@@ -30,19 +30,14 @@ def _checkout(root, origin="https://github.com/octo/repo.git", spec_dir=""):
 
     A real `git init` + origin, because the link refuses to drive a graph in a
     checkout that does not belong to the work item (issue-113 A6). ``spec_dir``
-    declares ``workflow.specDir`` in the checkout's harness config — the value
-    the daemon must honour rather than override (issue-123).
+    is where the checkout keeps its specs — the daemon's ``routing.graph.specDir``
+    must name the same directory (issue-352).
     """
     root.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-q", str(root)], check=True)
     subprocess.run(
         ["git", "-C", str(root), "remote", "add", "origin", origin], check=True
     )
-    if spec_dir:
-        (root / ".the-loop").mkdir(parents=True, exist_ok=True)
-        (root / ".the-loop" / "harness-config.yaml").write_text(
-            f"workflow:\n  specDir: {spec_dir}\n", encoding="utf-8"
-        )
     spec = root / (spec_dir or "docs/specs") / "issue-113"
     spec.mkdir(parents=True)
     (spec / "execution-log.md").write_text("# Execution Log\n")
@@ -243,21 +238,23 @@ def test_a_failing_graph_never_costs_the_delivery(tmp_path, checkout, monkeypatc
     )
 
 
-def test_a_repository_that_moved_its_specs_still_advances(tmp_path):
+def test_an_instance_that_moved_its_specs_still_advances(tmp_path):
     """
     Feature: Ingress-driven process graph
-    Scenario: A repository that keeps its specs outside docs/specs is not skipped
-      Given a checkout whose harness config declares workflow.specDir: specs
-      And the daemon's CLI config names no graph.specDir
+    Scenario: An instance whose repositories keep specs outside docs/specs is not skipped
+      Given a checkout keeping its specs under specs/
+      And the daemon's CLI config names routing.graph.specDir: specs
       When the dispatcher reports a spawned session for its work item
-      Then the graph's start node is entered under the repository's own directory
+      Then the graph's start node is entered under that directory
       And graph-state.json is written there
 
-    Requirement: docs/specs/issue-123/requirements.md#R1.1
+    Requirement: docs/specs/issue-123/requirements.md#R1.1 (re-based by issue-352)
     """
     checkout = _checkout(tmp_path / "moved", spec_dir="specs")
 
-    _dispatcher(tmp_path).graphlink.on_spawn(REF, str(checkout))
+    _dispatcher(tmp_path, graph={"specDir": "specs"}).graphlink.on_spawn(
+        REF, str(checkout)
+    )
 
     spec = checkout / "specs" / "issue-113"
     assert GraphState.load(spec, "issue-113").current_node == "phase-selection"
@@ -266,32 +263,34 @@ def test_a_repository_that_moved_its_specs_still_advances(tmp_path):
     )
 
 
-def test_two_repositories_with_different_spec_dirs_are_both_driven(tmp_path):
+def test_two_repositories_are_driven_under_the_instances_one_spec_dir(tmp_path):
     """
     Feature: Ingress-driven process graph
-    Scenario: One daemon serves repositories with different spec layouts
-      Given two watched repositories, one using docs/specs and one using specs
+    Scenario: One daemon serves two repositories with the same spec layout
+      Given two watched repositories, both keeping their specs under specs/
+      And the daemon's CLI config names routing.graph.specDir: specs
       When a session is spawned for a work item in each
-      Then both graphs enter their start node
-      And each does so under its own repository's declared directory
+      Then both graphs enter their start node under that one directory
 
-    Requirement: docs/specs/issue-123/requirements.md#R1.4
+    Requirement: docs/specs/issue-352/requirements.md R2.1
     """
-    default = _checkout(tmp_path / "a", origin="https://github.com/octo/repo.git")
-    moved = _checkout(
+    first = _checkout(
+        tmp_path / "a", origin="https://github.com/octo/repo.git", spec_dir="specs"
+    )
+    second = _checkout(
         tmp_path / "b", origin="https://github.com/octo/other.git", spec_dir="specs"
     )
     other_ref = WorkItemRef.parse("github:octo/other#113")
-    dispatcher = _dispatcher(tmp_path)
+    dispatcher = _dispatcher(tmp_path, graph={"specDir": "specs"})
 
-    dispatcher.graphlink.on_spawn(REF, str(default))
-    dispatcher.graphlink.on_spawn(other_ref, str(moved))
+    dispatcher.graphlink.on_spawn(REF, str(first))
+    dispatcher.graphlink.on_spawn(other_ref, str(second))
 
-    assert _state(default).current_node == "phase-selection"
-    assert (
-        GraphState.load(moved / "specs" / "issue-113", "issue-113").current_node
-        == "phase-selection"
-    )
+    for checkout in (first, second):
+        assert (
+            GraphState.load(checkout / "specs" / "issue-113", "issue-113").current_node
+            == "phase-selection"
+        )
 
 
 def test_the_poller_and_the_webhook_share_the_same_coupling(tmp_path):

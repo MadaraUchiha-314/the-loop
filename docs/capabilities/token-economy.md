@@ -62,7 +62,7 @@ Pointers, not copies:
 - Levers & loading map: [`skills/the-loop/reference/token-economy.md`](../../skills/the-loop/reference/token-economy.md).
 - Generation-side rung: [`skills/the-loop/reference/minimalism.md`](../../skills/the-loop/reference/minimalism.md).
 - Config contract: `.the-loop/harness-config.schema.json` (`tokenEconomy`, `$defs.modelTier`) and
-  the annotated `.the-loop/templates/harness-config.yaml`.
+  the annotated `skills/the-loop/templates/harness-config.yaml`.
 - Telemetry parsing: `cli/the_loop/harness/base.py` (`Usage`, `usage_from_output`) with
   per-dispatch logging in `cli/the_loop/webhook/dispatcher.py`.
 - Resident-session interplay (the tmux-hosted TUI amortizes context across a work item's

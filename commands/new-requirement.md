@@ -44,8 +44,8 @@ into requirements rather than starting from a blank page.
 
 4. **Identify collaborators up-front** (see `reference/collaboration.md`).
 
-5. **Leave the approval to the gate.** The human review of the requirements
-   (`workflow.requireHumanReviewPerPhase`, default true) happens at the graph's
+5. **Leave the approval to the gate.** The human review of the requirements is always
+   on and happens at the graph's
    `requirements-approval` node once a ticket exists — the gate classifies the reply,
    records the approver and locks the artifact itself (issue-281). Do **not** request
    an approval here and never set `status: approved` yourself; iterate the draft's

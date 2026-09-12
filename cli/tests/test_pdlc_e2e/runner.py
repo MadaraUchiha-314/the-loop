@@ -246,11 +246,6 @@ class ScenarioRun:
         self.spec_dir = self.checkout / "docs" / "specs" / scenario.work_item
         self.spec_dir.mkdir(parents=True)
         (self.checkout / ".the-loop").mkdir()
-        (self.checkout / ".the-loop" / "harness-config.yaml").write_text(
-            'version: "0.2.0"\nworkflow:\n  specDir: docs/specs\n'
-            '  phaseLabelPrefix: "loop:"\n',
-            encoding="utf-8",
-        )
         subprocess.run(
             ["git", "init", "-q", "-b", "main", str(self.checkout)],
             check=True,
@@ -269,7 +264,6 @@ class ScenarioRun:
             self.checkout,
             graph=load_graph(name=PDLC_WORK_ITEM_LOOP),
             config={
-                "phaseLabelPrefix": "loop:",
                 "authorizedUsers": [OWNER],
                 "originRepo": ORIGIN_REPO,
             },

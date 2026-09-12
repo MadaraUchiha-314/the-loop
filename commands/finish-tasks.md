@@ -20,7 +20,7 @@ of the loop; the cleanup set is intentionally **extensible** (more may be added 
    presented. If anything is outstanding, stop and report what remains (point back to
    `/the-loop:execute-tasks <id>`).
 
-2. **Mark complete.** Set the ticket phase label to `<phaseLabelPrefix>complete` and
+2. **Mark complete.** Set the ticket phase label to `loop:complete` and
    mirror `phase: complete` in the spec/execution log; add a final execution-log entry
    summarizing outcome + evidence.
 

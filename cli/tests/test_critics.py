@@ -23,15 +23,16 @@ from the_loop.harness import ClaudeCodeAdapter, CursorAgentAdapter
 # --------------------------------------------------------------------- helpers
 
 
+def config_path(root: Path) -> Path:
+    return root / "cli-config.yaml"
+
+
 def write_config(root: Path, critics_block: str) -> Path:
-    """A minimal harness config carrying just the reviews.critics list."""
-    cfg_dir = root / ".the-loop"
-    cfg_dir.mkdir(parents=True, exist_ok=True)
-    path = cfg_dir / "harness-config.yaml"
+    """A minimal CLI config carrying just the critics list (issue-352)."""
+    path = config_path(root)
     path.write_text(
-        "reviews:\n  selfReviewCount: 3\n  criticReviewCount: 3\n"
-        "  critics:\n"
-        + textwrap.indent(textwrap.dedent(critics_block).strip(), "    ")
+        'version: "0.9.0"\ncritics:\n'
+        + textwrap.indent(textwrap.dedent(critics_block).strip(), "  ")
         + "\n"
     )
     return path
@@ -78,12 +79,12 @@ def test_oneshot_argv_without_a_model_is_the_plain_one_shot_run():
 
 
 def test_no_config_means_no_critics(tmp_path: Path):
-    assert load_critics(tmp_path) == []
+    assert load_critics(config_path(tmp_path)) == []
 
 
 def test_critics_load_with_their_defaults(tmp_path: Path):
     write_config(tmp_path, "- name: cursor-gpt\n  harness: cursor\n  model: gpt-5.5\n")
-    (critic,) = load_critics(tmp_path)
+    (critic,) = load_critics(config_path(tmp_path))
     assert (critic.name, critic.harness, critic.model) == (
         "cursor-gpt",
         "cursor",
@@ -97,29 +98,19 @@ def test_critics_load_with_their_defaults(tmp_path: Path):
     assert critic.binary == "cursor-agent"
 
 
-def test_pre_rename_config_is_still_read(tmp_path: Path):
-    """A repo that has not run /the-loop:upgrade-the-loop keeps working (issue-82)."""
-    cfg_dir = tmp_path / ".the-loop"
-    cfg_dir.mkdir()
-    (cfg_dir / "config.yaml").write_text(
-        "reviews:\n  critics:\n    - name: c\n      harness: claude\n"
-    )
-    assert [c.name for c in load_critics(tmp_path)] == ["c"]
-
-
 def test_duplicate_names_are_rejected(tmp_path: Path):
     write_config(
         tmp_path,
         "- name: dup\n  harness: claude\n- name: dup\n  harness: cursor\n",
     )
     with pytest.raises(CriticConfigError, match="both named 'dup'"):
-        load_critics(tmp_path)
+        load_critics(config_path(tmp_path))
 
 
 def test_find_critic_names_the_alternatives(tmp_path: Path):
     write_config(tmp_path, "- name: cursor-gpt\n  harness: cursor\n")
     with pytest.raises(CriticConfigError, match="configured: cursor-gpt"):
-        find_critic(tmp_path, "nope")
+        find_critic("nope", config_path(tmp_path))
 
 
 @pytest.mark.parametrize(
@@ -145,20 +136,20 @@ def test_invalid_entries_carry_their_reason_instead_of_failing_the_listing(
 ):
     """R4.3: `critic list` still shows a broken entry — with why it is broken."""
     write_config(tmp_path, block)
-    (critic,) = load_critics(tmp_path)
+    (critic,) = load_critics(config_path(tmp_path))
     assert reason in critic.error
 
 
 def test_a_broken_entry_refuses_to_run(tmp_path: Path):
     write_config(tmp_path, "- name: c\n  harness: aider\n")
-    (critic,) = load_critics(tmp_path)
+    (critic,) = load_critics(config_path(tmp_path))
     with pytest.raises(CriticConfigError, match="no built-in invocation"):
         resolve_invocation(critic, {"prompt": "review"})
 
 
 def test_disabled_critic_refuses_to_run(tmp_path: Path):
     write_config(tmp_path, "- name: c\n  harness: claude\n  enabled: false\n")
-    (critic,) = load_critics(tmp_path)
+    (critic,) = load_critics(config_path(tmp_path))
     with pytest.raises(CriticConfigError, match="disabled in config"):
         resolve_invocation(critic, {"prompt": "review"})
 
@@ -384,8 +375,17 @@ def test_the_prompt_reaches_the_critic_as_one_argument(tmp_path: Path):
 
 
 def run_cli(argv: list[str]) -> int:
+    """Run the CLI against the config ``write_config`` put beside ``--root``.
+
+    The critics live in the operator's CLI config (issue-352), so the tests point
+    the CLI at the one they wrote with ``--config`` — exactly what an operator does.
+    """
     from the_loop.cli import main
 
+    if "--root" in argv:
+        root = Path(argv[argv.index("--root") + 1])
+        if config_path(root).is_file():
+            argv = ["--config", str(config_path(root)), *argv]
     return main(argv)
 
 

@@ -14,7 +14,6 @@ That arrangement is spread across four files that no single reader looks at toge
 ``.the-loop/manifest.yaml``                declares ``schemasDir`` and deprecates the copies
 ``.the-loop/*.schema.json``                the schemas themselves
 ``skills/the-loop/templates/*.yaml``       the configs ``/init`` scaffolds
-``cli/the_loop/harness-config.default.yaml``  the config the CLI writes when adopting a repo
 =========================================  =====================================================
 
 Four assertions, one per way the arrangement can rot:
@@ -60,15 +59,12 @@ SCHEMAS = (
 )
 
 #: Every config file the-loop scaffolds into a project, and the schema that validates it.
-#: The packaged default is byte-identical to its template
-#: (``test_harness_config.test_the_packaged_default_is_the_shipped_template``) but is
-#: listed separately: it is written by a different code path (adoption, issue-193) and a
-#: future divergence must fail here rather than silently ship a config with no modeline.
+#: (The CLI's packaged copy of the harness template went with adoption in issue-352: the
+#: CLI neither reads nor writes a harness config any more.)
 SCAFFOLDED: Dict[str, str] = {
     "skills/the-loop/templates/harness-config.yaml": "harness-config.schema.json",
     "skills/the-loop/templates/collaborators.yaml": "collaborators.schema.json",
     "skills/the-loop/templates/cli-config.yaml": "cli-config.schema.json",
-    "cli/the_loop/harness-config.default.yaml": "harness-config.schema.json",
 }
 
 #: The editor directive. ``yaml-language-server`` reads it from the first line only.

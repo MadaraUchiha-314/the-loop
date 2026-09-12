@@ -132,7 +132,7 @@ def test_split_ref_names_both_remedies():
     assert "issue-194" in message
     assert "<owner>/<repo>#<number>" in message
     assert "--ref" in message
-    assert "ticketing.github" in message
+    assert "origin" in message
 
 
 def test_split_ref_still_accepts_every_shape_it_did_before():

@@ -54,8 +54,10 @@ first was observable: a mistyped or moved path contributed no guidance and produ
 signal, so `onMissing: error` was a setting that never errored.
 
 ```bash
-the-loop instructions                      # each entry, its resolved path, its state
-the-loop instructions --format json        # machine-readable, for a harness or CI
+# you read customInstructions and hand the entries over — the CLI reads no harness config
+the-loop instructions --doc docs/team-conventions.md --doc /home/me/rules.md --on-missing warn
+the-loop instructions --doc '{"path": "docs/team-conventions.md", "notes": "House style"}'
+the-loop instructions --doc … --format json        # machine-readable, for a harness or CI
 ```
 
 Each entry comes back as `present`, `missing` (nothing resolves at that path),

@@ -71,11 +71,11 @@ What to use instead:
 Those two lists are the only places human identity is declared. Per-person notification
 routing is **not built**: a notification goes to a channel, not to a person.
 
-::: tip The harness side is unaffected
-`harness-config.yaml`'s own [`notifications.events`](/config/harness-config) is a different
-taxonomy — `decision-pending`, `phase-approval-pending`, and friends — and it is still
-read: it gates the process graph's `notify` hook, which then posts through the channels
-layer.
+::: tip The harness config carries no notification routing either
+`harness-config.yaml` used to carry its own `notifications.events` taxonomy —
+`decision-pending`, `phase-approval-pending`, and friends. issue-352 removed it: the
+process graph's `notify` hook publishes the graph's own events on the bus, and the
+[channels options](/config/cli/channels-options) decide who hears them.
 :::
 
 ## Next

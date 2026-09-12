@@ -57,7 +57,7 @@ the environment the plan references is usually described there.
    evidence. When the change adds or alters integration behaviour, run
    `the-loop scenarios --format markdown` for the reviewer briefing and reference it here.
 
-6. **Advance the phase.** Set the ticket label to `<phaseLabelPrefix>verification` while
+6. **Advance the phase.** Set the ticket label to `loop:verification` while
    running, mirror `phase: verification` in the execution log, and tell the graph when the
    node's work is done: `the-loop graph complete <id>`.
 

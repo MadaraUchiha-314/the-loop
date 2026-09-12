@@ -63,19 +63,20 @@ graph TD
     CR["critic"]
     SC["scenarios"]
   end
-  HC["the work item's checkout<br/>.the-loop/harness-config.yaml"]
+  HC["the work item's checkout<br/>.the-loop/harness-config.yaml<br/>(the agent's — never read here)"]
   MC["migrate-config<br/>upgrades cli-config.yaml"]
   CFG --> D
   CFG --> MC
-  D -->|"phase label, specDir,<br/>notifications"| HC
-  R --> HC
+  CFG -->|"specDir, critics,<br/>graph hooks"| R
+  HC -. "flags the agent passes:<br/>--spec-dir, --glob, --doc" .-> R
 ```
 
-Note the one arrow people expect to be missing: the daemon reads a **work item's own
-checkout** too, for the values that repository declares about itself. What it never does
-is take its *own* settings from a repository. That direction rule is
-[decision-044](/decisions/decision-044); the split into two files is
-[decision-032](/decisions/decision-032), and both files are explained in
+Note the arrow that is **not** there: nothing in the CLI reads a repository's harness
+config. Since [issue #352](https://github.com/MadaraUchiha-314/the-loop/issues/352) that
+file is the agent's alone; the spec directory, the critic roster and the graph hooks are
+the CLI config's, and anything else the CLI needs from a repository the agent hands over
+as a flag. The rule is [decision-123](/decisions/decision-123); the split into two files
+is [decision-032](/decisions/decision-032), and both files are explained in
 [Configuring the-loop](/config/).
 
 ## Next

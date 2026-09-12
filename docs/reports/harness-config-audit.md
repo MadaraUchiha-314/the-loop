@@ -5,6 +5,13 @@
 > removed outright, and if not, which of its keys belong in `cli-config.yaml` so the
 > **operator** controls them rather than the repository owner?
 >
+> **Outcome (PR #353 review, 2026-09-12).** The owner took the audit further than it
+> recommended: the CLI now reads **no** key of the harness config at all, and the file
+> shrank to the agent's policy — see [decision-123](../decisions/decision-123.md) and
+> [the config reference](../config/harness-config.md#what-moved-out-of-it-in-issue-352)
+> for what moved where. The analysis below is the state **before** that change, kept as
+> the record the decision was made on; its follow-ups are now the change itself.
+>
 > **Conclusion: the file cannot be removed, but it should shrink.** Two of its keys are
 > the wrong file's (`reviews.critics[]` and the model ids under `tokenEconomy`), one is a
 > mirror of the graph that a test forces to stay a mirror (`workflow.phases`), and a

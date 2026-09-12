@@ -52,7 +52,6 @@ to the plugin's install directory.)
      `eslint`/`oxlint`/`biome`, etc.; the Python and Go equivalents).
    - cross-check inferred tooling against `.github/workflows/` (or other CI config) —
      the commands CI actually runs are a strong signal.
-   - the git remote / owner / repo for ticketing.
    - candidate **custom instruction docs** for `customInstructions.docs` — existing
      convention files the team already maintains (`CONTRIBUTING.md`, style/convention
      guides under `docs/`). Propose them in the onboarding (never auto-register); the
@@ -71,10 +70,10 @@ to the plugin's install directory.)
    (in the plugin's `harness-config.schema.json` — `${CLAUDE_PLUGIN_ROOT}` /
    `manifest.schemasDir`, never a project copy) defines the ordered config groups
    (related keys that interact, clubbed together) and each group's `ask` level:
-   - `always` groups (e.g. **Project & ticketing**, **People & communication**) have
-     no sensible default — establish them with the user.
-   - `confirm` groups (tooling, custom instructions, workflow, quality gates,
-     reviews & autonomy) —
+   - `always` groups (**People & interaction**: the collaborators file) have no
+     sensible default — establish them with the user.
+   - `confirm` groups (repository layout, tooling, custom instructions, workflow,
+     quality gates, reviews & autonomy) —
      present the proposal from step 1's detection (falling back to schema defaults)
      and confirm/adjust the whole group in ONE interaction.
    - `advanced` groups (API contracts, observability, self-improvement & context
@@ -126,12 +125,15 @@ to the plugin's install directory.)
    - `<workflow.learningsDir>/learnings.md` — the learnings index, under the directory
      established in step 2 (default `docs/learnings`).
 
-4. **Create phase labels/tags** in the ticketing system for the workflow state
-   machine — one per `workflow.phases`, named `<workflow.phaseLabelPrefix><phase>`
-   (e.g. `loop:requirements-definition`, `loop:design`, … `loop:complete`,
-   `loop:cleanup`). On GitHub
-   create issue labels; on Jira create the equivalent statuses/labels. Skip any that
-   already exist. **No skip labels are needed** (issue-177): which phases a work item
+4. **Create phase labels/tags** in the ticketing system for the process graph's phases
+   — one per phase the shipped work-item loop declares, named `loop:<phase>` (the fixed
+   vocabulary, issue-352): `loop:not-started`, `loop:phase-selection`,
+   `loop:brainstorming`, `loop:requirements-definition`, `loop:design`,
+   `loop:test-planning`, `loop:tasks-breakdown`, `loop:implementation`,
+   `loop:verification`, `loop:needs-review`, `loop:complete`, `loop:cleanup`. The graph
+   is the source (`the-loop graph show --format json` lists each node's `phase`); the
+   config declares no phase list. On GitHub create issue labels; on Jira create the
+   equivalent statuses/labels. Skip any that already exist. **No skip labels are needed** (issue-177): which phases a work item
    walks is chosen on the ticket itself, at the loop's `phase-selection` phase, by an
    authorized user replying to the-loop's checklist — nothing to create per repository.
 
@@ -144,7 +146,11 @@ to the plugin's install directory.)
    - if scaffolded, `.the-loop/cli-config.yaml` ↔ `cli-config.schema.json`
 
    The absence of a project-local schema copy never weakens or skips this step. Report
-   any gaps the user must fill (e.g. empty `collaborators`, `ticketing.github.owner`).
+   any gaps the user must fill (e.g. empty `collaborators`). If `workflow.specDir` was
+   set to anything but `docs/specs`, say so explicitly: the CLI reads no harness config
+   (issue-352), so the operator must set `routing.graph.specDir` in their
+   `cli-config.yaml` to the same value (it is set in the scaffolded one if step 2 chose
+   to track it here).
 
 6. **Confirm collaborators.** If `.the-loop/collaborators.yaml` is still empty after
    the onboarding (step 2), ask the user (via a ticket comment if a ticket exists,

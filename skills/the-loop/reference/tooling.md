@@ -1,7 +1,7 @@
 # Tooling reference
 
 The harness must use exactly the tooling declared in `.the-loop/harness-config.yaml`
-(`repository`, `tooling`, `localOrchestration`, `hooks` sections). This file explains
+(`repository`, `tooling`, `hooks` sections). This file explains
 the rules and the per-language matrix so the essence is not lost.
 
 ## Repository management
@@ -43,15 +43,13 @@ the rules and the per-language matrix so the essence is not lost.
   tags**; container images → **GitHub Container Registry (ghcr)**.
 - Releases use the same commands locally and in CI.
 
-## Multi-artifact & multi-entity testing (`localOrchestration`)
+## Multi-artifact & multi-entity testing
 
-When several entities in a monorepo must be tested together:
-1. **All packages are locally linkable** (`linkPackagesLocally: true`) — use the
-   workspace tool's linking so cross-package changes are exercised without publishing.
-2. **All services run under `podman`** (`containerRuntime`).
-3. **Each service can point local or remote** — `localOrchestration.remoteServices`
-   lists services that should target a remote instead of running locally, so a
-   developer/harness can run a subset locally.
+When several entities in a monorepo must be tested together, link the packages locally
+with the workspace tool so cross-package changes are exercised without publishing, and
+run the services the project's own way (its compose file, its task runner). Which
+container runtime a machine has is the operator's business, not the repository's — the
+`localOrchestration` block that once named one was removed in issue-352.
 
 ## Pre-commit & pre-push hooks (`hooks`)
 

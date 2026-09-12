@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/MadaraUchiha-314/the-loop/.the-loop/cli-config.schema.json",
   "title": "the-loop CLI configuration",
-  "description": "Schema for the-loop's CLI config (cli-config.yaml: webhooks/polling/eventLog/collaborators/notifications), read by `the-loop gh-webhook`/`poll`/`sessions`/`events`. Independent of .the-loop/harness-config.schema.json (the per-repo HARNESS/plugin config): the CLI is expected to work across multiple repos, so its config resolves in priority order: --config/-c flag, $THE_LOOP_CLI_CONFIG env var, ./.the-loop/cli-config.yaml (repo-relative \u2014 an operator may choose to track it in a specific repo), else ~/.the-loop/cli-config.yaml. See decision-032. The operator's own notification recipients are DECLARED here (collaborators, same structure as collaborators.schema.json), never looked up from any repo's collaborators.yaml (issue-82, decision-035).",
+  "description": "Schema for the-loop's CLI config (cli-config.yaml: webhooks/polling/eventLog/collaborators/notifications), read by `the-loop gh-webhook`/`poll`/`sessions`/`events`. Independent of .the-loop/harness-config.schema.json (the per-repo HARNESS/plugin config): the CLI is expected to work across multiple repos, so its config resolves in priority order: --config/-c flag, $THE_LOOP_CLI_CONFIG env var, ./.the-loop/cli-config.yaml (repo-relative — an operator may choose to track it in a specific repo), else ~/.the-loop/cli-config.yaml. See decision-032. The operator's own notification recipients are DECLARED here (collaborators, same structure as collaborators.schema.json), never looked up from any repo's collaborators.yaml (issue-82, decision-035). Since issue-352 it also carries the two blocks of executable configuration the CLI used to read from a repository's harness config — `critics[]` and `routing.graph.hooks` — because the CLI reads that file no more (decision-123).",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -21,7 +21,7 @@
         "root": {
           "type": "string",
           "default": ".the-loop",
-          "description": "Root directory for generated state. A RELATIVE value \u2014 the default `.the-loop` included \u2014 is resolved against the directory the config file's `.the-loop/` sits in, never against the process's working directory (issue-339, decision-119): before that, a daemon and a CLI reading one config could address two different roots, and `the-loop status` read a second, stale heartbeat. `~` is expanded. Defaults derived from it: portable work-item records `<root>/portable/` (control + poll state \u2014 the half that travels between machines), session records `<root>/local/`, event log `<root>/logs/events.jsonl`, receiver pidfile `<root>/gh-webhook.pid`. Issue-128 organised the tree by portability rather than by writer, retiring `polling.stateFile` (the ledger is a directory now) and moving the session registry's default from `<root>/sessions` to `<root>/local`. The pre-issue-128 locations are still READ once per work item, so an upgrade never re-baselines a watched thread or forgets what an authorized user armed."
+          "description": "Root directory for generated state. A RELATIVE value — the default `.the-loop` included — is resolved against the directory the config file's `.the-loop/` sits in, never against the process's working directory (issue-339, decision-119): before that, a daemon and a CLI reading one config could address two different roots, and `the-loop status` read a second, stale heartbeat. `~` is expanded. Defaults derived from it: portable work-item records `<root>/portable/` (control + poll state — the half that travels between machines), session records `<root>/local/`, event log `<root>/logs/events.jsonl`, receiver pidfile `<root>/gh-webhook.pid`. Issue-128 organised the tree by portability rather than by writer, retiring `polling.stateFile` (the ledger is a directory now) and moving the session registry's default from `<root>/sessions` to `<root>/local`. The pre-issue-128 locations are still READ once per work item, so an upgrade never re-baselines a watched thread or forgets what an authorized user armed."
         }
       }
     },
@@ -40,18 +40,18 @@
     "instance": {
       "type": "object",
       "additionalProperties": false,
-      "description": "This instance of the-loop: its identity and the work items it manages (issue-322). Several instances can watch one repository, each in its own environment (a machine, a container, a checkout root \u2014 the-loop's concern stops at the session); this block says which one THIS config is and how new work items reach it. Unset: an unnamed, open instance, which behaves exactly as before the block existed. Hot-reloaded with the rest of the config, so a scope edit is live without a restart. The managed set is derived, never kept: the declared list below, plus every work item this instance holds a live session record or a control record for.",
+      "description": "This instance of the-loop: its identity and the work items it manages (issue-322). Several instances can watch one repository, each in its own environment (a machine, a container, a checkout root — the-loop's concern stops at the session); this block says which one THIS config is and how new work items reach it. Unset: an unnamed, open instance, which behaves exactly as before the block existed. Hot-reloaded with the rest of the config, so a scope edit is live without a restart. The managed set is derived, never kept: the declared list below, plus every work item this instance holds a live session record or a control record for.",
       "properties": {
         "name": {
           "type": "string",
           "default": "",
           "pattern": "^$|^[a-z0-9][a-z0-9-]{0,39}$",
-          "description": "The instance's name: lowercase letters, digits and hyphens, not starting with a hyphen, at most 40 characters (the standing-session grammar) \u2014 narrow because it is interpolated into a tmux argv (`-e THE_LOOP_INSTANCE=<name>`, so a spawned session can derive a port or a container name from it) and into the comments the CLI posts (`the-loop start instance:<name>`). Empty: unnamed \u2014 nothing can address it, and `scope.mode: addressed` resolves to `locked`. A name outside the grammar is warned about and treated as unset."
+          "description": "The instance's name: lowercase letters, digits and hyphens, not starting with a hyphen, at most 40 characters (the standing-session grammar) — narrow because it is interpolated into a tmux argv (`-e THE_LOOP_INSTANCE=<name>`, so a spawned session can derive a port or a container name from it) and into the comments the CLI posts (`the-loop start instance:<name>`). Empty: unnamed — nothing can address it, and `scope.mode: addressed` resolves to `locked`. A name outside the grammar is warned about and treated as unset."
         },
         "scope": {
           "type": "object",
           "additionalProperties": false,
-          "description": "How a work item this instance does not yet manage reaches it. A work item it already manages \u2014 declared here, or with a session or control record on this instance \u2014 is handled in every mode exactly as before.",
+          "description": "How a work item this instance does not yet manage reaches it. A work item it already manages — declared here, or with a session or control record on this instance — is handled in every mode exactly as before.",
           "properties": {
             "mode": {
               "type": "string",
@@ -61,7 +61,7 @@
                 "locked"
               ],
               "default": "open",
-              "description": "`open` (default): any armed, authorized start is taken \u2014 the pre-issue-322 behaviour, and the reason a lone instance that names itself changes nothing; two OPEN instances on one repository both take the same start. `addressed`: a new work item is taken only when the comment names this instance (`the-loop start instance:<name>`), or when `the-loop sessions start` is run on it \u2014 the steady state for several instances. `locked`: nothing new is taken, addressed or not; editing `workItems` is the only door. An address to ANOTHER instance is authoritative in every mode: this instance drops the event even for a work item it manages. A value the daemon does not know is warned about and resolves to `locked`, never to `open`. Every drop is a `dispatch.dropped` (or, for an authorized command, a `control.rejected`) in the event log with the reason \u2014 `unaddressed`, `instance-locked`, `addressed-elsewhere`, `ambiguous-address` \u2014 and leaves no reaction, comment or record: another instance may own the work item."
+              "description": "`open` (default): any armed, authorized start is taken — the pre-issue-322 behaviour, and the reason a lone instance that names itself changes nothing; two OPEN instances on one repository both take the same start. `addressed`: a new work item is taken only when the comment names this instance (`the-loop start instance:<name>`), or when `the-loop sessions start` is run on it — the steady state for several instances. `locked`: nothing new is taken, addressed or not; editing `workItems` is the only door. An address to ANOTHER instance is authoritative in every mode: this instance drops the event even for a work item it manages. A value the daemon does not know is warned about and resolves to `locked`, never to `open`. Every drop is a `dispatch.dropped` (or, for an authorized command, a `control.rejected`) in the event log with the reason — `unaddressed`, `instance-locked`, `addressed-elsewhere`, `ambiguous-address` — and leaves no reaction, comment or record: another instance may own the work item."
             },
             "workItems": {
               "type": "array",
@@ -69,7 +69,7 @@
               "items": {
                 "type": "string"
               },
-              "description": "Work items this instance manages by declaration, each a `<provider>:[<host>/]<owner>/<repo>#<n>` ref (`github:octo/repo#15`) or a GitHub issue / pull-request URL. The way into a `locked` instance, and a pre-address on an `addressed` one: an unaddressed start on a declared work item is taken. An entry that does not parse is warned about by position and skipped. A work item declared on two instances is managed by both \u2014 that is your declaration, honoured."
+              "description": "Work items this instance manages by declaration, each a `<provider>:[<host>/]<owner>/<repo>#<n>` ref (`github:octo/repo#15`) or a GitHub issue / pull-request URL. The way into a `locked` instance, and a pre-address on an `addressed` one: an unaddressed start on a declared work item is taken. An entry that does not parse is warned about by position and skipped. A work item declared on two instances is managed by both — that is your declaration, honoured."
             }
           }
         }
@@ -77,12 +77,17 @@
     },
     "repositories": {
       "type": "array",
-      "description": "Every GitHub repository this instance of the-loop works with, as `[HOST/]OWNER/REPO` (issue-348). ONE declaration, read by EVERY ingress: the gh-webhook receiver drops a delivery for a repository outside this list (`routing.dropped`, reason `undeclared-repository`), the poller takes its scopes from it, the `/the-loop` slash command bounds its target to it (decision-116 D4) and a Slack kickoff prefix resolves against it (decision-120 D1). Until issue-348 the list lived in `polling.sources[].repos`, named after the one ingress that read it \u2014 which is how the receiver came to be bounded by no repository list at all. A bare `OWNER/REPO` is on this instance's host (`integrations.github.host`, issue-311); write the host in front for a repository on another. A malformed entry is skipped, never guessed at, so a fault can only shrink the set. EMPTY OR UNSET BOUNDS NOTHING: the receiver then accepts a delivery for any repository that reaches it (13.12.0 behaviour, warned about at start) and the poller has nothing to poll.",
+      "description": "Every GitHub repository this instance of the-loop works with, as `[HOST/]OWNER/REPO` (issue-348). ONE declaration, read by EVERY ingress: the gh-webhook receiver drops a delivery for a repository outside this list (`routing.dropped`, reason `undeclared-repository`), the poller takes its scopes from it, the `/the-loop` slash command bounds its target to it (decision-116 D4) and a Slack kickoff prefix resolves against it (decision-120 D1). Until issue-348 the list lived in `polling.sources[].repos`, named after the one ingress that read it — which is how the receiver came to be bounded by no repository list at all. A bare `OWNER/REPO` is on this instance's host (`integrations.github.host`, issue-311); write the host in front for a repository on another. A malformed entry is skipped, never guessed at, so a fault can only shrink the set. EMPTY OR UNSET BOUNDS NOTHING: the receiver then accepts a delivery for any repository that reaches it (13.12.0 behaviour, warned about at start) and the poller has nothing to poll.",
       "items": {
         "type": "string"
       },
       "default": [],
-      "examples": [["octo/hello", "ghe.corp.example/team/service"]]
+      "examples": [
+        [
+          "octo/hello",
+          "ghe.corp.example/team/service"
+        ]
+      ]
     },
     "webhooks": {
       "type": "object",
@@ -97,7 +102,9 @@
               "type": "boolean",
               "default": false,
               "description": "Whether `the-loop start` brings the GitHub webhook receiver up (issue-228, decision-084). Explicit opt-in: a receiver needs a reachable bind, a secret and GitHub-side configuration, so a config that merely DESCRIBES one must not open a port. The foreground entry point (`python -m the_loop.daemon_entry gh-webhook`, for systemd) runs regardless of it.",
-              "examples": [true]
+              "examples": [
+                true
+              ]
             },
             "host": {
               "type": "string",
@@ -135,7 +142,7 @@
                 "check_suite",
                 "status"
               ],
-              "description": "GitHub event names of interest. Omitted or empty = the-loop's default set (shown above): every event it can map to a work item, so nothing routable is missed. Setting an explicit list narrows it \u2014 keep `issues` and `pull_request` in it, or a closed issue / merged PR never reaches the receiver and its session (plus its tmux session) is never closed; the receiver warns at startup if they are missing (issue-94).",
+              "description": "GitHub event names of interest. Omitted or empty = the-loop's default set (shown above): every event it can map to a work item, so nothing routable is missed. Setting an explicit list narrows it — keep `issues` and `pull_request` in it, or a closed issue / merged PR never reaches the receiver and its session (plus its tmux session) is never closed; the receiver warns at startup if they are missing (issue-94).",
               "items": {
                 "type": "string"
               }
@@ -146,14 +153,16 @@
     },
     "polling": {
       "type": "object",
-      "description": "Config for the the-loop CLI poller (started by `the-loop start` when `polling.enabled` is true, or directly via `python -m the_loop.daemon_entry poller`) \u2014 a pull-based, provider-agnostic alternative to the webhook receiver for hosts a webhook cannot reach. Each entry in `sources` selects a provider (e.g. github) the system interfaces with and says HOW to poll; the core carries no provider-specific knobs. WHICH repositories are polled is the top-level `repositories` (issue-348) \u2014 one declaration, read by every ingress. Dispatch behaviour (harness, runner, spawn policy, templates, registry) is the shared top-level `routing` block \u2014 the same one the webhook receiver runs on (issue-142).",
+      "description": "Config for the the-loop CLI poller (started by `the-loop start` when `polling.enabled` is true, or directly via `python -m the_loop.daemon_entry poller`) — a pull-based, provider-agnostic alternative to the webhook receiver for hosts a webhook cannot reach. Each entry in `sources` selects a provider (e.g. github) the system interfaces with and says HOW to poll; the core carries no provider-specific knobs. WHICH repositories are polled is the top-level `repositories` (issue-348) — one declaration, read by every ingress. Dispatch behaviour (harness, runner, spawn policy, templates, registry) is the shared top-level `routing` block — the same one the webhook receiver runs on (issue-142).",
       "additionalProperties": false,
       "properties": {
         "enabled": {
           "type": "boolean",
           "default": false,
           "description": "Whether `the-loop start` brings the poller up (issue-228, decision-084). Explicit opt-in, never inferred from a non-empty `sources` list — `sources` describes HOW to poll, not that polling is wanted on this host. `the-loop start` names this key when it skips a disabled poller, and `python -m the_loop.daemon_entry poller [--once]` runs one regardless (the cron/systemd form).",
-          "examples": [true]
+          "examples": [
+            true
+          ]
         },
         "intervalSeconds": {
           "type": "integer",
@@ -169,7 +178,7 @@
         },
         "sources": {
           "type": "array",
-          "description": "Ordered list of provider-specific poll sources. Each entry MUST name a `provider`; the remaining keys are that provider's own config (unknown to the core) and describe HOW to poll \u2014 label, monitored entity kinds, binary. WHAT to poll is the top-level `repositories` (issue-348), read by every ingress; every github source polls every declared repository.",
+          "description": "Ordered list of provider-specific poll sources. Each entry MUST name a `provider`; the remaining keys are that provider's own config (unknown to the core) and describe HOW to poll — label, monitored entity kinds, binary. WHAT to poll is the top-level `repositories` (issue-348), read by every ingress; every github source polls every declared repository.",
           "items": {
             "type": "object",
             "required": [
@@ -210,7 +219,7 @@
     },
     "routing": {
       "type": "object",
-      "description": "What happens to an event ONCE ACCEPTED: match it to a work item, route it to that item's registered harness session, or spawn one. Top-level since issue-142, because it is NOT the webhook receiver's \u2014 the poller reads every value here verbatim for dispatch and `the-loop sessions` reads it again, so one declaration governs both ingresses and the operator's own control surface (docs/specs/issue-15/design.md, decision-016).",
+      "description": "What happens to an event ONCE ACCEPTED: match it to a work item, route it to that item's registered harness session, or spawn one. Top-level since issue-142, because it is NOT the webhook receiver's — the poller reads every value here verbatim for dispatch and `the-loop sessions` reads it again, so one declaration governs both ingresses and the operator's own control surface (docs/specs/issue-15/design.md, decision-016).",
       "additionalProperties": false,
       "properties": {
         "enabled": {
@@ -221,7 +230,7 @@
         "registryDir": {
           "type": "string",
           "default": "<state.root>/local",
-          "description": "Directory holding one JSON file per registered session \u2014 the machine-LOCAL half of a work item's state (a harness conversation id, its cwd, its tmux target). Never track it in git: a copied session record is still counted live, so the duplicate guard would refuse the spawn the other machine needs (issue-128, decision-046). Unset resolves to `<state.root>/local`."
+          "description": "Directory holding one JSON file per registered session — the machine-LOCAL half of a work item's state (a harness conversation id, its cwd, its tmux target). Never track it in git: a copied session record is still counted live, so the duplicate guard would refuse the spawn the other machine needs (issue-128, decision-046). Unset resolves to `<state.root>/local`."
         },
         "defaultHarness": {
           "type": "string",
@@ -249,7 +258,7 @@
         },
         "control": {
           "type": "object",
-          "description": "Execution control: the keywords an AUTHORIZED user steers the-loop with, in a comment on the work item or its PR (issue-106). Before this, `authorizedUsers` said WHO may be an input and `autoExecuteLabel` said WHICH items may run \u2014 nothing said WHEN, so labelling an issue was itself an irreversible trigger. A comment carrying a declared keyword is interpreted by the-loop and NOT forwarded to the harness; the five session commands are also available as `the-loop sessions start|pause|resume|stop|cleanup`, which post the same keyword back to the ticket (marked as the-loop's own so it is never read back). Control parsing runs strictly AFTER the existing guards \u2014 the self-comment marker and authorizedUsers \u2014 so it never becomes a second, weaker way in; the parser recognises the fixed vocabulary only and yields one of the declared commands, never text from the comment.",
+          "description": "Execution control: the keywords an AUTHORIZED user steers the-loop with, in a comment on the work item or its PR (issue-106). Before this, `authorizedUsers` said WHO may be an input and `autoExecuteLabel` said WHICH items may run — nothing said WHEN, so labelling an issue was itself an irreversible trigger. A comment carrying a declared keyword is interpreted by the-loop and NOT forwarded to the harness; the five session commands are also available as `the-loop sessions start|pause|resume|stop|cleanup`, which post the same keyword back to the ticket (marked as the-loop's own so it is never read back). Control parsing runs strictly AFTER the existing guards — the self-comment marker and authorizedUsers — so it never becomes a second, weaker way in; the parser recognises the fixed vocabulary only and yields one of the declared commands, never text from the comment.",
           "additionalProperties": false,
           "properties": {
             "enabled": {
@@ -260,7 +269,7 @@
             "requireStartCommand": {
               "type": "boolean",
               "default": true,
-              "description": "BEHAVIOUR CHANGE (issue-106): the auto-execute label becomes NECESSARY BUT NOT SUFFICIENT. With the default true, a labelled work item is *armed*, and a session spawns only once an authorized user has issued the start command for it (by comment, or `the-loop sessions start`) \u2014 the request is durable, so it survives a daemon restart, and a later stop/pause disarms it again. This applies to `spawnOnUnmatched: always` too: 'always' widens which items may spawn, never who may start them. Set false to restore the pre-issue-106 behaviour where the label alone starts a session."
+              "description": "BEHAVIOUR CHANGE (issue-106): the auto-execute label becomes NECESSARY BUT NOT SUFFICIENT. With the default true, a labelled work item is *armed*, and a session spawns only once an authorized user has issued the start command for it (by comment, or `the-loop sessions start`) — the request is durable, so it survives a daemon restart, and a later stop/pause disarms it again. This applies to `spawnOnUnmatched: always` too: 'always' widens which items may spawn, never who may start them. Set false to restore the pre-issue-106 behaviour where the label alone starts a session."
             },
             "keywords": {
               "type": "object",
@@ -286,41 +295,54 @@
                 "execute": {
                   "type": "string",
                   "default": "the-loop execute",
-                  "description": "Answers the graph's `phase-selection` gate (issue-177): the authorized user has chosen which phases this work item needs, so freeze that selection and start walking. Unlike the session commands it does NOT touch the session registry \u2014 it neither arms nor disarms \u2014 and the comment carrying it is still delivered, because the gate itself is what reads the selection."
+                  "description": "Answers the graph's `phase-selection` gate (issue-177): the authorized user has chosen which phases this work item needs, so freeze that selection and start walking. Unlike the session commands it does NOT touch the session registry — it neither arms nor disarms — and the comment carrying it is still delivered, because the gate itself is what reads the selection."
                 },
                 "contribute": {
                   "type": "string",
                   "default": "the-loop contribute",
-                  "description": "Arms the work item exactly as `start` does \u2014 same spawn policy, same durable record, same named-actor authorization \u2014 and additionally selects the CONTRIBUTION loop (`pdlc-contribution-loop`, issue-185) for its outer walk: the-loop joins an EXISTING, in-progress issue or PR as a contributor rather than owning it from scratch. That loop refuses to begin until an authorized user has stated a goal and success criteria (a `Goal:` line plus a `Success criteria:` bullet list, in one comment \u2014 the comment carrying this keyword qualifies), and its phases are sized for a scoped intervention."
+                  "description": "Arms the work item exactly as `start` does — same spawn policy, same durable record, same named-actor authorization — and additionally selects the CONTRIBUTION loop (`pdlc-contribution-loop`, issue-185) for its outer walk: the-loop joins an EXISTING, in-progress issue or PR as a contributor rather than owning it from scratch. That loop refuses to begin until an authorized user has stated a goal and success criteria (a `Goal:` line plus a `Success criteria:` bullet list, in one comment — the comment carrying this keyword qualifies), and its phases are sized for a scoped intervention."
                 },
                 "do": {
                   "type": "string",
                   "default": "the-loop do",
                   "description": "Arms the work item exactly as `start` does — same spawn policy, same durable record, same named-actor authorization — and additionally selects the AD-HOC loop (`pdlc-adhoc-loop`, issue-225) for its outer walk: a tactical task that runs NO PDLC process. That loop has three nodes (`work` -> `review`, back to `work` while the requester asks for more, then `complete`), no spec chain, no phase-selection gate, no artifact gates and no review chain; the-loop does the work, reports back, and treats any authorized reply that is not a declaration of completion as more work. Typing this keyword IS the declaration that the item runs without the process — it is recorded in the portable control record and then in `graph-state.json`, so a reviewer of the resulting change can see that no review chain ran and who decided that. Set to an empty string to disable the word entirely.",
-                  "examples": ["the-loop do", "the-loop task", ""]
+                  "examples": [
+                    "the-loop do",
+                    "the-loop task",
+                    ""
+                  ]
                 },
                 "review": {
                   "type": "string",
                   "default": "the-loop review",
                   "description": "Arms the work item exactly as `start` does — same spawn policy, same durable record, same named-actor authorization — and additionally selects the REVIEW loop (`pdlc-review-loop`, issue-279): the-loop becomes the REVIEWER of the thread it was typed on, never its author. Typed on a pull request, the review binds to the PULL REQUEST ITSELF even when it links a ticket — the subject of a review is the change. Typed on a work item, one review conversation spans EVERY pull request delivering it: the fill-in template additionally asks which pull requests are in scope, pre-filled with the ones the-loop detects from its own pr-loops state and the work item's linked pull requests. That loop refuses to begin until an authorized user has stated a review brief (`Questions:` / `Angles:` / `Validations:` bullet lists, at least one section, in one comment — the comment carrying this keyword qualifies; otherwise the-loop posts the fill-in template and waits). Each round answers the frozen brief and is posted on the thread; any authorized reply that is not a declaration of completion is another round. The review session changes NO code: it commits nothing, pushes nothing and opens no pull request. Set to an empty string to disable the word entirely.",
-                  "examples": ["the-loop review", ""]
+                  "examples": [
+                    "the-loop review",
+                    ""
+                  ]
                 },
                 "cleanup": {
                   "type": "string",
                   "default": "the-loop cleanup",
-                  "description": "The other end of the life cycle (issue-186): release the LOCAL resources this work item accumulated \u2014 the tmux session of every endpoint (its own plus one per pull request), the workspace checkout, and the machine-local session record. DESTRUCTIVE and deliberately unconditional: it ignores `tmux.keepSessionOnClose` and `workspace.keepCheckoutOnClose`, so uncommitted work in the checkout is gone. It keeps the PORTABLE record (control, poll, frozen graph, collaborator roster) \u2014 that is persistence and tracking, not a resource \u2014 and performs NO remote action: no branch, pull request, issue or label is touched. Works retroactively on any work item the-loop tracked, with or without a live session, and durably disarms the item like `stop`. A closure by an AUTHORIZED user cleans up on its own; a closure that names no actor (or an unauthorized one) defers to this keyword, which is why it exists."
+                  "description": "The other end of the life cycle (issue-186): release the LOCAL resources this work item accumulated — the tmux session of every endpoint (its own plus one per pull request), the workspace checkout, and the machine-local session record. DESTRUCTIVE and deliberately unconditional: it ignores `tmux.keepSessionOnClose` and `workspace.keepCheckoutOnClose`, so uncommitted work in the checkout is gone. It keeps the PORTABLE record (control, poll, frozen graph, collaborator roster) — that is persistence and tracking, not a resource — and performs NO remote action: no branch, pull request, issue or label is touched. Works retroactively on any work item the-loop tracked, with or without a live session, and durably disarms the item like `stop`. A closure by an AUTHORIZED user cleans up on its own; a closure that names no actor (or an unauthorized one) defers to this keyword, which is why it exists."
                 },
                 "add-collaborator": {
                   "type": "string",
                   "default": "the-loop add-collaborator",
                   "description": "Grants a GitHub login WORK-ITEM COLLABORATOR status on this work item (issue-307): from then on that login's comments on this item — and on the pull requests routed to its session — are delivered to the session as agent INPUT. Nothing else changes hands: a collaborator cannot issue a control command (this one included), cannot arm or spawn a session, and cannot satisfy a human gate, all of which keep reading `routing.authorizedUsers` alone. Only a NAMED user in `routing.authorizedUsers` may grant, a grant is scoped to ONE work item, and it is cleared when that item closes. Written as `the-loop add-collaborator @login`; several `@login` tokens may follow one keyword, and a body naming none is refused. Unrelated to `.the-loop/collaborators.yaml`, which names the project's stewards and their roles for the plugin and is never read by the daemon. Set to an empty string to disable the word entirely.",
-                  "examples": ["the-loop add-collaborator", ""]
+                  "examples": [
+                    "the-loop add-collaborator",
+                    ""
+                  ]
                 },
                 "remove-collaborator": {
                   "type": "string",
                   "default": "the-loop remove-collaborator",
                   "description": "Revokes a work-item collaborator's grant (issue-307). Same authorization as `add-collaborator` — a NAMED user in `routing.authorizedUsers`, never the collaborator themselves — and it takes effect on the next event, because the roster is read per event and never cached in the session. Set to an empty string to disable the word entirely.",
-                  "examples": ["the-loop remove-collaborator", ""]
+                  "examples": [
+                    "the-loop remove-collaborator",
+                    ""
+                  ]
                 }
               }
             }
@@ -328,7 +350,7 @@
         },
         "interaction": {
           "type": "object",
-          "description": "Where a session the daemon drives takes its answers FROM (issue-134). Until this existed, a spawned session was never told whether a human was at its terminal, so the model guessed \u2014 and both guesses fail: a session asking interactively when nobody ever attaches to its tmux pane asks into a void, while an operator sitting in an attached tmux pane gets round-tripped through GitHub for no reason. The resolved mode is rendered into every event and spawn prompt through the `$interaction_directive` placeholder; a custom promptTemplate that omits the placeholder gets the directive APPENDED, so the rule cannot be stripped by a template edit. Independent of the mode, iteration on a generated artifact (brainstorm.md, requirements.md/bugfix.md, design.md, tasks.md) always happens in pull-request review \u2014 an invariant of the loop, not a setting (decision-052).",
+          "description": "Where a session the daemon drives takes its answers FROM (issue-134). Until this existed, a spawned session was never told whether a human was at its terminal, so the model guessed — and both guesses fail: a session asking interactively when nobody ever attaches to its tmux pane asks into a void, while an operator sitting in an attached tmux pane gets round-tripped through GitHub for no reason. The resolved mode is rendered into every event and spawn prompt through the `$interaction_directive` placeholder; a custom promptTemplate that omits the placeholder gets the directive APPENDED, so the rule cannot be stripped by a template edit. Independent of the mode, iteration on a generated artifact (brainstorm.md, requirements.md/bugfix.md, design.md, tasks.md) always happens in pull-request review — an invariant of the loop, not a setting (decision-052).",
           "additionalProperties": false,
           "properties": {
             "mode": {
@@ -338,13 +360,13 @@
                 "cli"
               ],
               "default": "work-item",
-              "description": "`work-item`: every question the agent needs answered is posted as a comment on the work item (or its PR) and the session waits for the reply to arrive as a new event. `cli`: a human is attached to the session's terminal, so questions are asked there \u2014 the decision's OUTCOME still lands on the work item, because the paper trail is not waived by asking in a terminal. Default `work-item` because it fails safe: a tmux session is attachable, not attended (the-loop announces the attach command precisely because nobody is there yet), so the default must be the channel that reaches a human who was not watching. An unrecognised value resolves to `work-item` with a warning, never to `cli`. That one is a warning rather than a refusal \u2014 the operator may be piping the harness somewhere the-loop cannot see."
+              "description": "`work-item`: every question the agent needs answered is posted as a comment on the work item (or its PR) and the session waits for the reply to arrive as a new event. `cli`: a human is attached to the session's terminal, so questions are asked there — the decision's OUTCOME still lands on the work item, because the paper trail is not waived by asking in a terminal. Default `work-item` because it fails safe: a tmux session is attachable, not attended (the-loop announces the attach command precisely because nobody is there yet), so the default must be the channel that reaches a human who was not watching. An unrecognised value resolves to `work-item` with a warning, never to `cli`. That one is a warning rather than a refusal — the operator may be piping the harness somewhere the-loop cannot see."
             }
           }
         },
         "graph": {
           "type": "object",
-          "description": "Whether dispatch also drives the-loop's process graph (issue-113). Before this, the ingress and the graph never met: spawning a session left the work item's graph unentered (so the `loop:<phase>` labels were never written by the entry hooks), and an arriving comment never reached the human gate waiting for it. With this enabled, a spawn enters the graph's start node and a delivered event advances at most one node boundary, carrying the event's comments to the gate's `classify-feedback`. It is best-effort: a graph failure is logged (`graph.link_failed`) and never costs the delivery. The same block serves the poller, which reuses this routing config.",
+          "description": "Whether dispatch also drives the-loop's process graph (issue-113). Before this, the ingress and the graph never met: spawning a session left the work item's graph unentered (so the `loop:<phase>` labels were never written by the entry hooks), and an arriving comment never reached the human gate waiting for it. With this enabled, a spawn enters the graph's start node and a delivered event advances at most one node boundary, carrying the event's comments to the gate's `classify-feedback`. It is best-effort: a graph failure is logged (`graph.link_failed`) and never costs the delivery. The same block serves the poller, which reuses this routing config. Since issue-352 this block also carries the operator's own graph hooks (`hooks`) and the one spec directory the instance drives (`specDir`).",
           "additionalProperties": false,
           "properties": {
             "enabled": {
@@ -352,15 +374,75 @@
               "default": true,
               "description": "Couple dispatch to the process graph. False restores the pre-issue-113 behaviour (the graph only moves when a human or CI runs `the-loop graph advance`)."
             },
-            "repoHooks": {
-              "type": "boolean",
-              "default": true,
-              "description": "Whether this machine runs the WATCHED REPOSITORIES' own graph hooks (issue-248). A repository declares them under `graph.hooks` in its harness config, and that declaration is the opt-in \u2014 a repository that declares none is unaffected either way. Left true, the-loop imports the modules a repository names and runs them at the boundaries it named; the code executes inside the-loop's process, with its environment, so adopting a repository's hooks is adopting its code. Set false to refuse the mechanism machine-wide: nothing from any repository is imported, and a repository that declared hooks is named in a warning rather than silently losing its gates. `the-loop graph hooks --repo <path>` reports what a repository declares without importing any of it."
-            },
             "specDir": {
               "type": "string",
-              "default": "",
-              "description": "OPTIONAL OVERRIDE. Where specs live in the session's checkout. Leave unset (the default): each work item's own repository declares this as `workflow.specDir` in its harness config, defaulting to `docs/specs` \u2014 which is the only thing that works for a daemon watching several repositories with different layouts (decision-032, decision-044). Setting it here overrides every watched repository, and exists for a checkout that carries no harness config at all. A work item with no directory under the resolved path is skipped (recorded as `graph.skipped`), which is what makes the coupling inert for repos that keep no specs. issue-123."
+              "default": "docs/specs",
+              "description": "Where the work items' specs live in every checkout this instance drives, relative to the checkout root. ONE value for the whole instance (issue-352): the CLI reads no repository's harness config, so a repository's own `workflow.specDir` (the agent's key) must agree with this one — `/the-loop:init` says so when it writes a non-default value. Empty reads as the default. `the-loop check`/`graph --spec-dir` override it for one invocation. A work item with no directory under the resolved path is skipped (recorded as `graph.skipped`), which is what makes the coupling inert for repos that keep no specs. issue-123, issue-352."
+            },
+            "hooks": {
+              "type": "object",
+              "description": "Hooks of YOUR OWN on the-loop's process graph (issue-248; moved here from the harness config's `graph.hooks` in issue-352): `modules` names the Python that defines them, `attach` says where each one runs. Applied to every checkout this instance drives — a `path` entry resolves against each checkout's root. Every hook a module registers is named `x-<something>` — the unprefixed namespace is the-loop's, so your hook can never shadow a shipped one. An attached hook is APPENDED to the node's shipped chain, so every shipped gate runs (and short-circuits) first: a hook here can add a constraint, never relax one, and an `outcome` it declares is ignored so it can neither approve a gate nor choose an edge. EXECUTABLE CONFIGURATION — the modules run inside the-loop's own process, with your credentials — so review an entry like code, exactly as `critics[]`. `the-loop graph hooks` reports what is declared without importing any of it.",
+              "additionalProperties": false,
+              "properties": {
+                "modules": {
+                  "type": "array",
+                  "description": "Python modules registering your hooks, loaded once per process. A module that is missing, raises on import, registers nothing, or registers a name outside the `x-` namespace FAILS the graph load rather than being skipped — a gate that silently stopped running is the failure this refuses.",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Exactly one of `path` or `module`. A bare string is refused: it cannot say which of the two it is.",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "description": "A .py file, relative to the checkout root and inside it. An absolute path, a `..` escape or a symlink leaving the tree is refused — hook code is run from the checkout the loop walks, never from elsewhere on the machine."
+                      },
+                      "module": {
+                        "type": "string",
+                        "description": "An importable dotted module name installed alongside the-loop's CLI — how a team ships shared hooks as a package."
+                      }
+                    }
+                  },
+                  "default": []
+                },
+                "attach": {
+                  "type": "array",
+                  "description": "Where each hook runs. An entry naming a node the loop does not declare, a boundary other than entry/exit, or a hook no declared module registered fails the graph load.",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "hook",
+                      "node"
+                    ],
+                    "properties": {
+                      "hook": {
+                        "type": "string",
+                        "pattern": "^x-.+",
+                        "description": "The hook's registered name. Must start with `x-`: only your OWN hooks may be attached, since attaching a shipped hook elsewhere would be editing the-loop's process."
+                      },
+                      "node": {
+                        "type": "string",
+                        "description": "The node to attach to, e.g. `design` or `implementation`. `the-loop graph show` lists the nodes of the loop being walked."
+                      },
+                      "boundary": {
+                        "type": "string",
+                        "enum": [
+                          "entry",
+                          "exit"
+                        ],
+                        "default": "exit",
+                        "description": "Which of the node's two chains to append to: `exit` gates leaving the node, `entry` runs on arrival."
+                      },
+                      "with": {
+                        "type": "object",
+                        "description": "Typed parameters handed to the hook as `ctx.params`, exactly as a shipped chain entry's `with:` is.",
+                        "default": {}
+                      }
+                    }
+                  },
+                  "default": []
+                }
+              }
             }
           }
         },
@@ -381,16 +463,16 @@
               },
               "github": {
                 "type": "string",
-                "description": "The person's GitHub login \u2014 the LEDGER's identity: what the webhook receiver, the poller, the control seam and the graph's human gates authorize on."
+                "description": "The person's GitHub login — the LEDGER's identity: what the webhook receiver, the poller, the control seam and the graph's human gates authorize on."
               },
               "slack": {
                 "type": "string",
-                "description": "The person's Slack MEMBER ID (U\u2026, never a display name \u2014 names are attacker-chosen): what the Slack channel authorizes replies, button presses and kickoffs on."
+                "description": "The person's Slack MEMBER ID (U…, never a display name — names are attacker-chosen): what the Slack channel authorizes replies, button presses and kickoffs on."
               }
             },
-            "description": "One PERSON (issue-309, decision-103): a bare string is a GitHub login; a mapping names that person's id on every channel they act on (`github`, `slack`, \u2026 \u2014 any channel name a provider registers), plus an optional `name`. An entry naming no `github` id may act on the channels it is named on and on nothing that reads GitHub logins."
+            "description": "One PERSON (issue-309, decision-103): a bare string is a GitHub login; a mapping names that person's id on every channel they act on (`github`, `slack`, … — any channel name a provider registers), plus an optional `name`. An entry naming no `github` id may act on the channels it is named on and on nothing that reads GitHub logins."
           },
-          "description": "SECURITY (prompt-injection guard): the PEOPLE whose actions the-loop may act on, declared ONCE with their id on every channel (issue-309). Their GitHub logins are what BOTH the webhook receiver and the poller authorize comments/reviews/labels/items on; their Slack member ids are what the Slack channel authorizes replies on (`channels.slack.authorizedUsers` is gone). REQUIRED to actually route anything: no fallback to any repo's harness (plugin) config (.the-loop/harness-config.yaml) \u2014 who may trigger the daemon is a CLI-config-only concern (issue-63 review). Empty means human-authored events are all ignored, on every channel (fail closed). Each operator runs their own instance for their own logins.",
+          "description": "SECURITY (prompt-injection guard): the PEOPLE whose actions the-loop may act on, declared ONCE with their id on every channel (issue-309). Their GitHub logins are what BOTH the webhook receiver and the poller authorize comments/reviews/labels/items on; their Slack member ids are what the Slack channel authorizes replies on (`channels.slack.authorizedUsers` is gone). REQUIRED to actually route anything: no fallback to any repo's harness (plugin) config (.the-loop/harness-config.yaml) — who may trigger the daemon is a CLI-config-only concern (issue-63 review). Empty means human-authored events are all ignored, on every channel (fail closed). Each operator runs their own instance for their own logins.",
           "default": []
         },
         "spawnWorkdir": {
@@ -415,7 +497,7 @@
                 "clone"
               ],
               "default": "worktree",
-              "description": "Checkout layout. 'worktree': one shared clone per repo at <root>/<host>/<owner>/<repo> plus one git worktree per work item under <root>/.worktrees/\u2026 \u2014 concurrent work items on a repo share objects (cheap). 'clone': one folder per work item at <root>/.work-items/<slug>/ with a full clone of each repo it touches \u2014 self-contained and simpler to reason about/clean up when a work item spans multiple repos, at the cost of a full clone per work item."
+              "description": "Checkout layout. 'worktree': one shared clone per repo at <root>/<host>/<owner>/<repo> plus one git worktree per work item under <root>/.worktrees/… — concurrent work items on a repo share objects (cheap). 'clone': one folder per work item at <root>/.work-items/<slug>/ with a full clone of each repo it touches — self-contained and simpler to reason about/clean up when a work item spans multiple repos, at the cost of a full clone per work item."
             },
             "cloneProtocol": {
               "type": "string",
@@ -434,7 +516,7 @@
             "keepCheckoutOnClose": {
               "type": "boolean",
               "default": false,
-              "description": "Keep a work item's checkout after its PR is merged/closed (for post-mortem) instead of removing it \u2014 the worktree (worktree strategy) or the work-item folder (clone strategy). In worktree strategy the shared per-repo clone is always kept regardless."
+              "description": "Keep a work item's checkout after its PR is merged/closed (for post-mortem) instead of removing it — the worktree (worktree strategy) or the work-item folder (clone strategy). In worktree strategy the shared per-repo clone is always kept regardless."
             },
             "gitBinary": {
               "type": "string",
@@ -445,28 +527,28 @@
         },
         "tmux": {
           "type": "object",
-          "description": "Lifetime of the tmux-hosted sessions every dispatch runs in \u2014 issue-86. Both defaults keep a finished session readable: a human most wants the transcript of what the agent did exactly when the work item completes.",
+          "description": "Lifetime of the tmux-hosted sessions every dispatch runs in — issue-86. Both defaults keep a finished session readable: a human most wants the transcript of what the agent did exactly when the work item completes.",
           "additionalProperties": false,
           "properties": {
             "keepSessionOnClose": {
               "type": "boolean",
               "default": true,
-              "description": "Leave the tmux session running when the work item's session is closed (PR merged/closed, or `the-loop sessions close`), so the transcript stays attachable; the registry entry is closed either way. false restores the pre-issue-86 kill-on-close. Retained sessions accumulate until the host reboots or you kill them \u2014 `the-loop sessions list --status closed` shows them, and a new spawn for the same work item reclaims the deterministic `loop-<slug>` name."
+              "description": "Leave the tmux session running when the work item's session is closed (PR merged/closed, or `the-loop sessions close`), so the transcript stays attachable; the registry entry is closed either way. false restores the pre-issue-86 kill-on-close. Retained sessions accumulate until the host reboots or you kill them — `the-loop sessions list --status closed` shows them, and a new spawn for the same work item reclaims the deterministic `loop-<slug>` name."
             },
             "remainOnExit": {
               "type": "boolean",
               "default": true,
-              "description": "Set tmux's `remain-on-exit` on spawned sessions so the pane and its scrollback survive the harness process exiting (best-effort: an older tmux that rejects it only warns). Events delivered to a session whose pane has died still trigger the issue-80 respawn \u2014 a dead pane never silently swallows an event."
+              "description": "Set tmux's `remain-on-exit` on spawned sessions so the pane and its scrollback survive the harness process exiting (best-effort: an older tmux that rejects it only warns). Events delivered to a session whose pane has died still trigger the issue-80 respawn — a dead pane never silently swallows an event."
             },
             "resumeOnRespawn": {
               "type": "boolean",
               "default": true,
-              "description": "When a dead tmux session is respawned (issue-80/issue-89), continue the SAME harness conversation \u2014 `claude --resume <recorded session id>` \u2014 instead of booting a blank one, so the agent keeps everything it knew about the work item. The registry keeps that session id, so repeated crashes converge on one conversation. The respawn is verified (see resumeProbeSeconds) and falls back to a fresh conversation whenever it cannot be: the harness has no interactive resume (anything but Claude Code today), the recorded id is malformed or absent, tmux failed, or the resumed harness exited immediately. false restores the pre-issue-89 behaviour (always a fresh conversation)."
+              "description": "When a dead tmux session is respawned (issue-80/issue-89), continue the SAME harness conversation — `claude --resume <recorded session id>` — instead of booting a blank one, so the agent keeps everything it knew about the work item. The registry keeps that session id, so repeated crashes converge on one conversation. The respawn is verified (see resumeProbeSeconds) and falls back to a fresh conversation whenever it cannot be: the harness has no interactive resume (anything but Claude Code today), the recorded id is malformed or absent, tmux failed, or the resumed harness exited immediately. false restores the pre-issue-89 behaviour (always a fresh conversation)."
             },
             "killHarnessOnClose": {
               "type": "boolean",
               "default": true,
-              "description": "When a work item closes (issue closed, PR merged/closed, or `the-loop sessions close`) and its tmux session is KEPT, end the harness process running inside it \u2014 so the retained pane is a readable record of what happened and not a live, writable claude/cursor TUI a stray keystroke or paste could resume (issue-94). SIGTERM, escalating to SIGKILL after harnessKillGraceSeconds; `remain-on-exit` is re-set first so the pane and its scrollback survive the process. Best-effort: a missing session or an already-dead pane never blocks the close. false restores the pre-issue-94 behaviour (a retained session keeps its harness running). Irrelevant when keepSessionOnClose is false \u2014 killing the tmux session ends the harness with it."
+              "description": "When a work item closes (issue closed, PR merged/closed, or `the-loop sessions close`) and its tmux session is KEPT, end the harness process running inside it — so the retained pane is a readable record of what happened and not a live, writable claude/cursor TUI a stray keystroke or paste could resume (issue-94). SIGTERM, escalating to SIGKILL after harnessKillGraceSeconds; `remain-on-exit` is re-set first so the pane and its scrollback survive the process. Best-effort: a missing session or an already-dead pane never blocks the close. false restores the pre-issue-94 behaviour (a retained session keeps its harness running). Irrelevant when keepSessionOnClose is false — killing the tmux session ends the harness with it."
             },
             "harnessKillGraceSeconds": {
               "type": "number",
@@ -478,19 +560,28 @@
               "type": "number",
               "minimum": 0,
               "default": 2,
-              "description": "How long a resume-on-respawn waits before checking that the harness is still running. `tmux new-session -d` succeeds as soon as the pane forks, while a harness that cannot resume (e.g. `claude --resume <unknown-id>`) exits within a fraction of a second \u2014 without this probe such a respawn would report success forever while events went nowhere. 0 checks immediately without waiting."
+              "description": "How long a resume-on-respawn waits before checking that the harness is still running. `tmux new-session -d` succeeds as soon as the pane forks, while a harness that cannot resume (e.g. `claude --resume <unknown-id>`) exits within a fraction of a second — without this probe such a respawn would report success forever while events went nowhere. 0 checks immediately without waiting."
             },
             "sessionPerPr": {
-              "type": ["string", "boolean"],
-              "enum": ["never", "cross-repository", "always", true, false],
+              "type": [
+                "string",
+                "boolean"
+              ],
+              "enum": [
+                "never",
+                "cross-repository",
+                "always",
+                true,
+                false
+              ],
               "default": "cross-repository",
-              "description": "How many tmux+claude sessions a work item's pull requests get (issue-172, issue-258). `never`: every PR's events are delivered into the work item's single session \u2014 the pre-issue-172 behaviour. `cross-repository` (the default): only a PR in a repository OTHER than the work item's gets its own tmux session and harness conversation; a PR in the work item's own repository is that work item's own delivery, on its branch and in its checkout, so it routes to the work item's session (issue-253). `always`: every PR delivering the work item gets its own session, its own repository included. In every mode an endpoint spawns only when it has a WORKING TREE of its own (decision-088 D2), so `always` needs `routing.workspace.root` set, and in practice `strategy: clone` \u2014 two git worktrees of one clone cannot both hold the PR's branch. A refusal is delivered into the work item's session and recorded as `session.pr_session_declined`. Endpoints are recorded on the work item's single session record and spawned lazily; a PR closing ends only that PR's session. The legacy booleans still parse: `true` is `cross-repository`, `false` is `never`. This value is the **DEFAULT** (issue-260), not the verdict: each work item chooses its own at `phase-selection` (the `pr-sessions-*` checklist rows, this value pre-ticked), an authorized `the-loop execute` freezes it into that work item's portable record, and routing reads it there first. This key answers for every work item that left the rows alone."
+              "description": "How many tmux+claude sessions a work item's pull requests get (issue-172, issue-258). `never`: every PR's events are delivered into the work item's single session — the pre-issue-172 behaviour. `cross-repository` (the default): only a PR in a repository OTHER than the work item's gets its own tmux session and harness conversation; a PR in the work item's own repository is that work item's own delivery, on its branch and in its checkout, so it routes to the work item's session (issue-253). `always`: every PR delivering the work item gets its own session, its own repository included. In every mode an endpoint spawns only when it has a WORKING TREE of its own (decision-088 D2), so `always` needs `routing.workspace.root` set, and in practice `strategy: clone` — two git worktrees of one clone cannot both hold the PR's branch. A refusal is delivered into the work item's session and recorded as `session.pr_session_declined`. Endpoints are recorded on the work item's single session record and spawned lazily; a PR closing ends only that PR's session. The legacy booleans still parse: `true` is `cross-repository`, `false` is `never`. This value is the **DEFAULT** (issue-260), not the verdict: each work item chooses its own at `phase-selection` (the `pr-sessions-*` checklist rows, this value pre-ticked), an authorized `the-loop execute` freezes it into that work item's portable record, and routing reads it there first. This key answers for every work item that left the rows alone."
             }
           }
         },
         "webTerminal": {
           "type": "object",
-          "description": "Optional ttyd-served browser terminal onto the tmux sessions. No auth of its own \u2014 access control is environmental: localhost, VPN, or the hosting provider's network (decision-021).",
+          "description": "Optional ttyd-served browser terminal onto the tmux sessions. No auth of its own — access control is environmental: localhost, VPN, or the hosting provider's network (decision-021).",
           "additionalProperties": false,
           "properties": {
             "enabled": {
@@ -538,7 +629,7 @@
         "spawnPromptTemplate": {
           "type": "string",
           "default": "skills/the-loop/templates/webhook-autoexecute-prompt.md",
-          "description": "string.Template rendered into the prompt for a newly spawned (auto-execute) session \u2014 kicks off the-loop's work-on flow. the-loop's internal template; the dispatcher falls back to a built-in default when the path is absent. Set a repo-relative path to override."
+          "description": "string.Template rendered into the prompt for a newly spawned (auto-execute) session — kicks off the-loop's work-on flow. the-loop's internal template; the dispatcher falls back to a built-in default when the path is absent. Set a repo-relative path to override."
         },
         "harnessArgs": {
           "type": "object",
@@ -561,13 +652,13 @@
         },
         "harnessTrust": {
           "type": "object",
-          "description": "Pre-seed the harness's own config before spawning a session, so it starts working instead of stopping on an interactive dialog (issue-90, decision-036). Claude Code's workspace-trust dialog and bypass-permissions disclaimer are not permission rules, so no CLI flag \u2014 `--dangerously-skip-permissions` included \u2014 silences them, and every per-work-item checkout is a brand-new directory that trips the trust dialog. Before each spawn/respawn the dispatcher marks that directory trusted in the harness's user config (`projects[<dir>].hasTrustDialogAccepted` + `hasCompletedProjectOnboarding`), honouring `CLAUDE_CONFIG_DIR`. BOTH keys are always written on the EXACT spawn directory (and its realpath), under every `scope`, because the harness reads each of them from the exact project key on at least one path \u2014 `scope` only decides whether trust ADDITIONALLY widens to an ancestor (issue-136, decision-052). Writes are narrow and non-destructive: only those keys, merged into what is already there, via a temp file + atomic replace, skipped entirely when the value is already correct, and never applied to a file that does not parse as JSON. A failure logs a warning and emits `workspace.trust_failed` but never fails the dispatch. A harness with no such config surface (cursor-agent) is a silent no-op. NOTE what trust means: a trusted checkout's OWN `.claude/settings.json` may pre-approve tool permissions and add directories to the workspace, so pre-trusting a clone honours grants authored by anyone who can push to that repository. `enabled: false` is the opt-out.",
+          "description": "Pre-seed the harness's own config before spawning a session, so it starts working instead of stopping on an interactive dialog (issue-90, decision-036). Claude Code's workspace-trust dialog and bypass-permissions disclaimer are not permission rules, so no CLI flag — `--dangerously-skip-permissions` included — silences them, and every per-work-item checkout is a brand-new directory that trips the trust dialog. Before each spawn/respawn the dispatcher marks that directory trusted in the harness's user config (`projects[<dir>].hasTrustDialogAccepted` + `hasCompletedProjectOnboarding`), honouring `CLAUDE_CONFIG_DIR`. BOTH keys are always written on the EXACT spawn directory (and its realpath), under every `scope`, because the harness reads each of them from the exact project key on at least one path — `scope` only decides whether trust ADDITIONALLY widens to an ancestor (issue-136, decision-052). Writes are narrow and non-destructive: only those keys, merged into what is already there, via a temp file + atomic replace, skipped entirely when the value is already correct, and never applied to a file that does not parse as JSON. A failure logs a warning and emits `workspace.trust_failed` but never fails the dispatch. A harness with no such config surface (cursor-agent) is a silent no-op. NOTE what trust means: a trusted checkout's OWN `.claude/settings.json` may pre-approve tool permissions and add directories to the workspace, so pre-trusting a clone honours grants authored by anyone who can push to that repository. `enabled: false` is the opt-out.",
           "additionalProperties": false,
           "properties": {
             "enabled": {
               "type": "boolean",
               "default": true,
-              "description": "Default true \u2014 an unattended daemon cannot answer a trust dialog, so this is what makes auto-execute actually run. Set false to leave your harness config untouched and keep the pre-issue-90 behaviour."
+              "description": "Default true — an unattended daemon cannot answer a trust dialog, so this is what makes auto-execute actually run. Set false to leave your harness config untouched and keep the pre-issue-90 behaviour."
             },
             "scope": {
               "type": "string",
@@ -576,7 +667,7 @@
                 "directory"
               ],
               "default": "workspace-root",
-              "description": "Whether trust ADDITIONALLY widens to an ancestor. The spawn directory itself is trusted under both values \u2014 that is not the choice here (issue-136, decision-052): `hasTrustDialogAccepted` has two readers in the harness, and only one of them walks up from the cwd. The other reads the exact project key with NO walk, and it decides both whether the dialog appears anyway and whether the repository's own `.claude/settings.json` `permissions.allow` / `additionalDirectories` load at all \u2014 so an ancestor entry alone leaves a checkout of any repo shipping those grants sitting on the dialog. `hasCompletedProjectOnboarding` has no ancestor walk either. `workspace-root` (default, owner decision on PR #92) writes a SECOND trust entry on `routing.workspace.root`, so the walking check covers every checkout beneath the root \u2014 including folders the-loop never spawned into (a repo you clone there by hand, a nested repo the agent walks into). `directory` keeps trust on the exact spawn directory only \u2014 least privilege, one entry per work item; use it when the workspace root holds more than the-loop's own checkouts. Safety rails on `workspace-root`: a root that does not actually contain the spawn directory is dropped, and a root broad enough to be meaningless (`/`, or the home directory itself) degrades to per-directory trust with a warning. With no workspace root configured (legacy `spawnWorkdir`) both scopes behave identically."
+              "description": "Whether trust ADDITIONALLY widens to an ancestor. The spawn directory itself is trusted under both values — that is not the choice here (issue-136, decision-052): `hasTrustDialogAccepted` has two readers in the harness, and only one of them walks up from the cwd. The other reads the exact project key with NO walk, and it decides both whether the dialog appears anyway and whether the repository's own `.claude/settings.json` `permissions.allow` / `additionalDirectories` load at all — so an ancestor entry alone leaves a checkout of any repo shipping those grants sitting on the dialog. `hasCompletedProjectOnboarding` has no ancestor walk either. `workspace-root` (default, owner decision on PR #92) writes a SECOND trust entry on `routing.workspace.root`, so the walking check covers every checkout beneath the root — including folders the-loop never spawned into (a repo you clone there by hand, a nested repo the agent walks into). `directory` keeps trust on the exact spawn directory only — least privilege, one entry per work item; use it when the workspace root holds more than the-loop's own checkouts. Safety rails on `workspace-root`: a root that does not actually contain the spawn directory is dropped, and a root broad enough to be meaningless (`/`, or the home directory itself) degrades to per-directory trust with a warning. With no workspace root configured (legacy `spawnWorkdir`) both scopes behave identically."
             },
             "acceptBypassPermissions": {
               "type": "string",
@@ -586,36 +677,36 @@
                 "never"
               ],
               "default": "auto",
-              "description": "Whether to also record the one-time bypass-permissions disclaimer acceptance (`skipDangerousModePermissionPrompt` in the user settings file, plus the legacy `bypassPermissionsModeAccepted` for older builds) \u2014 without it, a session configured for bypass mode is prompted or silently downgraded to `default`. `auto` (default) records it ONLY when this harness's `harnessArgs` already ask for bypass mode (`--dangerously-skip-permissions` or `--permission-mode bypassPermissions`), so the-loop never widens permissions you did not request; `always` records it regardless; `never` never does. NOTE the asymmetry with the trust key: trust is per-directory, but this acceptance is a USER-GLOBAL setting \u2014 it removes the bypass-mode confirmation from every Claude Code session on the account, interactive ones included, not just the-loop's spawned sessions. That is the only form the harness offers; `never` plus a narrower `--permission-mode acceptEdits` in `harnessArgs` avoids it entirely."
+              "description": "Whether to also record the one-time bypass-permissions disclaimer acceptance (`skipDangerousModePermissionPrompt` in the user settings file, plus the legacy `bypassPermissionsModeAccepted` for older builds) — without it, a session configured for bypass mode is prompted or silently downgraded to `default`. `auto` (default) records it ONLY when this harness's `harnessArgs` already ask for bypass mode (`--dangerously-skip-permissions` or `--permission-mode bypassPermissions`), so the-loop never widens permissions you did not request; `always` records it regardless; `never` never does. NOTE the asymmetry with the trust key: trust is per-directory, but this acceptance is a USER-GLOBAL setting — it removes the bypass-mode confirmation from every Claude Code session on the account, interactive ones included, not just the-loop's spawned sessions. That is the only form the harness offers; `never` plus a narrower `--permission-mode acceptEdits` in `harnessArgs` avoids it entirely."
             }
           }
         },
         "harnessPlugins": {
           "type": "object",
-          "description": "Enable the-loop's OWN plugin in the harness before spawning a session, so the session actually has the loop (issue-143, decision-054). Everything a spawned session knows about the loop \u2014 the `the-loop` skill, the `/the-loop:*` commands, the SessionStart hook stating the operating rules \u2014 ships in the plugin; nothing else in the spawn path installs it, so on a machine where nobody ran `/plugin marketplace add` by hand the session worked its ticket as a plain agent. Before each spawn/respawn the dispatcher ensures the harness's USER SETTINGS file (`<config dir>/settings.json`, honouring `CLAUDE_CONFIG_DIR`) carries `extraKnownMarketplaces[\"the-loop\"]` and `enabledPlugins[\"the-loop@the-loop\"]: true` \u2014 exactly what `/plugin marketplace add` + `/plugin install` write. Writes are narrow and non-destructive, sharing `harnessTrust`'s writer: only those two keys, merged into what is already there, temp file + atomic replace, skipped entirely when both already hold a value, and never applied to a file that does not parse as JSON. An EXISTING value is never changed \u2014 a marketplace of yours keeps pointing where it points, and an `enabledPlugins` entry already set to `false` stays `false`. A failure logs a warning and emits `workspace.trust_failed` but never fails the dispatch; `cursor-agent` has no plugin-configuration surface and is a silent no-op. Independent of `harnessTrust`: either may be switched off without the other. NOTE the scope: `enabledPlugins` in the user settings file is USER-GLOBAL, so the plugin \u2014 skill, commands and its SessionStart hook \u2014 also loads in Claude Code sessions you start by hand, not only the ones the-loop spawns. `enabled: false` is the opt-out.",
+          "description": "Enable the-loop's OWN plugin in the harness before spawning a session, so the session actually has the loop (issue-143, decision-054). Everything a spawned session knows about the loop — the `the-loop` skill, the `/the-loop:*` commands, the SessionStart hook stating the operating rules — ships in the plugin; nothing else in the spawn path installs it, so on a machine where nobody ran `/plugin marketplace add` by hand the session worked its ticket as a plain agent. Before each spawn/respawn the dispatcher ensures the harness's USER SETTINGS file (`<config dir>/settings.json`, honouring `CLAUDE_CONFIG_DIR`) carries `extraKnownMarketplaces[\"the-loop\"]` and `enabledPlugins[\"the-loop@the-loop\"]: true` — exactly what `/plugin marketplace add` + `/plugin install` write. Writes are narrow and non-destructive, sharing `harnessTrust`'s writer: only those two keys, merged into what is already there, temp file + atomic replace, skipped entirely when both already hold a value, and never applied to a file that does not parse as JSON. An EXISTING value is never changed — a marketplace of yours keeps pointing where it points, and an `enabledPlugins` entry already set to `false` stays `false`. A failure logs a warning and emits `workspace.trust_failed` but never fails the dispatch; `cursor-agent` has no plugin-configuration surface and is a silent no-op. Independent of `harnessTrust`: either may be switched off without the other. NOTE the scope: `enabledPlugins` in the user settings file is USER-GLOBAL, so the plugin — skill, commands and its SessionStart hook — also loads in Claude Code sessions you start by hand, not only the ones the-loop spawns. `enabled: false` is the opt-out.",
           "additionalProperties": false,
           "properties": {
             "enabled": {
               "type": "boolean",
               "default": true,
-              "description": "Default true \u2014 a spawned session that lacks the plugin is told to run a loop it does not have. Set false to leave your plugin configuration untouched; the session then relies on whatever the operator installed by hand (and on a repo-level `.claude/settings.json`, if the checkout ships one)."
+              "description": "Default true — a spawned session that lacks the plugin is told to run a loop it does not have. Set false to leave your plugin configuration untouched; the session then relies on whatever the operator installed by hand (and on a repo-level `.claude/settings.json`, if the checkout ships one)."
             },
             "marketplaceRepo": {
               "type": "string",
               "default": "MadaraUchiha-314/the-loop",
-              "description": "The `owner/repo` the `the-loop` marketplace is registered from, written as `{\"source\": {\"source\": \"github\", \"repo\": \"<this>\"}}`. Point it at your fork to run that fork's plugin \u2014 which means running whatever code that repository ships, in every session on this machine. Validated as `owner/repo` (nothing else is written) and only ever read from THIS file, never from an event payload or a cloned repository. Set it to the empty string to enable the plugin without registering any marketplace, for an operator who adds the marketplace some other way."
+              "description": "The `owner/repo` the `the-loop` marketplace is registered from, written as `{\"source\": {\"source\": \"github\", \"repo\": \"<this>\"}}`. Point it at your fork to run that fork's plugin — which means running whatever code that repository ships, in every session on this machine. Validated as `owner/repo` (nothing else is written) and only ever read from THIS file, never from an event payload or a cloned repository. Set it to the empty string to enable the plugin without registering any marketplace, for an operator who adds the marketplace some other way."
             }
           }
         },
         "reactions": {
           "type": "object",
-          "description": "Dispatch-lifecycle emoji reactions on the triggering GitHub entity (issue-84): when the dispatcher picks an event up it reacts with `started` on the comment that triggered it (or the issue/PR itself for presence/label/review events), then `completed` or `error` from the dispatch outcome. Shared by the webhook receiver AND the poller (like the rest of `routing`). Best-effort via the operator's own `gh` CLI: a reaction failure never affects the dispatch, and a missing `gh`, a non-GitHub provider, or an event with no reactable target is a silent no-op. GitHub's reaction palette is fixed (+1 -1 laugh confused heart hooray rocket eyes) \u2014 \u2705/\u2049\ufe0f do not exist, so the defaults map each state to the closest supported emoji.",
+          "description": "Dispatch-lifecycle emoji reactions on the triggering GitHub entity (issue-84): when the dispatcher picks an event up it reacts with `started` on the comment that triggered it (or the issue/PR itself for presence/label/review events), then `completed` or `error` from the dispatch outcome. Shared by the webhook receiver AND the poller (like the rest of `routing`). Best-effort via the operator's own `gh` CLI: a reaction failure never affects the dispatch, and a missing `gh`, a non-GitHub provider, or an event with no reactable target is a silent no-op. GitHub's reaction palette is fixed (+1 -1 laugh confused heart hooray rocket eyes) — ✅/⁉️ do not exist, so the defaults map each state to the closest supported emoji.",
           "additionalProperties": false,
           "properties": {
             "enabled": {
               "type": "boolean",
               "default": true,
-              "description": "Default true (owner decision, PR #85 \u2014 out-of-box visibility is the feature's point). Reacting is the daemon's one WRITE to GitHub, posted with the operator's own gh credentials and reaction-only (no text); it degrades to a silent no-op when gh is absent. Set false to opt out."
+              "description": "Default true (owner decision, PR #85 — out-of-box visibility is the feature's point). Reacting is the daemon's one WRITE to GitHub, posted with the operator's own gh credentials and reaction-only (no text); it degrades to a silent no-op when gh is absent. Set false to opt out."
             },
             "started": {
               "type": "string",
@@ -631,7 +722,7 @@
                 ""
               ],
               "default": "eyes",
-              "description": "Reaction added when the event is dequeued for delivery/spawn (\ud83d\udc40 by default). Empty string skips this state."
+              "description": "Reaction added when the event is dequeued for delivery/spawn (👀 by default). Empty string skips this state."
             },
             "completed": {
               "type": "string",
@@ -647,7 +738,7 @@
                 ""
               ],
               "default": "hooray",
-              "description": "Reaction added when the dispatch succeeds (\ud83c\udf89 by default \u2014 GitHub has no \u2705 reaction). Empty string skips this state."
+              "description": "Reaction added when the dispatch succeeds (🎉 by default — GitHub has no ✅ reaction). Empty string skips this state."
             },
             "error": {
               "type": "string",
@@ -663,19 +754,19 @@
                 ""
               ],
               "default": "confused",
-              "description": "Reaction added when the dispatch fails or the worker crashes (\ud83d\ude15 by default \u2014 GitHub has no \u2049\ufe0f reaction). Empty string skips this state."
+              "description": "Reaction added when the dispatch fails or the worker crashes (😕 by default — GitHub has no ⁉️ reaction). Empty string skips this state."
             }
           }
         },
         "announce": {
           "type": "object",
-          "description": "Announce a spawned interactive session on its work item (issue-86): when a tmux-mode session is first spawned for a work item, the-loop posts a comment carrying the tmux session name and the `tmux attach -t loop-<slug>` command, so a human reading the ticket can watch it work without digging through daemon logs. Best-effort via the operator's own `gh` CLI: a failure never affects the dispatch, and a missing `gh`, a non-GitHub work item, or a session with no tmux target yet is a no-op. The body is built only from registry fields (work-item ref, tmux target, harness) \u2014 never from event payloads, and it carries no paths, session ids or hostnames. A respawn (issue-80) posts nothing further: it reuses the same loop-<slug> name, so the comment already on the ticket stays correct.",
+          "description": "Announce a spawned interactive session on its work item (issue-86): when a tmux-mode session is first spawned for a work item, the-loop posts a comment carrying the tmux session name and the `tmux attach -t loop-<slug>` command, so a human reading the ticket can watch it work without digging through daemon logs. Best-effort via the operator's own `gh` CLI: a failure never affects the dispatch, and a missing `gh`, a non-GitHub work item, or a session with no tmux target yet is a no-op. The body is built only from registry fields (work-item ref, tmux target, harness) — never from event payloads, and it carries no paths, session ids or hostnames. A respawn (issue-80) posts nothing further: it reuses the same loop-<slug> name, so the comment already on the ticket stays correct.",
           "additionalProperties": false,
           "properties": {
             "enabled": {
               "type": "boolean",
               "default": true,
-              "description": "Default true (the point of issue-86 is that the attach command reaches the human; matches the `reactions` precedent). This posts TEXT to GitHub with the operator's own gh credentials \u2014 set false to opt out."
+              "description": "Default true (the point of issue-86 is that the attach command reaches the human; matches the `reactions` precedent). This posts TEXT to GitHub with the operator's own gh credentials — set false to opt out."
             }
           }
         }
@@ -768,10 +859,80 @@
         }
       }
     },
+    "critics": {
+      "type": "array",
+      "description": "Alternate harness/model combos used as critics, e.g. cursor+gpt-5.5 reviewing claude-opus output. Each entry is RUNNABLE: `the-loop critic run <name>` spawns it and returns its output as one JSON envelope (issue-108, decision-043). Declared HERE, in the operator's config, since issue-352 (decision-123): a critic is a harness and a model installed on the machine that runs the round, and executable configuration belongs in a file no pull request to a repository can edit. How MANY rounds run is the repository's (`reviews.criticReviewCount` in its harness config); which critics exist is yours. An entry is executable configuration — review one like code, and never put a secret in `env`.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Unique id for this critic; `the-loop critic run <name>` runs it. Names must be unique across the list."
+          },
+          "harness": {
+            "type": "string",
+            "description": "Critic harness/CLI. Free-form so any harness works (it is also the `[<harness>/<model>]` attribution prefix on every finding). When it names a harness the-loop has an adapter for (`claude`, `cursor`), the invocation is derived from that adapter and `command`/`args` may be omitted entirely."
+          },
+          "model": {
+            "type": "string",
+            "description": "Model the critic runs. Passed via the harness's own model flag for a built-in harness, or wherever `{model}` appears in `args`."
+          },
+          "command": {
+            "type": "string",
+            "description": "The EXECUTABLE to spawn (argv[0]) — not a shell line: arguments go in `args`, and nothing is ever run through a shell. Required for a harness the-loop has no adapter for; wins over `harness` when both are set. NOTE (issue-108): this key previously held a free-form invocation phrase (e.g. \"cursor-agent review\"); such a value is now rejected with a diagnostic instead of being silently mis-run."
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "description": "argv after the executable. Placeholders are substituted element-wise (never via a shell): {prompt}, {promptFile}, {model}, {workItem}, {specDir}, {cwd}. With an explicit `command`, the list MUST carry {prompt} or {promptFile} — otherwise the critic is handed nothing to review. With a built-in `harness`, these are appended as extra flags to the derived invocation."
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "description": "Environment overlaid on the inherited environment for this critic. NEVER put secrets here — name the variable and keep the value in `env.file` or the ambient environment, which the child inherits."
+          },
+          "cwd": {
+            "type": "string",
+            "description": "Directory to run the critic in. Defaults to the checkout the round is run from (`--root`)."
+          },
+          "outputFormat": {
+            "type": "string",
+            "enum": [
+              "text",
+              "json"
+            ],
+            "default": "text",
+            "description": "How to read the critic's stdout. `json` extracts the reviewer's text from the payload (falling back to raw stdout when it is not JSON); `text` uses stdout verbatim."
+          },
+          "timeoutSeconds": {
+            "type": "number",
+            "default": 900,
+            "description": "Hard bound on one critic round, so a hung critic CLI cannot wedge the review loop.",
+            "minimum": 1
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Set false to keep the entry but refuse to run it."
+          }
+        }
+      },
+      "default": []
+    },
     "channels": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Communication channels (issue-245, issue-309): the surfaces the-loop talks on, each a PEER on one event bus \u2014 it SUBSCRIBES to the event types it wants and may PUBLISH the ones it is granted \u2014 and one of them is the LEDGER every event is recorded on (decision-103). Distinct from `integrations` (transports for the-loop's own calls): a channel also reads, and everything it reads is recorded on the ledger before anything acts on it.",
+      "description": "Communication channels (issue-245, issue-309): the surfaces the-loop talks on, each a PEER on one event bus — it SUBSCRIBES to the event types it wants and may PUBLISH the ones it is granted — and one of them is the LEDGER every event is recorded on (decision-103). Distinct from `integrations` (transports for the-loop's own calls): a channel also reads, and everything it reads is recorded on the ledger before anything acts on it.",
       "properties": {
         "ledger": {
           "type": "string",
@@ -784,7 +945,7 @@
         "slack": {
           "type": "object",
           "additionalProperties": false,
-          "description": "The Slack BOT channel \u2014 the official slack-sdk WebClient, a bot token, one Slack channel, one thread per work item. THE Slack surface: the graph's notify hook, the ask and the ledger's comment events all reach it through the bus, filtered by `subscribe`; what a Slack message may become is `publish` (issue-309). Who may speak is `routing.authorizedUsers` \u2014 the `slack` id of each person entry.",
+          "description": "The Slack BOT channel — the official slack-sdk WebClient, a bot token, one Slack channel, one thread per work item. THE Slack surface: the graph's notify hook, the ask and the ledger's comment events all reach it through the bus, filtered by `subscribe`; what a Slack message may become is `publish` (issue-309). Who may speak is `routing.authorizedUsers` — the `slack` id of each person entry.",
           "properties": {
             "enabled": {
               "type": "boolean",
@@ -799,12 +960,12 @@
             "appTokenEnv": {
               "type": "string",
               "default": "THE_LOOP_SLACK_APP_TOKEN",
-              "description": "Env var holding the app-level token (xapp-, connections:write) that `the-loop channels listen` needs for Socket Mode \u2014 the no-polling read transport."
+              "description": "Env var holding the app-level token (xapp-, connections:write) that `the-loop channels listen` needs for Socket Mode — the no-polling read transport."
             },
             "channel": {
               "type": "string",
               "default": "",
-              "description": "The Slack channel id the bot posts into (C\u2026, from the channel's details pane \u2014 ids, not names, survive renames). Empty disables posting."
+              "description": "The Slack channel id the bot posts into (C…, from the channel's details pane — ids, not names, survive renames). Empty disables posting."
             },
             "subscribe": {
               "type": "array",
@@ -814,7 +975,7 @@
               "default": [
                 "session.awaiting_input"
               ],
-              "description": "The event types this channel RECEIVES (was `events` before issue-309). session.awaiting_input is the ask (`the-loop ask`); the graph's notification events (phase-approval-pending, pr-review-pending, decision-pending, security-sign-off-pending, conflict-escalated, work-item-complete) and the ledger's comment events (comment.agent \u2014 the agent's own comments; comment.human \u2014 an authorized user's or collaborator's) are the rest of the catalog \u2014 add the ones you want. `the-loop channels status` prints the catalog with ticks."
+              "description": "The event types this channel RECEIVES (was `events` before issue-309). session.awaiting_input is the ask (`the-loop ask`); the graph's notification events (phase-approval-pending, pr-review-pending, decision-pending, security-sign-off-pending, conflict-escalated, work-item-complete) and the ledger's comment events (comment.agent — the agent's own comments; comment.human — an authorized user's or collaborator's) are the rest of the catalog — add the ones you want. `the-loop channels status` prints the catalog with ticks."
             },
             "publish": {
               "type": "array",
@@ -824,7 +985,7 @@
               "default": [
                 "work-item.reply"
               ],
-              "description": "The event types a message on this channel MAY BECOME \u2014 the channel's authority, per event (issue-309, decision-103 D2). Default `work-item.reply`: a reply is input to the waiting session and nothing more (12.1.0 behaviour). Add `gate.feedback` to let an authorized member's reply answer an open human gate; `control.command` to let a typed control keyword run; `work-item.create` to let a top-level message open a work item (the message names its repository with a `<repo>:` prefix, `kickoff.repo` is the fallback \u2014 issue-341); `instance.command` to let the `/the-loop` slash command ask this instance for its status or restart / upgrade it, and `standing.command` to let it list, start, stop or restart standing sessions (issue-334 \u2014 both need `read.mode: socket`, and their paper trail is the event log, there being no ticket). The slash command's work-item verbs need `control.command`. Every ticket-bound one of them is recorded on the ledger FIRST, under your own credential, and judged by the ledger's own ingress \u2014 a grant never bypasses a guard. A message classified as a type not listed is dropped (`unpublishable-event`), never downgraded. A name the catalog does not mark publishable is ignored with a warning."
+              "description": "The event types a message on this channel MAY BECOME — the channel's authority, per event (issue-309, decision-103 D2). Default `work-item.reply`: a reply is input to the waiting session and nothing more (12.1.0 behaviour). Add `gate.feedback` to let an authorized member's reply answer an open human gate; `control.command` to let a typed control keyword run; `work-item.create` to let a top-level message open a work item (the message names its repository with a `<repo>:` prefix, `kickoff.repo` is the fallback — issue-341); `instance.command` to let the `/the-loop` slash command ask this instance for its status or restart / upgrade it, and `standing.command` to let it list, start, stop or restart standing sessions (issue-334 — both need `read.mode: socket`, and their paper trail is the event log, there being no ticket). The slash command's work-item verbs need `control.command`. Every ticket-bound one of them is recorded on the ledger FIRST, under your own credential, and judged by the ledger's own ingress — a grant never bypasses a guard. A message classified as a type not listed is dropped (`unpublishable-event`), never downgraded. A name the catalog does not mark publishable is ignored with a warning."
             },
             "verbosity": {
               "type": "string",
@@ -859,7 +1020,7 @@
                 "repo": {
                   "type": "string",
                   "default": "",
-                  "description": "The `[host/]owner/repo` a kickoff opens its issue in when the message does not name one \u2014 gh's own --repo grammar, the host present for GitHub Enterprise (issue-311). Since issue-341 this is the FALLBACK, not the requirement: a message may start with `<repo>: ` to pick any repository declared in `kickoff.repo` or `polling.sources[].repos`, and an unresolvable or ambiguous prefix is refused in the thread rather than guessed. Empty = every kickoff must name its repository."
+                  "description": "The `[host/]owner/repo` a kickoff opens its issue in when the message does not name one — gh's own --repo grammar, the host present for GitHub Enterprise (issue-311). Since issue-341 this is the FALLBACK, not the requirement: a message may start with `<repo>: ` to pick any repository declared in `kickoff.repo` or `polling.sources[].repos`, and an unresolvable or ambiguous prefix is refused in the thread rather than guessed. Empty = every kickoff must name its repository."
                 },
                 "labels": {
                   "type": "array",
@@ -867,14 +1028,14 @@
                     "type": "string"
                   },
                   "default": [],
-                  "description": "Labels applied to the created issue \u2014 from here and ONLY here, never from the message. Add `routing.autoExecuteLabel` to arm the item for `the-loop start`; leave empty to file it and stop."
+                  "description": "Labels applied to the created issue — from here and ONLY here, never from the message. Add `routing.autoExecuteLabel` to arm the item for `the-loop start`; leave empty to file it and stop."
                 }
               }
             },
             "read": {
               "type": "object",
               "additionalProperties": false,
-              "description": "How replies come back. Both transports read the threads the-loop itself started \u2014 and, with the `work-item.create` grant, the channel's top-level messages (the target is the message's to name; `kickoff.repo` is only its fallback \u2014 issue-341).",
+              "description": "How replies come back. Both transports read the threads the-loop itself started — and, with the `work-item.create` grant, the channel's top-level messages (the target is the message's to name; `kickoff.repo` is only its fallback — issue-341).",
               "properties": {
                 "mode": {
                   "type": "string",
@@ -897,7 +1058,7 @@
             "reactions": {
               "type": "object",
               "additionalProperties": false,
-              "description": "Acknowledge an ACCEPTED inbound Slack message with a reaction on that message (issue-325) \u2014 the channel-side mirror of `routing.reactions`: `received` the moment a thread reply, button press or kickoff message passes authorization, classification and the `publish` grant (before the ledger record), then `completed` when the pipeline's action landed (a reply recorded AND delivered; a gate answer or control keyword recorded on the ledger; a kickoff's issue created) or `error` when it did not. A DROPPED message (a bot's, an unlisted member's, an unpublishable type) gets no reaction. Best-effort by contract: posted with the bot token, needing the `reactions:write` scope; a refused reaction is a `channel.reaction_failed` event and never affects the record or the delivery. Names are Slack emoji names without colons \u2014 Slack's palette is open (built-in and custom), unlike GitHub's fixed eight, which is why the defaults can be the \u2705 GitHub cannot offer.",
+              "description": "Acknowledge an ACCEPTED inbound Slack message with a reaction on that message (issue-325) — the channel-side mirror of `routing.reactions`: `received` the moment a thread reply, button press or kickoff message passes authorization, classification and the `publish` grant (before the ledger record), then `completed` when the pipeline's action landed (a reply recorded AND delivered; a gate answer or control keyword recorded on the ledger; a kickoff's issue created) or `error` when it did not. A DROPPED message (a bot's, an unlisted member's, an unpublishable type) gets no reaction. Best-effort by contract: posted with the bot token, needing the `reactions:write` scope; a refused reaction is a `channel.reaction_failed` event and never affects the record or the delivery. Names are Slack emoji names without colons — Slack's palette is open (built-in and custom), unlike GitHub's fixed eight, which is why the defaults can be the ✅ GitHub cannot offer.",
               "properties": {
                 "enabled": {
                   "type": "boolean",
@@ -908,19 +1069,19 @@
                   "type": "string",
                   "pattern": "^([a-z0-9_+-]{1,100})?$",
                   "default": "eyes",
-                  "description": "Reaction added when the message is accepted, before the record (\ud83d\udc40 by default). Empty string skips this state."
+                  "description": "Reaction added when the message is accepted, before the record (👀 by default). Empty string skips this state."
                 },
                 "completed": {
                   "type": "string",
                   "pattern": "^([a-z0-9_+-]{1,100})?$",
                   "default": "white_check_mark",
-                  "description": "Reaction added when the pipeline's action landed (\u2705 by default \u2014 the mark issue-84 asked for, which GitHub lacks). For a relayed gate answer or control keyword this means the record reached the ledger; the ledger's ingress acts on it afterwards and that outcome is not reported here. Empty string skips this state."
+                  "description": "Reaction added when the pipeline's action landed (✅ by default — the mark issue-84 asked for, which GitHub lacks). For a relayed gate answer or control keyword this means the record reached the ledger; the ledger's ingress acts on it afterwards and that outcome is not reported here. Empty string skips this state."
                 },
                 "error": {
                   "type": "string",
                   "pattern": "^([a-z0-9_+-]{1,100})?$",
                   "default": "warning",
-                  "description": "Reaction added when the record could not be written, the reply could not be delivered, or the issue could not be created (\u26a0\ufe0f by default). Empty string skips this state."
+                  "description": "Reaction added when the record could not be written, the reply could not be delivered, or the issue could not be created (⚠️ by default). Empty string skips this state."
                 }
               }
             }
@@ -930,7 +1091,7 @@
     },
     "eventLog": {
       "type": "object",
-      "description": "Structured JSONL event log of every routing/dispatch/session decision made by the-loop's CLI processes (gh-webhook, poll, sessions). Queried with `the-loop events`; schema in skills/the-loop/reference/observability.md (decision-025). Top-level here (not nested under an `observability` key) \u2014 the CLI config has no dev/runtime log-level concept, that stays with the HARNESS config's `observability.devLevel`/`runtimeLevel`/`browserLogging`.",
+      "description": "Structured JSONL event log of every routing/dispatch/session decision made by the-loop's CLI processes (gh-webhook, poll, sessions). Queried with `the-loop events`; schema in skills/the-loop/reference/observability.md (decision-025). Top-level here (not nested under an `observability` key) — the CLI config has no dev/runtime log-level concept, that stays with the HARNESS config's `observability.devLevel`/`runtimeLevel`/`browserLogging`.",
       "additionalProperties": false,
       "properties": {
         "enabled": {
@@ -940,13 +1101,13 @@
         "path": {
           "type": "string",
           "default": "<state.root>/logs/events.jsonl",
-          "description": "Append-only JSONL file (git-ignored runtime state). Unset resolves under `state.root` (issue-106) \u2014 `.the-loop/logs/events.jsonl` with the default root."
+          "description": "Append-only JSONL file (git-ignored runtime state). Unset resolves under `state.root` (issue-106) — `.the-loop/logs/events.jsonl` with the default root."
         }
       }
     },
     "integrations": {
       "type": "object",
-      "description": "How the-loop's OWN calls reach external services (issue-109). This governs the control plane only \u2014 what the AGENT does from inside its session is unconstrained (CLI, MCP, API, whatever the harness has). Transport is a choice, not a mandate: `auto` resolves token -> binary and fails closed naming both remedies; an explicit transport is honoured verbatim and fails rather than silently degrading.",
+      "description": "How the-loop's OWN calls reach external services (issue-109). This governs the control plane only — what the AGENT does from inside its session is unconstrained (CLI, MCP, API, whatever the harness has). Transport is a choice, not a mandate: `auto` resolves token -> binary and fails closed naming both remedies; an explicit transport is honoured verbatim and fails rather than silently degrading.",
       "additionalProperties": false,
       "properties": {
         "github": {
@@ -1037,19 +1198,21 @@
     },
     "service": {
       "type": "object",
-      "description": "The control-plane API service (issue-161, decision-058/059): the HTTP layer over the-loop's core that the CLI and the MCP endpoint consume. No in-app authentication \u2014 a gateway owns that (decision-059); the service's own posture is network scoping: loopback-only unless `exposed` is explicitly true. Hosting the service requires the [service] extra (`pip install 'the-loopy-one[service]'`).",
+      "description": "The control-plane API service (issue-161, decision-058/059): the HTTP layer over the-loop's core that the CLI and the MCP endpoint consume. No in-app authentication — a gateway owns that (decision-059); the service's own posture is network scoping: loopback-only unless `exposed` is explicitly true. Hosting the service requires the [service] extra (`pip install 'the-loopy-one[service]'`).",
       "additionalProperties": false,
       "properties": {
         "enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Whether `the-loop start` brings the control-plane service up (issue-228, decision-084). Default true: the service is the CLI's only execution path for core capabilities (decision-058). Setting false also refuses the implicit auto-start (`service.autoStart`) \u2014 a service the operator disabled must not resurrect because an unrelated CLI command wanted it.",
-          "examples": [false]
+          "description": "Whether `the-loop start` brings the control-plane service up (issue-228, decision-084). Default true: the service is the CLI's only execution path for core capabilities (decision-058). Setting false also refuses the implicit auto-start (`service.autoStart`) — a service the operator disabled must not resurrect because an unrelated CLI command wanted it.",
+          "examples": [
+            false
+          ]
         },
         "host": {
           "type": "string",
           "default": "127.0.0.1",
-          "description": "Bind host. Non-loopback values refuse to boot unless `exposed` is true \u2014 the API can spawn harness sessions with the operator's credentials."
+          "description": "Bind host. Non-loopback values refuse to boot unless `exposed` is true — the API can spawn harness sessions with the operator's credentials."
         },
         "port": {
           "type": "integer",
@@ -1075,7 +1238,9 @@
               "type": "boolean",
               "default": true,
               "description": "Whether the service mounts the MCP endpoint at /mcp (issue-228, decision-084). Default true — /mcp has been unconditionally mounted since issue-161, so the flag exists to NARROW a deployment to REST-only (/mcp answers 404 when false), not as a new opt-in.",
-              "examples": [false]
+              "examples": [
+                false
+              ]
             }
           }
         },
@@ -1088,21 +1253,27 @@
               "type": "boolean",
               "default": true,
               "description": "Whether the service serves /api/v1/stream. Default true; false answers 404 and starts no tailer, narrowing a deployment to REST-only exactly as `service.mcp.enabled` does. An ABSENT block means unconfigured, not disabled.",
-              "examples": [false]
+              "examples": [
+                false
+              ]
             },
             "maxSubscribers": {
               "type": "integer",
               "default": 8,
               "minimum": 1,
               "description": "Simultaneous open stream connections. Beyond this the service answers 503 and never accepts the connection, so an open dashboard cannot starve the REST surface (requirements R5.1, abuse case 1). A value below 1 clamps up: the bound is not configurable away.",
-              "examples": [16]
+              "examples": [
+                16
+              ]
             },
             "keepAliveSeconds": {
               "type": "integer",
               "default": 15,
               "minimum": 1,
               "description": "Interval between SSE keep-alive comments on an idle connection, which is what stops an intermediary reaping it. Lower it only if something between the browser and the service reaps idle connections faster than this.",
-              "examples": [30]
+              "examples": [
+                30
+              ]
             }
           }
         },
@@ -1110,7 +1281,9 @@
           "type": "boolean",
           "default": true,
           "description": "Single-process mode (issue-231): with the service enabled, the enabled ingresses (the poller per `polling.enabled`, the webhook receiver per `webhooks.ghWebhook.enabled`) run as background tasks INSIDE the service process — one pid, one logfile — instead of as separate processes. Each hosted ingress still holds its own pidfile flock (under the service's pid), so `the-loop status`/`stop`, the single-instance guarantees and the daemons API answer unchanged, and a standalone daemon already holding a lock is skipped with a warning rather than fought over. Set false to keep the issue-228 split (fault isolation: a wedged ingress cannot share fate with the API); with `service.enabled: false` the ingresses always run standalone regardless of this flag.",
-          "examples": [false]
+          "examples": [
+            false
+          ]
         },
         "cors": {
           "type": "object",
@@ -1119,20 +1292,35 @@
           "properties": {
             "allowOrigins": {
               "type": "array",
-              "items": { "type": "string" },
-              "default": ["https://madarauchiha-314.github.io"],
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "https://madarauchiha-314.github.io"
+              ],
               "description": "Exact origins (scheme + host + port, no path) allowed to read responses. Compared exact-string — no prefix, suffix or regex matching. `[]` disables cross-origin access entirely. `\"*\"` allows every origin and is refused at start-up when `allowCredentials` is true."
             },
             "allowMethods": {
               "type": "array",
-              "items": { "type": "string" },
-              "default": ["GET", "POST", "OPTIONS"],
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "GET",
+                "POST",
+                "OPTIONS"
+              ],
               "description": "HTTP methods a cross-origin caller may use. The default is exactly what the shipped dashboard sends."
             },
             "allowHeaders": {
               "type": "array",
-              "items": { "type": "string" },
-              "default": ["Accept", "Content-Type"],
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "Accept",
+                "Content-Type"
+              ],
               "description": "Request headers a cross-origin caller may send, beyond the browser's safelist. Add `Authorization` when a gateway in front expects a bearer token from the page."
             },
             "allowCredentials": {
@@ -1151,19 +1339,21 @@
     },
     "selfDiagnosis": {
       "type": "object",
-      "description": "Self-diagnosis (issue-242): when the-loop's own machinery fails \u2014 an error-level event or a terminal give-up in the event log \u2014 debug it in an isolated agent one-shot and file the findings as an issue on the-loop's own repository, labeled `the-loop: self-diagnosed`. STRICTLY OPT-IN and off by default: enabling it means this machine may post redacted failure reports publicly, using your own `gh` credentials. Everything posted is built from a field allow-list with free text scrubbed (paths, usernames, hostnames, e-mails, tokens, sensitive env values), and a self-filed issue is never armed: no auto-execute label, no control-keyword comment, and the self-authored marker so the-loop's own ingress drops it. Preview what would leave the machine with `the-loop diagnose --dry-run` before opting in.",
+      "description": "Self-diagnosis (issue-242): when the-loop's own machinery fails — an error-level event or a terminal give-up in the event log — debug it in an isolated agent one-shot and file the findings as an issue on the-loop's own repository, labeled `the-loop: self-diagnosed`. STRICTLY OPT-IN and off by default: enabling it means this machine may post redacted failure reports publicly, using your own `gh` credentials. Everything posted is built from a field allow-list with free text scrubbed (paths, usernames, hostnames, e-mails, tokens, sensitive env values), and a self-filed issue is never armed: no auto-execute label, no control-keyword comment, and the self-authored marker so the-loop's own ingress drops it. Preview what would leave the machine with `the-loop diagnose --dry-run` before opting in.",
       "additionalProperties": false,
       "properties": {
         "enabled": {
           "type": "boolean",
           "default": false,
           "description": "The opt-in. Only a literal `true` enables anything; an absent section, `false`, or a malformed section all mean no scan, no watcher thread, no agent, no post (fail closed).",
-          "examples": [true]
+          "examples": [
+            true
+          ]
         },
         "repo": {
           "type": "string",
           "default": "MadaraUchiha-314/the-loop",
-          "description": "owner/repo the issues are filed on. Defaults to the-loop's own repository \u2014 the point of the feature is fixing the-loop, not your project. Point it at a fork if you triage there first."
+          "description": "owner/repo the issues are filed on. Defaults to the-loop's own repository — the point of the feature is fixing the-loop, not your project. Point it at a fork if you triage there first."
         },
         "label": {
           "type": "string",
@@ -1172,7 +1362,10 @@
         },
         "harness": {
           "type": "string",
-          "enum": ["claude", "cursor"],
+          "enum": [
+            "claude",
+            "cursor"
+          ],
           "default": "claude",
           "description": "Which agent harness runs the isolated diagnosis one-shot (the same adapter set as `routing.defaultHarness`)."
         },

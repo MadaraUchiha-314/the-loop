@@ -17,7 +17,17 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
 import yaml
 
@@ -93,6 +103,9 @@ LOOP_FOR_CONTROL_COMMAND: Dict[str, str] = {
 #: (see shipped_graph_path). Named pdlc.yaml before issue-172 split the process
 #: into the two loops.
 GRAPH_FILENAME = f"{PDLC_WORK_ITEM_LOOP}.yaml"
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .extensions import Declaration
 
 logger = logging.getLogger("the-loop.graph")
 
@@ -632,36 +645,32 @@ def load_graph(
     path: Optional[Path] = None,
     repo: Optional[Path] = None,
     name: str = PDLC_WORK_ITEM_LOOP,
-    allow_repo_hooks: bool = True,
+    declaration: Optional["Declaration"] = None,
 ) -> Graph:
-    """Load and compile a shipped loop. Cached — compiled once per repository.
+    """Load and compile a shipped loop. Cached — compiled once per declaration.
 
     ``name`` selects which loop when no explicit ``path`` is given: the
     work-item loop (the default, and the whole process before issue-172) or the
     PR loop. Both are shipped, compiled by the same code, and executed by the
     same runtime.
 
-    ``repo`` is what makes the result repository-specific (issue-248): the
-    repository's ``graph.hooks`` declaration is read, its modules executed, and
-    its hooks appended to the nodes it named. That is why the cache key carries
-    the repository and the declaration's digest — two repositories no longer
-    compile the same shipped file to the same graph. ``allow_repo_hooks=False``
-    is the operator's refusal (``routing.graph.repoHooks``): none of the
-    repository's code is imported, and what it declared is read only to report
-    what was refused.
+    ``declaration`` is the operator's ``routing.graph.hooks`` block, already
+    parsed (issue-248, re-homed in issue-352): its modules are executed and its
+    hooks appended to the nodes it named, with any ``path`` entry resolved
+    against ``repo`` — the checkout the loop is walked in. That is why the cache
+    key carries the repository and the declaration's digest. ``None`` — every
+    caller that has no CLI config at hand — compiles the shipped file alone.
+    ``repo`` without a declaration still warns about a repository-supplied graph
+    file, which the-loop ignores.
     """
     from . import hooks  # noqa: F401 — registers the built-ins before resolution
-    from .extensions import Declaration, apply, read_declaration
+    from .extensions import Declaration, apply
 
-    declaration = Declaration()
+    declared = declaration if declaration is not None else Declaration()
     if repo is not None:
         _warn_on_repo_graph(repo)
-        if allow_repo_hooks:
-            declaration = read_declaration(_repo_harness_config(repo))
-        else:
-            _warn_on_refused_hooks(repo)
     target = Path(path) if path else shipped_graph_path(name)
-    key = (str(target), str(repo or ""), declaration.digest())
+    key = (str(target), str(repo or ""), declared.digest())
     if key in _CACHE:
         return _CACHE[key]
     try:
@@ -675,36 +684,10 @@ def load_graph(
     if not isinstance(data, Mapping):
         raise GraphConfigError(f"the graph at {target} must be a mapping")
     graph = compile_graph(data)
-    if repo is not None:
-        graph = apply(graph, Path(repo), declaration)
+    if repo is not None and not declared.empty:
+        graph = apply(graph, Path(repo), declared)
     _CACHE[key] = graph
     return graph
-
-
-def _repo_harness_config(repo: Path) -> Mapping[str, Any]:
-    """``repo``'s harness config, read through its one reader (decision-044)."""
-    from ..harness_config import load as load_harness_config
-
-    return load_harness_config(Path(repo))
-
-
-def _warn_on_refused_hooks(repo: Path) -> None:
-    """Say what was refused. An operator who switched repository hooks off still
-    needs to know a repository expected some — a gate silently not running is the
-    failure mode this whole work item is built against."""
-    from .extensions import read_declaration
-
-    try:
-        declared = read_declaration(_repo_harness_config(repo))
-    except GraphConfigError:
-        declared = None
-    if declared is None or not declared.empty:
-        logger.warning(
-            "%s declares graph hooks, and this machine refuses them "
-            "(routing.graph.repoHooks is false): nothing from the repository was "
-            "imported and none of its hooks will run",
-            repo,
-        )
 
 
 def _warn_on_repo_graph(repo: Path) -> None:

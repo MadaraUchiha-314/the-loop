@@ -10,11 +10,11 @@ PR.
   ticketing system** (GitHub issue / Jira), not resolved silently in files.
 - **PR reviews** → happen **on the PR** as comments and replies.
 - **Self & critic reviews** → also as PR/ticket comments.
-- **Notifications/escalations** when a human action is pending → gated by the
-  `notifications.events` filters in `harness-config.yaml` (event → roles) and delivered
-  to a **channel**: the Slack bot under the CLI config's `channels.slack`, which posts
-  every event its own `events` allow-list subscribes to (issue-245). The roles name who
-  the event concerns and are printed in the message; they are not a delivery address —
+- **Notifications/escalations** when a human action is pending → published by the graph's
+  `notify` hook on the event bus and delivered to a **channel**: the Slack bot under the
+  CLI config's `channels.slack`, which posts every event its `subscribe` list names
+  (issue-245, issue-309). No event → role filter lives in the harness config any more
+  (issue-352); a role a node names rides along as detail and is not a delivery address —
   per-person routing is not built (issue-304). Notification only; the decision itself
   still lands as a comment.
 

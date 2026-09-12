@@ -426,45 +426,20 @@ Best-effort by design: a graph failure is logged (`graph.link_failed`) and never
 delivery. `false` restores the pre-issue-113 behaviour, where the graph moves only when a
 human or CI runs `the-loop graph advance`.
 
-### `graph.repoHooks`
-
-- **Type:** `boolean`
-- **Default:** `true`
-- **Related:** [process-graph](/capabilities/process-graph) · [harness config](/config/harness-config) · [decision-096](/decisions/decision-096)
-
-Whether this machine runs the **watched repositories' own graph hooks**. A repository
-declares them under `graph.hooks` in its harness config, and that declaration is the opt-in:
-a repository that declares none is unaffected whichever way this is set.
-
-Left `true`, the-loop imports the modules a repository names and runs them at the boundaries
-it named. **Those modules execute inside the-loop's own process, with its environment** — so
-adopting a repository's hooks is adopting its code, the same statement `reviews.critics[]`
-already carries for the critics a repository declares.
-
-Set `false` to refuse the mechanism machine-wide. Nothing from any repository is imported,
-and a repository that declared hooks is named in a warning rather than quietly losing its
-gates — an absent gate somebody asked for is worse than a loud refusal.
-
-```bash
-# what a repository would run, without importing any of it
-the-loop graph --repo /srv/checkouts/app hooks
-```
-
 ### `graph.specDir`
 
 - **Type:** `string`
-- **Default:** `""` (unset — each repository's own `workflow.specDir` is used)
-- **Related:** [decision-044](/decisions/decision-044) · [harness config](/config/harness-config)
+- **Default:** `docs/specs`
+- **Related:** [decision-123](/decisions/decision-123) · [harness config](/config/harness-config) · [`check`](/cli/commands/check)
 
-An **optional override**. Leave it unset: where a repository keeps its specs is that
-repository's to declare, so the daemon reads `workflow.specDir` from the work item's own
-checkout (defaulting to `docs/specs`) — after `_checkout_belongs_to` has proved via the
-`origin` remote that the checkout really is that repository's.
-
-That is the only thing that works here. This is **one flat value** for every watched
-repository, and the daemon is meant to watch several, so two repositories with different
-layouts cannot both be served by a value set here. Setting it overrides *every* watched
-repository; it exists for a checkout that carries no harness config at all.
+Where the work items' specs live, relative to the checkout root, in **every** repository
+this instance drives. One value for the whole instance: since
+[issue #352](https://github.com/MadaraUchiha-314/the-loop/issues/352) the CLI reads no
+repository's harness config, so a repository's own `workflow.specDir` (the agent's key)
+must agree with this one — `/the-loop:init` says so when it writes a non-default value.
+Empty reads as the default. `the-loop check --spec-dir` / `the-loop graph --spec-dir`
+override it for one invocation, which is what a CI job in a repository with an unusual
+layout uses.
 
 A work item with no directory under the resolved path is skipped, which is what makes the
 coupling inert for repositories that keep no specs. The skip is recorded as
@@ -472,12 +447,95 @@ coupling inert for repositories that keep no specs. The skip is recorded as
 and the reason — a work item that is labelled, armed and spawned but whose graph never
 moves is answerable from the event log.
 
-::: warning This used to default to `docs/specs` (fixed in issue-123)
-And because the value reaches the graph runtime as an explicit override, that default
-meant a watched repository's `workflow.specDir` was **never** honoured: a repository that
-kept its specs elsewhere had its graph silently skipped while its deliveries still
-counted as successful. If you set this key to work around that, unset it.
+::: warning Until 14.x this was an override, and the repository decided
+issue-123 had made an empty value mean "read the work item's own `workflow.specDir`",
+so one daemon could serve repositories with different layouts. That read is gone with
+the rest of the CLI's harness-config reads; an instance now drives every repository under
+this one directory.
 :::
+
+### graph.hooks
+
+- **Type:** `object` — the `modules` and `attach` lists documented below
+- **Default:** none (no hooks)
+- **Related:** [process-graph](/capabilities/process-graph) · [adding a hook](/cli/hooks) · [decision-096](/decisions/decision-096) · [decision-123](/decisions/decision-123)
+
+Hooks of **your own** on the-loop's process graph, applied to every checkout this instance
+drives. Until issue-352 a repository declared them under `graph.hooks` in its harness
+config and this block held only a switch to refuse them (`repoHooks`); the CLI reads no
+repository's declaration any more, so the declaration is yours — and the switch is gone,
+because a hook you did not write here does not run.
+
+```yaml
+routing:
+  graph:
+    hooks:
+      modules:
+        - path: .the-loop/hooks/house_rules.py     # a .py file inside each checkout
+        - module: acme_loop_hooks.compliance       # or an installed dotted name
+      attach:
+        - hook: x-licence-header
+          node: implementation
+          boundary: exit
+        - hook: x-arch-signoff
+          node: design
+          with: {board: platform}
+```
+
+**Those modules execute inside the-loop's own process, with your credentials** — the same
+statement [`critics[]`](/config/cli/critics-options) carries. Review an entry like code.
+`the-loop graph hooks` prints what is declared without importing any of it; `the-loop
+check` is what loads it, and a declaration that cannot load fails there rather than being
+skipped.
+
+### `graph.hooks.modules[].path`
+
+- **Type:** `string`
+- **Default:** none — exactly one of `path` or `module` per entry
+
+A `.py` file relative to the checkout root and inside it. An absolute path, a `..` escape
+or a symlink leaving the tree is refused — hook code is run from the checkout the loop
+walks, never from elsewhere on the machine.
+
+### `graph.hooks.modules[].module`
+
+- **Type:** `string`
+- **Default:** none — exactly one of `path` or `module` per entry
+
+An importable dotted module name installed alongside the-loop's CLI — how a team ships
+shared hooks as a package.
+
+### `graph.hooks.attach[].hook`
+
+- **Type:** `string`, matching `^x-.+`
+- **Default:** none — required
+
+The hook's registered name. Must start with `x-`: only your own hooks may be attached,
+since attaching a shipped hook elsewhere would be editing the-loop's process.
+
+### `graph.hooks.attach[].node`
+
+- **Type:** `string`
+- **Default:** none — required
+
+The node to attach to, e.g. `design` or `implementation`. `the-loop graph show` lists the
+nodes of the loop being walked.
+
+### `graph.hooks.attach[].boundary`
+
+- **Type:** `string` — `entry` | `exit`
+- **Default:** `exit`
+
+Which of the node's two chains to append to: `exit` gates leaving the node, `entry` runs
+on arrival.
+
+### `graph.hooks.attach[].with`
+
+- **Type:** `object`
+- **Default:** `{}`
+
+Typed parameters handed to the hook as `ctx.params`, exactly as a shipped chain entry's
+`with:` is.
 
 ## Where sessions run
 

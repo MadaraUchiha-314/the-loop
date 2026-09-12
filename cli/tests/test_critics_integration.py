@@ -2,7 +2,7 @@
 
 These drive the *real* ``the-loop critic`` command against a *real* critic process —
 a small Python program standing in for `cursor-agent`/`aider` — so they prove what
-the unit tests cannot: that a `reviews.critics[]` entry in a repo's harness config
+the unit tests cannot: that a `critics[]` entry in the operator's CLI config (issue-352)
 becomes an argv, a subprocess, and a JSON envelope the calling harness can parse.
 
 Feature: Critic-review invocation
@@ -40,32 +40,35 @@ CRITIC_CLI = """
 """
 
 
+def _cli_config(tmp_path: Path, monkeypatch, critics: str) -> Path:
+    """The operator's CLI config, declaring ``critics`` (dedented), as the CLI resolves it."""
+    path = tmp_path / "cli-config.yaml"
+    path.write_text(
+        'version: "0.9.0"\ncritics:\n' + textwrap.dedent(critics).rstrip() + "\n"
+    )
+    monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(path))
+    return path
+
+
 @pytest.fixture()
-def project(tmp_path: Path) -> Path:
-    """A checkout whose harness config declares one critic: our stand-in CLI."""
+def project(tmp_path: Path, monkeypatch) -> Path:
+    """A checkout, and a CLI config declaring one critic: our stand-in CLI."""
     critic_cli = tmp_path / "critic_cli.py"
     critic_cli.write_text(textwrap.dedent(CRITIC_CLI).lstrip())
-    cfg = tmp_path / ".the-loop"
-    cfg.mkdir()
-    (cfg / "harness-config.yaml").write_text(
-        textwrap.dedent(
-            f"""
-            workflow:
-              specDir: docs/specs
-            reviews:
-              selfReviewCount: 3
-              criticReviewCount: 3
-              critics:
-                - name: stand-in
-                  harness: stand-in-cli
-                  model: gpt-5.5
-                  command: {sys.executable}
-                  args: ["{critic_cli}", "--prompt-file", "{{promptFile}}",
-                         "--model", "{{model}}"]
-                  outputFormat: json
-                  timeoutSeconds: 60
-            """
-        ).lstrip()
+    (tmp_path / ".the-loop").mkdir()
+    _cli_config(
+        tmp_path,
+        monkeypatch,
+        f"""
+          - name: stand-in
+            harness: stand-in-cli
+            model: gpt-5.5
+            command: {sys.executable}
+            args: ["{critic_cli}", "--prompt-file", "{{promptFile}}",
+                   "--model", "{{model}}"]
+            outputFormat: json
+            timeoutSeconds: 60
+        """,
     )
     return tmp_path
 
@@ -76,7 +79,7 @@ def test_a_configured_critic_reviews_the_work_and_its_findings_reach_the_harness
     """
     Feature: Critic-review invocation
     Scenario: A configured critic CLI reviews the work and its findings reach the harness
-      Given a repo whose harness config names a critic CLI with its command and args
+      Given a CLI config naming a critic CLI with its command and args
       When the harness runs one critic round with a review prompt
       Then that CLI is spawned with the substituted argv
       And its findings come back in a single JSON envelope with the attribution prefix
@@ -109,26 +112,28 @@ def test_a_configured_critic_reviews_the_work_and_its_findings_reach_the_harness
     assert envelope["usage"]["present"] is True
 
 
-def test_a_critic_that_is_not_installed_fails_the_round_closed(tmp_path: Path, capsys):
+def test_a_critic_that_is_not_installed_fails_the_round_closed(
+    tmp_path: Path, monkeypatch, capsys
+):
     """
     Feature: Critic-review invocation
     Scenario: A critic that is not installed fails the round closed
-      Given a repo whose configured critic CLI is not present on this machine
+      Given a CLI config whose critic CLI is not present on this machine
       When the harness runs a critic round
       Then no fallback executable is tried
       And the round is reported as failed so it cannot be counted as a passing round
 
     Requirement: docs/specs/issue-108/requirements.md#R3.5
     """
-    cfg = tmp_path / ".the-loop"
-    cfg.mkdir()
-    (cfg / "harness-config.yaml").write_text(
-        "reviews:\n"
-        "  critics:\n"
-        "    - name: absent\n"
-        "      harness: nowhere-cli\n"
-        "      command: the-loop-critic-that-does-not-exist\n"
-        '      args: ["{prompt}"]\n'
+    _cli_config(
+        tmp_path,
+        monkeypatch,
+        """
+          - name: absent
+            harness: nowhere-cli
+            command: the-loop-critic-that-does-not-exist
+            args: ["{prompt}"]
+        """,
     )
 
     code = main(

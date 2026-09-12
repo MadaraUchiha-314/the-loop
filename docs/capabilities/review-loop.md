@@ -51,8 +51,14 @@ critique it, and how that critique gets back (issue-108).
 - The node SHALL declare `stage: critic-review`, so the existing `tokenEconomy` stage tables
   route it to a frontier model at high thinking effort without a new configuration key.
 
-### Declaring a critic (`reviews.critics[]`)
+### Declaring a critic (`critics[]` in the CLI config)
 
+- Critics SHALL be declared in the **operator's** CLI config (`critics[]`, issue-352,
+  [decision-123](../decisions/decision-123.md)), never in a repository's harness config:
+  a critic is a harness and a model installed on the machine that runs the round, and
+  executable configuration belongs in a file no pull request to the repository can edit.
+  The repository keeps the review **bar** (`reviews.criticReviewCount`); the operator
+  keeps the roster. `the-loop critic list` is how a session learns what this machine has.
 - A critic entry SHALL be **runnable**, not merely descriptive: `name` (unique), plus either
   a `harness` the-loop has an adapter for or an explicit `command`.
 - WHEN `harness` names a built-in adapter (`claude`, `cursor`) and no `command` is set, the
@@ -67,7 +73,8 @@ critique it, and how that critique gets back (issue-108).
 - IF an explicit `command`'s `args` carry neither `{prompt}` nor `{promptFile}` THEN the entry
   SHALL be refused — a critic handed nothing would review nothing.
 - `env` SHALL be overlaid on the **inherited** environment (so a critic CLI keeps the
-  operator's ambient credentials) and SHALL NOT hold secrets: the file is committed.
+  operator's ambient credentials) and SHALL NOT hold secrets: name a variable, keep the
+  value in `env.file` or the ambient environment.
 - `cwd` (default: project root), `outputFormat` (`text` | `json`), `timeoutSeconds`
   (default 900) and `enabled` (default true) complete the entry.
 - Entry names SHALL be unique; a duplicate SHALL reject the configuration rather than
@@ -104,10 +111,12 @@ critique it, and how that critique gets back (issue-108).
 
 ### Security posture
 
-- A `reviews.critics[]` entry is **executable configuration** in a repo-tracked file — anyone
-  who can land a commit can propose one. It is reviewed like code, nothing runs implicitly
-  (one named critic per invocation), and `.the-loop/harness-config.yaml` sits in this repo's
-  `autonomy.sensitivePaths` so a change to it raises the risk tier of the PR proposing it.
+- A `critics[]` entry is **executable configuration** in the operator's own file. Until
+  issue-352 it lived in the repository's harness config, where anyone who could land a
+  commit could propose one; moving it to the CLI config removed that surface entirely. It
+  is still reviewed like code and nothing runs implicitly (one named critic per
+  invocation); `.the-loop/cli-config.yaml` sits in this repo's `autonomy.sensitivePaths`
+  for the same reason.
 - Untrusted review material (diffs, ticket/PR comments) reaches the critic only as a single
   argv element or a file it reads — never as a shell string, so it cannot be executed.
 - A critic's output is untrusted, model-generated text: it is **findings to evaluate**, never
@@ -122,8 +131,9 @@ Pointers, not copies:
 - Procedure: [`skills/the-loop/reference/reviewing.md`](../../skills/the-loop/reference/reviewing.md)
   (§ Running a critic round) and [`reference/security.md`](../../skills/the-loop/reference/security.md)
   for the security round.
-- Config contract: `.the-loop/harness-config.schema.json` (`reviews`) and the annotated
-  `skills/the-loop/templates/harness-config.yaml`.
+- Config contract: `.the-loop/cli-config.schema.json` (`critics`) and the annotated
+  `skills/the-loop/templates/cli-config.yaml`; the round counts in
+  `.the-loop/harness-config.schema.json` (`reviews`).
 - Mechanism: `cli/the_loop/critics.py` (load → resolve → run) and
   `cli/the_loop/commands/critic_cmd.py` (`the-loop critic list|run`).
 - Built-in invocations: `cli/the_loop/harness/` (`HarnessAdapter.oneshot_argv`,
@@ -136,5 +146,6 @@ Pointers, not copies:
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-352 | The critic roster moved to the operator (2026-09-12): `reviews.critics[]` in the harness config became the top-level `critics[]` in the CLI config, same entry shape, read by `the-loop critic list\|run` through the resolved CLI config and never from a repository. `reviews.criticReviewCount` stays the repository's. A critic entry committed to a repository is inert | [spec](../specs/issue-352/), [decision-123](../decisions/decision-123.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/352) |
 | issue-188 | The design critic round (2026-08-10): an **opt-in** `design-critic-review` node between `design` and `test-planning`, reviewing the locked `design.md` against the requirements while a structural finding still costs an edit; off unless an authorized human ticks it at `phase-selection`, gating the execution log's own `## Design critic review` section, `stage: critic-review` so it routes to a frontier model; the procedure, the `unavailable` rule and the reply-first-then-fix protocol unchanged | [spec](../specs/issue-188/), [decision-071](../decisions/decision-071.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/188) |
 | issue-108 | Minted this capability. Made `reviews.critics[]` runnable — `command`/`args` with element-wise placeholders (or a built-in `harness` deriving them), `env`/`cwd`/`outputFormat`/`timeoutSeconds`/`enabled` — added `the-loop critic list\|run` returning one JSON envelope on stdout, and wrote the critic-round procedure (including the `unavailable` outcome) into `reference/reviewing.md`. | [spec](../specs/issue-108/), [decision-043](../decisions/decision-043.md) |

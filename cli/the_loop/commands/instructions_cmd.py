@@ -1,10 +1,14 @@
 """``the-loop instructions`` — which of this repository's registered instruction docs
 actually resolve (issue-132).
 
-``customInstructions.docs`` tells the-loop which of the operator's own convention docs to
+``customInstructions.docs`` tells the agent which of the operator's own convention docs to
 read before working an item. This command reports whether each one is really there, and
 turns ``onMissing`` into an exit code — so ``onMissing: error`` errors, CI can gate on a
 broken registration, and "which docs did you read?" has an answer that is not a promise.
+
+The docs arrive on the command line (``--doc``, repeatable) together with the policy
+(``--on-missing``): the CLI reads no harness config (issue-352, decision-123), so the
+agent reads ``customInstructions`` and hands the entries over.
 
 Deliberately the same shape as ``the-loop scenarios``: pure filesystem reads, no network,
 no subprocess, no mutation, three renderers. Both commands exist for the same reason —
@@ -100,6 +104,25 @@ _RENDERERS = {
 }
 
 
+def _parse_doc(value: str):
+    """One ``--doc`` value: a path, or a JSON object carrying ``path`` and ``notes``.
+
+    The JSON form exists so the agent can pass an entry exactly as the harness
+    config lists it, notes included. A value that starts like JSON and is not one
+    is a typo, refused rather than treated as a path named ``{...``.
+    """
+    text = value.strip()
+    if not text.startswith("{"):
+        return text
+    try:
+        entry = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"--doc {value!r} is not valid JSON: {exc}") from None
+    if not isinstance(entry, dict):
+        raise ValueError(f"--doc {value!r} must be a JSON object with a `path`")
+    return entry
+
+
 @register
 class InstructionsCommand(Command):
     name = "instructions"
@@ -109,7 +132,25 @@ class InstructionsCommand(Command):
         parser.add_argument(
             "--root",
             default=".",
-            help="Repository root to read the harness config from (default: current directory).",
+            help="Repository root relative paths resolve against (default: current directory).",
+        )
+        parser.add_argument(
+            "--doc",
+            action="append",
+            dest="docs",
+            default=[],
+            metavar="PATH",
+            help=(
+                "A registered instruction doc (repeatable) — an entry of the harness "
+                "config's customInstructions.docs, as the agent read it: a path, or "
+                'a JSON object {"path": ..., "notes": ...} to carry its notes.'
+            ),
+        )
+        parser.add_argument(
+            "--on-missing",
+            choices=("warn", "error", "ignore"),
+            default="warn",
+            help="The customInstructions.onMissing policy that grades the report.",
         )
         parser.add_argument(
             "--format",
@@ -121,11 +162,19 @@ class InstructionsCommand(Command):
     def run(self, args: argparse.Namespace) -> int:
         root = str(Path(args.root))
         try:
+            docs = [_parse_doc(value) for value in (args.docs or [])]
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        try:
             report = routed(
                 lambda connection: connection.get(
-                    "/repo/instructions", params={"repo": root}
+                    "/repo/instructions",
+                    params={"repo": root, "doc": docs, "onMissing": args.on_missing},
                 ),
-                lambda: core_repo.instructions(root),
+                lambda: core_repo.instructions(
+                    root, docs=docs, on_missing=args.on_missing
+                ),
             )
         except Exception as exc:  # noqa: BLE001 — mapped, or re-raised below
             mapped = service_error(exc)

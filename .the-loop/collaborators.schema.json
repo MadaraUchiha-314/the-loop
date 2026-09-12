@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/MadaraUchiha-314/the-loop/.the-loop/collaborators.schema.json",
   "title": "the-loop collaborators",
-  "description": "Schema for .the-loop/collaborators.yaml — the stewards of the repository (CODEOWNERS-like) and the single source of truth for WHO collaborates on this project and in which roles (issue-82, decision-035). The harness config (harness-config.yaml) references roles, never people: notifications.events names the roles a harness-raised event concerns, and the skill resolves a phase's reviewers and approvers from this file. This file declares no DELIVERY. A notification goes to a channel, subscribed by event name and configured once under the CLI config's channels.slack (issue-304); per-person routing is not built. The CLI daemon never reads this file (decision-032/decision-035).",
+  "description": "Schema for .the-loop/collaborators.yaml — the stewards of the repository (CODEOWNERS-like) and the single source of truth for WHO collaborates on this project and in which roles (issue-82, decision-035). The harness config (harness-config.yaml) references roles, never people, and the skill resolves a phase's reviewers and approvers from this file (the event → role filter it once carried, notifications.events, was removed in issue-352). This file declares no DELIVERY. A notification goes to a channel, subscribed by event name and configured once under the CLI config's channels.slack (issue-304); per-person routing is not built. The CLI daemon never reads this file (decision-032/decision-035).",
   "type": "object",
   "additionalProperties": false,
   "required": ["collaborators"],
@@ -31,7 +31,7 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": { "$ref": "#/$defs/role" },
-          "description": "Roles this collaborator holds. Harness-raised notification filters (harness-config.yaml notifications.events) name roles, and the skill pulls a phase's required reviewers and approvers from this list."
+          "description": "Roles this collaborator holds. The skill pulls a phase's required reviewers and approvers from this list."
         }
       }
     }

@@ -40,7 +40,7 @@ spec chain. A slice of `/the-loop:work-on`; `work-on` remains the superset.
    `design-approval` gate, never by the session — issue-281.) Skip this step (write
    `N/A`) for backend/CLI/infra work with no UI. **Read `reference/design-artifacts.md`** for the full pattern.
 
-4. **Advance the phase.** Set the ticket label to `<phaseLabelPrefix>design` and mirror
+4. **Advance the phase.** Set the ticket label to `loop:design` and mirror
    `phase: design` in the spec/execution log.
 
 5. **Reference on the ticket** (link the checked-in `design.md` and any `design/`

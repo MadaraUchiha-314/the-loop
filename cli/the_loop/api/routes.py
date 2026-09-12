@@ -81,6 +81,7 @@ class GraphCheckBody(BaseModel):
     # qualifies it by repository when the work item spans several (issue-183).
     pr: Optional[int] = None
     prRepo: str = ""
+    specDir: str = ""
 
 
 class GraphCompleteBody(BaseModel):
@@ -91,6 +92,7 @@ class GraphCompleteBody(BaseModel):
     ref: str = ""
     pr: Optional[int] = None
     prRepo: str = ""
+    specDir: str = ""
 
 
 class GraphAdvanceBody(BaseModel):
@@ -99,6 +101,7 @@ class GraphAdvanceBody(BaseModel):
     ref: str = ""
     pr: Optional[int] = None
     prRepo: str = ""
+    specDir: str = ""
 
 
 class GraphForceBody(BaseModel):
@@ -110,6 +113,7 @@ class GraphForceBody(BaseModel):
     ref: str = ""
     pr: Optional[int] = None
     prRepo: str = ""
+    specDir: str = ""
 
 
 class GraphSkipBody(BaseModel):
@@ -121,6 +125,7 @@ class GraphSkipBody(BaseModel):
     ref: str = ""
     pr: Optional[int] = None
     prRepo: str = ""
+    specDir: str = ""
 
 
 class SessionControlBody(BaseModel):
@@ -397,8 +402,9 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         repo: str = Query(...),
         pr: Optional[int] = Query(None),
         prRepo: str = Query(""),
+        specDir: str = Query(""),
     ) -> Dict[str, Any]:
-        return core_graphs.show(repo, pr=pr, pr_repo=prRepo)
+        return core_graphs.show(repo, pr=pr, pr_repo=prRepo, spec_dir=specDir)
 
     @router.post(
         f"{API_PREFIX}/graph/check",
@@ -420,6 +426,7 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
             recompute=body.recompute,
             pr=body.pr,
             pr_repo=body.prRepo,
+            spec_dir=body.specDir,
         )
 
     @router.post(
@@ -435,6 +442,7 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
             ref=body.ref,
             pr=body.pr,
             pr_repo=body.prRepo,
+            spec_dir=body.specDir,
         )
 
     @router.post(
@@ -443,7 +451,12 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
     )
     def graph_advance(body: GraphAdvanceBody) -> Dict[str, Any]:
         return core_graphs.advance(
-            body.repo, body.workItem, ref=body.ref, pr=body.pr, pr_repo=body.prRepo
+            body.repo,
+            body.workItem,
+            ref=body.ref,
+            pr=body.pr,
+            pr_repo=body.prRepo,
+            spec_dir=body.specDir,
         )
 
     @router.post(
@@ -460,6 +473,7 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
             ref=body.ref,
             pr=body.pr,
             pr_repo=body.prRepo,
+            spec_dir=body.specDir,
         )
 
     @router.post(
@@ -476,6 +490,7 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
             ref=body.ref,
             pr=body.pr,
             pr_repo=body.prRepo,
+            spec_dir=body.specDir,
         )
 
     @router.get(f"{API_PREFIX}/sessions", operation_id="listSessions")
@@ -828,8 +843,12 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         f"{API_PREFIX}/repo/instructions",
         operation_id="repoInstructions",
     )
-    def repo_instructions(repo: str = Query(...)) -> Dict[str, Any]:
-        return core_repo.instructions(repo)
+    def repo_instructions(
+        repo: str = Query(...),
+        doc: List[str] = Query(default=[]),
+        onMissing: str = Query("warn"),
+    ) -> Dict[str, Any]:
+        return core_repo.instructions(repo, docs=doc, on_missing=onMissing)
 
     @router.get(
         f"{API_PREFIX}/repo/critics",

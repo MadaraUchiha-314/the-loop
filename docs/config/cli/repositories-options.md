@@ -109,7 +109,7 @@ channels:
 ```
 
 ```yaml
-# after — 0.8.0
+# after — 0.9.0
 repositories: [octo/app, octo/lib]
 polling:
   sources:

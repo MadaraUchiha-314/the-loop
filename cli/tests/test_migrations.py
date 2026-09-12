@@ -606,9 +606,9 @@ WITH_POLL_REPOS = {
 }
 
 
-def test_the_current_config_version_is_0_8_0():
+def test_the_current_config_version_is_0_9_0():
     """R5.5 — the version the break is gated on."""
-    assert CURRENT_CONFIG_VERSION == "0.8.0"
+    assert CURRENT_CONFIG_VERSION == "0.9.0"
 
 
 def test_the_repository_lists_move_up():

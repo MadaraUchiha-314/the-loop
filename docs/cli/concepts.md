@@ -38,19 +38,17 @@ arrive by webhook or by poll, so switching ingress later changes nothing else.
 
 ## Two configuration files
 
-`cli-config.yaml` is the daemon's, and it describes *your machine*.
+`cli-config.yaml` is the CLI's, and it describes *your machine and what it drives*.
 `.the-loop/harness-config.yaml` is a repository's, and it describes *how work is done
-there*. They never share a key.
-
-Which file governs what is a question of **direction**, not of which command is asking
-([decision-044](/decisions/decision-044)): a repository's harness config configures work
-done *on that repository* — including when the daemon is the one doing it, which is how
-the graph coupling learns a repo's `phaseLabelPrefix` and `specDir`. It **never**
-configures the daemon itself. The two settings people most expect to be inherited,
-`authorizedUsers` and a poll source's `repos`, are CLI-config-only with no fallback, and
-fail closed when unset. See [Configuring the-loop](/config/),
-[decision-032](/decisions/decision-032) and
-[decision-044](/decisions/decision-044).
+there* — to the **agent**. They never share a key, and since
+[issue #352](https://github.com/MadaraUchiha-314/the-loop/issues/352) the CLI never opens
+the second one ([decision-123](/decisions/decision-123)): the spec directory, the critics
+and the graph hooks it needs are its own config's, and what a repository knows that the
+CLI needs — a non-default `workflow.specDir`, the integration-test globs, the registered
+instruction docs — the agent passes as flags. `authorizedUsers` and `repositories` were
+always CLI-config-only with no fallback, and fail closed when unset. See
+[Configuring the-loop](/config/), [decision-032](/decisions/decision-032) and
+[decision-123](/decisions/decision-123).
 
 ## Work items and sessions
 

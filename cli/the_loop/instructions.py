@@ -15,9 +15,10 @@ obligation nothing can observe is an obligation that drifts.
 
 Two properties are load-bearing:
 
-* **It takes an already-loaded config mapping**, never a path. The harness config is
-  opened in exactly one module (:mod:`the_loop.harness_config`, decision-044), and
-  ``test_harness_config.py`` H2 pins that.
+* **It takes an already-loaded config mapping**, never a path. The CLI opens no
+  harness config at all (issue-352, decision-123): ``the-loop instructions`` is handed
+  the registered docs on its command line — the agent reads ``customInstructions`` and
+  passes them — and builds the mapping this module reads.
 * **It reports facts *about* docs, never their contents.** Absolute and out-of-repo
   paths are supported on purpose — per-machine and company-wide docs are the feature —
   so path confinement is not the boundary. The boundary is output: a doc's body has no
@@ -170,7 +171,8 @@ def _resolve(root: Path, entry: Mapping[str, Any]) -> InstructionDoc:
 def collect_docs(root: Path, config: Mapping[str, Any]) -> List[InstructionDoc]:
     """Every registered instruction doc, in configured order, with its state.
 
-    ``config`` is an already-loaded harness config (see :mod:`the_loop.harness_config`).
+    ``config`` is a mapping shaped like a harness config's ``customInstructions`` block —
+    built by the command from its ``--doc``/``--on-missing`` arguments (issue-352).
     Order is preserved because it is load-bearing: ``reference/instructions.md`` says
     later docs win on conflict, so a reordered report would misdescribe precedence.
 

@@ -223,15 +223,16 @@ def test_every_declared_repo_with_a_finished_loop_releases_the_gate(tmp_path):
     assert result.status == "pass" and result.data["declared"] == 2
 
 
-def test_a_declared_origin_repo_needs_a_configured_origin(tmp_path):
-    """Without `ticketing.github`, a top-level pr-<n>/ cannot be attributed to a
-    repository — so the gate says so rather than guessing which loop was meant."""
+def test_a_declared_origin_repo_needs_a_known_origin(tmp_path):
+    """Without a known origin repository (the work item's ref, or the checkout's
+    remote — issue-352), a top-level pr-<n>/ cannot be attributed to a repository,
+    so the gate says so rather than guessing which loop was meant."""
     ctx = _ctx(tmp_path)
     _log(ctx.work_item.spec_dir, ["octo/repo"])
     _inner_state(ctx.work_item.spec_dir, 16, "complete")
     result = await_inner_loops(ctx)
     assert result.status == "wait"
-    assert "ticketing.github" in result.messages[0].text
+    assert "origin repository is unknown" in result.messages[0].text
 
 
 def test_a_malformed_declared_repo_blocks_rather_than_waits(tmp_path):
@@ -263,12 +264,33 @@ def test_bootstrap_refuses_a_hostile_repository(repo):
 
 
 def test_bootstrap_resolves_the_origin_repository(tmp_path):
+    """issue-352: the caller's word first (the daemon knows the work item), the
+    checkout's `origin` remote second, unknown last — never a harness config."""
+    import subprocess
+
+    (tmp_path / "docs" / "specs" / "issue-15").mkdir(parents=True)
     (tmp_path / ".the-loop").mkdir()
     (tmp_path / ".the-loop" / "harness-config.yaml").write_text(
-        "ticketing:\n  github:\n    owner: octo\n    repo: repo\n",
+        "ticketing:\n  github:\n    owner: smuggled\n    repo: nope\n",
         encoding="utf-8",
     )
-    (tmp_path / "docs" / "specs" / "issue-15").mkdir(parents=True)
+    assert build_runtime(tmp_path).config["originRepo"] == ""
+    assert build_runtime(tmp_path, origin_repo="octo/repo").config["originRepo"] == (
+        "octo/repo"
+    )
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "remote",
+            "add",
+            "origin",
+            "git@github.com:octo/repo.git",
+        ],
+        check=True,
+    )
     assert build_runtime(tmp_path).config["originRepo"] == "octo/repo"
 
 

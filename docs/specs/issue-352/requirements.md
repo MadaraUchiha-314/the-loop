@@ -4,94 +4,186 @@ phase: requirements-definition
 workItem: "github:MadaraUchiha-314/the-loop#352"
 status: draft
 approvedBy: []
-collaborators: [maintainer]
+collaborators: [product-manager, architect, engineer, security-reviewer]
 overrides: {}
 ---
 
-# Requirements: audit how `harness-config.yaml` is used and whether it is required
+# Requirements: the harness config is the agent's alone — the CLI reads no key of it
 
-> An **audit** work item: the deliverable is a report, not code. Following the shape
-> issue-212 used for its vendor-SDK analysis — the questions become requirements, the
-> answers become `docs/reports/harness-config-audit.md`, and every change the audit
-> recommends is raised as its own ticket rather than made here.
+> Phase 1 of 3 (requirements → design → tasks). Following the Kiro spec approach
+> (<https://kiro.dev/docs/specs/>). This phase MUST be reviewed and approved by the
+> required collaborators before moving to design.
+>
+> **How this work item got here.** It began as an audit
+> ([`docs/reports/harness-config-audit.md`](../../reports/harness-config-audit.md)):
+> which systems read `.the-loop/harness-config.yaml`, how each key is enforced, and
+> whether the file is needed. The owner's review of that audit on
+> [PR #353](https://github.com/MadaraUchiha-314/the-loop/pull/353) turned it into a
+> breaking change, and these requirements are that change. The audit's findings are the
+> evidence behind each requirement and are not repeated here.
 
 ## Introduction
 
-[Issue-352](https://github.com/MadaraUchiha-314/the-loop/issues/352) asks five
-questions about `.the-loop/harness-config.yaml`:
+[Issue-352](https://github.com/MadaraUchiha-314/the-loop/issues/352), and the owner's
+review on PR #353:
 
-> - `reviews.critics` should be moved to `cli-config.yaml` as it's really the operator
->   who controls it
-> - `workflow.phases` is redundant since the whole workflow is controlled through graphs
-> - why is a `harness-config` even necessary? which system reads it? how is it enforced?
-> - can we completely remove it?
-> - if yes, what are the candidates to move to cli-config to be controlled more by
->   the-loop's operator rather than the repository owner
+> Let's remove most of the harness-config. Additionally the CLI shouldn't read any of
+> the harness config. the-loop's skill should tell the coding harness (cursor/claude/codex)
+> about the config and how to use it. CLI shouldn't depend on it at all. Make this
+> breaking change.
 
-[decision-044](../../decisions/decision-044.md) answered the *narrow* form of this
-question (issue-121: why does the CLI read it) with a declared, test-pinned read
-surface. This audit answers the *wide* form: every reader, every key, and whether the
-file has a reason to exist at all.
+with six inline rulings on the audit's per-key table: `ticketing` — *"Not needed. Users
+can use whatever ticketing system they want. Repository shouldn't enforce"*;
+`workflow.phaseLabelPrefix` — *"remove"*; `workflow.requireHumanReviewPerPhase` —
+*"delete"*; `localOrchestration` — *"remove this. not needed."*; `reviews.critics[]` —
+*"this should be moved to cli-config."*; `notifications` — *"delete"*.
 
-## Requirement 1 — Every reader of the file is named, with evidence
+Until this change the CLI read eight keys of a repository's harness config through one
+declared, test-pinned module ([decision-044](../../decisions/decision-044.md)), wrote
+the-loop's default harness config into an unconfigured checkout before spawning a
+session there (issue-193, issue-201), and kept `workflow.phases` faithful to the graph by
+a parity test. After it, the file is read by the agent and by nothing else.
 
-**User story:** As the owner, I want to know exactly which systems read
-`harness-config.yaml`, so that "which system reads it?" has one answer with a file and
-line behind each claim.
+```mermaid
+graph LR
+  subgraph before["before"]
+    H1["harness-config.yaml"] --> A1["agent"]
+    H1 -->|"8 keys, READS"| C1["CLI"]
+    C1 -.->|"adopt: writes the default"| H1
+  end
+  subgraph after["after"]
+    H2["harness-config.yaml<br/>(agent's policy, 0.3.0)"] --> A2["agent"]
+    A2 -->|"--spec-dir · --glob · --doc"| C2["CLI"]
+    K2["cli-config.yaml<br/>specDir · critics · hooks (0.9.0)"] --> C2
+  end
+```
 
-### Acceptance criteria (EARS)
+## Requirement 1 — The CLI does not open a repository's harness config
 
-1. THE report SHALL list every reader by surface — the agent (skill, commands), the CLI
-   (`the_loop.harness_config.READS`), the hooks and rules, this repository's own tests
-   and CI, and the writers — with the mechanism each uses. (AC1)
-2. THE report SHALL classify every top-level schema key by who reads it and how it is
-   enforced (code gate, prompt-following, or nothing), in one table. (AC2)
-3. WHEN a key is claimed unread THEN the claim SHALL rest on a search of the skill, the
-   commands and the CLI source, not on memory. (AC3)
-
-## Requirement 2 — The two named examples are settled on evidence
-
-**User story:** As the owner, I want `reviews.critics` and `workflow.phases` each
-examined against what actually reads them, so that the ticket's two propositions are
-confirmed or refuted rather than restated.
-
-### Acceptance criteria (EARS)
-
-1. THE report SHALL state what `workflow.phases` is read by, what pins it to the graph,
-   and what would replace its one remaining job (label creation at `/init`). (AC4)
-2. THE report SHALL weigh `reviews.critics[]` against each of decision-044's four
-   arguments for keeping it in the harness config, and state which survive. (AC5)
-
-## Requirement 3 — "Can it be removed?" gets a yes or a no, with the consequences
-
-**User story:** As the owner, I want a direct answer to whether the file can go, so that
-the decision is mine to make on stated consequences.
+**User story:** As the operator, I want every `the-loop` command and daemon to take its
+configuration from my own `cli-config.yaml` and from its arguments, so that no checkout
+can configure the tool I run and no file I did not write is read on my behalf.
 
 ### Acceptance criteria (EARS)
 
-1. THE report SHALL answer removal directly and enumerate what breaks — per key, per
-   command, per session kind (daemon-spawned, cloud, CI checkout). (AC6)
-2. THE report SHALL list the keys that belong to the operator with a proposed home in
-   `cli-config.yaml`, and the keys read by nothing as deletion candidates. (AC7)
-3. THE report SHALL raise each recommended change as a follow-up with a tier, and SHALL
-   itself change no config, schema, code or rule. (AC8)
+1. THE CLI SHALL contain no code path that opens `.the-loop/harness-config.yaml` or the
+   pre-rename `.the-loop/config.yaml` in any checkout. (AC1.1)
+2. WHEN a repository's harness config declares a critic, a graph hook, a spec directory,
+   a ticketing repository or a notification filter THEN the CLI SHALL behave exactly as if
+   the file were absent. (AC1.2)
+3. THE CLI SHALL NOT write a harness config into any checkout: the adopt-on-spawn path and
+   the packaged default are removed, and the `harness.config_scaffolded` event leaves the
+   catalog. (AC1.3)
+4. WHEN `the-loop check`, `graph`, `scenarios`, `instructions` or `critic` runs in a
+   checkout with no CLI config anywhere THEN it SHALL run on defaults, as before. (AC1.4)
+
+## Requirement 2 — What the CLI needed has another source
+
+**User story:** As the operator, I want the spec directory, the critic roster and the
+graph hooks in my CLI config, and the rest passed on the command line, so that the CLI
+loses no capability when it loses the harness-config read.
+
+### Acceptance criteria (EARS)
+
+1. THE spec directory SHALL resolve as `--spec-dir` (on `check` and `graph`, carried
+   through the API bodies and the SDK), else `routing.graph.specDir` (default
+   `docs/specs`), else `docs/specs` — one value for every checkout an instance drives, and
+   the same value for the coupling's skip decision and the runtime it builds. (AC2.1)
+2. THE phase label SHALL be `loop:<phase>`, a constant. (AC2.2)
+3. THE origin repository SHALL be the work item's own when the daemon builds the runtime
+   (passed from the ref), else the checkout's `origin` remote, else unknown — in which
+   case no ref is derived and the failure names both remedies. (AC2.3)
+4. A contribution or a review (`GUEST_LOOPS`) SHALL keep its spec tree out of git and post
+   its plan to the thread; the work item's own loops SHALL do neither — keyed on the loop
+   (`guestLoop`), never on the checkout. (AC2.4)
+5. THE `notify` hook SHALL read roles only from the node's `with:`. (AC2.5)
+6. THE critic roster SHALL be the CLI config's top-level `critics[]`, same entry shape as
+   before, read strictly from the resolved CLI config; `reviews.criticReviewCount` SHALL
+   stay in the harness config. (AC2.6)
+7. THE graph hooks SHALL be the CLI config's `routing.graph.hooks`, same shape, a `path`
+   resolving against each checkout; `routing.graph.repoHooks` SHALL be removed and
+   migrated; `the-loop graph hooks` SHALL report the CLI config's declaration without
+   importing it. (AC2.7)
+8. `the-loop scenarios` SHALL search `--glob` patterns, else the built-in defaults;
+   `the-loop instructions` SHALL check the `--doc` entries (a path, or a JSON object
+   carrying `path` and `notes`) under `--on-missing`, and SHALL refuse a `--doc` that
+   starts like JSON and is not. (AC2.8)
+
+## Requirement 3 — The harness config shrinks to the agent's policy
+
+**User story:** As a repository owner, I want the harness config to hold only what the
+agent reads about how work is done here, so that nothing in it pretends to govern a tool
+that does not read it.
+
+### Acceptance criteria (EARS)
+
+1. THE schema, the template and this repository's config SHALL drop `ticketing`,
+   `workflow.phases`, `workflow.phaseLabelPrefix`, `workflow.specApproach`,
+   `workflow.requireHumanReviewPerPhase`, `localOrchestration`, `notifications`,
+   `reviews.critics` and `graph`, and SHALL carry `version: "0.3.0"`. (AC3.1)
+2. THE schema's onboarding groups SHALL name only keys that exist. (AC3.2)
+3. THE CLI config schema SHALL gain `critics[]` and `routing.graph.hooks`, lose
+   `routing.graph.repoHooks`, default `routing.graph.specDir` to `docs/specs`, and carry
+   `version: "0.9.0"`; `the-loop migrate-config` SHALL strip `repoHooks` and say where
+   critics and hooks live now. (AC3.3)
+4. EVERY new CLI-config leaf SHALL be documented under `docs/config/cli/` with its type
+   and default. (AC3.4)
+
+## Requirement 4 — The skill tells the harness
+
+**User story:** As the coding harness, I want the skill to tell me what the harness config
+is for and what to hand the CLI, so that I pass the flags the CLI no longer reads for
+itself.
+
+### Acceptance criteria (EARS)
+
+1. `SKILL.md` § Configuration SHALL state that the file is the agent's and that the CLI
+   never reads it, and SHALL map each key the CLI once read to the flag or CLI-config key
+   that carries it now. (AC4.1)
+2. THE reference files and commands that named `reviews.critics[]`, `graph.hooks`,
+   `notifications.events`, `workflow.phases`, `<workflow.phaseLabelPrefix>` or
+   `localOrchestration` SHALL be updated; `/the-loop:init` SHALL create labels from the
+   graph's phases; `/the-loop:upgrade-the-loop` SHALL carry the `0.3.0`/`0.9.0`
+   migration. (AC4.2)
+3. THE Claude SessionStart hook and the Cursor rule SHALL both test for
+   `.the-loop/harness-config.yaml`. (AC4.3)
+
+## Requirement 5 — The record
+
+1. THE change SHALL be recorded as a decision superseding decision-044, the affected
+   capability docs SHALL gain a history row, and the audit report SHALL say what became
+   of its recommendations. (AC5.1)
 
 ## Out of scope
 
-- Making any of the recommended changes. Each is a ticket of its own; the biggest
-  (moving `reviews.critics[]`) refines decision-044 and needs its own decision record.
-- The CLI config's own surface. Only what might *move into* it is considered.
+- Moving `tokenEconomy`'s model ids, `observability.browserLogging` or
+  `externalTools` — the owner ruled on no such row; they stay agent-read policy.
+- Per-repository spec directories under one instance. One value per instance is the
+  accepted cost; an operator with two layouts runs two instances.
+- A `the-loop graph phases` command. `/init` lists the phases from the graph file the
+  CLI already ships; a command is a later nicety.
 
 ## Security considerations
 
-The report handles no secrets and changes no executable configuration. It does discuss
-the security posture of `reviews.critics[]` (executable config in a committed file) as
-an input to the recommendation; that analysis is descriptive.
+Threat-model-lite for the change itself:
+
+| # | Abuse case | Disposition |
+|---|---|---|
+| A1 | A pull request to a repository adds a `reviews.critics[]` entry whose `command` is hostile, hoping the daemon runs it. | Closed by construction: the CLI never reads the file. A committed critic entry is inert (T5). |
+| A2 | A checkout carries a hook module the operator never declared, hoping `load_graph(repo=…)` imports it. | Nothing is imported without a declaration in the operator's CLI config (T6). |
+| A3 | A checkout's `workflow.specDir` names `../elsewhere` to steer a write outside the checkout. | The CLI does not read it. The operator's own `specDir` is still contained by `_is_contained` (T7). |
+| A4 | A forged `origin` remote in a foreign checkout makes the daemon drive a graph there. | Unchanged gate: `_checkout_belongs_to` must match the work item's repository first (T8). |
+| A5 | The migration silently drops an operator's `repoHooks: false`, re-enabling hooks they refused. | There is nothing to re-enable: hooks run only when declared in the CLI config, and the migration report says so (T9). |
+| A6 | A `--doc` value that is JSON smuggles a key other than `path`/`notes`. | `collect_docs` reads `path` and `notes` only; other keys are ignored, and a doc's body never reaches the report (T10). |
+
+The harness config itself stays in this repository's `autonomy.sensitivePaths` as the
+agent's policy (autonomy tiers, security gates); `.the-loop/cli-config.yaml` joins it
+because `critics[]` and `routing.graph.hooks` are executable configuration.
 
 ## Risk tier
 
-**Tier 2** (`autonomous-complete`): documentation only — one report, its two index
-entries, one pointer from the config reference, and this spec. No schema, config, code
-or workflow touched, so `autonomy.sensitivePaths` is not hit. The full spec chain is not
-required at this tier (`CLAUDE.md`, `config.autonomy`); the phases walked and skipped are
-recorded in [`execution-log.md`](execution-log.md).
+**Tier 4** (`human-approves-pr`, named security sign-off per
+`security.review.humanSignOffMinTier: 4`): two schemas change, executable configuration
+moves files, the daemon's coupling changes behaviour, and `.the-loop/harness-config.yaml`
+is a sensitive path. The owner's review on PR #353 is the named decision; their approval
+of the PR is the sign-off.

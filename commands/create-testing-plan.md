@@ -55,7 +55,7 @@ what this artifact should reference rather than restate.
    (issue-281). The plan **names commands an agent will run**, so it is executable
    content — review it like code (decision-043).
 
-4. **Advance the phase.** Set the ticket label to `<phaseLabelPrefix>test-planning` and
+4. **Advance the phase.** Set the ticket label to `loop:test-planning` and
    mirror `phase: test-planning` in the execution log.
 
 5. **Reference on the ticket** (link the checked-in `testing-plan.md`; later changes are

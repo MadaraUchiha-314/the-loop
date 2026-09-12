@@ -2,13 +2,16 @@
 
 A **hook** is the-loop's unit of work at a node boundary: one function, one signature, one
 return type. Ten ship with the CLI ([process-graph](/capabilities/process-graph) § The hook
-contract). Since [issue-248](https://github.com/MadaraUchiha-314/the-loop/issues/248) a
-repository can bring its own — a licence-header check on `implementation`, an architecture
+contract). Since [issue-248](https://github.com/MadaraUchiha-314/the-loop/issues/248) an operator
+can bring their own — a licence-header check on `implementation`, an architecture
 sign-off on `design`, a ping to your change-management system when a work item reaches
-`needs-review`.
+`needs-review`. Since [issue-352](https://github.com/MadaraUchiha-314/the-loop/issues/352)
+the declaration is the **operator's CLI config**, not a repository's harness config: the
+CLI reads no repository's configuration, so a hook runs only where the operator wrote it
+down. The module can still live in the repository's tree.
 
-The graph itself stays the-loop's: a repository cannot declare nodes, edges or loops, and
-cannot remove, reorder or replace a shipped hook. What it can do is **append** one of its own
+The graph itself stays the-loop's: nobody declares nodes, edges or loops, and nobody
+removes, reorders or replaces a shipped hook. What you can do is **append** one of your own
 to a boundary the shipped graph already declares.
 
 ## Write it
@@ -40,34 +43,36 @@ to run.
 
 ## Declare it
 
-In the repository's [harness config](/config/harness-config):
+In your [CLI config](/config/cli/routing-options#graph-hooks):
 
 ```yaml
-graph:
-  hooks:
-    modules:
-      - path: .the-loop/hooks/house_rules.py     # a .py file inside this repository
-      - module: acme_loop_hooks.compliance       # or an installed dotted name
-    attach:
-      - hook: x-licence-header
-        node: implementation
-        boundary: exit                           # entry | exit (default exit)
-      - hook: x-arch-signoff
-        node: design
-        with: {board: platform}                  # reaches the hook as ctx.params
+routing:
+  graph:
+    hooks:
+      modules:
+        - path: .the-loop/hooks/house_rules.py     # a .py file inside each checkout
+        - module: acme_loop_hooks.compliance       # or an installed dotted name
+      attach:
+        - hook: x-licence-header
+          node: implementation
+          boundary: exit                           # entry | exit (default exit)
+        - hook: x-arch-signoff
+          node: design
+          with: {board: platform}                  # reaches the hook as ctx.params
 ```
 
-`the-loop graph hooks` prints what a repository declares **without importing any of it**;
-`the-loop check <work item>` is what loads it.
+A `path` resolves against each checkout the loop walks, so one declaration serves every
+repository this instance drives. `the-loop graph hooks` prints what is declared **without
+importing any of it**; `the-loop check <work item>` is what loads it.
 
-## What a repository hook can and cannot do
+## What a hook of your own can and cannot do
 
 | It can | It cannot |
 |---|---|
 | Block a node (`HookResult.blocked`) | Unblock one — it is appended *after* every shipped hook, and the chain short-circuits at the first that does not pass |
 | Keep a node waiting (`waiting`) or decline to run (`skipped`) | Declare an `outcome` — the value is dropped with a warning, so it can neither approve a gate nor choose an edge |
 | Read the repository, the work item and the node | Take a name outside `x-`, or replace/reorder/remove a shipped hook |
-| Ship as a repo file or an installed package | Be loaded from outside the repository — an absolute path, a `..` escape or a symlink out is refused |
+| Ship as a file in the checkout or an installed package | Be loaded from outside the checkout — an absolute path, a `..` escape or a symlink out is refused |
 
 ## Failures are load failures
 
@@ -80,21 +85,20 @@ shipped one is.
 
 ## Before you adopt one
 
-A repository's hook modules are **imported into the-loop's own process**, with its
-environment. Adopting them is adopting that repository's code — review a hook module the way
-you review anything else that runs with your credentials in scope, and remember the
-declaration lives in a repo-tracked file precisely so it is reviewable.
-
-An operator refuses the whole mechanism machine-wide with
-[`routing.graph.repoHooks: false`](/config/cli/routing-options#graphrepohooks). A repository
-that declared hooks is then named in a warning rather than quietly losing its gates.
+Hook modules are **imported into the-loop's own process**, with its environment. Adopting
+one is adopting its code — review a hook module the way you review anything else that runs
+with your credentials in scope. That is why the declaration is yours and not a
+repository's: a checkout that carries a hook module you never declared has nothing run
+(issue-352), so there is no machine-wide refusal switch any more — the former
+`routing.graph.repoHooks` is stripped by `the-loop migrate-config`.
 
 Modules are imported **once per process**: a daemon picks up an edited hook module on its
 next start.
 
 ## See also
 
-- [`the-loop graph hooks`](/cli/commands/graph#hooks) — what a repository declares.
+- [`the-loop graph hooks`](/cli/commands/graph#hooks) — what your config declares.
 - [process-graph](/capabilities/process-graph) — the hook contract and the shipped hooks.
-- [harness config](/config/harness-config) — where `graph.hooks` lives, and why.
+- [routing options](/config/cli/routing-options#graph-hooks) — where `routing.graph.hooks`
+  lives, and why it is the operator's.
 - [decision-096](/decisions/decision-096) — the trade-offs behind the four rules.

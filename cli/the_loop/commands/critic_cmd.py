@@ -77,7 +77,7 @@ class CriticCommand(Command):
 
         lst = actions.add_parser(
             "list",
-            help="List reviews.critics[] with each one's executable and availability",
+            help="List the CLI config's critics[] with each one's executable and availability",
         )
         lst.add_argument("--root", default=".", help="Project root (default: .)")
         lst.add_argument(
@@ -96,7 +96,9 @@ class CriticCommand(Command):
                 "invocation — there is deliberately no run-all mode."
             ),
         )
-        run.add_argument("critic", help="The reviews.critics[] entry to run, by name.")
+        run.add_argument(
+            "critic", help="The CLI config's critics[] entry to run, by name."
+        )
         run.add_argument("--root", default=".", help="Project root (default: .)")
         prompt = run.add_mutually_exclusive_group(required=True)
         prompt.add_argument("--prompt", help="The review prompt, inline.")
@@ -147,8 +149,8 @@ class CriticCommand(Command):
             # An empty critics list is a valid configuration (self-review only),
             # so this is information, not a failure.
             print(
-                "No critics configured — add reviews.critics[] to "
-                ".the-loop/harness-config.yaml to run critic rounds."
+                "No critics configured — add critics[] to your cli-config.yaml "
+                "(the operator's file, not the repository's) to run critic rounds."
             )
             return _EXIT_OK
         print(_render_table(rows))

@@ -11,8 +11,9 @@ Kiro-style 3-phase spec workflow (https://kiro.dev/docs/specs/). Load
 `.the-loop/harness-config.yaml` first, then **read every custom instruction doc it registers**
 (`customInstructions.docs`, in order; missing docs per `customInstructions.onMissing`)
 and honor them throughout — they carry the operator's conventions and styles
-(`reference/instructions.md`). Run `the-loop instructions` alongside that read, so a
-registration that fails to resolve surfaces instead of quietly contributing nothing. Apply any per-task `overrides` from the work item's
+(`reference/instructions.md`). Run `the-loop instructions --doc <path>… --on-missing
+<policy>` with the entries you read, so a registration that fails to resolve surfaces
+instead of quietly contributing nothing (the CLI reads no harness config — issue-352). Apply any per-task `overrides` from the work item's
 front-matter. Specs live in `<workflow.specDir>/<id>/` (default `docs/specs/<id>/`).
 
 **`work-on` is the superset.** The same flow is also exposed as granular commands you can
@@ -32,7 +33,7 @@ detail — do not lose it.
 ## Phase state machine
 
 Keep the work item's phase **label** in the ticketing system in sync at every
-transition (label = `<workflow.phaseLabelPrefix><phase>`, e.g. `loop:design`), and
+transition (label = `loop:<phase>`, e.g. `loop:design` — fixed, issue-352), and
 mirror it in the execution log's `phase` front-matter (`brainstorming` is optional — enter
 it only when the work needs a scratchpad; otherwise start at `requirements-definition`):
 
@@ -99,7 +100,7 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
    review (issue-281): its `request-review` posts the one ask, and on an authorized
    approval the gate records the approver and locks the artifact itself. Never post an
    approval request of your own and never set `status: approved`.
-   `requireHumanReviewPerPhase` defaults to true and is delivered by that gate.
+   The human review per phase is always on and is delivered by that gate.
 
 5. **Phase 2 — Design** (`design`). Create `docs/specs/<id>/design.md` derived from the
    approved requirements: architecture, components/interfaces, data models, error
@@ -171,10 +172,9 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
    available, else the-loop's checklist (`reference/security.md`); a work item at
    risk tier ≥ `security.review.humanSignOffMinTier` waits for a named human security
    sign-off. Record every review as a PR/ticket comment and in the execution log's
-   review table (the security round in its Security review section). Notify per the
-   `notifications.events` filters (harness-config.yaml) when a human action is pending —
-   the event's roles name who it concerns; delivery is the configured channel's
-   (`channels.slack`), not a per-person lookup.
+   review table (the security round in its Security review section). A pending human
+   action is notified by the graph's `notify` hook on the event bus; delivery is the
+   operator's channel (`channels.slack` in the CLI config), not a per-person lookup.
 
 11. **Complete** (`complete`). Present validated evidence that the acceptance criteria
    are met — **summarised from the verification results** rather than re-derived — on the

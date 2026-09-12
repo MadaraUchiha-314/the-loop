@@ -34,8 +34,9 @@ usage on `MadaraUchiha-314/the-loop` via the GitHub API.
 
 ### 1. Phase labels — `loop:<phase>`
 
-The workflow's phase state machine. One label per `workflow.phases`, prefixed with
-`workflow.phaseLabelPrefix` (default `loop:`), created by `/the-loop:init`
+The workflow's phase state machine. One label per phase of the shipped work-item loop,
+prefixed `loop:` (a fixed vocabulary since issue-352 — the prefix and the phase list were
+harness-config keys until then), created by `/the-loop:init`
 ([`commands/init.md`](../../commands/init.md) step 4) and kept in sync by the workflow
 commands as an item advances:
 
@@ -228,8 +229,10 @@ dashboard question is answered by *applying* the taxonomy, not by writing new so
 
 ## Pointers
 
-- Phase labels & prefix: `workflow.phases` / `workflow.phaseLabelPrefix` in
-  [`.the-loop/harness-config.yaml`](../../.the-loop/harness-config.yaml),
+- Phase labels: the `phase:` of each node in
+  [`cli/the_loop/graph/pdlc-work-item-loop.yaml`](../../cli/the_loop/graph/pdlc-work-item-loop.yaml),
+  prefixed `loop:` (`PHASE_LABEL_PREFIX`); no longer configured in
+  [`.the-loop/harness-config.yaml`](../../.the-loop/harness-config.yaml) (issue-352),
   [`harness-config.schema.json`](../../.the-loop/harness-config.schema.json) (shipped with
   the plugin — [`manifest.schemasDir`](../../.the-loop/manifest.yaml))
 - Label creation: [`commands/init.md`](../../commands/init.md) step 4

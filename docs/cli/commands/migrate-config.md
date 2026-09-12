@@ -27,7 +27,17 @@ A breaking change is only as good as its migration, so four properties hold:
 
 ## What it migrates today
 
-Current version: **`0.8.0`**.
+Current version: **`0.9.0`**.
+
+**`routing.graph.repoHooks` removed** (issue-352,
+[decision-123](/decisions/decision-123)). The CLI reads no repository's harness config any
+more, so there is nothing of a repository's to refuse: the switch that refused a
+repository's `graph.hooks` goes, and the declaration itself is now yours, under
+[`routing.graph.hooks`](/config/cli/routing-options#graph-hooks). The critic roster moved
+the same way — from the harness config's `reviews.critics[]` to the top-level
+[`critics[]`](/config/cli/critics-options) here. Nothing inside this file is converted;
+the report says where to copy the entries you want from the repositories you operate, and
+what you do not copy does not run.
 
 **`polling.sources[].repos` → the top-level `repositories`** (issue-348). The list of
 repositories an instance works with was named after the one ingress that read it, so the
@@ -96,10 +106,10 @@ migrated the CLI config:
   · notifications removed — nothing read it (issue-304); Slack is declared once under `channels.slack`
   · channels.slack.events → channels.slack.subscribe (a channel subscribes AND publishes now, issue-309)
   · channels.slack.authorizedUsers → routing.authorizedUsers (1 Slack member id(s), one `{slack: …}` entry each — identity is declared once, issue-309)
-  · version '0.1.0' → '0.8.0'
+  · version '0.1.0' → '0.9.0'
 
 --- /home/you/.the-loop/cli-config.yaml (preview, not written) ---
-version: 0.8.0
+version: 0.9.0
 …
 ```
 

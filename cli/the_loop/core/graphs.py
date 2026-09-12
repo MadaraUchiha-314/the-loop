@@ -43,7 +43,7 @@ def resolve_repo(repo: str) -> Path:
     return Path(repo).expanduser().resolve()
 
 
-def _recorded_loop(path: Path, work_item: str) -> str:
+def _recorded_loop(path: Path, work_item: str, spec_root: str) -> str:
     """The outer-path loop this work item's state records (issue-185).
 
     ``""`` — the shipped default — for a fresh item, a pre-issue-185 state
@@ -53,12 +53,10 @@ def _recorded_loop(path: Path, work_item: str) -> str:
     contribution or an ad-hoc item (issue-225) with no new flags: the recorded
     fact travels with the checkout.
     """
-    from .. import harness_config
     from ..graph.model import resolve_outer_loop
     from ..graph.state import GraphState
 
     try:
-        spec_root = harness_config.spec_dir(harness_config.load(path))
         state = GraphState.load(path / spec_root / work_item, work_item)
         recorded = str(getattr(state, "loop", "") or "")
     except Exception:  # noqa: BLE001 — an unreadable state reads as the default
@@ -71,32 +69,32 @@ def _runtime(
     pr: Optional[int] = None,
     pr_repo: str = "",
     work_item: str = "",
-    adopt: bool = False,
+    spec_dir: str = "",
 ):
-    """A runtime for ``repo``, adopting it first when the caller changes state.
+    """A runtime for ``repo``.
 
-    ``adopt`` is passed explicitly by the four verbs that write — `complete`,
-    `advance`, `force`, `skip` — and by none of the readers (issue-193). It is a
-    parameter rather than something inferred from the verb because `check`'s
-    purity is what lets CI run the real runtime (issue-109 R8.8); a filesystem
-    write hidden behind a call that reads like a lookup would leave that property
-    resting on nothing a reviewer can check.
+    ``spec_dir`` is the caller's explicit choice (``--spec-dir``); unset, the CLI
+    config's ``routing.graph.specDir`` answers, else ``docs/specs``
+    (:func:`the_loop.graph.bootstrap.resolve_spec_root`). Resolved **once** here
+    and handed to both the loop lookup and the runtime, so the directory the
+    recorded loop is read from is the directory the state is written to.
 
-    Adoption runs **before** ``build_runtime`` so ``repoInitialized`` is true on
-    the very run that adopted the repository, and never for a guest loop — a
-    contribution (issue-185, PR #187) or a review (issue-279): the repository
-    the-loop was invited into keeps the-loop out of its history.
+    Nothing here writes to the checkout (issue-352): until then the four verbs
+    that drive the graph adopted an unconfigured repository by writing the-loop's
+    default harness config into it, a file the CLI no longer reads or owns.
     """
-    from .. import harness_config
-    from ..graph.model import GUEST_LOOPS
+    from ..graph.bootstrap import resolve_spec_root
 
     if pr_repo and pr is None:
         raise ValueError("pr_repo names a repository, not a loop: pass pr as well")
     path = resolve_repo(repo)
-    loop = _recorded_loop(path, work_item) if pr is None and work_item else ""
-    if adopt and loop not in GUEST_LOOPS:
-        harness_config.scaffold(path)
-    return build_runtime(path, pr_number=pr, pr_repo=pr_repo, loop=loop)
+    spec_root = resolve_spec_root(override=spec_dir)
+    loop = (
+        _recorded_loop(path, work_item, spec_root) if pr is None and work_item else ""
+    )
+    return build_runtime(
+        path, spec_root=spec_root, pr_number=pr, pr_repo=pr_repo, loop=loop
+    )
 
 
 def check(
@@ -105,6 +103,7 @@ def check(
     recompute: bool = False,
     pr: Optional[int] = None,
     pr_repo: str = "",
+    spec_dir: str = "",
 ) -> Dict[str, Any]:
     """`the-loop check` for one work item: the status report as a dict.
 
@@ -136,7 +135,7 @@ def check(
             "repoResolved": False,
         }
     return (
-        _runtime(repo, pr, pr_repo, work_item)
+        _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir)
         .status(work_item, recompute=recompute)
         .as_dict()
     )
@@ -150,9 +149,10 @@ def complete(
     ref: str = "",
     pr: Optional[int] = None,
     pr_repo: str = "",
+    spec_dir: str = "",
 ) -> Dict[str, Any]:
     """A completion claim for the current (or named) node — issue-148 semantics."""
-    return _runtime(repo, pr, pr_repo, work_item, adopt=True).complete(
+    return _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir).complete(
         work_item, ref=ref, node=node, actor=actor
     )
 
@@ -163,10 +163,11 @@ def advance(
     ref: str = "",
     pr: Optional[int] = None,
     pr_repo: str = "",
+    spec_dir: str = "",
 ) -> Dict[str, Any]:
     """Evaluate the current node's exit chain and take the matching edge."""
     return (
-        _runtime(repo, pr, pr_repo, work_item, adopt=True)
+        _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir)
         .advance(work_item, ref=ref)
         .as_dict()
     )
@@ -181,10 +182,11 @@ def force(
     ref: str = "",
     pr: Optional[int] = None,
     pr_repo: str = "",
+    spec_dir: str = "",
 ) -> Dict[str, Any]:
     """The authorized-operator escape hatch. Requires a reason; never forges a
     verdict. Not exposed over MCP (design §Security)."""
-    runtime = _runtime(repo, pr, pr_repo, work_item, adopt=True)
+    runtime = _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir)
     result = graph_runtime.force(
         runtime, work_item, to_node, reason, actor=actor, ref=ref
     )
@@ -206,6 +208,7 @@ def skip(
     ref: str = "",
     pr: Optional[int] = None,
     pr_repo: str = "",
+    spec_dir: str = "",
 ) -> Dict[str, Any]:
     """Declare skips for a work item (issue-177) — the operator channel.
 
@@ -214,7 +217,7 @@ def skip(
     graph's skip vocabulary, or naming nodes the pointer already reached, come
     back in ``rejected`` rather than taking effect.
     """
-    runtime = _runtime(repo, pr, pr_repo, work_item, adopt=True)
+    runtime = _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir)
     result = graph_runtime.declare_skips(
         runtime,
         work_item,
@@ -235,15 +238,17 @@ def skip(
     }
 
 
-def show(repo: str, pr: Optional[int] = None, pr_repo: str = "") -> Dict[str, Any]:
+def show(
+    repo: str, pr: Optional[int] = None, pr_repo: str = "", spec_dir: str = ""
+) -> Dict[str, Any]:
     """The process graph this repo runs on: its nodes and edges, as data.
 
-    A read of *which* graph is in force — the shipped one, or the override the
-    repo configures — so it belongs on the same surface as the reports derived
+    A read of *which* graph is in force — the shipped one, with the operator's
+    own hooks attached — so it belongs on the same surface as the reports derived
     from it rather than being re-resolved by each client. With ``pr`` set it is
     the inner ``pdlc-pr-loop`` instead.
     """
-    runtime = _runtime(repo, pr, pr_repo)
+    runtime = _runtime(repo, pr, pr_repo, spec_dir=spec_dir)
     graph = runtime.graph
     return {
         "version": graph.version,

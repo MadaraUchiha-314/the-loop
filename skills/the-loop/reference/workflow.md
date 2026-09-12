@@ -51,9 +51,8 @@ good place to converge on them) and confirm via a ticket comment.
 
 The Kiro 3-phase spec (requirements → design → tasks) plus the **testing plan** that
 sits between design and tasks (issue-163). Stored in `<workflow.specDir>/<id>/` (default
-`docs/specs/<id>/`). The human review per phase
-(`workflow.requireHumanReviewPerPhase`, default true) is delivered by the graph's
-approval nodes — `requirements-approval`, and `design-approval` covering design and
+`docs/specs/<id>/`). The human review per phase is always on and is delivered by the
+graph's approval nodes — `requirements-approval`, and `design-approval` covering design and
 testing plan together — which classify the feedback, record the approver, and lock the
 artifact (issue-281). The paper trail is the gate's own record; never re-request an
 approval from the session.
@@ -100,15 +99,15 @@ approval from the session.
 **The sequence below is defined by the shipped process graph**
 (`cli/the_loop/graph/pdlc-work-item-loop.yaml`, the **outer** of the two loops —
 see issue-172 for the per-PR `pdlc-pr-loop`) — this reference renders it, never
-redefines it,
-and `cli/tests/test_graph_parity.py` (P4) enforces the agreement in both
-directions (issue-148). On the automated path the graph's own entry hooks write
+redefines it (issue-148; since issue-352 the config mirrors nothing — the graph is
+the only phase list). On the automated path the graph's own entry hooks write
 the label and the log checkpoint at each boundary; when a node's work is done,
 run `the-loop graph complete <id>` so the graph evaluates the gate and advances
 — the pointer is the authority on which phase an item is in.
 
-Label = `<workflow.phaseLabelPrefix><phase>` (e.g. `loop:design`). Keep the label in
-sync at every transition and mirror it in the execution log's `phase` front-matter.
+Label = `loop:<phase>` (e.g. `loop:design`) — one fixed vocabulary, not a setting
+(issue-352). Keep the label in sync at every transition and mirror it in the execution
+log's `phase` front-matter.
 
 ```
 not-started → brainstorming → requirements-definition → design → test-planning
@@ -642,8 +641,9 @@ its own front page still described one loop and three.
 - **The procedure is defined in `reviewing.md`** — attribution prefixes, reply-first-
   then-fix, one-finding-per-commit, stop-on-zero-new-findings, and the diminishing-
   returns escalation. Follow it so review depth is reproducible and the loop converges.
-- **A configured critic is runnable, not decorative.** `reviews.critics[]` carries the
-  critic's executable and args; `the-loop critic run <name> --prompt-file <path>` spawns
+- **A configured critic is runnable, not decorative.** The operator's `critics[]` (in
+  `cli-config.yaml`, issue-352) carries each critic's executable and args;
+  `the-loop critic list` says which exist; `the-loop critic run <name> --prompt-file <path>` spawns
   it (never through a shell) and returns its output as one JSON envelope the running
   harness parses. A round that cannot run is recorded `unavailable` and does **not**
   count toward `criticReviewCount`. See `reviewing.md` § Running a critic round.

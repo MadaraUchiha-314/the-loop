@@ -25,7 +25,7 @@ last spec artifact. A slice of `/the-loop:work-on`; `work-on` remains the supers
    **names a row of `testing-plan.md`'s matrix**, so the DAG and the plan cannot describe
    different work. Include the explicit dependency graph.
 
-3. **Advance the phase.** Set the ticket label to `<phaseLabelPrefix>tasks-breakdown` and
+3. **Advance the phase.** Set the ticket label to `loop:tasks-breakdown` and
    mirror `phase: tasks-breakdown`.
 
 4. **Reference on the ticket** (link the checked-in `tasks.md`). `tasks-breakdown` has

@@ -1,6 +1,6 @@
 # Decision 044: a repository's harness config configures work on that repository, never the daemon itself
 
-- **Status:** proposed
+- **Status:** superseded by [decision-123](decision-123.md) (issue-352): the CLI no longer reads any key of a repository's harness config, so the ⟶ direction this record allowed is closed too
 - **Date:** 2026-07-30
 - **Deciders:** @MadaraUchiha-314 (issue #121)
 - **Work item:** issue-121

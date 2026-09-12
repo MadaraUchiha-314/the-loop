@@ -8,8 +8,9 @@ are hosted, where the log goes.
 
 It is deliberately **not** tied to a repository. The daemon is expected to watch several
 at once, so its settings live in one place rather than in N checkouts
-([decision-032](/decisions/decision-032)). For the per-repository file — phases, reviews,
-autonomy, tooling — see the [harness config](/config/harness-config).
+([decision-032](/decisions/decision-032)), and it is the **only** file the CLI reads:
+a repository's [harness config](/config/harness-config) is the agent's
+([decision-123](/decisions/decision-123)).
 
 A commented starting point ships at
 [`skills/the-loop/templates/cli-config.yaml`](https://github.com/MadaraUchiha-314/the-loop/blob/main/skills/the-loop/templates/cli-config.yaml).
@@ -73,7 +74,7 @@ which it says at start.
 
 - **Type:** `string`
 - **Default:** none — unset is accepted
-- **Current:** `0.8.0`
+- **Current:** `0.9.0`
 
 Schema version of this file. The CLI **refuses to start** against a config that declares
 a version older than the one it needs, naming the key, its replacement and the exact
@@ -253,6 +254,7 @@ Everything else takes its default. Build up from here with the option pages belo
 | [Webhook options](/config/cli/webhook-options) | `webhooks.ghWebhook` — bind address, path, HMAC secret, event filter |
 | [Routing options](/config/cli/routing-options) | `routing` — who may trigger, what spawns, how sessions are hosted |
 | [Standing-session options](/config/cli/standing-sessions-options) | `standingSessions` — the sessions the-loop keeps for itself, which belong to no work item |
+| [Critic options](/config/cli/critics-options) | `critics` — the critic harnesses a session may hand its work to (moved here from the harness config in issue-352) |
 | [Polling options](/config/cli/polling-options) | `polling` — the pull-based ingress and its sources |
 | [Integrations options](/config/cli/integrations-options) | `integrations` — how the-loop's own calls reach GitHub, Slack and Jira |
 | [Channels options](/config/cli/channels-options) | `channels` — the peers on the event bus (the Slack bot) and the ledger they record on |

@@ -7,12 +7,15 @@ the agent. Validated against `harness-config.schema.json`, which ships with the 
 rather than being copied into your repository — see
 [where the schemas live](/config/#where-the-schemas-live).
 
-For the daemon's own, repo-independent settings see the [CLI config](/config/cli/) —
-the two never share a key ([decision-032](/decisions/decision-032)).
+**The CLI never reads this file.** Since
+[issue #352](https://github.com/MadaraUchiha-314/the-loop/issues/352)
+([decision-123](/decisions/decision-123)) it is the agent's alone. Everything the CLI
+used to take from it has another home — the table below says where — and the skill tells
+the agent what to hand the CLI as flags. For the daemon's own settings see the
+[CLI config](/config/cli/); the two never share a key ([decision-032](/decisions/decision-032)).
 
-Whether this file needs to exist at all, which of its keys are read by what, and which
-belong to the operator rather than the repository is audited in
-[Is `harness-config.yaml` required?](/reports/harness-config-audit) (issue-352).
+Why the file exists at all, and what it looked like before it shrank, is the audit in
+[Is `harness-config.yaml` required?](/reports/harness-config-audit).
 
 ## Writing it
 
@@ -33,55 +36,30 @@ setting.
 ## When a repository has no config
 
 the-loop is routinely pointed at a repository that never ran `/the-loop:init` — a poller
-source, a webhook delivery, a work item somebody assigned to a cloud session. Such a
-repository is worked under the **built-in default**: the same commented baseline
-`/the-loop:init --defaults` writes, shipped inside the CLI as
-`the_loop/harness-config.default.yaml` so a bare `pip install the-loopy-one` resolves it
-with no plugin checkout in sight ([issue #193](https://github.com/MadaraUchiha-314/the-loop/issues/193),
-[decision-073](/decisions/decision-073)).
-
-The default is not only held in memory — it is **written into the repository**, once, the
-first time the-loop starts working there:
-
-| Where | Adopts? |
-|---|---|
-| The daemon's ingress→graph coupling (poller and webhook alike), after it has proved via the `origin` remote that the checkout is the work item's own repository | yes — **before the session is spawned**, and it fills in `ticketing.github.owner`/`repo` from the work item |
-| `the-loop graph complete` / `advance` / `force` / `skip` | yes |
-| `the-loop check`, `the-loop graph status` / `show` | **no** — reads write nothing |
-| A **contribution** (`the-loop contribute`, `pdlc-contribution-loop`) | **no** — the-loop was invited into that repository as a guest and stays out of its history ([issue #185](https://github.com/MadaraUchiha-314/the-loop/issues/185)) |
-| A **review** (`the-loop review`, `pdlc-review-loop`) | **no** — the same guest rule: a reviewer installs nothing in the repository it reviews ([issue #279](https://github.com/MadaraUchiha-314/the-loop/issues/279)) |
-
-The written file carries a header saying the-loop wrote it and how to replace it with a
-considered one, and each write is recorded as `harness.config_scaffolded` in
-[`the-loop events`](/cli/commands/events).
-
-Nothing about the repository is **detected** — the baseline's `repository`, `tooling` and
-`ticketing.system` values are the template's, not your project's, and only
-`ticketing.github.owner`/`repo` are filled in from the work item. Detection and the
-questions that go with it are `/the-loop:init`'s job; a scaffolded config is a working
-default meant to be tailored, not a survey of your repository.
-
-**An existing config is never opened.** A repository that already carries
-`harness-config.yaml` — or the pre-rename `config.yaml` — is left byte-for-byte as it is,
-so no inbound event can replace your `autonomy` tiers, `sensitivePaths` or
-`reviews.critics[]` with the-loop's defaults. To move an existing config forward, run
-`/the-loop:upgrade-the-loop`; to tailor a scaffolded one, run `/the-loop:init`.
+source, a webhook delivery, a work item somebody assigned to a cloud session. The agent
+works such a repository under the **schema's defaults** — the same baseline
+`/the-loop:init --defaults` writes — and says so in the execution log. Nothing writes a
+config into the repository on its behalf: until issue-352 the daemon *adopted* an
+unconfigured checkout by planting the-loop's default there before the spawn
+([issue #193](https://github.com/MadaraUchiha-314/the-loop/issues/193)); a CLI that
+reads no harness config has no reason to write one, so that path is gone, along with the
+`harness.config_scaffolded` event. Run `/the-loop:init` in the project when you want the
+file.
 
 ## Sections
 
 | Section | Covers |
 |---------|--------|
-| `ticketing` | GitHub or Jira; owner/repo, whether to use GitHub Projects. |
 | `repository` | Monorepo tooling (nx/yarn/pnpm/bun), whether scripts run from root. |
-| `workflow` | The spec approach, phase list, where the-loop's checked-in knowledge lives (`specDir`/`capabilitiesDir`/`learningsDir`), phase label prefix. |
+| `workflow` | Where the-loop's checked-in knowledge lives (`specDir`/`capabilitiesDir`/`learningsDir`). The phases are the [process graph's](/capabilities/process-graph) and the labels are `loop:<phase>`, fixed — neither is configured. |
 | `tooling` | Per-language package manager, unit/integration test runner, lint, type-check, release tooling. |
-| `customInstructions` | User-provided instruction docs the harness reads before working — see [instructions reference](/operating-model/reference/instructions). |
-| `testing` | Gherkin docstring requirement, `integrationTestGlobs` for [`the-loop scenarios`](/cli/commands/scenarios). |
+| `customInstructions` | User-provided instruction docs the agent reads before working — see [instructions reference](/operating-model/reference/instructions). The agent passes them to [`the-loop instructions`](/cli/commands/instructions) as `--doc`. |
+| `testing` | Gherkin docstring requirement, `integrationTestGlobs` — which the agent passes to [`the-loop scenarios`](/cli/commands/scenarios) as `--glob`. |
 | `apiSpecs` | Contract-first REST (OpenAPI) / GraphQL (SDL) locations and doc generation. |
 | `design` | UI/UX design-artifact directory/format — see [design-artifacts reference](/operating-model/reference/design-artifacts). |
 | `hooks` | Pre-commit / pre-push gate lists, commit convention. |
 | `observability` | Dev/runtime log levels, browser logging — see [observability reference](/operating-model/reference/observability). |
-| `reviews` | Self/critic review counts, stop conditions, and the **runnable** `critics[]` entries that [`the-loop critic run`](/cli/commands/critic) spawns — see [reviewing reference](/operating-model/reference/reviewing) and [review-loop](/capabilities/review-loop). |
+| `reviews` | Self/critic review counts and stop conditions. **Which** critics exist is the operator's [`critics[]`](/config/cli/critics-options) — see [reviewing reference](/operating-model/reference/reviewing) and [review-loop](/capabilities/review-loop). |
 | `autonomy` | Risk-tiered autonomy (1–5) and sensitive-path detection. |
 | `security` | Threat-model, design, and review gate requirements — see [security reference](/operating-model/reference/security). |
 | `tdd` | TDD mode: `standard` \| `tdd-first` \| `off`. |
@@ -90,74 +68,36 @@ so no inbound event can replace your `autonomy` tiers, `sensitivePaths` or
 | `selfImprovement` | Learnings index cap and write-gate occurrence threshold. Where the learnings live is `workflow.learningsDir` (default `docs/learnings`) — note that a project which **publishes** its `docs/` tree publishes its learnings with it unless it points that key elsewhere. |
 | `contextManagement` | Checkpoint-then-reset behaviour at phase/task boundaries — see [context reference](/operating-model/reference/context). |
 | `userInteraction` | Diagram format, mandatory PR briefing/education requirements, and `writingStyle` — the diagram-first rule and formal-language carve-out the bundled `the-loop:writing` skill reads (no length limits, by decision). See [writing-style](/capabilities/writing-style). |
-| `notifications` | Which harness-raised events notify which roles — the gate the graph's `notify` hook reads. Delivery is a channel's ([`channels.slack`](/config/cli/channels-options)); the roles name who the event concerns and are printed in the message. |
 | `externalTools` | Inline registry of MCPs/CLIs/skills the harness may use. |
-| `graph` | Hooks **this repository** brings to the-loop's process graph (`graph.hooks`) — see [process-graph](/capabilities/process-graph) and [adding a hook](/cli/extending#adding-a-hook). |
 
-### `graph.hooks` is executable config too
+## What moved out of it in issue-352
 
-Same rule, a second surface. `graph.hooks.modules[]` names Python that the-loop **imports
-into its own process** and runs at node boundaries, so review a hook module the way you
-would review anything else that runs with your credentials in scope.
+The CLI used to read eight keys from this file ([decision-044](/decisions/decision-044),
+now superseded). Each has a new home, and the file lost a few keys nothing read:
 
-What the mechanism guarantees in return is that a repository hook can only ever *add* a
-constraint: it is appended after every shipped hook (which short-circuits first), it must be
-named `x-<something>` so it cannot shadow one, and an `outcome` it declares is ignored so it
-can neither approve a gate nor pick an edge. `the-loop graph hooks` prints what a repository
-declares without importing any of it, and an operator refuses the whole mechanism with
-[`routing.graph.repoHooks: false`](/config/cli/routing-options#graphrepohooks).
+| Was in the harness config | Now |
+|---|---|
+| `workflow.specDir` *(still here, for the agent)* | The CLI resolves the same directory from its own [`routing.graph.specDir`](/config/cli/routing-options#graph-specdir) (default `docs/specs`), or `--spec-dir` on [`check`](/cli/commands/check) and [`graph`](/cli/commands/graph). A repository that moves its specs sets both. |
+| `workflow.phaseLabelPrefix` | Removed. Labels are `loop:<phase>`, one vocabulary everywhere. |
+| `workflow.phases` | Removed. The graph is the only phase list; `/the-loop:init` creates the labels from it. |
+| `ticketing` | Removed. A work item's ticket is its ref (`github:owner/repo#n`); in-session the CLI derives the repository from the checkout's `origin` remote when no `--ref` is given. |
+| `notifications` | Removed. The graph's `notify` hook publishes on the event bus; which channel receives what is [`channels.<name>.subscribe`](/config/cli/channels-options) in the CLI config. |
+| `reviews.critics[]` | The CLI config's top-level [`critics[]`](/config/cli/critics-options), same entry shape. `reviews.criticReviewCount` stays here. |
+| `graph.hooks` | The CLI config's [`routing.graph.hooks`](/config/cli/routing-options#graph-hooks), same shape; a `path` resolves against each checkout. |
+| `testing.integrationTestGlobs` *(still here, for the agent)* | [`the-loop scenarios --glob`](/cli/commands/scenarios). |
+| `customInstructions` *(still here, for the agent)* | [`the-loop instructions --doc … --on-missing …`](/cli/commands/instructions). |
+| `workflow.specApproach`, `workflow.requireHumanReviewPerPhase`, `localOrchestration` | Removed — read by nothing. |
 
-### `reviews.critics[]` is executable config
-
-Each entry becomes an **argv** that `the-loop critic run` spawns — an executable, its
-arguments and an environment overlay, in a committed file. Review a critic entry the way
-you would review code, and never put a secret in `env`. See
-[`the-loop critic`](/cli/commands/critic) for the entry shape and the placeholders it
-accepts.
-
-## What the CLI reads from it
-
-The file's primary reader is the agent — the `/the-loop:*` commands and the operating
-skill. But the [CLI](/cli/) reads eight of its keys too, and it is worth being precise
-about which, because "why is the CLI reading my harness config?" is a fair question
-([issue #121](https://github.com/MadaraUchiha-314/the-loop/issues/121)).
-
-The answer is that these eight are the **repository's own policy**, and the CLI is
-executing that policy on the repository's behalf. None of them could live in
-`cli-config.yaml`: that is one machine-scoped file for a daemon watching N repositories,
-the skill already reads the same values, and `check`/`scenarios` run in bare CI checkouts
-where no CLI config exists.
-
-| Key | Read by | Why it is the repository's to declare |
-|---|---|---|
-| `workflow.phaseLabelPrefix` | `check`, `graph`, and the daemon's graph coupling | The `loop:<phase>` label namespace is this project's convention. |
-| `workflow.specDir` | `check`, `graph`, and the daemon's graph coupling | Where this project keeps its specs is a fact about its layout. |
-| `notifications` | `check`, `graph`, and the daemon's graph coupling | Which of this repository's own events are worth raising is this repository's call; the roles it names are its own `collaborators.yaml`'s. |
-| `reviews.critics` | `critic` | The review bar is a property of the project — and the skill reads the same entries, so a second source could make the two disagree. |
-| `testing.integrationTestGlobs` | `scenarios` | Where the integration tests live is part of the layout. |
-| `ticketing.github` | `check`, `graph`, and the daemon's graph coupling | The repository the ticket was created in is what makes `pr-loops/pr-<n>/` attributable once a work item spans several repositories ([issue #183](https://github.com/MadaraUchiha-314/the-loop/issues/183)). |
-| `graph.hooks` | `check`, `graph`, and the daemon's graph coupling | A hook a project wrote to gate its own artifacts is that project's rule, and the code it names lives in that project's tree ([issue #248](https://github.com/MadaraUchiha-314/the-loop/issues/248)). |
-| `customInstructions` | `instructions` | Which conventions govern work on this repository is a fact about this repository — and the agent reads the same entries, so a check resolving a different list would verify nothing. |
-
-Everything else in this file is read by the agent alone.
-
-`workflow.specDir` was the one of the five the daemon *claimed* to read but did not:
-`routing.graph.specDir` defaulted to `docs/specs` and reached the graph runtime as an
-explicit override, so a watched repository's value was never consulted and a repository
-that had moved its specs had its graph silently skipped. Fixed in
-[issue #123](https://github.com/MadaraUchiha-314/the-loop/issues/123) — that CLI key is
-now unset by default and is an override only.
+`/the-loop:upgrade-the-loop` performs the migration (harness config `0.2.0` → `0.3.0`) and
+[`the-loop migrate-config`](/cli/commands/migrate-config) the CLI config's half
+(`0.8.0` → `0.9.0`).
 
 ::: tip The rule, in one line
-A repository's harness config configures work done **on that repository** — including
-when a daemon is the one doing it. It never configures the daemon itself: no checkout
-supplies `authorizedUsers`, a poll source's `repos`, a port, or anything else about the
-operator's machine. See [decision-044](/decisions/decision-044).
+The harness config is the **agent's**: it describes how work is done in this repository,
+and the agent reads it in every session. The CLI is the **operator's** and reads only the
+operator's `cli-config.yaml`. What the CLI needs from a repository, the agent hands it as
+a flag. See [decision-123](/decisions/decision-123).
 :::
-
-The table above is enforced: `cli/tests/test_harness_config.py` fails the build if the CLI
-reads a key that is not listed here, if a key listed here is no longer read, or if any
-module other than `the_loop.harness_config` opens the file.
 
 ## Collaborators
 
@@ -167,9 +107,8 @@ CODEOWNERS-like: the stewards of the repository. Validated against the plugin's
 `collaborators.schema.json`.
 
 Each collaborator declares a handle, `kind` (individual/group) and `roles`. Roles are what
-everything else targets: the harness config's `notifications.events` names the roles an
-event concerns, and the loop pulls a phase's required reviewers and approvers from this
-file. Decisions themselves always land as ticket/PR comments — the paper trail.
+everything else targets: the loop pulls a phase's required reviewers and approvers from
+this file. Decisions themselves always land as ticket/PR comments — the paper trail.
 
 ```yaml
 collaborators:

@@ -72,9 +72,8 @@ live in `docs/specs/<id>/`:
    mechanically from the two artifacts the human just approved, so it has **no approval
    gate and needs no human sign-off** (issue-281) — it advances on shape alone.
 
-The work item's **phase** is tracked on the ticket via a label
-(`<workflow.phaseLabelPrefix><phase>`) and mirrored in the execution log (`brainstorming`
-is optional):
+The work item's **phase** is tracked on the ticket via a label (`loop:<phase>` — a fixed
+vocabulary, issue-352) and mirrored in the execution log (`brainstorming` is optional):
 
 ```
 not-started → brainstorming → requirements-definition → design → test-planning
@@ -129,8 +128,9 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   the pair the human just approved at `design-approval`; the brainstorm converges when
   its author says so on the thread. Never write a downstream artifact against an
   upstream one whose gate has not yet approved it.
-- **Human review per phase** (`workflow.requireHumanReviewPerPhase`, default true) —
-  delivered by the graph's approval nodes, never re-implemented in a session.
+- **Human review per phase** — always on, delivered by the graph's approval nodes, never
+  re-implemented in a session (the `workflow.requireHumanReviewPerPhase` switch was
+  removed in issue-352; nothing read it).
 - **Skips are declared by humans, never taken by the harness** (issue-177,
   decision-067). Every work item starts at **`phase-selection`**: the-loop posts a
   checklist of the selectable phases on the ticket and waits for an **authorized user**
@@ -270,7 +270,8 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   Gherkin-syntax docstring (`Feature:`/`Scenario:`/Given-When-Then) naming the scenario
   under test, with a `Requirement:` link when tied to a `requirements.md`
   (`config.testing`). The harness can query all covered scenarios as a table via
-  `the-loop scenarios` (`--format table|markdown|json`). See `reference/testing.md`.
+  `the-loop scenarios --glob <testing.integrationTestGlobs entry>…`
+  (`--format table|markdown|json`). See `reference/testing.md`.
 - **Contract-first APIs.** RESTful API specs are authored in `specs/openapi/` in the
   OpenAPI format; GraphQL schemas are SDL-first under `specs/graphql/`; documentation is
   generated from those contracts, never hand-written (`config.apiSpecs`). See
@@ -331,8 +332,9 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   that the structured config does not model. The structured config wins where both
   speak, and no instruction doc can weaken the loop's gates (security, paper trail,
   reviews); a missing doc is handled per `customInstructions.onMissing`. Run
-  `the-loop instructions` at the same time, so a registration that silently fails to
-  resolve is a signal rather than guidance you never received. See
+  `the-loop instructions --doc <path>… --on-missing <policy>` with the entries you read,
+  so a registration that silently fails to resolve is a signal rather than guidance you
+  never received (the CLI reads no harness config — you hand it the list). See
   `reference/instructions.md`.
 - **Use the configured tooling.** Package managers, test runners, linters, type checkers
   and release tooling come from `.the-loop/harness-config.yaml`; run scripts from the project
@@ -347,19 +349,36 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 
 ## Configuration
 
-Behaviour is driven by `.the-loop/harness-config.yaml` (this repo's **harness/plugin
-config**, formerly `config.yaml` — issue-82, decision-035), validated against
-`harness-config.schema.json`. Sections: `ticketing`, `repository`,
-`workflow`, `tooling`, `customInstructions`, `testing`, `apiSpecs`, `design`,
-`localOrchestration`, `hooks`, `observability`, `reviews`, `autonomy`, `security`, `tdd`,
-`minimalism`, `tokenEconomy`, `selfImprovement`, `contextManagement`, `userInteraction`,
-`notifications`, `externalTools`. People (collaborators and the roles they hold — no
-delivery config of their own, issue-304) live in `.the-loop/collaborators.yaml`
-(validated against `collaborators.schema.json`) — the single source of truth;
-`notifications`
-references roles only. A subset of keys can be overridden per work
-item via the YAML front-matter `overrides` of the work-item / spec markdown. Managed
-files are listed in `.the-loop/manifest.yaml`.
+Behaviour is driven by `.the-loop/harness-config.yaml` — **the agent's file**, validated
+against `harness-config.schema.json`. Read it at the start of every work item and follow
+it: `repository`, `workflow` (`specDir`, `capabilitiesDir`, `learningsDir`), `tooling`,
+`customInstructions`, `testing`, `apiSpecs`, `design`, `hooks`, `observability`,
+`reviews` (the round counts), `autonomy`, `security`, `tdd`, `minimalism`,
+`tokenEconomy`, `selfImprovement`, `contextManagement`, `userInteraction`,
+`externalTools`. A subset of keys can be overridden per work item via the YAML
+front-matter `overrides` of the work-item / spec markdown. People (collaborators and the
+roles they hold) live in `.the-loop/collaborators.yaml`. Managed files are listed in
+`.the-loop/manifest.yaml`.
+
+**The CLI never reads this file** (issue-352, decision-123). The `the-loop` CLI is the
+operator's tool and takes its configuration from the operator's `cli-config.yaml`
+(`--config` / `$THE_LOOP_CLI_CONFIG` / `./.the-loop/cli-config.yaml` /
+`~/.the-loop/cli-config.yaml`). So when you run the CLI, **you** carry the harness config
+to it — the file is yours to read, the flags are yours to pass:
+
+| Harness-config key (yours) | How the CLI learns it |
+|---|---|
+| `workflow.specDir` | The CLI's own `routing.graph.specDir` (default `docs/specs`). Pass `--spec-dir <dir>` to `the-loop check` / `the-loop graph` when the project keeps its specs elsewhere and the operator's config does not say so — and tell the operator to set the key, since the daemon reads nothing else. |
+| `testing.integrationTestGlobs` | `the-loop scenarios --glob <pattern>` (repeatable). No `--glob` means the built-in defaults. |
+| `customInstructions.docs` / `.onMissing` | `the-loop instructions --doc <path> … --on-missing <warn\|error\|ignore>`. A `--doc` may be a JSON object `{"path": …, "notes": …}` to carry the entry's notes. |
+| *(critics)* | Not in this file. Which critic harnesses exist is the operator's `critics[]` in `cli-config.yaml`; `the-loop critic list` tells you what this machine has, and `reviews.criticReviewCount` here says how many rounds to run with them. |
+| *(graph hooks)* | Not in this file. The operator's `routing.graph.hooks` in `cli-config.yaml`; `the-loop graph hooks` prints what is declared. |
+
+Two things this file **no longer** says, because they were never the repository's to
+decide: the **ticketing system** (a work item's ticket is its ref — `github:owner/repo#n`
+— and the CLI derives the repository from the checkout's `origin` remote when no `--ref`
+is given) and the **phase labels** (`loop:<phase>`, one fixed vocabulary, so dashboards
+built on it work across every repository).
 
 **The schemas are the plugin's, not the project's** (issue-220). All three —
 `harness-config`, `collaborators`, `cli-config` — ship under
@@ -370,17 +389,17 @@ never fetch one over the network. A scaffolded config carries the schema's publi
 in a `# yaml-language-server: $schema=…` **first line** so an operator's editor validates
 it; that comment is for the editor alone and is never what the loop validates against.
 
-A repository that has never run `/the-loop:init` is worked under the **built-in default**
-— the same baseline `--defaults` writes, shipped inside the CLI — and the-loop writes it
-into `.the-loop/harness-config.yaml` the first time it works there, so the config is a
-file you can read and edit rather than an assumption (issue-193, decision-073). It never
-overwrites an existing config, and a **contribution** adopts nothing: see
-`reference/automation.md`.
+**A repository that has never run `/the-loop:init`** carries no `.the-loop/`. Work it
+under the schema's defaults (the same baseline `/the-loop:init --defaults` writes) and say
+so in the execution log; nothing writes a config into the repository for you — until
+issue-352 the CLI did, and now neither the CLI nor a guest loop (a contribution, a review)
+touches the repository's configuration. Suggest `/the-loop:init` on the ticket when the
+project is the work item's own.
 
-The CLI daemon (`gh-webhook`/`poll`/`sessions`/`events`) reads a separate, independent
-**CLI config** instead (`webhooks`, `polling`, `eventLog`) — it is not tied to this
-repo. See `docs/config/` (the configuration reference) and
-`docs/decisions/decision-032.md`.
+The CLI daemon (`the-loop start`, the receiver, the poller, `sessions`, `events`) reads
+the separate **CLI config** described above and nothing of this repository's. See
+`docs/config/` (the configuration reference), `docs/decisions/decision-032.md` and
+`docs/decisions/decision-123.md`.
 
 ## Commands
 

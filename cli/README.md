@@ -95,12 +95,12 @@ Full docs at **<https://madarauchiha-314.github.io/the-loop/cli/>**:
 | [Adding a command](https://madarauchiha-314.github.io/the-loop/cli/extending) | The `Command` / `@register` contract |
 | [Python SDK](https://madarauchiha-314.github.io/the-loop/sdk/) | The same package, imported: mount the control plane into your own FastAPI service, or call the capabilities directly |
 
-> **Two config files, and they never overlap.** The CLI daemon reads `cli-config.yaml`
-> (yours, machine-scoped, resolved via `--config` → `$THE_LOOP_CLI_CONFIG` →
-> `./.the-loop/cli-config.yaml` → `~/.the-loop/cli-config.yaml`). A repository's
-> `.the-loop/harness-config.yaml` is the *plugin* config and is never read by the daemon —
-> including `authorizedUsers` and a poll source's `repos`, which have no fallback and fail
-> closed when unset. See
+> **Two config files, and they never overlap.** The CLI reads `cli-config.yaml` and
+> nothing else (yours, machine-scoped, resolved via `--config` → `$THE_LOOP_CLI_CONFIG` →
+> `./.the-loop/cli-config.yaml` → `~/.the-loop/cli-config.yaml`): ingress, routing, the
+> spec directory, the critics, the graph hooks. A repository's
+> `.the-loop/harness-config.yaml` is the *agent's* config and is never read by the CLI
+> (issue-352, decision-123). See
 > [Configuring the-loop](https://madarauchiha-314.github.io/the-loop/config/).
 
 ## Development

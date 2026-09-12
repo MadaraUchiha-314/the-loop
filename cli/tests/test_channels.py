@@ -572,25 +572,23 @@ def test_the_catalog_carries_the_ask_and_every_notification_event():
         assert name in SUBSCRIBABLE_EVENTS
 
 
-def test_the_catalog_matches_the_harness_notification_taxonomy():
-    """Containment is pinned against the schema, so a new notification event
-    cannot ship without joining the catalog users configure against."""
-    import json
+def test_the_catalog_covers_every_event_the_shipped_graphs_notify():
+    """Containment is pinned against the graphs themselves (the harness config's
+    `notifications.events` taxonomy is gone — issue-352), so a `notify` hook
+    cannot name an event the channels cannot subscribe to."""
+    import re
     from pathlib import Path
 
     from the_loop.channels.events import NOTIFICATION_EVENTS
 
-    schema = json.loads(
-        (
-            Path(__file__).resolve().parents[2]
-            / ".the-loop"
-            / "harness-config.schema.json"
-        ).read_text(encoding="utf-8")
-    )
-    taxonomy = schema["properties"]["notifications"]["properties"]["events"][
-        "properties"
-    ]
-    assert set(taxonomy) == set(NOTIFICATION_EVENTS)
+    graphs = Path(__file__).resolve().parents[1] / "the_loop" / "graph"
+    named = set()
+    for path in graphs.glob("pdlc-*.yaml"):
+        named.update(
+            re.findall(r"hook: notify, with: \{event: ([a-z-]+)", path.read_text())
+        )
+    assert named, "the shipped graphs notify at least one event"
+    assert named <= set(NOTIFICATION_EVENTS), named - set(NOTIFICATION_EVENTS)
 
 
 def test_the_docs_list_every_subscribable_event():

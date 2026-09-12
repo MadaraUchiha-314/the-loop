@@ -14,7 +14,9 @@ portion of the loop. A slice of `/the-loop:work-on`; `work-on` remains the super
 `reference/tooling.md` first.**
 Load `.the-loop/harness-config.yaml`; read every custom instruction doc it registers
 (`customInstructions.docs`, in order — the operator's conventions and styles,
-`reference/instructions.md`, and `the-loop instructions` to confirm each one resolved);
+`reference/instructions.md`, and `the-loop instructions --doc <path>… --on-missing
+<policy>` with those entries to confirm each one resolved — the CLI reads no harness
+config, issue-352);
 apply any per-task `overrides` from the spec front-matter.
 
 **Start clean.** Entering implementation crosses a phase boundary: apply
@@ -71,9 +73,9 @@ locked spec files read from disk, not the drafting conversation (plan-mode style
    `reference/security.md`); risk tier ≥ `security.review.humanSignOffMinTier` waits
    for a named human security sign-off. Record every review as a PR/ticket comment and
    in the log's review table (the security round in its Security review section).
-   Notify per the `notifications.events` filters (harness-config.yaml) when a human
-   action is pending — the event's roles name who it concerns; delivery is the
-   configured channel's (`channels.slack`), not a per-person lookup.
+   A pending human action is notified by the graph's `notify` hook on the event bus;
+   delivery is the operator's channel (`channels.slack` in the CLI config), not a
+   per-person lookup.
 
 5. **Evidence + reviewer briefing (required gate).** Present validated evidence that the
    acceptance criteria are met — **summarised from the verification results** rather than

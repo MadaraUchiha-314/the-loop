@@ -4,13 +4,13 @@ the-loop's review loop runs self-reviews, then **critic** reviews by a *differen
 harness/model, then the human (``reviews.selfReviewCount`` /
 ``reviews.criticReviewCount``). The policy for that lives in the skill's
 ``reference/reviewing.md``; what was missing (issue-108) was the mechanism: how a
-running harness turns ``reviews.critics[]`` into an actual process, and how it gets
+running harness turns ``critics[]`` into an actual process, and how it gets
 that process's output back.
 
 This module is that mechanism and nothing more. It
 
-1. loads ``reviews.critics[]`` from the repo's harness config (via
-   :mod:`the_loop.harness_config`, the CLI's only reader of that file),
+1. loads ``critics[]`` from the operator's CLI config (issue-352 moved the roster
+   out of the repository's harness config, which the CLI no longer reads),
 2. resolves ONE critic into an argv list — either the operator's explicit
    ``command``/``args`` or, for a harness the-loop already has an adapter for, that
    adapter's own one-shot argv, and
@@ -21,8 +21,9 @@ The review *loop* — round counts, convergence, posting findings — stays with
 harness following ``reference/reviewing.md``. Splitting it the other way would fork
 the loop into two implementations that have to agree (decision-043).
 
-Security: a ``reviews.critics[]`` entry is **executable configuration** in a
-repo-tracked file, so it is reviewed like code. Nothing here ever runs implicitly —
+Security: a ``critics[]`` entry is **executable configuration** in the operator's own
+CLI config, so it is reviewed like code — and, since issue-352, no longer in a file a
+pull request to the repository can edit. Nothing here ever runs implicitly —
 the caller names exactly one critic — and every invocation is an argv *list* with
 ``shell=False``, so no placeholder value (a diff, a ticket comment, anything
 untrusted quoted into the review prompt) can be parsed as a command.
@@ -44,13 +45,10 @@ from typing import Dict, List, Mapping, Optional, Sequence
 
 from .harness import Usage, build_adapters
 from .harness.base import parse_json_object, usage_from_output
-from .harness_config import HarnessConfigError
-from .harness_config import config_path as config_path
-from .harness_config import load_strict
 
 logger = logging.getLogger("the-loop.critics")
 
-#: The closed set of substitutions available in ``reviews.critics[].args``.
+#: The closed set of substitutions available in ``critics[].args``.
 #: Closed on purpose: an unknown ``{placeholder}`` is a typo that would otherwise
 #: reach the critic as literal braces and quietly review the wrong thing.
 PLACEHOLDERS = ("prompt", "promptFile", "model", "workItem", "specDir", "cwd")
@@ -74,7 +72,7 @@ class CriticConfigError(ValueError):
 
 @dataclass(frozen=True)
 class Critic:
-    """One ``reviews.critics[]`` entry.
+    """One ``critics[]`` entry.
 
     ``error`` carries why an entry is unusable instead of raising at load time, so
     ``the-loop critic list`` can show a broken entry beside the working ones (R4.3)
@@ -152,35 +150,45 @@ class CriticResult:
 # --------------------------------------------------------------------------- load
 
 
-def load_critics(root: Path) -> List[Critic]:
-    """Every ``reviews.critics[]`` entry for the project rooted at ``root``.
+def load_critics(config_path: Optional[Path] = None) -> List[Critic]:
+    """Every ``critics[]`` entry of the operator's CLI config.
 
-    Read **strictly** — alone among the CLI's harness-config readers (decision-044).
-    The others degrade a broken file to defaults; a critic round cannot, because
-    "no critics configured" and "the file naming them does not parse" would look
-    identical and the second one is a false green.
+    The roster moved out of the repository's harness config in issue-352
+    (decision-123): a critic is a harness and a model installed on the machine
+    that runs the round, so it is the operator's to declare — and executable
+    configuration no longer lives in a file a pull request can edit.
+    ``config_path`` defaults to the resolved CLI config (``--config``, the env var,
+    the checkout's, the home directory's).
+
+    Read **strictly**: an absent file is "no critics configured", but a file that
+    exists and does not parse raises, because "no critics" and "the file naming
+    them is broken" would otherwise look identical and the second is a false green.
 
     Raises :class:`CriticConfigError` only for problems that make the *whole*
-    configuration ambiguous (unparseable file, duplicate names). A problem with one
-    entry is recorded on that entry's ``error``.
+    configuration ambiguous (unparseable file, not a list, duplicate names). A
+    problem with one entry is recorded on that entry's ``error``.
     """
-    path = config_path(root)
-    if path is None:
+    from .cli_config import _load_cli_config_raw, default_cli_config_path
+
+    path = Path(config_path) if config_path is not None else default_cli_config_path()
+    if not path.is_file():
         return []
     try:
-        data = load_strict(root)
-    except HarnessConfigError as exc:
-        raise CriticConfigError(str(exc)) from exc
-    entries = ((data.get("reviews") or {}).get("critics")) or []
+        data = _load_cli_config_raw(path, strict=True)
+    except Exception as exc:  # noqa: BLE001 — any parse failure is the same to us
+        raise CriticConfigError(f"could not parse {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise CriticConfigError(f"{path} does not contain a YAML mapping")
+    entries = data.get("critics") or []
     if not isinstance(entries, list):
-        raise CriticConfigError(f"{path}: reviews.critics must be a list")
+        raise CriticConfigError(f"{path}: critics must be a list")
 
     critics = [_critic_from_entry(entry, index) for index, entry in enumerate(entries)]
     seen: Dict[str, int] = {}
     for index, critic in enumerate(critics):
         if critic.name in seen:
             raise CriticConfigError(
-                f"{path}: two reviews.critics entries are both named "
+                f"{path}: two critics entries are both named "
                 f"{critic.name!r} (#{seen[critic.name] + 1} and #{index + 1}); "
                 "names identify a critic, so they must be unique"
             )
@@ -188,15 +196,15 @@ def load_critics(root: Path) -> List[Critic]:
     return critics
 
 
-def find_critic(root: Path, name: str) -> Critic:
+def find_critic(name: str, config_path: Optional[Path] = None) -> Critic:
     """The critic called ``name``, or a :class:`CriticConfigError` naming the rest."""
-    critics = load_critics(root)
+    critics = load_critics(config_path)
     for critic in critics:
         if critic.name == name:
             return critic
     known = ", ".join(c.name for c in critics) or "none"
     raise CriticConfigError(
-        f"no critic named {name!r} in reviews.critics (configured: {known})"
+        f"no critic named {name!r} in the CLI config's critics[] (configured: {known})"
     )
 
 
@@ -367,7 +375,7 @@ def run_critic(
     if shutil.which(binary) is None:
         result.error = (
             f"critic CLI {binary!r} not found on PATH; install it or point "
-            f"reviews.critics[] entry {critic.name!r} at the right executable"
+            f"critics[] entry {critic.name!r} at the right executable"
         )
         return result
 

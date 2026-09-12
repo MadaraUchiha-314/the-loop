@@ -115,6 +115,31 @@ command reconciles them.
      empty and relying on the now-removed `ticketing.github` fallback (Requirement 4) —
      those need an explicit value in the new CLI config or the daemon fails closed.
 
+   **The CLI stopped reading the harness config (issue-352, decision-123) — harness
+   config `0.2.0` → `0.3.0`, CLI config `0.8.0` → `0.9.0`.** Detect a harness config
+   declaring any of `ticketing`, `workflow.phases`, `workflow.phaseLabelPrefix`,
+   `workflow.specApproach`, `workflow.requireHumanReviewPerPhase`, `localOrchestration`,
+   `notifications`, `reviews.critics` or `graph`, and migrate it:
+   - **Remove** `ticketing` (the work item's ref names its repository), `workflow.phases`
+     and `workflow.phaseLabelPrefix` (labels are `loop:<phase>`, fixed),
+     `workflow.specApproach`, `workflow.requireHumanReviewPerPhase`, `localOrchestration`
+     and `notifications` (delivery is the CLI config's `channels.<name>.subscribe`).
+     Report each removal; none of them carried a value the loop still reads.
+   - **Move** `reviews.critics[]` to the CLI config's top-level `critics[]` and
+     `graph.hooks` to its `routing.graph.hooks` — **same entry shapes**, so the move is
+     a cut and paste into `.the-loop/cli-config.yaml` when the project tracks one, else
+     a printed block for the operator to place in `~/.the-loop/cli-config.yaml`. Say
+     plainly that these are executable configuration moving from a committed file to the
+     operator's: what the operator does not copy does not run.
+   - IF `workflow.specDir` is not `docs/specs` THEN the CLI config's
+     `routing.graph.specDir` must name the same directory — set it where the project
+     tracks its CLI config, otherwise surface it under **needs-user**.
+   - Bump `version` to `0.3.0`, re-validate against the plugin's
+     `harness-config.schema.json`, and run `the-loop migrate-config` for the CLI config
+     (it strips `routing.graph.repoHooks` and bumps to `0.9.0`; a pre-rename
+     `.the-loop/config.yaml` is no longer read by anything, so the rename in step 4 is
+     now required rather than merely advised).
+
    **The learnings tree moved into `docs/` (issue-224, decision-082).** `workflow.learningsDir`
    is a new, additive harness-config key whose default is `docs/learnings` — where the old
    hardcoded location was `learnings/` in the project root. The key itself is the ordinary

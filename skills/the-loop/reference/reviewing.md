@@ -1,7 +1,7 @@
 # Reviewing reference — the self/critic review loop
 
 `reviews.selfReviewCount` / `reviews.criticReviewCount` say *how many* rounds and
-`reviews.critics[]` *which* critic; this file defines the **procedure** those counts
+the operator's `critics[]` *which* critic; this file defines the **procedure** those counts
 drive, so review depth is reproducible and the loop converges. Tool-agnostic: "review
 comments" and "threads" map to GitHub reviews or Jira comments equally.
 
@@ -11,7 +11,7 @@ comments" and "threads" map to GitHub reviews or Jira comments equally.
 - Each finding carries a short **attribution prefix** so mixed-harness findings are
   distinguishable: `[<harness>/<model>]` (e.g. `[claude/opus-4.8]`, `[cursor/gpt-5.5]`).
   Self-review uses the running harness/model; critic rounds use the configured
-  `reviews.critics[]` entry — see **Running a critic round** below for how that entry
+  `critics[]` entry — see **Running a critic round** below for how that entry
   becomes an actual process and how its output comes back.
 - Run `selfReviewCount` self rounds, then `criticReviewCount` critic rounds — these are
   **caps**, not quotas.
@@ -36,22 +36,25 @@ For every finding, in order:
 ## Running a critic round (which harness, how, and getting the output back)
 
 A critic round is a *different* harness/model reviewing the running harness's work. Which
-one, and how to run it, is declared per critic in `reviews.critics[]` — and it is
-**runnable**, not just descriptive (issue-108, decision-043):
+critics exist is the **operator's** — `critics[]` in their `cli-config.yaml` (issue-352,
+decision-123): a critic is a harness and a model installed on the machine that runs the
+round, which is why the roster moved out of the repository's harness config. Each entry is
+**runnable**, not just descriptive (issue-108, decision-043); `reviews.criticReviewCount`
+in the harness config says how many rounds to run with whatever the machine has:
 
 ```yaml
-reviews:
-  critics:
-    - name: cursor-gpt          # a harness the-loop has an adapter for needs nothing else
-      harness: cursor           # built-in: claude | cursor
-      model: gpt-5.5
-    - name: aider-review        # any other CLI: the executable and its argv, spelled out
-      harness: aider
-      model: gpt-5.5
-      command: aider            # argv[0] — NOT a shell line
-      args: ["--message-file", "{promptFile}", "--model", "{model}", "--no-auto-commits"]
-      outputFormat: text        # text | json
-      timeoutSeconds: 900
+# cli-config.yaml (the operator's)
+critics:
+  - name: cursor-gpt          # a harness the-loop has an adapter for needs nothing else
+    harness: cursor           # built-in: claude | cursor
+    model: gpt-5.5
+  - name: aider-review        # any other CLI: the executable and its argv, spelled out
+    harness: aider
+    model: gpt-5.5
+    command: aider            # argv[0] — NOT a shell line
+    args: ["--message-file", "{promptFile}", "--model", "{model}", "--no-auto-commits"]
+    outputFormat: text        # text | json
+    timeoutSeconds: 900
 ```
 
 Placeholders are substituted **element-wise**, never through a shell: `{prompt}`,
@@ -99,10 +102,11 @@ passing round toward `reviews.criticReviewCount`, and it is never reported as co
 no critic can run at all, say so in the execution log and the PR briefing and continue to
 the human gate — an unrun critic round is a stated gap, not a silent pass.
 
-**A critic entry is executable configuration** in a committed file: anyone who can land a
-commit can propose one. Review a change to `reviews.critics[]` like code, and never put
-secrets in `env` — the critic CLI's own credentials come from the ambient environment the
-child inherits.
+**A critic entry is executable configuration** in the operator's own file — no longer one
+a pull request to the repository can edit. Review a change to `critics[]` like code, and
+never put secrets in `env` — the critic CLI's own credentials come from the ambient
+environment the child inherits. `the-loop critic list` is how a session learns which
+critics this machine offers; a session with none records its rounds `unavailable`.
 
 ## The design critic round (opt-in, issue-188)
 

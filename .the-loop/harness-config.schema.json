@@ -2,10 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/MadaraUchiha-314/the-loop/.the-loop/harness-config.schema.json",
   "title": "the-loop plugin configuration",
-  "description": "Schema for .the-loop/harness-config.yaml (formerly config.yaml — renamed in issue-82, decision-035) — the HARNESS (plugin) config, installed per repo (Claude/Cursor plugin) and read by /the-loop:* commands and the skill working that repo. A subset of these keys may be overridden per work-item via the YAML front-matter of the work-item / spec markdown. People live elsewhere: collaborators and their notification channels are defined in .the-loop/collaborators.yaml (collaborators.schema.json) — this file references ROLES only (notifications.events). The CLI daemon (gh-webhook/poll/sessions/events) reads a separate, repo-independent CLI config instead — see .the-loop/cli-config.schema.json (decision-032).",
+  "description": "Schema for .the-loop/harness-config.yaml — the HARNESS (plugin) config, installed per repo and read by the /the-loop:* commands and the skill working that repo: how work is done HERE (layout, tooling, reviews, autonomy, security, writing). THE CLI NEVER READS THIS FILE (issue-352, decision-123): what the CLI needs it takes from its own cli-config.yaml (spec directory, critics, graph hooks) or from flags the agent passes (`--spec-dir`, `--glob`, `--doc`); the skill tells the agent which. Phase labels are `loop:<phase>`, fixed; the ticket's repository is the work item's ref, not a setting. A subset of these keys may be overridden per work-item via the YAML front-matter of the work-item / spec markdown. People live in .the-loop/collaborators.yaml (collaborators.schema.json).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "ticketing", "repository", "reviews"],
+  "required": ["version", "repository", "reviews"],
   "$defs": {
     "autonomyPolicy": {
       "type": "string",
@@ -17,7 +17,10 @@
       "additionalProperties": false,
       "description": "A model-routing tier bound to a concrete model id per harness. Empty/omitted = use that harness's default model for the tier.",
       "properties": {
-        "claude": { "type": "string", "description": "Model id passed to the claude CLI for this tier (e.g. --model)." },
+        "claude": {
+          "type": "string",
+          "description": "Model id passed to the claude CLI for this tier (e.g. --model)."
+        },
         "cursor": { "type": "string", "description": "Model id passed to cursor-agent for this tier." }
       }
     }
@@ -32,10 +35,10 @@
     "groups": [
       {
         "id": "project",
-        "title": "Project & ticketing",
-        "ask": "always",
-        "explain": "Where work items (tickets) live and how the repository is laid out. Every work item needs a ticket, so the loop cannot run until this is right.",
-        "keys": ["ticketing", "repository"]
+        "title": "Repository layout",
+        "ask": "confirm",
+        "explain": "How the repository is laid out — monorepo or not, which tool, whether scripts run from the root. Detected where possible. The ticketing system is NOT configured here: a work item's ticket is named by its ref (issue-352).",
+        "keys": ["repository"]
       },
       {
         "id": "tooling",
@@ -55,7 +58,7 @@
         "id": "workflow",
         "title": "Workflow & phases",
         "ask": "confirm",
-        "explain": "The spec workflow (Kiro-style requirements → design → tasks, plus the testing plan between design and tasks), where the-loop's checked-in knowledge lives in this repository (specs, capability docs, learnings), and the phase labels tracked on the ticket.",
+        "explain": "The spec workflow (Kiro-style requirements → design → tasks, plus the testing plan between design and tasks) and where the-loop's checked-in knowledge lives in this repository (specs, capability docs, learnings). Phase labels are fixed (`loop:<phase>`); if specDir moves, the CLI's routing.graph.specDir moves with it.",
         "keys": ["workflow"]
       },
       {
@@ -74,10 +77,10 @@
       },
       {
         "id": "people",
-        "title": "People & communication",
+        "title": "People & interaction",
         "ask": "always",
-        "explain": "Who approves work and how they are reached: collaborators (people, roles, notification channels) live in .the-loop/collaborators.yaml (collaborators.schema.json) — init establishes that file in this group. Here the group covers which events notify which ROLES (notifications) and how the harness presents work to and educates humans (userInteraction). Every decision needs a paper trail, so at least one collaborator must hold the approver role.",
-        "keys": ["notifications", "userInteraction"]
+        "explain": "Who approves work: collaborators (people, roles) live in .the-loop/collaborators.yaml (collaborators.schema.json) — init establishes that file in this group. Here the group covers how the harness presents work to and educates humans (userInteraction). Every decision needs a paper trail, so at least one collaborator must hold the approver role. Notification delivery is the CLI config's (channels.slack); no event→role filter lives here since issue-352.",
+        "keys": ["userInteraction"]
       },
       {
         "id": "contracts-design",
@@ -88,10 +91,10 @@
       },
       {
         "id": "runtime",
-        "title": "Observability & local orchestration",
+        "title": "Observability & external tools",
         "ask": "advanced",
-        "explain": "Logging levels (dev == runtime, only breakpoints differ), browser logging, container runtime and local service wiring for multi-artifact testing, the external-tools registry, and any hooks this repository brings to the process graph.",
-        "keys": ["observability", "localOrchestration", "externalTools", "graph"]
+        "explain": "Logging levels (dev == runtime, only breakpoints differ), browser logging, and the external-tools registry. Hooks on the process graph and critic harnesses are the operator's CLI config (routing.graph.hooks, critics), not this file's (issue-352).",
+        "keys": ["observability", "externalTools"]
       },
       {
         "id": "automation",
@@ -105,38 +108,8 @@
   "properties": {
     "version": {
       "type": "string",
-      "description": "Schema version of this config file. Used by /upgrade-the-loop to reconcile.",
-      "examples": ["0.1.0"]
-    },
-    "ticketing": {
-      "type": "object",
-      "description": "Where work items live.",
-      "additionalProperties": false,
-      "required": ["system"],
-      "properties": {
-        "system": {
-          "type": "string",
-          "enum": ["github", "jira"],
-          "default": "github"
-        },
-        "github": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "owner": { "type": "string", "description": "GitHub org/user that owns the repository.", "examples": ["MadaraUchiha-314"] },
-            "repo": { "type": "string", "description": "Repository name.", "examples": ["the-loop"] },
-            "useProjects": { "type": "boolean", "default": true }
-          }
-        },
-        "jira": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "baseUrl": { "type": "string", "format": "uri", "description": "Jira site base URL.", "examples": ["https://your-org.atlassian.net"] },
-            "projectKey": { "type": "string", "description": "Jira project key work items are created under.", "examples": ["PROJ"] }
-          }
-        }
-      }
+      "description": "Schema version of this config file. Used by /upgrade-the-loop to reconcile. 0.3.0 (issue-352) removed ticketing, workflow.phases/phaseLabelPrefix/specApproach/requireHumanReviewPerPhase, localOrchestration, notifications, reviews.critics and graph — see the upgrade command for where each went.",
+      "examples": ["0.3.0"]
     },
     "repository": {
       "type": "object",
@@ -160,24 +133,13 @@
     },
     "workflow": {
       "type": "object",
-      "description": "The Kiro-style 3-phase spec workflow (plus the testing plan) and the phase state machine tracked on the ticket.",
+      "description": "The Kiro-style 3-phase spec workflow (plus the testing plan) and where the-loop's checked-in knowledge lives in this repository. The phases themselves are the process graph's (shipped with the CLI) and the ticket labels are `loop:<phase>`; neither is configured here since issue-352.",
       "additionalProperties": false,
       "properties": {
-        "specApproach": {
-          "type": "string",
-          "enum": ["kiro-3-phase"],
-          "default": "kiro-3-phase",
-          "description": "(optional brainstorm.md ->) requirements(.md)/bugfix(.md) -> design.md -> tasks.md, each artifact iterated with feedback and gated by a human review before advancing."
-        },
-        "requireHumanReviewPerPhase": {
-          "type": "boolean",
-          "default": true,
-          "description": "A human review/approval is required at the end of each spec phase."
-        },
         "specDir": {
           "type": "string",
           "default": "docs/specs",
-          "description": "Per-work-item spec files live in <specDir>/<id>/{requirements|bugfix,design,tasks,execution-log}.md."
+          "description": "Per-work-item spec files live in <specDir>/<id>/{requirements|bugfix,design,testing-plan,tasks,execution-log}.md. The AGENT's key: the CLI resolves the same directory from its own `routing.graph.specDir` (default docs/specs) or `--spec-dir`, so a repository that moves its specs sets both (issue-352)."
         },
         "capabilitiesDir": {
           "type": "string",
@@ -188,46 +150,6 @@
           "type": "string",
           "default": "docs/learnings",
           "description": "The learnings tree the self-improvement lifecycle maintains: the injected index <learningsDir>/learnings.md, one <learningsDir>/learning-<nnn>.md per durable learning, and the consolidated overflow in <learningsDir>/topics/<category>.md. Tuned by `selfImprovement`; the git-ignored write-gate queue stays under .the-loop/learnings-pending/ and is not affected by this key. Repo-relative, like specDir and capabilitiesDir. NOTE that the default places learnings inside the documentation tree: a project that PUBLISHES docs/ and would rather not publish its learnings should point this key somewhere it does not build from."
-        },
-        "phaseLabelPrefix": {
-          "type": "string",
-          "default": "loop:",
-          "description": "Prefix for the labels/tags created in the ticketing system to track phase."
-        },
-        "phases": {
-          "type": "array",
-          "description": "Ordered phase state machine for a work item. Each maps to a ticket label. `phase-selection` is where every work item starts: the-loop asks which phases this item needs and waits for an authorized user's `the-loop execute` (issue-177). `brainstorming` is optional — a work item may enter it or start directly at `requirements-definition`. `test-planning` produces testing-plan.md before the task DAG that references it, and `verification` executes that plan after implementation (issue-163). `cleanup` is the terminal phase the-loop enters when it releases the work item's LOCAL resources — tmux sessions, workspace checkout, machine-local session record (issue-186); a work item reaches it after `complete`, or from wherever it stood when it was closed unfinished.",
-          "default": [
-            "not-started",
-            "phase-selection",
-            "brainstorming",
-            "requirements-definition",
-            "design",
-            "test-planning",
-            "tasks-breakdown",
-            "implementation",
-            "verification",
-            "needs-review",
-            "complete",
-            "cleanup"
-          ],
-          "items": {
-            "type": "string",
-            "enum": [
-              "not-started",
-              "phase-selection",
-              "brainstorming",
-              "requirements-definition",
-              "design",
-              "test-planning",
-              "tasks-breakdown",
-              "implementation",
-              "verification",
-              "needs-review",
-              "complete",
-              "cleanup"
-            ]
-          }
         }
       }
     },
@@ -238,7 +160,10 @@
       "properties": {
         "languages": {
           "type": "array",
-          "items": { "type": "string", "enum": ["python", "js", "ts", "go"] },
+          "items": {
+            "type": "string",
+            "enum": ["python", "js", "ts", "go"]
+          },
           "uniqueItems": true
         },
         "packageManager": {
@@ -314,7 +239,14 @@
           "type": "array",
           "default": [],
           "description": "Ordered list of instruction documents, read in order when starting work on a work item (later docs win over earlier ones where they conflict).",
-          "examples": [[{ "path": "docs/team-conventions.md", "notes": "House TS style, naming, PR etiquette." }]],
+          "examples": [
+            [
+              {
+                "path": "docs/team-conventions.md",
+                "notes": "House TS style, naming, PR etiquette."
+              }
+            ]
+          ],
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -359,7 +291,9 @@
           "type": "array",
           "description": "Globs the harness scans to enumerate integration-test scenarios (`the-loop scenarios`). Empty = use the CLI's built-in defaults.",
           "items": { "type": "string" },
-          "examples": [["tests/integration/**/*.py", "e2e/**/*.spec.ts"]]
+          "examples": [
+            ["tests/integration/**/*.py", "e2e/**/*.spec.ts"]
+          ]
         }
       }
     },
@@ -460,20 +394,6 @@
         }
       }
     },
-    "localOrchestration": {
-      "type": "object",
-      "description": "Multi-artifact & multi-entity testing.",
-      "additionalProperties": false,
-      "properties": {
-        "containerRuntime": { "type": "string", "default": "podman" },
-        "linkPackagesLocally": { "type": "boolean", "default": true },
-        "remoteServices": {
-          "type": "array",
-          "description": "Services that should point at a remote instead of running locally.",
-          "items": { "type": "string" }
-        }
-      }
-    },
     "hooks": {
       "type": "object",
       "description": "Pre-commit / pre-push gating. RULE: same tooling as CI.",
@@ -481,12 +401,18 @@
       "properties": {
         "preCommit": {
           "type": "array",
-          "items": { "type": "string", "enum": ["lint", "typecheck", "unit-test"] },
+          "items": {
+            "type": "string",
+            "enum": ["lint", "typecheck", "unit-test"]
+          },
           "default": ["lint", "typecheck", "unit-test"]
         },
         "prePush": {
           "type": "array",
-          "items": { "type": "string", "enum": ["lint", "typecheck", "unit-test", "integration-test"] },
+          "items": {
+            "type": "string",
+            "enum": ["lint", "typecheck", "unit-test", "integration-test"]
+          },
           "default": ["lint", "typecheck", "unit-test"]
         },
         "commitConvention": {
@@ -497,66 +423,21 @@
         }
       }
     },
-    "graph": {
-      "type": "object",
-      "description": "THE PROCESS GRAPH, as THIS REPOSITORY extends it (issue-248, decision-096). the-loop's graph ships with the CLI and a repository cannot redefine it — nodes, edges and loops are the-loop's. What a repository MAY do is bring hooks of its own to the boundaries the shipped graph already declares.",
-      "additionalProperties": false,
-      "properties": {
-        "hooks": {
-          "type": "object",
-          "description": "Hooks this repository provides: `modules` names the Python that defines them, `attach` says where each one runs. Every hook a module registers is named `x-<something>` — the unprefixed namespace is the-loop's, so a repository hook can never shadow a shipped one. An attached hook is APPENDED to the node's shipped chain, so every shipped gate runs (and short-circuits) first: a repository hook can add a constraint, never relax one, and an `outcome` it declares is ignored so it can neither approve a gate nor choose an edge. This block is EXECUTABLE CONFIGURATION — the modules it names run inside the-loop's own process — so review one like code, exactly as `reviews.critics[]`. `the-loop graph hooks` reports what a repository declares without importing any of it; an operator refuses the whole mechanism with `routing.graph.repoHooks: false` in their CLI config.",
-          "additionalProperties": false,
-          "examples": [
-            {
-              "modules": [{ "path": ".the-loop/hooks/house_rules.py" }, { "module": "acme_loop_hooks.compliance" }],
-              "attach": [
-                { "hook": "x-licence-header", "node": "implementation", "boundary": "exit" },
-                { "hook": "x-arch-signoff", "node": "design", "with": { "board": "platform" } }
-              ]
-            }
-          ],
-          "properties": {
-            "modules": {
-              "type": "array",
-              "description": "Python modules registering this repository's hooks, loaded once per process. A module that is missing, raises on import, registers nothing, or registers a name outside the `x-` namespace FAILS the graph load rather than being skipped — a gate that silently stopped running is the failure this refuses.",
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "description": "Exactly one of `path` or `module`. A bare string is refused: it cannot say which of the two it is.",
-                "properties": {
-                  "path": { "type": "string", "description": "A .py file, relative to the repository root and inside it. An absolute path, a `..` escape or a symlink leaving the tree is refused — a repository may only run hook code it carries." },
-                  "module": { "type": "string", "description": "An importable dotted module name installed alongside the-loop's CLI — how a team ships shared hooks as a package." }
-                }
-              },
-              "default": []
-            },
-            "attach": {
-              "type": "array",
-              "description": "Where each repository hook runs. An entry naming a node the loop does not declare, a boundary other than entry/exit, or a hook no declared module registered fails the graph load.",
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["hook", "node"],
-                "properties": {
-                  "hook": { "type": "string", "pattern": "^x-.+", "description": "The hook's registered name. Must start with `x-`: only a repository's OWN hooks may be attached, since attaching a shipped hook elsewhere would be editing the-loop's process." },
-                  "node": { "type": "string", "description": "The node to attach to, e.g. `design` or `implementation`. `the-loop graph show` lists the nodes of the loop being walked." },
-                  "boundary": { "type": "string", "enum": ["entry", "exit"], "default": "exit", "description": "Which of the node's two chains to append to: `exit` gates leaving the node, `entry` runs on arrival." },
-                  "with": { "type": "object", "description": "Typed parameters handed to the hook as `ctx.params`, exactly as a shipped chain entry's `with:` is.", "default": {} }
-                }
-              },
-              "default": []
-            }
-          }
-        }
-      }
-    },
     "observability": {
       "type": "object",
       "description": "Logging must be identical at dev-time and run-time; only breakpoints differ. The CLI daemon's structured event log (`eventLog`) is a CLI-config concern, not a plugin one — see .the-loop/cli-config.schema.json (decision-032).",
       "additionalProperties": false,
       "properties": {
-        "devLevel": { "type": "string", "enum": ["debug", "info", "warn", "error"], "default": "debug" },
-        "runtimeLevel": { "type": "string", "enum": ["debug", "info", "warn", "error"], "default": "info" },
+        "devLevel": {
+          "type": "string",
+          "enum": ["debug", "info", "warn", "error"],
+          "default": "debug"
+        },
+        "runtimeLevel": {
+          "type": "string",
+          "enum": ["debug", "info", "warn", "error"],
+          "default": "info"
+        },
         "browserLogging": {
           "type": "string",
           "description": "How browser logs are surfaced to the harness, e.g. chrome-devtools-mcp.",
@@ -566,7 +447,7 @@
     },
     "reviews": {
       "type": "object",
-      "description": "Self-review and critic-review loop before escalating to a human. The counts are caps; see reference/reviewing.md for the procedure they drive.",
+      "description": "Self-review and critic-review loop before escalating to a human. The counts are caps; see reference/reviewing.md for the procedure they drive. WHICH critics exist is the operator's: `critics[]` in cli-config.yaml (issue-352), listed by `the-loop critic list`.",
       "additionalProperties": false,
       "required": ["selfReviewCount", "criticReviewCount"],
       "properties": {
@@ -591,80 +472,6 @@
           "type": "boolean",
           "default": true,
           "description": "Diminishing-returns guard: if two consecutive rounds surface the SAME finding, escalate to a human instead of looping."
-        },
-        "critics": {
-          "type": "array",
-          "description": "Alternate harness/model combos used as critics, e.g. cursor+gpt-5.5 reviewing claude-opus output. Each entry is RUNNABLE: `the-loop critic run <name>` spawns it and returns its output as one JSON envelope (issue-108, decision-043). An entry is therefore executable configuration in a repo-tracked file — review one like code.",
-          "examples": [
-            [
-              { "name": "cursor-gpt", "harness": "cursor", "model": "gpt-5.5" },
-              {
-                "name": "aider-review",
-                "harness": "aider",
-                "model": "gpt-5.5",
-                "command": "aider",
-                "args": ["--message-file", "{promptFile}", "--model", "{model}", "--no-auto-commits"],
-                "outputFormat": "text",
-                "timeoutSeconds": 900
-              }
-            ]
-          ],
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["name"],
-            "properties": {
-              "name": {
-                "type": "string",
-                "description": "Unique id for this critic; `the-loop critic run <name>` runs it. Names must be unique across the list."
-              },
-              "harness": {
-                "type": "string",
-                "description": "Critic harness/CLI. Free-form so any harness works (it is also the `[<harness>/<model>]` attribution prefix on every finding). When it names a harness the-loop has an adapter for (`claude`, `cursor`), the invocation is derived from that adapter and `command`/`args` may be omitted entirely."
-              },
-              "model": {
-                "type": "string",
-                "description": "Model the critic runs. Passed via the harness's own model flag for a built-in harness, or wherever `{model}` appears in `args`."
-              },
-              "command": {
-                "type": "string",
-                "description": "The EXECUTABLE to spawn (argv[0]) — not a shell line: arguments go in `args`, and nothing is ever run through a shell. Required for a harness the-loop has no adapter for; wins over `harness` when both are set. NOTE (issue-108): this key previously held a free-form invocation phrase (e.g. \"cursor-agent review\"); such a value is now rejected with a diagnostic instead of being silently mis-run."
-              },
-              "args": {
-                "type": "array",
-                "items": { "type": "string" },
-                "default": [],
-                "description": "argv after the executable. Placeholders are substituted element-wise (never via a shell): {prompt}, {promptFile}, {model}, {workItem}, {specDir}, {cwd}. With an explicit `command`, the list MUST carry {prompt} or {promptFile} — otherwise the critic is handed nothing to review. With a built-in `harness`, these are appended as extra flags to the derived invocation."
-              },
-              "env": {
-                "type": "object",
-                "additionalProperties": { "type": "string" },
-                "default": {},
-                "description": "Environment overlaid on the inherited environment for this critic. NEVER put secrets here — this file is committed; a critic CLI's own credentials come from the operator's ambient environment, which the child inherits."
-              },
-              "cwd": {
-                "type": "string",
-                "description": "Directory to run the critic in. Defaults to the project root."
-              },
-              "outputFormat": {
-                "type": "string",
-                "enum": ["text", "json"],
-                "default": "text",
-                "description": "How to read the critic's stdout. `json` extracts the reviewer's text from the payload (falling back to raw stdout when it is not JSON); `text` uses stdout verbatim."
-              },
-              "timeoutSeconds": {
-                "type": "number",
-                "exclusiveMinimum": 0,
-                "default": 900,
-                "description": "Hard bound on one critic round, so a hung critic CLI cannot wedge the review loop."
-              },
-              "enabled": {
-                "type": "boolean",
-                "default": true,
-                "description": "Set false to keep the entry but refuse to run it."
-              }
-            }
-          }
         }
       }
     },
@@ -689,7 +496,9 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Globs that force a high tier when touched.",
-          "examples": [["**/auth/**", "**/*secret*", "**/*schema*"]]
+          "examples": [
+            ["**/auth/**", "**/*secret*", "**/*schema*"]
+          ]
         },
         "tiers": {
           "type": "object",
@@ -821,7 +630,10 @@
             },
             "stages": {
               "type": "object",
-              "additionalProperties": { "type": "string", "enum": ["economy", "standard", "frontier"] },
+              "additionalProperties": {
+                "type": "string",
+                "enum": ["economy", "standard", "frontier"]
+              },
               "description": "Stage → tier assignment. Keys are pipeline stages (brainstorm, requirements, design, test-planning, tasks, implementation, verification, self-review, critic-review, evidence, capability-docs, reviewer-briefing, status, learnings). Reasoning-heavy stages default to frontier; mechanical/formatting stages to economy.",
               "default": {
                 "brainstorm": "frontier",
@@ -845,8 +657,14 @@
               "additionalProperties": false,
               "description": "Optional minimum tier by work-item risk tier (1–5): high-risk work never runs below the named tier even on an otherwise-economy stage.",
               "properties": {
-                "4": { "type": "string", "enum": ["economy", "standard", "frontier"] },
-                "5": { "type": "string", "enum": ["economy", "standard", "frontier"] }
+                "4": {
+                  "type": "string",
+                  "enum": ["economy", "standard", "frontier"]
+                },
+                "5": {
+                  "type": "string",
+                  "enum": ["economy", "standard", "frontier"]
+                }
               }
             }
           }
@@ -859,7 +677,10 @@
             "enabled": { "type": "boolean", "default": true },
             "stages": {
               "type": "object",
-              "additionalProperties": { "type": "string", "enum": ["none", "low", "medium", "high"] },
+              "additionalProperties": {
+                "type": "string",
+                "enum": ["none", "low", "medium", "high"]
+              },
               "description": "Stage → thinking-effort budget. Design/critic-review default high; status/evidence/formatting default none/low.",
               "default": {
                 "design": "high",
@@ -890,7 +711,17 @@
               "type": "array",
               "items": { "type": "string" },
               "description": "Content classes compression must never touch — these are contracts and paper trail.",
-              "default": ["code", "commands", "diffs", "errors", "paper-trail-comments", "reviewer-briefing", "specs", "decisions", "capability-docs"]
+              "default": [
+                "code",
+                "commands",
+                "diffs",
+                "errors",
+                "paper-trail-comments",
+                "reviewer-briefing",
+                "specs",
+                "decisions",
+                "capability-docs"
+              ]
             }
           }
         },
@@ -1077,55 +908,6 @@
         }
       }
     },
-    "notifications": {
-      "type": "object",
-      "description": "Which harness-raised events notify which ROLES (issue-82, decision-035). Recipients are resolved from .the-loop/collaborators.yaml: for each listed role, every collaborator holding it whose notifications are enabled is notified on their enabled channels. Notification-only — the decision itself always lands as a ticket/PR comment (the paper trail). Replaces the retired global `messaging`/`personas` keys: people and their channels now live ONLY in collaborators.yaml. Daemon-side events (dispatch failures, session crashes, …) are filtered separately in cli-config.yaml.",
-      "additionalProperties": false,
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Master switch for harness-raised notifications."
-        },
-        "events": {
-          "type": "object",
-          "description": "Event → roles to notify. Omitting an event means nobody is notified for it. The event names are the canonical harness-side taxonomy; each value lists the roles whose holders (from collaborators.yaml) get pinged.",
-          "additionalProperties": false,
-          "properties": {
-            "decision-pending": {
-              "type": "array",
-              "items": { "type": "string", "enum": ["product-manager", "architect", "designer", "engineer", "qa", "reviewer", "approver"] },
-              "description": "A planning/design question or opinion awaits a human (asked as a ticket comment)."
-            },
-            "phase-approval-pending": {
-              "type": "array",
-              "items": { "type": "string", "enum": ["product-manager", "architect", "designer", "engineer", "qa", "reviewer", "approver"] },
-              "description": "A spec phase gate (requirements/design/tasks) awaits human review/approval."
-            },
-            "pr-review-pending": {
-              "type": "array",
-              "items": { "type": "string", "enum": ["product-manager", "architect", "designer", "engineer", "qa", "reviewer", "approver"] },
-              "description": "A PR is ready for human review (reviewer briefing posted)."
-            },
-            "security-sign-off-pending": {
-              "type": "array",
-              "items": { "type": "string", "enum": ["product-manager", "architect", "designer", "engineer", "qa", "reviewer", "approver"] },
-              "description": "A security review at or above security.review.humanSignOffMinTier needs a named human sign-off."
-            },
-            "conflict-escalated": {
-              "type": "array",
-              "items": { "type": "string", "enum": ["product-manager", "architect", "designer", "engineer", "qa", "reviewer", "approver"] },
-              "description": "A blocked conflict/ambiguity was escalated (logged in docs/decisions/conflicts.md)."
-            },
-            "work-item-complete": {
-              "type": "array",
-              "items": { "type": "string", "enum": ["product-manager", "architect", "designer", "engineer", "qa", "reviewer", "approver"] },
-              "description": "A work item reached the complete phase."
-            }
-          }
-        }
-      }
-    },
     "externalTools": {
       "type": "object",
       "description": "Tools/skills/MCPs/plugins the-loop may freely use, declared inline so the whole config lives in one YAML — no separate registry file (issue-37 PR feedback). The harness checks this registry before assuming a capability is available.",
@@ -1140,18 +922,27 @@
             "additionalProperties": false,
             "required": ["name"],
             "properties": {
-              "name": { "type": "string", "description": "Tool/skill/MCP/plugin name, e.g. `github`, `gh`, `ponytail`." },
+              "name": {
+                "type": "string",
+                "description": "Tool/skill/MCP/plugin name, e.g. `github`, `gh`, `ponytail`."
+              },
               "kind": {
                 "type": "string",
                 "enum": ["mcp", "cli", "skill", "plugin", "other"],
                 "description": "What kind of tool this is."
               },
               "url": { "type": "string", "description": "Optional homepage/repository URL." },
-              "notes": { "type": "string", "description": "Access patterns, auth, constraints, or why it is registered." }
+              "notes": {
+                "type": "string",
+                "description": "Access patterns, auth, constraints, or why it is registered."
+              }
             }
           }
         },
-        "notes": { "type": "string", "description": "Global free-form notes (auth, access patterns, constraints) spanning tools." }
+        "notes": {
+          "type": "string",
+          "description": "Global free-form notes (auth, access patterns, constraints) spanning tools."
+        }
       }
     }
   }

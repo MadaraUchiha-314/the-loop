@@ -136,8 +136,8 @@ RETIRED: Dict[str, str] = {
     "notifications": (
         "the CLI config's daemon-side `notifications` block was removed in issue-304 — "
         "its event names were never raised. Subscribe `channels.slack.subscribe` to "
-        "the events you want instead; the harness config keeps its own "
-        "`notifications.events`, which the graph's `notify` hook carries as detail. "
+        "the events you want instead; the graph's `notify` hook publishes its own "
+        "vocabulary, which the channel carries as detail. "
         "Run `the-loop migrate-config`"
     ),
     "channels.slack.events": (

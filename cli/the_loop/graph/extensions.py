@@ -1,5 +1,5 @@
-"""A repository's own hooks: declared in its harness config, run at the-loop's
-boundaries (issue-248).
+"""Hooks of the operator's own, declared in the CLI config and run at the-loop's
+boundaries (issue-248; moved out of the harness config in issue-352).
 
 issue-109 shipped ten hooks and deferred *"user-defined graphs and user-authored
 hooks"* to a later work item, on the stated grounds that "the declarative form and
@@ -10,11 +10,13 @@ of its own to a boundary the shipped graph already declares.
 
 Four rules hold the whole design, and three of them are restrictions:
 
-* **Declared in the harness config** (``graph.hooks``). A hook gating *this
-  project's* artifacts is a property of the project, not of the operator's machine
-  (decision-044), which is where ``reviews.critics[]`` already lives — and, like
-  that entry, it is executable configuration in a repo-tracked file: review one
-  like code (decision-043).
+* **Declared in the CLI config** (``routing.graph.hooks``). The CLI reads no
+  repository's harness config at all (issue-352, decision-123), so the hooks it
+  runs are the operator's declaration, on the operator's machine — executable
+  configuration, like ``critics[]`` beside it: review one like code
+  (decision-043). A ``path`` entry still resolves against each checkout the
+  daemon works in, so the hook *code* may live in the repository; what may not is
+  the decision to run it.
 * **Append-only.** An attachment goes on the END of the node's shipped chain, so
   every shipped hook runs — and short-circuits — first. The strongest thing a
   repository hook can do to the loop is *stop* it.
@@ -62,8 +64,8 @@ __all__ = [
     "read_declaration",
 ]
 
-#: Where a repository declares its hooks, for messages that have to name it.
-CONFIG_KEY = "graph.hooks"
+#: Where the operator declares the hooks, for messages that have to name it.
+CONFIG_KEY = "routing.graph.hooks"
 
 #: The boundaries a repository may attach to — the node's own two.
 BOUNDARIES = ("entry", "exit")
@@ -74,7 +76,7 @@ _DOTTED = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
 
 @dataclass(frozen=True)
 class ModuleRef:
-    """One ``graph.hooks.modules[]`` entry: a file in the repository, or an
+    """One ``routing.graph.hooks.modules[]`` entry: a file in the checkout, or an
     installed module. Exactly one of the two, checked at parse time."""
 
     path: str = ""
@@ -86,7 +88,7 @@ class ModuleRef:
 
 @dataclass(frozen=True)
 class Attachment:
-    """One ``graph.hooks.attach[]`` entry — a hook, a node, a boundary, params."""
+    """One ``routing.graph.hooks.attach[]`` entry — a hook, a node, a boundary, params."""
 
     hook: str
     node: str
@@ -100,11 +102,11 @@ class Attachment:
 
 @dataclass(frozen=True)
 class Declaration:
-    """What a repository declared, parsed and validated — but not yet executed.
+    """What the operator declared, parsed and validated — but not yet executed.
 
     Kept separate from loading on purpose: ``the-loop graph hooks`` reports this
-    and stops, which is how an operator inspects a repository's declarations
-    without running any of its code (R5.1).
+    and stops, which is how an operator inspects the declaration without running
+    any of its code (R5.1).
     """
 
     modules: Tuple[ModuleRef, ...] = ()
@@ -130,24 +132,27 @@ class Declaration:
 # -- parsing (reads YAML; imports nothing) ------------------------------------
 
 
-def read_declaration(harness: Mapping[str, Any]) -> Declaration:
-    """Parse ``graph.hooks`` out of an already-loaded harness config.
+def read_declaration(cli_config: Mapping[str, Any]) -> Declaration:
+    """Parse ``routing.graph.hooks`` out of an already-loaded CLI config.
 
     A malformed block raises rather than resolving to "no hooks" — the whole point
     of R4.4. An **absent** block is not malformed: it returns an empty declaration,
-    which is what every repository that has never heard of this feature gets.
+    which is what every operator who has never heard of this feature gets.
     """
-    if not isinstance(harness, Mapping):
+    if not isinstance(cli_config, Mapping):
         return Declaration()
-    block = harness.get("graph") or {}
+    routing = cli_config.get("routing") or {}
+    if not isinstance(routing, Mapping):
+        raise GraphConfigError("CLI config: `routing` must be a mapping")
+    block = routing.get("graph") or {}
     if not isinstance(block, Mapping):
-        raise GraphConfigError("harness config: `graph` must be a mapping")
+        raise GraphConfigError("CLI config: `routing.graph` must be a mapping")
     raw = block.get("hooks") or {}
     if not raw:
         return Declaration()
     if not isinstance(raw, Mapping):
         raise GraphConfigError(
-            f"harness config: `{CONFIG_KEY}` must be a mapping with `modules` "
+            f"CLI config: `{CONFIG_KEY}` must be a mapping with `modules` "
             "and `attach` lists"
         )
     return Declaration(
@@ -160,9 +165,9 @@ def _entries(value: Any, key: str) -> Sequence[Any]:
     if not value:
         return ()
     if isinstance(value, Mapping) or isinstance(value, str):
-        raise GraphConfigError(f"harness config: `{CONFIG_KEY}.{key}` must be a list")
+        raise GraphConfigError(f"CLI config: `{CONFIG_KEY}.{key}` must be a list")
     if not isinstance(value, Sequence):
-        raise GraphConfigError(f"harness config: `{CONFIG_KEY}.{key}` must be a list")
+        raise GraphConfigError(f"CLI config: `{CONFIG_KEY}.{key}` must be a list")
     return value
 
 
@@ -171,7 +176,7 @@ def _read_modules(value: Any) -> Tuple[ModuleRef, ...]:
     for entry in _entries(value, "modules"):
         if not isinstance(entry, Mapping):
             raise GraphConfigError(
-                f"harness config: `{CONFIG_KEY}.modules` entry {entry!r} must be a "
+                f"CLI config: `{CONFIG_KEY}.modules` entry {entry!r} must be a "
                 "mapping — write `- path: .the-loop/hooks/mine.py` or "
                 "`- module: acme.hooks`, never a bare string, because a bare string "
                 "cannot say which of the two it is"
@@ -180,13 +185,13 @@ def _read_modules(value: Any) -> Tuple[ModuleRef, ...]:
         dotted = str(entry.get("module") or "").strip()
         if bool(path) == bool(dotted):
             raise GraphConfigError(
-                f"harness config: `{CONFIG_KEY}.modules` entry {dict(entry)!r} must "
+                f"CLI config: `{CONFIG_KEY}.modules` entry {dict(entry)!r} must "
                 "name exactly one of `path` (a .py file in this repository) or "
                 "`module` (an installed dotted name)"
             )
         if dotted and not _DOTTED.match(dotted):
             raise GraphConfigError(
-                f"harness config: `{CONFIG_KEY}.modules` module {dotted!r} is not an "
+                f"CLI config: `{CONFIG_KEY}.modules` module {dotted!r} is not an "
                 "importable dotted name"
             )
         refs.append(ModuleRef(path=path, dotted=dotted))
@@ -198,7 +203,7 @@ def _read_attachments(value: Any) -> Tuple[Attachment, ...]:
     for entry in _entries(value, "attach"):
         if not isinstance(entry, Mapping):
             raise GraphConfigError(
-                f"harness config: `{CONFIG_KEY}.attach` entry {entry!r} must be a "
+                f"CLI config: `{CONFIG_KEY}.attach` entry {entry!r} must be a "
                 "mapping of `hook`, `node`, and optionally `boundary` and `with`"
             )
         name = str(entry.get("hook") or "").strip()
@@ -208,24 +213,24 @@ def _read_attachments(value: Any) -> Tuple[Attachment, ...]:
         params = {} if params is None else params
         if not name or not node:
             raise GraphConfigError(
-                f"harness config: `{CONFIG_KEY}.attach` entry {dict(entry)!r} needs "
+                f"CLI config: `{CONFIG_KEY}.attach` entry {dict(entry)!r} needs "
                 "both a `hook` and a `node`"
             )
         if not name.startswith(EXTENSION_PREFIX):
             raise GraphConfigError(
-                f"harness config: `{CONFIG_KEY}.attach` may only name a repository "
+                f"CLI config: `{CONFIG_KEY}.attach` may only name a repository "
                 f"hook, and those are named {EXTENSION_PREFIX}<something>; {name!r} "
                 "is not one. Attaching a SHIPPED hook to another node would be "
                 "editing the-loop's process, which a repository cannot do"
             )
         if boundary not in BOUNDARIES:
             raise GraphConfigError(
-                f"harness config: `{CONFIG_KEY}.attach` entry for {name!r} names "
+                f"CLI config: `{CONFIG_KEY}.attach` entry for {name!r} names "
                 f"boundary {boundary!r}; it must be one of {list(BOUNDARIES)}"
             )
         if not isinstance(params, Mapping):
             raise GraphConfigError(
-                f"harness config: `{CONFIG_KEY}.attach` entry for {name!r} has a "
+                f"CLI config: `{CONFIG_KEY}.attach` entry for {name!r} has a "
                 "`with` that is not a mapping"
             )
         attachments.append(
