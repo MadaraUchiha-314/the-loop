@@ -13,8 +13,8 @@ the-loop check --all       [--repo .] [--spec-dir docs/specs] [--format table|js
 [`routing.graph.specDir`](/config/cli/routing-options#graph-specdir) answers, else
 `docs/specs`. The CLI reads no harness config
 ([issue #352](https://github.com/MadaraUchiha-314/the-loop/issues/352)), so a repository
-with an unusual layout says so on the command line — a CI job, or the agent reading the
-repository's `workflow.specDir` and passing it along.
+laid out differently says so on the command line — the loop's convention is `docs/specs`,
+and `routing.graph.specDir` or this flag is for an instance that departs from it.
 
 ```text
 $ the-loop check issue-117

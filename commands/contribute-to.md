@@ -39,7 +39,7 @@ management); only the node set differs.
    posts the format once and waits. The frozen criteria are the definition of done.
 
 2. **One artifact, not four.** The planning nodes (`context-intake`, `scoped-plan`)
-   author a single `<workflow.specDir>/<id>/contribution.md` — goal, success criteria,
+   author a single `docs/specs/<id>/contribution.md` — goal, success criteria,
    context, approach, verification plan — from the bundled `contribution.md` template.
    Requirements-and-design thinking still happens; it just lands in sections, not
    files. Leave it a draft at `scoped-plan` and iterate it with the human at

@@ -377,7 +377,7 @@
             "specDir": {
               "type": "string",
               "default": "docs/specs",
-              "description": "Where the work items' specs live in every checkout this instance drives, relative to the checkout root. ONE value for the whole instance (issue-352): the CLI reads no repository's harness config, so a repository's own `workflow.specDir` (the agent's key) must agree with this one — `/the-loop:init` says so when it writes a non-default value. Empty reads as the default. `the-loop check`/`graph --spec-dir` override it for one invocation. A work item with no directory under the resolved path is skipped (recorded as `graph.skipped`), which is what makes the coupling inert for repos that keep no specs. issue-123, issue-352."
+              "description": "Where the work items' specs live in every checkout this instance drives, relative to the checkout root. ONE value for the whole instance (issue-352): the CLI reads no repository's harness config, and the loop's convention is docs/specs/<id>/ — set this only for an instance whose repositories are laid out differently. Empty reads as the default. `the-loop check`/`graph --spec-dir` override it for one invocation. A work item with no directory under the resolved path is skipped (recorded as `graph.skipped`), which is what makes the coupling inert for repos that keep no specs. issue-123, issue-352."
             },
             "hooks": {
               "type": "object",

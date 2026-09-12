@@ -44,8 +44,8 @@ there* — to the **agent**. They never share a key, and since
 [issue #352](https://github.com/MadaraUchiha-314/the-loop/issues/352) the CLI never opens
 the second one ([decision-123](/decisions/decision-123)): the spec directory, the critics
 and the graph hooks it needs are its own config's, and what a repository knows that the
-CLI needs — a non-default `workflow.specDir`, the integration-test globs, the registered
-instruction docs — the agent passes as flags. `authorizedUsers` and `repositories` were
+CLI needs — the integration-test globs, the registered instruction docs — the agent
+passes as flags. `authorizedUsers` and `repositories` were
 always CLI-config-only with no fallback, and fail closed when unset. See
 [Configuring the-loop](/config/), [decision-032](/decisions/decision-032) and
 [decision-123](/decisions/decision-123).

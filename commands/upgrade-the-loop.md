@@ -154,25 +154,29 @@ command reconciles them.
      a printed block for the operator to place in `~/.the-loop/cli-config.yaml`. Say
      plainly that these are executable configuration moving from a committed file to the
      operator's: what the operator does not copy does not run.
-   - IF `workflow.specDir` is not `docs/specs` THEN the CLI config's
-     `routing.graph.specDir` must name the same directory — set it where the project
-     tracks its CLI config, otherwise surface it under **needs-user**.
+   - **Remove** `workflow` (fourth pass): `docs/specs/<id>/`, `docs/capabilities/` and
+     `docs/learnings/` are the loop's convention. IF the old `workflow.specDir` named
+     another directory THEN the specs are moved under `docs/specs/` (with the operator's
+     confirmation, like the learnings tree below) or, when the operator keeps the layout,
+     the CLI config's `routing.graph.specDir` names it — set it where the project tracks
+     its CLI config, otherwise surface it under **needs-user**. A non-default
+     `capabilitiesDir`/`learningsDir` is the same choice: move the tree, or report it.
    - Bump `version` to `0.3.0`, re-validate against the plugin's
      `harness-config.schema.json`, and run `the-loop migrate-config` for the CLI config
      (it strips `routing.graph.repoHooks` and bumps to `0.9.0`; a pre-rename
      `.the-loop/config.yaml` is no longer read by anything, so the rename in step 4 is
      now required rather than merely advised).
 
-   **The learnings tree moved into `docs/` (issue-224, decision-082).** `workflow.learningsDir`
-   is a new, additive harness-config key whose default is `docs/learnings` — where the old
-   hardcoded location was `learnings/` in the project root. The key itself is the ordinary
-   add-with-defaults case; **the directory is not**, because it holds the operator's data.
-   So when the project carries a root-level `learnings/` and no `workflow.learningsDir`,
-   present both supported outcomes and take neither on your own:
-   - **Move it** — `git mv learnings docs/learnings` (or wherever the project's docs live),
-     fix the relative links inside the moved files, and leave `learningsDir` at its
-     default (or set it to the chosen directory).
-   - **Pin it** — add `workflow.learningsDir: learnings` and change nothing on disk.
+   **The learnings tree lives in `docs/learnings/` (issue-224, decision-082; fixed since
+   issue-352).** The old hardcoded location was `learnings/` in the project root, and
+   for a while a `workflow.learningsDir` key could pin it elsewhere; that key is gone.
+   **The directory holds the operator's data**, so when the project carries a root-level
+   `learnings/` (or a tree wherever the removed key pointed), present both outcomes and
+   take neither on your own:
+   - **Move it** — `git mv learnings docs/learnings`, fix the relative links inside the
+     moved files.
+   - **Leave it** — change nothing on disk; the loop reads `docs/learnings/` only, so say
+     plainly that the old tree is no longer read.
 
    **Never move or delete a learnings tree without the operator's confirmation**, and if
    they do not answer, leave it exactly as it is and report it under **needs-user**: an

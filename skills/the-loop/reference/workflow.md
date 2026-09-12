@@ -50,8 +50,8 @@ good place to converge on them) and confirm via a ticket comment.
 ## The spec artifacts (Kiro-style — https://kiro.dev/docs/specs/)
 
 The Kiro 3-phase spec (requirements → design → tasks) plus the **testing plan** that
-sits between design and tasks (issue-163). Stored in `<workflow.specDir>/<id>/` (default
-`docs/specs/<id>/`). The human review per phase is always on and is delivered by the
+sits between design and tasks (issue-163). Stored in `docs/specs/<id>/` — the loop's
+fixed convention. The human review per phase is always on and is delivered by the
 graph's approval nodes — `requirements-approval`, and `design-approval` covering design and
 testing plan together — which classify the feedback, record the approver, and lock the
 artifact (issue-281). The paper trail is the gate's own record; never re-request an
@@ -586,8 +586,8 @@ distinction and per-harness mechanics):
 ## Capability docs — the organized view of specs (fold-in step)
 
 Per-work-item specs are *deltas*; readers need *state*. The loop maintains **living
-capability docs** under `workflow.capabilitiesDir` (default `docs/capabilities/`,
-indexed by `capabilities.md`, template
+capability docs** under `docs/capabilities/` (the loop's fixed convention, indexed by
+`capabilities.md`, template
 `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/capability.md`):
 
 - One doc per capability — product-feature and architecture shaped are both valid.

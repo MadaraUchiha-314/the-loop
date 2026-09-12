@@ -198,7 +198,7 @@ const developerSidebar = [
     collapsed: true,
     items: [{ text: "Decision log", link: "/decisions/decisions" }],
   },
-  // Learnings moved under docs/ in issue-224 (workflow.learningsDir), which put them
+  // Learnings moved under docs/ in issue-224 (now the fixed convention), which put them
   // inside this site's srcDir. Listed rather than excluded: the whole point of checking
   // learnings in is that a human reads them, and an unlisted page is one nobody finds.
   {

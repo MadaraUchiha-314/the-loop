@@ -264,14 +264,12 @@ predictable via:
 
 the-loop is not expected to be perfect from the start; it captures learnings in your repo
 so it measurably stops repeating mistakes — without letting the index grow unbounded and
-blow the context budget. Learnings live in `<learningsDir>/learnings.md` (index) +
-`<learningsDir>/learning-<nnn>.md` (detail), with overflow in
-`<learningsDir>/topics/<category>.md`, where `<learningsDir>` is
-`config.workflow.learningsDir` — the same block that names the spec and capability
-directories, defaulting to `docs/learnings`. A project that **publishes** its `docs/` tree
-and would rather not publish its learnings points the key elsewhere. The lifecycle itself
-is fixed: the index stays under 200 lines, and a learning is written once the same
-finding has occurred three times.
+blow the context budget. Learnings live in `docs/learnings/learnings.md` (index) +
+`docs/learnings/learning-<nnn>.md` (detail), with overflow in
+`docs/learnings/topics/<category>.md` — the loop's fixed convention, beside the spec and
+capability trees; a repository that **publishes** its `docs/` tree publishes its
+learnings with it. The lifecycle itself is fixed: the index stays under 200 lines, and a
+learning is written once the same finding has occurred three times.
 Sources: **user feedback** (requirements/design/tasks iteration, PR reviews) and **system
 feedback** (repeated failures or insights). The skill implements this today; the Python
 CLI can harden it later. Four stages:
@@ -285,7 +283,7 @@ CLI can harden it later. Four stages:
 3. **Consolidate.** At the end of a run, classify each candidate against the existing
    index as **ADD / UPDATE / DELETE** (on contradiction) / **NOOP**, then **prune to the
    size cap** (200 lines) by evicting the least-important/least-recent entries into
-   `<learningsDir>/topics/<category>.md`.
+   `docs/learnings/topics/<category>.md`.
 4. **Inject.** Load the **capped index** (under 200 lines) into each agent's
    prompt at the start of a run; overflow detail is read on demand from the topic files.
 

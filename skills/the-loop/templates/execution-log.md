@@ -122,7 +122,7 @@ under `<specDir>/<id>/evidence/`.
 > Which living capability docs this work item changed, and the history row that traces
 > each behaviour back to it. Capability docs are the **organized view of specs** — the
 > single source of truth for a capability's *current* behaviour — so they are updated
-> **in the same PR** as the change (`workflow.capabilitiesDir`), and this section is what
+> **in the same PR** as the change (under `docs/capabilities/`), and this section is what
 > the `capability-docs` node gates on. A work item that genuinely changed no capability
 > says so here, and why; the section is never deleted to shorten the log.
 

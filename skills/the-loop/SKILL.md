@@ -159,8 +159,8 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   changes are **edits to those files, not new comments**.
 - **Capability docs are the organized view of specs.** Raw specs under
   `docs/specs/<id>/` are the per-work-item record (*deltas*); living capability docs
-  under `workflow.capabilitiesDir` (default `docs/capabilities/`, indexed by
-  `capabilities.md`) are the **single source of truth for a capability's *current*
+  under `docs/capabilities/` (indexed by `capabilities.md`) are the **single source of
+  truth for a capability's *current*
   behaviour** (*state*), each behaviour traced by a history row to the specs/decisions
   that produced it. Update the affected capability docs **in the same PR** as the work
   item — a ready-to-ship gate item. Mint docs emergently (product-feature and
@@ -318,8 +318,8 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 - **Keep moving; log conflicts.** Resolvable ambiguity → assume a reasonable default and
   continue; genuine block → log to `docs/decisions/conflicts.md`, escalate once, move on.
 - **Learnings lifecycle.** Capture → write-gate (rule-of-three) → consolidate (size cap)
-  → inject a capped index (under 200 lines; written on the third occurrence), in the tree
-  `workflow.learningsDir` names (default `docs/learnings`). See `reference/automation.md`.
+  → inject a capped index (under 200 lines; written on the third occurrence), under
+  `docs/learnings/`. See `reference/automation.md`.
 - **Evidence at the end.** Present validated evidence that acceptance criteria are met.
 - **Communicate for the reviewer (required gate).** Before requesting human review,
   post/update the **reviewer briefing** in the PR — produced from the-loop's internal
@@ -357,9 +357,8 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 
 Behaviour is driven by `.the-loop/harness-config.yaml` — **the agent's file**, validated
 against `harness-config.schema.json`. Read it at the start of every work item and follow
-it: `version`, `workflow` (`specDir`, `capabilitiesDir`, `learningsDir`),
-`customInstructions`, `testing`, `apiSpecs` and `design` — six keys, nothing else. A
-subset of these keys can be overridden per work item via
+it: `version`, `customInstructions`, `testing`, `apiSpecs` and `design` — five keys,
+nothing else. A subset of these keys can be overridden per work item via
 the YAML front-matter `overrides` of the work-item / spec markdown. People (collaborators
 and the roles they hold) live in `.the-loop/collaborators.yaml`. Managed files are listed
 in `.the-loop/manifest.yaml`.
@@ -385,7 +384,9 @@ nothing is written into a config. `observability`: log levels are the project's 
 logging configuration, and browser logging uses whatever tool the harness discovers
 (`reference/observability.md`). `reviews`: the review-round policy is the **operator's**,
 top-level `reviews` in `cli-config.yaml`, read with `the-loop critic policy`
-(`reference/reviewing.md`).
+(`reference/reviewing.md`). And `workflow` left in the fourth: the doc trees are the
+loop's fixed convention — specs at `docs/specs/<id>/`, capability docs at
+`docs/capabilities/`, learnings at `docs/learnings/` — not a location a project configures.
 
 **The CLI never reads this file** (issue-352, decision-123). The `the-loop` CLI is the
 operator's tool and takes its configuration from the operator's `cli-config.yaml`
@@ -395,7 +396,7 @@ to it — the file is yours to read, the flags are yours to pass:
 
 | Harness-config key (yours) | How the CLI learns it |
 |---|---|
-| `workflow.specDir` | The CLI's own `routing.graph.specDir` (default `docs/specs`). Pass `--spec-dir <dir>` to `the-loop check` / `the-loop graph` when the project keeps its specs elsewhere and the operator's config does not say so — and tell the operator to set the key, since the daemon reads nothing else. |
+| *(spec directory)* | Not in this file. Specs live at `docs/specs/<id>/` — the loop's fixed convention, which the CLI's own `routing.graph.specDir` defaults to. `--spec-dir <dir>` on `the-loop check` / `the-loop graph` is only for an operator whose instance drives repositories laid out differently. |
 | `testing.integrationTestGlobs` | `the-loop scenarios --glob <pattern>` (repeatable). No `--glob` means the built-in defaults. |
 | `customInstructions.docs` / `.onMissing` | `the-loop instructions --doc <path> … --on-missing <warn\|error\|ignore>`. A `--doc` may be a JSON object `{"path": …, "notes": …}` to carry the entry's notes. |
 | *(critics)* | Not in this file. Which critic harnesses exist is the operator's `critics[]` in `cli-config.yaml`, and how many rounds to run with them is the operator's `reviews` there too: `the-loop critic list` tells you what this machine has, `the-loop critic policy` the round counts and stop conditions (the defaults — 3 self, 3 critic, stop on no new findings, escalate on a repeat — when the operator set none, or when the CLI is not installed). |
@@ -475,10 +476,9 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
 - `docs/decisions/decisions.md` + `decision-<nnn>.md` — decision log (every durable
   decision is recorded).
 - `docs/specs/<id>/` — the per-work-item 3-phase spec + execution log.
-- `<learningsDir>/learnings.md` + `learning-<nnn>.md` — learnings from user & system
-  feedback, checked in for review. `workflow.learningsDir` (default `docs/learnings`), so
-  the tree sits wherever this project keeps the documents the loop maintains. See
-  `reference/automation.md`.
+- `docs/learnings/learnings.md` + `learning-<nnn>.md` — learnings from user & system
+  feedback, checked in for review; the tree sits with the other documents the loop
+  maintains. See `reference/automation.md`.
 
 ## Interacting with other tools
 

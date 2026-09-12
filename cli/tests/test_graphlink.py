@@ -5,7 +5,7 @@ refuses to do: skip when the work item has no spec, skip when nobody started it,
 and — above all — never let a graph failure cost an event delivery.
 
 Issue-123 added the other half: *where* it looks for that spec. The directory is
-the work item's own repository's to declare (`workflow.specDir`, decision-044),
+the work item's own repository's to declare (its harness config, decision-044),
 with the CLI key left as a deliberate override — so these also pin which source
 wins, that the gate and the runtime resolve one value, and that a value read from
 a checkout cannot point outside it.
@@ -88,7 +88,7 @@ def _link(repo, runtime, **cfg):
 
 
 def _harness_config(root, spec_dir):
-    """Give ``root`` a harness config declaring ``workflow.specDir`` — which the CLI
+    """Give ``root`` a harness config declaring a spec directory — which the CLI
     must IGNORE (issue-352): the tests below that write one assert exactly that."""
     directory = root / ".the-loop"
     directory.mkdir(parents=True, exist_ok=True)
@@ -336,7 +336,7 @@ def test_the_graph_block_defaults_to_enabled():
 def test_the_graph_block_leaves_spec_dir_unset_by_default(data):
     """R1.3 — an always-set default is what made the repository's value
     unreachable: `build_runtime` treats an explicit spec_root as an override, so
-    a non-empty default meant `workflow.specDir` was never consulted."""
+    a non-empty default meant the repository's value was never consulted."""
     assert RoutingConfig.from_mapping(data, None).graph.spec_dir == ""
 
 
@@ -441,7 +441,7 @@ def test_a_directory_that_is_not_a_checkout_is_skipped(tmp_path):
 
 def test_the_instances_spec_dir_is_honoured(tmp_path):
     """issue-352 — one `routing.graph.specDir` for every checkout this daemon drives;
-    the CLI reads no repository's `workflow.specDir` any more."""
+    the CLI reads no repository's spec directory any more."""
     _git_repo(tmp_path)
     (tmp_path / "specs" / "issue-113").mkdir(parents=True)
     runtime = _FakeRuntime()
@@ -465,7 +465,7 @@ def test_a_checkout_with_no_harness_config_uses_the_default(repo):
 
 
 def test_the_repositorys_harness_config_is_not_consulted(tmp_path):
-    """issue-352 — a checkout declaring `workflow.specDir: specs` is driven under the
+    """issue-352 — a checkout declaring `specDir: specs` in its config is driven under the
     daemon's directory, not its own: the CLI never opens the file."""
     _git_repo(tmp_path)
     _harness_config(tmp_path, "specs")

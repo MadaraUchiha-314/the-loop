@@ -27,10 +27,10 @@ human decision the loop records.
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
 | phase-selection | 2026-09-11 | — | Pass 1: tier 2, audit only. Pass 2 (2026-09-12): tier 4 after the owner's review on PR #353; full chain, named security sign-off = the owner's PR approval |
-| requirements-definition | 2026-09-11 / 2026-09-12 | | [`requirements.md`](requirements.md) — rewritten for the breaking change: five requirements, six abuse cases; R3.5–R3.6 added after the owner's second review (the policy blocks), R3.7–R3.8 after the third (inferred facts, the review policy) |
+| requirements-definition | 2026-09-11 / 2026-09-12 | | [`requirements.md`](requirements.md) — rewritten for the breaking change: five requirements, six abuse cases; R3.5–R3.6 added after the owner's second review (the policy blocks), R3.7–R3.8 after the third (inferred facts, the review policy), R3.9 after the fourth (the doc trees) |
 | design | 2026-09-12 | | [`design.md`](design.md) — thirteen design points; [`decision-123`](../../decisions/decision-123.md) supersedes decision-044 |
 | test-planning | 2026-09-12 | | [`testing-plan.md`](testing-plan.md) — thirteen rows, eleven applicable |
-| tasks-breakdown | 2026-09-12 | | [`tasks.md`](tasks.md) — fourteen tasks |
+| tasks-breakdown | 2026-09-12 | | [`tasks.md`](tasks.md) — fifteen tasks |
 | implementation | 2026-09-12 | | On `claude/github-issue-352-un79kv` |
 | verification | 2026-09-12 | | [`evidence/verification.md`](evidence/verification.md); [`evidence/security-review.md`](evidence/security-review.md) — six abuse cases, six closed |
 | needs-review | 2026-09-12 | | PR #353 updated; awaiting the owner (tier 4: PR approval is the sign-off) |
@@ -40,7 +40,7 @@ human decision the loop records.
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| [#353](https://github.com/MadaraUchiha-314/the-loop/pull/353) | pass 1 (the audit), pass 2 (tasks 1–12), pass 3 (task 13, the policy blocks) and pass 4 (task 14, the inferred facts and the review policy) — the whole work item | open |
+| [#353](https://github.com/MadaraUchiha-314/the-loop/pull/353) | pass 1 (the audit), pass 2 (tasks 1–12), pass 3 (task 13, the policy blocks) pass 4 (task 14, the inferred facts and the review policy) and pass 5 (task 15, the doc trees) — the whole work item | open |
 
 ## Progress entries
 
@@ -131,5 +131,20 @@ human decision the loop records.
   capability docs and config pages say "inferred" and "the operator's policy".
 - **Checkpoint/tests:** `make check` green on the PR head — 3501 passed, 1 skipped; ruff,
   pyright and markdownlint clean (`evidence/verification.md`).
+- **Next:** the owner's review of PR #353.
+- **Blockers:** none.
+
+### 2026-09-12 — the fourth review: the doc trees (pass 5)
+
+- **Phase:** needs-review → requirements-definition → … → needs-review
+- **Decision recorded:** the owner's fourth ruling on PR #353 (08:06Z): `workflow` —
+  *"remove workflow."* Recorded as R3.9, D15 and decision-123 D14.
+- **Did (task 15):** `workflow` left the harness schema (five keys remain);
+  `docs/specs/<id>/`, `docs/capabilities/` and `docs/learnings/` are written as the
+  loop's convention in the skill, commands, templates and docs; `routing.graph.specDir`
+  is described as the operator's departure from it; `/init` scaffolds the fixed trees;
+  `upgrade-the-loop` moves a differently placed tree with confirmation or reports it.
+- **Checkpoint/tests:** `make check` green on the PR head (counts in
+  `evidence/verification.md`).
 - **Next:** the owner's review of PR #353.
 - **Blockers:** none.

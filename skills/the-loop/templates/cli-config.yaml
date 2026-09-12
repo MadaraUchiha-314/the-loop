@@ -198,8 +198,8 @@ routing:
     enabled: true               # false = pre-issue-113 behaviour
     # WHERE the specs live, for every checkout this instance drives (issue-352):
     # the CLI reads no repository's harness config, so this one value is the
-    # answer for all of them — keep it equal to each repository's
-    # `workflow.specDir` (the agent's key). `--spec-dir` overrides it per call.
+    # answer for all of them. The loop's convention is docs/specs/<id>/; set this
+    # only for repositories laid out differently. `--spec-dir` overrides it per call.
     specDir: docs/specs
     # HOOKS OF YOUR OWN on the process graph (issue-248, decision-096; declared
     # here since issue-352). the-loop's graph ships with the CLI and cannot be

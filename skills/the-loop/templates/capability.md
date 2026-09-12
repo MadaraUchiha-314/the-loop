@@ -9,10 +9,10 @@
 
 > One-line purpose of the capability. A **capability doc** is the organized view of the
 > specs that shaped this capability: the **single source of truth for its *current*
-> behaviour**. The raw specs under `<specDir>/<id>/` remain the historical record of how
+> behaviour**. The raw specs under `docs/specs/<id>/` remain the historical record of how
 > each change arrived. Update this doc **in the same PR** as any work item that changes
 > the capability's behaviour (a ready-to-ship gate item), and keep the index
-> (`<capabilitiesDir>/capabilities.md`) in sync.
+> (`docs/capabilities/capabilities.md`) in sync.
 
 ## What it is
 

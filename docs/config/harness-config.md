@@ -51,16 +51,20 @@ file.
 | Section | Covers |
 |---------|--------|
 | `version` | The schema version the file follows (`0.3.0`); `/the-loop:upgrade-the-loop` migrates it. |
-| `workflow` | Where the-loop's checked-in knowledge lives (`specDir`/`capabilitiesDir`/`learningsDir`). The phases are the [process graph's](/capabilities/process-graph) and the labels are `loop:<phase>`, fixed — neither is configured. A project which **publishes** its `docs/` tree publishes its learnings with it unless `learningsDir` points elsewhere. |
 | `customInstructions` | User-provided instruction docs the agent reads before working — see [instructions reference](/operating-model/reference/instructions). The agent passes them to [`the-loop instructions`](/cli/commands/instructions) as `--doc`. |
 | `testing` | Gherkin docstring requirement, `integrationTestGlobs` — which the agent passes to [`the-loop scenarios`](/cli/commands/scenarios) as `--glob`. |
 | `apiSpecs` | Contract-first REST (OpenAPI) / GraphQL (SDL) locations and doc generation. |
 | `design` | UI/UX design-artifact directory/format — see [design-artifacts reference](/operating-model/reference/design-artifacts). |
 
-Six keys, and nothing about the repository's layout, tooling, git hooks, logging or
-review rounds: the first three the agent **infers from the repository itself** every
-session ([tooling reference](/operating-model/reference/tooling)), logging is the project's
-own, and the review rounds are the operator's — the table below says where each went.
+Five keys, and nothing about the repository's layout, tooling, git hooks, logging, review
+rounds or the location of the loop's own documents: the first three the agent **infers
+from the repository itself** every session
+([tooling reference](/operating-model/reference/tooling)), logging is the project's own,
+the review rounds are the operator's, and the doc trees are the loop's fixed convention
+— `docs/specs/<id>/`, `docs/capabilities/`, `docs/learnings/`, with the phases the
+[process graph's](/capabilities/process-graph) and the labels `loop:<phase>`. A project
+which **publishes** its `docs/` tree publishes its learnings with it. The table below
+says where each went.
 
 ## What moved out of it in issue-352
 
@@ -71,7 +75,7 @@ every repository, so not a setting:
 
 | Was in the harness config | Now |
 |---|---|
-| `workflow.specDir` *(still here, for the agent)* | The CLI resolves the same directory from its own [`routing.graph.specDir`](/config/cli/routing-options#graph-specdir) (default `docs/specs`), or `--spec-dir` on [`check`](/cli/commands/check) and [`graph`](/cli/commands/graph). A repository that moves its specs sets both. |
+| `workflow` (`specDir`, `capabilitiesDir`, `learningsDir`) | Removed — `docs/specs/<id>/`, `docs/capabilities/`, `docs/learnings/` are the loop's convention, not a location a project configures. The CLI's own [`routing.graph.specDir`](/config/cli/routing-options#graph-specdir) defaults to `docs/specs`; an operator whose instance drives repositories laid out differently sets it, or passes `--spec-dir` to [`check`](/cli/commands/check) and [`graph`](/cli/commands/graph). |
 | `workflow.phaseLabelPrefix` | Removed. Labels are `loop:<phase>`, one vocabulary everywhere. |
 | `workflow.phases` | Removed. The graph is the only phase list; `/the-loop:init` creates the labels from it. |
 | `ticketing` | Removed. A work item's ticket is its ref (`github:owner/repo#n`); in-session the CLI derives the repository from the checkout's `origin` remote when no `--ref` is given. |
@@ -91,7 +95,7 @@ every repository, so not a setting:
 | `tdd` | Removed — the rule is fixed: `standard`, always — tests alongside the implementation, a bug fix reproduced red first. See the [workflow reference](/operating-model/reference/workflow). |
 | `minimalism` | Removed — the rule is fixed: always on, at standard intensity, per the ladder in the [minimalism reference](/operating-model/reference/minimalism). |
 | `tokenEconomy` | Removed — the rule is fixed: the [token-economy reference](/operating-model/reference/token-economy) is guidance, always advisory. The harness runs whatever model the operator chose (no routing table); thinking effort and verbosity follow the guidance's stage table; disclosure, sub-agent delegation, compaction and telemetry are practices, not switches. |
-| `selfImprovement` | Removed — the rule is fixed: learnings are always on, the index stays under 200 lines, a learning is written at the third occurrence. `workflow.learningsDir` stays. See the [workflow reference](/operating-model/reference/workflow). |
+| `selfImprovement` | Removed — the rule is fixed: learnings are always on, the index stays under 200 lines, a learning is written at the third occurrence, under `docs/learnings/`. See the [workflow reference](/operating-model/reference/workflow). |
 | `contextManagement` | Removed — the rule is fixed: clear at a phase boundary, compact after each task, never clear mid-task. See the [context reference](/operating-model/reference/context). |
 | `userInteraction` | Removed — the rule is fixed: mermaid diagrams; the PR briefing (the bundled `pr-briefing.md` template, condensed, with diagrams) is required before human review; educating the user is mandatory; the writing contract is the bundled `the-loop:writing` skill — diagram-first, fixed formal registers, no length limits ([decision-061](/decisions/decision-061)). See [writing-style](/capabilities/writing-style). |
 | `externalTools` | Removed, nothing replaces it: the harness discovers its tools (MCP servers, plugins, skills, CLIs) itself. |

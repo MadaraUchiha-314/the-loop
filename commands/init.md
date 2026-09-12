@@ -51,8 +51,7 @@ to the plugin's install directory.)
      see (see the skill's `reference/instructions.md`).
    - the **integration-test globs** for `testing.integrationTestGlobs` — from the test
      directories and the naming the repository already uses.
-   - existing **API contracts** (`openapi*.yaml`, `*.graphql`) for `apiSpecs`, and an
-     existing specs/docs layout for `workflow.specDir`/`capabilitiesDir`/`learningsDir`.
+   - existing **API contracts** (`openapi*.yaml`, `*.graphql`) for `apiSpecs`.
    Where no signal exists, keep the schema default and mark the line with a trailing
    `# TODO: verify — no signal found, defaulted` comment; surface it in the guided
    onboarding (step 2) or, non-interactively, under **needs-user** in the final report.
@@ -65,7 +64,7 @@ to the plugin's install directory.)
    (related keys that interact, clubbed together) and each group's `ask` level:
    - `always` groups (**People & interaction**: the collaborators file) have no
      sensible default — establish them with the user.
-   - `confirm` groups (custom instructions, workflow, testing conventions) —
+   - `confirm` groups (custom instructions, testing conventions) —
      present the proposal from step 1's detection (falling back to schema defaults)
      and confirm/adjust the whole group in ONE interaction.
    - `advanced` groups (API contracts & design artifacts) — default silently; offer a
@@ -113,9 +112,9 @@ to the plugin's install directory.)
      `templates/cli-config.yaml`, and nothing else. Never scaffolded on the
      home-directory answer or under `--defaults`.
    - `docs/architecture/architecture.md`, `docs/decisions/decisions.md`,
-     `<workflow.specDir>/` (per-work-item Kiro specs + execution logs).
-   - `<workflow.learningsDir>/learnings.md` — the learnings index, under the directory
-     established in step 2 (default `docs/learnings`).
+     `docs/specs/` (per-work-item Kiro specs + execution logs), `docs/capabilities/`.
+   - `docs/learnings/learnings.md` — the learnings index. The doc trees are the loop's
+     convention, not a setting (issue-352).
 
 4. **Create phase labels/tags** in the ticketing system for the process graph's phases
    — one per phase the shipped work-item loop declares, named `loop:<phase>` (the fixed
@@ -138,11 +137,7 @@ to the plugin's install directory.)
    - if scaffolded, `.the-loop/cli-config.yaml` ↔ `cli-config.schema.json`
 
    The absence of a project-local schema copy never weakens or skips this step. Report
-   any gaps the user must fill (e.g. empty `collaborators`). If `workflow.specDir` was
-   set to anything but `docs/specs`, say so explicitly: the CLI reads no harness config
-   (issue-352), so the operator must set `routing.graph.specDir` in their
-   `cli-config.yaml` to the same value (it is set in the scaffolded one if step 2 chose
-   to track it here).
+   any gaps the user must fill (e.g. empty `collaborators`).
 
 6. **Confirm collaborators.** If `.the-loop/collaborators.yaml` is still empty after
    the onboarding (step 2), ask the user (via a ticket comment if a ticket exists,

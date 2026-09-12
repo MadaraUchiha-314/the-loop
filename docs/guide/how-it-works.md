@@ -85,9 +85,9 @@ docs/
                      execution-log.md, evidence/
 ```
 
-Three of those directories are the project's to place: `workflow.specDir`,
-`workflow.capabilitiesDir` and `workflow.learningsDir` (defaults `docs/specs`,
-`docs/capabilities`, `docs/learnings`). This repository states all three explicitly.
+Those directories are the loop's fixed convention, not a setting: `docs/specs/<id>/`,
+`docs/capabilities/` and `docs/learnings/`. A repository that publishes its `docs/` tree
+publishes its learnings with it.
 
 ## Development (the-loop's own quality gates)
 

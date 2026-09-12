@@ -99,10 +99,10 @@ class GraphLinkConfig:
     ``spec_dir`` is ``routing.graph.specDir``: where the work items' specs live
     in every checkout this daemon drives. Empty means the shipped default
     (``docs/specs``). Until issue-352 an empty value deferred to each
-    repository's own ``workflow.specDir`` (issue-123); the CLI reads no harness
+    repository's own harness config (issue-123); the CLI reads no harness
     config any more, so the operator's one value is the answer for every
-    repository it watches — the harness config's key is the agent's, and the
-    skill tells the agent to keep the two aligned.
+    repository it watches — and the loop's convention is ``docs/specs``, so the
+    value is set only for an instance laid out differently.
     """
 
     enabled: bool = True

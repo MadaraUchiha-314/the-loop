@@ -14,7 +14,7 @@ and honor them throughout — they carry the operator's conventions and styles
 (`reference/instructions.md`). Run `the-loop instructions --doc <path>… --on-missing
 <policy>` with the entries you read, so a registration that fails to resolve surfaces
 instead of quietly contributing nothing (the CLI reads no harness config — issue-352). Apply any per-task `overrides` from the work item's
-front-matter. Specs live in `<workflow.specDir>/<id>/` (default `docs/specs/<id>/`).
+front-matter. Specs live in `docs/specs/<id>/` — the loop's fixed convention.
 
 **`work-on` is the superset.** The same flow is also exposed as granular commands you can
 run one step at a time: `/the-loop:brainstorm` (optional) → `/the-loop:new-requirement` →
@@ -190,7 +190,7 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
    enough context to decide, and **educate the user on the low-level design decisions —
    this is mandatory, not optional.**
 
-12. **Capture learnings.** Add to `<workflow.learningsDir>/learnings.md` (+ a
+12. **Capture learnings.** Add to `docs/learnings/learnings.md` (+ a
    `learning-<nnn>.md` beside it) for any user/system feedback worth remembering. Log
    durable decisions under `docs/decisions/`.
 

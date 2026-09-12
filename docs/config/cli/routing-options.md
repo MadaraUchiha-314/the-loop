@@ -435,9 +435,9 @@ human or CI runs `the-loop graph advance`.
 Where the work items' specs live, relative to the checkout root, in **every** repository
 this instance drives. One value for the whole instance: since
 [issue #352](https://github.com/MadaraUchiha-314/the-loop/issues/352) the CLI reads no
-repository's harness config, so a repository's own `workflow.specDir` (the agent's key)
-must agree with this one — `/the-loop:init` says so when it writes a non-default value.
-Empty reads as the default. `the-loop check --spec-dir` / `the-loop graph --spec-dir`
+repository's harness config, and the loop's convention is `docs/specs/<id>/` — set this
+only for an instance whose repositories are laid out differently. Empty reads as the
+default. `the-loop check --spec-dir` / `the-loop graph --spec-dir`
 override it for one invocation, which is what a CI job in a repository with an unusual
 layout uses.
 
@@ -448,7 +448,7 @@ and the reason — a work item that is labelled, armed and spawned but whose gra
 moves is answerable from the event log.
 
 ::: warning Until 14.x this was an override, and the repository decided
-issue-123 had made an empty value mean "read the work item's own `workflow.specDir`",
+issue-123 had made an empty value mean "read the work item's own harness config",
 so one daemon could serve repositories with different layouts. That read is gone with
 the rest of the CLI's harness-config reads; an instance now drives every repository under
 this one directory.

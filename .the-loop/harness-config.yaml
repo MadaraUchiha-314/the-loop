@@ -3,19 +3,15 @@
 # own repository (installed here as a Claude/Cursor plugin). Validated against
 # .the-loop/harness-config.schema.json. THE AGENT'S FILE: the skill and the
 # /the-loop:* commands read it, and the CLI never does (issue-352, decision-123) —
-# what the CLI needs lives in .the-loop/cli-config.yaml (spec directory, critics,
-# review rounds, graph hooks) or arrives as a flag the agent passes. Only what the
-# agent cannot infer is here: layout, tooling and git hooks are read off the
-# repository itself every session (the skill's reference/tooling.md). People live
+# what the CLI needs lives in .the-loop/cli-config.yaml (critics, review rounds,
+# graph hooks) or arrives as a flag the agent passes. Only what the agent cannot
+# infer is here: layout, tooling and git hooks are read off the repository itself
+# every session (the skill's reference/tooling.md), and the doc trees are the
+# loop's convention (docs/specs/<id>/, docs/capabilities/, docs/learnings/). People live
 # in .the-loop/collaborators.yaml; this file names no ticketing system (the work
 # item's ref says which repository) and no phase labels (they are `loop:<phase>`).
 
 version: "0.3.0"
-
-workflow:
-  specDir: docs/specs                  # the CLI's routing.graph.specDir must agree (issue-352)
-  capabilitiesDir: docs/capabilities   # living capability docs — the organized view of specs (issue-25)
-  learningsDir: docs/learnings         # issue-224: stated, not defaulted — the learnings sit with every other doc the loop maintains
 
 customInstructions:             # user-provided instruction docs the harness reads before working
   docs: []                      # the-loop's own conventions live in the skill itself; none extra

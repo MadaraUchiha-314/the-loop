@@ -166,7 +166,7 @@ routing:
   # instance drives, and any HOOKS of your own on the graph's boundaries.
   graph:
     enabled: true
-    specDir: docs/specs         # must agree with each repository's workflow.specDir
+    specDir: docs/specs         # the loop's convention; set only for a different layout
     # Hooks run inside the-loop's process with your credentials — review one like
     # code. A `path` resolves against each checkout; `x-` names only; appended
     # after every shipped hook, so a hook here can block but never approve.

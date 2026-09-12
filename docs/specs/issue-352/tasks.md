@@ -84,5 +84,9 @@ flowchart LR
   SDK and MCP; `/init` and `onboarding.md` without the inferred groups;
   `reference/tooling.md`'s detection as the per-session procedure; every reference in
   the skill, commands and docs. _Test:_ T2, T3, T9, T11.
+- [x] **15 · The fourth review: the doc trees** — drop `workflow` from the harness schema,
+  template and config; the literal paths in the skill, commands, templates and docs;
+  `routing.graph.specDir` described as the departure from the convention; `/init` and
+  `upgrade-the-loop` accordingly. _Test:_ T9, T11.
 - [x] **12 · Verification + evidence** — `make check`; the grep; `evidence/verification.md`
   and `evidence/security-review.md`; execution log; PR body. _Test:_ all.

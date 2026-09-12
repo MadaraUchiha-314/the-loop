@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/MadaraUchiha-314/the-loop/.the-loop/harness-config.schema.json",
   "title": "the-loop plugin configuration",
-  "description": "Schema for .the-loop/harness-config.yaml — the HARNESS (plugin) config, installed per repo and read by the /the-loop:* commands and the skill working that repo: the few facts about this repository the agent cannot infer (where the specs live, the instruction docs, the testing conventions, the API contracts, the design artifacts). Layout, tooling and git hooks are inferred from the repository every session; the review-round policy is the operator's cli-config.yaml. THE CLI NEVER READS THIS FILE (issue-352, decision-123): what the CLI needs it takes from its own cli-config.yaml (spec directory, critics, graph hooks) or from flags the agent passes (`--spec-dir`, `--glob`, `--doc`); the skill tells the agent which. Phase labels are `loop:<phase>`, fixed; the ticket's repository is the work item's ref, not a setting.",
+  "description": "Schema for .the-loop/harness-config.yaml — the HARNESS (plugin) config, installed per repo and read by the /the-loop:* commands and the skill working that repo: the few facts about this repository the agent cannot infer (the instruction docs, the testing conventions, the API contracts, the design artifacts). Layout, tooling and git hooks are inferred from the repository every session; the review-round policy is the operator's cli-config.yaml. THE CLI NEVER READS THIS FILE (issue-352, decision-123): what the CLI needs it takes from its own cli-config.yaml (spec directory, critics, graph hooks) or from flags the agent passes (`--spec-dir`, `--glob`, `--doc`); the skill tells the agent which. Phase labels are `loop:<phase>`, fixed; the ticket's repository is the work item's ref, not a setting. The doc trees are the loop's convention — docs/specs/<id>/, docs/capabilities/, docs/learnings/ — not a setting.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version"],
   "x-onboarding": {
-    "description": "Drives the guided onboarding `/the-loop:init` runs (see the the-loop skill's reference/onboarding.md). Groups club related top-level keys that interact and are established with the user together, in this order. Per-key explanations, defaults, enum possibilities and examples come from the property schemas below — this block only adds grouping and ask policy, so the schema stays the single source of truth. `version` belongs to no group: init stamps it. A group may carry no key (`people`): it exists to establish a sibling file. Repository layout and tooling are not groups any more: the skill infers them from the repository every session (issue-352). Validators ignore x-* keywords.",
+    "description": "Drives the guided onboarding `/the-loop:init` runs (see the the-loop skill's reference/onboarding.md). Groups club related top-level keys that interact and are established with the user together, in this order. Per-key explanations, defaults, enum possibilities and examples come from the property schemas below — this block only adds grouping and ask policy, so the schema stays the single source of truth. `version` belongs to no group: init stamps it. A group may carry no key (`people`): it exists to establish a sibling file. Repository layout and tooling are not groups any more: the skill infers them from the repository every session; the doc trees (docs/specs, docs/capabilities, docs/learnings) are the loop's convention (issue-352). Validators ignore x-* keywords.",
     "askLevels": {
       "always": "No sensible default exists — init MUST establish this group with the user (or report it under needs-user when running non-interactively).",
       "confirm": "Init proposes sensible values (detected from the repo, else the schema default) and asks the user to confirm or adjust the whole group in one pass.",
@@ -20,13 +20,6 @@
         "ask": "confirm",
         "explain": "Per-installation instruction documents (readme/markdown files) the harness reads and honors while working: team conventions, developing/testing/coding styles, house rules the structured config does not model. Candidates are detected from common convention files (CONTRIBUTING.md, docs style guides); supplementary to the external-tools registry.",
         "keys": ["customInstructions"]
-      },
-      {
-        "id": "workflow",
-        "title": "Workflow & phases",
-        "ask": "confirm",
-        "explain": "Where the-loop's checked-in knowledge lives in this repository (specs, capability docs, learnings). Phase labels are fixed (`loop:<phase>`); if specDir moves, the CLI's routing.graph.specDir moves with it.",
-        "keys": ["workflow"]
       },
       {
         "id": "testing",
@@ -54,30 +47,8 @@
   "properties": {
     "version": {
       "type": "string",
-      "description": "Schema version of this config file. Used by /upgrade-the-loop to reconcile. 0.3.0 (issue-352) removed ticketing, workflow.phases/phaseLabelPrefix/specApproach/requireHumanReviewPerPhase, localOrchestration, notifications, reviews.critics and graph — see the upgrade command for where each went. It also removed autonomy, security, tdd, minimalism, tokenEconomy, selfImprovement, contextManagement, userInteraction and externalTools: those configured what is now simply the loop's rule (risk tiers, security gates, TDD, minimalism, token economy, learnings, context management, the writing contract) and the harness discovers its own tools. A third pass removed repository, tooling, hooks and observability (the skill infers layout, tooling and git hooks from the repository; logging is the project's own) and moved reviews to the CLI config's top-level `reviews`.",
+      "description": "Schema version of this config file. Used by /upgrade-the-loop to reconcile. 0.3.0 (issue-352) removed ticketing, workflow.phases/phaseLabelPrefix/specApproach/requireHumanReviewPerPhase, localOrchestration, notifications, reviews.critics and graph — see the upgrade command for where each went. It also removed autonomy, security, tdd, minimalism, tokenEconomy, selfImprovement, contextManagement, userInteraction and externalTools: those configured what is now simply the loop's rule (risk tiers, security gates, TDD, minimalism, token economy, learnings, context management, the writing contract) and the harness discovers its own tools. A third pass removed repository, tooling, hooks and observability (the skill infers layout, tooling and git hooks from the repository; logging is the project's own) and moved reviews to the CLI config's top-level `reviews`. A fourth pass removed workflow: docs/specs/<id>/, docs/capabilities/ and docs/learnings/ are the loop's convention.",
       "examples": ["0.3.0"]
-    },
-    "workflow": {
-      "type": "object",
-      "description": "The Kiro-style 3-phase spec workflow (plus the testing plan) and where the-loop's checked-in knowledge lives in this repository. The phases themselves are the process graph's (shipped with the CLI) and the ticket labels are `loop:<phase>`; neither is configured here since issue-352.",
-      "additionalProperties": false,
-      "properties": {
-        "specDir": {
-          "type": "string",
-          "default": "docs/specs",
-          "description": "Per-work-item spec files live in <specDir>/<id>/{requirements|bugfix,design,testing-plan,tasks,execution-log}.md. The AGENT's key: the CLI resolves the same directory from its own `routing.graph.specDir` (default docs/specs) or `--spec-dir`, so a repository that moves its specs sets both (issue-352)."
-        },
-        "capabilitiesDir": {
-          "type": "string",
-          "default": "docs/capabilities",
-          "description": "Living capability docs (the organized view of specs; single source of truth for a capability's current behaviour) live in <capabilitiesDir>/, indexed by <capabilitiesDir>/capabilities.md. Affected docs are updated in the same PR as the work item (ready-to-ship gate item)."
-        },
-        "learningsDir": {
-          "type": "string",
-          "default": "docs/learnings",
-          "description": "The learnings tree the self-improvement lifecycle maintains: the injected index <learningsDir>/learnings.md, one <learningsDir>/learning-<nnn>.md per durable learning, and the consolidated overflow in <learningsDir>/topics/<category>.md. Tuned by `selfImprovement`; the git-ignored write-gate queue stays under .the-loop/learnings-pending/ and is not affected by this key. Repo-relative, like specDir and capabilitiesDir. NOTE that the default places learnings inside the documentation tree: a project that PUBLISHES docs/ and would rather not publish its learnings should point this key somewhere it does not build from."
-        }
-      }
     },
     "customInstructions": {
       "type": "object",
