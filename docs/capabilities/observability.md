@@ -32,6 +32,11 @@ for humans, coding agents and any dashboarding built on top.
   (independent of any repo's plugin config — decision-032).
 - JSONL SHALL be the source of truth (no SQLite store); query/dashboard layers build on
   top of the file ([decision-025](../decisions/decision-025.md)).
+- The catalog SHALL also be the vocabulary of **attach points** for
+  [lifecycle hooks](lifecycle-hooks.md) (issue-344): every record `emit` builds reaches
+  the file (when enabled) and every registered sink, and `hooks.loaded`, `hooks.failed`
+  and `hooks.dropped` record the hook system's own outcomes without ever being attach
+  points themselves.
 
 ## Design
 
@@ -43,6 +48,7 @@ for humans, coding agents and any dashboarding built on top.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-344 | The log grew a second consumer (2026-09-12): `EventLog.build`/`write` split the record from the file, module-level `emit` fans each record out to registered sinks whether or not the file is enabled, `configure_from_file` installs the CLI config's `hooks` block in the same call, and three `hooks.*` types joined the catalog | [spec](../specs/issue-344/), [lifecycle-hooks](lifecycle-hooks.md), [decision-124](../decisions/decision-124.md) |
 | issue-245 | Six `channel.*` event types joined the catalog — `posted`, `post_failed`, `reply_received`, `dropped` (reasons: `unmapped` \| `self-authored` \| `unauthorized-actor` \| `undeliverable`), `mirrored`, `mirror_failed` — tracing a question's fan-out to the conversation channels and a reply's round-trip back; payloads carry ids, never message text or tokens | [spec](../specs/issue-245/), [decision-094](../decisions/decision-094.md) |
 | issue-239 | The event log gained a second reader: `stream.subscribed`, `stream.refused`, `stream.desync` and `stream.disconnected` record who is watching a workstation, what was refused and why, and when a subscriber was told to resynchronise. `api.request` and `mcp.call` are excluded from what the stream carries — the log still serves them to `the-loop events` | [spec](../specs/issue-239/), [decision-087](../decisions/decision-087.md) |
 | issue-63 | `observability.eventLog` moved into the independent, repo-agnostic CLI config as top-level `eventLog` | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |

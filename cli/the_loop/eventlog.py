@@ -43,7 +43,17 @@ import os
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Iterator, Optional, Sequence, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Union,
+)
 
 import yaml
 
@@ -59,6 +69,26 @@ LEVELS = ("debug", "info", "warning", "error")
 # by `the-loop events --types` and mirrored in the observability reference.
 # Adding an instrumentation point means adding its type (and description) here.
 EVENT_TYPES: Dict[str, str] = {
+    # -- lifecycle hooks (issue-344; any source) -------------------------------
+    "hooks.loaded": (
+        "The `hooks` block of the CLI config was loaded and its lifecycle hooks "
+        "attached (modules, attachments, events: the count of event types with at "
+        "least one hook). Emitted once per process by whichever entry point "
+        "configured the event log."
+    ),
+    "hooks.failed": (
+        "A lifecycle hook raised, or returned a blocking result (hook, on: the event "
+        "type it ran for, error: "
+        "the exception class and message, or the hook's own message). The hook's "
+        "failure is contained: the next hook and the next event still run. Never an "
+        "attach point itself — the `hooks.*` domain is excluded from `hooks.lifecycle`."
+    ),
+    "hooks.dropped": (
+        "The lifecycle-hook queue was full, so this record was NOT delivered to its "
+        "hooks (on: its event type, capacity). It still reached the log. Emitted once per overflow "
+        "episode — the first drop after the queue last accepted — so a slow hook shows "
+        "up as one line, not one per lost record."
+    ),
     # -- webhook receiver (source: gh-webhook) --------------------------------
     "webhook.received": (
         "An inbound webhook POST was accepted for routing "
@@ -954,9 +984,18 @@ class EventLog:
         """Append one event record. Unknown ``event`` types are still logged
         (forward compatibility), but instrumentation should register them in
         :data:`EVENT_TYPES`."""
-        if not self.enabled:
-            return
-        record = {
+        self.write(self.build(event, level, fields))
+
+    def build(
+        self, event: str, level: str, fields: Mapping[str, Any]
+    ) -> Dict[str, Any]:
+        """The record for one event: the envelope plus the non-``None`` fields.
+
+        Split from :meth:`write` in issue-344 so the same record reaches every
+        consumer — the file, and the lifecycle hooks the module-level :func:`emit`
+        fans out to — built once.
+        """
+        record: Dict[str, Any] = {
             "ts": _utcnow(),
             "source": self.source,
             "event": event,
@@ -964,6 +1003,12 @@ class EventLog:
             "pid": os.getpid(),
         }
         record.update({k: v for k, v in fields.items() if v is not None})
+        return record
+
+    def write(self, record: Mapping[str, Any]) -> None:
+        """Append one built record; a no-op when disabled, never raises."""
+        if not self.enabled:
+            return
         line = json.dumps(record, separators=(",", ":"), default=str) + "\n"
         try:
             with self._lock:
@@ -991,20 +1036,30 @@ def configure(
 
 
 def configure_from_file(source: str) -> EventLog:
-    """:func:`configure` from ``eventLog`` in the CLI config.
+    """:func:`configure` from ``eventLog`` in the CLI config, and install the
+    lifecycle hooks the same file declares (issue-344).
 
     An unset ``path`` resolves under ``state.root`` (issue-106) — the same
     ``<root>/logs/events.jsonl`` :data:`DEFAULT_PATH` names for the default root.
+    A ``hooks`` block that cannot be honoured raises
+    :class:`~the_loop.lifecycle_hooks.HooksConfigError` out of here, so the entry
+    point that asked for the log refuses to run rather than running without the
+    hooks it was told to run.
     """
     from .state import layout_from_config
 
-    data = cli_config.load_cli_config(cli_config.default_cli_config_path())
+    config_path = cli_config.default_cli_config_path()
+    data = cli_config.load_cli_config(config_path)
     cfg = data.get("eventLog") or {}
-    return configure(
+    log = configure(
         source,
         path=str(cfg.get("path") or layout_from_config(data).event_log),
         enabled=bool(cfg.get("enabled", True)),
     )
+    from . import lifecycle_hooks
+
+    lifecycle_hooks.install(data, config_path)
+    return log
 
 
 def load_config(config_path: Optional[Union[str, Path]] = None) -> dict:
@@ -1030,16 +1085,68 @@ def load_config(config_path: Optional[Union[str, Path]] = None) -> dict:
     return data.get("eventLog") or {}
 
 
+#: Consumers of every record besides the file (issue-344): the lifecycle-hook
+#: runtime registers its dispatch here. A sink is called on the emitting thread
+#: and must not block; one that raises is contained, because o11y never breaks
+#: ingress.
+Sink = Callable[[Dict[str, Any]], Any]
+_sinks: List[Sink] = []
+_sink_warned = False
+
+
+def add_sink(fn: Sink) -> None:
+    if fn not in _sinks:
+        _sinks.append(fn)
+
+
+def remove_sink(fn: Sink) -> None:
+    try:
+        _sinks.remove(fn)
+    except ValueError:
+        pass
+
+
 def emit(event: str, level: str = "info", **fields) -> None:
-    """Emit through the configured log; silently a no-op when unconfigured."""
-    if _log is not None:
+    """Emit through the configured log; silently a no-op when unconfigured.
+
+    The record is built once and reaches the file (when the log is enabled) and
+    every sink (whether or not it is): the log file is one consumer of a record,
+    the lifecycle hooks are another (issue-344).
+    """
+    global _sink_warned
+    if _log is None:
+        return
+    build = getattr(_log, "build", None)
+    if build is None:
+        # A test double that offers only ``emit``: keep the old contract for the
+        # file, and build the sinks' copy of the record the same way the log would.
         _log.emit(event, level=level, **fields)
+        if not _sinks:
+            return
+        record = EventLog(source=getattr(_log, "source", "")).build(
+            event, level, fields
+        )
+    else:
+        record = build(event, level, fields)
+        _log.write(record)
+    for sink in tuple(_sinks):
+        try:
+            sink(record)
+        except Exception as exc:  # noqa: BLE001 — a sink never breaks the emitter
+            if not _sink_warned:
+                _sink_warned = True
+                logger.warning("event sink %r failed: %s", sink, exc)
 
 
 def reset() -> None:
-    """Deconfigure the module-level log (tests)."""
-    global _log
+    """Deconfigure the module-level log and forget its sinks (tests)."""
+    global _log, _sink_warned
     _log = None
+    _sinks.clear()
+    _sink_warned = False
+    from . import lifecycle_hooks
+
+    lifecycle_hooks.reset()
 
 
 # -- reader ---------------------------------------------------------------------

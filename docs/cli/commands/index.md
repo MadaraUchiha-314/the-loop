@@ -35,6 +35,7 @@ that item's own checkout, the same way the repo-scoped commands do.
 | [`remove-collaborator`](/cli/commands/remove-collaborator) | Take that voice back; it lapses on the next event. |
 | [`channels`](/cli/commands/channels) | Operate the conversation channels (the Slack bot): `status`, `threads`, one `poll` cycle, the Socket Mode `listen`er (replies, buttons, the `/the-loop` command), or the app `manifest` to import. |
 | [`events`](/cli/commands/events) | Query the structured event log — the answer to "why did nothing happen?". |
+| [`hooks`](/cli/commands/hooks) | What the CLI config's [`hooks`](/config/cli/hooks-options) block would run — modules, attachments, matched events — without importing any of it. |
 
 ## Repo-scoped commands
 

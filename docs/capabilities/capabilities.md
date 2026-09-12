@@ -21,6 +21,7 @@ PR** as the work item that changes behaviour (a ready-to-ship gate item).
 | [interactive-sessions](interactive-sessions.md) | tmux-hosted harness sessions humans can watch/steer live (local, SSH, browser). |
 | [instances](instances.md) | Several instances of the-loop on one repository: a named, scoped CLI config, the address token, the locked instance, and the seams a manager of instances will use. |
 | [standing-sessions](standing-sessions.md) | Named, long-lived sessions that belong to no work item — the ones the-loop keeps for itself, addressed by name on the control plane and in Slack. |
+| [lifecycle-hooks](lifecycle-hooks.md) | Every recorded event as an attach point: operator hooks on the whole lifecycle (work start, work finish, every dispatch between), declared in the CLI config, run off one worker thread, unable to stop the-loop or move its graph; the shipped `forward-event`. |
 | [observability](observability.md) | Structured JSONL event log of the CLI's actions and the `events` query command. |
 | [channels](channels.md) | Every channel a peer on one event bus — subscribe, publish by grant, render natively — with GitHub as the ledger every event is recorded on. |
 | [self-diagnosis](self-diagnosis.md) | the-loop filing redacted issues for its own failures: event-log detection, an isolated diagnosis agent, never-armed issue creation (opt-in, default off). |

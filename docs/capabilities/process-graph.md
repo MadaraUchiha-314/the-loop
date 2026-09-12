@@ -572,6 +572,10 @@ included, however empty the log was.
 - A module SHALL be imported once per process. The **graph itself stays the-loop's**: nodes,
   edges and loops are not repository-authorable, which is the half of issue-109's deferred
   item this does not deliver.
+- A hook that should run on something that is **not a node boundary** — a session
+  spawning, a work item ending, any dispatch — is a [lifecycle hook](lifecycle-hooks.md)
+  (issue-344): the same decorator and loader, attached to an event type under the CLI
+  config's top-level `hooks`, observing rather than gating.
 
 ### Testing is planned and verified as nodes (issue-163)
 

@@ -48,7 +48,7 @@ import re
 import sys
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Dict, Mapping, Sequence, Tuple
+from typing import Any, Dict, Mapping, Sequence, Tuple, Type
 
 from .model import Graph, GraphConfigError, _validate_chain
 from .registry import EXTENSION_PREFIX, HookFn, collecting
@@ -60,8 +60,10 @@ __all__ = [
     "Declaration",
     "ModuleRef",
     "apply",
+    "load_module",
     "load_modules",
     "read_declaration",
+    "read_modules",
 ]
 
 #: Where the operator declares the hooks, for messages that have to name it.
@@ -156,27 +158,43 @@ def read_declaration(cli_config: Mapping[str, Any]) -> Declaration:
             "and `attach` lists"
         )
     return Declaration(
-        modules=_read_modules(raw.get("modules")),
+        modules=read_modules(raw.get("modules")),
         attachments=_read_attachments(raw.get("attach")),
     )
 
 
-def _entries(value: Any, key: str) -> Sequence[Any]:
+def _entries(
+    value: Any,
+    key: str,
+    config_key: str = CONFIG_KEY,
+    error: Type[ValueError] = GraphConfigError,
+) -> Sequence[Any]:
     if not value:
         return ()
     if isinstance(value, Mapping) or isinstance(value, str):
-        raise GraphConfigError(f"CLI config: `{CONFIG_KEY}.{key}` must be a list")
+        raise error(f"CLI config: `{config_key}.{key}` must be a list")
     if not isinstance(value, Sequence):
-        raise GraphConfigError(f"CLI config: `{CONFIG_KEY}.{key}` must be a list")
+        raise error(f"CLI config: `{config_key}.{key}` must be a list")
     return value
 
 
-def _read_modules(value: Any) -> Tuple[ModuleRef, ...]:
+def read_modules(
+    value: Any,
+    config_key: str = CONFIG_KEY,
+    error: Type[ValueError] = GraphConfigError,
+) -> Tuple[ModuleRef, ...]:
+    """Parse a ``modules[]`` list — exactly one of ``path``/``module`` per entry.
+
+    The one shape both hook surfaces declare (issue-344): ``routing.graph.hooks``
+    names the key and the error class it has always used, and the lifecycle
+    hooks' top-level ``hooks`` block names its own, so a message always says which
+    block the entry came from.
+    """
     refs: list[ModuleRef] = []
-    for entry in _entries(value, "modules"):
+    for entry in _entries(value, "modules", config_key, error):
         if not isinstance(entry, Mapping):
-            raise GraphConfigError(
-                f"CLI config: `{CONFIG_KEY}.modules` entry {entry!r} must be a "
+            raise error(
+                f"CLI config: `{config_key}.modules` entry {entry!r} must be a "
                 "mapping — write `- path: .the-loop/hooks/mine.py` or "
                 "`- module: acme.hooks`, never a bare string, because a bare string "
                 "cannot say which of the two it is"
@@ -184,14 +202,14 @@ def _read_modules(value: Any) -> Tuple[ModuleRef, ...]:
         path = str(entry.get("path") or "").strip()
         dotted = str(entry.get("module") or "").strip()
         if bool(path) == bool(dotted):
-            raise GraphConfigError(
-                f"CLI config: `{CONFIG_KEY}.modules` entry {dict(entry)!r} must "
-                "name exactly one of `path` (a .py file in this repository) or "
+            raise error(
+                f"CLI config: `{config_key}.modules` entry {dict(entry)!r} must "
+                "name exactly one of `path` (a .py file) or "
                 "`module` (an installed dotted name)"
             )
         if dotted and not _DOTTED.match(dotted):
-            raise GraphConfigError(
-                f"CLI config: `{CONFIG_KEY}.modules` module {dotted!r} is not an "
+            raise error(
+                f"CLI config: `{config_key}.modules` module {dotted!r} is not an "
                 "importable dotted name"
             )
         refs.append(ModuleRef(path=path, dotted=dotted))
@@ -268,7 +286,26 @@ def load_modules(repo: Path, declaration: Declaration) -> Dict[str, HookFn]:
 
 
 def _load_one(repo: Path, ref: ModuleRef) -> Dict[str, HookFn]:
-    target = _contained(repo, ref.path) if ref.path else None
+    return load_module(repo, ref)
+
+
+def load_module(
+    root: Path,
+    ref: ModuleRef,
+    config_key: str = CONFIG_KEY,
+    error: Type[ValueError] = GraphConfigError,
+    root_label: str = "the repository root",
+) -> Dict[str, HookFn]:
+    """Execute one declared module and return the ``x-`` hooks it registered.
+
+    ``root`` is what a ``path`` resolves against and must stay inside: the
+    checkout for a graph hook, the CLI config's directory for a lifecycle hook
+    (issue-344). The cache is keyed by the resolved source, so a module both
+    surfaces declare is executed once and both see the same table.
+    """
+    target = (
+        _contained(root, ref.path, config_key, error, root_label) if ref.path else None
+    )
     key = f"path:{target}" if target is not None else f"module:{ref.dotted}"
     cached = _MODULE_CACHE.get(key)
     if cached is not None:
@@ -276,61 +313,67 @@ def _load_one(repo: Path, ref: ModuleRef) -> Dict[str, HookFn]:
     with collecting() as collected:
         try:
             if target is not None:
-                _execute_file(target, key)
+                _execute_file(target, key, error)
             else:
                 _import_dotted(ref.dotted)
-        except GraphConfigError:
+        except error:
             raise
         except BaseException as exc:  # noqa: BLE001 — every failure names the module
-            raise GraphConfigError(
-                f"the hook module {ref.label()!r} declared in `{CONFIG_KEY}` could "
+            raise error(
+                f"the hook module {ref.label()!r} declared in `{config_key}` could "
                 f"not be loaded: {exc.__class__.__name__}: {exc}"
             ) from None
         hooks = dict(collected)
     if not hooks:
-        raise GraphConfigError(
-            f"the hook module {ref.label()!r} declared in `{CONFIG_KEY}` registered "
+        raise error(
+            f"the hook module {ref.label()!r} declared in `{config_key}` registered "
             f"no hooks; decorate a function with @hook('{EXTENSION_PREFIX}<name>')"
         )
     _MODULE_CACHE[key] = hooks
     return hooks
 
 
-def _contained(repo: Path, raw: str) -> Path:
-    """Resolve ``raw`` inside ``repo``, or refuse it.
+def _contained(
+    root_dir: Path,
+    raw: str,
+    config_key: str = CONFIG_KEY,
+    error: Type[ValueError] = GraphConfigError,
+    root_label: str = "the repository root",
+) -> Path:
+    """Resolve ``raw`` inside ``root_dir``, or refuse it.
 
-    What a repository declares must be code the repository carries, so its own
-    reviewers see it. An absolute path, a ``..`` escape and a symlink out of the
-    tree are all the same defect and get the same answer (R5.3).
+    What a declaration names must be code that lives with it, so the reviewers of
+    the declaration see the code. An absolute path, a ``..`` escape and a symlink
+    out of the tree are all the same defect and get the same answer (R5.3).
     """
     candidate = Path(raw)
     if candidate.is_absolute():
-        raise GraphConfigError(
-            f"`{CONFIG_KEY}.modules` path {raw!r} is absolute; a hook module is "
-            "named relative to the repository root, and must live inside it"
+        raise error(
+            f"`{config_key}.modules` path {raw!r} is absolute; a hook module is "
+            f"named relative to {root_label}, and must live inside it"
         )
-    root = Path(repo).resolve()
+    root = Path(root_dir).resolve()
     target = (root / candidate).resolve()
     if not target.is_relative_to(root):
-        raise GraphConfigError(
-            f"`{CONFIG_KEY}.modules` path {raw!r} resolves outside the repository "
-            f"({target}); a repository may only run hook code it carries"
+        raise error(
+            f"`{config_key}.modules` path {raw!r} resolves outside {root_label} "
+            f"({target}); a declaration may only run hook code that lives with it"
         )
     if target.suffix != ".py":
-        raise GraphConfigError(f"`{CONFIG_KEY}.modules` path {raw!r} is not a .py file")
+        raise error(f"`{config_key}.modules` path {raw!r} is not a .py file")
     if not target.is_file():
-        raise GraphConfigError(
-            f"`{CONFIG_KEY}.modules` path {raw!r} does not exist ({target})"
-        )
+        raise error(f"`{config_key}.modules` path {raw!r} does not exist ({target})")
     return target
 
 
-def _execute_file(target: Path, key: str) -> None:
+def _execute_file(
+    target: Path, key: str, error: Type[ValueError] = GraphConfigError
+) -> None:
     """Execute ``target`` as a module under a synthetic, collision-proof name."""
     name = "the_loop_repo_hooks_" + hashlib.sha256(key.encode()).hexdigest()[:16]
     spec = importlib.util.spec_from_file_location(name, target)
     if spec is None or spec.loader is None:
-        raise GraphConfigError(f"{target} could not be loaded as a Python module")
+        raise error(f"{target} could not be loaded as a Python module")
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     try:

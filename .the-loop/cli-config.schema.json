@@ -958,6 +958,67 @@
         }
       }
     },
+    "hooks": {
+      "type": "object",
+      "description": "LIFECYCLE hooks of your own (issue-344, decision-124): code that runs when the-loop records an event — any of the ~150 event types `the-loop events --types` lists, from `session.spawned` (work start) to `work_item.ended` (work finish). `modules` names the Python that defines them (or none, for a shipped hook), `lifecycle` attaches each hook to the events it wants. A lifecycle hook OBSERVES: it runs off one worker thread after the record is written, cannot block the delivery that emitted it, and cannot move the process graph. A hook that raises is recorded as `hooks.failed` and the next one runs. EXECUTABLE CONFIGURATION — the modules run inside the-loop's own process, with your credentials — so review an entry like code, exactly as `critics[]` and `routing.graph.hooks`. `the-loop hooks` reports what is declared without importing any of it; a declaration that cannot load fails the entry point that loads it (`the-loop start`, the receiver, the poller, any command that records events).",
+      "additionalProperties": false,
+      "properties": {
+        "modules": {
+          "type": "array",
+          "description": "Python modules registering your lifecycle hooks, loaded once per process — the same shape as `routing.graph.hooks.modules`. A module that is missing, raises on import, registers nothing, or registers a name outside the `x-` namespace FAILS the entry point that loads it rather than being skipped.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Exactly one of `path` or `module`. A bare string is refused: it cannot say which of the two it is.",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "A .py file, relative to THIS CONFIG FILE's directory and inside it — a lifecycle hook is the instance's, so its code lives with the declaration (unlike a graph hook's, which resolves against each checkout). An absolute path, a `..` escape or a symlink leaving the directory is refused."
+              },
+              "module": {
+                "type": "string",
+                "description": "An importable dotted module name installed alongside the-loop's CLI — how a team ships shared hooks as a package."
+              }
+            }
+          },
+          "default": []
+        },
+        "lifecycle": {
+          "type": "array",
+          "description": "Which hook runs on which events. An entry naming a hook that is neither `x-<something>` from a declared module nor a shipped lifecycle hook, or a pattern matching no catalogued event type, fails the load — a typo must not silently disarm telemetry.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "hook",
+              "on"
+            ],
+            "properties": {
+              "hook": {
+                "type": "string",
+                "description": "The hook's registered name: `x-<something>` registered by one of `modules`, or a SHIPPED lifecycle hook — `forward-event` (POST the record as JSON to `with.url`, bearer token from the environment variable `with.tokenEnv` names, read when the hook runs). Shipped lifecycle hooks are attachable by the operator; shipped GRAPH hooks are not, because attaching one elsewhere would edit the process."
+              },
+              "on": {
+                "type": [
+                  "string",
+                  "array"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "description": "The event type(s) to run on: an exact name (`session.spawned`) or an fnmatch pattern (`graph.*`, `*`), or a list of them. Expanded against the event catalog when the config is loaded. `hooks.*` — the hook system's own events — are never attach points."
+              },
+              "with": {
+                "type": "object",
+                "description": "Parameters handed to the hook as `event.params`. For `forward-event`: `url` (required, http or https), `tokenEnv` (the NAME of the environment variable holding the bearer token — never the value), `headers` (string → string, sent verbatim), `timeoutSeconds` (default 5).",
+                "additionalProperties": true
+              }
+            }
+          },
+          "default": []
+        }
+      }
+    },
     "channels": {
       "type": "object",
       "additionalProperties": false,

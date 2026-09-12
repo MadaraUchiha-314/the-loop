@@ -83,7 +83,10 @@ trail), `gh_event` + `action`, `actor`, `harness`, `harness_session_id`, `reason
 
 The **full catalog** of event types with descriptions is `the-loop events --types`
 (source of truth: `EVENT_TYPES` in `cli/the_loop/eventlog.py`; a unit test keeps
-emitted types and the catalog in sync).
+emitted types and the catalog in sync). The same catalog is the vocabulary of **attach
+points** for the operator's lifecycle hooks (issue-344): the CLI config's top-level
+`hooks` block attaches code to any of these types — `session.spawned` for work start,
+`work_item.ended` for work finish — and `the-loop hooks` prints what is attached.
 
 ### Querying it (humans and agents)
 
