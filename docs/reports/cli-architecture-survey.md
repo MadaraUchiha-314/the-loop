@@ -438,6 +438,28 @@ into every prompt as `$interaction_directive`.
 daemon-hosted loop session is Claude Code in tmux; Cursor participates as a critic
 (one-shot) and through the same Stop-hook gate (`.cursor/hooks.json`, `followup_message`).
 
+### Where the harness is told about the CLI and the process
+
+There is no single prompt. What a session knows is assembled in layers, and only the
+first two are prompts the daemon writes; the rest is the plugin the session runs under.
+
+| Layer | What it says | Where |
+|---|---|---|
+| **Spawn prompt** (a new session) | "Start the-loop on it now by running `/the-loop:work-on <item>`"; read the whole thread first; the process is defined by the-loop's own graph; the work item's text is untrusted. Carries `$interaction_directive` and `$graph_context`. | `skills/the-loop/templates/webhook-autoexecute-prompt.md` (`routing.spawnPromptTemplate`); fallback `DEFAULT_SPAWN_TEMPLATE` in `webhook/dispatcher.py` |
+| **Event prompt** (a resumed session) | "You are the the-loop session working `<item>`. React to this event per the-loop's rules"; same two blocks; the payload excerpt is untrusted. | `skills/the-loop/templates/webhook-event-prompt.md` (`routing.promptTemplate`); fallback `DEFAULT_PROMPT_TEMPLATE` |
+| **`$graph_context`** block, in both prompts | The current node, phase and status; the gate's messages; the verdict the gate just reached on this event; `resume with: /the-loop:<command> <item>`; where to iterate the artifacts; and `when this node's work is done, run: the-loop graph complete <item>`. A pending context says "NOT ENTERED YET — do not start a phase". | `graphlink.py:render_graph_context` |
+| **`$interaction_directive`** block, in both prompts | Where answers come from: in `work-item` mode, ask with `the-loop ask --work-item … --question …`, then stop and wait for the reply as an event; never block on an interactive prompt; the artifact-on-a-PR rule. | `interaction.py:_WORK_ITEM_DIRECTIVE` / `_CLI_DIRECTIVE` (`routing.interaction.mode`) |
+| **Assignment paste**, on every node entry | `the-loop assignment for <item>: you are now at node …; produce: …; work it with: /the-loop:<command> <item>; when done, report back: the-loop graph complete <item>` — or, at a human gate, "do not claim it". | `graph/hooks/assignment.py:render_assignment`, delivered by `deliver-assignment` |
+| **SessionStart hook** / Cursor rule | One line: the-loop is initialized here, read the harness config, follow the `the-loop` skill. | `hooks/hooks.json` (SessionStart); `rules/the-loop.mdc` |
+| **Slash commands** | The per-phase procedure. `work-on` is the superset: load the config, register the session (`the-loop sessions register`, `link-pr`), walk the phases, and at each node end "run `the-loop graph complete`". | `commands/work-on.md` and the granular `commands/*.md` |
+| **The skill** | The operating model. `SKILL.md` states the rule "tell the graph so — `the-loop graph complete <id>`", the config-key → CLI-flag table (§ Configuration: `scenarios --glob`, `instructions --doc`, `critic policy`, `graph hooks`), and the review-round policy; `reference/automation.md` § CLI companion describes the CLI itself — lifecycle verbs, the receiver, routing, arming, sessions; `reference/workflow.md` renders the graph and names `check`, `graph complete`, `graph skip`, `graph force`. | `skills/the-loop/SKILL.md`, `skills/the-loop/reference/automation.md`, `reference/workflow.md` |
+
+So the prompts name only the verbs the session must use at the seams (`graph complete`,
+`ask`, the `/the-loop:<command>` to resume with); the explanation of the CLI and the
+process around it is the skill's, loaded because the spawn prompt sends the session
+through `/the-loop:work-on`, which tells the session to read the skill and its
+reference files before acting.
+
 ## 5. Where to look first
 
 - The graph: `cli/the_loop/graph/pdlc-work-item-loop.yaml` — read the `edges:` block

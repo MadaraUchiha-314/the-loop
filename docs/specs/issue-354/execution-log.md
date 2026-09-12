@@ -49,6 +49,20 @@ loop records.
 - **Next:** the owner's review of the PR.
 - **Blockers:** none.
 
+### 2026-09-12 — the owner's question on PR #355
+
+- **Phase:** needs-review
+- **Decision recorded:** the owner asked on the PR where the agent harness is told
+  about the-loop CLI and the process around it. Answered on the thread and folded into
+  the report as § 4 "Where the harness is told about the CLI and the process": the two
+  prompt templates, the `$graph_context` and `$interaction_directive` blocks, the
+  assignment paste, the SessionStart hook / Cursor rule, the slash commands and the
+  skill — with the observation that the prompts name only the seam verbs and the skill
+  carries the explanation.
+- **Checkpoint/tests:** markdownlint clean on the report.
+- **Next:** the owner's review of the PR.
+- **Blockers:** none.
+
 ## Review cycles
 
 Self-review: every file and line reference in the report was re-read against the tree
