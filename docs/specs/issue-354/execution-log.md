@@ -1,14 +1,15 @@
 ---
 type: execution-log
 workItem: "github:MadaraUchiha-314/the-loop#354"
-phase: requirements-definition
+phase: needs-review
 status: in-progress
 ---
 
 # Execution Log: survey — the architecture of the-loop (CLI)
 
 > Append-only log for issue-354. Ticket:
-> [#354](https://github.com/MadaraUchiha-314/the-loop/issues/354).
+> [#354](https://github.com/MadaraUchiha-314/the-loop/issues/354). Pull request:
+> [#355](https://github.com/MadaraUchiha-314/the-loop/pull/355).
 
 ## How this session ran the loop
 
@@ -61,7 +62,10 @@ considerations.
 
 ## Final validation evidence
 
-`npx markdownlint-cli2` over the changed markdown: clean. Recorded in the PR.
+`npx markdownlint-cli2@0.18.1` over the five changed markdown files: 0 errors. Every Mermaid
+block in the report parsed by Mermaid 11 (`mermaid.parse`, under jsdom): 4 of 4 ok. The CI
+gate (`the-loop check issue-354 --recompute --fail-on block`) run locally: `WAIT` at
+`phase-selection`, exit 0 — and green on the PR's first push.
 
 ## Capability docs
 
@@ -81,4 +85,4 @@ rather than duplicating.
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| *(filled in when raised)* | the whole work item | |
+| [#355](https://github.com/MadaraUchiha-314/the-loop/pull/355) | the whole work item — spec record, the report, its registrations | open |

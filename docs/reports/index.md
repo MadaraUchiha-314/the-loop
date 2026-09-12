@@ -14,3 +14,7 @@ dives, surveys, and reference write-ups produced along the way.
 - [Is `harness-config.yaml` required?](/reports/harness-config-audit) — every reader of
   the per-repository harness config, how each key is enforced, why the file cannot be
   removed, and which keys belong in the CLI config or nowhere (issue-352).
+- [The architecture of the-loop (CLI)](/reports/cli-architecture-survey) — how the CLI is
+  put together, the exact `the-loop start` / `the-loop execute` flows, which guardrails
+  keep `design` behind `requirements-approval` (and which are code), and how the harness
+  and the daemon talk — with component and sequence diagrams (issue-354).

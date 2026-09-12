@@ -3,6 +3,11 @@
 This is the top-level architecture index. Sub-component architectures are linked from
 here as they are added (`docs/architecture/<component>.md`).
 
+For how the **CLI** is put together at runtime — the process graph, the daemon that
+spawns and steers harness sessions, the guardrails between phases and the harness↔CLI
+interaction model, with component and sequence diagrams — read the survey
+[The architecture of the-loop (CLI)](../reports/cli-architecture-survey.md) (issue-354).
+
 ## What the-loop is
 
 A distributable harness (shipped as a plugin for **Claude Code and Cursor**) that
