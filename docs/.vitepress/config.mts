@@ -220,6 +220,7 @@ const developerSidebar = [
       { text: "Vendor SDKs vs. binaries", link: "/reports/vendor-sdk-analysis" },
       { text: "Status labels & dashboards", link: "/reports/labels-and-dashboards" },
       { text: "Is harness-config.yaml required?", link: "/reports/harness-config-audit" },
+      { text: "The architecture of the-loop (CLI)", link: "/reports/cli-architecture-survey" },
     ],
   },
 ];
