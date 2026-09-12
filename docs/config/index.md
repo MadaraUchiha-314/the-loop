@@ -26,8 +26,8 @@ Since [issue #352](https://github.com/MadaraUchiha-314/the-loop/issues/352)
 config. `routing.authorizedUsers` (who may trigger it) and `repositories` (what it works
 with) were always CLI-config-only; now so are the spec directory
 (`routing.graph.specDir`), the critic roster (`critics[]`), the review rounds
-(`reviews`) and the graph hooks (`routing.graph.hooks`). Set them in your CLI config, or
-the daemon fails closed and does nothing.
+(`reviews`), the graph hooks (`routing.graph.hooks`) and the lifecycle hooks (`hooks`).
+Set them in your CLI config, or the daemon fails closed and does nothing.
 :::
 
 ## Which one am I editing?
@@ -36,7 +36,7 @@ the daemon fails closed and does nothing.
 graph TD
   Q{"What are you changing?"}
   Q -->|"specs layout, testing, API specs,<br/>design artifacts, instruction docs"| H["<b>harness config</b><br/>.the-loop/harness-config.yaml<br/>in the repo — read by the agent"]
-  Q -->|"webhook port, polling, who may trigger,<br/>spec directory, critics, review rounds,<br/>graph hooks, event log, GitHub/Slack transport"| C["<b>CLI config</b><br/>cli-config.yaml<br/>on your machine — read by the CLI"]
+  Q -->|"webhook port, polling, who may trigger,<br/>spec directory, critics, review rounds,<br/>graph and lifecycle hooks, event log, GitHub/Slack transport"| C["<b>CLI config</b><br/>cli-config.yaml<br/>on your machine — read by the CLI"]
   H --> H2["written by <code>/the-loop:init</code>"]
   C --> C2["copied from<br/>skills/the-loop/templates/cli-config.yaml"]
 ```

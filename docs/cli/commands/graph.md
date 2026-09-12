@@ -179,6 +179,10 @@ rather than being skipped.
 |------|---------|---------|
 | `--format` | `text` | `text`, or `json` (`shipped`, `modules`, `attach`) for scripting. |
 
+A hook on something that is *not* a node boundary — a session spawning, a work item
+ending — is a [lifecycle hook](/config/cli/hooks-options), reported by
+[`the-loop hooks`](/cli/commands/hooks).
+
 Writing one of these is [adding a hook](/cli/extending#adding-a-hook). A hook runs only
 when the operator's own CLI config declares it under
 [`routing.graph.hooks`](/config/cli/routing-options#graph-hooks) — a checkout cannot opt its

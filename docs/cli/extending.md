@@ -49,7 +49,7 @@ stable help output.
   makes the CLI scriptable — see [exit codes](/cli/commands/#exit-codes).
 - **Which config?** Ask who *reads* the setting. The CLI reads exactly one file, the
   operator's [CLI config](/config/cli/) — ingress, routing, hosting, logging, the spec
-  directory, the critics, the graph hooks. A project's
+  directory, the critics, the graph and lifecycle hooks. A project's
   [harness config](/config/harness-config) is the **agent's**: how work is done there, read
   in every session and **never by the CLI** ([decision-123](/decisions/decision-123)).
   A command that needs something a repository knows takes it as a flag the agent passes

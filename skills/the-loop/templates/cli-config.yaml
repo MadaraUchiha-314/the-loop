@@ -380,6 +380,31 @@ critics: []
 #   timeoutSeconds: 900          # a hung critic must not wedge the review loop
 #   enabled: true
 
+# LIFECYCLE HOOKS (issue-344, decision-124): code of your own that runs when
+# the-loop RECORDS an event — any of the ~150 types `the-loop events --types`
+# lists, from `session.spawned` (work start) to `work_item.ended` (work finish).
+# The graph hooks above gate a NODE; these observe an EVENT: they run off one
+# worker thread after the record is written, cannot block what emitted them,
+# and cannot move the graph. Same `@hook("x-…")` decorator, same load-or-fail
+# rule; a `path` here resolves against THIS FILE's directory (the declaration
+# is the instance's, so its code lives with it). `forward-event` is shipped:
+# the record as JSON, POSTed, bearer token read from the environment variable
+# `tokenEnv` NAMES when the hook runs. Executable configuration — review an
+# entry like code. `the-loop hooks` reports the block without importing it.
+# hooks:
+#   modules:
+#     - path: hooks/telemetry.py              # a .py file beside this config
+#     - module: acme_loop_hooks.telemetry     # or an installed dotted name
+#   lifecycle:
+#     - hook: x-otel-span                     # registered by a module above
+#       on: [session.spawned, session.closed, graph.*]
+#       with: {service: the-loop}
+#     - hook: forward-event                   # shipped — no Python needed
+#       on: "work_item.*"
+#       with:
+#         url: https://telemetry.example/the-loop
+#         tokenEnv: ACME_TELEMETRY_TOKEN      # a variable NAME, never a value
+
 # REVIEW ROUNDS (moved here from the harness config in issue-352, decision-123):
 # the operator who runs the rounds sets how many. Every key has a default, so the
 # block may be omitted; `the-loop critic policy` prints the effective values.

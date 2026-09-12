@@ -1,6 +1,7 @@
 # Adding a hook
 
-A **hook** is the-loop's unit of work at a node boundary: one function, one signature, one
+A **hook** is the-loop's unit of work at a node boundary — and, since issue-344, at any
+event it records ([lifecycle hooks](#lifecycle-hooks), below): one function, one signature, one
 return type. Ten ship with the CLI ([process-graph](/capabilities/process-graph) § The hook
 contract). Since [issue-248](https://github.com/MadaraUchiha-314/the-loop/issues/248) an operator
 can bring their own — a licence-header check on `implementation`, an architecture
@@ -95,9 +96,74 @@ repository's: a checkout that carries a hook module you never declared has nothi
 Modules are imported **once per process**: a daemon picks up an edited hook module on its
 next start.
 
+## Lifecycle hooks
+
+Since [issue-344](https://github.com/MadaraUchiha-314/the-loop/issues/344) there is a
+second place to attach: not a node boundary but **an event the-loop records**. Every type
+[`the-loop events --types`](/cli/commands/events) lists is an attach point — `session.spawned`
+when work starts, `work_item.ended` when it finishes, and every dispatch, control keyword,
+PR spawn and channel post between ([decision-124](/decisions/decision-124)). A lifecycle
+hook **observes**: it runs off one worker thread after the record is written, can never
+block what emitted it, and can never move the graph. A veto is a graph hook.
+
+### Write it
+
+```python
+# ~/.the-loop/hooks/telemetry.py
+from the_loop.graph import HookResult, hook
+from the_loop.lifecycle_hooks import LifecycleEvent
+
+
+@hook("x-otel-span")
+def otel_span(event: LifecycleEvent) -> HookResult | None:
+    span = {"name": event.event, "work_item": event.work_item, **event.params}
+    span.update(event.fields)          # the record's per-type fields, e.g. session, node
+    my_exporter.send(span)             # your code; a raise is recorded, never fatal
+    return None                        # or HookResult.ok(...) — both are success
+```
+
+Same decorator, same result type, same `x-` rule. `event` carries the record's envelope
+(`event`, `level`, `ts`, `source`, `pid`), its `fields`, the attachment's `with` as
+`params`, and the instance name; `event.record()` is the whole line the log holds.
+
+### Declare it
+
+```yaml
+hooks:                                        # top-level, beside `critics`
+  modules:
+    - path: hooks/telemetry.py                # relative to THIS FILE's directory
+  lifecycle:
+    - hook: x-otel-span
+      on: [session.spawned, session.closed, graph.*]
+      with: {service: the-loop}
+    - hook: forward-event                     # shipped: POST the record, no Python
+      on: "work_item.*"
+      with: {url: https://telemetry.example/loop, tokenEnv: ACME_TELEMETRY_TOKEN}
+```
+
+`the-loop hooks` prints what is declared — and which events each pattern matches —
+**without importing any of it**. The block is the operator's for the same reason the
+graph block is; see [hook options](/config/cli/hooks-options).
+
+### Graph hook or lifecycle hook?
+
+| | Graph hook (`routing.graph.hooks`) | Lifecycle hook (`hooks`) |
+|---|---|---|
+| Attaches to | a node boundary (`entry` / `exit`) | an event type or pattern (`session.*`) |
+| Receives | `HookContext` — the node, the artifacts, the graph | `LifecycleEvent` — the record, `params`, the instance |
+| Runs | inside the chain, synchronously, before the pointer moves | off one worker thread, after the record is written |
+| Can | block or park the node | observe; fail (`hooks.failed`) |
+| Cannot | approve a gate, choose an edge | affect the event, the dispatch or the graph at all |
+| `path` resolves against | each checkout the loop walks | the CLI config file's directory |
+| Shipped hooks attachable | no — that would edit the process | yes (`forward-event`) |
+| Shared | `@hook("x-…")`, `HookResult`, the loader, the `x-` rule, load-or-fail | |
+
 ## See also
 
-- [`the-loop graph hooks`](/cli/commands/graph#hooks) — what your config declares.
+- [`the-loop graph hooks`](/cli/commands/graph#hooks) — what your config declares for the
+  graph; [`the-loop hooks`](/cli/commands/hooks) for the lifecycle.
+- [hook options](/config/cli/hooks-options) and
+  [lifecycle-hooks](/capabilities/lifecycle-hooks) — the lifecycle block and the capability.
 - [process-graph](/capabilities/process-graph) — the hook contract and the shipped hooks.
 - [routing options](/config/cli/routing-options#graph-hooks) — where `routing.graph.hooks`
   lives, and why it is the operator's.
