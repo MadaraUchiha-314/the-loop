@@ -1,4 +1,5 @@
-"""A repository's own graph hooks — parsing, loading, attaching (issue-248).
+"""The operator's own graph hooks — parsing, loading, attaching (issue-248; declared in
+the CLI config since issue-352).
 
 Every test here builds a repository under ``tmp_path``, writes the hook module it
 declares, and compiles a graph against it. Nothing reaches the network, nothing
@@ -58,7 +59,7 @@ def _repo(tmp_path: Path, module_body: str = MODULE, **hooks_block) -> Path:
 
 
 def _declaration(**hooks_block) -> extensions.Declaration:
-    return extensions.read_declaration({"graph": {"hooks": hooks_block}})
+    return extensions.read_declaration({"routing": {"graph": {"hooks": hooks_block}}})
 
 
 def _context(node_id: str = "work", graph=None) -> HookContext:
@@ -128,8 +129,9 @@ def test_declaration_reads_modules_and_attachments():
 
 def test_an_absent_block_declares_nothing():
     assert extensions.read_declaration({}).empty
-    assert extensions.read_declaration({"graph": {}}).empty
-    assert extensions.read_declaration({"graph": {"hooks": {}}}).empty
+    assert extensions.read_declaration({"routing": {}}).empty
+    assert extensions.read_declaration({"routing": {"graph": {}}}).empty
+    assert extensions.read_declaration({"routing": {"graph": {"hooks": {}}}}).empty
 
 
 def test_the_digest_follows_the_declaration():
@@ -163,7 +165,7 @@ def test_a_malformed_declaration_is_refused_at_parse_time(block, message):
 
 def test_a_graph_block_that_is_not_a_mapping_is_refused():
     with pytest.raises(GraphConfigError, match="must be a mapping"):
-        extensions.read_declaration({"graph": "hooks"})
+        extensions.read_declaration({"routing": {"graph": "hooks"}})
 
 
 # --------------------------------------------------------------------- loading
@@ -436,27 +438,15 @@ def test_a_repository_hook_cannot_rescue_a_blocked_chain(tmp_path):
 # ------------------------------------------------------------------ load_graph
 
 
-def _adopt(repo: Path, block: str) -> None:
-    (repo / ".the-loop").mkdir(parents=True, exist_ok=True)
-    (repo / ".the-loop" / "harness-config.yaml").write_text(block)
+DECLARED = dict(
+    modules=[{"path": ".the-loop/hooks/house.py"}],
+    attach=[{"hook": "x-house-rules", "node": "implementation"}],
+)
 
 
-HARNESS = """
-version: "0.2.0"
-graph:
-  hooks:
-    modules:
-      - path: .the-loop/hooks/house.py
-    attach:
-      - hook: x-house-rules
-        node: implementation
-"""
-
-
-def test_load_graph_attaches_a_repositorys_hooks(tmp_path):
+def test_load_graph_attaches_the_declared_hooks(tmp_path):
     repo = _repo(tmp_path)
-    _adopt(repo, HARNESS)
-    graph = load_graph(repo=repo)
+    graph = load_graph(repo=repo, declaration=_declaration(**DECLARED))
     assert graph.node("implementation").exit[-1] == {"hook": "x-house-rules"}
 
 
@@ -469,10 +459,11 @@ def test_load_graph_without_a_declaration_changes_nothing(tmp_path):
     assert load_graph(repo=tmp_path).extension_hooks == {}
 
 
-def test_the_operator_kill_switch_imports_nothing(tmp_path):
+def test_no_declaration_imports_nothing(tmp_path):
+    """A hook module lying in a checkout is inert until the OPERATOR declares it
+    (issue-352): the repository can no longer opt its own code in."""
     repo = _repo(tmp_path, "raise RuntimeError('this module must never run')\n")
-    _adopt(repo, HARNESS)
-    graph = load_graph(repo=repo, allow_repo_hooks=False)
+    graph = load_graph(repo=repo)
     assert graph.extension_hooks == {}
     assert all(
         entry != {"hook": "x-house-rules"}
@@ -482,6 +473,8 @@ def test_the_operator_kill_switch_imports_nothing(tmp_path):
 
 def test_a_broken_declaration_fails_the_load_rather_than_degrading(tmp_path):
     repo = _repo(tmp_path)
-    _adopt(repo, HARNESS.replace("house.py", "missing.py"))
+    broken = _declaration(
+        modules=[{"path": ".the-loop/hooks/missing.py"}], attach=DECLARED["attach"]
+    )
     with pytest.raises(GraphConfigError, match="does not exist"):
-        load_graph(repo=repo)
+        load_graph(repo=repo, declaration=broken)

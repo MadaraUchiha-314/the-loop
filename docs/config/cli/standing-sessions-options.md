@@ -33,8 +33,8 @@ standingSessions:
 ::: warning This block is executable-adjacent config
 An entry names **harness arguments** and a **working directory**, and the session runs
 with your own credentials — the same posture
-[`routing.harnessArgs`](/config/cli/routing-options#harnessargs) and the harness config's
-`reviews.critics` already carry. Review an entry the way you review code, and never let
+[`routing.harnessArgs`](/config/cli/routing-options#harnessargs) and
+[`critics[]`](/config/cli/critics-options) already carry. Review an entry the way you review code, and never let
 one arrive in your config from somewhere you would not merge a pull request from.
 :::
 

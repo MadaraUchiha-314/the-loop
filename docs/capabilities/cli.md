@@ -188,8 +188,9 @@ self-learning/ML capabilities.
   it gets an explicit ceiling rather than trust. `force` is the authorized-operator escape
   hatch: it requires a reason and moves the pointer without ever forging the bypassed
   gate's verdict. `--ref` is optional on every verb that runs hooks: omitted, it is
-  **derived** from the repository's `ticketing.github` plus the `issue-<n>` work-item id
-  (issue-194). WHEN a verb's outbound call could not be made — no derivable ref, no
+  **derived** from the origin repository — the work item's own, as the daemon knows it,
+  or the checkout's `origin` remote in-session (issue-352) — plus the `issue-<n>` work-item
+  id (issue-194). WHEN a verb's outbound call could not be made — no derivable ref, no
   credentials, an outage — THEN the command SHALL say so on stdout as a `warning:` /
   `WARNING:` line and SHALL keep its exit code: a degraded side effect is not a failed
   verb, and it is not a silent one either.
@@ -222,9 +223,8 @@ self-learning/ML capabilities.
 - `the-loop critic list|run` SHALL list the configured critic harnesses and run **one**
   named critic-review round, printing its result as a single JSON envelope on stdout — the
   seam by which the running harness hands work to a *different* harness and reads back what
-  it said (see [review-loop](review-loop.md)). Like `check` and `scenarios` it is
-  repo-scoped: it reads the harness config of the project it is invoked in, and is no part
-  of the daemon (decision-032).
+  it said (see [review-loop](review-loop.md)). The roster is the operator's CLI config's
+  `critics[]` (issue-352); the command is no part of the daemon (decision-032).
 - `the-loop events` SHALL query the structured JSONL event log of the CLI's own
   routing/dispatch/session decisions (see [observability](observability.md)).
 - `the-loop install` / `the-loop upgrade` SHALL install and upgrade **the-loop itself** —
@@ -268,16 +268,18 @@ self-learning/ML capabilities.
   `./.the-loop/cli-config.yaml` (repo-relative, so an operator can track it in a
   chosen repo), else `~/.the-loop/cli-config.yaml`, so the CLI is not tied to a single
   repo (`cli/README.md`, decision-032).
-- A repository's harness config SHALL configure work done **on that repository** and
-  SHALL NOT configure the daemon itself (decision-044). Concretely: the daemon's graph
-  coupling reads a work item's own checkout for `workflow.phaseLabelPrefix`,
-  `workflow.specDir` and `notifications` — after `graphlink` has proved via the checkout's
-  `origin` remote that it is that repository's — while `authorizedUsers`, a poll source's
-  `repos` and every other ingress setting remain CLI-config-only with no fallback.
-- The CLI SHALL read a repository's harness config in exactly one module
-  (`the_loop.harness_config`), which SHALL declare its complete read surface as data
-  (`READS`); a test SHALL fail the build when a key is read that is not declared, when a
-  declared key is undocumented, or when any other module opens the file.
+- **The CLI SHALL NOT read any repository's harness config** (issue-352,
+  [decision-123](../decisions/decision-123.md), superseding decision-044). That file is
+  the agent's. What the CLI used to take from it has another source: the spec directory
+  is `routing.graph.specDir` in the CLI config (default `docs/specs`) or `--spec-dir` on
+  `check`/`graph`; the phase label prefix is the constant `loop:`; the origin repository
+  is the work item's ref (daemon) or the checkout's `origin` remote (in-session); the
+  critic roster is the CLI config's `critics[]`; graph hooks are its `routing.graph.hooks`;
+  `scenarios` takes `--glob` and `instructions` takes `--doc`/`--on-missing`, both passed
+  by the agent from the keys it read. The CLI SHALL neither write a harness config into a
+  checkout (issue-193's adoption is retired) nor degrade on one it cannot parse, because it
+  never opens one. `authorizedUsers`, `repositories` and every other setting remain
+  CLI-config-only with no fallback.
 
 - **`the-loop start|stop|status|restart` SHALL be the whole system's lifecycle surface**
   (issue-228, decision-084). `start` reads the CLI config and starts, detached, every
@@ -402,6 +404,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-352 | The CLI stopped reading the harness config altogether (2026-09-12): `the_loop.harness_config`, its `READS` table, the packaged default and the adopt-on-spawn path are gone. `routing.graph.specDir` (default `docs/specs`) and `--spec-dir` on `check`/`graph` name the spec directory; `loop:` is a constant; the origin repository comes from the work item's ref or the checkout's `origin` remote; `critics[]` and `routing.graph.hooks` moved into the CLI config (`repoHooks` removed, CLI config `0.9.0`); `scenarios --glob` and `instructions --doc`/`--on-missing` take what the agent read. The harness config shrank to the agent's policy (`0.3.0`) | [spec](../specs/issue-352/), [decision-123](../decisions/decision-123.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/352) |
 | issue-339 | One configuration resolves to one state root, in every process (2026-09-11): `state.root` is made absolute where the config is **loaded**, anchored on the directory the config's `.the-loop/` sits in, so the ~30 `layout_from_config` call sites all name one directory whatever each process's cwd is; `~` is now expanded. Every spawn — the auto-started service, `lifecycle.spawn_service`, `core.daemons.control_daemon` — carries `THE_LOOP_CLI_CONFIG` = the path it resolved, the property `schedule_restart` already had. `the-loop status` prints its config, its root, and any rival root holding a second heartbeat. Before this, a daemon started in one directory and a CLI run from another silently addressed different files: a live poller was reported dead off a two-day-old heartbeat, and a dead one would have read as fine | [spec](../specs/issue-339/), [decision-119](../decisions/decision-119.md), [supervision](../cli/supervision.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/339) |
 | issue-331 | A poll source's bare `OWNER/REPO` is on the resolved GitHub host (2026-09-09): `RepoSpec.parse` / `parse_repos` take a `default_host`, `from_source` / `build_provider` carry it, and the daemon resolves it with `ghhost.github_host` from the CLI config it reads `polling` from — at pre-flight, at the first plan and on every hot reload — so listing, scope naming and `owns()` agree; `describe()` spells the host. Before it, a bare entry meant github.com to `owns()` and "wherever `gh` points" to the listing, and on GitHub Enterprise closure reconciliation silently refused every ref its own listing had minted | [spec](../specs/issue-331/), [decision-114](../decisions/decision-114.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/331) |
 | issue-322 | The CLI config names the **instance** it is (`instance.name`, `instance.scope.mode`, `instance.scope.workItems`), `the-loop status` prints one line naming it with its mode and the size of its managed set (and carries the whole document as `instance` in JSON), `the-loop sessions start` on a `locked` instance is refused before anything is recorded or posted, and the keyword the CLI posts back carries `instance:<name>` on a named instance | [spec](../specs/issue-322/), [decision-110](../decisions/decision-110.md), [instances](instances.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/322) |

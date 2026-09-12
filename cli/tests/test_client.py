@@ -71,7 +71,7 @@ def test_the_auto_started_service_carries_the_config_this_process_resolved(
 
     selected = tmp_path / "chosen" / ".the-loop" / "cli-config.yaml"
     selected.parent.mkdir(parents=True)
-    selected.write_text("version: '0.8.0'\n")
+    selected.write_text("version: '0.9.0'\n")
     monkeypatch.setattr(client_mod.subprocess, "Popen", FakePopen)
     cli_config.set_override(selected)
     try:

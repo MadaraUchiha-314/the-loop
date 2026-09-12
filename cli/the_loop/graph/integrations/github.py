@@ -117,9 +117,9 @@ def _ref_parts(ref: str) -> tuple[str, str, str, str]:
         # operator to find that out from the source.
         raise IntegrationError(
             f"malformed work item ref: {ref!r} — expected "
-            "'[<provider>:]<owner>/<repo>#<number>'. Pass --ref, or declare "
-            "ticketing.github in .the-loop/harness-config.yaml so the-loop can "
-            "derive it."
+            "'[<provider>:]<owner>/<repo>#<number>'. Pass --ref, or run from a "
+            "checkout whose `origin` remote names the repository so the-loop "
+            "can derive it."
         )
     return host, owner, repo, number
 

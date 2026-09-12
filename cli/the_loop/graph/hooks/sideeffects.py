@@ -19,7 +19,14 @@ from ..registry import hook
 
 logger = logging.getLogger("the-loop.graph")
 
+#: The namespace of the phase labels the loop writes on a ticket. A constant since
+#: issue-352: it was the harness config's ``workflow.phaseLabelPrefix``, a key the
+#: CLI no longer reads — and one label vocabulary across every repository is what
+#: lets a dashboard built on ``loop:<phase>`` work everywhere (issue-73).
+PHASE_LABEL_PREFIX = "loop:"
+
 __all__ = [
+    "PHASE_LABEL_PREFIX",
     "log_entry",
     "notify",
     "publish_artifact",
@@ -54,8 +61,7 @@ def set_phase_label(ctx: HookContext) -> HookResult:
     phase = str(ctx.node.get("phase") or "")
     if not phase:
         return HookResult.skipped(name, "node declares no phase label")
-    prefix = str(ctx.config.get("phaseLabelPrefix", "loop:"))
-    label = f"{prefix}{phase}"
+    label = f"{PHASE_LABEL_PREFIX}{phase}"
     try:
         _integration(ctx, "github").call(
             "set-labels", ref=ctx.work_item.ref, labels=[label]
@@ -110,22 +116,23 @@ def request_review(ctx: HookContext) -> HookResult:
 @hook("publish-artifact")
 def publish_artifact(ctx: HookContext) -> HookResult:
     """Post an artifact's content to the work item's thread — the review surface
-    of a repository that never adopted the-loop (issue-185, PR #187 review).
+    of a GUEST loop (issue-185, PR #187 review; re-based on the loop in issue-352).
 
-    In an initialized repository the artifact is checked in and reviewable
-    there, so this hook does nothing — the gate comment (``request-review``)
-    already points at it. In an **uninitialized** repository the spec tree is
-    excluded from git (``Runtime.start``), so the file exists only in the
-    working checkout and no human can see it: the thread is where the plan and
-    its verification results must land. Re-posting on each entry is deliberate —
-    a gate looped back through ``changes-requested`` shows the *revised*
-    artifact, and each post is one comment the requester asked for, not bloat.
+    In the work item's own loops the artifact is checked in and reviewable in
+    the repository, so this hook does nothing — the gate comment
+    (``request-review``) already points at it. In a **guest** loop (a
+    contribution, a review) the spec tree is excluded from git
+    (``Runtime.start``), so the file exists only in the working checkout and no
+    human can see it: the thread is where the plan and its verification results
+    must land. Re-posting on each entry is deliberate — a gate looped back
+    through ``changes-requested`` shows the *revised* artifact, and each post is
+    one comment the requester asked for, not bloat.
 
     Best-effort by contract: an outage or a missing file (planning declared
     away) records and continues — ``validate-artifacts`` remains the gate.
     """
     name = "publish-artifact"
-    if ctx.config.get("repoInitialized") is not False:
+    if ctx.config.get("guestLoop") is not True:
         return HookResult.skipped(
             name, "the repository carries the artifact; it is reviewable there"
         )
@@ -142,8 +149,8 @@ def publish_artifact(ctx: HookContext) -> HookResult:
         return HookResult.ok(name, posted=False, error=str(exc))
     body = mark_self_authored(
         f"🤖 _the-loop_ — **`{artifact}`** for `{ctx.work_item.id}`.\n\n"
-        "This repository does not carry the-loop's config, so the artifact is "
-        "working state — kept out of git — and this comment is its review "
+        "the-loop is a guest in this repository, so the artifact is working "
+        "state — kept out of git — and this comment is its review "
         "surface.\n\n---\n\n" + content
     )
     # Deliberately bound at call time, not import time (the goal/selection
@@ -163,10 +170,13 @@ def publish_artifact(ctx: HookContext) -> HookResult:
 
 
 def _recipients(ctx: HookContext, event: str) -> List[str]:
-    """Roles for ``event`` — resolved only through notifications.events (R5.7)."""
-    events = (ctx.config.get("notifications") or {}).get("events") or {}
-    roles = events.get(event) or ctx.params.get("roles") or []
-    return [str(r) for r in roles]
+    """Roles for ``event`` — only what the node's own ``with:`` names.
+
+    Until issue-352 the harness config's ``notifications.events`` supplied them;
+    the CLI reads that file no more, and nothing ever resolved a role to a person
+    (issue-304), so the roles are detail the graph may carry and nothing gates on.
+    """
+    return [str(r) for r in (ctx.params.get("roles") or [])]
 
 
 #: How much of an artifact a notification carries (issue-309 R4.4). The channel
@@ -228,9 +238,9 @@ def notify(ctx: HookContext) -> HookResult:
     ``quiet`` channel finally gets the link its contract promised and a
     ``normal`` one sees what it is approving.
 
-    The harness config's ``notifications.events`` roles ride along as detail;
-    they no longer gate the hook — nothing ever resolved a role to a person
-    (issue-304), and the subscription is the channel's decision now.
+    Roles a node names in its ``with:`` ride along as detail; they never gate
+    the hook — nothing ever resolved a role to a person (issue-304), and the
+    subscription is the channel's decision now.
     """
     name = "notify"
     event = str(ctx.params.get("event") or "phase-approval-pending")

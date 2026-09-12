@@ -200,12 +200,28 @@ def test_unresolved_counts_everything_that_is_not_present(tmp_path: Path) -> Non
 # ---------------------------------------------------------------- the command surface
 
 
-def _run(tmp_path: Path, fmt: str = "table", root: str = "") -> int:
+def _run(
+    tmp_path: Path,
+    fmt: str = "table",
+    root: str = "",
+    docs=(),
+    on_missing: str = "warn",
+) -> int:
+    """Run the command as the agent does (issue-352): the registered docs and the
+    policy arrive on the command line, never from a file the CLI reads."""
     command = InstructionsCommand()
     parser = _parser(command)
-    return command.run(
-        parser.parse_args(["--root", root or str(tmp_path), "--format", fmt])
-    )
+    argv = [
+        "--root",
+        root or str(tmp_path),
+        "--format",
+        fmt,
+        "--on-missing",
+        on_missing,
+    ]
+    for doc in docs:
+        argv += ["--doc", doc if isinstance(doc, str) else json.dumps(doc)]
+    return command.run(parser.parse_args(argv))
 
 
 def _parser(command: InstructionsCommand):
@@ -216,72 +232,62 @@ def _parser(command: InstructionsCommand):
     return parser
 
 
-def _write_config(root: Path, body: str) -> None:
-    (root / ".the-loop").mkdir(exist_ok=True)
-    (root / ".the-loop" / "harness-config.yaml").write_text(body, encoding="utf-8")
-
-
 def test_exit_is_zero_when_every_doc_resolves(tmp_path: Path) -> None:
     (tmp_path / "rules.md").write_text("x\n", encoding="utf-8")
     for policy in ("warn", "error", "ignore"):
-        _write_config(
-            tmp_path,
-            f"customInstructions:\n  docs:\n    - path: rules.md\n  onMissing: {policy}\n",
-        )
-        assert _run(tmp_path) == 0, policy
+        assert _run(tmp_path, docs=["rules.md"], on_missing=policy) == 0, policy
 
 
 def test_exit_is_non_zero_under_on_missing_error(tmp_path: Path) -> None:
-    _write_config(
-        tmp_path,
-        "customInstructions:\n  docs:\n    - path: gone.md\n  onMissing: error\n",
-    )
-    assert _run(tmp_path) == 1
+    assert _run(tmp_path, docs=["gone.md"], on_missing="error") == 1
 
 
 @pytest.mark.parametrize("policy", ["warn", "ignore"])
 def test_exit_is_zero_under_warn_and_ignore(tmp_path: Path, policy: str) -> None:
-    _write_config(
-        tmp_path,
-        f"customInstructions:\n  docs:\n    - path: gone.md\n  onMissing: {policy}\n",
-    )
-    assert _run(tmp_path) == 0
+    assert _run(tmp_path, docs=["gone.md"], on_missing=policy) == 0
 
 
 def test_warn_names_the_unresolved_doc_and_ignore_stays_quiet(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     for policy, expected in (("warn", True), ("ignore", False)):
-        _write_config(
-            tmp_path,
-            f"customInstructions:\n  docs:\n    - path: gone.md\n  onMissing: {policy}\n",
-        )
         caplog.clear()
         with caplog.at_level("WARNING", logger="the-loop.instructions"):
-            _run(tmp_path)
+            _run(tmp_path, docs=["gone.md"], on_missing=policy)
         assert ("gone.md" in caplog.text) is expected, policy
 
 
-def test_an_absent_config_reports_nothing_and_succeeds(tmp_path: Path) -> None:
-    assert _run(tmp_path) == 0
-
-
-def test_unparseable_config_reports_nothing_and_succeeds(
+def test_no_docs_reports_nothing_and_succeeds(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # harness_config.load is best-effort by contract: a half-edited config must not fail
-    # a build for a reason unrelated to instructions.
-    _write_config(tmp_path, "customInstructions: [unclosed\n")
     assert _run(tmp_path, fmt="json") == 0
     assert json.loads(capsys.readouterr().out) == []
 
 
-def test_exit_code_does_not_depend_on_the_output_format(tmp_path: Path) -> None:
-    _write_config(
-        tmp_path,
+def test_a_harness_config_in_the_checkout_is_never_read(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """issue-352: the registration lives in the harness config for the AGENT; the
+    CLI only sees what it is handed."""
+    (tmp_path / ".the-loop").mkdir()
+    (tmp_path / ".the-loop" / "harness-config.yaml").write_text(
         "customInstructions:\n  docs:\n    - path: gone.md\n  onMissing: error\n",
+        encoding="utf-8",
     )
-    assert {_run(tmp_path, fmt=f) for f in ("table", "markdown", "json")} == {1}
+    assert _run(tmp_path, fmt="json") == 0
+    assert json.loads(capsys.readouterr().out) == []
+
+
+def test_a_malformed_doc_argument_is_refused(tmp_path: Path) -> None:
+    """A `--doc` that starts like JSON but is not is a typo, not a path."""
+    assert _run(tmp_path, docs=['{"path": "rules.md"']) == 2
+
+
+def test_exit_code_does_not_depend_on_the_output_format(tmp_path: Path) -> None:
+    assert {
+        _run(tmp_path, fmt=f, docs=["gone.md"], on_missing="error")
+        for f in ("table", "markdown", "json")
+    } == {1}
 
 
 # -------------------------------------------------------------------------- rendering
@@ -291,11 +297,7 @@ def test_json_renders_the_record_contract(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     (tmp_path / "rules.md").write_text("x\n", encoding="utf-8")
-    _write_config(
-        tmp_path,
-        "customInstructions:\n  docs:\n    - path: rules.md\n      notes: House style\n",
-    )
-    _run(tmp_path, fmt="json")
+    _run(tmp_path, fmt="json", docs=[{"path": "rules.md", "notes": "House style"}])
     payload = json.loads(capsys.readouterr().out)
     assert payload[0]["path"] == "rules.md"
     assert payload[0]["state"] == "present"
@@ -308,11 +310,7 @@ def test_markdown_escapes_pipes_in_notes(
 ) -> None:
     # A crafted `notes` must not be able to forge table structure.
     (tmp_path / "rules.md").write_text("x\n", encoding="utf-8")
-    _write_config(
-        tmp_path,
-        'customInstructions:\n  docs:\n    - path: rules.md\n      notes: "a | b"\n',
-    )
-    _run(tmp_path, fmt="markdown")
+    _run(tmp_path, fmt="markdown", docs=[{"path": "rules.md", "notes": "a | b"}])
     out = capsys.readouterr().out
     assert "a \\| b" in out
     assert "| a | b |" not in out
@@ -322,11 +320,7 @@ def test_json_encodes_control_characters_inertly(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     (tmp_path / "rules.md").write_text("x\n", encoding="utf-8")
-    _write_config(
-        tmp_path,
-        'customInstructions:\n  docs:\n    - path: rules.md\n      notes: "a\\u001b[31mb"\n',
-    )
-    _run(tmp_path, fmt="json")
+    _run(tmp_path, fmt="json", docs=[{"path": "rules.md", "notes": "a\x1b[31mb"}])
     raw = capsys.readouterr().out
     assert "\\u001b" in raw, "the escape sequence must be encoded, not emitted raw"
     assert json.loads(raw)[0]["notes"] == "a\x1b[31mb"
@@ -336,11 +330,7 @@ def test_table_reports_every_doc_with_its_state(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     (tmp_path / "ok.md").write_text("x\n", encoding="utf-8")
-    _write_config(
-        tmp_path,
-        "customInstructions:\n  docs:\n    - path: ok.md\n    - path: gone.md\n",
-    )
-    _run(tmp_path)
+    _run(tmp_path, docs=["ok.md", "gone.md"])
     out = capsys.readouterr().out
     assert "present" in out and "missing" in out
     assert "ok.md" in out and "gone.md" in out

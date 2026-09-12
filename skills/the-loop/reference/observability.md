@@ -1,8 +1,9 @@
 # Observability reference
 
-Config: `observability` (`devLevel`/`runtimeLevel`/`browserLogging`) in
-`.the-loop/harness-config.yaml` (the plugin config). The CLI event log below is configured
-separately, in the independent CLI config (`eventLog`; decision-032).
+the-loop configures nothing here (issue-352, third pass): log levels are the project's
+own logging configuration, and browser logging uses whatever browser-logging tool the
+harness discovers. What this file carries is the rule. The CLI event log below is
+configured separately, in the independent CLI config (`eventLog`; decision-032).
 
 ## Core rule: dev-time == run-time
 
@@ -11,13 +12,12 @@ and at runtime (when the system is actually running). The ONLY advantage at dev-
 that you can set **breakpoints** and inspect variable values. Do not add log statements
 or instrumentation that exist only in dev — that defeats the purpose.
 
-## Configurable levels
+## Levels
 
-There are different, configurable levels of observability:
-- **Dev-time** (`observability.devLevel`, default `debug`): all `debug` logs and above
-  are accessible.
-- **Run-time** (`observability.runtimeLevel`, default `info`): all `info` logs and above
-  are available.
+The levels are the project's own — set wherever its logger is configured, never in
+the-loop's config:
+- **Dev-time** (typically `debug`): all `debug` logs and above are accessible.
+- **Run-time** (typically `info`): all `info` logs and above are available.
 
 Use the same logger and the same log lines in both; only the active level differs.
 
@@ -111,8 +111,8 @@ truncate/rotate externally; readers tolerate it.
 
 - **Locally running services**: prefer **file-system based logging** that the agent
   harness can read directly (tail/grep the log files).
-- **Browser-based logging**: surface browser console/network logs to the harness via
-  `observability.browserLogging` (default `chrome-devtools-mcp` — the Chrome DevTools
-  MCP server).
+- **Browser-based logging**: surface browser console/network logs to the harness through
+  whatever browser-logging tool the harness discovers (e.g. `chrome-devtools-mcp`, the
+  Chrome DevTools MCP server) — tools are discovered, not declared.
   - _Open question:_ confirm chrome-devtools MCP is the right mechanism for browser
     logging, and document the setup. Record a decision once validated.

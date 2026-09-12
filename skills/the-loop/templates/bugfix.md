@@ -56,7 +56,7 @@ What is causing the bug, once known.
 
 ## Security considerations
 
-> Same gate as requirements (`security.threatModel.required`); usually short for a bug.
+> Same gate as requirements (always required); usually short for a bug.
 > See `reference/security.md`.
 
 - Is the bug itself security-relevant (exploitable, data-exposing)? If so, treat its

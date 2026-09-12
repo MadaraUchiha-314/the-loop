@@ -38,10 +38,12 @@ that item's own checkout, the same way the repo-scoped commands do.
 
 ## Repo-scoped commands
 
-Run once, inside a checkout. They read that project's
-[harness config](/config/harness-config) and are no part of the daemon
-([decision-032](/decisions/decision-032)) — they need no `cli-config.yaml` at all, which
-is what lets [`check`](/cli/commands/check) run as a CI gate in a bare checkout.
+Run once, inside a checkout. They read the project's files and the operator's
+[CLI config](/config/cli/) — never the project's [harness config](/config/harness-config),
+which is the agent's ([decision-123](/decisions/decision-123)) — and are no part of the
+daemon ([decision-032](/decisions/decision-032)). They run with no `cli-config.yaml` at
+all, on defaults, which is what lets [`check`](/cli/commands/check) run as a CI gate in a
+bare checkout (`--spec-dir` when the specs are not under `docs/specs`).
 
 | Command | What it does |
 |---------|--------------|

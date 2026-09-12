@@ -12,10 +12,11 @@
 #      automatically when `the-loop <command>` is run from this checkout)
 #   4. ~/.the-loop/cli-config.yaml (the always-available fallback)
 #
-# See .the-loop/config.yaml for the-loop's own PLUGIN config (ticketing,
-# workflow, tooling, reviews, …).
+# See .the-loop/harness-config.yaml for the-loop's own PLUGIN config — the
+# agent's file (workflow, tooling, reviews, …), which the CLI never
+# reads (issue-352, decision-123).
 
-version: "0.8.0"
+version: "0.9.0"
 
 # Everything the CLI GENERATES lives under this root (issue-106), organised by
 # whether it travels between machines (issue-128, decision-046):
@@ -159,6 +160,24 @@ routing:
   # pull-request review — an invariant of the loop (decision-051).
   interaction:
     mode: work-item             # work-item | cli
+  # The process graph, as this instance drives it (issue-113). The CLI reads no
+  # repository's harness config (issue-352, decision-123), so the two things it
+  # used to take from one live here: WHERE the specs are, for every checkout this
+  # instance drives, and any HOOKS of your own on the graph's boundaries.
+  graph:
+    enabled: true
+    specDir: docs/specs         # the loop's convention; set only for a different layout
+    # Hooks run inside the-loop's process with your credentials — review one like
+    # code. A `path` resolves against each checkout; `x-` names only; appended
+    # after every shipped hook, so a hook here can block but never approve.
+    # hooks:
+    #   modules:
+    #     - path: .the-loop/hooks/house_rules.py   # a .py file inside the checkout
+    #     - module: acme_loop_hooks.compliance     # or an installed dotted name
+    #   attach:
+    #     - hook: x-licence-header
+    #       node: implementation
+    #       boundary: exit                          # entry | exit (default exit)
   # SECURITY: no fallback to this repo's plugin config (issue-63 review) —
   # empty here means nothing human-authored is actioned (fail closed).
   # Set this explicitly, e.g. ["MadaraUchiha-314"], to actually route events.
@@ -296,6 +315,41 @@ routing:
   # paths, session ids or hostnames.
   announce:
     enabled: true
+
+# CRITIC HARNESSES (issue-108, decision-043; declared HERE since issue-352,
+# decision-123). Each entry is RUNNABLE: `the-loop critic run <name> --prompt-file
+# <path>` spawns it — never through a shell — and prints its output as one JSON
+# envelope the running harness reads. A critic is a harness and a model installed
+# on THIS machine, which is why the roster is yours and not any repository's, and
+# so is how many rounds run (`reviews` below, `the-loop critic policy`).
+# Executable configuration: review an entry like code, never put a secret
+# in `env` (name a variable; keep the value in `env.file` or the environment).
+critics: []
+# A harness the-loop has an adapter for needs nothing else — the invocation is derived:
+# - name: cursor-gpt
+#   harness: cursor              # built-in: claude | cursor (free-form otherwise)
+#   model: gpt-5.5
+#
+# Any other CLI: spell out the executable and its argv. Placeholders are substituted
+# element-wise — {prompt} {promptFile} {model} {workItem} {specDir} {cwd} — and the
+# args MUST carry {prompt} or {promptFile}, or the critic reviews nothing.
+# - name: aider-review
+#   harness: aider
+#   model: gpt-5.5
+#   command: aider               # argv[0] — NOT a shell line (args go below)
+#   args: ["--message-file", "{promptFile}", "--model", "{model}", "--no-auto-commits"]
+#   outputFormat: text           # text | json (json extracts the reviewer's text)
+#   timeoutSeconds: 900          # a hung critic must not wedge the review loop
+#   enabled: true
+
+# REVIEW ROUNDS (moved here from the harness config in issue-352, decision-123):
+# the operator who runs the rounds sets how many. Every key has a default, so the
+# block may be omitted; `the-loop critic policy` prints the effective values.
+reviews:
+  selfReviewCount: 3              # cap; the loop stops early on zero new findings
+  criticReviewCount: 3            # cap; rounds with the critics[] above
+  stopOnNoNewFindings: true       # stop when a round finds nothing new actionable
+  escalateOnRepeatFinding: true   # same finding twice in a row -> escalate to a human
 
 # Standing sessions (issue-277): the sessions the-loop keeps for ITSELF —
 # no ticket, no spec chain, no completion, started by `the-loop start` and

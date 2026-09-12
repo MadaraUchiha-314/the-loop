@@ -5,13 +5,13 @@
 
 ## What it is
 
-The knowledge layer under `workflow.capabilitiesDir` (default `docs/capabilities/`)
+The knowledge layer under `docs/capabilities/` (the loop's fixed convention)
 that answers "what does the product do *today*, by topic?" without making the reader
 merge specs in ticket order. Raw specs are *deltas*; capability docs are *state*.
 
 ## Current behaviour
 
-- Each capability SHALL have one living doc `<capabilitiesDir>/<capability>.md`
+- Each capability SHALL have one living doc `docs/capabilities/<capability>.md`
   (template `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/capability.md`) containing: narrative, current
   behaviour (normative), design pointers, and a history table.
 - A capability doc SHALL be the **single source of truth for the capability's current
@@ -35,4 +35,4 @@ merge specs in ticket order. Raw specs are *deltas*; capability docs are *state*
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-25 | Introduced the layer: template, `workflow.capabilitiesDir`, fold-in gate, backfill of all existing capabilities | [spec](../specs/issue-25/), [decision-020](../decisions/decision-020.md), PR #26 |
+| issue-25 | Introduced the layer: template, a `workflow.capabilitiesDir` key (removed in issue-352 — `docs/capabilities/` is the convention), fold-in gate, backfill of all existing capabilities | [spec](../specs/issue-25/), [decision-020](../decisions/decision-020.md), PR #26 |

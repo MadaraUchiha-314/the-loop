@@ -85,7 +85,7 @@ status: in-progress          # in-progress | complete
 > left it. Rounds follow `reference/reviewing.md` unchanged: attribution prefix, own-comment
 > marker, reply-first-then-fix, stop on zero new findings, escalate on a repeated finding.
 > A round that could not run is recorded as **`unavailable`** with the cause and does NOT
-> count toward `reviews.criticReviewCount`.
+> count toward the operator's `reviews.criticReviewCount` (`the-loop critic policy`).
 
 | Round | Critic (`<harness>/<model>`) | Outcome | Findings → disposition | Link |
 |-------|-----------------------------|---------|------------------------|------|
@@ -94,7 +94,8 @@ status: in-progress          # in-progress | complete
 ## Review cycles
 
 > Outcome is one of: new findings · zero (converged) · escalated · **unavailable** (the
-> configured critic could not run — it does NOT count toward `reviews.criticReviewCount`).
+> configured critic could not run — it does NOT count toward the operator's
+> `reviews.criticReviewCount`, read with `the-loop critic policy`).
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
 |-------|-----------------------------|----------|---------|------|
@@ -102,11 +103,11 @@ status: in-progress          # in-progress | complete
 
 ## Security review (gate)
 
-> Required before ready-to-ship (`security.review.required`). See `reference/security.md`.
+> Required before ready-to-ship, always. See `reference/security.md`.
 
-- **Mechanism:** <security-review skill | the-loop checklist> (`security.review.mechanism`)
+- **Mechanism:** <security-review skill | the-loop checklist>
 - **Outcome:** <pass | findings fixed (link threads) | escalated>
-- **Human sign-off:** <n/a (tier below `security.review.humanSignOffMinTier`) | @handle + link>
+- **Human sign-off:** <n/a (risk tier below 4) | @handle + link>
 
 ## Final validation evidence
 
@@ -121,7 +122,7 @@ under `<specDir>/<id>/evidence/`.
 > Which living capability docs this work item changed, and the history row that traces
 > each behaviour back to it. Capability docs are the **organized view of specs** — the
 > single source of truth for a capability's *current* behaviour — so they are updated
-> **in the same PR** as the change (`workflow.capabilitiesDir`), and this section is what
+> **in the same PR** as the change (under `docs/capabilities/`), and this section is what
 > the `capability-docs` node gates on. A work item that genuinely changed no capability
 > says so here, and why; the section is never deleted to shorten the log.
 

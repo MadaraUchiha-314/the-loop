@@ -98,8 +98,8 @@ flowchart LR
   sight only on the poll path. A stranger's comment is published nowhere.
 - **Content-rich notifications.** The `notify` hook publishes with the work item's URL
   and, when the node names an `artifact` (`requirements-approval` → `requirements.md`,
-  `design-approval` → `design.md`), an excerpt of it; it no longer skips when
-  `notifications.events` names no role — the roles ride along as detail. The URL is
+  `design-approval` → `design.md`), an excerpt of it; roles a node names in its `with:`
+  ride along as detail (the harness config's `notifications.events` is gone, issue-352). The URL is
   derived from the work item's ref, which on GitHub Enterprise carries the host
   `integrations.github.host` resolves (issue-311) — so the link a Slack member clicks
   and the comment the ledger wrote are on the same GitHub.

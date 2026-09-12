@@ -74,20 +74,11 @@ def test_complete_is_still_terminal():
     assert load_graph(name=PDLC_WORK_ITEM_LOOP).nodes["complete"].terminal is True
 
 
-def test_the_cleanup_phase_is_in_the_configurable_vocabulary():
-    import json
-    from pathlib import Path
-
-    schema = json.loads(
-        (
-            Path(__file__).resolve().parents[2]
-            / ".the-loop"
-            / "harness-config.schema.json"
-        ).read_text(encoding="utf-8")
-    )
-    phases = schema["properties"]["workflow"]["properties"]["phases"]
-    assert "cleanup" in phases["default"]
-    assert "cleanup" in phases["items"]["enum"]
+def test_the_cleanup_phase_is_in_the_graphs_vocabulary():
+    """The phase vocabulary is the graph's alone since issue-352 (no
+    `workflow.phases` to mirror it): the terminal node carries the phase."""
+    graph = load_graph(name=PDLC_WORK_ITEM_LOOP)
+    assert graph.nodes[CLEANUP_NODE].phase == "cleanup"
 
 
 # -- Runtime.cleanup -------------------------------------------------------------

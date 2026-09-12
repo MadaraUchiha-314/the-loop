@@ -1,6 +1,6 @@
 ---
 description: Initialize "the-loop" in the current repository — scaffold .the-loop/, the docs trees (specs, capabilities, decisions, learnings) and a validated config, establishing the config with the user via a guided, schema-driven onboarding. Idempotent, non-clobbering, with drift detection.
-argument-hint: "[--dry-run] [--defaults] [--monorepo-tool nx|pnpm|yarn|bun|none] [--ticketing github|jira]"
+argument-hint: "[--dry-run] [--defaults]"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
@@ -38,32 +38,23 @@ to the plugin's install directory.)
 
 ## Steps
 
-1. **Detect the project.** Inspect the repo to infer sensible defaults — never stamp
-   the plugin's hardcoded tooling defaults onto an existing project unread:
-   - languages present (python / js / ts / go) — from file extensions and manifests
-     (`package.json`, `pyproject.toml`/`setup.cfg`/`requirements.txt`, `go.mod`).
-   - whether it looks like a monorepo (nx.json, pnpm-workspace.yaml, workspaces) and
-     which tool — default Nx; support non-monorepo (`monorepo: false`).
-   - existing package manager / test runner / linter / type-checker per language, by
-     reading lock files, manifest fields, and dependency lists, per the exact signal
-     table in the `the-loop` skill's `reference/tooling.md` → "Tooling detection"
-     (e.g. `package-lock.json`→npm, `yarn.lock`→yarn, `bun.lockb`→bun,
-     `pnpm-lock.yaml`→pnpm; devDependencies for `jest`/`vitest`/`mocha`,
-     `eslint`/`oxlint`/`biome`, etc.; the Python and Go equivalents).
-   - cross-check inferred tooling against `.github/workflows/` (or other CI config) —
-     the commands CI actually runs are a strong signal.
-   - the git remote / owner / repo for ticketing.
+1. **Detect the project.** Inspect the repo to propose the few facts the config still
+   carries — nothing about layout or tooling is written: the skill reads the languages,
+   package managers, test runners, linters, type checkers, monorepo tool and git hooks
+   off the repository itself at the start of every work item (`reference/tooling.md` →
+   "Tooling detection (every session)"; issue-352), so a config cannot go stale on them.
+   Detect, and propose in the onboarding:
    - candidate **custom instruction docs** for `customInstructions.docs` — existing
      convention files the team already maintains (`CONTRIBUTING.md`, style/convention
-     guides under `docs/`). Propose them in the onboarding (never auto-register); the
-     user confirms, adjusts, or adds paths — including absolute per-machine paths
-     detection can never see (see the skill's `reference/instructions.md`).
-   Where detection is unambiguous, write the detected tool into `tooling.<concern>.<lang>`.
-   Where it's ambiguous or no signal exists, fall back to the plugin default but mark
-   that line with a trailing `# TODO: verify — no signal found, defaulted` comment, and
-   surface it in the guided onboarding (step 2) — or, when running non-interactively,
-   in the **needs-user** section of the final report (step 8) — so the user confirms it
-   before the agent invokes it.
+     guides under `docs/`). Propose them (never auto-register); the user confirms,
+     adjusts, or adds paths — including absolute per-machine paths detection can never
+     see (see the skill's `reference/instructions.md`).
+   - the **integration-test globs** for `testing.integrationTestGlobs` — from the test
+     directories and the naming the repository already uses.
+   - existing **API contracts** (`openapi*.yaml`, `*.graphql`) for `apiSpecs`.
+   Where no signal exists, keep the schema default and mark the line with a trailing
+   `# TODO: verify — no signal found, defaulted` comment; surface it in the guided
+   onboarding (step 2) or, non-interactively, under **needs-user** in the final report.
 
 2. **Onboard the config with the user (guided, grouped, schema-driven).** Do not dump
    a config file and walk away — establish it together, following the skill's
@@ -71,14 +62,13 @@ to the plugin's install directory.)
    (in the plugin's `harness-config.schema.json` — `${CLAUDE_PLUGIN_ROOT}` /
    `manifest.schemasDir`, never a project copy) defines the ordered config groups
    (related keys that interact, clubbed together) and each group's `ask` level:
-   - `always` groups (e.g. **Project & ticketing**, **People & communication**) have
-     no sensible default — establish them with the user.
-   - `confirm` groups (tooling, custom instructions, workflow, quality gates,
-     reviews & autonomy) —
+   - `always` groups (**People & interaction**: the collaborators file) have no
+     sensible default — establish them with the user.
+   - `confirm` groups (custom instructions, testing conventions) —
      present the proposal from step 1's detection (falling back to schema defaults)
      and confirm/adjust the whole group in ONE interaction.
-   - `advanced` groups (API contracts, observability, self-improvement & context
-     management) — default silently; offer a full tour only if the user wants it.
+   - `advanced` groups (API contracts & design artifacts) — default silently; offer a
+     full tour only if the user wants it.
    For every group: explain what it does and why it matters (educating the user is
    mandatory); for enum keys show ALL the possibilities with a one-line meaning each;
    for free-form keys show the schema's `examples` so the user never guesses. Pull
@@ -116,22 +106,25 @@ to the plugin's install directory.)
      `# yaml-language-server: $schema=…` **first line** intact: the directive only works
      there, and it is the operator's editor validation (issue-220).
    - `.the-loop/manifest.yaml` — the manifest.
-   - `.the-loop/collaborators.yaml` — from templates (user-owned). External tools are
-     declared inline in `config.externalTools`, not a separate file (issue-37).
+   - `.the-loop/collaborators.yaml` — from templates (user-owned). No tool registry is
+     written: the harness discovers its own tools (issue-352).
    - **Only if step 2 answered "track it here":** `.the-loop/cli-config.yaml` — from
      `templates/cli-config.yaml`, and nothing else. Never scaffolded on the
      home-directory answer or under `--defaults`.
    - `docs/architecture/architecture.md`, `docs/decisions/decisions.md`,
-     `<workflow.specDir>/` (per-work-item Kiro specs + execution logs).
-   - `<workflow.learningsDir>/learnings.md` — the learnings index, under the directory
-     established in step 2 (default `docs/learnings`).
+     `docs/specs/` (per-work-item Kiro specs + execution logs), `docs/capabilities/`.
+   - `docs/learnings/learnings.md` — the learnings index. The doc trees are the loop's
+     convention, not a setting (issue-352).
 
-4. **Create phase labels/tags** in the ticketing system for the workflow state
-   machine — one per `workflow.phases`, named `<workflow.phaseLabelPrefix><phase>`
-   (e.g. `loop:requirements-definition`, `loop:design`, … `loop:complete`,
-   `loop:cleanup`). On GitHub
-   create issue labels; on Jira create the equivalent statuses/labels. Skip any that
-   already exist. **No skip labels are needed** (issue-177): which phases a work item
+4. **Create phase labels/tags** in the ticketing system for the process graph's phases
+   — one per phase the shipped work-item loop declares, named `loop:<phase>` (the fixed
+   vocabulary, issue-352): `loop:not-started`, `loop:phase-selection`,
+   `loop:brainstorming`, `loop:requirements-definition`, `loop:design`,
+   `loop:test-planning`, `loop:tasks-breakdown`, `loop:implementation`,
+   `loop:verification`, `loop:needs-review`, `loop:complete`, `loop:cleanup`. The graph
+   is the source (`the-loop graph show --format json` lists each node's `phase`); the
+   config declares no phase list. On GitHub create issue labels; on Jira create the
+   equivalent statuses/labels. Skip any that already exist. **No skip labels are needed** (issue-177): which phases a work item
    walks is chosen on the ticket itself, at the loop's `phase-selection` phase, by an
    authorized user replying to the-loop's checklist — nothing to create per repository.
 
@@ -144,7 +137,7 @@ to the plugin's install directory.)
    - if scaffolded, `.the-loop/cli-config.yaml` ↔ `cli-config.schema.json`
 
    The absence of a project-local schema copy never weakens or skips this step. Report
-   any gaps the user must fill (e.g. empty `collaborators`, `ticketing.github.owner`).
+   any gaps the user must fill (e.g. empty `collaborators`).
 
 6. **Confirm collaborators.** If `.the-loop/collaborators.yaml` is still empty after
    the onboarding (step 2), ask the user (via a ticket comment if a ticket exists,
@@ -153,11 +146,12 @@ to the plugin's install directory.)
    (issue-82, decision-035; it declares no delivery of its own — issue-304). RULE: every
    decision needs a paper trail.
 
-7. **Wire local hooks & CI parity.** Set up pre-commit / pre-push hooks that run the
-   `hooks.preCommit` / `hooks.prePush` steps (lint, typecheck, unit-test) using the
-   configured tooling, and ensure CI invokes the SAME root commands (see
+7. **Wire local hooks & CI parity.** When the project has no hook manager of its own,
+   set up pre-commit / pre-push hooks that run lint, typecheck and unit tests with the
+   detected tooling, and ensure CI invokes the SAME root commands (see
    `reference/tooling.md` → "CI/CD must use exactly the same tooling as local"). Only
-   scaffold what the project doesn't already have.
+   scaffold what the project doesn't already have — a repository's existing hooks are
+   what the loop runs.
 
 8. **Report.** End with a short summary grouped as **created / skipped (up to date) /
    drifted (suggested) / needs-user** (files or config gaps the user must fill), then the

@@ -230,7 +230,7 @@ def test_the_block_reaches_routing_config_through_the_loaded_config(tmp_path):
     """Design §2: one construction, the `_ghBinary` precedent."""
     path = tmp_path / "cli-config.yaml"
     path.write_text(
-        "version: '0.8.0'\n"
+        "version: '0.9.0'\n"
         "instance:\n  name: laptop-b\n  scope:\n    mode: addressed\n"
         "    workItems: [github:octo/repo#15]\n"
         "routing:\n  enabled: true\n"
@@ -248,7 +248,7 @@ def test_a_bare_routing_mapping_is_an_unnamed_open_instance():
 
 def test_a_config_without_routing_still_carries_the_block(tmp_path):
     path = tmp_path / "cli-config.yaml"
-    path.write_text("version: '0.8.0'\ninstance:\n  name: solo\n")
+    path.write_text("version: '0.9.0'\ninstance:\n  name: solo\n")
     loaded = cli_config.load_cli_config(path)
     assert RoutingConfig.from_mapping(loaded["routing"]).instance.name == "solo"
 

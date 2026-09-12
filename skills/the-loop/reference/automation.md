@@ -42,11 +42,10 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
     `GET /health`, and logs deliveries. Defaults come from `webhooks.ghWebhook` in the
     **CLI config** (`cli-config.yaml` — resolved via `--config`/env/cwd/home; see
     `docs/config/cli/`) — not this project's `.the-loop/harness-config.yaml`; the daemon is not
-    tied to any one repo (decision-032). The CLI config also carries the operator's
-    own notification recipients (`collaborators`, same structure as the per-repo
-    `collaborators.yaml` but declared, never looked up) and the daemon-side
-    `notifications.events` filters (work-item-spawned, dispatch-failed, session-died,
-    event-dropped-unauthorized) — issue-82, decision-035.
+    tied to any one repo (decision-032), and the CLI never reads this repository's
+    harness config at all (issue-352, decision-123): the spec directory, the critic
+    roster and the operator's graph hooks are CLI-config keys (`routing.graph.specDir`,
+    `critics[]`, `routing.graph.hooks`).
 - **Webhook → session routing** (`routing.enabled`): a received
   event (PR/issue comment, `workflow_run` result, …) is matched to the registered
   session working that item and delivered by *resuming* that session through its
@@ -240,22 +239,15 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   review comment on a spec PR a dead letter — the comment resolves to the PR as a work
   item nobody armed, is refused as unstarted, and is never re-evaluated.
 
-- **A repository with no `.the-loop/` is adopted, not improvised around** (issue-193,
-  `docs/decisions/decision-073.md`). the-loop is routinely pointed at a repository that
-  never ran `/the-loop:init`. WHEN the daemon's graph coupling — or one of the
-  state-changing graph verbs (`graph complete|advance|force|skip`) — works such a
-  repository THEN the-loop writes its **built-in default harness config** (shipped inside
-  the CLI package, the same baseline `/the-loop:init --defaults` writes) to
-  `.the-loop/harness-config.yaml`, naming the work item's owner/repo, and records
-  `harness.config_scaffolded`. On the daemon path this happens **before the harness
-  process starts** (issue-201) — between preparing the checkout and rendering the prompt,
-  and again in the respawn pre-flight — so a session spawned into a fresh clone reads a
-  real config rather than inventing one. Three limits: an existing config of either filename is
-  **never** opened, `the-loop check` and the other read-only commands write nothing, and a
-  **contribution** (`the-loop contribute`) adopts nothing at all, and neither does a
-  **review** (`the-loop review`) — the-loop stays out of
-  the history of a repository it was invited into as a guest. Tailor a scaffolded config
-  with `/the-loop:init`.
+- **A repository with no `.the-loop/` is worked on the skill's defaults, and nothing
+  writes one for you** (issue-352, decision-123; this replaces issue-193's adoption).
+  the-loop is routinely pointed at a repository that never ran `/the-loop:init`. The
+  harness config is the agent's file: read it when it is there, fall back to the schema's
+  defaults when it is not, and say which in the execution log. The CLI neither reads nor
+  writes it — it takes the spec directory, the critics and the graph hooks from the
+  operator's `cli-config.yaml` — so a spawned session finds exactly what the repository
+  committed, never a file the daemon planted. A **contribution** or a **review** (guest
+  loops) never installs the-loop in the repository it was invited into, as before.
 
 ## Predictability & execution guarantees
 
@@ -272,13 +264,12 @@ predictable via:
 
 the-loop is not expected to be perfect from the start; it captures learnings in your repo
 so it measurably stops repeating mistakes — without letting the index grow unbounded and
-blow the context budget. Learnings live in `<learningsDir>/learnings.md` (index) +
-`<learningsDir>/learning-<nnn>.md` (detail), with overflow in
-`<learningsDir>/topics/<category>.md`, where `<learningsDir>` is
-`config.workflow.learningsDir` — the same block that names the spec and capability
-directories, defaulting to `docs/learnings`. A project that **publishes** its `docs/` tree
-and would rather not publish its learnings points the key elsewhere. The lifecycle itself
-is tuned by `config.selfImprovement` (`enabled`, `maxIndexLines`, `writeGateOccurrences`).
+blow the context budget. Learnings live in `docs/learnings/learnings.md` (index) +
+`docs/learnings/learning-<nnn>.md` (detail), with overflow in
+`docs/learnings/topics/<category>.md` — the loop's fixed convention, beside the spec and
+capability trees; a repository that **publishes** its `docs/` tree publishes its
+learnings with it. The lifecycle itself is fixed: the index stays under 200 lines, and a
+learning is written once the same finding has occurred three times.
 Sources: **user feedback** (requirements/design/tasks iteration, PR reviews) and **system
 feedback** (repeated failures or insights). The skill implements this today; the Python
 CLI can harden it later. Four stages:
@@ -287,13 +278,13 @@ CLI can harden it later. Four stages:
    pass/fail signals it already produces (a red check, a rejected review, a repeated
    reviewer comment) into a **git-ignored pending queue** (`.the-loop/learnings-pending/`).
 2. **Write-gate.** A candidate becomes a durable, injected learning only once it
-   **recurs** (`writeGateOccurrences`, rule-of-three) — or immediately for a clearly
+   **recurs** (rule-of-three: the third occurrence) — or immediately for a clearly
    high-severity one-off. This keeps one-off noise out of the index.
 3. **Consolidate.** At the end of a run, classify each candidate against the existing
    index as **ADD / UPDATE / DELETE** (on contradiction) / **NOOP**, then **prune to the
-   size cap** (`maxIndexLines`) by evicting the least-important/least-recent entries into
-   `<learningsDir>/topics/<category>.md`.
-4. **Inject.** Load the **capped index** (first `maxIndexLines` lines) into each agent's
+   size cap** (200 lines) by evicting the least-important/least-recent entries into
+   `docs/learnings/topics/<category>.md`.
+4. **Inject.** Load the **capped index** (under 200 lines) into each agent's
    prompt at the start of a run; overflow detail is read on demand from the topic files.
 
 Everything durable is checked in so you can review it and give feedback.

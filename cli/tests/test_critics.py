@@ -11,6 +11,8 @@ import pytest
 
 from the_loop import critics
 from the_loop.critics import (
+    REVIEW_POLICY_DEFAULTS,
+    load_review_policy,
     Critic,
     CriticConfigError,
     find_critic,
@@ -23,15 +25,16 @@ from the_loop.harness import ClaudeCodeAdapter, CursorAgentAdapter
 # --------------------------------------------------------------------- helpers
 
 
+def config_path(root: Path) -> Path:
+    return root / "cli-config.yaml"
+
+
 def write_config(root: Path, critics_block: str) -> Path:
-    """A minimal harness config carrying just the reviews.critics list."""
-    cfg_dir = root / ".the-loop"
-    cfg_dir.mkdir(parents=True, exist_ok=True)
-    path = cfg_dir / "harness-config.yaml"
+    """A minimal CLI config carrying just the critics list (issue-352)."""
+    path = config_path(root)
     path.write_text(
-        "reviews:\n  selfReviewCount: 3\n  criticReviewCount: 3\n"
-        "  critics:\n"
-        + textwrap.indent(textwrap.dedent(critics_block).strip(), "    ")
+        'version: "0.9.0"\ncritics:\n'
+        + textwrap.indent(textwrap.dedent(critics_block).strip(), "  ")
         + "\n"
     )
     return path
@@ -78,12 +81,12 @@ def test_oneshot_argv_without_a_model_is_the_plain_one_shot_run():
 
 
 def test_no_config_means_no_critics(tmp_path: Path):
-    assert load_critics(tmp_path) == []
+    assert load_critics(config_path(tmp_path)) == []
 
 
 def test_critics_load_with_their_defaults(tmp_path: Path):
     write_config(tmp_path, "- name: cursor-gpt\n  harness: cursor\n  model: gpt-5.5\n")
-    (critic,) = load_critics(tmp_path)
+    (critic,) = load_critics(config_path(tmp_path))
     assert (critic.name, critic.harness, critic.model) == (
         "cursor-gpt",
         "cursor",
@@ -97,14 +100,43 @@ def test_critics_load_with_their_defaults(tmp_path: Path):
     assert critic.binary == "cursor-agent"
 
 
-def test_pre_rename_config_is_still_read(tmp_path: Path):
-    """A repo that has not run /the-loop:upgrade-the-loop keeps working (issue-82)."""
-    cfg_dir = tmp_path / ".the-loop"
-    cfg_dir.mkdir()
-    (cfg_dir / "config.yaml").write_text(
-        "reviews:\n  critics:\n    - name: c\n      harness: claude\n"
+def test_no_config_means_the_default_review_policy(tmp_path: Path):
+    """issue-352: the counts moved to the operator; an absent block is the defaults."""
+    assert load_review_policy(config_path(tmp_path)) == REVIEW_POLICY_DEFAULTS
+    assert REVIEW_POLICY_DEFAULTS == {
+        "selfReviewCount": 3,
+        "criticReviewCount": 3,
+        "stopOnNoNewFindings": True,
+        "escalateOnRepeatFinding": True,
+    }
+
+
+def test_review_policy_reads_the_operators_block_and_defaults_the_rest(tmp_path: Path):
+    config_path(tmp_path).write_text(
+        'version: "0.9.0"\nreviews:\n  criticReviewCount: 1\n  escalateOnRepeatFinding: false\n'
     )
-    assert [c.name for c in load_critics(tmp_path)] == ["c"]
+    assert load_review_policy(config_path(tmp_path)) == {
+        "selfReviewCount": 3,
+        "criticReviewCount": 1,
+        "stopOnNoNewFindings": True,
+        "escalateOnRepeatFinding": False,
+    }
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        "reviews: 3\n",
+        "reviews:\n  selfReviewCount: many\n",
+        "reviews:\n  selfReviewCount: -1\n",
+        "reviews:\n  selfReviewCount: true\n",
+        "reviews:\n  stopOnNoNewFindings: yes please\n",
+    ],
+)
+def test_a_malformed_review_policy_is_refused(tmp_path: Path, block: str):
+    config_path(tmp_path).write_text('version: "0.9.0"\n' + block)
+    with pytest.raises(CriticConfigError):
+        load_review_policy(config_path(tmp_path))
 
 
 def test_duplicate_names_are_rejected(tmp_path: Path):
@@ -113,13 +145,13 @@ def test_duplicate_names_are_rejected(tmp_path: Path):
         "- name: dup\n  harness: claude\n- name: dup\n  harness: cursor\n",
     )
     with pytest.raises(CriticConfigError, match="both named 'dup'"):
-        load_critics(tmp_path)
+        load_critics(config_path(tmp_path))
 
 
 def test_find_critic_names_the_alternatives(tmp_path: Path):
     write_config(tmp_path, "- name: cursor-gpt\n  harness: cursor\n")
     with pytest.raises(CriticConfigError, match="configured: cursor-gpt"):
-        find_critic(tmp_path, "nope")
+        find_critic("nope", config_path(tmp_path))
 
 
 @pytest.mark.parametrize(
@@ -145,20 +177,20 @@ def test_invalid_entries_carry_their_reason_instead_of_failing_the_listing(
 ):
     """R4.3: `critic list` still shows a broken entry — with why it is broken."""
     write_config(tmp_path, block)
-    (critic,) = load_critics(tmp_path)
+    (critic,) = load_critics(config_path(tmp_path))
     assert reason in critic.error
 
 
 def test_a_broken_entry_refuses_to_run(tmp_path: Path):
     write_config(tmp_path, "- name: c\n  harness: aider\n")
-    (critic,) = load_critics(tmp_path)
+    (critic,) = load_critics(config_path(tmp_path))
     with pytest.raises(CriticConfigError, match="no built-in invocation"):
         resolve_invocation(critic, {"prompt": "review"})
 
 
 def test_disabled_critic_refuses_to_run(tmp_path: Path):
     write_config(tmp_path, "- name: c\n  harness: claude\n  enabled: false\n")
-    (critic,) = load_critics(tmp_path)
+    (critic,) = load_critics(config_path(tmp_path))
     with pytest.raises(CriticConfigError, match="disabled in config"):
         resolve_invocation(critic, {"prompt": "review"})
 
@@ -384,9 +416,24 @@ def test_the_prompt_reaches_the_critic_as_one_argument(tmp_path: Path):
 
 
 def run_cli(argv: list[str]) -> int:
+    """Run the CLI against the config ``write_config`` put beside ``--root``.
+
+    The critics live in the operator's CLI config (issue-352), so the tests point
+    the CLI at the one they wrote with ``--config`` — exactly what an operator does.
+    """
+    from the_loop import cli_config
     from the_loop.cli import main
 
-    return main(argv)
+    if "--root" in argv:
+        root = Path(argv[argv.index("--root") + 1])
+        if config_path(root).is_file():
+            argv = ["--config", str(config_path(root)), *argv]
+    try:
+        return main(argv)
+    finally:
+        # ``--config`` is a process-wide override; a leaked one would make every
+        # later test read this test's file instead of its own env var.
+        cli_config.set_override(None)
 
 
 def test_critic_command_is_registered():
@@ -416,6 +463,32 @@ def test_list_reports_availability(tmp_path: Path, capsys):
     assert by_name["cursor-gpt"]["available"] is False  # not installed in CI
     assert by_name["paused"]["enabled"] is False
     assert "no built-in invocation" in by_name["broken"]["error"]
+
+
+def test_policy_prints_the_defaulted_block(tmp_path: Path, capsys):
+    config_path(tmp_path).write_text(
+        'version: "0.9.0"\nreviews:\n  criticReviewCount: 2\n'
+    )
+    assert (
+        run_cli(["critic", "policy", "--root", str(tmp_path), "--format", "json"]) == 0
+    )
+    assert json.loads(capsys.readouterr().out) == {
+        "selfReviewCount": 3,
+        "criticReviewCount": 2,
+        "stopOnNoNewFindings": True,
+        "escalateOnRepeatFinding": True,
+    }
+
+
+def test_policy_text_is_one_key_per_line(tmp_path: Path, capsys):
+    assert run_cli(["critic", "policy", "--root", str(tmp_path)]) == 0
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert lines == [
+        "selfReviewCount: 3",
+        "criticReviewCount: 3",
+        "stopOnNoNewFindings: true",
+        "escalateOnRepeatFinding: true",
+    ]
 
 
 def test_list_with_no_critics_exits_zero(tmp_path: Path, capsys):

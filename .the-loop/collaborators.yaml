@@ -3,8 +3,8 @@
 # Validated against .the-loop/collaborators.schema.json. The single source of
 # truth for WHO collaborates on this project and in which ROLES (issue-82,
 # decision-035); migrated from harness-config.yaml's retired `personas`/
-# `messaging` keys. Which events concern which roles is configured in
-# harness-config.yaml (notifications.events).
+# `messaging` keys. The skill resolves a phase's reviewers and approvers from
+# the roles here; no event → role filter exists any more (issue-352).
 #
 # No delivery is declared here (issue-304). A notification goes to a channel —
 # `channels.slack` in the CLI config, one bot for the whole daemon, subscribed

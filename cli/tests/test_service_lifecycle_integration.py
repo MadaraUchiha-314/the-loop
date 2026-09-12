@@ -163,7 +163,15 @@ def test_every_routed_command_works_over_the_transport(service_env, tmp_path):
     assert f"closed session for {ref}" in closed.stdout
 
     repo_root = str(pathlib.Path(__file__).resolve().parents[2])
-    scenarios = _run_cli("scenarios", "--root", repo_root, "--format", "json")
+    scenarios = _run_cli(
+        "scenarios",
+        "--root",
+        repo_root,
+        "--glob",
+        "cli/tests/test_*_integration.py",
+        "--format",
+        "json",
+    )
     assert scenarios.returncode == 0, scenarios.stderr
     assert json.loads(scenarios.stdout)
 

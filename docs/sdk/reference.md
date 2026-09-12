@@ -148,8 +148,9 @@ session.
 | Method | Returns |
 |--------|---------|
 | `scenarios(repo, globs=None)` | the Gherkin scenarios integration tests document |
-| `instructions(repo)` | the resolved `customInstructions` docs, and any that failed to resolve |
-| `critics(repo)` | the critics that repository's harness config registers |
+| `instructions(repo, docs=None, on_missing="warn")` | the resolved instruction docs handed in (the agent reads them from the harness config), and any that failed to resolve |
+| `critics(repo)` | the critic harnesses the operator's CLI config declares (`critics[]`) |
+| `review_policy(repo="")` | the review-round policy — the CLI config's `reviews` block with every key defaulted |
 | `critic_run(repo, name, prompt="", prompt_file="", work_item="", spec_dir="", timeout=None, cwd="")` | run one critic round; the JSON envelope as a dict |
 
 ### `loop.settings`

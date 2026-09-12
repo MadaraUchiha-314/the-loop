@@ -38,7 +38,7 @@ every API is authored contract-first with docs generated from the contract).
   declaring what is needed and running the project's own commands, and links the operator's
   registered `customInstructions` docs rather than restating them.
 - A testing plan names commands an agent will run, so it SHALL be reviewed as **executable
-  content**, on the same footing as `reviews.critics[]` entries
+  content**, on the same footing as the operator's `critics[]` entries
   ([decision-043](../decisions/decision-043.md)).
 - WHEN implementation completes THEN the **`verification`** node SHALL execute the plan and
   re-gate the same artifact: every activity ticked (`checkmarks: complete`) and a non-empty

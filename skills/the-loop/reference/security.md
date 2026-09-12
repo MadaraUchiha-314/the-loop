@@ -2,14 +2,15 @@
 
 Security is a **first-class, gated concern** of the spec workflow, not a bolt-on step:
 each existing phase gate (requirements → design → review) also checks a security
-question, and the answer is recorded in the phase's artifact. Driven by
-`config.security`; born from the prompt-injection finding on the trigger paths
+question, and the answer is recorded in the phase's artifact. Always on — the
+`security` block left `.the-loop/harness-config.yaml` in issue-352 because nothing here
+is optional; born from the prompt-injection finding on the trigger paths
 (decision-023 → issue-47).
 
 The principle behind every check: **untrusted input never drives privileged behaviour,
 and ambiguity fails closed.**
 
-## Requirements phase — threat-model-lite (`security.threatModel.required`)
+## Requirements phase — threat-model-lite (always required)
 
 `requirements.md` (and `bugfix.md`) carries a **Security considerations** section — a
 lightweight threat model captured alongside the acceptance criteria, while scope is
@@ -30,10 +31,10 @@ still cheap to change:
 A work item with an empty Security considerations section does not pass the
 requirements gate.
 
-If the project keeps a living threat-model doc (`security.threatModel.projectDoc`),
-the section links to it and records only this work item's deltas.
+The threat model is per work item: each section records its own actors, boundaries
+and abuse cases; there is no project-level threat-model doc to point at instead.
 
-## Design phase — enforce the boundaries (`security.design.required`)
+## Design phase — enforce the boundaries (always required)
 
 `design.md` carries a **Security design** section stating **how each trust boundary
 from the requirements is enforced** — mechanisms, not intentions:
@@ -60,7 +61,7 @@ in `tasks.md` name the **negative test** that proves the boundary holds (unautho
 actor rejected, malformed input refused, missing config fails closed), red→green like
 any other task.
 
-## Review phase — the security review gate (`security.review`)
+## Review phase — the security review gate (always required)
 
 Before the ready-to-ship gate can hold, a **security review** runs as its own recorded
 round — complementing (not replacing) the self/critic rounds of `reviewing.md`.
@@ -69,15 +70,13 @@ round — complementing (not replacing) the self/critic rounds of `reviewing.md`
 > human may declare it away at `phase-selection`, before any work starts, and the omission
 > is recorded against their name. The graph no longer refuses it. Nothing else changed —
 > **a session never declares it away itself**, and when the node is walked it gates the
-> execution log exactly as below. A work item at a risk tier that requires a named
-> sign-off (`security.review.humanSignOffMinTier`) still requires one; that policy is now
-> upheld by the person selecting the phases, not by the graph.
+> execution log exactly as below. A work item at risk tier 4 or above still requires a
+> named human sign-off; that policy is now upheld by the person selecting the phases,
+> not by the graph.
 
-- **Mechanism** (`security.review.mechanism`):
-  - `auto` *(default)* — use the harness's built-in security-review skill (e.g. Claude
-    Code's `/security-review`) when one is available; otherwise fall back to the
-    checklist below.
-  - `skill` / `checklist` — force one mechanism.
+- **Mechanism:** the harness's built-in security-review skill (e.g. Claude Code's
+  `/security-review`) when it has one; otherwise the checklist below. Nothing selects
+  between them — a harness that has the skill uses it.
 - **Findings follow the standard protocol:** reply-first-then-fix, one finding per
   commit (`reviewing.md`). A security finding is never silently dismissed — won't-fix
   requires a recorded justification, and an unresolved security finding **blocks
@@ -102,18 +101,19 @@ Verify against the diff, not from memory — each item pass/fail with evidence:
 7. Every abuse case from the requirements has a passing negative test.
 8. New dependencies are justified in `design.md` and come from trusted sources.
 
-## Human sign-off — risk-tiered (`security.review.humanSignOffMinTier`)
+## Human sign-off — tier 4 and above
 
 The autonomous checklist is enough for low-risk work; high-risk work waits for a human
-(same shape as `autonomy.tiers`):
+(same shape as the risk tiers in `workflow.md`):
 
-- Compute the work item's **effective risk tier** as usual (`riskTier` front-matter,
-  else `autonomy.defaultTier`, raised by `autonomy.inferFromChange` on
-  `autonomy.sensitivePaths`).
-- **Tier ≥ `humanSignOffMinTier`** (default 4): a named human must approve the
-  security review (paper trail on the PR/ticket) before the work item completes —
-  autonomous completion is off the table even if `autonomy.tiers` would allow it.
-- **Tier below the threshold:** the autonomous security review suffices; escalate
+- Compute the work item's **effective risk tier** as usual: `riskTier` front-matter,
+  else inferred from the change (default 3 when unclear), raised when the change
+  touches a fixed sensitive path — `**/*schema*`, `.the-loop/**`,
+  `.github/workflows/**`, `**/auth/**`, `**/*secret*`, `**/*credential*`.
+- **Tier 4 and above:** a named human must approve the security review (paper trail
+  on the PR/ticket) before the work item completes — a distinct sign-off from the PR
+  approval the tier already requires; autonomous completion is off the table.
+- **Tier 3 and below:** the autonomous security review suffices; escalate
   anyway when a finding needs a security-relevant *decision* (accepting a residual
   risk, weakening a guard, adding an allowlist entry) — decisions belong to humans,
   detection belongs to the loop.

@@ -409,12 +409,13 @@ def test_every_shipped_loop_is_loadable():
         assert load_graph(name=name).name == name
 
 
-# -- the uninitialized repository (PR #187 review) ----------------------------
-# The target repo may never have adopted the-loop: no `.the-loop/`, no
-# harness-config.yaml, no spec-dir convention. The loop must still run — on
-# built-in defaults (decision-044) — and must not push its machinery into the
-# repository's history: the spec tree is working state, excluded from git, and
-# the thread is the plan's review surface.
+# -- the guest posture (PR #187 review; keyed on the loop since issue-352) -------
+# A contribution joins a repository the-loop does not own. The loop must still run
+# — on built-in defaults — and must not push its machinery into the repository's
+# history: the spec tree is working state, excluded from git, and the thread is
+# the plan's review surface. Until issue-352 this hung on "has the repository
+# adopted the-loop?", read from its harness config; the CLI reads that file no
+# more, so the guest posture is the loop's own.
 
 
 def test_build_runtime_needs_no_harness_config(tmp_path):
@@ -422,15 +423,12 @@ def test_build_runtime_needs_no_harness_config(tmp_path):
     runtime = build_runtime(tmp_path, loop=PDLC_CONTRIBUTION_LOOP)
     assert runtime.graph.name == PDLC_CONTRIBUTION_LOOP
     assert runtime.spec_root == "docs/specs"
-    assert runtime.config["phaseLabelPrefix"] == "loop:"
-    assert runtime.config["notifications"] == {}
-    assert runtime.config["repoInitialized"] is False
+    assert runtime.config["guestLoop"] is True
 
 
-def test_build_runtime_knows_an_initialized_repo(tmp_path):
-    (tmp_path / ".the-loop").mkdir()
-    (tmp_path / ".the-loop" / "harness-config.yaml").write_text("workflow: {}\n")
-    assert build_runtime(tmp_path).config["repoInitialized"] is True
+def test_the_work_items_own_loop_is_not_a_guest(tmp_path):
+    assert build_runtime(tmp_path).config["guestLoop"] is False
+    assert build_runtime(tmp_path, pr_number=7).config["guestLoop"] is False
 
 
 def _git(repo, *args):
@@ -441,14 +439,14 @@ def _git(repo, *args):
     )
 
 
-def test_the_walk_runs_and_stays_out_of_git_in_an_unadopted_repo(tmp_path, fake_github):
+def test_the_walk_runs_and_stays_out_of_git_as_a_guest(tmp_path, fake_github):
     """
     Feature: joining an existing work item as a contributor
-    Scenario: the target repository never ran the-loop's setup
+    Scenario: the contribution loop walks a repository the-loop does not own
       Given a git checkout with no `.the-loop/` directory at all
       And the arming comment states a goal and success criteria
       When the contribution loop starts and advances
-      Then the two gates run exactly as in an adopted repository
+      Then the two gates run exactly as in the-loop's own repositories
       And the spec tree exists only as ignored working state — nothing the
            contribution PR could carry
 
@@ -470,13 +468,10 @@ def test_the_walk_runs_and_stays_out_of_git_in_an_unadopted_repo(tmp_path, fake_
     assert _git(tmp_path, "status", "--porcelain").stdout.strip() == ""
 
 
-def test_an_adopted_repos_spec_tree_is_not_excluded(tmp_path, fake_github):
+def test_the_work_items_own_loop_does_not_exclude_its_spec_tree(tmp_path, fake_github):
+    """The spec tree is the work item's own deliverable in the loops the-loop owns."""
     assert _git(tmp_path, "init", "-q").returncode == 0
-    (tmp_path / ".the-loop").mkdir()
-    (tmp_path / ".the-loop" / "harness-config.yaml").write_text("workflow: {}\n")
-    runtime = build_runtime(
-        tmp_path, authorized_users=["@owner"], loop=PDLC_CONTRIBUTION_LOOP
-    )
+    runtime = build_runtime(tmp_path, authorized_users=["@owner"])
     runtime.start(WORK_ITEM, ref=REF)
     ignored = _git(tmp_path, "check-ignore", "-q", f"docs/specs/{WORK_ITEM}/x")
     assert ignored.returncode != 0
@@ -498,12 +493,10 @@ def _publish_ctx(repo_dir, config):
     return ctx, spec
 
 
-def test_the_plan_is_posted_to_the_thread_when_the_repo_is_unadopted(
-    tmp_path, fake_github
-):
+def test_the_plan_is_posted_to_the_thread_in_a_guest_loop(tmp_path, fake_github):
     from the_loop.graph.hooks.sideeffects import publish_artifact
 
-    ctx, spec = _publish_ctx(tmp_path, {"repoInitialized": False})
+    ctx, spec = _publish_ctx(tmp_path, {"guestLoop": True})
     (spec / "contribution.md").write_text("## Goal\n\nship it\n")
     result = publish_artifact(ctx)
     assert result.status == "pass" and result.data["posted"] is True
@@ -512,11 +505,13 @@ def test_the_plan_is_posted_to_the_thread_when_the_repo_is_unadopted(
     assert "the-loop:agent-comment" in fake_github.posted[0]
 
 
-def test_the_plan_stays_off_the_thread_in_an_adopted_repo(tmp_path, fake_github):
+def test_the_plan_stays_off_the_thread_in_the_work_items_own_loop(
+    tmp_path, fake_github
+):
     """The no-bloat rule holds where the checked-in file is the surface."""
     from the_loop.graph.hooks.sideeffects import publish_artifact
 
-    ctx, spec = _publish_ctx(tmp_path, {"repoInitialized": True})
+    ctx, spec = _publish_ctx(tmp_path, {"guestLoop": False})
     (spec / "contribution.md").write_text("## Goal\n\nship it\n")
     assert publish_artifact(ctx).status == "skip"
     assert fake_github.posted == []
@@ -527,7 +522,7 @@ def test_a_declared_away_plan_publishes_nothing_and_blocks_nothing(
 ):
     from the_loop.graph.hooks.sideeffects import publish_artifact
 
-    ctx, _ = _publish_ctx(tmp_path, {"repoInitialized": False})
+    ctx, _ = _publish_ctx(tmp_path, {"guestLoop": True})
     assert publish_artifact(ctx).status == "skip"
     assert fake_github.posted == []
 
@@ -632,7 +627,9 @@ def _contribution_link(runtime):
         def _outer_loop_name(self, root, spec_dir, item_id, work_item):
             return PDLC_CONTRIBUTION_LOOP
 
-        def _build_runtime(self, cwd, spec_dir, pr_number=None, pr_repo="", loop=""):
+        def _build_runtime(
+            self, cwd, spec_dir, pr_number=None, pr_repo="", loop="", origin_repo=""
+        ):
             assert loop == PDLC_CONTRIBUTION_LOOP
             return runtime
 

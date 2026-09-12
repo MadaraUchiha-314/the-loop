@@ -71,8 +71,9 @@ enforces both: **a registered CLI command needs a page** under `docs/cli/command
 **a CLI-config key needs a documented option** under `docs/config/cli/`. See
 [documentation](/capabilities/documentation).
 
-The site toolchain uses [bun](https://bun.sh/) (the-loop's declared TS package manager,
-`tooling.packageManager.ts`); scripts are TypeScript (`.mts`), run by bun directly.
+The site toolchain uses [bun](https://bun.sh/) (the TS package manager the-loop detects
+here from the `bun.lock` beside `docs/package.json`); scripts are TypeScript (`.mts`), run
+by bun directly.
 
 ```bash
 cd docs

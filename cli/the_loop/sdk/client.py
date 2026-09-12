@@ -178,9 +178,9 @@ class Graph(_Namespace):
     """The process graph: where a work item stands, and moving it (issue-148)."""
 
     def show(
-        self, repo: str, pr: Optional[int] = None, pr_repo: str = ""
+        self, repo: str, pr: Optional[int] = None, pr_repo: str = "", spec_dir: str = ""
     ) -> Dict[str, Any]:
-        return core_graphs.show(repo, pr=pr, pr_repo=pr_repo)
+        return core_graphs.show(repo, pr=pr, pr_repo=pr_repo, spec_dir=spec_dir)
 
     def check(
         self,
@@ -189,6 +189,7 @@ class Graph(_Namespace):
         recompute: bool = False,
         pr: Optional[int] = None,
         pr_repo: str = "",
+        spec_dir: str = "",
     ) -> Dict[str, Any]:
         """The work item's gate report.
 
@@ -197,7 +198,12 @@ class Graph(_Namespace):
         on this report should treat that as *unevaluated*, not as *satisfied*.
         """
         return core_graphs.check(
-            repo, work_item, recompute=recompute, pr=pr, pr_repo=pr_repo
+            repo,
+            work_item,
+            recompute=recompute,
+            pr=pr,
+            pr_repo=pr_repo,
+            spec_dir=spec_dir,
         )
 
     def complete(
@@ -323,11 +329,16 @@ class Repo(_Namespace):
     def scenarios(self, repo: str, globs: Optional[List[str]] = None) -> Dict[str, Any]:
         return core_repo.scenarios(repo, globs=globs)
 
-    def instructions(self, repo: str) -> Dict[str, Any]:
-        return core_repo.instructions(repo)
+    def instructions(
+        self, repo: str, docs: Optional[List[str]] = None, on_missing: str = "warn"
+    ) -> Dict[str, Any]:
+        return core_repo.instructions(repo, docs=docs, on_missing=on_missing)
 
     def critics(self, repo: str) -> List[Dict[str, Any]]:
         return core_repo.critics(repo)
+
+    def review_policy(self, repo: str = "") -> Dict[str, Any]:
+        return core_repo.review_policy(repo)
 
     def critic_run(
         self,

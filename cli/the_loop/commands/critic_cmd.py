@@ -77,7 +77,7 @@ class CriticCommand(Command):
 
         lst = actions.add_parser(
             "list",
-            help="List reviews.critics[] with each one's executable and availability",
+            help="List the CLI config's critics[] with each one's executable and availability",
         )
         lst.add_argument("--root", default=".", help="Project root (default: .)")
         lst.add_argument(
@@ -88,6 +88,22 @@ class CriticCommand(Command):
         )
         lst.set_defaults(_action=self._list)
 
+        policy = actions.add_parser(
+            "policy",
+            help=(
+                "Print the review-round policy — the CLI config's reviews block, "
+                "defaulted (self/critic round caps, stop and escalate rules)"
+            ),
+        )
+        policy.add_argument("--root", default=".", help="Project root (default: .)")
+        policy.add_argument(
+            "--format",
+            choices=("text", "json"),
+            default="text",
+            help="Output format (default: text).",
+        )
+        policy.set_defaults(_action=self._policy)
+
         run = actions.add_parser(
             "run",
             help="Run ONE critic-review round and print its JSON envelope on stdout",
@@ -96,7 +112,9 @@ class CriticCommand(Command):
                 "invocation — there is deliberately no run-all mode."
             ),
         )
-        run.add_argument("critic", help="The reviews.critics[] entry to run, by name.")
+        run.add_argument(
+            "critic", help="The CLI config's critics[] entry to run, by name."
+        )
         run.add_argument("--root", default=".", help="Project root (default: .)")
         prompt = run.add_mutually_exclusive_group(required=True)
         prompt.add_argument("--prompt", help="The review prompt, inline.")
@@ -147,11 +165,32 @@ class CriticCommand(Command):
             # An empty critics list is a valid configuration (self-review only),
             # so this is information, not a failure.
             print(
-                "No critics configured — add reviews.critics[] to "
-                ".the-loop/harness-config.yaml to run critic rounds."
+                "No critics configured — add critics[] to your cli-config.yaml "
+                "(the operator's file, not the repository's) to run critic rounds."
             )
             return _EXIT_OK
         print(_render_table(rows))
+        return _EXIT_OK
+
+    # ---------------------------------------------------------------- policy
+
+    def _policy(self, args: argparse.Namespace) -> int:
+        """The operator's review-round policy, defaulted — what the skill reads
+        before it runs a single review round (issue-352 moved it here)."""
+        try:
+            policy = routed(
+                lambda connection: connection.get(
+                    "/repo/critics/policy", params={"repo": str(Path(args.root))}
+                ),
+                lambda: core_repo.review_policy(str(Path(args.root))),
+            )
+        except Exception as exc:  # noqa: BLE001 — mapped below
+            return self._fail(exc)
+        if args.format == "json":
+            print(json.dumps(policy, indent=2))
+            return _EXIT_OK
+        for key, value in policy.items():
+            print(f"{key}: {json.dumps(value)}")
         return _EXIT_OK
 
     # ------------------------------------------------------------------- run

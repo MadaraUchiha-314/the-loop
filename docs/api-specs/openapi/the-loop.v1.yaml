@@ -1172,6 +1172,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/repo/critics/policy:
+    get:
+      summary: Repo Review Policy
+      operationId: repoReviewPolicy
+      parameters:
+      - name: repo
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Repo
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Reporeviewpolicy
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/repo/critics/run:
     post:
       summary: Repo Critic Run

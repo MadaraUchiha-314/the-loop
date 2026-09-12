@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [123](decision-123.md) | The harness config is the agent's alone: the CLI reads no key of it, takes the spec directory, critics and graph hooks from its own config, and the agent passes the rest as flags; `ticketing`, the phase list and prefix, `notifications`, `localOrchestration` and two dead keys are removed | proposed | 2026-09-12 |
 | [122](decision-122.md) | A Slack kickoff asks which repository (Block Kit options) instead of refusing; one question, a claimed+expiring pending record, socket-only | proposed | 2026-09-11 |
 | [121](decision-121.md) | The repositories an instance works with are declared once, at the top level, and every ingress reads that list — the webhook receiver included; `polling.sources[].repos` is removed and migrated; an empty list bounds nothing and says so | proposed | 2026-09-11 |
 | [120](decision-120.md) | A Slack kickoff names its repository with a first-line `<repo>:` prefix resolved against the declared set (`kickoff.repo` + poll sources); unresolvable or ambiguous is refused, an unmatched bare word falls back, and `kickoff.repo` stops being a precondition | proposed | 2026-09-11 |

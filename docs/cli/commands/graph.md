@@ -5,6 +5,8 @@ executable graph of nodes with entry and exit hooks, rather than a set of labels
 remembers to move.
 
 ```bash
+# --spec-dir DIR (before the action) names where the specs live; default
+# routing.graph.specDir from the CLI config, else docs/specs (issue-352)
 the-loop graph [--repo .] show   [--format text|json]
 the-loop graph [--repo .] hooks  [--format text|json]
 the-loop graph [--repo .] status <work-item>
@@ -26,10 +28,11 @@ it — the ref is resolved in three tiers
 
 1. **`--ref`, when you pass one.** It always wins, even against a repository that declares
    something else.
-2. **Derived** from [`ticketing.github`](/config/harness-config) in the repository's
-   harness config plus the work-item id: `issue-194` in a repo declaring `octo/repo`
-   becomes `github:octo/repo#194`. This is what makes `the-loop graph advance issue-194`
-   work with no flags.
+2. **Derived** from the checkout's `origin` remote plus the work-item id: `issue-194` in
+   a checkout whose remote is `github.com/octo/repo` becomes `github:octo/repo#194`
+   (the daemon passes the work item's own repository instead). This is what makes
+   `the-loop graph advance issue-194` work with no flags. Until issue-352 this tier read
+   `ticketing.github` from the harness config, which the CLI no longer opens.
 3. **The bare work-item id**, when neither of the above applies — a project that is not
    GitHub-ticketed, or an id that is not `issue-<n>`. Nothing is guessed: an owner or
    repository name that is not a shape GitHub accepts derives *nothing* rather than
@@ -45,8 +48,8 @@ output and records a `graph.hook_degraded` event for anyone reading
 issue-194: phase-selection → wait
   · waiting for an authorized user to choose the phases and reply `the-loop execute`
   · warning: post-phase-selection did not complete: malformed work item ref:
-    'issue-194' — expected '[<provider>:]<owner>/<repo>#<number>'. Pass --ref, or
-    declare ticketing.github in .the-loop/harness-config.yaml so the-loop can derive it.
+    'issue-194' — expected '[<provider>:]<owner>/<repo>#<number>'. Pass --ref, or run
+    from a checkout whose `origin` remote names the repository so the-loop can derive it.
 ```
 
 The node's status, the edge taken and the exit code are unaffected — the warning reports a
@@ -150,14 +153,15 @@ so a reviewer's suggestions never block the phase — they are recorded and carr
 
 ## `hooks`
 
-Report the **shipped** hooks and the hooks **this repository** brings to the graph
+Report the **shipped** hooks and the hooks **your CLI config** brings to the graph
 ([issue-248](https://github.com/MadaraUchiha-314/the-loop/issues/248)) — the declarations
-under `graph.hooks` in its [harness config](/config/harness-config).
+under [`routing.graph.hooks`](/config/cli/routing-options#graph-hooks). Until issue-352 a
+repository declared these in its harness config; the CLI reads that file no more.
 
-This action imports nothing. That is its purpose: a repository's hook modules run inside
-the-loop's own process, so an operator gets to read what a checkout would run **before**
-running it. `the-loop check` is what loads them, and a declaration that cannot load fails
-there rather than being skipped.
+This action imports nothing. That is its purpose: the hook modules run inside the-loop's
+own process, so an operator gets to read what would run **before** running it. `the-loop
+check` is what loads them, and a declaration that cannot load fails there rather than
+being skipped.
 
 ```text
 $ the-loop graph --repo /srv/checkouts/app hooks
@@ -175,8 +179,10 @@ rather than being skipped.
 |------|---------|---------|
 | `--format` | `text` | `text`, or `json` (`shipped`, `modules`, `attach`) for scripting. |
 
-Writing one of these is [adding a hook](/cli/extending#adding-a-hook); refusing all of them
-machine-wide is [`routing.graph.repoHooks`](/config/cli/routing-options#graphrepohooks).
+Writing one of these is [adding a hook](/cli/extending#adding-a-hook). A hook runs only
+when the operator's own CLI config declares it under
+[`routing.graph.hooks`](/config/cli/routing-options#graph-hooks) — a checkout cannot opt its
+own modules in (issue-352).
 
 ## `status`
 

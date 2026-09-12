@@ -40,7 +40,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from . import eventlog, harness_config
+from . import eventlog
+from .ghhost import repo_slug as _repo_slug
 from .control import ControlConfig, ControlStore
 from .sessions import WorkItemRef
 
@@ -62,12 +63,6 @@ _COMMENT_EVENTS = {
     "pull_request_review_comment": "comment",
     "pull_request_review": "review",
 }
-
-#: The actions whose adoption safety net runs (issue-193, narrowed by issue-201) — the
-#: two that *drive* the graph. ``context`` is excluded because it is documented as
-#: mutating nothing, and ``clean`` because it runs while the checkout is being released.
-#: The primary adoption is :meth:`GraphLink.adopt`, called before anything is spawned.
-_ADOPTING_ACTIONS = frozenset({"start", "advance"})
 
 #: The actions that do NOT require ``<specDir>/<id>/`` to already exist (issue-273).
 #:
@@ -101,16 +96,13 @@ class GraphLinkConfig:
     specs in the repo gets nothing from the coupling — though for them it is
     already inert, since a work item with no spec directory is skipped.
 
-    ``spec_dir`` defaults to **unset**, and that is the whole of issue-123. It
-    used to default to ``docs/specs``, which was never merely a default: it is
-    passed to ``build_runtime`` as an explicit ``spec_root``, and an explicit
-    ``spec_root`` overrides the repository's own ``workflow.specDir``. Always
-    being set therefore meant *never* honouring a watched repository's value —
-    a repo that kept its specs elsewhere had its graph silently skipped, on one
-    flat value the operator could not vary per repository (decision-032: the
-    daemon watches several). Empty means "the repository decides"; a non-empty
-    value is a deliberate override for a checkout that carries no harness
-    config at all.
+    ``spec_dir`` is ``routing.graph.specDir``: where the work items' specs live
+    in every checkout this daemon drives. Empty means the shipped default
+    (``docs/specs``). Until issue-352 an empty value deferred to each
+    repository's own harness config (issue-123); the CLI reads no harness
+    config any more, so the operator's one value is the answer for every
+    repository it watches — and the loop's convention is ``docs/specs``, so the
+    value is set only for an instance laid out differently.
     """
 
     enabled: bool = True
@@ -156,23 +148,6 @@ def _pr_repo(work_item: WorkItemRef, pr: WorkItemRef) -> str:
     ONE spec directory in the origin repository's checkout.
     """
     return "" if pr.path == work_item.path else pr.path
-
-
-def _repo_slug(remote_url: str) -> str:
-    """``owner/repo`` (lowercased) from any git remote URL form.
-
-    Handles the shapes a real checkout carries — `https://host/o/r.git`,
-    `git@host:o/r.git`, `ssh://git@host/o/r`, and a proxied `http://host/git/o/r`
-    — by taking the last two path components, because that is the part every
-    form agrees on. Anything shorter yields ``""``, which never matches.
-    """
-    trimmed = remote_url.strip().rstrip("/")
-    if trimmed.endswith(".git"):
-        trimmed = trimmed[: -len(".git")]
-    parts = [p for p in trimmed.replace(":", "/").split("/") if p]
-    if len(parts) < 2:
-        return ""
-    return "/".join(parts[-2:]).lower()
 
 
 def _is_contained(root: Path, spec_dir: str) -> bool:
@@ -764,13 +739,12 @@ class GraphLink:
         life cycle, and the item is disarmed by the command that asks for it.
 
         The gate order is load-bearing: ``_checkout_belongs_to`` runs **before**
-        anything reads the checkout, because resolving the spec directory reads
-        that checkout's harness config and the daemon may only do so once it has
-        proved the directory is the work item's own repository (decision-044,
-        issue-113 A6). The set of skipped work items is unchanged by the order —
-        both are pure predicates over disjoint inputs — only which reason is
-        reported when both would fire, and a foreign checkout is the more
-        important of the two.
+        anything in the checkout is touched, because the spec id is derived from
+        the issue number alone and a foreign checkout's ``docs/specs/issue-15``
+        belongs to a different project (issue-113 A6). The set of skipped work
+        items is unchanged by the order — both are pure predicates over disjoint
+        inputs — only which reason is reported when both would fire, and a
+        foreign checkout is the more important of the two.
         """
         if not self.config.enabled:
             return None
@@ -798,7 +772,7 @@ class GraphLink:
                 action,
             )
             return None
-        spec_dir = self._spec_dir(root)
+        spec_dir = self._spec_dir()
         if not _is_contained(root, spec_dir):
             logger.warning(
                 "%s resolves its spec directory to %r, which is outside the "
@@ -809,15 +783,11 @@ class GraphLink:
             )
             self._skipped(action, work_item, "spec-dir-outside-checkout", spec_dir)
             return None
-        # Resolved here rather than beside the runtime build (where it used to
-        # live) because adoption asks the same question: the CONTRIBUTION loop is
-        # the one walk that must not adopt its repository.
         loop = (
             self._outer_loop_name(root, spec_dir, item_id, work_item)
             if pr_number is None
             else ""
         )
-        self._adopt(action, root, work_item, loop)
         if (
             action not in _SPEC_DIR_OPTIONAL_ACTIONS
             and not (root / spec_dir / item_id).is_dir()
@@ -836,15 +806,22 @@ class GraphLink:
             # runtime factory (tests, embedders) built for two arguments still
             # serves every outer-path caller. A contribution item (issue-185)
             # is the one exception: its resolved loop name rides along.
+            origin = f"{work_item.owner}/{work_item.repo}"
             if pr_number is None:
                 runtime = (
-                    self._build_runtime(str(root), spec_dir, loop=loop)
+                    self._build_runtime(
+                        str(root), spec_dir, loop=loop, origin_repo=origin
+                    )
                     if loop
-                    else self._build_runtime(str(root), spec_dir)
+                    else self._build_runtime(str(root), spec_dir, origin_repo=origin)
                 )
             else:
                 runtime = self._build_runtime(
-                    str(root), spec_dir, pr_number=pr_number, pr_repo=pr_repo
+                    str(root),
+                    spec_dir,
+                    pr_number=pr_number,
+                    pr_repo=pr_repo,
+                    origin_repo=origin,
                 )
             if action == "context":
                 return call(runtime, item_id)
@@ -1078,132 +1055,22 @@ class GraphLink:
                 logger.debug("could not read %s's control record: %s", item_id, exc)
         return ""
 
-    def adopt(self, work_item: WorkItemRef, cwd: str) -> None:
-        """Adopt an unconfigured checkout **before anything is spawned** (issue-201).
+    def _spec_dir(self) -> str:
+        """Where this daemon's work items keep their specs, as the operator declared.
 
-        This is the entry point the dispatcher calls between preparing the
-        workspace and rendering the prompt, and its whole reason for existing is
-        *ordering*. issue-193 wrote the default from :meth:`on_spawn`, which the
-        dispatcher calls **after** ``tmux.spawn`` — so a session could begin, its
-        SessionStart hook included, in a checkout whose ``.the-loop/`` did not
-        exist yet. The window was short and the write is fast, but a harness whose
-        point is predictability cannot leave "did the agent read a config?" to a
-        race.
+        ``routing.graph.specDir``, else the shipped default — one value for every
+        checkout this daemon drives (issue-352). Resolved **once** per call and
+        threaded into both the ``is_dir()`` gate and the runtime, so the directory
+        the skip decision is made on and the directory ``graph-state.json`` is
+        written into cannot drift apart (issue-123 R2.1).
 
-        It cannot simply call :func:`harness_config.scaffold`, because at this
-        point ``cwd`` is not yet known to be the work item's own repository:
-        under the legacy ``spawnWorkdir`` setup it is a static directory that may
-        be the operator's own checkout. So the same gates run here as anywhere
-        else the coupling touches a checkout — the coupling is enabled, the work
-        item is nameable, an authorized human armed it, and ``origin`` proves the
-        directory (issue-113 A6, decision-044) — plus the contribution carve-out.
-
-        :meth:`_adopt` stays behind it, on the driving actions, as an idempotent
-        safety net: a session spawned before this existed, or any path that does
-        not come through the dispatcher, is still adopted at its next advance.
-
-        Best-effort and silent about it, like everything here.
+        Returned **whether or not it is usable**; containment is the caller's gate
+        (:func:`_is_contained`), so a refused value can still be named in the log
+        and the ``graph.skipped`` record.
         """
-        if not self.config.enabled:
-            return
-        item_id = spec_id_for(work_item)
-        if item_id is None:
-            return
-        if self._awaiting_start(work_item):
-            return
-        root = Path(cwd or ".")
-        if not self._checkout_belongs_to(root, work_item):
-            logger.warning(
-                "%s is not a checkout of %s/%s; not adopting it",
-                root,
-                work_item.owner,
-                work_item.repo,
-            )
-            return
-        loop = self._outer_loop_name(root, self._spec_dir(root), item_id, work_item)
-        self._write_default(root, work_item, loop)
+        from .graph.bootstrap import DEFAULT_SPEC_DIR
 
-    def _adopt(
-        self, action: str, root: Path, work_item: WorkItemRef, loop: str
-    ) -> None:
-        """The driving actions' adoption — the safety net behind :meth:`adopt`.
-
-        The primary moment is pre-spawn (issue-201); this one catches a work item
-        whose session started before that existed, or that reaches the graph by a
-        route the dispatcher does not own. It is idempotent, so the common case
-        here is :func:`harness_config.scaffold` reporting ``"present"``.
-
-        **Only on the actions that drive the graph** (:data:`_ADOPTING_ACTIONS`).
-        ``context`` resolves a prompt's block and is documented as mutating
-        nothing — an exception for "only a config file" is how that property
-        stops being true — and ``clean`` runs as the work item's local resources
-        are released, where a newly written file would be leaving litter in a
-        checkout about to be removed.
-        """
-        if action not in _ADOPTING_ACTIONS:
-            return
-        self._write_default(root, work_item, loop)
-
-    def _write_default(self, root: Path, work_item: WorkItemRef, loop: str) -> None:
-        """Write the built-in default into ``root``, unless it is a guest's (issue-193).
-
-        the-loop is routinely pointed at a repository that never ran
-        ``/the-loop:init``: the daemon clones it, spawns a session in it, and the
-        session finds no ``.the-loop/`` at all — no workflow, no tooling, no
-        phases.
-
-        **Never for a guest loop.** ``pdlc-contribution-loop`` joins somebody
-        else's in-progress work item, and PR #187 decided the-loop's machinery
-        stays out of that repository's history; ``pdlc-review-loop``
-        (issue-279) reviews somebody else's change under the same rule. A
-        committed file declaring the-loop's process in a repository that never
-        asked for it would be the loudest possible breach of that; a guest
-        does not install itself.
-
-        Both callers have already proved the checkout is the work item's own.
-        Best-effort: :func:`harness_config.scaffold` never raises, and a
-        repository that could not be adopted is worked exactly as it was before.
-        """
-        from .graph.model import GUEST_LOOPS
-
-        if loop in GUEST_LOOPS:
-            return
-        if harness_config.scaffold(root, work_item.owner, work_item.repo) != "written":
-            return
-        written = harness_config.config_path(root)
-        eventlog.emit(
-            "harness.config_scaffolded",
-            work_item=work_item.ref,
-            path=str(written) if written else "",
-            repo=f"{work_item.owner}/{work_item.repo}",
-        )
-
-    def _spec_dir(self, root: Path) -> str:
-        """Where this work item's specs live, as declared.
-
-        The repository's own ``workflow.specDir`` is the answer — that is the ⟶
-        direction decision-044 allows, and where a project keeps its specs is a
-        fact about that project's layout. ``config.spec_dir`` overrides it only
-        when the operator set it deliberately.
-
-        Returns the declared value **whether or not it is usable**; containment
-        is the caller's gate (:func:`_is_contained`), so a refused value can
-        still be named in the log and the ``graph.skipped`` record. A refusal the
-        operator cannot see the value of is a refusal they cannot fix.
-
-        Resolved **once** per call and threaded into both the ``is_dir()`` gate
-        and the runtime, so the directory the skip decision is made on and the
-        directory ``graph-state.json`` is written into cannot drift apart.
-
-        Reading the checkout is safe here and only here: the caller has already
-        proved via the ``origin`` remote that this directory is the work item's
-        own repository. ``harness_config.load`` degrades a missing, unparseable
-        or non-mapping file to ``{}``, so a repository mid-edit falls back to the
-        default rather than costing a delivery.
-        """
-        return self.config.spec_dir or harness_config.spec_dir(
-            harness_config.load(root)
-        )
+        return self.config.spec_dir or DEFAULT_SPEC_DIR
 
     def _awaiting_start(self, work_item: WorkItemRef) -> bool:
         """Whether an authorized user has yet to start this item (issue-106).
@@ -1263,6 +1130,7 @@ class GraphLink:
         pr_number: Optional[int] = None,
         pr_repo: str = "",
         loop: str = "",
+        origin_repo: str = "",
     ) -> Any:
         """The graph runtime rooted at the session's checkout.
 
@@ -1279,6 +1147,10 @@ class GraphLink:
         runtime agree on one directory (issue-123 R2.1); passing the raw key is
         what made them disagree.
 
+        ``origin_repo`` is the work item's own ``owner/repo`` (issue-352): the
+        daemon knows which repository the ticket lives in from the ref it is
+        acting on, so the runtime need not ask the checkout.
+
         ``authorized_users`` is threaded through deliberately: it is what
         ``classify-feedback`` filters comments on, and a runtime built without
         it fails closed on every human gate — the coupling would deliver the
@@ -1293,4 +1165,5 @@ class GraphLink:
             pr_number=pr_number,
             pr_repo=pr_repo,
             loop=loop,
+            origin_repo=origin_repo,
         )

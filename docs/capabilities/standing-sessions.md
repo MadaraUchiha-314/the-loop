@@ -220,7 +220,7 @@ apart ([decision-100](../decisions/decision-100.md)):
 
 - **The config is executable-adjacent.** An entry names harness arguments and a working
   directory, and the session runs with the operator's own credentials — the posture
-  `routing.harnessArgs` and `reviews.critics` already carry. `/api/v1/config` is off the
+  `routing.harnessArgs` and `critics[]` already carry. `/api/v1/config` is off the
   MCP surface, so an agent cannot write itself a new standing session.
 - **No cross-namespace addressing.** `standing:<name>` has neither a `/` nor a `#`, so
   `WorkItemRef.parse` cannot accept it; `parse_standing_ref` is the only reader of the

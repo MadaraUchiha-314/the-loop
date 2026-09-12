@@ -7,13 +7,16 @@
 
 A reviewer approving a work item reads `requirements.md`, `design.md`, `testing-plan.md`
 and the PR briefing. Before issue-165 nothing set a shape, a length or a register for
-them, and the harness's only verbosity lever (`tokenEconomy.outputVerbosity`) compresses
-*chat narration* while explicitly **preserving** specs — aimed away from the documents the
-reviewer actually opens.
+them, and the harness's only verbosity rule (the token-economy guidance's concise
+narration) compresses *chat narration* while explicitly **preserving** specs — aimed away
+from the documents the reviewer actually opens.
 
 This capability is the writing contract: a bundled **`the-loop:writing`** skill carrying
-the judgement, `userInteraction.writingStyle` carrying the policy, a pointer to the skill
-in each human-read template, and a parity test catching the drift prose cannot.
+both the judgement and the policy (diagram-first, the formal-register carve-out), a
+pointer to the skill in each human-read template, and a parity test catching the drift
+prose cannot. Nothing about it is configured — until issue-352 the policy half sat in a
+`userInteraction.writingStyle` block of the harness config; the skill is now the contract
+on its own.
 
 It carries **no length limits**, deliberately. A work item's scope is not known in
 advance, so a number that fits a two-line bug fix is wrong for a new subsystem, and a cap
@@ -22,11 +25,10 @@ test is density, not length — and density is a review judgement.
 
 ```mermaid
 flowchart LR
-  C["userInteraction.writingStyle<br/>(policy: skill, diagramFirst,<br/>formalRegisters — no limits)"] --> S["the-loop:writing skill<br/>(judgement)"]
-  C --> T["template pointer<br/>&lt;!-- per the the-loop:writing skill --&gt;"]
-  S --> A["the artifact"]
+  S["the-loop:writing skill<br/>(policy + judgement: diagram-first,<br/>formal registers — no limits)"] --> A["the artifact"]
+  S --> T["template pointer<br/>&lt;!-- per the the-loop:writing skill --&gt;"]
   T --> A
-  C --> P["test_writing_parity.py<br/>(drift)"]
+  S --> P["test_writing_parity.py<br/>(drift)"]
   T --> P
   A --> R([human reviewer])
 ```
@@ -42,26 +44,27 @@ flowchart LR
 - Each template producing a human-read artifact SHALL name the governing skill in a
   pointer comment, so an author starting from the template is governed by the contract
   without having to know it exists.
-- The configuration SHALL declare **no length limits**. WHEN an artifact is judged too
-  long THEN the test SHALL be density — whether a sentence can be removed without losing
+- The contract SHALL declare **no length limits**. WHEN an artifact is judged too long
+  THEN the test SHALL be density — whether a sentence can be removed without losing
   information — assessed in review, never by a gate.
 - IF shortening a document would delete a gated section THEN the section SHALL stay,
   recorded empty with its reason. Concision governs words, not coverage.
 - WHERE prose would describe a structure, sequence or state change with three or more
-  named parts THEN a mermaid diagram SHALL be authored instead
-  (`writingStyle.diagramFirst`); `design.md` carries at least one.
-- The registers in `writingStyle.formalRegisters` — EARS acceptance criteria, abuse cases,
-  API contracts, JSON-Schema descriptions, RFC-2119 keywords — SHALL NOT be relaxed into
+  named parts THEN a mermaid diagram SHALL be authored instead (the skill's diagram-first
+  rule); `design.md` carries at least one.
+- The skill's fixed formal registers — EARS acceptance criteria, abuse cases, API
+  contracts, JSON-Schema descriptions, RFC-2119 keywords — SHALL NOT be relaxed into
   informal prose. Explanation around them is ordinary prose.
 - A revise pass SHALL NOT rewrite quoted material, code, committed evidence, third-party
   text, or historical specs under `docs/specs/`.
 - `cli/tests/test_writing_parity.py` SHALL assert the mechanical half of the contract
-  (the skill parses, every human-read template points at it, the pointer names the skill
-  the schema declares, no length limits have crept back in, no P0 tell reaches shipped
-  prose) and SHALL NOT assert whether a document is well written or how long it is —
-  presence is mechanical, quality is a review item.
-- Third-party writing skills SHALL be **registered** in `externalTools`, never vendored
-  ([decision-062](../decisions/decision-062.md)).
+  (the skill parses, every human-read template points at it, the pointer names the
+  bundled skill, no length limits have crept back in, no P0 tell reaches shipped prose)
+  and SHALL NOT assert whether a document is well written or how long it is — presence
+  is mechanical, quality is a review item.
+- Third-party writing skills SHALL NOT be vendored ([decision-062](../decisions/decision-062.md));
+  the-loop implements their techniques natively and the harness discovers whatever skills
+  it has itself — there is no registry to add them to.
 
 ## Design
 
@@ -69,10 +72,11 @@ flowchart LR
 [literature survey](../specs/issue-165/brainstorm.md) ·
 [`skills/writing/SKILL.md`](../../skills/writing/SKILL.md) ·
 [`reference/token-economy.md`](../../skills/the-loop/reference/token-economy.md) (the
-neighbouring, output-side lever)
+neighbouring, output-side guidance)
 
 ## History
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-352 | The `userInteraction` block left the harness config (2026-09-12): the writing contract is the `the-loop:writing` skill itself — diagram-first, fixed formal registers, no length limits (decision-061) — with mermaid diagrams, the mandatory PR briefing and educating the user fixed rules rather than settings. `externalTools` left too; third-party writing skills are neither vendored nor registered | [spec](../specs/issue-352/), [decision-123](../decisions/decision-123.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/352) |
 | issue-165 | Introduced the capability: the `the-loop:writing` skill and its tells catalogue, `userInteraction.writingStyle` (diagram-first, formal carve-out), a skill pointer in eight templates, and `test_writing_parity.py`. Per-artifact word budgets were proposed and **rejected in review** — scope is not knowable in advance | [spec](../specs/issue-165/), [decision-061](../decisions/decision-061.md), [decision-062](../decisions/decision-062.md), PR #168 |

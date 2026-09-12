@@ -72,7 +72,8 @@ loop runs the project's own commands:
   work on the item starts (`reference/instructions.md`), so planning has them in hand.
 
 A testing plan **names commands an agent will run**, which makes it executable content:
-review it like code, exactly as `reviews.critics[]` entries are reviewed (decision-043).
+review it like code, exactly as the operator's `critics[]` entries are reviewed
+(decision-043).
 If the environment cannot be brought up, that is recorded, the dependent activities stay
 unticked, and the item escalates — a gate is never passed on an environment that never
 came up.
@@ -100,7 +101,7 @@ writes is markdown, it renders on the repository host and the docs site, and a r
 opening it gets headings and fenced blocks rather than a wall of console output. Give each
 file a title, a line saying which work item and which activity it belongs to, a section per
 command, and the raw output inside a fenced block so it is never reflowed. It is linted
-like every other markdown file (`tooling.lint.markdown`). Binary captures — screenshots,
+like every other markdown file (the detected markdown linter). Binary captures — screenshots,
 GIFs, recordings — stay in their own formats and are *referenced* from the markdown.
 
 - **Test output** — the summary that shows counts and the red→green transitions.
@@ -151,14 +152,16 @@ A coding-agent harness (Claude, Cursor, …) — or a human — can enumerate ev
 integration suite covers **without running it**:
 
 ```bash
-the-loop scenarios                      # aligned table
-the-loop scenarios --format markdown    # GitHub-flavoured table (paste into PRs/docs)
-the-loop scenarios --format json        # machine-readable, for the harness
+the-loop scenarios --glob 'cli/tests/test_*_integration.py'    # aligned table
+the-loop scenarios --glob … --format markdown    # GitHub-flavoured table (paste into PRs/docs)
+the-loop scenarios --glob … --format json        # machine-readable, for the harness
 ```
 
-- Files scanned come from `testing.integrationTestGlobs`; when empty, the CLI's
-  built-in defaults cover common layouts (`**/tests/integration/**`,
-  `*.integration.test.ts`, `*_integration_test.py`, Go `integration/**/*_test.go`).
+- Files scanned are the `--glob` patterns you pass — read `testing.integrationTestGlobs`
+  from the harness config and pass each as `--glob` (the CLI reads no harness config,
+  issue-352); with none, the CLI's built-in defaults cover common layouts
+  (`**/tests/integration/**`, `*.integration.test.ts`, `*_integration_test.py`, Go
+  `integration/**/*_test.go`).
 - Each row reports **Feature, Scenario, Requirement, `file:line`** — the tabular view
   the harness presents when asked "what scenarios are tested?".
 - The markdown output is what the reviewer briefing / PR summary should embed when the

@@ -26,14 +26,15 @@ agent harness delivers a work item end-to-end, escalating to humans only for dec
 ### 2. Project footprint (`.the-loop/`)
 
 Everything the-loop creates/maintains is tracked in `.the-loop/manifest.yaml`.
-- `harness-config.yaml` (+ `harness-config.schema.json`) — per-project **plugin** configuration; per-task
-  overrides via work-item front-matter. The CLI daemon's own `cli-config.yaml`
+- `harness-config.yaml` (+ `harness-config.schema.json`) — per-project **plugin** configuration, read by
+  the agent and never by the CLI (issue-352, decision-123); per-task overrides via work-item front-matter. The CLI daemon's own `cli-config.yaml`
   (`webhooks`, `polling`, `eventLog`; `cli-config.schema.json`) is independent and NOT
   required to be per-project — `--config`/`-c`, else `$THE_LOOP_CLI_CONFIG`, else
   `./.the-loop/cli-config.yaml`, else `~/.the-loop/cli-config.yaml`, so the daemon is
   not tied to a single repo (decision-032).
-- `collaborators.yaml` — user-owned registry (external tools now live inline in
-  `config.externalTools`, issue-37).
+- `collaborators.yaml` — user-owned registry of people and roles. External tools are
+  not registered anywhere: the harness discovers its MCP servers, plugins, skills and
+  CLIs itself (`externalTools` left the harness config in issue-352).
 
 ### 3. The loop (runtime workflow)
 
@@ -53,8 +54,8 @@ as commands/skills today; hooks add predictability where a step must always run.
 ### 4. Knowledge & feedback
 
 - `docs/architecture/`, `docs/decisions/`, `docs/specs/<id>/` (requirements/bugfix,
-  design, tasks, execution-log), `docs/learnings/` — the last two placed by
-  `workflow.specDir` and `workflow.learningsDir`.
+  design, tasks, execution-log), `docs/learnings/` — the loop's fixed convention, not
+  a configured location.
 - `docs/capabilities/` — living capability docs, the **organized view of the specs**:
   one doc per capability (product-feature and architecture shaped), the single source
   of truth for its *current* behaviour, with history rows linking the raw specs and

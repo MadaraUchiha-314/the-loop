@@ -41,7 +41,7 @@ def _no_leaked_override():
     cli_config.set_override(None)
 
 
-def _write_config(directory: Path, body: str = "version: '0.8.0'\n") -> Path:
+def _write_config(directory: Path, body: str = "version: '0.9.0'\n") -> Path:
     config_dir = directory / ".the-loop"
     config_dir.mkdir(parents=True, exist_ok=True)
     path = config_dir / "cli-config.yaml"
@@ -92,7 +92,7 @@ def test_a_relative_root_is_anchored_on_the_config_not_the_cwd(tmp_path, monkeyp
     repo = tmp_path / "repo"
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
-    path = _write_config(repo, "version: '0.8.0'\nstate:\n  root: var/state\n")
+    path = _write_config(repo, "version: '0.9.0'\nstate:\n  root: var/state\n")
 
     monkeypatch.chdir(elsewhere)
     layout = layout_from_config(cli_config.load_cli_config(path))
@@ -113,7 +113,7 @@ def test_migration_an_explicit_root_keeps_the_directory_it_always_had(
     Requirement: docs/specs/issue-339/bugfix.md R1.2 (no silent state move)
     """
     repo = tmp_path / "repo"
-    path = _write_config(repo, "version: '0.8.0'\nstate:\n  root: .the-loop\n")
+    path = _write_config(repo, "version: '0.9.0'\nstate:\n  root: .the-loop\n")
 
     monkeypatch.chdir(repo)
     before_fix = Path(".the-loop").resolve()  # what a cwd-relative root named here
@@ -134,7 +134,7 @@ def test_an_absolute_root_is_used_verbatim(tmp_path):
     """
     repo = tmp_path / "repo"
     elsewhere = tmp_path / "srv" / "the-loop"
-    path = _write_config(repo, f"version: '0.8.0'\nstate:\n  root: {elsewhere}\n")
+    path = _write_config(repo, f"version: '0.9.0'\nstate:\n  root: {elsewhere}\n")
 
     layout = layout_from_config(cli_config.load_cli_config(path))
 
@@ -282,7 +282,7 @@ def test_status_prints_its_config_its_root_and_a_rival_without_changing_exit_cod
     elsewhere.mkdir()
     path = _write_config(
         repo,
-        "version: '0.8.0'\nservice:\n  enabled: false\nstandingSessions:\n  enabled: false\n",
+        "version: '0.9.0'\nservice:\n  enabled: false\nstandingSessions:\n  enabled: false\n",
     )
     (home / ".the-loop").mkdir(parents=True)
     (home / ".the-loop" / "poll-status.json").write_text("{}")

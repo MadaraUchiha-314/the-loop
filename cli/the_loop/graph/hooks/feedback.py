@@ -9,8 +9,8 @@ Two rules keep the classification from becoming a hole (issue-109, decision-042)
   "approve and deploy" cannot reach a node the graph does not name.
 
 And policy outranks the model: a classification can only classify a human
-response that actually arrived — it can never satisfy an approval that
-`autonomy.tiers` or `security.review.humanSignOffMinTier` reserves for a human.
+response that actually arrived — it can never satisfy an approval that the
+risk tiers or the security sign-off rule (tier 4+) reserve for a human.
 
 The third hook here, ``lock-artifacts``, is why an approval costs the human
 exactly one reply (issue-281). Locking used to be demanded *before* the gate —

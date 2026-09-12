@@ -737,12 +737,13 @@ class Runtime:
         if state.current_node:
             return None
 
-        # A repository that never adopted the-loop must not have the spec tree
-        # committed into it (issue-185, PR #187 review): exclude it from git
-        # BEFORE the first state write creates it. `is False` on purpose — only
-        # a bootstrap that positively established "uninitialized" triggers this;
-        # a hand-built runtime config without the key changes nothing.
-        if self.config.get("repoInitialized") is False:
+        # A guest loop — a contribution, a review — must not push the-loop's
+        # spec tree into a repository it does not own (issue-185, PR #187
+        # review; keyed on the loop since issue-352): exclude it from git
+        # BEFORE the first state write creates it. `is True` on purpose — only
+        # a bootstrap that positively established "guest" triggers this; a
+        # hand-built runtime config without the key changes nothing.
+        if self.config.get("guestLoop") is True:
             outcome = _exclude_spec_root(self.repo, self.spec_root)
             if outcome == "added":
                 eventlog.emit(
@@ -751,8 +752,8 @@ class Runtime:
                     path=self.spec_root,
                 )
                 logger.info(
-                    "%s: %s excluded from git — this repository has not adopted "
-                    "the-loop, so its spec tree stays out of history",
+                    "%s: %s excluded from git — the-loop is a guest in this "
+                    "repository, so its spec tree stays out of history",
                     ref or work_item_id,
                     self.spec_root,
                 )

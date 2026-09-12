@@ -5,7 +5,7 @@ refuses to do: skip when the work item has no spec, skip when nobody started it,
 and — above all — never let a graph failure cost an event delivery.
 
 Issue-123 added the other half: *where* it looks for that spec. The directory is
-the work item's own repository's to declare (`workflow.specDir`, decision-044),
+the work item's own repository's to declare (its harness config, decision-044),
 with the CLI key left as a deliberate override — so these also pin which source
 wins, that the gate and the runtime resolve one value, and that a value read from
 a checkout cannot point outside it.
@@ -79,7 +79,7 @@ def _link(repo, runtime, **cfg):
     config = GraphLinkConfig(**{"enabled": True, **cfg})
     link = GraphLink(config, control=ControlConfig(enabled=False))
 
-    def _build(cwd, spec_dir, pr_number=None, pr_repo="", loop=""):
+    def _build(cwd, spec_dir, pr_number=None, pr_repo="", loop="", origin_repo=""):
         runtime.built.append((cwd, spec_dir))
         return runtime
 
@@ -88,7 +88,8 @@ def _link(repo, runtime, **cfg):
 
 
 def _harness_config(root, spec_dir):
-    """Give ``root`` a harness config declaring ``workflow.specDir``."""
+    """Give ``root`` a harness config declaring a spec directory — which the CLI
+    must IGNORE (issue-352): the tests below that write one assert exactly that."""
     directory = root / ".the-loop"
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "harness-config.yaml").write_text(
@@ -244,7 +245,9 @@ def test_an_item_nobody_started_is_skipped(repo):
         control_store=ControlStore(repo / "control.json"),
     )
     link._build_runtime = (  # noqa: SLF001
-        lambda cwd, spec_dir, pr_number=None, pr_repo="", loop="": runtime
+        lambda cwd, spec_dir, pr_number=None, pr_repo="", loop="", origin_repo="": (
+            runtime
+        )
     )
     link.on_spawn(REF, str(repo))
     link.on_event(REF, str(repo), _comment_event())
@@ -261,7 +264,9 @@ def test_a_started_item_is_coupled(repo):
         control_store=store,
     )
     link._build_runtime = (  # noqa: SLF001
-        lambda cwd, spec_dir, pr_number=None, pr_repo="", loop="": runtime
+        lambda cwd, spec_dir, pr_number=None, pr_repo="", loop="", origin_repo="": (
+            runtime
+        )
     )
     link.on_spawn(REF, str(repo))
     assert runtime.started == [("issue-113", REF.ref)]
@@ -331,7 +336,7 @@ def test_the_graph_block_defaults_to_enabled():
 def test_the_graph_block_leaves_spec_dir_unset_by_default(data):
     """R1.3 — an always-set default is what made the repository's value
     unreachable: `build_runtime` treats an explicit spec_root as an override, so
-    a non-empty default meant `workflow.specDir` was never consulted."""
+    a non-empty default meant the repository's value was never consulted."""
     assert RoutingConfig.from_mapping(data, None).graph.spec_dir == ""
 
 
@@ -431,18 +436,16 @@ def test_a_directory_that_is_not_a_checkout_is_skipped(tmp_path):
     assert runtime.started == []
 
 
-# -- where the specs are: the repository decides (issue-123) ---------------------
+# -- where the specs are: the operator's CLI config decides (issue-123, issue-352) --
 
 
-def test_the_repositorys_spec_dir_is_honoured(tmp_path):
-    """R1.1 — a daemon watches N repositories and cannot hold one layout for all
-    of them; where a repository keeps its specs is its own to declare
-    (decision-044)."""
+def test_the_instances_spec_dir_is_honoured(tmp_path):
+    """issue-352 — one `routing.graph.specDir` for every checkout this daemon drives;
+    the CLI reads no repository's spec directory any more."""
     _git_repo(tmp_path)
-    _harness_config(tmp_path, "specs")
     (tmp_path / "specs" / "issue-113").mkdir(parents=True)
     runtime = _FakeRuntime()
-    link = _link(tmp_path, runtime)
+    link = _link(tmp_path, runtime, spec_dir="specs")
 
     link.on_spawn(REF, str(tmp_path))
 
@@ -461,35 +464,33 @@ def test_a_checkout_with_no_harness_config_uses_the_default(repo):
     assert runtime.built == [(str(repo), "docs/specs")]
 
 
-def test_the_cli_key_overrides_the_repositorys_value(tmp_path):
-    """R1.3 — the key survives as a deliberate escape hatch (a checkout with no
-    harness config whose specs are elsewhere), not as a silent default."""
+def test_the_repositorys_harness_config_is_not_consulted(tmp_path):
+    """issue-352 — a checkout declaring `specDir: specs` in its config is driven under the
+    daemon's directory, not its own: the CLI never opens the file."""
     _git_repo(tmp_path)
     _harness_config(tmp_path, "specs")
-    (tmp_path / "ops-specs" / "issue-113").mkdir(parents=True)
+    (tmp_path / "docs" / "specs" / "issue-113").mkdir(parents=True)
     runtime = _FakeRuntime()
-    link = _link(tmp_path, runtime, spec_dir="ops-specs")
+    link = _link(tmp_path, runtime)
 
     link.on_spawn(REF, str(tmp_path))
 
-    assert runtime.started == [("issue-113", REF.ref)]
-    assert runtime.built == [(str(tmp_path), "ops-specs")]
+    assert runtime.built == [(str(tmp_path), "docs/specs")]
 
 
 def test_the_gate_reads_the_same_directory_the_runtime_will(tmp_path):
-    """R2.1 — the skip decision and the runtime resolve **one** value. A repo
-    that declares `specs` and still has an old `docs/specs` must not be gated on
-    the stale one and then written to the declared one.
+    """R2.1 — the skip decision and the runtime resolve **one** value. An instance
+    that declares `specs` and a checkout that still has an old `docs/specs` must
+    not be gated on the stale one and then written to the declared one.
 
     Driven by an `advance`, which is the action the gate still applies to since
     issue-273; the `start` beside it pins the other half — the value threaded into
     the runtime is the declared one, so a graph that starts writes its state where
     the gate would have looked."""
     _git_repo(tmp_path)
-    _harness_config(tmp_path, "specs")
     (tmp_path / "docs" / "specs" / "issue-113").mkdir(parents=True)
     runtime = _FakeRuntime()
-    link = _link(tmp_path, runtime)
+    link = _link(tmp_path, runtime, spec_dir="specs")
 
     link.on_event(REF, str(tmp_path), _comment_event())
 
@@ -501,9 +502,9 @@ def test_the_gate_reads_the_same_directory_the_runtime_will(tmp_path):
     assert runtime.built == [(str(tmp_path), "specs")]
 
 
-def test_an_unparseable_harness_config_falls_back_to_the_default(repo):
-    """A repository someone is halfway through editing still gets its graph
-    driven — `harness_config.load` degrades to `{}` and the default applies."""
+def test_an_unparseable_harness_config_changes_nothing(repo):
+    """A repository someone is halfway through editing is driven exactly as any
+    other — there is no read to degrade (issue-352)."""
     (repo / ".the-loop").mkdir(parents=True, exist_ok=True)
     (repo / ".the-loop" / "harness-config.yaml").write_text("workflow: [unclosed\n")
     runtime = _FakeRuntime()
@@ -516,17 +517,16 @@ def test_an_unparseable_harness_config_falls_back_to_the_default(repo):
 
 @pytest.mark.parametrize("declared", ["../elsewhere", "/etc", "docs/../../escape"])
 def test_a_spec_dir_that_escapes_the_checkout_is_refused(tmp_path, declared):
-    """R4.3 — the value now comes from a repository, so it must not be able to
-    select a write target elsewhere on the operator's machine."""
+    """R4.3 — a value that would name a write target elsewhere on the operator's
+    machine is refused, wherever it came from."""
     checkout = tmp_path / "checkout"
     checkout.mkdir()
     _git_repo(checkout)
-    _harness_config(checkout, declared)
     (tmp_path / "elsewhere" / "issue-113").mkdir(parents=True)
     (tmp_path / "escape" / "issue-113").mkdir(parents=True)
     events = _events(tmp_path)
     runtime = _FakeRuntime()
-    link = _link(checkout, runtime)
+    link = _link(checkout, runtime, spec_dir=declared)
 
     link.on_spawn(REF, str(checkout))
 
@@ -539,28 +539,16 @@ def test_a_spec_dir_that_escapes_the_checkout_is_refused(tmp_path, declared):
     )
 
 
-def test_a_foreign_checkouts_harness_config_is_never_read(tmp_path, monkeypatch):
+def test_a_foreign_checkout_is_never_coupled(tmp_path):
     """R4.1/R4.2 — ownership is proved via the `origin` remote *before* anything
-    in the checkout is read. Resolving specDir from a directory the daemon has
-    not proved belongs to the work item would reopen the ⟵ direction
-    decision-044 closes."""
-    from the_loop import graphlink as graphlink_mod
-
+    in the checkout is touched (issue-113 A6)."""
     _git_repo(tmp_path, origin="https://github.com/someone-else/other.git")
-    _harness_config(tmp_path, "specs")
-    (tmp_path / "specs" / "issue-113").mkdir(parents=True)
-    reads = []
-    monkeypatch.setattr(
-        graphlink_mod.harness_config,
-        "load",
-        lambda root: reads.append(root) or {},
-    )
+    (tmp_path / "docs" / "specs" / "issue-113").mkdir(parents=True)
     runtime = _FakeRuntime()
 
     _link(tmp_path, runtime).on_spawn(REF, str(tmp_path))
 
-    assert runtime.started == []
-    assert reads == [], "a foreign checkout's harness config must not be read"
+    assert runtime.started == [] and runtime.built == []
 
 
 # -- a skipped work item is visible in `the-loop events` (issue-123) -------------

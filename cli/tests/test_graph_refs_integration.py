@@ -1,7 +1,7 @@
 """The ticket's exact symptom, end to end through the shipped seams (issue-194).
 
     the-loop graph advance 194        (no --ref)
-        → build_runtime reads ticketing.github from the repository
+        → build_runtime reads the checkout's origin remote
         → Runtime.work_item derives github:octo/repo#194
         → the entry chain's post-phase-selection reaches THAT ref
         → and when it cannot, the command says so on stdout
@@ -102,16 +102,28 @@ def github(monkeypatch):
 
 
 def _repo(tmp_path, ticketing: str = "octo/repo"):
-    """A checkout whose harness config declares (or does not declare) its ticketing."""
+    """A checkout whose `origin` remote names (or does not name) its repository.
+
+    issue-352: the CLI reads no `ticketing.github` from a harness config; the
+    checkout's remote is the in-session source of the origin repository.
+    """
+    import subprocess
+
     (tmp_path / "docs" / "specs" / WORK_ITEM).mkdir(parents=True)
-    (tmp_path / ".the-loop").mkdir()
-    owner, _, name = ticketing.partition("/")
-    config = "workflow:\n  specDir: docs/specs\n"
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     if ticketing:
-        config += f"ticketing:\n  github:\n    owner: {owner}\n    repo: {name}\n"
-    (tmp_path / ".the-loop" / "harness-config.yaml").write_text(
-        config, encoding="utf-8"
-    )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(tmp_path),
+                "remote",
+                "add",
+                "origin",
+                f"https://github.com/{ticketing}.git",
+            ],
+            check=True,
+        )
     return tmp_path
 
 
@@ -138,13 +150,11 @@ def _args(action, **kwargs):
 # -- the ticket's headline: a verb with no --ref reaches the right ticket -------
 
 
-def test_a_verb_with_no_ref_posts_to_the_repository_the_config_declares(
-    tmp_path, github
-):
+def test_a_verb_with_no_ref_posts_to_the_repository_the_remote_names(tmp_path, github):
     """
     Feature: outbound graph hooks reach the ticket
-      Scenario: a graph verb with no --ref posts to the repository the config declares
-        Given a work item issue-194 in a repo whose harness config names octo/repo
+      Scenario: a graph verb with no --ref posts to the repository the remote names
+        Given a work item issue-194 in a checkout whose origin remote names octo/repo
         And no --ref is passed, exactly as the docs and the skill show the command
         When the work item enters the graph
         Then the phase-selection checklist is posted to github:octo/repo#194
@@ -169,11 +179,11 @@ def test_an_explicit_ref_still_wins(tmp_path, github):
     assert {ref for _, ref in github.calls} == {"github:other/place#7"}
 
 
-def test_a_repo_with_no_ticketing_config_derives_nothing(tmp_path, github):
+def test_a_checkout_with_no_origin_derives_nothing(tmp_path, github):
     """
     Feature: outbound graph hooks reach the ticket
-      Scenario: a repository with no ticketing config says what to do about it
-        Given a repository whose harness config declares no ticketing.github
+      Scenario: a checkout with no origin remote says what to do about it
+        Given a checkout with no `origin` remote
         When a graph verb runs with no --ref
         Then no ref is invented — the bare work-item id is used, as before
         And the integration error names both remedies
@@ -187,7 +197,7 @@ def test_a_repo_with_no_ticketing_config_derives_nothing(tmp_path, github):
     from the_loop.graph.integrations.github import _split_ref
     from the_loop.graph.integrations.base import IntegrationError
 
-    with pytest.raises(IntegrationError, match="ticketing.github"):
+    with pytest.raises(IntegrationError, match="origin"):
         _split_ref(WORK_ITEM)
 
 
@@ -195,7 +205,7 @@ def test_an_inner_loop_derives_the_pull_requests_ref_not_the_work_items(tmp_path
     """
     Feature: outbound graph hooks reach the ticket
       Scenario: a pull request's inner loop posts to the pull request
-        Given a work item issue-194 in a repo whose harness config names octo/repo
+        Given a work item issue-194 in a checkout whose origin remote names octo/repo
         When a runtime is built for that work item's pull request 7 with no --ref
         Then the derived ref is the PULL REQUEST's, github:octo/repo#7
         And a pull request in another repository derives that repository's ref
@@ -214,8 +224,8 @@ def test_an_inner_loop_derives_the_pull_requests_ref_not_the_work_items(tmp_path
 
 
 def test_an_inner_loop_never_falls_back_to_the_work_items_ref(tmp_path):
-    """The failure mode this guards: a repository whose config names no
-    ticketing leaves the PR ref underivable, and the loop must then use the bare
+    """The failure mode this guards: a checkout with no origin remote leaves the
+    PR ref underivable, and the loop must then use the bare
     id — NOT the work item's ref, which would put a pull request's review
     comments on the ticket."""
     repo = _repo(tmp_path, ticketing="")

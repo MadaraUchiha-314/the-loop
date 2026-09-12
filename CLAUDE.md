@@ -27,7 +27,7 @@ labels sit unused precisely because past work bypassed the loop.)
 2. **Every change is a work item with a ticket.** Nothing is worked without a GitHub issue.
    Create and lock the spec chain (`requirements → design → testing-plan → tasks`) under
    `docs/specs/<id>/` before writing code, **scaling rigor to the change** per
-   `config.autonomy` tiers: a trivial (tier 1–2) change is autonomous-complete and needs no
+   the skill's risk tiers: a trivial (tier 1–2) change is autonomous-complete and needs no
    full spec; a tier 3+ change does. When unsure which, follow the skill.
 3. **Keep the phase label in sync.** Apply and advance the `loop:<phase>` label on the
    ticket at every transition (`loop:not-started → … → loop:complete`), mirrored in

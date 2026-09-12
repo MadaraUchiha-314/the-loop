@@ -764,25 +764,19 @@ EVENT_TYPES: Dict[str, str] = {
         "ran."
     ),
     "graph.spec_tree_excluded": (
-        "A contribution started in a repository that never adopted the-loop "
-        "(no harness config), so its spec tree was written into the "
-        "checkout's git exclude file — working state the contribution PR can "
-        "never carry (work_item, path). issue-185, PR #187 review."
-    ),
-    "harness.config_scaffolded": (
-        "the-loop adopted a repository that carried no harness config, by writing "
-        "its built-in defaults to `.the-loop/harness-config.yaml` (work_item, path, "
-        "repo: the owner/repo named in it, or empty). The answer to 'who put this "
-        "file in my repository?' — nothing else the-loop does creates configuration "
-        "in a checkout, and an existing config is never overwritten. issue-193."
+        "A guest loop — a contribution or a review — started in a repository "
+        "the-loop does not own, so its spec tree was written into the checkout's "
+        "git exclude file — working state the contribution PR can never carry "
+        "(work_item, path). issue-185, PR #187 review; keyed on the loop since "
+        "issue-352."
     ),
     "graph.skipped": (
         "The ingress→graph coupling declined to touch a work item's graph, so a "
         "successful delivery moved nothing (work_item, action: start | advance, "
         "reason: no-spec-dir | spec-dir-outside-checkout, spec_dir: the directory "
-        "resolved from the repository's `workflow.specDir`, or the "
-        "`routing.graph.specDir` override). The answer to 'it is labelled, armed "
-        "and spawned — why is its graph still at node one?'. issue-123."
+        "`routing.graph.specDir` resolves to, default `docs/specs`). The answer to "
+        "'it is labelled, armed and spawned — why is its graph still at node "
+        "one?'. issue-123, issue-352."
     ),
     "graph.link_failed": (
         "The ingress→graph coupling raised and was swallowed so the event was "
@@ -1019,8 +1013,8 @@ def load_config(config_path: Optional[Union[str, Path]] = None) -> dict:
     Defaults to the CLI config's resolved path (``cli_config.default_cli_config_path()``
     — ``--config``, then ``$THE_LOOP_CLI_CONFIG``, then ``./.the-loop/cli-config.yaml``,
     then ``~/.the-loop/cli-config.yaml``, decision-032). ``eventLog`` is top-level in the
-    CLI config, unlike the PLUGIN config's
-    ``observability.devLevel``/``runtimeLevel``/``browserLogging``.
+    CLI config; a project's log levels are its own logging configuration (issue-352
+    removed the harness config's ``observability`` block).
     """
     path = (
         Path(config_path)

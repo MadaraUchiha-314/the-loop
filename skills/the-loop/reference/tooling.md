@@ -1,23 +1,28 @@
 # Tooling reference
 
-The harness must use exactly the tooling declared in `.the-loop/harness-config.yaml`
-(`repository`, `tooling`, `localOrchestration`, `hooks` sections). This file explains
-the rules and the per-language matrix so the essence is not lost.
+The harness uses exactly the tooling the repository already uses — **inferred from the
+repository itself, every session**, never declared in a config (issue-352, third pass).
+This file carries the inference rules (§ Tooling detection), the per-language matrix that
+is the fallback where no signal exists, and the rules that hold whatever the tooling is.
 
 ## Repository management
 
-- **Monorepo is configurable; the default is _not_ a monorepo** (`monorepo: false`,
-  `monorepoTool: none` — PR #195 review). Supported tools when it is one: Nx, yarn
-  workspaces, pnpm workspaces, bun workspaces. Read `repository.monorepoTool`.
-- **the-loop MUST also work in a non-monorepo setup** (`repository.monorepo: false`,
-  `monorepoTool: none`). Never assume a workspace tool exists.
-- **All scripts run from the project root** (`repository.runScriptsFromRoot: true`).
-  Invoke build/test/lint/typecheck from the root, delegating to the workspace tool
-  (e.g. `nx run <project>:test`) rather than `cd`-ing into packages.
+- **Monorepo or not is inferred, never declared.** `nx.json` → Nx; `pnpm-workspace.yaml`
+  → pnpm workspaces; a `workspaces` field in the root `package.json` → yarn or bun
+  workspaces, whichever package manager was detected. None of those → not a monorepo,
+  which is the common case (PR #195 review).
+- **the-loop MUST also work in a non-monorepo setup.** Never assume a workspace tool
+  exists; when none was detected, run the project's own scripts directly.
+- **All scripts run from the project root.** Invoke build/test/lint/typecheck from the
+  root, delegating to the workspace tool when there is one (e.g. `nx run <project>:test`)
+  rather than `cd`-ing into packages.
   - _Open question:_ validate that "all scripts from root" scales for large monorepos;
     revisit and log a decision if it doesn't.
 
 ## Per-language tooling matrix
+
+These are the **fallback defaults** — what the harness uses for a concern only when the
+detection below finds no signal for it, and says so in the execution log.
 
 | Concern | Python | JS/TS | Go (proposed defaults) |
 |---------|--------|-------|------------------------|
@@ -31,8 +36,8 @@ the rules and the per-language matrix so the essence is not lost.
 
 - **Golang choices are proposed defaults** (the issue left them as "??"). Confirm with
   the user and record a decision before relying on them.
-- **Linting covers ALL files, including markdown** (`tooling.lint.markdown`, default
-  `markdownlint`). Lint markdown too — docs are first-class.
+- **Linting covers ALL files, including markdown** (the repository's markdown linter,
+  `markdownlint` where it has none). Lint markdown too — docs are first-class.
 - **Integration tests carry Gherkin scenario docstrings** and REST/GraphQL contracts
   live under `specs/` (`config.testing` / `config.apiSpecs`) — see
   `reference/testing.md` for the conventions and the `the-loop scenarios` query.
@@ -43,27 +48,28 @@ the rules and the per-language matrix so the essence is not lost.
   tags**; container images → **GitHub Container Registry (ghcr)**.
 - Releases use the same commands locally and in CI.
 
-## Multi-artifact & multi-entity testing (`localOrchestration`)
+## Multi-artifact & multi-entity testing
 
-When several entities in a monorepo must be tested together:
-1. **All packages are locally linkable** (`linkPackagesLocally: true`) — use the
-   workspace tool's linking so cross-package changes are exercised without publishing.
-2. **All services run under `podman`** (`containerRuntime`).
-3. **Each service can point local or remote** — `localOrchestration.remoteServices`
-   lists services that should target a remote instead of running locally, so a
-   developer/harness can run a subset locally.
+When several entities in a monorepo must be tested together, link the packages locally
+with the workspace tool so cross-package changes are exercised without publishing, and
+run the services the project's own way (its compose file, its task runner). Which
+container runtime a machine has is the operator's business, not the repository's — the
+`localOrchestration` block that once named one was removed in issue-352.
 
-## Pre-commit & pre-push hooks (`hooks`)
+## Pre-commit & pre-push hooks
 
-- **pre-commit**: `lint`, `typecheck`, `unit-test` (default).
-- **pre-push**: `lint`, `typecheck`, `unit-test` (add `integration-test` where cheap).
-- **commit-msg**: enforce the commit convention (`hooks.commitConvention`).
-- These are git hooks (e.g. wired via the repo's hook manager); they run the SAME
-  commands as CI.
+The git hooks are the **repository's own**: run what its hook manager runs —
+`.pre-commit-config.yaml`, a husky or lefthook config, the `package.json` scripts they
+call, a `Makefile`/`justfile` check target — and those must be the SAME commands CI
+runs. When the repository has none, the loop's baseline before a commit or a push is:
+
+- **pre-commit**: lint, typecheck, unit tests.
+- **pre-push**: lint, typecheck, unit tests (add integration tests where cheap).
+- **commit-msg**: enforce Conventional Commits (the rule below).
 
 ## Hooks the PROJECT brings to the loop (`graph.hooks`)
 
-Different `hooks` entirely from the block above: those are git hooks running the project's
+Different hooks entirely from the section above: those are git hooks running the project's
 own commands; these are **process-graph hooks** — a check of the project's own, appended to
 a node boundary the-loop already declares (issue-248, decision-096). A project declares the
 module and where it attaches; the-loop loads it and runs it in the same chain as its shipped
@@ -83,8 +89,8 @@ All commits MUST follow Conventional Commits v1.0.0
 (https://www.conventionalcommits.org/en/v1.0.0/):
 `<type>[optional scope][!]: <description>`, where type is one of
 `feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert`.
-`hooks.commitConvention` (default `conventional-commits`) wires a `commit-msg` hook that
-rejects non-conforming messages. **Prefer a well-maintained library over custom code:**
+A `commit-msg` hook rejects non-conforming messages — this is a rule, not a setting.
+**Prefer a well-maintained library over custom code:**
 enforcement uses **[commitizen](https://commitizen-tools.github.io/commitizen/)**
 (`cz check`) — configured in `.cz.toml` — not a bespoke validator. Merge/revert messages
 are allowed through (`--allow-abort`). commitizen also offers `cz commit` (guided
@@ -96,11 +102,12 @@ No last-minute build failures from config/environment drift. CI jobs invoke the 
 same root scripts/commands the pre-commit/pre-push hooks and the harness use locally.
 When adding a check, add it in one place and reference it from both local hooks and CI.
 
-## Tooling detection (`/the-loop:init`)
+## Tooling detection (every session)
 
-`init` must never blindly stamp the defaults above onto an existing project — it must
-first look for signals of what the project already uses, and only fall back to a
-default where no signal exists. Check, per language present in the repo:
+Nothing declares the tooling: at the start of a work item, look for the signals of what
+the project already uses, and fall back to the matrix above only where no signal exists.
+Never stamp the defaults onto a project that has tooling of its own. Check, per language
+present in the repo (manifests and file extensions say which languages are present):
 
 ### JS/TS
 
@@ -138,11 +145,13 @@ default where no signal exists. Check, per language present in the repo:
 
 ### Applying results
 
-- Where a signal is unambiguous, write the detected tool directly into
-  `tooling.<concern>.<language>`.
+- Nothing is written into a config. The detected tooling is what this session runs —
+  the package manager, test runner, linter, type checker and workspace tool behind every
+  command in the work item — and the execution log records what was detected and from
+  which signal, so the next session and a reviewer can check the inference.
 - Where signals conflict, are absent, or only partially cover a concern (e.g. a test
-  runner is inferred but no linter can be determined), write the plugin default but
-  append a same-line comment `# TODO: verify — no signal found, defaulted` so it's
-  flagged in the init report's needs-user section rather than silently applied.
+  runner is inferred but no linter can be determined), use the matrix default for that
+  concern and say so in the execution log ("defaulted — no signal found"), so a guess
+  is visible as a guess rather than silently applied.
 - Never silently apply a default when the project has _some_ tooling for that concern
-  that merely wasn't recognized — prefer flagging over guessing wrong.
+  that merely wasn't recognized — prefer surfacing it to the user over guessing wrong.

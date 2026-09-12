@@ -55,16 +55,20 @@ def _detail(exc: Exception) -> str:
     return exc.detail if isinstance(exc, ApiError) and exc.detail else str(exc)
 
 
-def _show(root: Path, pr: "int | None" = None, pr_repo: str = "") -> Dict[str, Any]:
+def _show(
+    root: Path, pr: "int | None" = None, pr_repo: str = "", spec_dir: str = ""
+) -> Dict[str, Any]:
     """The repo's graph, its start node and its spec root — one round trip."""
     params: Dict[str, Any] = {"repo": str(root)}
     if pr is not None:
         params["pr"] = pr
     if pr_repo:
         params["prRepo"] = pr_repo
+    if spec_dir:
+        params["specDir"] = spec_dir
     return routed(
         lambda connection: connection.get("/graph", params=params),
-        lambda: core_graphs.show(str(root), pr=pr, pr_repo=pr_repo),
+        lambda: core_graphs.show(str(root), pr=pr, pr_repo=pr_repo, spec_dir=spec_dir),
     )
 
 
@@ -74,6 +78,7 @@ def _check(
     recompute: bool = False,
     pr: "int | None" = None,
     pr_repo: str = "",
+    spec_dir: str = "",
 ) -> Dict[str, Any]:
     return routed(
         lambda connection: connection.post(
@@ -84,10 +89,16 @@ def _check(
                 "recompute": bool(recompute),
                 "pr": pr,
                 "prRepo": pr_repo,
+                "specDir": spec_dir,
             },
         ),
         lambda: core_graphs.check(
-            str(root), work_item, recompute=recompute, pr=pr, pr_repo=pr_repo
+            str(root),
+            work_item,
+            recompute=recompute,
+            pr=pr,
+            pr_repo=pr_repo,
+            spec_dir=spec_dir,
         ),
     )
 
@@ -98,6 +109,7 @@ def _advance(
     ref: str = "",
     pr: "int | None" = None,
     pr_repo: str = "",
+    spec_dir: str = "",
 ) -> Dict[str, Any]:
     return routed(
         lambda connection: connection.post(
@@ -108,10 +120,11 @@ def _advance(
                 "ref": ref,
                 "pr": pr,
                 "prRepo": pr_repo,
+                "specDir": spec_dir,
             },
         ),
         lambda: core_graphs.advance(
-            str(root), work_item, ref=ref, pr=pr, pr_repo=pr_repo
+            str(root), work_item, ref=ref, pr=pr, pr_repo=pr_repo, spec_dir=spec_dir
         ),
     )
 
@@ -124,6 +137,7 @@ def _complete(
     ref: str = "",
     pr: "int | None" = None,
     pr_repo: str = "",
+    spec_dir: str = "",
 ) -> Dict[str, Any]:
     return routed(
         lambda connection: connection.post(
@@ -136,6 +150,7 @@ def _complete(
                 "ref": ref,
                 "pr": pr,
                 "prRepo": pr_repo,
+                "specDir": spec_dir,
             },
         ),
         lambda: core_graphs.complete(
@@ -146,6 +161,7 @@ def _complete(
             ref=ref,
             pr=pr,
             pr_repo=pr_repo,
+            spec_dir=spec_dir,
         ),
     )
 
@@ -159,6 +175,7 @@ def _force(
     ref: str,
     pr: "int | None" = None,
     pr_repo: str = "",
+    spec_dir: str = "",
 ) -> Dict[str, Any]:
     return routed(
         lambda connection: connection.post(
@@ -172,6 +189,7 @@ def _force(
                 "ref": ref,
                 "pr": pr,
                 "prRepo": pr_repo,
+                "specDir": spec_dir,
             },
         ),
         lambda: core_graphs.force(
@@ -183,6 +201,7 @@ def _force(
             ref=ref,
             pr=pr,
             pr_repo=pr_repo,
+            spec_dir=spec_dir,
         ),
     )
 
@@ -196,6 +215,7 @@ def _skip(
     ref: str,
     pr: "int | None" = None,
     pr_repo: str = "",
+    spec_dir: str = "",
 ) -> Dict[str, Any]:
     return routed(
         lambda connection: connection.post(
@@ -209,6 +229,7 @@ def _skip(
                 "ref": ref,
                 "pr": pr,
                 "prRepo": pr_repo,
+                "specDir": spec_dir,
             },
         ),
         lambda: core_graphs.skip(
@@ -220,6 +241,7 @@ def _skip(
             ref=ref,
             pr=pr,
             pr_repo=pr_repo,
+            spec_dir=spec_dir,
         ),
     )
 
@@ -305,6 +327,7 @@ class CheckCommand(Command):
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("work_item", nargs="?", help="work item id, e.g. issue-109")
         parser.add_argument("--repo", default=".", help="repository root (default: .)")
+        _add_spec_dir_flag(parser)
         parser.add_argument("--format", choices=["table", "json"], default="table")
         parser.add_argument(
             "--all",
@@ -339,7 +362,9 @@ class CheckCommand(Command):
 
     def _report_on(self, root: Path, args: argparse.Namespace) -> int:
         if args.all:
-            items = _discover_work_items(root, _show(root)["specRoot"])
+            items = _discover_work_items(
+                root, _show(root, spec_dir=args.spec_dir)["specRoot"]
+            )
         elif args.work_item:
             items = [args.work_item]
         else:
@@ -349,7 +374,7 @@ class CheckCommand(Command):
         payload = []
         failing = 0
         for item in items:
-            data = _check(root, item, recompute=args.recompute)
+            data = _check(root, item, recompute=args.recompute, spec_dir=args.spec_dir)
             payload.append(data)
             if _fails(data, args.fail_on):
                 failing += 1
@@ -393,6 +418,24 @@ class CheckCommand(Command):
         return 1 if failing else 0
 
 
+def _add_spec_dir_flag(parser: argparse.ArgumentParser) -> None:
+    """``--spec-dir``: where this checkout keeps its specs (issue-352).
+
+    The CLI reads no harness config, so a repository whose specs are not under
+    ``docs/specs`` says so here — or, for a daemon, once in the CLI config's
+    ``routing.graph.specDir``. Unset, that config key answers, else the default.
+    """
+    parser.add_argument(
+        "--spec-dir",
+        default="",
+        dest="spec_dir",
+        help=(
+            "where the specs live, relative to the repository root "
+            "(default: routing.graph.specDir from the CLI config, else docs/specs)"
+        ),
+    )
+
+
 def _add_pr_flags(parser: argparse.ArgumentParser) -> None:
     """The two flags that select an INNER loop, on every verb that has them.
 
@@ -416,22 +459,22 @@ def _add_pr_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _repository_hooks(root: Path) -> Dict[str, Any]:
-    """What ``root`` declares under ``graph.hooks``, parsed but NOT loaded.
+def _declared_hooks() -> Dict[str, Any]:
+    """What the CLI config declares under ``routing.graph.hooks``, parsed but NOT loaded.
 
-    Deliberately local and deliberately inert. Local, because this reads a file in
-    a checkout rather than evaluating a work item — the same shape as
-    ``the-loop critic list``, which reports the other block of executable
-    configuration a repository declares. Inert, because the whole point is that an
-    operator can see what a repository would run **before** running it (R5.1): a
-    declaration is reported here, and only ``the-loop check`` imports it.
+    Deliberately inert: the whole point is that an operator can see what would
+    run **before** running it (R5.1) — the same shape as ``the-loop critic list``,
+    which reports the other block of executable configuration the CLI config
+    carries. A declaration is reported here, and only ``the-loop check`` imports
+    it. Since issue-352 the declaration is the operator's, not a repository's: the
+    CLI reads no harness config.
     """
     from ..graph import hooks as _hooks  # noqa: F401 — registers the built-ins
     from ..graph import read_declaration
+    from ..graph.bootstrap import load_cli_config_best_effort
     from ..graph.registry import hook_names
-    from ..harness_config import load as load_harness_config
 
-    declaration = read_declaration(load_harness_config(root))
+    declaration = read_declaration(load_cli_config_best_effort())
     return {
         "shipped": hook_names(),
         "modules": [
@@ -450,7 +493,7 @@ def _repository_hooks(root: Path) -> Dict[str, Any]:
 
 
 def _report_hooks(root: Path, fmt: str) -> int:
-    report = _repository_hooks(root)
+    report = _declared_hooks()
     if fmt == "json":
         print(json.dumps(report, indent=2))
         return 0
@@ -458,13 +501,10 @@ def _report_hooks(root: Path, fmt: str) -> int:
     print(f"shipped hooks ({len(shipped)}): {', '.join(shipped)}")
     modules, attach = report["modules"], report["attach"]
     if not modules and not attach:
-        print(
-            "this repository declares no graph hooks "
-            "(`graph.hooks` in .the-loop/harness-config.yaml)"
-        )
+        print("no graph hooks declared (`routing.graph.hooks` in the CLI config)")
         return 0
     print(
-        f"\nthis repository declares {len(modules)} module(s) and "
+        f"\nthe CLI config declares {len(modules)} module(s) and "
         f"{len(attach)} attachment(s) — nothing here has been imported:"
     )
     for ref in modules:
@@ -488,6 +528,7 @@ class GraphCommand(Command):
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("--repo", default=".", help="repository root (default: .)")
+        _add_spec_dir_flag(parser)
         sub = parser.add_subparsers(dest="action", required=True)
 
         show = sub.add_parser("show", help="print the shipped graph")
@@ -561,8 +602,9 @@ class GraphCommand(Command):
         sub.add_parser(
             "hooks",
             help=(
-                "report the shipped hooks and this repository's own declarations "
-                "(issue-248) — WITHOUT importing any of the repository's code"
+                "report the shipped hooks and the CLI config's own declarations "
+                "(routing.graph.hooks, issue-248) — WITHOUT importing any of "
+                "the declared code"
             ),
         ).add_argument("--format", choices=["text", "json"], default="text")
 
@@ -591,8 +633,9 @@ class GraphCommand(Command):
         if args.action == "hooks":
             return _report_hooks(root, args.format)
 
+        spec_dir = getattr(args, "spec_dir", "") or ""
         if args.action == "show":
-            graph = _show(root, pr=args.pr, pr_repo=args.pr_repo)
+            graph = _show(root, pr=args.pr, pr_repo=args.pr_repo, spec_dir=spec_dir)
             if args.format == "json":
                 # ``specRoot`` is a layout fact the runtime carries, not part of
                 # the graph an operator asked to see, so it stays out of here.
@@ -627,7 +670,13 @@ class GraphCommand(Command):
             return 0
 
         if args.action == "status":
-            report = _check(root, args.work_item, pr=args.pr, pr_repo=args.pr_repo)
+            report = _check(
+                root,
+                args.work_item,
+                pr=args.pr,
+                pr_repo=args.pr_repo,
+                spec_dir=spec_dir,
+            )
             reached, ahead = _split_at_pointer(report["nodes"], report["currentNode"])
             print(f"{report['workItem']}: at {report['currentNode']}")
             print(_render_table(reached, ahead))
@@ -635,7 +684,12 @@ class GraphCommand(Command):
 
         if args.action == "advance":
             result = _advance(
-                root, args.work_item, ref=args.ref, pr=args.pr, pr_repo=args.pr_repo
+                root,
+                args.work_item,
+                ref=args.ref,
+                pr=args.pr,
+                pr_repo=args.pr_repo,
+                spec_dir=spec_dir,
             )
             print(f"{args.work_item}: {result['node']} → {result['status']}")
             for message in result["messages"]:
@@ -655,6 +709,7 @@ class GraphCommand(Command):
                 ref=args.ref,
                 pr=args.pr,
                 pr_repo=args.pr_repo,
+                spec_dir=spec_dir,
             )
             print(json.dumps(result, indent=2))
             return 0
@@ -670,6 +725,7 @@ class GraphCommand(Command):
                     args.ref,
                     pr=args.pr,
                     pr_repo=args.pr_repo,
+                    spec_dir=spec_dir,
                 )
             except Exception as exc:  # noqa: BLE001
                 # A refused declaration is the runtime's verdict, not a broken
@@ -708,6 +764,7 @@ class GraphCommand(Command):
                     args.ref,
                     pr=args.pr,
                     pr_repo=args.pr_repo,
+                    spec_dir=spec_dir,
                 )
             except Exception as exc:  # noqa: BLE001
                 # A refused force is the runtime's verdict, not a broken CLI —

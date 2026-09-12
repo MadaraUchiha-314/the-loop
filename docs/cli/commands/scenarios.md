@@ -34,15 +34,18 @@ def test_unauthorized_comment_is_dropped():
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `--root` | `.` | Project root to scan. |
-| `--glob PATTERN` | see below | Glob for integration-test files. Repeatable; overrides config and defaults. |
+| `--glob PATTERN` | see below | Glob for integration-test files. Repeatable. |
 | `--format` | `table` | `table`, `markdown` or `json`. |
 
 ### Glob resolution order
 
 1. `--glob` (repeatable), else
-2. `testing.integrationTestGlobs` in the repository's
-   [harness config](/config/harness-config), else
-3. built-in defaults covering common layouts.
+2. built-in defaults covering common layouts.
+
+The repository's `testing.integrationTestGlobs` (in its
+[harness config](/config/harness-config)) is the **agent's** to read and pass as
+`--glob`: the CLI reads no harness config
+([issue #352](https://github.com/MadaraUchiha-314/the-loop/issues/352)).
 
 ## Formats
 

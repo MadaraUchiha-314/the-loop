@@ -12,7 +12,7 @@ NO human intervention, escalating only when a decision/opinion is genuinely requ
 
 > **Read the relevant reference file before acting** — they carry the full detail so the
 > essence is not lost:
-> - `reference/workflow.md` — the loop, phases, TDD, reviews, autonomy, DAG, resumability.
+> - `reference/workflow.md` — the loop, phases, TDD, reviews, risk tiers, DAG, resumability.
 > - `reference/context.md` — context-window management: clearing vs compaction, the checkpoint-then-reset protocol, per-harness mechanics.
 > - `reference/onboarding.md` — the guided, schema-driven config onboarding `/init` runs (groups, ask levels, sensible-defaults precedence).
 > - `reference/instructions.md` — user-provided custom instruction docs (`customInstructions`): when to read them, precedence, what they can and cannot override.
@@ -22,7 +22,7 @@ NO human intervention, escalating only when a decision/opinion is genuinely requ
 > - `reference/tooling.md` — repo management, per-language tooling matrix, hooks, CI parity.
 > - `reference/testing.md` — the testing plan and the verification node (test-type matrix, verification environment, evidence and redaction), Gherkin scenario docstrings on integration tests, the queryable scenario view, OpenAPI/GraphQL contract conventions.
 > - `reference/minimalism.md` — generation-time decision ladder to counter code bloat.
-> - `reference/token-economy.md` — token/cost levers (model routing, verbosity, disclosure, sub-agents, telemetry); advisory, never at the expense of rigor.
+> - `reference/token-economy.md` — token/cost levers (model choice, thinking effort, verbosity, disclosure, sub-agents, telemetry); guidance only, never configured, never at the expense of rigor.
 > - `reference/collaboration.md` — collaborators/roles, paper trail, **the self-comment loop-prevention marker (every reply MUST carry it)**, conflict log, notifications, MCP.
 > - `reference/observability.md` — dev==runtime logging, levels, browser logging.
 > - `reference/automation.md` — distribution, the CLI, webhooks, predictability, learnings lifecycle.
@@ -72,9 +72,8 @@ live in `docs/specs/<id>/`:
    mechanically from the two artifacts the human just approved, so it has **no approval
    gate and needs no human sign-off** (issue-281) — it advances on shape alone.
 
-The work item's **phase** is tracked on the ticket via a label
-(`<workflow.phaseLabelPrefix><phase>`) and mirrored in the execution log (`brainstorming`
-is optional):
+The work item's **phase** is tracked on the ticket via a label (`loop:<phase>` — a fixed
+vocabulary, issue-352) and mirrored in the execution log (`brainstorming` is optional):
 
 ```
 not-started → brainstorming → requirements-definition → design → test-planning
@@ -129,8 +128,9 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   the pair the human just approved at `design-approval`; the brainstorm converges when
   its author says so on the thread. Never write a downstream artifact against an
   upstream one whose gate has not yet approved it.
-- **Human review per phase** (`workflow.requireHumanReviewPerPhase`, default true) —
-  delivered by the graph's approval nodes, never re-implemented in a session.
+- **Human review per phase** — always on, delivered by the graph's approval nodes, never
+  re-implemented in a session (the `workflow.requireHumanReviewPerPhase` switch was
+  removed in issue-352; nothing read it).
 - **Skips are declared by humans, never taken by the harness** (issue-177,
   decision-067). Every work item starts at **`phase-selection`**: the-loop posts a
   checklist of the selectable phases on the ticket and waits for an **authorized user**
@@ -159,8 +159,8 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   changes are **edits to those files, not new comments**.
 - **Capability docs are the organized view of specs.** Raw specs under
   `docs/specs/<id>/` are the per-work-item record (*deltas*); living capability docs
-  under `workflow.capabilitiesDir` (default `docs/capabilities/`, indexed by
-  `capabilities.md`) are the **single source of truth for a capability's *current*
+  under `docs/capabilities/` (indexed by `capabilities.md`) are the **single source of
+  truth for a capability's *current*
   behaviour** (*state*), each behaviour traced by a history row to the specs/decisions
   that produced it. Update the affected capability docs **in the same PR** as the work
   item — a ready-to-ship gate item. Mint docs emergently (product-feature and
@@ -226,22 +226,24 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   (locked spec → fresh window for implementation, plan-mode style), **compact** after
   each completed task and mid-task (never clear mid-task), and isolate high-volume
   exploration in subagents. The checked-in artifacts are the memory that makes resets
-  affordable (`contextManagement`). See `reference/context.md`.
-- **Review before escalating.** Run `reviews.selfReviewCount` self-reviews then
-  `reviews.criticReviewCount` critic reviews (a different harness/model), default 3
-  each, BEFORE reaching out to a human. All reviews are comments. **Follow the defined
+  affordable. The boundaries are fixed rules; see `reference/context.md`.
+- **Review before escalating.** Run the operator's `reviews.selfReviewCount`
+  self-reviews then `reviews.criticReviewCount` critic reviews (a different
+  harness/model) BEFORE reaching out to a human — the review-round policy is the
+  operator's CLI config, read with `the-loop critic policy` (default 3 each, also when
+  the CLI is not installed). All reviews are comments. **Follow the defined
   procedure** in `reference/reviewing.md` (attribution prefix, reply-first-then-fix,
   stop on zero new findings, escalate on a repeated finding).
-- **Security is gated, not bolted on** (`config.security`). Every phase gate also asks
+- **Security is gated, not bolted on** (always on). Every phase gate also asks
   the security question: requirements carry a **Security considerations**
   threat-model-lite (untrusted actors, trust boundaries, abuse cases, fail-closed);
   design carries a **Security design** section enforcing those boundaries; the
   ready-to-ship gate includes a **security review** (built-in security-review skill or
-  the-loop's checklist), with a named human sign-off at risk tier ≥
-  `security.review.humanSignOffMinTier`. "No new attack surface" is written and
-  justified, never implied. See `reference/security.md`.
-- **Test-first.** `tdd.mode` (default `standard`): no production code without a failing
-  test that motivates it; record the red→green transition as evidence.
+  the-loop's checklist), with a named human sign-off at risk tier 4 and above. "No new
+  attack surface" is written and justified, never implied. See `reference/security.md`.
+- **Test-first.** Tests are written alongside the implementation: no production code
+  without a failing test that motivates it, and a bug fix reproduces the bug red first;
+  record the red→green transition as evidence.
 - **Plan the proof, then execute the plan.** How a work item will be verified is an
   artifact (`testing-plan.md`), not an afterthought: the `test-planning` node decides
   which kinds of testing apply — unit, integration, contract, e2e, UI/visual, snapshot,
@@ -270,7 +272,8 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   Gherkin-syntax docstring (`Feature:`/`Scenario:`/Given-When-Then) naming the scenario
   under test, with a `Requirement:` link when tied to a `requirements.md`
   (`config.testing`). The harness can query all covered scenarios as a table via
-  `the-loop scenarios` (`--format table|markdown|json`). See `reference/testing.md`.
+  `the-loop scenarios --glob <testing.integrationTestGlobs entry>…`
+  (`--format table|markdown|json`). See `reference/testing.md`.
 - **Contract-first APIs.** RESTful API specs are authored in `specs/openapi/` in the
   OpenAPI format; GraphQL schemas are SDL-first under `specs/graphql/`; documentation is
   generated from those contracts, never hand-written (`config.apiSpecs`). See
@@ -288,34 +291,35 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 - **Write the artifacts for the human who has to approve them.** Every document a person
   reads — `requirements.md`, `design.md`, `testing-plan.md`, the PR briefing, decision and
   capability docs, ticket and review comments — follows the bundled **`the-loop:writing`**
-  skill (`userInteraction.writingStyle`): a four-part spine (what was broken → what we did
+  skill — the writing contract, fixed: a four-part spine (what was broken → what we did
   → what it costs → what to check), conclusion-first sections, and **draw it rather than
-  describe it** where three or more named parts are involved
-  (`writingStyle.diagramFirst`). **There is no length limit** — scope is not knowable in
-  advance, so the test is *density* (can a sentence come out without losing information?),
-  and that is a review judgement, never a gate. Two things concision never buys: a **gated
-  section is never deleted to shorten a document** (say it is empty, and why), and the
-  **formal registers stay formal** — EARS criteria, abuse cases, RFC-2119 keywords, API
-  contracts and schema descriptions (`writingStyle.formalRegisters`) are contracts, not
-  prose. Distinct from
-  `tokenEconomy.outputVerbosity`, which compresses chat narration and preserves specs; this
-  governs the specs themselves. Rules and the tells catalogue live in the skill — do not
-  restate them here.
-- **Token economy.** Apply the `reference/token-economy.md` levers (`config.tokenEconomy`):
-  progressive/phase-scoped disclosure, dense prompts, model routing + thinking-effort by
-  stage/risk tier, narration-only output compression (with its preservation list),
-  sub-agent delegation for verbose work, compaction/filesystem-memory, and per-work-item
-  token telemetry. **Advisory, never a gate** — cheaper never means sloppier; the rigor
-  floor (validation/security/tests/paper-trail/review depth) is untouchable.
-- **Risk-tiered autonomy.** Gate completion by the work item's risk tier
-  (`config.autonomy`): low tiers may complete after the review loop; high tiers wait for
-  a human. Only complete autonomously once the **ready-to-ship gate** holds (green
-  checks, all threads resolved, evidence recorded).
+  describe it** where three or more named parts are involved. **There is no length
+  limit** — scope is not knowable in advance, so the test is *density* (can a sentence
+  come out without losing information?), and that is a review judgement, never a gate.
+  Two things concision never buys: a **gated section is never deleted to shorten a
+  document** (say it is empty, and why), and the **formal registers stay formal** — EARS
+  criteria, abuse cases, RFC-2119 keywords, API contracts and schema descriptions are
+  contracts, not prose. Distinct from the token-economy verbosity rule, which compresses
+  chat narration and preserves specs; this governs the specs themselves. Rules and the
+  tells catalogue live in the skill — do not restate them here.
+- **Token economy.** Apply the `reference/token-economy.md` levers: progressive/
+  phase-scoped disclosure, dense prompts, thinking effort by stage, narration-only output
+  compression (with its preservation list), sub-agent delegation for verbose work,
+  compaction/filesystem-memory, and per-work-item token telemetry. **Guidance, never
+  configured, never a gate** — the harness runs the model the operator chose; cheaper
+  never means sloppier; the rigor floor (validation/security/tests/paper-trail/review
+  depth) is untouchable.
+- **Risk tiers.** Gate completion by the work item's risk tier, a fixed rule of
+  `reference/workflow.md`: tiers 1–2 complete after the review loop, tiers 3–4 wait for
+  a human to approve the PR, tier 5 waits for spec and PR approval. The tier is inferred
+  from the change (default 3) and raised by the fixed sensitive paths. Only complete
+  autonomously once the **ready-to-ship gate** holds (green checks, all threads
+  resolved, evidence recorded).
 - **Keep moving; log conflicts.** Resolvable ambiguity → assume a reasonable default and
   continue; genuine block → log to `docs/decisions/conflicts.md`, escalate once, move on.
 - **Learnings lifecycle.** Capture → write-gate (rule-of-three) → consolidate (size cap)
-  → inject a capped index (`config.selfImprovement`), in the tree
-  `workflow.learningsDir` names (default `docs/learnings`). See `reference/automation.md`.
+  → inject a capped index (under 200 lines; written on the third occurrence), under
+  `docs/learnings/`. See `reference/automation.md`.
 - **Evidence at the end.** Present validated evidence that acceptance criteria are met.
 - **Communicate for the reviewer (required gate).** Before requesting human review,
   post/update the **reviewer briefing** in the PR — produced from the-loop's internal
@@ -323,43 +327,86 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   prioritized** summary (where to
   focus first), the spec→implementation insights and low-level decisions, and **mermaid**
   diagrams. This is a required item of the ready-to-ship gate
-  (`userInteraction.prSummary.required`), so **mandatory user-education is triggered, not
-  optional** — you cannot request review without it. See `reference/collaboration.md`.
+  (fixed, not configurable), so **mandatory user-education is triggered, not optional** —
+  you cannot request review without it. See `reference/collaboration.md`.
 - **Honor the user's custom instructions.** Read every doc registered in
   `customInstructions.docs` (in order) when starting work on an item, and follow it —
   these are the operator's conventions (developing/testing/coding styles, house rules)
   that the structured config does not model. The structured config wins where both
   speak, and no instruction doc can weaken the loop's gates (security, paper trail,
   reviews); a missing doc is handled per `customInstructions.onMissing`. Run
-  `the-loop instructions` at the same time, so a registration that silently fails to
-  resolve is a signal rather than guidance you never received. See
+  `the-loop instructions --doc <path>… --on-missing <policy>` with the entries you read,
+  so a registration that silently fails to resolve is a signal rather than guidance you
+  never received (the CLI reads no harness config — you hand it the list). See
   `reference/instructions.md`.
-- **Use the configured tooling.** Package managers, test runners, linters, type checkers
-  and release tooling come from `.the-loop/harness-config.yaml`; run scripts from the project
-  root; lint ALL files including markdown. See `reference/tooling.md`.
+- **Use the detected tooling.** Package managers, test runners, linters, type checkers
+  and release tooling are inferred from the repository itself at the start of every work
+  item (manifests, lock files, tool config, CI) — never declared in a config; run scripts
+  from the project root; lint ALL files including markdown. See `reference/tooling.md`.
 - **Same tooling everywhere.** Pre-commit/pre-push hooks and CI run the SAME commands —
-  no last-minute build surprises.
+  no last-minute build surprises. The git hooks are the repository's own (whatever its
+  hook manager runs); where it has none, the loop's baseline before a commit or push is
+  lint, typecheck and unit tests.
 - **Conventional Commits.** All commits follow Conventional Commits v1.0.0
   (`<type>[scope][!]: <desc>`), enforced by a commit-msg hook running **commitizen**
-  (`cz check`, not custom code) — `hooks.commitConvention`. See `reference/tooling.md`.
+  (`cz check`, not custom code). See `reference/tooling.md`.
 - **Identical observability.** Logging is the same at dev-time and runtime; the only dev
   advantage is breakpoints. See `reference/observability.md`.
 
 ## Configuration
 
-Behaviour is driven by `.the-loop/harness-config.yaml` (this repo's **harness/plugin
-config**, formerly `config.yaml` — issue-82, decision-035), validated against
-`harness-config.schema.json`. Sections: `ticketing`, `repository`,
-`workflow`, `tooling`, `customInstructions`, `testing`, `apiSpecs`, `design`,
-`localOrchestration`, `hooks`, `observability`, `reviews`, `autonomy`, `security`, `tdd`,
-`minimalism`, `tokenEconomy`, `selfImprovement`, `contextManagement`, `userInteraction`,
-`notifications`, `externalTools`. People (collaborators and the roles they hold — no
-delivery config of their own, issue-304) live in `.the-loop/collaborators.yaml`
-(validated against `collaborators.schema.json`) — the single source of truth;
-`notifications`
-references roles only. A subset of keys can be overridden per work
-item via the YAML front-matter `overrides` of the work-item / spec markdown. Managed
-files are listed in `.the-loop/manifest.yaml`.
+Behaviour is driven by `.the-loop/harness-config.yaml` — **the agent's file**, validated
+against `harness-config.schema.json`. Read it at the start of every work item and follow
+it: `version`, `customInstructions`, `testing`, `apiSpecs` and `design` — five keys,
+nothing else. A subset of these keys can be overridden per work item via
+the YAML front-matter `overrides` of the work-item / spec markdown. People (collaborators
+and the roles they hold) live in `.the-loop/collaborators.yaml`. Managed files are listed
+in `.the-loop/manifest.yaml`.
+
+The file carries **policy only**. Nine blocks that once configured behaviour — `autonomy`,
+`security`, `tdd`, `minimalism`, `tokenEconomy`, `selfImprovement`, `contextManagement`,
+`userInteraction` and `externalTools` — were removed in issue-352 because they
+configured what is simply the loop's rule. Those rules are stated where they belong: the
+risk tiers and sensitive paths in `reference/workflow.md`, the security gates in
+`reference/security.md`, standard TDD in `reference/workflow.md`, the minimalism ladder
+in `reference/minimalism.md`, the token-economy guidance in `reference/token-economy.md`,
+the learnings numbers in `reference/automation.md`, the context-window protocol in
+`reference/context.md`, and the user-interaction and writing contract in
+`reference/collaboration.md` and the `the-loop:writing` skill. Tools are discovered, not
+declared.
+
+Five more blocks left in the third pass because they described the repository or the
+operator, not a decision of the project. `repository`, `tooling` and `hooks`: the layout
+(monorepo and its workspace tool), the per-language tooling and the git hooks are
+**inferred from the repository itself, every session** — manifests, lock files, tool
+config, the hook manager's config, cross-checked against CI — per `reference/tooling.md`;
+nothing is written into a config. `observability`: log levels are the project's own
+logging configuration, and browser logging uses whatever tool the harness discovers
+(`reference/observability.md`). `reviews`: the review-round policy is the **operator's**,
+top-level `reviews` in `cli-config.yaml`, read with `the-loop critic policy`
+(`reference/reviewing.md`). And `workflow` left in the fourth: the doc trees are the
+loop's fixed convention — specs at `docs/specs/<id>/`, capability docs at
+`docs/capabilities/`, learnings at `docs/learnings/` — not a location a project configures.
+
+**The CLI never reads this file** (issue-352, decision-123). The `the-loop` CLI is the
+operator's tool and takes its configuration from the operator's `cli-config.yaml`
+(`--config` / `$THE_LOOP_CLI_CONFIG` / `./.the-loop/cli-config.yaml` /
+`~/.the-loop/cli-config.yaml`). So when you run the CLI, **you** carry the harness config
+to it — the file is yours to read, the flags are yours to pass:
+
+| Harness-config key (yours) | How the CLI learns it |
+|---|---|
+| *(spec directory)* | Not in this file. Specs live at `docs/specs/<id>/` — the loop's fixed convention, which the CLI's own `routing.graph.specDir` defaults to. `--spec-dir <dir>` on `the-loop check` / `the-loop graph` is only for an operator whose instance drives repositories laid out differently. |
+| `testing.integrationTestGlobs` | `the-loop scenarios --glob <pattern>` (repeatable). No `--glob` means the built-in defaults. |
+| `customInstructions.docs` / `.onMissing` | `the-loop instructions --doc <path> … --on-missing <warn\|error\|ignore>`. A `--doc` may be a JSON object `{"path": …, "notes": …}` to carry the entry's notes. |
+| *(critics)* | Not in this file. Which critic harnesses exist is the operator's `critics[]` in `cli-config.yaml`, and how many rounds to run with them is the operator's `reviews` there too: `the-loop critic list` tells you what this machine has, `the-loop critic policy` the round counts and stop conditions (the defaults — 3 self, 3 critic, stop on no new findings, escalate on a repeat — when the operator set none, or when the CLI is not installed). |
+| *(graph hooks)* | Not in this file. The operator's `routing.graph.hooks` in `cli-config.yaml`; `the-loop graph hooks` prints what is declared. |
+
+Two things this file **no longer** says, because they were never the repository's to
+decide: the **ticketing system** (a work item's ticket is its ref — `github:owner/repo#n`
+— and the CLI derives the repository from the checkout's `origin` remote when no `--ref`
+is given) and the **phase labels** (`loop:<phase>`, one fixed vocabulary, so dashboards
+built on it work across every repository).
 
 **The schemas are the plugin's, not the project's** (issue-220). All three —
 `harness-config`, `collaborators`, `cli-config` — ship under
@@ -370,17 +417,17 @@ never fetch one over the network. A scaffolded config carries the schema's publi
 in a `# yaml-language-server: $schema=…` **first line** so an operator's editor validates
 it; that comment is for the editor alone and is never what the loop validates against.
 
-A repository that has never run `/the-loop:init` is worked under the **built-in default**
-— the same baseline `--defaults` writes, shipped inside the CLI — and the-loop writes it
-into `.the-loop/harness-config.yaml` the first time it works there, so the config is a
-file you can read and edit rather than an assumption (issue-193, decision-073). It never
-overwrites an existing config, and a **contribution** adopts nothing: see
-`reference/automation.md`.
+**A repository that has never run `/the-loop:init`** carries no `.the-loop/`. Work it
+under the schema's defaults (the same baseline `/the-loop:init --defaults` writes) and say
+so in the execution log; nothing writes a config into the repository for you — until
+issue-352 the CLI did, and now neither the CLI nor a guest loop (a contribution, a review)
+touches the repository's configuration. Suggest `/the-loop:init` on the ticket when the
+project is the work item's own.
 
-The CLI daemon (`gh-webhook`/`poll`/`sessions`/`events`) reads a separate, independent
-**CLI config** instead (`webhooks`, `polling`, `eventLog`) — it is not tied to this
-repo. See `docs/config/` (the configuration reference) and
-`docs/decisions/decision-032.md`.
+The CLI daemon (`the-loop start`, the receiver, the poller, `sessions`, `events`) reads
+the separate **CLI config** described above and nothing of this repository's. See
+`docs/config/` (the configuration reference), `docs/decisions/decision-032.md` and
+`docs/decisions/decision-123.md`.
 
 ## Commands
 
@@ -429,21 +476,20 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
 - `docs/decisions/decisions.md` + `decision-<nnn>.md` — decision log (every durable
   decision is recorded).
 - `docs/specs/<id>/` — the per-work-item 3-phase spec + execution log.
-- `<learningsDir>/learnings.md` + `learning-<nnn>.md` — learnings from user & system
-  feedback, checked in for review. `workflow.learningsDir` (default `docs/learnings`), so
-  the tree sits wherever this project keeps the documents the loop maintains. See
-  `reference/automation.md`.
+- `docs/learnings/learnings.md` + `learning-<nnn>.md` — learnings from user & system
+  feedback, checked in for review; the tree sits with the other documents the loop
+  maintains. See `reference/automation.md`.
 
 ## Interacting with other tools
 
-the-loop may freely use the MCP servers, CLIs, skills and plugins registered in
-`config.externalTools` (the `externalTools.tools` list + `notes` in
-`.the-loop/harness-config.yaml`). Check that registry before assuming a capability is available.
+the-loop may freely use the MCP servers, CLIs, skills and plugins available in the
+harness. Nothing registers them: discover what the harness actually offers, and check
+before assuming a capability is available.
 
 ## Custom instructions the loop honors
 
-Supplementary to the external-tools registry, `config.customInstructions` registers
-**guidance** rather than tools: user-provided readme/markdown docs (per installation,
+`config.customInstructions` registers **guidance**, not tools: user-provided
+readme/markdown docs (per installation,
 configurable paths) the harness reads at the start of working an item and follows —
 conventions and styles the structured config does not model. Precedence and limits:
 `reference/instructions.md`.

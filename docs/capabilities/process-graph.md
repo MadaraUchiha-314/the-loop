@@ -60,19 +60,17 @@ There are exactly **two** runtime concepts and **one** contract between them.
     portable control record, then the default) by the daemon and every CLI verb. Only
     shipped loop names SHALL be honoured — an invented value in the agent-writable
     state file reads as the default, never as a graph choice.
-  - The target repository need not have **adopted** the-loop (PR #187 review), and a
-    contribution SHALL NOT adopt it (issue-193,
-    [decision-073](../decisions/decision-073.md)): every other loop writes the built-in
-    default into a repository that carries none, and this one deliberately does not —
-    a guest does not install itself. WHEN it
-    carries no `.the-loop/harness-config.yaml` THEN every harness-config read SHALL
-    degrade to the built-in defaults (decision-044), the spec tree SHALL be kept out
-    of the repository's history structurally (`Runtime.start` writes the spec root
+  - A contribution is a **guest** (PR #187 review; keyed on the loop since issue-352,
+    [decision-123](../decisions/decision-123.md)): the-loop installs nothing in the
+    repository it was invited into — and since issue-352 the CLI installs nothing in
+    *any* repository, adoption having gone with the harness-config reads. WHEN the
+    runtime's loop is a guest loop (`config.guestLoop`) THEN the spec tree SHALL be kept
+    out of the repository's history structurally (`Runtime.start` writes the spec root
     into the checkout's git exclude file — the contribution PR carries only the
     intervention), and the `publish-artifact` hook SHALL post `contribution.md`'s
     content to the thread at `plan-approval` and `human-approval` — the review surface
-    such a repository offers. In an adopted repository the hook SHALL skip: the
-    checked-in artifact is the surface, and no extra comment is posted.
+    a guest has. In the work item's own loops the hook SHALL skip: the checked-in
+    artifact is the surface, and no extra comment is posted.
 - **The fourth loop is the ad-hoc loop** (issue-225,
   [decision-083](../decisions/decision-083.md)). `pdlc-adhoc-loop` SHALL be walked
   instead of the outer loop when an authorized user arms a work item with the `do`
@@ -106,10 +104,10 @@ There are exactly **two** runtime concepts and **one** contract between them.
     close path (a closed issue, or a merged/closed PR) already ends the session
     (issue-94), and this loop inherits it.
   - It SHALL reuse the existing phase vocabulary (`implementation`, `complete`,
-    `cleanup`), so adopting it changes no repository's `workflow.phases`.
-  - Unlike a contribution, an ad-hoc item is **not a guest**: an unconfigured checkout
-    SHALL be adopted exactly as the outer loop adopts it (issue-193). The harness config
-    is what supplies the test and lint commands the ad-hoc session still runs.
+    `cleanup`) — the graph's, the only phase list since issue-352.
+  - Unlike a contribution, an ad-hoc item is **not a guest**: its spec tree is the work
+    item's own. The harness config, where the repository has one, is what supplies the
+    agent the test and lint commands the ad-hoc session still runs.
   - Which non-default outer-path loop a recorded name selects SHALL be decided in exactly
     one place, `graph.model.resolve_outer_loop`, which returns `""` for the default, for
     the inner loop (addressed by pull-request number, never by name) and for anything
@@ -157,9 +155,8 @@ There are exactly **two** runtime concepts and **one** contract between them.
     held as the ad-hoc loop holds it) — and SHALL reuse the existing phase vocabulary
     (`needs-review`, `complete`, `cleanup`).
   - A review is a **guest** (`GUEST_LOOPS`, generalizing the contribution carve-out):
-    it SHALL NOT adopt the repository it reviews in, and in an unadopted repository
-    the spec tree (the graph-state cache) SHALL stay out of git via the existing
-    `repoInitialized` seam.
+    its spec tree (the graph-state cache) SHALL stay out of git via the `guestLoop`
+    seam, and it installs nothing in the repository it reviews.
 - **Every work-item-level loop ends at a `cleanup` node** (issue-186). `pdlc-work-item-loop`,
   `pdlc-contribution-loop`, `pdlc-adhoc-loop` and `pdlc-review-loop` SHALL each declare a
   terminal `cleanup`
@@ -196,7 +193,8 @@ There are exactly **two** runtime concepts and **one** contract between them.
     never release it.
 - **The loops run in named places when the work spans repositories** (issue-183,
   [decision-069](../decisions/decision-069.md)). The **origin** repository is the one the
-  ticket was created in (`ticketing.github`).
+  ticket was created in — the work item's ref as the daemon knows it, or the checkout's
+  `origin` remote in-session (issue-352; until then `ticketing.github`).
   - The outer loop SHALL walk in the origin repository, and the work item's one spec chain
     SHALL live there. WHEN a work item needs contributions in *n* repositories THEN *n*
     pull requests SHALL be raised — one per repository, each walking its own
@@ -461,8 +459,8 @@ exit:
   folding them together would lose which of the two was skipped, and they share a node
   because a second node would cost an edge, a `stage` key and a place in both loops' entry
   chains to read a file this one already opens. The node keeps its id and `stage`:
-  `stage: capability-docs` is a public key in operators' `tokenEconomy.modelRouting.stages`
-  and `thinkingEffort.stages` maps, so a rename would drop their configuration silently.
+  `stage: capability-docs` is the key the token-economy guidance's stage table is written
+  against, so a rename would silently detach the node from its thinking-effort row.
   The **inner** loop gates neither — a work item's documentation is decided once, at the
   outer level.
 - `cli/tests/test_graph_parity.py`'s **P5** SHALL enforce all three questions against the
@@ -538,11 +536,14 @@ included, however empty the log was.
 
 > [decision-096](../decisions/decision-096.md) · [adding a hook](../cli/hooks.md)
 
-- A repository SHALL be able to bring **hooks of its own** and attach them to boundaries the
-  shipped graph already declares, by declaring `graph.hooks` in its
-  [harness config](../config/harness-config.md): `modules[]` (a `path` to a `.py` file inside
-  the repository, or an installed `module` dotted name) and `attach[]`
-  (`hook`, `node`, optional `boundary` and `with`).
+- An operator SHALL be able to bring **hooks of their own** and attach them to boundaries
+  the shipped graph already declares, by declaring `routing.graph.hooks` in their
+  [CLI config](../config/cli/routing-options.md#graph-hooks) (issue-352 moved the
+  declaration out of the repository's harness config, which the CLI no longer reads):
+  `modules[]` (a `path` to a `.py` file inside the checkout, or an installed `module`
+  dotted name) and `attach[]` (`hook`, `node`, optional `boundary` and `with`). The
+  declaration applies to every checkout the instance drives; a repository cannot opt its
+  own code in.
 - A repository hook SHALL use the **same contract** as a shipped one —
   `(HookContext) -> HookResult`, the same `@hook` decorator, the same block-on-raise
   behaviour. There is one hook API, not two.
@@ -565,9 +566,9 @@ included, however empty the log was.
   loudly absent. (A repository *graph* file is still merely ignored — the-loop never promised
   to honour that one.)
 - The modules run **inside the-loop's own process**, so `the-loop graph hooks` SHALL report
-  what a repository declares **without importing any of it**, and
-  `routing.graph.repoHooks: false` SHALL refuse the mechanism machine-wide, naming any
-  repository whose hooks were refused.
+  what the CLI config declares **without importing any of it**. There is no refusal switch
+  (`routing.graph.repoHooks` was removed in issue-352): a module nobody declared never
+  runs.
 - A module SHALL be imported once per process. The **graph itself stays the-loop's**: nodes,
   edges and loops are not repository-authorable, which is the half of issue-109's deferred
   item this does not deliver.
@@ -641,9 +642,10 @@ verb is not required to be given one. The ref SHALL be resolved in three tiers, 
 nothing outside them SHALL be invented:
 
 1. An explicit `--ref` (or `ref=` argument) SHALL always win.
-2. Otherwise the ref SHALL be **derived** from `ticketing.github` in the repository's
-   harness config plus the work-item id: `issue-<n>` in a repository declaring
-   `<owner>/<repo>` yields `github:<owner>/<repo>#<n>`. This is the inverse of the
+2. Otherwise the ref SHALL be **derived** from the origin repository plus the work-item
+   id: `issue-<n>` in `<owner>/<repo>` yields `github:<owner>/<repo>#<n>`. The origin is
+   the work item's own repository when the daemon builds the runtime, else the checkout's
+   `origin` remote (issue-352; `ticketing.github` until then). This is the inverse of the
    ingress's own ref → id translation, and the two SHALL agree.
 3. Otherwise the bare work-item id SHALL be used, exactly as before derivation existed.
 
@@ -700,14 +702,11 @@ reader.
   nor past SHALL be refused naming the current node, and a claim on an item that never
   entered the graph SHALL be refused. Output is one JSON envelope; a refusal or block is
   a result, not a CLI error. Claims are recorded in the state's `completions` ledger.
-- **A state-changing verb adopts an unconfigured repository; a read never does**
-  (issue-193, [decision-073](../decisions/decision-073.md)). WHEN `graph complete`,
-  `graph advance`, `graph force` or `graph skip` runs in a repository carrying no harness
-  config THEN the-loop SHALL write its built-in default there before building the runtime,
-  so the verb and the daemon read one configuration instead of two sets of defaults. WHEN
-  `check`, `graph status` or `graph show` runs THEN nothing SHALL be written — the check
-  operation is pure by contract, and asking a question must not dirty a CI checkout. A
-  contribution adopts nothing, whichever verb is used.
+- **No verb writes configuration into a repository** (issue-352, retiring issue-193's
+  adoption). The CLI reads no harness config, so it has none to plant: `graph complete`,
+  `graph advance`, `graph force`, `graph skip`, `check`, `graph status` and `graph show`
+  all leave `.the-loop/` exactly as they found it. The check operation stays pure by
+  contract.
 - **Graph state is resolved before anything is delivered** (issue-148): the dispatcher
   SHALL resolve a read-only context — current node, phase, status, parked/blocked
   reason, gate messages, the node's `command` — before rendering any prompt, and SHALL
@@ -781,14 +780,14 @@ reader.
   the requirement — neither can be the first thing that happens to a work item, so for
   them a missing directory still means the graph was never placed here, and keeping it
   there is what preserves the rule above.
-- **Where the specs are is the work item's own repository's to declare** (issue-123,
-  [decision-044](../decisions/decision-044.md)). On the ingress path the coupling SHALL
-  resolve the spec directory from the checkout's `workflow.specDir` (default
-  `docs/specs`), with `routing.graph.specDir` left as a deliberate override for a checkout
-  that carries no harness config — not, as before, as a machine-scoped default that
-  silently governed every watched repository. It SHALL resolve that directory **once** and
-  use the same value for the skip decision and for the runtime it builds, so the directory
-  gated on and the directory `graph-state.json` is written into cannot drift apart.
+- **Where the specs are is the operator's CLI config's to declare** (issue-352,
+  [decision-123](../decisions/decision-123.md), superseding issue-123's repository read).
+  On the ingress path the coupling SHALL resolve the spec directory from
+  `routing.graph.specDir` (default `docs/specs`) — one value for every checkout the
+  instance drives — and in-session `check`/`graph` SHALL take `--spec-dir`, else the same
+  key, else the default. It SHALL resolve that directory **once** and use the same value
+  for the skip decision and for the runtime it builds, so the directory gated on and the
+  directory `graph-state.json` is written into cannot drift apart.
 - That read SHALL happen only **after** `_checkout_belongs_to` has proved via the `origin`
   remote that the directory is the work item's own repository, and a declared value that
   is absolute or resolves outside the checkout SHALL be refused — a value read from a
@@ -839,6 +838,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-352 | The graph stopped reading the harness config (2026-09-12): `build_runtime` takes the spec directory from the CLI config or `--spec-dir`, the phase label prefix is the constant `loop:`, the origin repository is the work item's ref or the checkout's `origin` remote, `repoInitialized` became `guestLoop` (a contribution or review keeps its spec tree out of git and posts its plan to the thread; the work item's own loops never do), `notify` reads roles from the node's `with:` only, and the operator's hooks come from `routing.graph.hooks` (`load_graph(declaration=…)`, `repoHooks` gone). Adoption (issue-193/201) is retired: no verb writes into `.the-loop/`. `workflow.phases` and its parity test are gone — the graph is the only phase list. The `stage` keys nodes declare are matched against the token-economy guidance's stage table, not against a `tokenEconomy` routing map — that block left the harness config too | [spec](../specs/issue-352/), [decision-123](../decisions/decision-123.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/352) |
 | issue-281 | The gate became the locker (2026-08-25): `validate-artifacts` stopped demanding `locked: true` on any producing node — brainstorming, requirements-definition, design, test-planning, tasks-breakdown, and the contribution loop's scoped-plan gate shape only — and a new `lock-artifacts` hook on the approval nodes' exit chains (after `classify-feedback` and `record-feedback`) writes `status: approved` and merges the approving authors into `approvedBy` as a comment-preserving front-matter splice, verified after the write and failing closed. It consumes the classifier's verdict from the same chain run (never re-reading comments), skips on `changes-requested` or an absent artifact, and declares no outcome, so the classifier alone routes. This ends the double-ask the stacked layers produced: one human approval per gate, and no approval at all for nodes the graph gives no gate | [spec](../specs/issue-281/), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/281) |
 | issue-279 | A fifth shipped loop, `pdlc-review-loop` (2026-08-24): the-loop as a pull request's **reviewer**, never its author. Armed by a ninth control keyword (`the-loop review`) that — alone among the keywords — binds to the pull request itself rather than its linked ticket; gated by a `required: true` brief gate (`review-brief` posts a fill-in template, freezes an authorized reviewer's questions/angles/validations with provenance); each agent round answers the frozen brief in one self-marked comment; the `follow-up` gate reuses `classify-adhoc-reply`, so any authorized reply that is not "done" is another round. No `produces`, no `phase-selection`, no code changed by contract, and no adoption — the contribution loop's guest carve-out generalized to `GUEST_LOOPS` | [spec](../specs/issue-279/), [decision-101](../decisions/decision-101.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/279) |
 | issue-273 | `phase-selection` stopped being routed around by default (2026-08-20): the ingress→graph coupling gated **every** graph action on `<specDir>/<id>/` already existing, so a work item minted as a plain ticket — no `/create-ticket`, no committed spec folder — had its graph declined at spawn (`graph.skipped`, `no-spec-dir`, twice) and its session walked into `requirements-definition` with the outer loop's one `required: true` node never having run: no checklist, no `the-loop execute`, no frozen graph, and nothing for `the-loop check` to attribute. `start` and `context` are now exempt (the directory is created by the work the gate holds back; `advance` and `clean` keep the check), and the read-before-spawn context of an unplaced work item renders its start node as `pending` — a block that names the gate and forbids beginning a phase before the node's assignment arrives, instead of the empty block that let the session start on its own | [spec](../specs/issue-273/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/273) |
@@ -862,6 +862,6 @@ reader.
 | issue-156 | Process runner removed; tmux is the only runner (2026-08-05): every spawn is tmux-hosted, so "every spawn enters the graph" no longer needs a per-runner qualifier, and the gate-session binding's `runner` is always `"tmux"` | [spec](../specs/issue-156/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |
 | issue-148 | The graph went from observer to authority: `the-loop graph complete` (the node-completion claim — idempotent, node-named, never a verdict), `GraphContext` resolved read-only before every delivery and spawn, the `$graph_context` prompt block, consult-first ordering at human gates (no consume-only routes), `resolve_session` gained its caller (`graph.gate_session`), tmux spawns finally enter the graph, two-writer state locking, and P4 phase parity — `pdlc.yaml` defines the sequence, the prose renders it | [spec](../specs/issue-148/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/148) |
 | issue-124 | `produces` names an artifact rather than a filename: `\|`-separated alternatives, one resolver shared by every hook that reads them, ambiguity fails closed, malformed entries fail at compile; `enforces-boundaries-from` resolves `upstream` the same way, which turned a security gate that had been silently skipping for every bug work item into one that runs; graph ↔ manifest ↔ template parity is now a test | [spec](../specs/issue-124/), [decision-045](../decisions/decision-045.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/124) |
-| issue-123 | The daemon stopped taking `specDir` from the operator's machine: `routing.graph.specDir` defaults to unset, so the work item's own `workflow.specDir` wins; the gate and the runtime resolve one value; the checkout's ownership is proved before its config is read; an escaping value is refused; and the skip is recorded as `graph.skipped` instead of a debug line | [spec](../specs/issue-123/), [decision-044](../decisions/decision-044.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/123) |
+| issue-123 | The daemon stopped taking `specDir` from the operator's machine: `routing.graph.specDir` defaults to unset, so the work item's own `workflow.specDir` wins (reversed in issue-352: the CLI reads no harness config and the key is gone; `docs/specs` is the convention); the gate and the runtime resolve one value; the checkout's ownership is proved before its config is read; an escaping value is refused; and the skip is recorded as `graph.skipped` instead of a debug line | [spec](../specs/issue-123/), [decision-044](../decisions/decision-044.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/123) |
 | issue-113 | Wired the ingress to the graph: `Runtime.start()`, the `GraphLink` seam in the shared dispatcher, `HookContext.event` finally written, the `routing.graph` config block, and the chain-outcome fix that lets a passing gate's verdict reach its edges | [spec](../specs/issue-113/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/113) |
 | issue-109 | Established the capability: the two-concept graph (node + hook), the `HookResult` contract, the shipped PDLC graph, ten hooks, configurable integration transports, `the-loop check`/`graph`, and the forced-transition escape hatch | [spec](../specs/issue-109/), [decision-041](../decisions/decision-041.md), [decision-042](../decisions/decision-042.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/109) |

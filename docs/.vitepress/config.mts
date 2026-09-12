@@ -172,6 +172,7 @@ const configSidebar = [
       { text: "Webhook options", link: "/config/cli/webhook-options" },
       { text: "Routing options", link: "/config/cli/routing-options" },
       { text: "Standing-session options", link: "/config/cli/standing-sessions-options" },
+      { text: "Critic options", link: "/config/cli/critics-options" },
       { text: "Polling options", link: "/config/cli/polling-options" },
       { text: "Integrations options", link: "/config/cli/integrations-options" },
       { text: "Channels options", link: "/config/cli/channels-options" },
@@ -197,7 +198,7 @@ const developerSidebar = [
     collapsed: true,
     items: [{ text: "Decision log", link: "/decisions/decisions" }],
   },
-  // Learnings moved under docs/ in issue-224 (workflow.learningsDir), which put them
+  // Learnings moved under docs/ in issue-224 (now the fixed convention), which put them
   // inside this site's srcDir. Listed rather than excluded: the whole point of checking
   // learnings in is that a human reads them, and an unlisted page is one nobody finds.
   {
@@ -218,6 +219,7 @@ const developerSidebar = [
       { text: "GitHub queries", link: "/reports/gh-queries" },
       { text: "Vendor SDKs vs. binaries", link: "/reports/vendor-sdk-analysis" },
       { text: "Status labels & dashboards", link: "/reports/labels-and-dashboards" },
+      { text: "Is harness-config.yaml required?", link: "/reports/harness-config-audit" },
     ],
   },
 ];

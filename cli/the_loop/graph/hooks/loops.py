@@ -155,8 +155,8 @@ def _repos_without_a_loop(
 
     A declared repository is matched to its loops by :func:`repo_state_key`: the
     origin repository owns the **top-level** ``pr-<n>`` loops, every other
-    repository owns its own subdirectory. Without a configured origin
-    (``ticketing.github``) a top-level loop cannot be attributed to any
+    repository owns its own subdirectory. Without a known origin (the work
+    item's ref, or the checkout's ``origin`` remote) a top-level loop cannot be attributed to any
     repository, so the declaration goes unsatisfied and the caller says why —
     guessing which loop was meant is how a gate passes on the wrong evidence.
     """
@@ -239,8 +239,9 @@ def await_inner_loops(ctx: HookContext) -> HookResult:
         )
     if origin_unknown:
         parts.append(
-            "the origin repository is unknown (set `ticketing.github.owner`/"
-            "`.repo`), so pr-loops/pr-<n>/ cannot be attributed to a repository"
+            "the origin repository is unknown (the checkout has no `origin` "
+            "remote naming it), so pr-loops/pr-<n>/ cannot be attributed to a "
+            "repository"
         )
     return HookResult(
         status="wait",

@@ -10,18 +10,20 @@ Turn an already-drafted `requirements.md` into a tracked work item. RULE: everyt
 harness works on must have a ticket — this command creates it and wires the spec to it.
 
 **Read the `the-loop` skill, `reference/collaboration.md` and `reference/workflow.md`.**
-Load `.the-loop/harness-config.yaml` for `ticketing` (github | jira).
+Load `.the-loop/harness-config.yaml`. The ticketing system is whatever the repository's
+remote and the available integration are (GitHub via `gh`/MCP, Jira via MCP) — it is no
+longer a harness-config key (issue-352).
 
 ## Steps
 
 1. **Read the requirements** at `$ARGUMENTS`. Use its introduction/user-stories to form
    the ticket title and body.
 
-2. **Create the ticket** in the configured ticketing system using the available
+2. **Create the ticket** in the project's ticketing system using the available
    integration (GitHub via `gh`/GitHub MCP, or Jira via MCP):
    - Title from the requirement's summary; body links to the spec (do not paste the whole
      file — reference it, single source of truth).
-   - Apply the initial phase label `<workflow.phaseLabelPrefix>requirements-definition`
+   - Apply the initial phase label `loop:requirements-definition`
      (labels are created by `/the-loop:init`).
 
 3. **Promote the folder.** Derive the canonical id from the new ticket (e.g. `issue-42`,

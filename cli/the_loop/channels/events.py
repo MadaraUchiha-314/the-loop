@@ -44,7 +44,8 @@ class EventSpec:
     recorded: bool = False
 
 
-#: The graph notification vocabulary (harness config `notifications.events`).
+#: The graph notification vocabulary — the events the graph's `notify` hook publishes
+#: (until issue-352 also the harness config's `notifications.events` taxonomy).
 NOTIFICATION_EVENTS: Tuple[str, ...] = (
     "decision-pending",
     "phase-approval-pending",

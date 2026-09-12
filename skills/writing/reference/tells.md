@@ -80,7 +80,7 @@ A revise pass **never** rewrites:
 - code, commands, config values, log lines, test output;
 - committed evidence under `<specDir>/<id>/evidence/`;
 - EARS criteria, abuse cases, RFC-2119 keywords, API contracts and schema descriptions
-  (`userInteraction.writingStyle.formalRegisters`);
+  (the formal registers of the writing contract, fixed since issue-352);
 - historical specs under `docs/specs/`. They are the record of what was written then.
   Editing one to match today's style destroys the evidence it exists to hold.
 

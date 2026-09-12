@@ -11,9 +11,10 @@ Kiro-style 3-phase spec workflow (https://kiro.dev/docs/specs/). Load
 `.the-loop/harness-config.yaml` first, then **read every custom instruction doc it registers**
 (`customInstructions.docs`, in order; missing docs per `customInstructions.onMissing`)
 and honor them throughout — they carry the operator's conventions and styles
-(`reference/instructions.md`). Run `the-loop instructions` alongside that read, so a
-registration that fails to resolve surfaces instead of quietly contributing nothing. Apply any per-task `overrides` from the work item's
-front-matter. Specs live in `<workflow.specDir>/<id>/` (default `docs/specs/<id>/`).
+(`reference/instructions.md`). Run `the-loop instructions --doc <path>… --on-missing
+<policy>` with the entries you read, so a registration that fails to resolve surfaces
+instead of quietly contributing nothing (the CLI reads no harness config — issue-352). Apply any per-task `overrides` from the work item's
+front-matter. Specs live in `docs/specs/<id>/` — the loop's fixed convention.
 
 **`work-on` is the superset.** The same flow is also exposed as granular commands you can
 run one step at a time: `/the-loop:brainstorm` (optional) → `/the-loop:new-requirement` →
@@ -32,7 +33,7 @@ detail — do not lose it.
 ## Phase state machine
 
 Keep the work item's phase **label** in the ticketing system in sync at every
-transition (label = `<workflow.phaseLabelPrefix><phase>`, e.g. `loop:design`), and
+transition (label = `loop:<phase>`, e.g. `loop:design` — fixed, issue-352), and
 mirror it in the execution log's `phase` front-matter (`brainstorming` is optional — enter
 it only when the work needs a scratchpad; otherwise start at `requirements-definition`):
 
@@ -93,19 +94,19 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
    accepted names; write **one**, never both) from the template:
    introduction, user stories, and EARS acceptance criteria — **including the Security
    considerations section** (threat-model-lite: untrusted actors, trust boundaries,
-   abuse cases, fail-closed; `security.threatModel.required` — "no new attack surface"
-   is written and justified, see `reference/security.md`). Post/link it on the ticket,
+   abuse cases, fail-closed; always required — "no new attack surface" is written
+   and justified, see `reference/security.md`). Post/link it on the ticket,
    run `the-loop graph complete`, and let the **`requirements-approval` gate** run the
    review (issue-281): its `request-review` posts the one ask, and on an authorized
    approval the gate records the approver and locks the artifact itself. Never post an
    approval request of your own and never set `status: approved`.
-   `requireHumanReviewPerPhase` defaults to true and is delivered by that gate.
+   The human review per phase is always on and is delivered by that gate.
 
 5. **Phase 2 — Design** (`design`). Create `docs/specs/<id>/design.md` derived from the
    approved requirements: architecture, components/interfaces, data models, error
    handling, testing strategy — **including the Security design section** stating how
-   each requirements-phase trust boundary is enforced (`security.design.required`; a
-   boundary left unenforced fails the gate). **If the work item has a user-facing
+   each requirements-phase trust boundary is enforced (a boundary left unenforced
+   fails the gate). **If the work item has a user-facing
    surface**, also
    produce **UI/UX design artifacts** under `docs/specs/<id>/design/` (self-contained
    HTML+CSS+JS prototypes and/or a linked Figma file), inventory them in `design.md`, and
@@ -143,16 +144,16 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
    spec doc are made as **edits to that file, not new comments**.
 
 8. **Implementation** (`implementation`). Entering implementation crosses the big phase
-   boundary: **reset context per `contextManagement.phaseBoundary` (default `clear`)**
-   and execute against the locked spec files read from disk, not the drafting
+   boundary: **clear the context window (the fixed phase-boundary rule)** and execute
+   against the locked spec files read from disk, not the drafting
    conversation (plan-mode style; `reference/context.md`). Execute the task DAG
    autonomously. **Tick each task in `tasks.md` (`- [ ]` → `- [x]`) as it completes.**
    Maintain `docs/specs/<id>/execution-log.md`: append progress and run tests
    (unit/integration per config) at logical checkpoints — self-checking as you go.
    **After each completed task: checkpoint (checkmark, log entry with a concrete Next,
-   WIP committed/noted), then reset per `contextManagement.taskBoundary` (default
-   `compact`); mid-task compact only, never clear; never reset without the
-   checkpoint.** Same tooling as CI; logging/observability identical to runtime.
+   WIP committed/noted), then compact (the fixed task-boundary rule); mid-task
+   compact only, never clear; never reset without the checkpoint.** Same tooling as
+   CI; logging/observability identical to runtime.
 
 9. **Verification** (`verification`). Execute `testing-plan.md`: bring up the declared
    environment, run each planned activity, and tick it **only** once it has run and its
@@ -164,23 +165,24 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
    cannot run stays unticked: record why, then replan (with the reason) or escalate; an
    environment that will not come up escalates rather than passing the gate.
 
-10. **Review** (`needs-review`). Run up to `reviews.selfReviewCount` self-reviews and
-   `reviews.criticReviewCount` critic reviews (configured critics, e.g. a different
+10. **Review** (`needs-review`). Read the operator's review-round policy with
+   `the-loop critic policy` (`selfReviewCount`, `criticReviewCount`, the stop
+   conditions; defaults 3/3 when unset or when the CLI is not installed), then run up
+   to that many self-reviews and critic reviews (configured critics, e.g. a different
    harness/model) BEFORE escalating to the human reviewer. Then run the **security
-   review gate** (`security.review`): the built-in security-review skill when
-   available, else the-loop's checklist (`reference/security.md`); a work item at
-   risk tier ≥ `security.review.humanSignOffMinTier` waits for a named human security
-   sign-off. Record every review as a PR/ticket comment and in the execution log's
-   review table (the security round in its Security review section). Notify per the
-   `notifications.events` filters (harness-config.yaml) when a human action is pending —
-   the event's roles name who it concerns; delivery is the configured channel's
-   (`channels.slack`), not a per-person lookup.
+   review gate**: the built-in security-review skill when available, else the-loop's
+   checklist (`reference/security.md`); a work item at risk tier 4 or above waits for
+   a named human security sign-off. Record every review as a PR/ticket comment and in
+   the execution log's
+   review table (the security round in its Security review section). A pending human
+   action is notified by the graph's `notify` hook on the event bus; delivery is the
+   operator's channel (`channels.slack` in the CLI config), not a per-person lookup.
 
 11. **Complete** (`complete`). Present validated evidence that the acceptance criteria
    are met — **summarised from the verification results** rather than re-derived — on the
    PR; record it in the execution log.
    **Before requesting human review, post/update the R10 reviewer briefing in the PR**
-   (required gate item — `userInteraction.prSummary.required`), produced from
+   (required gate item, fixed), produced from
    `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md`: a **condensed,
    prioritized** summary saying
    **where to focus first**, **mermaid** diagram(s) of the change, and the
@@ -188,7 +190,7 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
    enough context to decide, and **educate the user on the low-level design decisions —
    this is mandatory, not optional.**
 
-12. **Capture learnings.** Add to `<workflow.learningsDir>/learnings.md` (+ a
+12. **Capture learnings.** Add to `docs/learnings/learnings.md` (+ a
    `learning-<nnn>.md` beside it) for any user/system feedback worth remembering. Log
    durable decisions under `docs/decisions/`.
 

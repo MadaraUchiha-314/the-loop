@@ -857,7 +857,7 @@ work item without commenting on it. Three things bound that:
    is still required and [`spawnOnUnmatched`](/config/cli/routing-options#spawnonunmatched)
    still governs — and applying a label needs write access to the repository.
 2. **The diff is loud.** A pull request touching `.the-loop/portable/` is a configuration
-   change; review it like one, the way `reviews.critics[]` is reviewed as executable
+   change; review it like one, the way the operator's `critics[]` is reviewed as executable
    config.
 3. **Choose the repository accordingly.** Track state where only you can push. A
    repository that accepts third-party pull requests means arming records are proposable

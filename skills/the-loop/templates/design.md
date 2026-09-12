@@ -63,7 +63,7 @@ Failure modes and how they are surfaced (observability identical at dev-time/run
 ## Security design
 
 > How each trust boundary from the requirements' **Security considerations** is
-> enforced — mechanisms, not intentions (`security.design.required`, default true).
+> enforced — mechanisms, not intentions (always required).
 > A boundary left unenforced fails this phase's gate. See `reference/security.md`.
 
 - **AuthN/AuthZ:** who is identified how; where authorization is checked.

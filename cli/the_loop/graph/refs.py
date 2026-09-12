@@ -38,9 +38,10 @@ _ISSUE_ID_RE = re.compile(r"^issue-(\d+)$")
 def derive_ref(work_item_id: str, origin_repo: str, host: str = "") -> str:
     """``issue-194`` + ``octo/repo`` → ``github:octo/repo#194``; ``""`` if it cannot.
 
-    ``origin_repo`` is ``<owner>/<repo>`` as :func:`harness_config.origin_repo`
-    produces it — empty when the project is not GitHub-ticketed or has not said,
-    in which case there is nothing to derive from and nothing is derived.
+    ``origin_repo`` is ``<owner>/<repo>`` as :func:`the_loop.ghhost.origin_repo`
+    produces it from the checkout's ``origin`` remote, or as the daemon passes
+    it from the work item's ref — empty when neither knows, in which case there
+    is nothing to derive from and nothing is derived.
 
     ``host`` is the GitHub the ref lives on (issue-311) — the resolver's answer
     (:func:`the_loop.ghhost.github_host`), carried as its own argument so the

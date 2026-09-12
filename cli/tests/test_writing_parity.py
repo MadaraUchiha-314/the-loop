@@ -2,7 +2,8 @@
 
 the-loop's artifacts are read by a human who has to approve them, and nothing in the
 harness used to say how they should read. issue-165 added a writing contract: a bundled
-``the-loop:writing`` skill, the ``userInteraction.writingStyle`` policy it reads, and a
+``the-loop:writing`` skill (the policy it carried in the harness config left with
+issue-352 — the contract is the skill itself) and a
 pointer to that skill in every template producing a human-read artifact.
 
 **There are no length budgets, deliberately.** The first draft of this work item shipped
@@ -18,7 +19,7 @@ cost. So the mechanical parts of the contract are asserted here:
 ======  =========================================================  =========================
 P1      the writing skill exists and its front-matter parses       the skill is renamed or dropped
 P2      every human-read template points at the writing skill      a template ships with no contract
-P3      the pointer names the skill the schema declares            the two drift apart
+P3      every pointer names the one bundled skill                  the two drift apart
 P4      no P0 writing tell appears in shipped prose                a chatbot tic reaches a user-facing doc
 ======  =========================================================  =========================
 
@@ -37,10 +38,9 @@ Pure filesystem reads: no network, no subprocess, no fixtures.
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import List
 
 import pytest
 
@@ -49,7 +49,8 @@ SKILLS = REPO_ROOT / "skills"
 WRITING_SKILL = SKILLS / "writing" / "SKILL.md"
 WRITING_TELLS = SKILLS / "writing" / "reference" / "tells.md"
 TEMPLATES = SKILLS / "the-loop" / "templates"
-HARNESS_SCHEMA = REPO_ROOT / ".the-loop" / "harness-config.schema.json"
+#: The one writing skill the-loop ships (issue-352: no longer a harness-config default).
+WRITING_SKILL_NAME = "the-loop:writing"
 
 pytestmark = pytest.mark.skipif(
     not SKILLS.is_dir(),
@@ -117,16 +118,9 @@ _EMOJI_HEADING = re.compile(
 _FRONT_MATTER = re.compile(r"\A---\n.*?\n---\n", re.DOTALL)
 
 
-def _writing_style_schema() -> Dict[str, Any]:
-    schema = json.loads(HARNESS_SCHEMA.read_text(encoding="utf-8"))
-    return schema["properties"]["userInteraction"]["properties"]["writingStyle"][
-        "properties"
-    ]
-
-
 def _schema_skill_name() -> str:
-    """The skill the pointers must name — read, not hardcoded, so a rename is one edit."""
-    return str(_writing_style_schema()["skill"]["default"])
+    """The skill the pointers must name — one constant, so a rename is one edit."""
+    return WRITING_SKILL_NAME
 
 
 #: Doc trees P4 does not scan.
@@ -169,7 +163,7 @@ def test_p1_writing_skill_exists_and_parses() -> None:
     block = head.group(0)
     assert re.search(r"^name:\s*writing\s*$", block, re.MULTILINE), (
         "the skill's `name` must be `writing` — it is namespaced by the plugin, so it "
-        "resolves as `the-loop:writing`, which is what `writingStyle.skill` names"
+        "resolves as `the-loop:writing`, which is what the template pointers name"
     )
     description = re.search(r"^description:\s*(\S.*)$", block, re.MULTILINE)
     assert description, (
@@ -197,31 +191,15 @@ def test_p2_human_read_template_points_at_the_skill(filename: str) -> None:
 
 
 def test_p3_pointers_name_the_configured_skill() -> None:
-    """The templates and the schema are two statements of one name (R5.1)."""
+    """Every template names the one bundled skill (R5.1)."""
     expected = _schema_skill_name()
     for filename in HUMAN_READ_TEMPLATES:
         pointer = _POINTER.search((TEMPLATES / filename).read_text(encoding="utf-8"))
         assert pointer, f"{filename}: no pointer (P2 covers this)"
         assert pointer.group(1) == expected, (
-            f"{filename} names skill={pointer.group(1)!r} but writingStyle.skill "
-            f"defaults to {expected!r}"
+            f"{filename} names skill={pointer.group(1)!r} but the bundled skill "
+            f"is {expected!r}"
         )
-
-
-def test_p3_the_schema_declares_no_length_limits() -> None:
-    """Budgets were rejected on PR #168; a re-added cap must be a deliberate decision.
-
-    Not a style preference — the reason is recorded in decision-061: scope is not known
-    in advance, so a fixed number is wrong for half the work items. If a future work item
-    wants length limits back, it changes this test and says why, rather than reintroducing
-    them by accident alongside an unrelated schema edit.
-    """
-    style = _writing_style_schema()
-    assert "budgets" not in style, (
-        "userInteraction.writingStyle.budgets is back. Length limits were removed "
-        "deliberately (decision-061) — re-adding them is a decision to record, not a "
-        "detail to slip in."
-    )
 
 
 # ---------------------------------------------------------------------------- P4

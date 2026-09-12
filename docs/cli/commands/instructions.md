@@ -5,15 +5,18 @@ Which of the custom instruction docs your project registers actually resolve —
 `onMissing: error` is a setting that errors.
 
 ```bash
-the-loop instructions [--root .] [--format table|markdown|json]
+the-loop instructions [--root .] [--doc PATH | --doc '{"path": …, "notes": …}']...
+                      [--on-missing warn|error|ignore] [--format table|markdown|json]
 ```
 
 ## What it reads
 
-`customInstructions.docs` in the repository's
-[harness config](/config/harness-config) — the ordered list of your own rule and
-guideline files the loop reads before working an item
-([instructions reference](/operating-model/reference/instructions)):
+The docs you hand it. `customInstructions.docs` in the repository's
+[harness config](/config/harness-config) is the ordered list of your own rule and
+guideline files the **agent** reads before working an item
+([instructions reference](/operating-model/reference/instructions)); the CLI reads no
+harness config ([issue #352](https://github.com/MadaraUchiha-314/the-loop/issues/352)),
+so the agent — or you — passes each entry as `--doc`, and the policy as `--on-missing`:
 
 ```yaml
 customInstructions:
@@ -25,9 +28,17 @@ customInstructions:
   onMissing: warn                             # warn | error | ignore
 ```
 
-It reports each entry in configured order — order matters, because later docs win on
+```bash
+the-loop instructions \
+  --doc '{"path": "docs/team-conventions.md", "notes": "House TS style, naming, PR etiquette."}' \
+  --doc /home/me/company-wide-rules.md \
+  --on-missing warn
+```
+
+It reports each entry in the order given — order matters, because later docs win on
 conflict — with its configured path, the absolute path it resolved to, your `notes`, and
-its state.
+its state. A `--doc` is a path, or a JSON object carrying `path` and `notes`; a value
+that starts like JSON and is not is refused (exit 2) rather than read as a path.
 
 ## States
 
@@ -45,7 +56,7 @@ is right but the target is not a doc" send you to different places.
 
 Everything that is not `present` counts as unresolved — `invalid` included, because a
 registration the-loop could not understand is guidance that is not reaching the agent.
-What happens then is `customInstructions.onMissing`:
+What happens then is `--on-missing` (the harness config's `customInstructions.onMissing`, carried over by the caller):
 
 | `onMissing` | Unresolved docs | Exit |
 |-------------|-----------------|------|
@@ -61,16 +72,16 @@ to archive:
 the-loop instructions --format markdown >> pr-briefing.md
 ```
 
-A repository that registers **no** docs reports an empty list and exits 0 — configuring
-nothing is not an error. So does a repository whose harness config is absent or
-half-edited: reading it is best-effort by contract, and a broken YAML file should fail
-your build for its own reasons, not this one.
+A run with **no** `--doc` reports an empty list and exits 0 — registering nothing is not
+an error.
 
 ## Flags
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| `--root` | `.` | Repository root to read the harness config from. |
+| `--root` | `.` | Repository root that relative paths resolve against. |
+| `--doc` | — | A registered doc (repeatable): a path, or `{"path": …, "notes": …}`. |
+| `--on-missing` | `warn` | `warn`, `error` or `ignore` — the policy that grades the report. |
 | `--format` | `table` | `table`, `markdown` or `json`. |
 
 ## What it does *not* print
@@ -93,5 +104,5 @@ obligation nothing can observe is an obligation that drifts.
 
 - [instructions reference](/operating-model/reference/instructions) — when the docs are
   read, and what they can and cannot override.
-- [harness config](/config/harness-config) — the `customInstructions` block.
+- [harness config](/config/harness-config) — the `customInstructions` block the agent reads and passes here.
 - [`scenarios`](/cli/commands/scenarios) — the same shape, for test coverage.

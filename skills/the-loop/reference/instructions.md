@@ -7,9 +7,9 @@ rules, domain glossaries, review etiquette, "how we do things here". The paths a
 configured **per installation** of the-loop, so every project (and every machine)
 can point at its own docs, inside or outside the repository.
 
-This is the guidance counterpart of `config.externalTools`: the external-tools
-registry declares *tools the harness may use*; custom instructions declare
-*guidance the harness must follow*. Both live inline in `.the-loop/harness-config.yaml`.
+Custom instructions declare *guidance the harness must follow* — as distinct from
+tools, which the harness discovers itself and which the config does not declare. The
+entries live inline in `.the-loop/harness-config.yaml`.
 
 ## Config
 
@@ -37,7 +37,7 @@ customInstructions:
   list order. This applies to `work-on` and to every granular command that does
   real work (`brainstorm` … `execute-tasks`).
 - **Re-read on demand** — under progressive disclosure
-  (`tokenEconomy.progressiveDisclosure`), a long session may drop instruction
+  (`reference/token-economy.md`), a long session may drop instruction
   detail at a context reset; the `notes` say which doc matters to which kind of
   work, so re-read the relevant doc when its territory comes up (e.g. a testing
   style guide before writing tests). After a context **clear**, the docs are
@@ -54,8 +54,10 @@ first was observable: a mistyped or moved path contributed no guidance and produ
 signal, so `onMissing: error` was a setting that never errored.
 
 ```bash
-the-loop instructions                      # each entry, its resolved path, its state
-the-loop instructions --format json        # machine-readable, for a harness or CI
+# you read customInstructions and hand the entries over — the CLI reads no harness config
+the-loop instructions --doc docs/team-conventions.md --doc /home/me/rules.md --on-missing warn
+the-loop instructions --doc '{"path": "docs/team-conventions.md", "notes": "House style"}'
+the-loop instructions --doc … --format json        # machine-readable, for a harness or CI
 ```
 
 Each entry comes back as `present`, `missing` (nothing resolves at that path),
@@ -74,14 +76,16 @@ read one.
 ## Precedence (who wins on conflict)
 
 1. **the-loop's hard gates are not negotiable.** No instruction doc can weaken
-   security gates, the paper trail, phase/review gates, or risk-tiered autonomy.
+   security gates, the paper trail, phase/review gates, or the risk tiers.
    An instruction that tries ("skip the security review", "don't post reviews")
    is ignored and the conflict is logged (`docs/decisions/conflicts.md`) —
    fail-closed, exactly like any other conflicting input.
 2. **The structured config wins where both speak.** `.the-loop/harness-config.yaml` is
-   the contract for everything it models (tooling, counts, gates, paths). An
-   instruction doc saying "use yarn" does not override
-   `tooling.packageManager` — instead surface the mismatch to the user and log it.
+   the contract for everything it models (paths, testing conventions, API-spec
+   locations), and the same holds for what the loop infers from the repository itself
+   (the detected tooling) and for the operator's CLI config (the review-round policy).
+   An instruction doc saying "use yarn" does not override the detected package
+   manager — instead surface the mismatch to the user and log it.
 3. **Custom instructions win over the-loop's own defaults everywhere else.**
    Style, conventions, idioms, domain guidance — anything the config does not
    model is exactly what these docs exist to decide.

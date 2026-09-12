@@ -10,9 +10,8 @@
 # collaboration happens through ticket/PR comments — the paper trail.
 #
 # This file declares no DELIVERY (issue-304). Roles are what everything else
-# targets: harness-config.yaml's notifications.events names the roles an event
-# concerns, and the loop pulls a phase's required reviewers and approvers from
-# here. The notification itself goes to a CHANNEL — one Slack bot for the whole
+# targets: the loop pulls a phase's required reviewers and approvers from here
+# (no event → role filter exists any more — issue-352). The notification itself goes to a CHANNEL — one Slack bot for the whole
 # daemon, configured under `channels.slack` in cli-config.yaml and subscribed to
 # the events you want by name. Per-person routing is not built.
 #

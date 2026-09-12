@@ -10,11 +10,11 @@ PR.
   ticketing system** (GitHub issue / Jira), not resolved silently in files.
 - **PR reviews** → happen **on the PR** as comments and replies.
 - **Self & critic reviews** → also as PR/ticket comments.
-- **Notifications/escalations** when a human action is pending → gated by the
-  `notifications.events` filters in `harness-config.yaml` (event → roles) and delivered
-  to a **channel**: the Slack bot under the CLI config's `channels.slack`, which posts
-  every event its own `events` allow-list subscribes to (issue-245). The roles name who
-  the event concerns and are printed in the message; they are not a delivery address —
+- **Notifications/escalations** when a human action is pending → published by the graph's
+  `notify` hook on the event bus and delivered to a **channel**: the Slack bot under the
+  CLI config's `channels.slack`, which posts every event its `subscribe` list names
+  (issue-245, issue-309). No event → role filter lives in the harness config any more
+  (issue-352); a role a node names rides along as detail and is not a delivery address —
   per-person routing is not built (issue-304). Notification only; the decision itself
   still lands as a comment.
 
@@ -257,8 +257,8 @@ recorded as a ticket comment (paper trail). See `reference/design-artifacts.md`.
 ## User-interaction principles (reviewing AI-authored work)
 
 The human often did not write the code and their familiarity with the codebase keeps
-dropping, so how the-loop communicates is a first-class concern. Driven by
-`config.userInteraction`.
+dropping, so how the-loop communicates is a first-class concern. These rules are
+fixed — the `userInteraction` block left the harness config in issue-352.
 
 - **Give enough context to decide.** Whenever user input is requested (a planning
   question, a design opinion, a review), include enough context that the user can make
@@ -268,17 +268,16 @@ dropping, so how the-loop communicates is a first-class concern. Driven by
   is not realistic. Lead with the highest-priority items to scrutinize. This briefing is
   produced from the-loop's internal
   `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md` and **posted/updated in the PR
-  BEFORE human review is requested** — a required item of the ready-to-ship gate
-  (`userInteraction.prSummary.required`), so it triggers on every PR (see
-  `workflow.md`).
+  BEFORE human review is requested** — a required item of the ready-to-ship gate, so
+  it triggers on every PR (see `workflow.md`).
 - **RULE: all diagrams are mermaid.** PR summaries, design docs and educational snippets
-  use mermaid diagrams to explain low-level details (`diagramFormat: mermaid`).
+  use mermaid diagrams to explain low-level details.
 - **Document insights & decisions in the PR description.** Capture the insights from
   taking the spec to implementation and every low-level decision the harness had to make,
   so the user sees the reasoning, not just the diff.
 - **RULE: educate the user (mandatory, not optional).** As the user's familiarity with
   the code drops, use every opportunity to teach them the low-level design decisions.
-  This is intentional and required (`educateUser: true`), not a nicety. **Enforcement:**
+  This is intentional and required, not a nicety. **Enforcement:**
   it is not left to chance — the reviewer briefing is a required item of the ready-to-ship
   gate (`workflow.md`), so "request human review" cannot happen without the education
   step having fired.
@@ -286,7 +285,6 @@ dropping, so how the-loop communicates is a first-class concern. Driven by
 ## Working with other tools (MCP / CLIs / plugins)
 
 the-loop is allowed to freely interact with the MCP tools, skills and plugins available
-in the harness. The user declares which ones to be aware of in `config.externalTools`
-(the `externalTools.tools` list + `notes` in `.the-loop/config.yaml`). Examples:
-Jira via MCP, GitHub via `gh`, plugins such as ponytail or superpowers. Always check
-this registry before assuming a capability is or isn't available.
+in the harness — Jira via MCP, GitHub via `gh`, plugins such as superpowers. Nothing
+declares them in the config: discover what the harness offers (its MCP servers,
+plugins, skills and CLIs) and check before assuming a capability is or isn't available.

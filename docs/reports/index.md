@@ -11,3 +11,6 @@ dives, surveys, and reference write-ups produced along the way.
 - [Status labels & dashboards](/reports/labels-and-dashboards) — the label taxonomy
   the-loop defines, why the labels sit unused today, and how they feed a GitHub Projects
   kanban without a bespoke dashboard.
+- [Is `harness-config.yaml` required?](/reports/harness-config-audit) — every reader of
+  the per-repository harness config, how each key is enforced, why the file cannot be
+  removed, and which keys belong in the CLI config or nowhere (issue-352).

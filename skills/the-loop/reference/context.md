@@ -63,28 +63,27 @@ names its requirements, so late tasks rarely need the full `requirements.md` re-
 
 ## Where each technique applies
 
-Configured under `contextManagement` in `.the-loop/harness-config.yaml`; defaults below.
+These are fixed rules of the loop, not configuration (the `contextManagement` block
+left `.the-loop/harness-config.yaml` in issue-352).
 
-- **Phase boundaries → clear** (`contextManagement.phaseBoundary`, default `clear`).
-  The big one is **tasks-breakdown → implementation**: once the spec chain is locked,
-  the drafting/iteration history is pure noise for implementation — the approved files
-  *are* the contract. Start implementation on a fresh window that reads
-  `requirements.md`, `design.md`, `tasks.md` and the execution log from disk. This is
-  the same move Claude Code's plan mode makes (plan in one context, execute from the
-  approved plan, not the deliberation), and Cursor's "new chat per task" guidance.
-  The earlier spec→spec transitions (requirements → design → tasks) benefit too: each
-  artifact is derived from the locked file, not from the chat that produced it.
-- **Task boundaries → compact** (`contextManagement.taskBoundary`, default `compact`).
-  After each completed task in the DAG: checkpoint, then compact away the finished
-  task's exploration, diffs and test output while keeping cross-task working knowledge
-  (codebase layout, conventions discovered, the design's shape). Set it to `clear` for
-  long DAGs or low-context harnesses — the execution log makes that affordable — or
-  `off` to defer to mid-task compaction only. When compacting with a steerable harness,
-  direct it: keep the current design constraints and discovered conventions; drop
-  resolved errors and superseded attempts.
-- **Mid-task → compact only** (`contextManagement.midTask`, default `compact`). If the
-  window nears its limit inside a task, write an interim checkpoint (log entry with
-  current state + next step), then compact. **Never clear mid-task.**
+- **Phase boundaries → clear.** The big one is **tasks-breakdown → implementation**:
+  once the spec chain is locked, the drafting/iteration history is pure noise for
+  implementation — the approved files *are* the contract. Start implementation on a
+  fresh window that reads `requirements.md`, `design.md`, `tasks.md` and the execution
+  log from disk. This is the same move Claude Code's plan mode makes (plan in one
+  context, execute from the approved plan, not the deliberation), and Cursor's "new
+  chat per task" guidance. The earlier spec→spec transitions (requirements → design →
+  tasks) benefit too: each artifact is derived from the locked file, not from the chat
+  that produced it.
+- **Task boundaries → compact.** After each completed task in the DAG: checkpoint,
+  then compact away the finished task's exploration, diffs and test output while
+  keeping cross-task working knowledge (codebase layout, conventions discovered, the
+  design's shape). When compacting with a steerable harness, direct it: keep the
+  current design constraints and discovered conventions; drop resolved errors and
+  superseded attempts.
+- **Mid-task → compact only.** If the window nears its limit inside a task, write an
+  interim checkpoint (log entry with current state + next step), then compact. **Never
+  clear mid-task.**
 - **High-volume work → isolate it instead.** The cheapest context management is not
   ingesting noise in the first place: run wide exploration, log digging and verbose
   test analysis in **subagents** (Claude Code `Task` tool) that return conclusions, not

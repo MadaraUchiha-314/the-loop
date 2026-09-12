@@ -299,9 +299,7 @@ def test_a_spawn_reads_context_before_render_and_enters_after(tmp_path):
     deliver_at = link.seq.index("deliver")
     spawn_at = next(i for i, s in enumerate(link.seq) if isinstance(s, tuple))
     assert deliver_at < spawn_at  # writes only after the spawn succeeded
-    # ...with one write deliberately BEFORE it (issue-201): the harness config a
-    # fresh clone lacks must exist before the harness that reads it starts.
-    assert link.seq.index("adopt") < link.seq.index("context") < deliver_at
+    assert link.seq.index("context") < deliver_at
     verb, bound_id, runner = link.seq[spawn_at]
     assert verb == "spawn" and runner == "tmux"
     # The dispatcher pre-assigns the session id (a uuid4, issue-156): the id

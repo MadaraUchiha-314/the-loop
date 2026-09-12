@@ -55,7 +55,7 @@ __all__ = [
 #: Bumped by issue-109, then issue-128, then issue-142, then issue-245, then
 #: issue-304, then issue-309, then issue-348. A config below this needs
 #: `/the-loop:upgrade-the-loop`.
-CURRENT_CONFIG_VERSION = "0.8.0"
+CURRENT_CONFIG_VERSION = "0.9.0"
 
 _UPGRADE = "/the-loop:upgrade-the-loop"
 
@@ -128,6 +128,16 @@ _REPOS_KEY = "repos"
 _REPOS_REPLACEMENT = "repositories"
 _KICKOFF_SITE: Tuple[str, ...] = ("channels", "slack", "kickoff")
 _KICKOFF_KEY = "repo"
+
+# issue-352 ends the CLI's reading of any repository's harness config (decision-123).
+# `routing.graph.repoHooks` was the switch that refused the hooks a REPOSITORY declared;
+# the declaration is the operator's own now (`routing.graph.hooks`), so a switch for
+# refusing it is a switch for not writing it. The critic roster moved the same way, from
+# the harness config's `reviews.critics[]` to the top-level `critics[]` here — nothing to
+# migrate inside this file, but the note says where it went.
+_REPO_HOOKS_SITE: Tuple[str, ...] = ("routing", "graph")
+_REPO_HOOKS_KEY = "repoHooks"
+_REPO_HOOKS_REPLACEMENT = "routing.graph.hooks"
 
 
 def _github_sources(config: Mapping[str, Any]) -> List[Dict[str, Any]]:
@@ -202,6 +212,8 @@ def needs_migration(config: Mapping[str, Any]) -> bool:
     if _SLACK_EVENTS_KEY in slack or _SLACK_USERS_KEY in slack:
         return True
     if any(_REPOS_KEY in source for source in _github_sources(config)):
+        return True
+    if (_dig(config, _REPO_HOOKS_SITE) or {}).get(_REPO_HOOKS_KEY) is not None:
         return True
     return any(
         (section or {}).get("ghBinary") is not None
@@ -483,6 +495,7 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
 
     _migrate_slack_channel(data, report)
     _promote_repositories(data, report)
+    _retire_repo_hooks(data, report)
 
     if _parts(str(data.get("version", "0"))) < _parts(CURRENT_CONFIG_VERSION):
         report.moves.append(
@@ -492,6 +505,32 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
         report.changed = True
 
     return report
+
+
+def _retire_repo_hooks(data: Dict[str, Any], report: MigrationReport) -> None:
+    """Drop ``routing.graph.repoHooks`` and say where hooks and critics live now (issue-352).
+
+    Nothing is converted: the key refused what a *repository* declared, and the
+    CLI no longer reads any repository's declaration. An operator who had set it
+    to ``false`` gets the same outcome by declaring no ``routing.graph.hooks``.
+    """
+    graph = _dig(data, _REPO_HOOKS_SITE)
+    if graph is None or _REPO_HOOKS_KEY not in graph:
+        return
+    value = graph.pop(_REPO_HOOKS_KEY)
+    report.changed = True
+    report.moves.append(
+        f"{'.'.join(_REPO_HOOKS_SITE)}.{_REPO_HOOKS_KEY} ({value!r}) removed — the CLI "
+        "reads no repository's harness config any more (issue-352), so there is "
+        "nothing of a repository's to refuse"
+    )
+    report.notes.append(
+        "graph hooks and critics are declared in THIS file now: hooks under "
+        f"`{_REPO_HOOKS_REPLACEMENT}` (modules + attach, the shape the harness "
+        "config's `graph.hooks` had), critics under the top-level `critics[]` (the "
+        "shape `reviews.critics[]` had). Copy the entries you want across from the "
+        "repositories you operate; what you do not copy does not run"
+    )
 
 
 def _migrate_slack_channel(data: Dict[str, Any], report: MigrationReport) -> None:

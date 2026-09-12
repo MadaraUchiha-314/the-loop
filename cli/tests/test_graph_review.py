@@ -639,39 +639,19 @@ def test_the_prompt_tells_a_review_session_to_change_no_code():
 
 
 # -- the guest posture -------------------------------------------------------------
+# A review installs nothing in the repository it reviews. Until issue-352 that was
+# an adoption carve-out (the daemon wrote the-loop's default harness config into an
+# unconfigured checkout, never for a guest); the CLI writes no harness config at all
+# any more, so the posture is now the loop's `guestLoop` flag alone.
 
 
-def test_a_review_never_adopts_its_host_repository(tmp_path):
-    """R7.1 — a guest does not install itself; the ad-hoc contrast proves the
-    carve-out is the loop's, not the call site's."""
-    from the_loop.graph.model import PDLC_ADHOC_LOOP
-    from the_loop.graphlink import GraphLink, GraphLinkConfig
-    from the_loop.sessions import WorkItemRef
+def test_a_review_is_a_guest_loop():
+    """R7.1 — the spec tree stays out of git and the plan posts to the thread."""
+    from pathlib import Path
 
-    link = GraphLink(GraphLinkConfig(), control_store=ControlStore(tmp_path / "p"))
-    ref = WorkItemRef.parse(REF)
-    guest = tmp_path / "guest"
-    guest.mkdir()
-    link._write_default(guest, ref, PDLC_REVIEW_LOOP)
-    assert not (guest / ".the-loop" / "harness-config.yaml").exists()
+    from the_loop.graph.bootstrap import build_runtime
 
-    own = tmp_path / "own"
-    own.mkdir()
-    link._write_default(own, ref, PDLC_ADHOC_LOOP)
-    assert (own / ".the-loop" / "harness-config.yaml").exists()
-
-
-def test_the_core_write_verbs_do_not_adopt_for_a_review(repo):
-    """R7.1 on the second adoption seam — `the-loop graph complete` and its
-    siblings pass adopt=True, and a recorded review loop must gate it."""
-    from the_loop.core.graphs import _runtime
-
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
-    state.loop = PDLC_REVIEW_LOOP
-    state.save(_spec_dir(repo))
-    rt = _runtime(str(repo), work_item=WORK_ITEM, adopt=True)
-    assert rt.graph.name == PDLC_REVIEW_LOOP
-    assert not (repo / ".the-loop" / "harness-config.yaml").exists()
+    assert build_runtime(Path("."), loop=PDLC_REVIEW_LOOP).config["guestLoop"] is True
 
 
 # -- PR-first targeting (integration, through the real dispatcher) ------------------

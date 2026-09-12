@@ -12,7 +12,7 @@ including anything posted **before** this run was started: comments made while a
 item is unstarted (or its session paused) are refused on purpose and were never
 delivered to you as events, so the thread is the only place they exist.
 
-Follow the-loop's normal flow and autonomy gates — the process is defined by
+Follow the-loop's normal flow and risk-tier gates — the process is defined by
 the-loop's own graph, and the block below states where this item stands in it —
 escalating to a human only when a decision is required.
 

@@ -6,9 +6,9 @@ configured integration-test globs, extracts those scenarios and presents them as
 (default), a Markdown table, or JSON — so a coding-agent harness can query "what
 scenarios are tested?" without running anything.
 
-Globs come from ``--glob`` (repeatable) or, failing that, ``testing.integrationTestGlobs``
-in the repository's harness config (read through :mod:`the_loop.harness_config`, which
-also honours the pre-rename name — issue-82), else a built-in default set.
+Globs come from ``--glob`` (repeatable), else a built-in default set. The CLI reads no
+harness config (issue-352): a repository's ``testing.integrationTestGlobs`` is the
+agent's to read and pass here as ``--glob``.
 """
 
 from __future__ import annotations
@@ -104,7 +104,7 @@ class ScenariosCommand(Command):
             action="append",
             dest="globs",
             metavar="PATTERN",
-            help="Glob for integration-test files (repeatable). Overrides config/defaults.",
+            help="Glob for integration-test files (repeatable). Default: the built-in set.",
         )
         parser.add_argument(
             "--format",

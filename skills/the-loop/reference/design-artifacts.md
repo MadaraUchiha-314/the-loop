@@ -82,7 +82,7 @@ flowchart LR
    in a browser / view the Figma frame), not the source. Capture a screenshot.
 3. **Designer review (paper trail).** The **designer** persona (`collaborators`, role
    `designer`) reviews. Every opinion/decision lands as a **ticket comment** — same
-   paper-trail rule as any human decision. The `userInteraction` rules apply: give enough
+   paper-trail rule as any human decision. The user-interaction rules apply: give enough
    context to decide, educate on the low-level design choices.
 4. **Iterate.** Fold feedback back into the artifact (regenerate the HTML / edit the
    Figma). Changes are **edits to the checked-in artifact, not new copies** — one

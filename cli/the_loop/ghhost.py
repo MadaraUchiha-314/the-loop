@@ -46,7 +46,14 @@ from .sessions import DEFAULT_GITHUB_HOST, host_from_url, is_github_host
 
 logger = logging.getLogger("the-loop.ghhost")
 
-__all__ = ["api_base_for", "github_host", "host_from_remote", "host_of_api_base"]
+__all__ = [
+    "api_base_for",
+    "github_host",
+    "host_from_remote",
+    "host_of_api_base",
+    "origin_repo",
+    "repo_slug",
+]
 
 #: The public API's base, as the shipped config spells it. Any other base is
 #: taken to name an enterprise host.
@@ -116,6 +123,38 @@ def _origin_remote(root: Path) -> str:
         logger.debug("could not read the origin remote of %s: %s", root, exc)
         return ""
     return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
+def repo_slug(remote_url: str) -> str:
+    """``owner/repo`` (lowercased) from any git remote URL form.
+
+    Handles the shapes a real checkout carries — `https://host/o/r.git`,
+    `git@host:o/r.git`, `ssh://git@host/o/r`, and a proxied `http://host/git/o/r`
+    — by taking the last two path components, because that is the part every
+    form agrees on. Anything shorter yields ``""``, which never matches.
+    """
+    trimmed = remote_url.strip().rstrip("/")
+    if trimmed.endswith(".git"):
+        trimmed = trimmed[: -len(".git")]
+    parts = [p for p in trimmed.replace(":", "/").split("/") if p]
+    if len(parts) < 2:
+        return ""
+    return "/".join(parts[-2:]).lower()
+
+
+def origin_repo(
+    root: Path, remote_reader: Optional[Callable[[Path], str]] = None
+) -> str:
+    """``owner/repo`` of the checkout at ``root``, from its ``origin`` remote, or ``""``.
+
+    The **origin repository** of a work item worked in-session (issue-352): the CLI
+    no longer reads ``ticketing.github`` from a harness config, so the checkout's own
+    remote is the one source it has for "which repository is this". A directory that is
+    not a checkout, has no origin, or whose remote has no ``owner/repo`` tail reads as
+    unknown — callers fail closed on ``""`` rather than guess.
+    """
+    reader = remote_reader or _origin_remote
+    return repo_slug(reader(root))
 
 
 def _github_section(cli_config: Optional[Mapping[str, Any]]) -> Mapping[str, Any]:

@@ -225,14 +225,20 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         globs they were collected from."""
         return core_repo.scenarios(repo, globs=globs)
 
-    def repo_instructions(repo: str) -> Dict[str, Any]:
-        """A repo's registered custom-instruction docs, their resolution state
-        and the onMissing policy that grades them."""
-        return core_repo.instructions(repo)
+    def repo_instructions(
+        repo: str, docs: Optional[List[str]] = None, on_missing: str = "warn"
+    ) -> Dict[str, Any]:
+        """Whether the instruction docs a repo's harness config registers
+        (pass them as `docs`) resolve, graded by the onMissing policy."""
+        return core_repo.instructions(repo, docs=docs, on_missing=on_missing)
 
     def repo_critics(repo: str) -> List[Dict[str, Any]]:
-        """A repo's configured critic harnesses."""
+        """The critic harnesses the CLI config declares (critics[])."""
         return core_repo.critics(repo)
+
+    def repo_review_policy(repo: str = "") -> Dict[str, Any]:
+        """The review-round policy (the CLI config's reviews block), defaulted."""
+        return core_repo.review_policy(repo)
 
     def repo_critic_run(
         repo: str,
@@ -279,6 +285,7 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         repo_scenarios,
         repo_instructions,
         repo_critics,
+        repo_review_policy,
         repo_critic_run,
     ):
         server.add_tool(fn, name=fn.__name__)

@@ -15,8 +15,11 @@ is how that happens without either harness knowing about the other.
 
 ## Where critics come from
 
-`reviews.critics[]` in the repository's
-[harness config](/config/harness-config#reviews-critics-is-executable-config). Each entry is
+`critics[]` in **your** [CLI config](/config/cli/critics-options) — not any repository's
+harness config, since [issue #352](https://github.com/MadaraUchiha-314/the-loop/issues/352):
+a critic is a harness and a model installed on the machine that runs the round. The same
+file says how many rounds to run — its [`reviews`](/config/cli/critics-options#review-rounds)
+block, printed by [`policy`](#policy) — and, with `critics[]`, with what. Each entry is
 either:
 
 - a **`harness`** the-loop has an adapter for — `claude`, `cursor` — where the invocation is
@@ -27,9 +30,9 @@ either:
 `env` overlays the inherited environment, and `outputFormat`, `timeoutSeconds`, `cwd` and
 `enabled` complete the entry.
 
-::: danger This is executable config in a committed file
-A critic entry becomes an argv the CLI spawns. Review one the way you would review code, and
-**never** put a secret in `env` — the file is committed.
+::: danger This is executable config
+A critic entry becomes an argv the CLI spawns, with your credentials in scope. Review one
+the way you would review code, and **never** put a secret in `env`.
 :::
 
 ## `list`
@@ -38,8 +41,30 @@ Every configured critic with its executable and whether that executable is avail
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| `--root` | `.` | Project root. |
+| `--root` | `.` | Project root — the default working directory for a round. |
 | `--format` | `table` | `table` or `json`. |
+
+## `policy`
+
+The review-round policy the skill follows — the CLI config's `reviews` block with every
+key defaulted, so the output is the same shape whether or not the block exists.
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--root` | `.` | Project root (kept for the route's shape; the policy is the operator's, not the repository's). |
+| `--format` | `text` | `text` (one `key: value` per line) or `json`. |
+
+```json
+{
+  "selfReviewCount": 3,
+  "criticReviewCount": 3,
+  "stopOnNoNewFindings": true,
+  "escalateOnRepeatFinding": true
+}
+```
+
+A harness with no CLI installed follows these same defaults; the skill's
+[reviewing reference](/operating-model/reference/reviewing) is the procedure they drive.
 
 ## `run`
 
@@ -47,7 +72,7 @@ Run **one** named critic round.
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| *(positional)* | — | The `reviews.critics[]` entry to run, by name. |
+| *(positional)* | — | The `critics[]` entry to run, by name. |
 | `--prompt` | — | The review prompt, inline. |
 | `--prompt-file` | — | File holding the prompt. **Preferred** — review prompts are long. |
 | `--root` | `.` | Project root. |
@@ -104,13 +129,14 @@ harness needs to record, not an absence of output.
 ## Scope
 
 Repo-scoped, like [`check`](/cli/commands/check) and
-[`scenarios`](/cli/commands/scenarios): it reads the harness config of the project it is
-invoked in, and is no part of the daemon ([decision-032](/decisions/decision-032)).
+[`scenarios`](/cli/commands/scenarios): it runs in the project it is invoked in, reads only
+the operator's CLI config, and is no part of the daemon
+([decision-032](/decisions/decision-032)).
 
 The review **loop** itself — round counts, convergence, posting findings — stays with the
 harness following the
-[reviewing reference](/operating-model/reference/reviewing). This command runs one round;
-it does not decide how many there are.
+[reviewing reference](/operating-model/reference/reviewing). `run` runs one round;
+`policy` says how many there may be.
 
 ## See also
 

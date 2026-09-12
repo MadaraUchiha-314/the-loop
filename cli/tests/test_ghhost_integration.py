@@ -6,7 +6,7 @@
         → the notify hook's link, the ask's link and the portable record's url
           are all derived from THAT ref — and so is every gh argv
 
-Every scenario walks a real ``build_runtime`` over a real harness config and a
+Every scenario walks a real ``build_runtime`` over a real checkout and a
 real CLI config file (``$THE_LOOP_CLI_CONFIG``); no network, no ``gh``. The
 github.com scenario is the regression guard: a config that says nothing must
 mint the exact strings it always did.
@@ -25,20 +25,23 @@ WORK_ITEM = "issue-311"
 GHE = "ghe.corp.example"
 
 
+ORIGIN = "octo/repo"
+
+
 def _repo(tmp_path):
     (tmp_path / "docs" / "specs" / WORK_ITEM).mkdir(parents=True)
-    (tmp_path / ".the-loop").mkdir()
-    (tmp_path / ".the-loop" / "harness-config.yaml").write_text(
-        "workflow:\n  specDir: docs/specs\n"
-        "ticketing:\n  github:\n    owner: octo\n    repo: repo\n",
-        encoding="utf-8",
-    )
     return tmp_path
+
+
+def _runtime(repo, **kwargs):
+    """The runtime as the daemon builds it: the work item's own repository passed in
+    (issue-352), since these checkouts carry no `origin` remote."""
+    return build_runtime(repo, origin_repo=ORIGIN, **kwargs)
 
 
 def _cli_config(tmp_path, monkeypatch, body: str):
     path = tmp_path / "cli-config.yaml"
-    path.write_text('version: "0.8.0"\n' + body, encoding="utf-8")
+    path.write_text('version: "0.9.0"\n' + body, encoding="utf-8")
     monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(path))
     monkeypatch.delenv("GH_HOST", raising=False)
     return path
@@ -54,7 +57,7 @@ def test_a_configured_host_reaches_the_link_and_the_argv(tmp_path, monkeypatch):
     """
     Feature: links and gh calls name the GitHub the work item is on
       Scenario: the CLI config names a GitHub Enterprise host
-        Given a checkout whose harness config declares ticketing octo/repo
+        Given a work item in octo/repo
         And a CLI config declaring integrations.github.host: ghe.corp.example
         When the graph derives the work item's ref
         Then the ref is github:ghe.corp.example/octo/repo#311
@@ -66,7 +69,7 @@ def test_a_configured_host_reaches_the_link_and_the_argv(tmp_path, monkeypatch):
     repo = _repo(tmp_path)
     _cli_config(tmp_path, monkeypatch, f"integrations:\n  github:\n    host: {GHE}\n")
 
-    runtime = build_runtime(repo)
+    runtime = _runtime(repo)
     item = runtime.work_item(WORK_ITEM)
 
     assert runtime.config["githubHost"] == GHE
@@ -91,7 +94,7 @@ def test_gh_host_answers_when_the_config_says_nothing(tmp_path, monkeypatch):
     _cli_config(tmp_path, monkeypatch, "integrations:\n  github:\n    transport: cli\n")
     monkeypatch.setenv("GH_HOST", GHE)
 
-    item = build_runtime(repo).work_item(WORK_ITEM)
+    item = _runtime(repo).work_item(WORK_ITEM)
     assert item.ref == f"github:{GHE}/octo/repo#311"
 
 
@@ -116,7 +119,7 @@ def test_the_checkouts_remote_answers_in_session(tmp_path, monkeypatch):
 
     monkeypatch.setattr("the_loop.ghhost._origin_remote", remote)
 
-    item = build_runtime(repo).work_item(WORK_ITEM)
+    item = _runtime(repo).work_item(WORK_ITEM)
     assert item.ref == f"github:{GHE}/octo/repo#311"
     assert seen == [repo]  # read for THIS checkout, once
 
@@ -133,7 +136,7 @@ def test_a_pull_request_loop_carries_the_host_too(tmp_path, monkeypatch):
     """
     repo = _repo(tmp_path)
     _cli_config(tmp_path, monkeypatch, f"integrations:\n  github:\n    host: {GHE}\n")
-    runtime = build_runtime(repo, pr_number=12)
+    runtime = _runtime(repo, pr_number=12)
     assert runtime.config["prRef"] == f"github:{GHE}/octo/repo#12"
 
 
@@ -152,7 +155,7 @@ def test_github_com_mints_exactly_what_it_always_did(tmp_path, monkeypatch):
     repo = _repo(tmp_path)
     _cli_config(tmp_path, monkeypatch, "integrations:\n  github:\n    transport: cli\n")
 
-    runtime = build_runtime(repo)
+    runtime = _runtime(repo)
     item = runtime.work_item(WORK_ITEM)
     assert runtime.config["githubHost"] == "github.com"
     assert item.ref == "github:octo/repo#311"
@@ -176,5 +179,5 @@ def test_a_bad_configured_host_never_reaches_a_ref(tmp_path, monkeypatch):
         monkeypatch,
         'integrations:\n  github:\n    host: "https://ghe.corp.example/api"\n',
     )
-    item = build_runtime(repo).work_item(WORK_ITEM)
+    item = _runtime(repo).work_item(WORK_ITEM)
     assert item.ref == "github:octo/repo#311"

@@ -2,8 +2,10 @@
 
 the-loop iterates, is verbose by design, and keeps each work item's harness TUI resident
 across the item's whole event stream — so it is inherently token-hungry (issue-37). This
-reference is the loop's **opinion on token economy**: a set of config-driven levers
-(`tokenEconomy` in `.the-loop/harness-config.yaml`) plus the guidance that makes them real.
+reference is the loop's **opinion on token economy**: a set of levers plus the guidance
+that makes them real. Nothing here is configured — the `tokenEconomy` block left
+`.the-loop/harness-config.yaml` in issue-352 because these are practices the skill
+follows, always advisory. The harness runs whatever model the operator chose.
 
 ## The one guardrail (absolute)
 
@@ -18,7 +20,7 @@ correctness/safety wins, every time. This is the same stance as `minimalism.md`.
 
 ## The levers
 
-### 1. Progressive disclosure (`tokenEconomy.progressiveDisclosure`)
+### 1. Progressive disclosure
 
 `SKILL.md` is a **thin index**; the heavy detail lives in `reference/*.md` and is pulled
 in **just-in-time**. Deepen it: a step loads only the reference file(s) its phase needs —
@@ -54,44 +56,43 @@ intact.
 
 The YAGNI → stdlib → native → existing-dep → inline → new-abstraction ladder is **also** a
 token lever: code never generated is tokens never spent (and never reviewed). This is
-ponytail's "lazy senior developer" ladder expressed natively; ponytail itself is registered
-in `config.externalTools` for operators who want the packaged skill.
+ponytail's "lazy senior developer" ladder implemented natively (decision-005).
 
-### 5. Output-verbosity compression (`tokenEconomy.outputVerbosity`)
+### 5. Output-verbosity compression
 
-`mode: concise` → drop conversational filler, prefer fragments, in the agent's **narration
-only**. NEVER compress anything in `outputVerbosity.preserve`: code, commands, diffs,
-errors, paper-trail comments, the **reviewer briefing**, specs, decisions, capability docs.
+Narration is **concise**: drop conversational filler, prefer fragments, in the agent's
+**narration only**. NEVER compress the preserved set: code, commands, diffs, errors,
+paper-trail comments, the **reviewer briefing**, specs, decisions, capability docs.
 Because the reviewer briefing and ticket/PR comments are exempt, the *educate-the-reviewer*
-mandate (`userInteraction.prSummary`) is fully preserved. This is caveman's preservation
-rule; caveman is registered in `config.externalTools`.
+mandate is fully preserved. This is caveman's preservation rule implemented natively
+(decision-005).
 
-### 6. Model routing (`tokenEconomy.modelRouting`)
+### 6. Model choice
 
 Different stages need different horsepower — mechanical stages (evidence, capability-doc
 fold-in, reviewer briefing, status reads, checkmark/lint updates, learnings) do **not** need
-a frontier model. Route by an abstract **tier** (`economy | standard | frontier`) that the
-operator binds to concrete per-harness model ids (`tiers.<tier>.claude` / `.cursor`); an
-empty binding means "use the harness default for that tier." The default **stage → tier**
-map (overridable):
+a frontier model. The loop runs on **whatever model the operator chose**; there is no
+per-stage routing table and no stage → model-id binding. When the operator asks which
+model a stage warrants, this is the guidance:
 
-| Tier | Stages |
-|------|--------|
-| `frontier` | brainstorm, requirements, design, critic-review |
-| `standard` | tasks, implementation, self-review |
-| `economy` | evidence, capability-docs, reviewer-briefing, status, learnings |
+| Horsepower | Stages |
+|------------|--------|
+| frontier | brainstorm, requirements, design, critic-review |
+| standard | tasks, implementation, self-review |
+| economy | evidence, capability-docs, reviewer-briefing, status, learnings |
 
-`riskTierFloor` lifts high-risk work (tier 4/5) to a minimum tier regardless of stage, so an
-auth/schema change never runs on the economy model. Routing is **advisory**: where a harness
-can't switch models programmatically, treat the tier as the model the human should select.
+High-risk work (tier 4/5) never warrants the economy end regardless of stage — an
+auth/schema change is not where to save. Advisory throughout: the row is the model a
+human would select, never one the loop switches to.
 
-### 7. Thinking-effort control (`tokenEconomy.thinkingEffort`)
+### 7. Thinking effort
 
-Extended thinking bills as **output** tokens. Cap effort by stage: `high` for
-design/critic-review, `medium` for implementation, `none`/`low` for status/evidence/
-formatting. Advisory where a harness can't set effort.
+Extended thinking bills as **output** tokens. Effort by stage: `high` for design and
+critic-review; `medium` for test-planning and implementation; `low` for verification,
+capability-docs and the reviewer briefing; `none` for evidence and status reads. Advisory
+where a harness can't set effort.
 
-### 8. Sub-agent delegation (`tokenEconomy.subAgentDelegation`)
+### 8. Sub-agent delegation
 
 Run verbose work — the test suite, doc fetches, scanning large files/logs — in a **fresh-
 context sub-agent** so the raw output stays in *its* window and only a short summary returns
@@ -99,13 +100,14 @@ to the controller. This keeps the controller's window lean across a long autonom
 (the classic 6k-tokens-read → 400-token-summary trade). Guidance where a harness lacks
 sub-agents.
 
-### 9. Compaction & filesystem-as-memory (`tokenEconomy.compaction`)
+### 9. Compaction & filesystem-as-memory
 
 the-loop already persists durable state to disk (specs, `execution-log.md`, capability
 docs) — that is *why* resumability works, and it is a **token** strategy: offload state to
 disk, keep the window lean. For long runs: checkpoint state to the execution log, then
 compact/reset the window with a "preserve the spec + open threads" instruction rather than
-letting the window grow unbounded ("context rot").
+letting the window grow unbounded ("context rot"). The boundaries at which the loop
+resets are fixed in `reference/context.md`.
 
 ### 10. Manage the resident session's window
 
@@ -116,7 +118,7 @@ side is a window that only grows: manage context **inside** the session — comp
 clears at phase boundaries per `reference/context.md` — rather than letting one giant
 mega-session re-send the whole growing conversation every turn.
 
-### 11. Measure it (`tokenEconomy.telemetry`) — the prerequisite
+### 11. Measure it — the prerequisite
 
 You cannot reduce what you do not measure. Usage (input/output/cache tokens + cost) is
 parsed best-effort from each harness's JSON output (`DispatchResult.usage`) and surfaced per
@@ -133,7 +135,7 @@ one.
 | 3 | Tool-output trimming / MCP hygiene | §3 |
 | 4 | Generation minimalism (YAGNI ladder ≈ ponytail) | §4 |
 | 5 | Output-verbosity compression (≈ caveman) | §5 |
-| 6 | Model routing by stage + risk tier | §6 |
+| 6 | Model choice by stage + risk tier (guidance) | §6 |
 | 7 | Thinking-effort control | §7 |
 | 8 | Sub-agents w/ fresh context for verbose work | §8 |
 | 9 | Compaction + structured note-taking | §9 |
@@ -145,5 +147,5 @@ one.
 - Root artifact & research digest: `docs/specs/issue-37/brainstorm.md`.
 - Anthropic — *Effective context engineering for AI agents*; *Agent Skills*.
 - Claude Code docs — *Manage costs effectively*.
-- External plugins (registered, not vendored): caveman (output compression),
-  ponytail (generation minimalism) — see `config.externalTools` in `.the-loop/harness-config.yaml`.
+- Prior art implemented natively, not vendored (decision-005, decision-062): caveman
+  (output compression), ponytail (generation minimalism).

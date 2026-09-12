@@ -4,10 +4,17 @@ Evaluate a work item's [process-graph](/capabilities/process-graph) nodes agains
 checked-in artifacts, and report what is unmet.
 
 ```bash
-the-loop check <work-item> [--repo .] [--format table|json]
+the-loop check <work-item> [--repo .] [--spec-dir docs/specs] [--format table|json]
                            [--recompute] [--fail-on unmet|block]
-the-loop check --all       [--repo .] [--format table|json]
+the-loop check --all       [--repo .] [--spec-dir docs/specs] [--format table|json]
 ```
+
+`--spec-dir` names where the checkout keeps its specs; unset, the CLI config's
+[`routing.graph.specDir`](/config/cli/routing-options#graph-specdir) answers, else
+`docs/specs`. The CLI reads no harness config
+([issue #352](https://github.com/MadaraUchiha-314/the-loop/issues/352)), so a repository
+laid out differently says so on the command line — the loop's convention is `docs/specs`,
+and `routing.graph.specDir` or this flag is for an instance that departs from it.
 
 ```text
 $ the-loop check issue-117
@@ -119,4 +126,4 @@ Nodes are split at the pointer, deliberately:
 
 - [`graph`](/cli/commands/graph) — inspect and **drive** the same runtime.
 - [process-graph](/capabilities/process-graph) — nodes, hooks, edges, the human gate.
-- [Harness config](/config/harness-config) — the `workflow` settings `check` reads.
+- [CLI config](/config/cli/routing-options#graph-specdir) — the spec directory and the hooks `check` reads.

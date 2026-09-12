@@ -38,10 +38,10 @@ Inspect it with [`the-loop graph`](/cli/commands/graph) and read the full behavi
 
 ## Configuration, templates and the operating model
 
-- **Configuration** lives in `.the-loop/harness-config.yaml`. A subset of keys can be
-  overridden per work item via the markdown front-matter. The CLI daemon's own config
-  (webhook receiver / poller) is independent and not tied to a repo — see the
-  [configuration reference](/config/).
+- **Configuration** for the agent lives in `.the-loop/harness-config.yaml`. A subset of
+  keys can be overridden per work item via the markdown front-matter. The CLI's own config
+  (the daemon, the spec directory, critics, graph hooks) is independent, not tied to a
+  repo, and the only file the CLI reads — see the [configuration reference](/config/).
 - **Everything the-loop manages** is tracked in `.the-loop/manifest.yaml`.
 - **Templates** for epics, stories, bugs, the optional `brainstorm` root artifact and the
   spec artifacts (`requirements`/`bugfix`, `design`, `testing-plan`, `tasks`,
@@ -85,9 +85,9 @@ docs/
                      execution-log.md, evidence/
 ```
 
-Three of those directories are the project's to place: `workflow.specDir`,
-`workflow.capabilitiesDir` and `workflow.learningsDir` (defaults `docs/specs`,
-`docs/capabilities`, `docs/learnings`). This repository states all three explicitly.
+Those directories are the loop's fixed convention, not a setting: `docs/specs/<id>/`,
+`docs/capabilities/` and `docs/learnings/`. A repository that publishes its `docs/` tree
+publishes its learnings with it.
 
 ## Development (the-loop's own quality gates)
 

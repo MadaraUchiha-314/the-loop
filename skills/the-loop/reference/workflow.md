@@ -50,10 +50,9 @@ good place to converge on them) and confirm via a ticket comment.
 ## The spec artifacts (Kiro-style — https://kiro.dev/docs/specs/)
 
 The Kiro 3-phase spec (requirements → design → tasks) plus the **testing plan** that
-sits between design and tasks (issue-163). Stored in `<workflow.specDir>/<id>/` (default
-`docs/specs/<id>/`). The human review per phase
-(`workflow.requireHumanReviewPerPhase`, default true) is delivered by the graph's
-approval nodes — `requirements-approval`, and `design-approval` covering design and
+sits between design and tasks (issue-163). Stored in `docs/specs/<id>/` — the loop's
+fixed convention. The human review per phase is always on and is delivered by the
+graph's approval nodes — `requirements-approval`, and `design-approval` covering design and
 testing plan together — which classify the feedback, record the approver, and lock the
 artifact (issue-281). The paper trail is the gate's own record; never re-request an
 approval from the session.
@@ -70,14 +69,14 @@ approval from the session.
    the gate.
    Includes the **Security considerations** section — a threat-model-lite (untrusted
    actors, trust boundaries, abuse cases, fail-closed expectations) captured with the
-   requirements (`security.threatModel.required`); an empty section fails the gate,
-   "no new attack surface" is written and justified. See `reference/security.md`.
+   requirements, always; an empty section fails the gate, "no new attack surface" is
+   written and justified. See `reference/security.md`.
 2. **`design.md`** — overview, architecture, components/interfaces, data models, error
    handling, testing strategy. Derived from approved requirements. Phase: `design`.
    Includes the **Security design** section — how each requirements-phase trust
    boundary is enforced (authn/authz, input validation, secrets, least privilege,
-   injection surfaces, fail-closed behaviour) (`security.design.required`); a boundary
-   left unenforced fails the gate. For
+   injection surfaces, fail-closed behaviour), always; a boundary left unenforced
+   fails the gate. For
    work items with a **user-facing surface**, the design phase also produces **UI/UX design
    artifacts** — Figma links and/or self-contained HTML+CSS+JS prototypes checked in under
    `docs/specs/<id>/design/` (`design.uiArtifacts`) — inventoried in `design.md` and
@@ -100,15 +99,15 @@ approval from the session.
 **The sequence below is defined by the shipped process graph**
 (`cli/the_loop/graph/pdlc-work-item-loop.yaml`, the **outer** of the two loops —
 see issue-172 for the per-PR `pdlc-pr-loop`) — this reference renders it, never
-redefines it,
-and `cli/tests/test_graph_parity.py` (P4) enforces the agreement in both
-directions (issue-148). On the automated path the graph's own entry hooks write
+redefines it (issue-148; since issue-352 the config mirrors nothing — the graph is
+the only phase list). On the automated path the graph's own entry hooks write
 the label and the log checkpoint at each boundary; when a node's work is done,
 run `the-loop graph complete <id>` so the graph evaluates the gate and advances
 — the pointer is the authority on which phase an item is in.
 
-Label = `<workflow.phaseLabelPrefix><phase>` (e.g. `loop:design`). Keep the label in
-sync at every transition and mirror it in the execution log's `phase` front-matter.
+Label = `loop:<phase>` (e.g. `loop:design`) — one fixed vocabulary, not a setting
+(issue-352). Keep the label in sync at every transition and mirror it in the execution
+log's `phase` front-matter.
 
 ```
 not-started → brainstorming → requirements-definition → design → test-planning
@@ -510,10 +509,10 @@ copy of its contents. The checked-in file is the single source of truth.
 ## Implementation & self-checking
 
 - Execute the task DAG in dependency order (`implementation`).
-- **Test-first discipline** (`tdd.mode`): the invariant is **no production code without a
-  failing test that motivates it**. `standard` = red→green→refactor per task;
-  `tdd-first` = all tests for the work item written and failing before any production
-  code; `off` = not enforced. Each task's checkpoint in the execution log records the
+- **Test-first discipline**: the invariant is **no production code without a failing
+  test that motivates it** — red→green→refactor per task, tests written alongside the
+  implementation, and a bug fix reproduces the bug red before fixing it. There is no
+  other mode. Each task's checkpoint in the execution log records the
   **test command and its red→green transition** as evidence — "did a test fail first?"
   is a recorded fact, not an assumption.
 - **Keep `tasks.md` checkmarks current**: as each task is completed, tick its `- [ ]` →
@@ -528,8 +527,8 @@ copy of its contents. The checked-in file is the single source of truth.
   code that correctly does the job; justify any new dependency in `design.md`.
 - **Manage the context window at every boundary** (see `context.md`): each task's
   checkpoint (checkmark + log entry + tests) is also the safe point to reset context —
-  compact after each completed task (`contextManagement.taskBoundary`, default
-  `compact`), compact (never clear) mid-task if the window nears its limit, and run
+  compact after each completed task, compact (never clear) mid-task if the window
+  nears its limit, and run
   high-volume exploration in subagents so it never enters the main window.
 
 ## Verification — executing the plan
@@ -574,7 +573,7 @@ distinction and per-harness mechanics):
 
 - **Never reset without a checkpoint** — checkmarks current, an execution-log entry
   with a concrete **Next:**, phase label in sync, WIP committed or noted.
-- **Phase boundaries clear** (`contextManagement.phaseBoundary`, default `clear`):
+- **Phase boundaries clear** (fixed):
   once `tasks.md` clears its gate, start implementation on a **fresh window** that
   re-reads the approved spec from disk — the same separation Claude Code's plan mode makes
   between planning and execution. Spec→spec transitions derive each artifact from the
@@ -587,8 +586,8 @@ distinction and per-harness mechanics):
 ## Capability docs — the organized view of specs (fold-in step)
 
 Per-work-item specs are *deltas*; readers need *state*. The loop maintains **living
-capability docs** under `workflow.capabilitiesDir` (default `docs/capabilities/`,
-indexed by `capabilities.md`, template
+capability docs** under `docs/capabilities/` (the loop's fixed convention, indexed by
+`capabilities.md`, template
 `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/capability.md`):
 
 - One doc per capability — product-feature and architecture shaped are both valid.
@@ -637,20 +636,22 @@ its own front page still described one loop and three.
 
 - After the work is done, run **self-reviews** then **critic reviews** using configured
   critics — a *different* harness/model (e.g. Cursor + GPT‑5.5 reviewing Claude Opus
-  output). `reviews.selfReviewCount` / `reviews.criticReviewCount` (default **3**) are
-  caps run BEFORE reaching out to the human reviewer (`needs-review`).
+  output). The operator's `reviews.selfReviewCount` / `reviews.criticReviewCount`
+  (`the-loop critic policy`, default **3**) are caps run BEFORE reaching out to the human
+  reviewer (`needs-review`).
 - **The procedure is defined in `reviewing.md`** — attribution prefixes, reply-first-
   then-fix, one-finding-per-commit, stop-on-zero-new-findings, and the diminishing-
   returns escalation. Follow it so review depth is reproducible and the loop converges.
-- **A configured critic is runnable, not decorative.** `reviews.critics[]` carries the
-  critic's executable and args; `the-loop critic run <name> --prompt-file <path>` spawns
+- **A configured critic is runnable, not decorative.** The operator's `critics[]` (in
+  `cli-config.yaml`, issue-352) carries each critic's executable and args;
+  `the-loop critic list` says which exist; `the-loop critic run <name> --prompt-file <path>` spawns
   it (never through a shell) and returns its output as one JSON envelope the running
   harness parses. A round that cannot run is recorded `unavailable` and does **not**
   count toward `criticReviewCount`. See `reviewing.md` § Running a critic round.
 - **All reviews happen as comments** in the PR and/or ticket (paper trail). Record every
   round in the execution log's review table.
 
-## Evidence, the ready-to-ship gate & risk-tiered autonomy
+## Evidence, the ready-to-ship gate & risk tiers
 
 At the end, present **validated evidence** that the work item meets the acceptance
 criteria (test output, screenshots, logs).
@@ -663,35 +664,35 @@ must ALL hold:
 - validated evidence recorded — the **verification** node has passed, so the testing
   plan's activities are all ticked and its results table names each command, outcome
   and committed artifact;
-- the **security review has passed** (`security.review.required`, default true) — run
-  via the built-in security-review skill or the-loop's checklist
-  (`security.review.mechanism`), recorded in the execution log's Security review
-  section; an unresolved security finding blocks completion regardless of risk tier
-  (`reference/security.md`);
+- the **security review has passed** (always required) — run via the built-in
+  security-review skill when the harness has one, else the-loop's checklist, recorded
+  in the execution log's Security review section; an unresolved security finding blocks
+  completion regardless of risk tier (`reference/security.md`);
 - the **affected capability docs are updated in the same PR** (or "none affected" is
   recorded in the execution log) — the organized view of specs must not rot; **and**
 - the **R10 reviewer briefing** is posted/updated in the PR — a condensed, prioritized
   summary (where to focus), mermaid diagram(s), and the low-level decisions — produced
-  from `userInteraction.prSummary.templatePath` (default the-loop's internal
-  `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md`). This is the
-  **trigger** that makes mandatory
-  user-education actually fire (`userInteraction.prSummary.required`, default true); do
-  not request review without it. RULE: educating the reviewer is not optional.
+  from the-loop's internal
+  `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md`. This is the
+  **trigger** that makes mandatory user-education actually fire (a fixed gate item, not
+  a setting); do not request review without it. RULE: educating the reviewer is not
+  optional.
 
-Then the loop marks the work item ready and applies **risk-tiered autonomy**
-(`config.autonomy`):
+Then the loop marks the work item ready and applies the **risk tiers** — a fixed rule
+of the skill, not configuration:
 
-- Each work item has a **risk tier 1–5** (from its front-matter `riskTier`, else
-  `autonomy.defaultTier`; raised automatically when the change touches
-  `autonomy.sensitivePaths` — auth/security/schema/public API — if `inferFromChange`).
-- `autonomy.tiers` maps each tier to a gate: `autonomous-complete` (finish after the
-  review loop), `human-approves-pr`, or `human-approves-spec-and-pr`. Only tiers the
-  policy permits complete without a human; the rest wait for the named approval.
-- The security review adds its own tier threshold: an effective tier ≥
-  `security.review.humanSignOffMinTier` (default 4) requires a **named human security
-  sign-off** (paper trail) even where `autonomy.tiers` would otherwise allow
-  autonomous completion; below it the autonomous security review suffices, escalating
-  only when a finding needs a security-relevant *decision* (`reference/security.md`).
+- Each work item has a **risk tier 1–5**: its front-matter `riskTier` when set, else
+  inferred from the change (default 3 when unclear), and raised when the change touches
+  a **sensitive path**: `**/*schema*`, `.the-loop/**`, `.github/workflows/**`, or an
+  auth/secret/credential path (`**/auth/**`, `**/*secret*`, `**/*credential*`).
+- The tier sets the gate: tiers **1–2** are `autonomous-complete` (finish after the
+  review loop), tiers **3–4** are `human-approves-pr`, tier **5** is
+  `human-approves-spec-and-pr`. Only tiers 1–2 complete without a human; the rest wait
+  for the named approval.
+- The security review adds its own threshold: tier **4 and above** requires a **named
+  human security sign-off** (paper trail), distinct from the PR approval; below it the
+  autonomous security review suffices, escalating only when a finding needs a
+  security-relevant *decision* (`reference/security.md`).
 
 This makes autonomy safe-by-construction: a typo fix (low tier) can complete on its own,
 while an auth/payments change (high tier) always waits for a human — one meaningful
@@ -715,9 +716,8 @@ using dependency relationships:
 ## Interacting with the rest of the harness
 
 the-loop may freely use other MCP tools, skills and plugins available in the harness
-(e.g. Jira via MCP, GitHub via `gh`, plugins like ponytail/superpowers). The user
-registers what to be aware of in `config.externalTools` (the `externalTools.tools` list
-in `.the-loop/harness-config.yaml`). See `collaboration.md`.
+(e.g. Jira via MCP, GitHub via `gh`, plugins like superpowers). Nothing registers
+them: discover what the harness offers rather than assuming it. See `collaboration.md`.
 
 ## Predictability & guarantees
 

@@ -7,8 +7,8 @@ you want is the whole trick:
 |---|---|---|
 | **File** | `.the-loop/harness-config.yaml` | `cli-config.yaml` |
 | **Installed** | **per repository**, by `/the-loop:init` | **per operator**, wherever you keep it |
-| **Read by** | the `/the-loop:*` commands and the operating skill — the agent doing the work | the CLI daemon: `gh-webhook`, `poll`, `sessions`, `events` |
-| **Governs** | *how work is done here* — ticketing, phases, tooling, reviews, autonomy, security | *how work is triggered and hosted* — ingress, routing, sessions, integrations, logging |
+| **Read by** | the `/the-loop:*` commands and the operating skill — the agent doing the work. **Never the CLI** ([decision-123](/decisions/decision-123)) | every `the-loop` command and daemon |
+| **Governs** | *how work is done here* — where the specs live, testing conventions, API-spec locations, design artifacts, instruction docs | *how work is triggered, hosted and gated* — ingress, routing, sessions, the spec directory, critics and review rounds, graph hooks, integrations, logging |
 | **Schema** | `harness-config.schema.json` | `cli-config.schema.json` |
 | **Where the schema lives** | [with the plugin](#where-the-schemas-live), never copied into your repo | [with the plugin](#where-the-schemas-live), never copied into your repo |
 | **Committed?** | yes — it is a statement about the project | usually not; it describes *your machine* |
@@ -16,16 +16,18 @@ you want is the whole trick:
 The split is deliberate ([decision-032](/decisions/decision-032)). The daemon is expected
 to watch **several** repositories at once, so tying its settings to any one checkout would
 mean the same operator maintaining N copies of their own webhook port. Conversely, "this
-project requires three critic rounds" is a property of the project, not of whoever happens
-to be running the daemon today.
+project keeps its specs under `docs/specs/`" is a property of the project, not of whoever
+happens to be running the daemon today. What is neither — the repository's layout, tooling
+and git hooks — is in no config at all: the agent infers it from the repository itself.
 
-::: warning A repository never configures the daemon
-The rule runs in **one direction** ([decision-044](/decisions/decision-044)): a
-repository's harness config configures work done *on that repository*, and never the
-daemon itself. The two settings people most expect to be inherited —
-`routing.authorizedUsers` (who may trigger it) and a poll source's `repos` (what it
-watches) — are **CLI-config-only**, with no fallback. Set them explicitly, or the daemon
-fails closed and does nothing.
+::: warning A repository configures nothing the CLI does
+Since [issue #352](https://github.com/MadaraUchiha-314/the-loop/issues/352)
+([decision-123](/decisions/decision-123)) the CLI **never opens** a repository's harness
+config. `routing.authorizedUsers` (who may trigger it) and `repositories` (what it works
+with) were always CLI-config-only; now so are the spec directory
+(`routing.graph.specDir`), the critic roster (`critics[]`), the review rounds
+(`reviews`) and the graph hooks (`routing.graph.hooks`). Set them in your CLI config, or
+the daemon fails closed and does nothing.
 :::
 
 ## Which one am I editing?
@@ -33,27 +35,19 @@ fails closed and does nothing.
 ```mermaid
 graph TD
   Q{"What are you changing?"}
-  Q -->|"phases, specs, reviews,<br/>autonomy, tooling, security"| H["<b>harness config</b><br/>.the-loop/harness-config.yaml<br/>in the repo"]
-  Q -->|"webhook port, polling,<br/>who may trigger,<br/>event log, GitHub/Slack transport"| C["<b>CLI config</b><br/>cli-config.yaml<br/>on your machine"]
+  Q -->|"specs layout, testing, API specs,<br/>design artifacts, instruction docs"| H["<b>harness config</b><br/>.the-loop/harness-config.yaml<br/>in the repo — read by the agent"]
+  Q -->|"webhook port, polling, who may trigger,<br/>spec directory, critics, review rounds,<br/>graph hooks, event log, GitHub/Slack transport"| C["<b>CLI config</b><br/>cli-config.yaml<br/>on your machine — read by the CLI"]
   H --> H2["written by <code>/the-loop:init</code>"]
   C --> C2["copied from<br/>skills/the-loop/templates/cli-config.yaml"]
 ```
 
-The picture is not "daemons read one file, other commands read the other" — it is the
-direction. Anything the-loop does **to a repository** is configured by that repository:
-
-- `the-loop check` and `the-loop graph` read the repo's `workflow` and process graph.
-- `the-loop scenarios` reads the repo's `testing.integrationTestGlobs`.
-- `the-loop critic` reads the repo's `reviews.critics[]`.
-- **The daemon does too**, for the work item's *own* checkout: the graph coupling reads
-  `workflow.phaseLabelPrefix`, `workflow.specDir` and `notifications` from there, after
-  proving via the checkout's `origin` remote that it really is that repository's. It has
-  to — the `loop:<phase>` label it writes is named by the repository, and a daemon
-  watching several cannot know the name for each without asking.
-
-What never happens is the reverse: no checkout supplies the daemon's *own* settings. The
-full list of keys the CLI reads from a repository is in
-[the harness config reference](/config/harness-config#what-the-cli-reads-from-it).
+The picture is simple since issue-352: **the agent reads one file, the CLI reads the
+other.** Where the CLI needs something the repository knows, the agent hands it over as a
+flag — `--spec-dir` on `check`/`graph`, `--glob` on `scenarios`, `--doc` and
+`--on-missing` on `instructions` — and the skill says so. Two things stopped being
+configuration at all: the ticket's repository (the work item's ref, or the checkout's
+`origin` remote) and the phase label prefix (`loop:`). The table of what moved where is in
+[the harness config reference](/config/harness-config#what-moved-out-of-it-in-issue-352).
 
 ## Where the schemas live
 
@@ -85,6 +79,7 @@ prefer, and you lose completion while typing, nothing else.
   by area:
   [webhook](/config/cli/webhook-options) ·
   [routing](/config/cli/routing-options) ·
+  [critics](/config/cli/critics-options) ·
   [polling](/config/cli/polling-options) ·
   [integrations](/config/cli/integrations-options) ·
   [channels](/config/cli/channels-options) ·

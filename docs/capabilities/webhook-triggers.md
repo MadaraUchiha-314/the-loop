@@ -749,40 +749,20 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   `classify-feedback`. The coupling lives in the dispatcher, so the poller and the
   receiver behave identically; it honours the same `control.requireStartCommand` gate the
   spawn path does; and it is best-effort — any failure is logged as `graph.link_failed`
-  and the delivery still counts. **Where the specs are comes from the work item's own
-  checkout** (`workflow.specDir`, default `docs/specs`), read only after the `origin`
-  remote has proved the checkout is that repository's; `routing.graph.specDir` is an
-  optional override for a checkout with no harness config, and setting it applies to every
-  watched repository. A work item skipped for want of that directory is recorded as
+  and the delivery still counts. **Where the specs are comes from the CLI config**
+  (`routing.graph.specDir`, default `docs/specs` — the loop's convention) — one directory
+  for every checkout the instance drives, since issue-352 ended the daemon's read of the
+  checkout's harness config (decision-123). A work item skipped for want of that directory is recorded as
   `graph.skipped` — the delivery still succeeds, so without the record an inert graph had
   no explanation (issue-123). **Starting a graph needs no such directory** (issue-273):
   the spec folder is created by the work the graph gates, so only `advance` and `clean`
   are held back by its absence. See [process-graph](process-graph.md).
-- **A repository that never adopted the-loop is adopted on the way in** (issue-193,
-  [decision-073](../decisions/decision-073.md)). WHEN the coupling handles a work item in
-  a checkout it has proved to be that work item's own repository, and the checkout carries
-  neither `.the-loop/harness-config.yaml` nor the pre-rename `config.yaml`, THEN the-loop
-  SHALL write its [built-in default](../config/harness-config.md#when-a-repository-has-no-config)
-  there — naming the work item's `owner`/`repo` under `ticketing.github` — and record it as
-  `harness.config_scaffolded`. Before this, the daemon would clone such a repository, spawn
-  a session in it, and leave that session with no workflow, tooling or phases to read.
-  - **It happens before the harness starts** (issue-201): between the workspace being
-    prepared and the prompt being rendered, so the config is on disk before `tmux.spawn`
-    is called — and again in the respawn pre-flight, beside the harness-trust preparation.
-    The write is *also* attempted when the graph is driven (`start`/`advance`) as an
-    idempotent safety net for a session that predates this, but the guarantee lives at the
-    spawn. Adoption from the `context` read and from `cleanup` is deliberately excluded:
-    the first is documented as mutating nothing, the second runs while the checkout is
-    being released.
-  - It happens **after** the ownership proof (a payload can never name a directory, only
-    fail to match one) — which is why the pre-spawn path runs that proof itself rather
-    than trusting the prepared `cwd`, since under the legacy `spawnWorkdir` setup that
-    directory may be the operator's own checkout.
-  - It happens **before** the spec-directory gate: a brand-new work item has no spec
-    directory, yet its session is about to run in the checkout.
-  - It happens **never for a contribution** — a repository the-loop was invited into as a
-    guest keeps the-loop out of its history. An existing config of either name is never
-    opened, so no inbound event can replace an operator's policy.
+- **The daemon writes no configuration into a checkout** (issue-352, retiring
+  issue-193/201's adoption). It used to plant the-loop's default harness config into an
+  unconfigured checkout before the spawn so the session had a file to read; the CLI reads
+  no harness config any more, so it has none to write, and a session finds exactly what the
+  repository committed — the skill works a repository without `.the-loop/` on the schema's
+  defaults. `harness.config_scaffolded` is retired from the event catalog.
 - The `webhooks.*` and `routing.*` keys above live in the **CLI config**
   (`cli-config.yaml`, resolved via `--config`/env/cwd/home — see `cli/README.md`),
   independent of any repo's
@@ -793,11 +773,12 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   declaration governs both ingresses (issue-142, decision-053). A config still nesting it
   under `webhooks.ghWebhook` is refused, naming the replacement and the upgrade command.
   `routing.authorizedUsers` has no fallback: it must be set explicitly in the CLI
-  config or the receiver fails closed (acts on no human-authored events). The rule runs
-  in one direction only: the graph coupling above *does* read a work item's own checkout
-  for `workflow.phaseLabelPrefix`, `workflow.specDir` and `notifications`, after
-  `_checkout_belongs_to` has proved via the checkout's `origin` remote that it is that
-  repository's.
+  config or the receiver fails closed (acts on no human-authored events). Since issue-352
+  there is no exception in either direction: the graph coupling reads nothing from the
+  checkout's `.the-loop/` — the label prefix is `loop:`, the spec directory and the hooks
+  are this config's, and the origin repository is the work item's ref.
+  `_checkout_belongs_to` still proves via the `origin` remote that a checkout is the work
+  item's before a graph is driven in it (issue-113 A6).
 
 ## Design
 
@@ -808,6 +789,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-352 | The coupling stopped reading the work item's checkout (2026-09-12): the spec directory is `routing.graph.specDir` for every repository the instance drives, the label prefix is the constant `loop:`, notifications carry no configured roles, and the pre-spawn adoption that wrote a default harness config into a fresh clone is gone with the reader it served | [spec](../specs/issue-352/), [decision-123](../decisions/decision-123.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/352) |
 | issue-348 | The receiver gained the repository bound it never had: the list of repositories an instance works with moved out of `polling.sources[].repos` to a top-level `repositories`, and **every** ingress reads it — the receiver drops an undeclared delivery (and undeclared linked refs) as `undeclared-repository`, above the actor guard; the poller takes its scopes from it; `may_target` and the kickoff resolve against it. Breaking: config version 0.8.0, `the-loop migrate-config` moves the lists up (and `kickoff.repo` with them), an un-migrated config refuses to start. An empty list bounds nothing and says so at start | [spec](../specs/issue-348/), [decision-121](../decisions/decision-121.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/348) |
 | issue-332 | A closed item the poller had merely listed leaves the board by itself (2026-09-09): a portable record carrying only `poll` — excluded from reconciliation by issue-329 because asking every cycle would cost one provider call per unlabelled open item, forever — is now asked once it has been absent from complete listings for sixty cycles' worth of `intervalSeconds` (measured on the ledger's own `lastPolledAt` / new `closureCheckedAt`, so `poll --once` from cron gets it too), at most twenty per source per cycle, longest-absent first. A closure takes the unchanged close path and the record ends as `ended` only; a *still open* or unanswerable answer writes only `closureCheckedAt`, deferring the question a window. `poll.cycle` counts the questions as `ledger_checks`. The tracked set is untouched | [spec](../specs/issue-332/), [decision-115](../decisions/decision-115.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/332) |
 | issue-329 | A closed work item is recorded as ended (2026-09-09): the close path stamps an `ended` section (`state`, `kind`, `reason`, `at`, `source`, `actor`) on the portable record of every tracked item a `closed` event names — with or without a session on this machine — and a `reopened` event or a listing that carries the item clears it. Closure reconciliation widened from active sessions to every session record plus every armed, frozen or rostered portable record, skipping stamped ones; a polled closure now carries GitHub's `closed_by` as its `sender`, so an authorized closer's cleanup runs on a polling deployment as it does on a webhook one. Both attention surfaces read the stamp and demote the item. Before it, closed items sat under *Needs you* forever | [spec](../specs/issue-329/), [decision-113](../decisions/decision-113.md), [control plane](control-plane.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/329) |
@@ -840,7 +822,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 | issue-136 | Pre-spawn trust reached the checkout it was for: `hasTrustDialogAccepted` is written on the exact spawn directory under every `scope` (the gate that decides whether the dialog appears for a repo shipping `.claude/settings.json` grants has no ancestor walk), so `scope` now only widens | [spec](../specs/issue-136/), [decision-052](../decisions/decision-052.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/136) |
 | issue-134 | A spawned session is told **where its answers come from** instead of guessing: `routing.interaction.mode` (`work-item` default, or `cli`) is rendered into every prompt through `$interaction_directive`, appended when a custom template omits the placeholder, and reported on `session.spawned`; artifact iteration in pull-request review became a stated invariant of the loop | [spec](../specs/issue-134/), [decision-051](../decisions/decision-051.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/134) |
 | issue-135 | The default execution-control keywords changed shape from colon-joined (`the-loop:start-execution`) to a short command (`the-loop start`); the vocabulary, matching semantics and trust boundary from issue-106 are unchanged, and an operator's own explicit `keywords` override is unaffected | [spec](../specs/issue-135/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/135) |
-| issue-123 | The graph coupling stopped sourcing a repo-scoped fact from the operator's machine: `routing.graph.specDir` became an optional override, so each watched repository's own `workflow.specDir` is honoured, and a spec-directory skip is recorded as `graph.skipped` rather than a debug line under a successful delivery | [spec](../specs/issue-123/), [decision-044](../decisions/decision-044.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/123) |
+| issue-123 | The graph coupling stopped sourcing a repo-scoped fact from the operator's machine: `routing.graph.specDir` became an optional override, so each watched repository's own `workflow.specDir` was honoured (reversed in issue-352: the CLI reads no harness config and the key is gone; `docs/specs` is the convention), and a spec-directory skip is recorded as `graph.skipped` rather than a debug line under a successful delivery | [spec](../specs/issue-123/), [decision-044](../decisions/decision-044.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/123) |
 | issue-119 | The poll path stopped swallowing a control command that predates first sight: unprocessed, authorized, unambiguous keyword comments are held back from the first-sight baseline and forwarded on the same cycle, so a labelled item whose start comment already existed actually starts | [spec](../specs/issue-119/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/119) |
 | issue-128 | Generated state reorganised by portability: one `portable/<slug>.json` per work item (control + poll sections, read-modify-write) and machine-local session handles under `local/`, replacing three writer-shaped stores; `polling.stateFile` retired through the version-gated config migration; the pre-issue-128 locations read forward on upgrade | [spec](../specs/issue-128/), [decision-046](../decisions/decision-046.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/128) |
 | issue-111 | The session registry treats `<root>/sessions/` as shared state: listings read only `<slug>.json` files it wrote, keeping the corrupt-entry warning meaningful | [spec](../specs/issue-111/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/111) |
