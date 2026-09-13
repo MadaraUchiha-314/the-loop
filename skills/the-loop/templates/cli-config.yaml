@@ -83,6 +83,43 @@ repositories: []
 # - octo/hello
 # - ghe.corp.example/team/service
 
+# What a session can be RUN AS (issue-358). Top level, beside `repositories` and
+# `critics`, because `routing` configures how an event reaches a session while
+# these configure what a session is. A work item then picks a model and an effort
+# level at its `phase-selection` gate, by the same authorized reply that freezes
+# the phases — no config edit, no daemon restart.
+#
+# Two rules carry the whole thing:
+#   * A DECLARATION MAY NARROW; ONLY THE PROBE MAY CONFIRM. Nothing here asserts
+#     that a harness can run a model. `the-loop models check` asks, and caches the
+#     answer; a refused model is never offered to a human in the first place.
+#   * the-loop owns the EFFORT vocabulary; the provider owns the MODEL NAME. An
+#     effort level is a the-loop concept harnesses spell differently, so there is
+#     one enum and each adapter translates it. A model name is the provider's
+#     identifier, copied verbatim and never parsed for a vendor.
+harnesses: []
+# - name: claude
+#   default: true                 # the harness an unmatched event spawns on
+#   args: [--dangerously-skip-permissions]   # new home of routing.harnessArgs.claude
+# - name: cursor
+
+models: []                        # EMPTY OFFERS NO MODEL CHOICE — today's behaviour
+# - opus-5                        # a bare name: candidate for every declared harness
+# - fable-5.1
+# - name: gpt-5.6-sol             # a mapping NARROWS: offered and probed on cursor only
+#   harnesses: [cursor]
+#   about: for the OpenAI-shaped work
+
+effort: []                        # one enum, the same words whatever harness runs
+# - low
+# - medium
+# - high
+# - xhigh
+# - max
+# NOTE: no adapter ships an effort mapping yet — neither `claude` nor
+# `cursor-agent` exposes a thinking-effort flag — so declaring these offers
+# nothing until one does. the-loop does not invent a flag.
+
 webhooks:
   ghWebhook:
     enabled: false                  # `the-loop start` brings the receiver up when true

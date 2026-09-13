@@ -277,10 +277,37 @@ GitHub event. Everything on this page about how a pane is spawned, pasted into,
 terminated and retained applies to them; everything about *which work item* an event
 belongs to does not.
 
+- WHEN a work item is armed and its graph pointer parks on a **human gate that is the
+  graph's own start node** THEN no session SHALL be spawned (issue-358, R8): the gate's
+  work is the daemon's — `phase-selection`'s checklist is posted through the CLI's github
+  integration, not by an agent — so a session would only sit at it, on whatever model the
+  harness defaults to. The session is spawned once an authorized reply unparks the
+  pointer, and it then already carries the model that gate froze. Deferral applies **only**
+  while the pointer has never left the start node and that node waits on a human: a
+  mid-graph work item always spawns and respawns, an inner PR loop is untouched, and every
+  existing graph-link skip path means nothing is deferred. An armed work item with no
+  session is followed with `the-loop check`, not `sessions list`.
+- WHEN a session is spawned or respawned for a work item that froze a **model** or an
+  **effort level** at `phase-selection` THEN it SHALL be launched with that harness's own
+  arguments followed by the model's and then the effort's (issue-358). Both are
+  re-validated on the way in — against what the operator declares *now*, and against the
+  probed availability matrix — so a hand-edited state file, a withdrawn declaration or a
+  model this machine's harness has started refusing resolves to the harness's own
+  arguments unchanged, and a refusal is said out loud rather than left to a dead pane.
+- WHEN a live session is running with arguments its work item no longer resolves to THEN
+  the next event SHALL **re-launch** it, resuming the conversation, rather than being
+  delivered into it. Compared against what was *recorded at launch*, never against the
+  config, so a session registered before the-loop recorded any of this is left alone.
+- WHEN a session is registered THEN its record SHALL carry the `model`, `effort` and
+  `harnessArgs` it was launched with, each omitted when empty, and `the-loop sessions list`
+  SHALL show the model (with the effort beside it) — so "what is this running on?" is
+  answered without attaching to a pane.
+
 ## History
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-358 | A work item picks its **model** and **effort** at `phase-selection`, and the spawn now happens **after** that gate rather than before it: `graphlink.on_spawn` split into `on_arm` (enter the graph) and `on_spawn` (bind the session), so an armed item parked at a human start gate costs no tmux session and the first spawn already carries the frozen choice. `Dispatcher._adapter_for` resolves the choice like `_tmux_for` resolves `sessionPerPr`; the session record gained `model`/`effort`/`harnessArgs` | [spec](../specs/issue-358/), [decision-124](../decisions/decision-124.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/358) |
 | issue-317 | The spawn path opens the work item's channel conversations first: `Dispatcher` takes an injected opener (`channels.publishers.conversation_opener`), called with the ref at the top of `_spawn_for` — behind every refusal, before the checkout — and contained if it raises; both daemons and the core facade's dispatcher wire it | [spec](../specs/issue-317/), [decision-107](../decisions/decision-107.md), [channels](channels.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/317) |
 | issue-277 | The runner learned to be addressed by **target** rather than by work item (`spawn_in`, `deliver_to`, `kill_target`, `terminate_harness_in`), so a session with no work item can be hosted the same way; the four work-item entry points delegate and keep their exact refusals. The first caller is [standing-sessions](standing-sessions.md) | [spec](../specs/issue-277/), [decision-099](../decisions/decision-099.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/277) |
 | issue-240 | A read-only observer no longer blocks delivery: the submit keystroke is a second, unbracketed `paste-buffer` instead of `send-keys … Enter`, so no tmux command in the delivery resolves a client. tmux ≥ 3.7 refused `send-keys` with `client is read-only` whenever anyone was attached with `--read-only`, and `-t` could not avoid it — the guard tests the *target client*, which is resolved from `-c`/the current client | [spec](../specs/issue-240/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/240) |

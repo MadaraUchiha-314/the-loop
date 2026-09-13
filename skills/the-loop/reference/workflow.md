@@ -325,6 +325,48 @@ refusal is recorded (`session.pr_session_declined`). **The agent never ticks the
 exactly as it never declares a skip. See
 [decision-093](../../../docs/decisions/decision-093.md).
 
+### Which model, and how much effort — the same act (issue-358)
+
+The checklist carries two more non-phase questions, answered by the same signed reply:
+**which model this work item's sessions run on, and at what effort.** Two independent
+groups, at most one tick each:
+
+```text
+- [ ] `model-opus-5`      for anything with real design in it
+- [ ] `model-fable-5.1`   fast and cheap — good for small, well-specified items
+
+- [ ] `effort-high`
+- [ ] `effort-xhigh`
+```
+
+They are **independent**: choosing a model neither requires nor implies an effort, and an
+ambiguous answer to one does not discard the other. Exactly one ticked row is a choice;
+none, several, an unknown name and an unreadable checklist all mean *no choice* — which is
+a different recorded fact from "the default", and is what lets a later change to the
+operator's configuration apply to this item.
+
+A row appears only when the operator declared it (top-level `models` and `effort` in the
+CLI config) **and** this work item's harness is not known to refuse it — availability is
+measured by `the-loop models check`, not assumed, so a human is never offered a model that
+would leave a session dead in a pane. Leave both alone and the work item runs on that
+harness's own arguments, exactly as every work item did before the question existed.
+
+**The agent never ticks these rows**, exactly as it never declares a skip. See
+[decision-124](../../../docs/decisions/decision-124.md).
+
+### The session is spawned after this gate, not before (issue-358)
+
+Nothing about phase selection needs a harness session: the checklist is posted by the
+**daemon**, through the CLI's own GitHub integration. So a work item that has been armed
+but not yet answered has **no tmux session** — its graph has been entered, its checklist is
+on the ticket, and the pointer is parked. The session is spawned when an authorized reply
+unparks it, which is what lets the very first session carry the model the gate just froze.
+
+Two practical consequences for a session reading this: an armed work item with no session
+is **normal**, not a fault — follow it with `the-loop check` rather than `sessions list` —
+and the deferral only ever applies at the graph's own start node, so anything mid-flight
+spawns and respawns exactly as before.
+
 ## The contribution loop — joining an existing work item (issue-185)
 
 The third shipped graph, **`pdlc-contribution-loop`**, is walked instead of the outer
