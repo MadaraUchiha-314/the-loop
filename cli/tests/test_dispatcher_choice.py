@@ -11,9 +11,7 @@ operator's declared list, and the argv is built from the operator's own config.*
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
-import pytest
 
 from conftest import FakeTmux, StubInteractiveAdapter
 from the_loop.control import ControlConfig, ControlStore
