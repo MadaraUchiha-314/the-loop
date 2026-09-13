@@ -176,4 +176,4 @@ Pending implementation.
 
 | Document | What changed |
 |----------|--------------|
-| — | none in this pass. The implementation pass changes `docs/config/cli/routing-options.md` (the `harnessModels` key), the phase-selection section of the operating model, and `skills/the-loop/templates/cli-config.yaml`. |
+| — | none in this pass. The implementation pass documents the three new top-level sections (`harnesses`, `models`, `effort`) in the CLI configuration reference under `docs/config/cli/`, notes the `routing.harnessArgs` deprecation in `routing-options.md`, updates the phase-selection section of the operating model, and extends `skills/the-loop/templates/cli-config.yaml`. |
