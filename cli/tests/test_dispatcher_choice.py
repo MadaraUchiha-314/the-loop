@@ -82,7 +82,7 @@ def _dispatcher(tmp_path, cli_config=None, **over):
         def on_close(self, *a, **k):
             pass
 
-    dispatcher.graphlink = _Link()
+    setattr(dispatcher, "graphlink", _Link())
     return registry, dispatcher, tmux
 
 
@@ -178,7 +178,7 @@ def test_abuse_a_forged_frozen_choice_is_ignored(tmp_path):
     registry, dispatcher, tmux = _dispatcher(tmp_path)
 
     adapter = dispatcher._adapter_for(WorkItemRef.parse(REF), "claude")
-    assert adapter is dispatcher.adapters["claude"]
+    assert adapter is not None and adapter is dispatcher.adapters["claude"]
     assert "smuggled-9" not in " ".join(adapter.extra_args)
 
 
@@ -243,7 +243,7 @@ def test_an_unreadable_frozen_record_launches_on_the_operators_arguments(tmp_pat
         def frozen_graph(self, work_item):
             raise OSError("state is on fire")
 
-    dispatcher.control_store = _Exploding()
+    setattr(dispatcher, "control_store", _Exploding())
     adapter = dispatcher._adapter_for(WorkItemRef.parse(REF), "claude")
     assert adapter is dispatcher.adapters["claude"]
 
@@ -349,5 +349,5 @@ def test_abuse_a_model_narrowed_to_another_harness_cannot_be_forced_onto_this_on
     registry, dispatcher, tmux = _dispatcher(tmp_path, cli_config=config)
 
     adapter = dispatcher._adapter_for(WorkItemRef.parse(REF), "claude")
-    assert adapter is dispatcher.adapters["claude"]
+    assert adapter is not None and adapter is dispatcher.adapters["claude"]
     assert "gpt-5.6-sol" not in " ".join(adapter.extra_args)
