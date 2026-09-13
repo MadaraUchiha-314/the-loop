@@ -14,7 +14,10 @@ riskTier: 4
 > [`requirements.md`](requirements.md). MUST be reviewed and approved before moving to tasks
 > breakdown.
 >
-> **Revision 5** — `models` is a plain list of provider-named models, **not tied to a harness**:
+> **Revision 6** — a model name may optionally carry `harnesses:`, which **narrows** it (and the
+> probe matrix) without ever being authoritative — a declaration may restrict, only the probe may
+> confirm. Revision 5 made `models` a plain list of provider-named models, **not tied to a
+> harness**:
 > the model × harness relation is *measured* by R7's availability probe rather than declared, which
 > is what makes the owner's flat list sound and retires the `harness:` field revision 3 proposed.
 > Revision 4 brought the spawn-order change in scope as **R8** (§ *Spawning after the gate, not
@@ -278,10 +281,11 @@ harnesses:                       # NEW — the harnesses this instance has
     args: ["--dangerously-skip-permissions"]   # this harness's launch args
   - name: cursor
 
-models:                          # NEW — just the model names, in each provider's
-  - opus-5                       #   own naming convention. NOT tied to a harness:
-  - fable-5.1                    #   which harness can run which name is MEASURED
-  - gpt-5.6-sol                  #   (R7), never declared and never guessed.
+models:                          # NEW — the model names, in each provider's own
+  - opus-5                       #   naming convention. A bare name is a candidate
+  - fable-5.1                    #   for every declared harness, and the probe (R7)
+  - name: gpt-5.6-sol            #   decides. An OPTIONAL `harnesses:` narrows it.
+    harnesses: [cursor]
 
 effort:                          # NEW — the-loop's OWN normalized vocabulary
   - low                          #   the levels this instance offers, drawn from
@@ -289,14 +293,30 @@ effort:                          # NEW — the-loop's OWN normalized vocabulary
   - high                         #   mapping to each harness is the ADAPTER's job.
 ```
 
-**`models` is a plain list of model names, not tied to a harness** (revision 5, the owner's
-call — and it is the better design, because it dissolves the objection I had raised twice rather
-than working around it).
+**`models` is a list of model names; a name may optionally say which harnesses support it**
+(revisions 5 and 6, the owner's calls). The two together are one rule: **a declaration may narrow,
+only the probe may confirm.**
 
-My objection was that a harness-independent list forces the-loop to *attribute* a name to a
-harness, and attribution is a guess. What I missed is that **R7 already replaces the guess with a
+| | what it does | what it cannot do |
+|---|---|---|
+| a bare name (`opus-5`) | candidate for every declared harness | — |
+| `harnesses: [cursor]` on a name | restricts it to those harnesses, and to those probes | grant a capability the harness refuses |
+| the probe (R7) | the only thing that makes a name *offerable* on a harness | widen past a declared `harnesses:` |
+
+So the optional link is an operator's **restriction** — keep an expensive model off one harness,
+or skip probing combinations you already know are pointless — and it cuts the matrix from
+*models × harnesses* down to what was declared, which is the practical reason to use it. It can
+never say a harness supports something it does not: that remains measured. This is the same
+fail-closed intersection `repos.py` follows, where a declaration can only ever shrink the set.
+
+Two accepted shapes on one list is deliberate and in house style (`sessionPerPr` still takes its
+legacy booleans, `--doc` takes a string or an object, a kickoff prefix has three spellings): the
+bare string is the common case, and the mapping exists for the operator who wants to narrow.
+
+My original objection was that a harness-independent list forces the-loop to *attribute* a name to
+a harness, and attribution is a guess. What I missed is that **R7 already replaces the guess with a
 measurement.** The availability probe asks each harness whether it can actually run a given name
-and caches the answer, so the model × harness relation is *observed* rather than declared:
+and caches the answer, so the model × harness relation is *observed* rather than inferred:
 
 ```text
                  claude        cursor
@@ -308,7 +328,8 @@ and caches the answer, so the model × harness relation is *observed* rather tha
 A work item's harness is already decided before any of this (`harnesses[].default`, or the
 per-item harness), so resolution only ever consults **that harness's column**. A name the harness
 cannot run is `refused`, which R7 already means "not offered, never spawned". Nothing is
-attributed, nothing is guessed, and the operator writes one flat list.
+attributed and nothing is guessed — an undeclared combination is *asked about*, and a declared one
+is still asked before it is offered.
 
 **Names stay the provider's.** `opus-5`, `fable-5.1`, `gpt-5.6-sol` — the-loop does not normalize
 model names and does not parse them for a vendor. The name is passed to the harness's model flag
@@ -380,9 +401,11 @@ The cache is therefore a **matrix**, model × harness and level × harness — w
 lets `models[]` be a plain list of names (§ the declarations). Resolution reads one cell: this work
 item's harness, this name.
 
-- **What it probes.** Every declared **model** row, and every **effort** level against every
-  declared harness — the effort mapping is the-loop's own assertion about a harness CLI, so it is
-  exactly the kind of claim that must be checked rather than trusted.
+- **What it probes.** Every model name against every harness it is a candidate for — all declared
+  harnesses for a bare name, or just the ones its `harnesses:` names — and every **effort** level
+  against every declared harness, because the effort mapping is the-loop's own assertion about a
+  harness CLI and is exactly the kind of claim that must be checked rather than trusted. An
+  operator who declares `harnesses:` is therefore also choosing how much probing happens.
 - **How it probes.** `adapter.oneshot_argv(PROBE_PROMPT, …)` plus the choice's resolved args — the
   harness's own cheapest non-interactive invocation, the same surface critics already use. The
   prompt is a fixed the-loop constant; **no text from a work item is ever sent** (the
@@ -499,8 +522,10 @@ unlike `critics[].args` there is no `{…}` to expand anywhere in this feature.
 
 | Situation | Behaviour | Surfaced as |
 |---|---|---|
-| a harness with no `model_flag` | offered no model section at all — never handed a hand-written flag | `models check` reports the harness as unable to take a model (R2.5) |
-| an effort level a harness cannot express | not offered for that harness | `models check` names the level as unsupported there (R2.6) |
+| a harness with no `model_flag` | offered no model section at all — never handed a hand-written flag | `models check` reports the harness as unable to take a model (R2.7) |
+| a model whose `harnesses:` names one that is not declared | that link contributes nothing, named at validation; the rest of the row stands | `validate_config.py` / `diagnose` |
+| a model declared for a harness that then refuses it | not offered there — the declaration narrows, it cannot confirm | the probe matrix in `models check` (R2.3) |
+| an effort level a harness cannot express | not offered for that harness | `models check` names the level as unsupported there (R2.8) |
 | a model name this work item's harness cannot run | not offered for that work item; refused at resolution | the probe matrix in `models check` (R7.3, R7.4) |
 | `harnessArgs.<harness>` already carries the same flag | validation warns, naming both | as above (R3.4) |
 | a declared choice the harness refuses | not offered; if resolved anyway, spawn on `harnessArgs` + one comment naming it | `models check`, the checklist's absence, the comment (R7.3, R7.4) |
@@ -618,13 +643,15 @@ authored yet because this design is not approved.
    `refused` choice from the checklist so a human cannot pick it, fall back visibly if one is
    resolved anyway, and re-probe once on a dead session so a stale `ok` cannot become a respawn
    loop. The failure surfaces at `models check` and `diagnose`, not in an unattended pane.
-4. *Per harness or overall?* **Overall — a plain list of provider-named models, not tied to a
-   harness** (revision 5). I argued twice that this forces the-loop to *attribute* a name to a
-   harness, which would be a guess. That was wrong once R7 existed: the probe **measures** the
-   model × harness matrix, so the relation is observed rather than attributed, resolution reads
-   one cell, and a name the work item's harness cannot run is `refused` — already "not offered,
-   never spawned". The owner's shape is both simpler and better founded than the `harness:` field
-   I proposed in revision 3, and both the nested map and that field are gone.
+4. *Per harness or overall?* **A flat list of provider-named models, with an optional
+   `harnesses:` link per name** (revisions 5 and 6). I argued twice that an untied list forces
+   the-loop to *attribute* a name to a harness, which would be a guess. That was wrong once R7
+   existed: the probe **measures** the matrix, so the relation is observed, resolution reads one
+   cell, and a name the work item's harness cannot run is `refused` — already "not offered, never
+   spawned". The optional link then does the one thing a declaration legitimately can: **narrow**
+   — restrict a model to some harnesses and shrink the probe matrix to match — while never
+   granting support the harness refuses. Revision 3's mandatory per-row `harness:` is gone; this
+   is its optional, plural, non-authoritative descendant.
 5. *Model and effort coupled?* **No — two inputs, two lists, two questions.** Revision 1 coupled
    them into one named argv, which would have made the operator declare the cross product. They
    are now independent all the way through: declaration, checklist section, frozen key, and
@@ -673,7 +700,8 @@ authored yet because this design is not approved.
 |---|---|
 | `routing.harnessArgsByLabel` (the ticket's proposal) | a label rides GitHub's permission model, not `authorizedUsers`, and the payload does not attribute a label to a person — so it would let anyone with triage rights choose an unattended agent's argv. Same argument as issue-177's, with an argv at the end of it. |
 | one coupled model+effort choice (revision 1) | the operator would declare the cross product; the owner's review rejected it, and it would grow multiplicatively. |
-| a `harness:` field on each model row (revision 3) | superseded: it declares a relation the probe already measures, and it makes the operator restate a fact the harness can be asked for. |
+| a **required** single `harness:` per model row (revision 3) | superseded by the optional plural `harnesses:`: requiring it makes the operator restate a fact the harness can be asked for, and one harness per row cannot express a model two harnesses both run. |
+| treating a declared `harnesses:` as authoritative (skipping the probe for it) | a declaration would then be able to assert support that does not exist, and the failure would land in an unattended pane — the thing R7 exists to prevent. |
 | parsing a model name for its vendor (`gpt-*` → OpenAI → cursor) | a guess dressed as a convention, and it breaks the first time a provider renames or a harness adds a model family. The probe answers the same question with evidence. |
 | nesting `models` under `harnesses[]`, or under `routing` | the owner's review rejected both: `routing` is about event delivery, and nesting hides the one table an operator wants to read. |
 | the operator declaring effort flags per harness (revision 2) | restates a flag in every config and lets two configs disagree about what "high" means. the-loop normalizes instead. |
@@ -736,3 +764,4 @@ than failed at spawn.
 |---|---|
 | "Let's not tie model to harness. Let's just keep it models" | § the declarations, rewritten: `models` is a plain list of names. My twice-stated objection — that the-loop would have to *attribute* a name to a harness — dissolves, because R7's probe **measures** the model × harness matrix instead. Trade-off 4 says so; the `harness:` field is in the rejected table. |
 | "models will be like opus 5, fable 5.1, gpt 5.6 sol … use whatever naming convention each of the model providers follow" | names are the provider's, passed to `adapter.model_flag` verbatim; the-loop neither normalizes nor parses them, which is the deliberate contrast with `effort`, where it owns the vocabulary |
+| "for each model, we can link it to supported harnesses" | an **optional** `harnesses:` on a name (revision 6). It narrows — restricting the model and shrinking the probe matrix — and it is never authoritative: the probe still decides what is offerable, so a declaration cannot assert support the harness refuses. § the declarations carries the three-row table of what each source may do. |

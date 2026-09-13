@@ -35,7 +35,7 @@ approves the pull request and a named human signs off the security review.
 |-------|---------|----------------------|-------|
 | phase-selection | 2026-09-13 | — | recorded, not answered — no authorized `execute` reaches a cloud session |
 | requirements-definition | 2026-09-13 | | [`requirements.md`](requirements.md) — six requirements, six abuse cases |
-| design | 2026-09-13 | | [`design.md`](design.md) — revision 5 after four rounds of the owner's review on PR #359 (model/effort split and availability in r2; three top-level sections, a flat `models[]`, and the-loop-owned effort normalization in r3); awaiting approval |
+| design | 2026-09-13 | | [`design.md`](design.md) — revision 6 after five rounds of the owner's review on PR #359 (model/effort split and availability in r2; three top-level sections, a flat `models[]`, and the-loop-owned effort normalization in r3); awaiting approval |
 | test-planning | | | not started — downstream of an unapproved design |
 | tasks-breakdown | | | not started |
 | implementation | | | **blocked by the owner's instruction** until the design is approved; scope now includes R8 (spawn after the gate) |
@@ -187,6 +187,35 @@ approves the pull request and a named human signs off the security review.
   lifetime and the `harnesses[]` consolidation follow-up.
 - **Blockers:** the implementation hold.
 
+### 2026-09-13 — an optional model→harnesses link (revision 6)
+
+- **Phase:** design (revision 6)
+- **Decision recorded:** *"for each model, we can link it to supported harnesses."* Taken as an
+  **optional** `harnesses:` on a model name, with one rule that keeps it from contradicting the
+  probe: **a declaration may narrow, only the probe may confirm.**
+
+  | | what it does | what it cannot do |
+  |---|---|---|
+  | a bare name | candidate for every declared harness | — |
+  | `harnesses: [cursor]` | restricts the model to those harnesses, and probes only those | grant support the harness refuses |
+  | the probe (R7) | the only thing that makes a name offerable | widen past a declared `harnesses:` |
+
+- **Why it is worth having** even though the probe already measures the relation: it cuts the
+  matrix from *models × harnesses* to what was declared, and it lets an operator keep an expensive
+  model off a harness deliberately. Both are restrictions, which is the only thing a declaration
+  is allowed to be here.
+- **Rejected in the same breath:** treating a declared link as authoritative and skipping the probe
+  for it — a declaration could then assert support that does not exist, and the failure would land
+  in an unattended pane, which is the whole thing R7 exists to prevent.
+- **Note on the artifacts:** revision 3's mandatory single `harness:` per row is not what came back.
+  This is its optional, plural, non-authoritative descendant, and the rejected-alternatives table
+  now distinguishes the two so a later reader does not read the history as a circle.
+- **Checkpoint/tests:** `markdownlint-cli2` on the three files, clean. R2's criteria were renumbered
+  (the old 3–10 became 5–12) and every cross-reference re-checked. Still no code.
+- **Next:** the owner's approval of the design, and their answers on the effort enum, the verdict
+  lifetime and the `harnesses[]` consolidation follow-up.
+- **Blockers:** the implementation hold.
+
 ## Verification results
 
 > Not applicable to this pass: nothing is implemented. The `verification` node will record
@@ -206,6 +235,7 @@ approves the pull request and a named human signs off the security review.
 | 3 | human (owner) | @MadaraUchiha-314 | new findings on the declaration's shape → all three addressed in revision 3 | [PR #359](https://github.com/MadaraUchiha-314/the-loop/pull/359#discussion_r4000531271) |
 | 4 | human (owner) | @MadaraUchiha-314 | the spawn-order change is to land in this PR → R8 | [PR #359](https://github.com/MadaraUchiha-314/the-loop/pull/359#discussion_r4000541107) |
 | 5 | human (owner) | @MadaraUchiha-314 | a model is not tied to a harness → revision 5; the probe measures the matrix | [PR #359](https://github.com/MadaraUchiha-314/the-loop/pull/359#discussion_r4000531271) |
+| 6 | human (owner) | @MadaraUchiha-314 | link a model to supported harnesses → revision 6, as an optional narrowing that the probe still confirms | [PR #359](https://github.com/MadaraUchiha-314/the-loop/pull/359#discussion_r4000724428) |
 
 ## Security review (gate)
 
