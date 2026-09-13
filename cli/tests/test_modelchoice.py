@@ -101,12 +101,18 @@ def test_an_undeclared_model_has_no_candidates():
 
 
 def test_effort_is_the_loops_own_enum():
-    assert EFFORT_LEVELS == ("low", "medium", "high")
+    """Claude's own effort levels, so the-loop's vocabulary is a superset rather
+    than an invention — a harness with fewer simply offers fewer."""
+    assert EFFORT_LEVELS == ("low", "medium", "high", "xhigh", "max")
 
 
 def test_declared_effort_keeps_enum_order_not_declaration_order():
     """One vocabulary, rendered the same way whatever order it was written in."""
-    assert declared_effort({"effort": ["high", "low"]}) == ["low", "high"]
+    assert declared_effort({"effort": ["xhigh", "low", "high"]}) == [
+        "low",
+        "high",
+        "xhigh",
+    ]
 
 
 def test_a_level_outside_the_enum_contributes_nothing():

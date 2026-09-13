@@ -24,6 +24,8 @@ effort:
   - low
   - medium
   - high
+  - xhigh
+  - max
 ```
 
 They sit at the top level, beside [`repositories`](/config/cli/repositories-options) and
@@ -171,7 +173,7 @@ picking between two models wants to know.
 
 ### `effort`
 
-- **Type:** `string[]` — each one of `low`, `medium`, `high`
+- **Type:** `string[]` — each one of `low`, `medium`, `high`, `xhigh`, `max`
 - **Default:** `[]` — unset offers no effort choice
 
 Which of the-loop's effort levels this instance offers. There are **no flags in this

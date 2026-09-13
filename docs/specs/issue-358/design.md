@@ -729,9 +729,8 @@ than failed at spawn.
 3. **Should the confirmation comment also say the argv?** It names the model and the effort level
    in this design. Naming the arguments would be more honest about what was resolved, and would
    also print `--dangerously-skip-permissions` onto a public ticket. Proposed: the ids only.
-4. **Is `low | medium | high` the right effort enum?** Three levels is the smallest useful
-   vocabulary and adding a level is easier than removing one. Say if you want `minimal` / `max`
-   at the ends.
+4. ~~Is `low | medium | high` the right effort enum?~~ **Answered: Claude's own five.**
+   Codex's set is still unconfirmed — its adapter's mapping stays empty until it is.
 5. **Does the follow-up that folds `harnessTrust`, `harnessPlugins` and `defaultHarness` into
    `harnesses[]` get raised now?** This work item needs only `name`, `default` and `args`; the
    rest is a breaking config migration with its own tests.

@@ -63,7 +63,13 @@ EFFORT_KEY = "effort"
 #: the-loop's own effort vocabulary, identical across harnesses. The operator declares
 #: which of these an instance offers; the *translation* to a given harness is that
 #: harness's adapter (``effort_args``), never the operator's config.
-EFFORT_LEVELS: Tuple[str, ...] = ("low", "medium", "high")
+#:
+#: These five are Claude's own ``output_config.effort`` levels — ``xhigh`` is the
+#: default in Claude Code — so the-loop's vocabulary is a superset rather than an
+#: invention, and a harness with fewer levels simply does not offer the ones it
+#: cannot express. That is the normalisation doing its job: one set of words for
+#: the human, per-harness truth underneath, and every mapping probe-validated.
+EFFORT_LEVELS: Tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
 
 #: A model name's grammar. Deliberately narrow: a name is passed to a harness's model flag
 #: **verbatim**, so the grammar is what makes copying a provider's own spelling safe — a
