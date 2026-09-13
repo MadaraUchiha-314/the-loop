@@ -1,0 +1,13 @@
+{
+  "ref": "github:octo/repo#15",
+  "url": "https://github.com/octo/repo/issues/15",
+  "control": {
+    "ref": "github:octo/repo#15",
+    "command": "contribute",
+    "source": "comment",
+    "actor": "octo",
+    "requestedAt": "2026-09-13T20:29:34Z",
+    "note": "",
+    "instance": ""
+  }
+}

@@ -93,6 +93,14 @@ class StateLayout:
         return str(self.root_path / "local")
 
     @property
+    def verdict_cache(self) -> str:
+        """Availability verdicts: which models and effort levels each harness on
+        THIS machine will actually accept (issue-358). Machine-local by
+        construction — a verdict is a fact about this box's harness installation,
+        so it never travels in a repository and is never agent-writable."""
+        return str(self.root_path / "local" / "model-verdicts.json")
+
+    @property
     def event_log(self) -> str:
         return str(self.root_path / "logs" / "events.jsonl")
 

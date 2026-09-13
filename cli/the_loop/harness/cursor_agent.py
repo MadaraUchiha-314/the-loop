@@ -20,6 +20,8 @@ class CursorAgentAdapter(HarnessAdapter):
     name = "cursor"
     default_binary = "cursor-agent"
     model_flag = "-m"
+    #: No effort mapping yet — see :class:`ClaudeCodeAdapter` (issue-358).
+    _EFFORT_ARGS: dict = {}
 
     def _oneshot_argv(self, prompt: str) -> List[str]:
         return ["-p", prompt, "--output-format", "json"] + self.extra_args
