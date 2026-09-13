@@ -57,7 +57,9 @@ from ..graphlink import (
 )
 from ..harness.base import HarnessAdapter, UnsupportedRunnerError
 from ..modelchoice import (
+    candidate_harnesses,
     declared_effort,
+    declared_harnesses,
     declared_models,
     effective_args,
     effort_args,
@@ -1400,6 +1402,21 @@ class Dispatcher:
                 model,
             )
             model = ""
+        if model and declared_harnesses(config):
+            # The operator's own narrowing, enforced HERE as well as at the gate
+            # (R2.3). The gate decides what can be picked; a frozen record is a
+            # state file an agent can write, so "offered only on these harnesses"
+            # has to hold at the point the argv is built too — otherwise a
+            # hand-edited record could put a cursor-only model on claude.
+            if harness not in candidate_harnesses(config, model):
+                logger.warning(
+                    "%s froze the model %r, which is not declared for the %s "
+                    "harness; launching on the harness's own arguments",
+                    work_item.ref,
+                    model,
+                    harness,
+                )
+                model = ""
         if effort and effort not in declared_effort(config):
             effort = ""
         return self._offerable_only(work_item, harness, model, effort)

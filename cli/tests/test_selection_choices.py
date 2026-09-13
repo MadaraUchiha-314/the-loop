@@ -186,3 +186,93 @@ def test_abuse_a_choice_row_is_never_read_as_a_phase():
     )
     assert skips == ["design"]
     assert refused == [] and opt_ins == []
+
+
+# -- the gate's own authorization (A1, A6) ---------------------------------------
+
+
+def _gate_ctx(comments, **config):
+    """A context the real `classify-phase-selection` hook will run against."""
+    config.setdefault("harness", "claude")
+    config.setdefault("authorizedUsers", ["owner"])
+    return HookContext(
+        work_item=WorkItem(
+            ref="github:octo/repo#358", id="issue-358", spec_dir=Path(".")
+        ),
+        node={"id": "phase-selection"},
+        boundary="exit",
+        repo=Path("."),
+        config=config,
+        event={"comments": comments},
+    )
+
+
+def test_abuse_an_unauthorized_reply_freezes_nothing(monkeypatch):
+    """A1. The model rows ride the same authorization as every other answer at this
+    gate — and the filter runs upstream of any parsing, so an unauthorized reply is
+    never even read for a choice."""
+    monkeypatch.setattr(
+        selection, "_resolve", lambda ctx: pytest.fail("must not reach GitHub")
+    )
+    ctx = _gate_ctx(
+        [
+            {
+                "author": "a-stranger",
+                "body": "- [x] `model-fable-5.1`\nthe-loop execute",
+            }
+        ],
+        **_declared(),
+    )
+    result = selection.classify_phase_selection(ctx)
+    assert result.status == "wait"
+    assert "model" not in (result.data or {})
+
+
+def test_abuse_an_unreadable_checklist_keeps_the_operators_arguments(monkeypatch):
+    """A6. A deleted or unreachable comment resolves to no choice — never to a
+    guess, and never to the last thing somebody happened to tick."""
+    posted = []
+
+    class _Integration:
+        def call(self, verb, **kw):
+            if verb == "list-comments":
+                raise OSError("github is unreachable")
+            posted.append(kw)
+            return {}
+
+    monkeypatch.setattr(selection, "_resolve", lambda ctx: _Integration())
+    ctx = _gate_ctx(
+        [{"author": "owner", "body": "the-loop execute"}],  # no checklist in the reply
+        **_declared(),
+    )
+    result = selection.classify_phase_selection(ctx)
+    assert result.status == "pass"
+    assert result.data["model"] == ""
+    assert result.data["effort"] == ""
+
+
+def test_an_authorized_reply_freezes_both_choices(monkeypatch):
+    posted = []
+
+    class _Integration:
+        def call(self, verb, **kw):
+            posted.append((verb, kw))
+            return {}
+
+    monkeypatch.setattr(selection, "_resolve", lambda ctx: _Integration())
+    ctx = _gate_ctx(
+        [
+            {
+                "author": "owner",
+                "body": "- [x] `model-fable-5.1`\n- [x] `effort-high`\nthe-loop execute",
+            }
+        ],
+        **_declared(),
+    )
+    result = selection.classify_phase_selection(ctx)
+    assert result.data["model"] == "fable-5.1"
+    assert result.data["effort"] == "high"
+    assert result.data["frozenGraph"]["model"] == "fable-5.1"
+    # ...and the human is told, in both directions (R1.6).
+    confirmation = next(kw["body"] for verb, kw in posted if verb == "add-comment")
+    assert "fable-5.1" in confirmation and "high" in confirmation
