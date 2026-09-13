@@ -232,6 +232,25 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
         ),
     ),
     GeneratedPath(
+        name="model availability verdicts",
+        attr="verdict_cache",
+        default="<root>/local/model-verdicts.json",
+        portable=False,
+        holds=(
+            "one verdict per (harness, model-or-effort name): ok, refused or "
+            "unknown, the argv it was taken against, and when it was taken "
+            "(issue-358)"
+        ),
+        why=(
+            "a fact about THIS machine's harness installation and this account's "
+            "model access, not about the work. Copied elsewhere it would withhold "
+            "a model another box can run perfectly well, or offer one it cannot — "
+            "and it is re-measurable in a second, so there is nothing to carry. "
+            "Machine-local also keeps it out of reach of an agent session, which "
+            "matters because a verdict can only ever WITHHOLD a declared choice"
+        ),
+    ),
+    GeneratedPath(
         name="session record",
         attr="local_dir",
         default="<root>/local/<slug>.json",

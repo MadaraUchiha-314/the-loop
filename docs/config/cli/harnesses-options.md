@@ -103,19 +103,18 @@ permission flag you did not. If your list already carries the same flag a choice
 append, `the-loop diagnose` warns — whether the appended one wins is the harness's own
 argument-parsing rule, not the-loop's to assert.
 
-## The models and the effort levels
+## The models
 
-### `models`
+The `models` list declares the models a work item may be put on, in each provider's own
+naming convention. Unset — the default — **offers no model choice**, exactly as before this
+key existed.
 
-- **Type:** `(string | object)[]`
-- **Default:** `[]` — **unset offers no model choice**, exactly as before this key existed
-
-The models a work item may be put on, in each provider's own naming convention. A bare
-string is the common case; a mapping narrows.
+An entry is either a **bare name** (the common case) or a **mapping** that narrows it:
 
 ```yaml
 models:
   - opus-5                      # candidate for every declared harness
+  - fable-5.1
   - name: gpt-5.6-sol
     harnesses: [cursor]         # narrowed: offered and probed on cursor only
     about: for the OpenAI-shaped work
@@ -136,13 +135,39 @@ only ever shrink the set.
   gpt-5.6-sol    refused       ok
 ```
 
-`harnesses:` on an entry restricts which cells are offered and probed. It cannot fill one
-in: a harness that refuses a model still refuses it, and a harness named there that you did
-not declare contributes nothing.
-
 There is deliberately **no `args` escape hatch** on a model. A harness with no model flag
 cannot be handed a model at all, so it is offered no model section rather than given a
 hand-written flag that nothing validates.
+
+### `models[].name`
+
+- **Type:** `string`
+- **Default:** none — required in the mapping form; a bare string entry *is* the name
+
+The model's name as its provider spells it. the-loop neither normalises it nor parses it
+for a vendor.
+
+### `models[].harnesses`
+
+- **Type:** `string[]`
+- **Default:** unset — the model is a candidate for **every** declared harness
+
+Narrow this model to these declared harnesses: it is offered only on them, and probed only
+against them — which is also how you keep the probe matrix small. A harness named here that
+you did not declare in `harnesses` contributes nothing.
+
+This **narrows; it never confirms.** A harness that refuses the model still refuses it, so
+a declaration here can never assert support that does not exist.
+
+### `models[].about`
+
+- **Type:** `string`
+- **Default:** `""`
+
+One line rendered beside the model's row on the phase-selection checklist — what a human
+picking between two models wants to know.
+
+## The effort levels
 
 ### `effort`
 

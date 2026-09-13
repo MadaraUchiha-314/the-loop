@@ -254,6 +254,14 @@ EVENT_TYPES: Dict[str, str] = {
     "session.spawn_failed": (
         "Spawning a session failed (work_item, harness, error; will_retry)."
     ),
+    "session.spawn_deferred": (
+        "No session was spawned, on purpose: the work item is parked on its "
+        "graph's first node and that node is a HUMAN gate the daemon services "
+        "itself (issue-358, R8) — `phase-selection`, a contribution's "
+        "`goal-definition`. A session starts once an authorized reply unparks "
+        "the pointer, and it then carries the model that gate froze (work_item, "
+        "harness, gh_event, delivery_id, reason)."
+    ),
     "session.respawned": (
         "A tmux-mode session found dead on delivery was respawned on a fresh "
         "tmux session, and the pending event delivered as its boot prompt "

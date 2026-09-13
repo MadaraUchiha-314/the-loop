@@ -28,7 +28,8 @@ you say otherwise, never relative to whatever directory a command was run from
 │   ├── index.json                 # what this directory holds, derived — tracked
 │   └── github-octo-repo-15.json   # one per work item: control, poll, graph, collaborators — tracked
 ├── local/
-│   └── github-octo-repo-15.json   # that item's session handle(s) — never tracked
+│   ├── github-octo-repo-15.json   # that item's session handle(s) — never tracked
+│   └── model-verdicts.json        # which models this box's harnesses accept — never tracked
 ├── logs/
 │   ├── events.jsonl               # the decision trail
 │   └── poller.out                 # a daemonized poller's stdout/stderr
@@ -75,6 +76,7 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 | `<root>/portable/<slug>.json` | execution control + the poller | what was armed, which phases were frozen, who was invited onto the item, which comments are already seen, and whether — and how — the item ended | **portable** |
 | `<root>/portable/index.json` | the same store, derived | one entry per record: ref, url, file, sections | **portable** |
 | `<root>/local/<slug>.json` | the session registry | conversation id, `cwd`, tmux target, status, and the item's pull requests with their own sessions | **local** |
+| `<root>/local/model-verdicts.json` | `the-loop models check` (issue-358) | one verdict per harness × model-or-effort name: `ok`, `refused` or `unknown`, the argv it was taken against, and when — re-measured every 24h | **local** |
 | `<root>/local/standing/<name>.json` | the standing-session registry (issue-277, opt-in) | per standing session: harness, conversation id, `cwd`, tmux target, status, the Slack channel/thread its chat runs in — and, for a session created through the API, its whole definition | **local** |
 | `<root>/logs/events.jsonl` | every ingress, and `sessions` | one JSON object per decision | **local** |
 | `<root>/logs/poller.out` | a daemonized poller | its stdout and stderr, appended | **local** |
@@ -598,6 +600,42 @@ covers both (and the atomic writer's temporaries) with one `self-diagnosis.json*
 **If you delete it:** every failure still in the event log becomes "new" again on the
 next scan, so already-filed issues can be filed a second time. Delete it only together
 with (or after) the event log it summarises.
+
+## Availability verdicts — `<root>/local/model-verdicts.json`
+
+What this machine's harnesses will actually accept (issue-358). It is what lets
+[`models`](/config/cli/harnesses-options#models) be a plain list of provider-named models
+with no harness attached: the model × harness relation is **measured**, not declared.
+
+```json
+{
+  "verdicts": [
+    {
+      "harness": "claude",
+      "kind": "model",
+      "name": "fable-5.1",
+      "argsDigest": "6f1c0a9b2d4e7a31",
+      "verdict": "ok",
+      "checkedAt": 1789000000.0
+    }
+  ]
+}
+```
+
+`argsDigest` fingerprints the argv the verdict was taken against, so a changed flag or a
+changed adapter mapping asks again rather than standing for something nobody tested. A
+verdict older than 24 hours is re-measured. `unknown` — the harness could not be run at
+all — is **offerable**: a machine with no binary installed must not silently lose a model
+you declared.
+
+**Local, and deliberately not agent-writable.** A verdict is a fact about this box's
+harness installation and this account's model access, not about the work, so copying it
+elsewhere would withhold a model another machine runs perfectly well. It is also
+re-measurable in a second, so there is nothing to carry. It can only ever *withhold* a
+declared choice — it can never introduce one, because resolution is always against what
+the operator declared.
+
+Delete it and the next `the-loop models check` rebuilds it.
 
 ## Standing-session record — `<root>/local/standing/<name>.json`
 

@@ -2326,6 +2326,38 @@ class Dispatcher:
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
             return False
+        # R8 (issue-358): the graph is entered HERE, before any session exists.
+        # When the pointer parks on the graph's own start node and that node is a
+        # HUMAN gate — `phase-selection`, a contribution's `goal-definition` —
+        # the work waiting to be done is the daemon's, not an agent's: the hook
+        # posts its checklist through the CLI's github integration. Spawning now
+        # would buy a tmux session and a harness process that sit at a gate, and
+        # would spend them on the operator's default model before the work item
+        # has said which one it wants. So: no session yet. The one that does
+        # spawn, once an authorized reply unparks the pointer, already carries
+        # the frozen choice.
+        #
+        # A deferral is a SUCCESS, not a failure: the event was handled (the gate
+        # was posted, or advanced by this very comment), so the delivery is not
+        # released for retry and the work item is followed with `the-loop check`
+        # rather than `sessions list`.
+        if self.graphlink.on_arm(work_item, cwd, routed=routed):
+            logger.info(
+                "not spawning a session for %s yet: it is parked at its first "
+                "human gate, which the daemon services itself — a session starts "
+                "once an authorized reply answers it",
+                work_item.ref,
+            )
+            eventlog.emit(
+                "session.spawn_deferred",
+                work_item=work_item.ref,
+                harness=self.config.default_harness,
+                gh_event=routed.event,
+                action=routed.action or None,
+                delivery_id=routed.delivery_id or None,
+                reason="parked-at-human-start-gate",
+            )
+            return True
         # Reads before the spawn, writes after it (issue-148, D5): the graph
         # context is resolved from the prepared workspace so a respawned
         # mid-graph item is told to RESUME at its current node, while entering

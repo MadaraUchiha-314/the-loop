@@ -388,6 +388,13 @@ def _raw(name: str) -> dict:
     return json.loads(configschema.schema_path(name).read_text(encoding="utf-8"))
 
 
+#: Keywords whose contents are INSTANCE DATA, not schema. Descending into them
+#: reports a sample object's own field names as though they were JSON Schema
+#: keywords — which is what `harnesses`/`models` first exposed (issue-358), being
+#: the first sections whose `examples` are objects rather than strings.
+_DATA_KEYWORDS = ("examples", "default", "enum")
+
+
 def _keywords(node, out: set, in_names: bool = False) -> None:
     """Collect schema keywords, skipping the levels whose keys are *names*."""
     if isinstance(node, list):
@@ -401,4 +408,6 @@ def _keywords(node, out: set, in_names: bool = False) -> None:
             _keywords(value, out)
             continue
         out.add(key)
+        if key in _DATA_KEYWORDS:
+            continue
         _keywords(value, out, in_names=key in ("properties", "$defs"))

@@ -138,36 +138,32 @@
       "type": "array",
       "description": "The models a work item may be put on, in each PROVIDER's own naming convention (issue-358) — `opus-5`, `fable-5.1`, `gpt-5.6-sol`. the-loop neither normalises these names nor parses them for a vendor: the name is passed to the harness's own model flag verbatim, and the grammar (alphanumeric start, then letters/digits/`.`/`_`/`:`/`-`) is what makes that safe — a name can never be a flag, a path or a shell fragment. A name is NOT tied to a harness here: which harness can actually run which name is MEASURED by `the-loop models check` and cached, never declared and never guessed (decision-124). An entry may optionally carry `harnesses` to NARROW where it is offered and probed; narrowing can only ever restrict — the probe remains the only thing that makes a name offerable. An entry that declares no usable name contributes nothing, so a fault can only shrink the set. EMPTY OR UNSET OFFERS NO MODEL CHOICE, which is exactly the behaviour of every install before this key existed.",
       "items": {
-        "oneOf": [
-          {
+        "type": [
+          "string",
+          "object"
+        ],
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
             "type": "string",
             "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
           },
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "name"
-            ],
-            "properties": {
-              "name": {
-                "type": "string",
-                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
-              },
-              "harnesses": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "description": "Narrow this model to these declared harnesses: it is offered only on them and probed only against them. A harness named here that is not declared in `harnesses` contributes nothing. This NARROWS; it never confirms — a harness that refuses the model still refuses it."
-              },
-              "about": {
-                "type": "string",
-                "description": "One line rendered beside the model's row on the phase-selection checklist."
-              }
-            }
+          "harnesses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Narrow this model to these declared harnesses: it is offered only on them and probed only against them. A harness named here that is not declared in `harnesses` contributes nothing. This NARROWS; it never confirms — a harness that refuses the model still refuses it."
+          },
+          "about": {
+            "type": "string",
+            "description": "One line rendered beside the model's row on the phase-selection checklist."
           }
-        ]
+        }
       },
       "default": [],
       "examples": [

@@ -13,9 +13,16 @@ This module is the missing call. Two entry points, both invoked by the
 **dispatcher** (which both ingresses share, so wiring it here means a webhook
 deployment and a polling one behave identically):
 
+* :meth:`GraphLink.on_arm` — a work item was armed, before any session exists:
+  it enters the graph, its first human gate is evaluated against the arming
+  event, and the caller is told whether the pointer parked there (issue-358, R8).
+  A parked pointer means **do not spawn yet** — the gate's work is the daemon's,
+  and the session that eventually starts carries the model the gate froze;
 * :meth:`GraphLink.on_spawn` — a session just started for a work item, so the
   work item enters the graph (and, when the node it enters is a human gate, that
-  gate is evaluated once against the spawning event — issue-199);
+  gate is evaluated once against the spawning event — issue-199). After
+  :meth:`on_arm` has run, ``start`` is a no-op and this records the session
+  binding alone;
 * :meth:`GraphLink.on_event` — an event reached an existing session, so the
   graph takes at most one node boundary, with the event's comments attached.
 
@@ -482,6 +489,57 @@ class GraphLink:
 
     # -- entry points -----------------------------------------------------------
 
+    def on_arm(
+        self,
+        work_item: WorkItemRef,
+        cwd: str,
+        routed: Optional[Any] = None,
+    ) -> bool:
+        """Enter the graph for a work item that has just been armed — before any
+        session exists — and say whether its spawn should WAIT (issue-358, R8).
+
+        **True means "do not spawn yet".** The pointer is parked on the graph's
+        own start node and that node is a *human* gate — ``phase-selection`` for
+        the outer loop, ``goal-definition`` for a contribution — which is work
+        the **daemon itself** does: the hook posts the checklist through the CLI's
+        github integration, not through an agent. Until somebody answers it there
+        is nothing for a session to do, so spawning one buys a tmux session and a
+        harness process that sit at a gate. The first spawn then happens *after*
+        the answer is frozen, which is what lets it already carry the work item's
+        chosen model.
+
+        The reorder keeps the reason the old order existed
+        (``_spawn_tmux``: *"a failed spawn must not leave a labelled ticket
+        pointing at a node nobody stands on"*), because a pointer parked here
+        stands on a node the daemon services.
+
+        Every event on the arming path passes through here while the pointer is
+        parked, and each attempts one advance with that event's comments — which
+        is how the ``the-loop execute`` comment freezes the selection and unparks
+        the item when it has no session to be delivered into. issue-199's
+        hand-off is unchanged, only earlier: the arming comment is attached to
+        the same first advance it always was.
+
+        Deliberately narrow, so nothing can be stranded: only the **start** node
+        defers, and only while it is still the current one. A pointer that has
+        moved, an agent node, a graph that is disabled, a foreign checkout, a
+        missing spec-id convention — every one of them returns False and the
+        caller spawns exactly as it does today.
+        """
+
+        def call(rt, item):
+            rt.start(item, work_item.ref)
+            if not self._parked_on_a_human_start_gate(rt, item):
+                return False
+            rt.advance(
+                item,
+                ref=work_item.ref,
+                event={"comments": comments_from(routed, self.authorized_users)},
+            )
+            return self._parked_on_a_human_start_gate(rt, item)
+
+        return bool(self._guarded("start", work_item, cwd, call))
+
     def on_spawn(
         self,
         work_item: WorkItemRef,
@@ -875,6 +933,34 @@ class GraphLink:
                 error=str(exc),
             )
             return None
+
+    @staticmethod
+    def _parked_on_a_human_start_gate(rt: Any, item_id: str) -> bool:
+        """Whether the pointer is still on the graph's own start node, and that
+        node waits on a human (issue-358, R8).
+
+        The predicate the deferred spawn turns on, and the reason it cannot
+        strand anything: it is false the moment the pointer moves, false for an
+        agent node, and false for any graph whose start node is not a gate — an
+        inner ``pdlc-pr-loop`` among them. Anything unreadable answers *no*, so a
+        fault spawns a session rather than withholding one.
+        """
+        from .graph.state import GraphState
+
+        try:
+            item = rt.work_item(item_id)
+            state_dir = (
+                rt.state_dir(item) if hasattr(rt, "state_dir") else item.spec_dir
+            )
+            current = GraphState.load(state_dir, item_id).current_node
+            if not current or current != rt.graph.start:
+                return False
+            return rt.graph.node(current).actor == "human"
+        except Exception as exc:  # noqa: BLE001 — a fake runtime, a vanished node
+            logger.debug(
+                "could not decide whether %s is parked at its gate: %s", item_id, exc
+            )
+            return False
 
     @staticmethod
     def _entered_a_human_gate(rt: Any, report: Any) -> bool:
