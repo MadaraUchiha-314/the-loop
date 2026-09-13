@@ -14,12 +14,14 @@ riskTier: 4
 > [`requirements.md`](requirements.md). MUST be reviewed and approved before moving to tasks
 > breakdown.
 >
-> **Revision 2** — rewritten against the owner's review of PR #359. Model and effort are now
-> two independent inputs, availability is a designed mechanism rather than an unexamined case,
-> the key is `routing.models`, and there is a new section on **why a session exists before the
-> gate is answered and why it should not**. Still **presented for approval with the
-> requirements**, and still nothing implemented: no authorized `the-loop execute` reaches a
-> cloud session, so neither gate can be answered here.
+> **Revision 3** — the declarations moved out of `routing` into three top-level sections
+> (`harnesses`, `models`, `effort`), `models` became a flat list whose rows name a harness, and
+> **effort is normalized by the-loop** rather than described per harness by the operator — all
+> three from the owner's second round of review on PR #359. Revision 2 split model from effort
+> and added the availability requirement (R7); revision 1 was the label-to-args map's
+> replacement. Still **presented for approval with the requirements**, and still nothing
+> implemented: no authorized `the-loop execute` reaches a cloud session, so neither gate can be
+> answered here.
 
 ## Overview
 
@@ -43,7 +45,8 @@ to the owner's first question — the-loop discovers nothing; it validates what 
 ```mermaid
 flowchart LR
   subgraph operator["operator's machine — trusted"]
-    cfg["cli-config.yaml<br/>routing.models.claude[]<br/>routing.effort.claude[]<br/>routing.harnessArgs.claude[]"]
+    cfg["cli-config.yaml<br/>harnesses[] · models[] · effort[]"]
+    ad["harness adapter<br/>model_flag · effort_args(level)"]
     probe["availability cache<br/>(harness, id) → ok · refused · unknown"]
   end
   subgraph ticket["the work item — untrusted text"]
@@ -58,6 +61,8 @@ flowchart LR
     tmux["tmux + harness argv"]
     reg["session record<br/>model · effort · harnessArgs"]
   end
+  cfg --> ad
+  ad -->|"the argv for a normalized level"| res
   cfg --> probe
   cfg -->|"renders the rows"| chk
   probe -->|"withholds a refused row"| chk
@@ -196,9 +201,10 @@ def resolve_choice(token: str, declared: Sequence[DeclaredChoice]) -> Optional[D
 def effective_args(base: Sequence[str], *chosen: Optional[DeclaredChoice]) -> List[str]: ...
 ```
 
-- One type for both kinds, with `kind` on it, because the two differ in exactly one rule — an
-  effort entry has no flag to fall back on — and two near-identical types would be two places
-  to fix the next bug in.
+- One type for both kinds, with `kind` on it, because they differ in exactly one rule — where
+  `args` comes from: a **model** row resolves through `adapter.model_flag`, an **effort** level
+  through `adapter.effort_args(level)`. Neither is ever read from the operator's file for a
+  harness the-loop adapts. Two near-identical types would be two places to fix the next bug in.
 - `declared_choices` is **fail-closed in the shrinking direction**, the rule `repos.py` already
   follows: a malformed entry contributes nothing, so a fault can only remove a choice — it can
   never invent one.
@@ -208,51 +214,82 @@ def effective_args(base: Sequence[str], *chosen: Optional[DeclaredChoice]) -> Li
 - `effective_args` is `list(base) + …` in argument order and nothing else (R3.1, R3.2). Variadic
   so the call site reads `effective_args(base, model, effort)` and a `None` contributes nothing.
 
-### `routing.models` and `routing.effort` — the declarations
+### `harnesses`, `models`, `effort` — three top-level sections
+
+**Not under `routing`, and not nested.** `routing` answers *how an event reaches a session*.
+Which harnesses this instance has, and what they can be asked to run, is a property of **the
+machine's installed tooling** — the same kind of fact as `repositories` (this instance's scope)
+and `critics[]` (this instance's harness+model combos). So three top-level keys, beside those:
 
 ```yaml
-routing:
-  harnessArgs:
-    claude: ["--dangerously-skip-permissions"]     # unchanged, still applies to everything
-  models:                                          # NEW (issue-358)
-    claude:
-      - id: fable
-        about: fast and cheap — good for small, well-specified items
-      - id: opus
-        about: the default for anything with real design in it
-    cursor:
-      - id: gpt-5.5
-  effort:                                          # NEW — independent of the above
-    claude:
-      - id: high
-        args: ["--thinking-effort", "high"]        # the operator's own flag; none is assumed
-      - id: low
-        args: ["--thinking-effort", "low"]
+# ── top level, beside `repositories` and `critics` ──────────────────────────────
+harnesses:                       # NEW — the harnesses this instance has
+  - name: claude
+    default: true                # the one an unmatched event spawns
+    args: ["--dangerously-skip-permissions"]   # this harness's launch args
+  - name: cursor
+
+models:                          # NEW — a flat list; each row names its harness,
+  - harness: claude              #   exactly the shape `critics[]` already uses
+    id: opus
+    about: the default for anything with real design in it
+  - harness: claude
+    id: fable
+    about: fast and cheap — good for small, well-specified items
+  - harness: cursor
+    id: gpt-5.5
+
+effort:                          # NEW — the-loop's OWN normalized vocabulary
+  - low                          #   the levels this instance offers, drawn from
+  - medium                       #   the loop's fixed enum. NO flags here: the
+  - high                         #   mapping to each harness is the ADAPTER's job.
 ```
 
-**Two lists, not their product.** Three models and two efforts are five declarations and two
-questions — the coupled shape the first revision proposed would have needed six entries and
-would have grown multiplicatively with every model added. The checklist asks twice, the frozen
-record answers twice, and `effective_args` concatenates.
+**`models` is a flat list whose rows name a harness**, which is the correction to revision 2's
+nested map. My objection to a harness-independent list was that the-loop would have to
+*attribute* an id to a harness — a guess. A `harness:` field removes the guess without nesting
+anything: the operator states the association in the row, `critics[]` has worked exactly this
+way since issue-108, and `the-loop models list` can print one table.
 
-A **model** entry with no `args` resolves to `[<adapter.model_flag>, <id>]` — `--model fable`
-for Claude Code, `-m gpt-5.5` for Cursor (R2.4). An **effort** entry needs its own `args`,
-because `HarnessAdapter.effort_flag` is empty for both adapters the-loop ships: no harness it
-adapts exposes a common effort flag, so there is nothing to derive from and the-loop will not
-invent one. The field exists on the adapter so that a harness which grows one is a one-line
-change rather than a special case.
+**`effort` is normalized by the-loop, not described by the operator.** Revision 2 had the
+operator hand-writing `["--thinking-effort", "high"]`, which is worse than nesting: it makes
+every operator restate a flag per harness, and it lets two configs disagree about what "high"
+means. So the vocabulary is **fixed and the-loop's** — `low | medium | high`, one enum, the same
+three words whatever harness runs — and the translation is the adapter's:
 
-**Per harness, not global** (R2.2, the owner's second question). A model id is meaningful only
-to the harness that has it: `fable` is Claude Code's, `gpt-5.5` is Cursor's, and the flag
-differs too. A single flat list would force the-loop to attribute each id to a harness — a
-guess, which is the thing decision-120 forbade for repositories and decision-123 for critics.
-The cost is one extra key for an operator who uses one harness; the alternative is a
-mis-attributed id reaching an argv.
+```python
+class HarnessAdapter:
+    #: This harness's own way of asking for more or less thinking. Empty tuple for a
+    #: level this harness cannot express, and for a harness with no effort control at
+    #: all — never a guess, and never the operator's problem.
+    def effort_args(self, level: str) -> Tuple[str, ...]: ...
+```
 
-The keys sit beside `harnessArgs`, `harnessTrust` and `harnessPlugins` — same kind of thing,
-per-harness operator policy — and in `cli-config.yaml` rather than the harness config because
-they are executable configuration on the machine that runs the daemon, which decision-123
-already settled.
+One consequence, stated plainly because it is the thing to check: **the per-harness mapping
+table is the one fact this design cannot settle from the-loop's own codebase.** No adapter has
+an effort flag today, and a spec must not invent one. So the table is filled in at implementation
+from each harness CLI's own `--help`, every mapping is validated by the availability probe (R7 —
+the same probe that validates a model, for the same reason), and a level a harness cannot express
+is simply **not offered for that harness**. `the-loop models check` prints which levels each
+harness actually supports. That is the honest version of "the-loop normalizes this": one
+vocabulary for the human, per-harness truth underneath, and nothing asserted that has not been
+probed.
+
+**Where `harnesses[].args` leaves `routing`.** The merge in R3.1 is onto this harness's launch
+args, which live in `routing.harnessArgs.<harness>` today. `harnesses[].args` is their new home:
+read from there when present, from `routing.harnessArgs` otherwise with a deprecation warning —
+the warn-never-fail shim this repository already used when `routing.runner` was removed
+(issue-156) and when the repository list left `polling.sources[].repos` (issue-348). The other
+three per-harness keys — `routing.harnessTrust`, `routing.harnessPlugins` and
+`routing.defaultHarness` — belong in `harnesses[]` by exactly the same argument, and folding them
+in is a **follow-up work item**, not this one: it is a breaking config migration with its own
+tests, and `harnesses[].default` is included here only because `models[]` needs to know which
+harness a work item will run on.
+
+A **model** row resolves to `[<adapter.model_flag>, <id>]`. An explicit `args` on a model row is
+accepted **only** when the named harness has no `model_flag` — a harness the-loop adapts is
+normalized, never hand-written — and validation rejects it otherwise, so there is exactly one way
+to do the ordinary thing.
 
 ### `modelprobe.py` — availability (R7)
 
@@ -273,7 +310,10 @@ def probe(choice: DeclaredChoice, adapter: HarnessAdapter) -> Verdict: ...
 def offerable(choice: DeclaredChoice, cache: VerdictCache) -> bool: ...
 ```
 
-- **How it probes.** `adapter.oneshot_argv(PROBE_PROMPT, …)` plus the choice's own args — the
+- **What it probes.** Every declared **model** row, and every **effort** level against every
+  declared harness — the effort mapping is the-loop's own assertion about a harness CLI, so it is
+  exactly the kind of claim that must be checked rather than trusted.
+- **How it probes.** `adapter.oneshot_argv(PROBE_PROMPT, …)` plus the choice's resolved args — the
   harness's own cheapest non-interactive invocation, the same surface critics already use. The
   prompt is a fixed the-loop constant; **no text from a work item is ever sent** (the
   requirements' egress rule). A non-zero exit or an error envelope is `refused`; a binary that
@@ -351,7 +391,7 @@ change (no recorded args) is left alone until something else respawns it.
   "harnessSessionId": "…",
   "model": "fable",
   "effort": "high",
-  "harnessArgs": ["--dangerously-skip-permissions", "--model", "fable", "--thinking-effort", "high"]
+  "harnessArgs": ["--dangerously-skip-permissions", "--model", "fable", "<the adapter's args for high>"]
 }
 ```
 
@@ -371,8 +411,9 @@ N/A — no product UI. The three human surfaces are text: the two checklist sect
 
 | Where | Key | Type | Default | Validated by |
 |---|---|---|---|---|
-| `cli-config.yaml` | `routing.models.<harness>[]` | `{id, args?, about?}` | absent | `cli-config.schema.json` + `scripts/validate_config.py` |
-| `cli-config.yaml` | `routing.effort.<harness>[]` | `{id, args, about?}` | absent | as above; `args` required while no adapter has an effort flag |
+| `cli-config.yaml` | `harnesses[]` (top level) | `{name, default?, args?}` | absent → inferred from `routing.defaultHarness` | `cli-config.schema.json` + `scripts/validate_config.py` |
+| `cli-config.yaml` | `models[]` (top level) | `{harness, id, about?, args?}` | absent | as above; `args` only for a harness with no `model_flag` |
+| `cli-config.yaml` | `effort[]` (top level) | `enum[]` — `low` \| `medium` \| `high` | absent | as above; no flags, the adapter maps each level |
 | portable frozen record | `model`, `effort` | string | `""` | re-validated on read against the declared set |
 | machine-local state | availability cache | `Verdict[]` | empty | re-validated against the declared set on read |
 | session record | `model`, `effort` | string | omitted | — |
@@ -388,8 +429,9 @@ there is no `{…}` to expand.
 
 | Situation | Behaviour | Surfaced as |
 |---|---|---|
-| a model entry with no `args` and a harness with no model flag | config validation fails, naming the entry | `validate_config.py` / `diagnose`, at startup — never at spawn (R2.6) |
-| an effort entry with no `args` | config validation fails, naming the entry | as above (R2.5) |
+| a model row with `args` on a harness that has a model flag, or neither | config validation fails, naming the row | `validate_config.py` / `diagnose`, at startup — never at spawn (R2.5) |
+| an effort level a harness cannot express | not offered for that harness | `models check` names the level as unsupported there (R2.6) |
+| a `models[]` row naming a harness that is not declared | the row contributes nothing, named at validation | `validate_config.py` / `diagnose` |
 | `harnessArgs.<harness>` already carries the same flag | validation warns, naming both | as above (R3.4) |
 | a declared choice the harness refuses | not offered; if resolved anyway, spawn on `harnessArgs` + one comment naming it | `models check`, the checklist's absence, the comment (R7.3, R7.4) |
 | the harness cannot be probed at all | `unknown` — offered, never blocking | `models check` / `diagnose` report it as unprobed (R7.6) |
@@ -447,8 +489,9 @@ refused one indefinitely.
 
 Unit tests carry the resolution rules (`modelchoice.py`: declaration parsing per kind, unknown
 tokens, the `args`-vs-flag fork, the three-part merge order) and the schema validation
-(`validate_config.py` rejecting a model entry with no flag and no args, rejecting an effort entry
-with no args, warning on a duplicated flag). `modelprobe` tests use a stub adapter: `ok`,
+(`validate_config.py` rejecting a model row whose harness is undeclared, rejecting `args` on a
+model row whose harness *has* a `model_flag`, rejecting an effort level outside the loop's enum,
+warning on a duplicated flag and on a deprecated `routing.harnessArgs`). `modelprobe` tests use a stub adapter: `ok`,
 `refused`, `unknown`, digest invalidation, and the withhold-not-introduce rule. Selection-hook
 tests cover rendering (each section present only when offerable, capped, default in prose),
 per-section parsing (one tick, no tick, two ticks, unknown token, an ambiguous model beside a
@@ -496,14 +539,27 @@ authored yet because this design is not approved.
    `refused` choice from the checklist so a human cannot pick it, fall back visibly if one is
    resolved anyway, and re-probe once on a dead session so a stale `ok` cannot become a respawn
    loop. The failure surfaces at `models check` and `diagnose`, not in an unattended pane.
-4. *Per harness or overall?* **Per harness** — a model id is meaningful only to the harness that
-   has it, and a flat list would make the-loop attribute ids to harnesses, which is a guess. One
-   extra key for a single-harness operator.
-5. *Model and effort coupled?* **No — two inputs, two lists, two questions.** The first revision
-   coupled them into one named argv, which would have made the operator declare the cross
-   product. They are now independent all the way through: declaration, checklist section, frozen
-   key, and concatenation order.
-6. *Why does a session exist before the gate is answered?* It should not; see the section above.
+4. *Per harness or overall?* **One flat `models[]` list whose rows name a harness** — the owner's
+   correction, and it is right. My objection was to the-loop having to *attribute* an id to a
+   harness; a `harness:` field on the row removes the guess without nesting anything, and
+   `critics[]` has had exactly this shape since issue-108. Revision 2's nested map is gone.
+5. *Model and effort coupled?* **No — two inputs, two lists, two questions.** Revision 1 coupled
+   them into one named argv, which would have made the operator declare the cross product. They
+   are now independent all the way through: declaration, checklist section, frozen key, and
+   concatenation order.
+6. *Who owns the effort vocabulary?* **the-loop.** Revision 2 had the operator writing
+   `["--thinking-effort", "high"]` per harness, which is worse than the coupling it replaced: it
+   restates a flag in every config and lets two of them disagree about what "high" means. So the
+   enum is fixed and the-loop's (`low | medium | high`), the translation is
+   `adapter.effort_args(level)`, and a level a harness cannot express is not offered there. The
+   per-harness mapping table is the **one fact this design cannot settle from the codebase** — no
+   adapter has an effort flag today — so it is read from each harness CLI's own `--help` at
+   implementation and validated by the same probe that validates a model. A spec does not invent
+   a flag.
+7. *Why were these under `routing`?* They should not have been. `routing` answers how an event
+   reaches a session; the harnesses an instance has and what they can run is installed-tooling
+   configuration, like `repositories` and `critics[]`. Three top-level sections now.
+8. *Why does a session exist before the gate is answered?* It should not; see the section above.
    Proposed as a prerequisite work item, with the bridge keeping this design correct either way.
 
 **What this costs.**
@@ -525,7 +581,9 @@ authored yet because this design is not approved.
 |---|---|
 | `routing.harnessArgsByLabel` (the ticket's proposal) | a label rides GitHub's permission model, not `authorizedUsers`, and the payload does not attribute a label to a person — so it would let anyone with triage rights choose an unattended agent's argv. Same argument as issue-177's, with an argv at the end of it. |
 | one coupled model+effort choice (revision 1) | the operator would declare the cross product; the owner's review rejected it, and it would grow multiplicatively. |
-| a harness-independent model list | the-loop would have to attribute each id to a harness. A guess, and guesses are what decision-120 and decision-123 exist to refuse. |
+| a model list with **no** harness on the row | the-loop would have to attribute each id to a harness — a guess, and guesses are what decision-120 and decision-123 exist to refuse. A `harness:` field on a flat row is not that, and is what revision 3 does. |
+| nesting `models` under `harnesses[]`, or under `routing` | the owner's review rejected both: `routing` is about event delivery, and nesting hides the one table an operator wants to read. |
+| the operator declaring effort flags per harness (revision 2) | restates a flag in every config and lets two configs disagree about what "high" means. the-loop normalizes instead. |
 | enumerating models from the harness or a vendor API | no stable machine-readable source; a network ingress this daemon does not need; and it would go stale between the fetch and the spawn anyway. R7 validates instead. |
 | a `the-loop model: <id>` control keyword | works before a session exists, which is attractive — but it is a second surface for a per-work-item decision the gate already collects three of, and the control parser is deliberately argument-free except for `@login` (issue-307). The ordering fix removes the motivation. |
 | free-form args in the reply (`the-loop execute --model X`) | comment text into argv. Refused outright. |
@@ -533,9 +591,12 @@ authored yet because this design is not approved.
 | changing the running session's model in place | no harness exposes it. |
 
 **Durable decisions to record** (at implementation, as `docs/decisions/decision-124.md`): the
-choice is a phase-selection question, not a label; the pickable sets are declared per harness by
-the operator and validated rather than discovered; model and effort are independent inputs; and a
-choice the harness refuses is withheld from the checklist rather than failed at spawn.
+choice is a phase-selection question, not a label; the harnesses, models and effort levels an
+instance offers are top-level installed-tooling configuration, not `routing`; a model row names
+its harness rather than being nested under one; the effort vocabulary is the-loop's and the
+per-harness translation is the adapter's; declarations are validated against the harness rather
+than discovered from it; and a choice the harness refuses is withheld from the checklist rather
+than failed at spawn.
 
 ## Open questions
 
@@ -543,9 +604,15 @@ choice the harness refuses is withheld from the checklist rather than failed at 
    Recommended: raise it, land it first, and the bridge becomes a safety net nothing exercises.
 2. **What lifetime should an availability verdict have?** Proposed 24 hours, plus invalidation on
    a changed declaration, plus the one re-probe of R7.5.
-3. **Should the confirmation comment also say the argv?** It names the model and the effort in
-   this design. Naming the arguments would be more honest about what the operator declared, and
-   would also print `--dangerously-skip-permissions` onto a public ticket. Proposed: the ids only.
+3. **Should the confirmation comment also say the argv?** It names the model and the effort level
+   in this design. Naming the arguments would be more honest about what was resolved, and would
+   also print `--dangerously-skip-permissions` onto a public ticket. Proposed: the ids only.
+4. **Is `low | medium | high` the right effort enum?** Three levels is the smallest useful
+   vocabulary and adding a level is easier than removing one. Say if you want `minimal` / `max`
+   at the ends.
+5. **Does the follow-up that folds `harnessTrust`, `harnessPlugins` and `defaultHarness` into
+   `harnesses[]` get raised now?** This work item needs only `name`, `default` and `args`; the
+   rest is a breaking config migration with its own tests.
 
 ## Review comments
 
@@ -556,5 +623,14 @@ choice the harness refuses is withheld from the checklist rather than failed at 
 | handle a model the harness does not have | R7 and § `modelprobe.py`; trade-off 3; the refused-at-resolution rows of § Error handling; scenario 3 and abuse case A7 |
 | per harness or overall? | § *Per harness, not global*; trade-off 4; R2.2 |
 | model and effort are coupled — keep them separate | § *Two lists, not their product*; the two checklist sections; the three-part merge order; trade-off 5 |
-| "just models" | `routing.models` (+ `routing.effort`), and the module renamed `modelchoice.py` |
+| "just models" | `models[]` (+ `effort[]`), and the module renamed `modelchoice.py` |
 | why is a session started before phase selection? we ideally shouldn't | § *Why a session exists before the gate, and why it should not* — agreed, with the code's own stated rationale, the reorder diagram, and a prerequisite ticket proposed; the bridge keeps this design correct under either ordering |
+
+### 2026-09-13 — @MadaraUchiha-314, second round on PR #359
+
+| Feedback | Where it landed |
+|---|---|
+| "separate section for harnesses, a separate section for models, a separate list for efforts" | § *`harnesses`, `models`, `effort` — three top-level sections*; the data-models table |
+| "the-loop should take care of normalizing" the effort enums | the enum is the-loop's (`low \| medium \| high`); `adapter.effort_args(level)` translates; a level a harness cannot express is not offered; the mapping table is probed, never invented — trade-off 6 |
+| "putting it under routing key doesn't make any sense to me" | agreed — top level, beside `repositories` and `critics`; `routing` is event delivery. `harnesses[].args` is the new home for `routing.harnessArgs.<harness>`, with the warn-never-fail shim issue-156 and issue-348 used; the other three per-harness keys are a named follow-up — trade-off 7 |
+| (implicit) the nested per-harness map | replaced by a flat `models[]` whose rows carry `harness:` — the shape `critics[]` already uses; trade-off 4 |

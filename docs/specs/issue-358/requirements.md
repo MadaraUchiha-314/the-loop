@@ -15,12 +15,12 @@ riskTier: 4
 > (<https://kiro.dev/docs/specs/>). This phase MUST be reviewed and approved by the
 > required collaborators before moving to design.
 >
-> **Revision 2** — rewritten against the owner's review of PR #359. Three things changed:
-> model and effort are **two independent inputs** (not one coupled choice), a model the
-> harness will not accept is now a **stated requirement** (R7) rather than an unexamined
-> case, and the key is `routing.models`. The fourth point — that a session should not exist
-> before the gate is answered — is answered in `design.md` § *Why a session exists before
-> the gate, and why it should not*, and is proposed as a prerequisite work item.
+> **Revision 3** — the declarations are three **top-level** sections (`harnesses`, `models`,
+> `effort`), `models` is a flat list whose rows name a harness, and **the effort vocabulary is
+> the-loop's own**, translated per harness by the adapter rather than spelled out by the operator
+> (owner's second round on PR #359). Revision 2 split model from effort and added the availability
+> requirement (R7). The spawn-order point is answered in `design.md` § *Why a session exists
+> before the gate, and why it should not* and proposed as a prerequisite work item.
 
 ## Introduction
 
@@ -44,15 +44,18 @@ So these requirements keep the reporter's five properties and move the channel:
 
 | Reporter asked for | Kept as |
 |---|---|
-| a configurable label-to-args map | an operator-declared, closed set of **models** and, separately, of **effort levels**, per harness (R2) |
+| a configurable label-to-args map | a declared, closed set of **models** (`models[]`) and a normalized set of **effort levels** (`effort[]`), both top-level (R2) |
 | merge, do not replace | R3 |
 | applied at spawn and at respawn | R4 |
 | visible in the registry | R5 |
 | unlabelled items unchanged | R6 — a work item that chooses nothing runs exactly as today |
 
-And they answer the two questions the owner's review added: a model the harness does not
-accept is **never offered and never reaches a spawn** (R7), and the declarations are **per
-harness**, because a model id is only meaningful to the harness that has it.
+And they answer what the owner's two review rounds added: a model the harness does not accept is
+**never offered and never reaches a spawn** (R7); the declarations live at the **top level**,
+because which harnesses an instance has and what they can run is installed-tooling configuration
+rather than event routing; a **model row names its harness** instead of being nested under one;
+and the **effort vocabulary is the-loop's**, normalized across harnesses, with the translation to
+each harness's own mechanism owned by its adapter.
 
 ## Requirements
 
@@ -68,9 +71,9 @@ on the strongest model at full effort.
 1. WHEN the `phase-selection` checklist is posted for a work item whose harness has declared
    models THEN the system SHALL render one row per declared model, in the order the operator
    declared them, in a section of its own, distinct from the phase rows.
-2. WHEN that harness has declared effort levels THEN the system SHALL render them as a
-   **second, independent** section — a work item chooses a model and an effort separately,
-   and choosing one SHALL NOT require or imply the other.
+2. WHEN effort levels are declared THEN the system SHALL render them as a **second,
+   independent** section, using the-loop's own level names — a work item chooses a model and an
+   effort separately, and choosing one SHALL NOT require or imply the other.
 3. WHEN an authorized user replies with the execute keyword THEN the system SHALL freeze both
    choices by the same authorization and the same freeze that already record the phase skips,
    the outer-loop surface and `sessionPerPr`.
@@ -82,8 +85,11 @@ on the strongest model at full effort.
    ambiguous model never discards a valid effort.
 6. WHEN the gate confirms a selection THEN the confirmation comment SHALL name the model and
    the effort the work item will run on, including when either is the operator's default.
-7. IF the work item's harness has declared no models THEN the system SHALL render no model
+7. IF no models are declared for the work item's harness THEN the system SHALL render no model
    section, and likewise for effort — each section appears only if it has something to offer.
+8. WHEN an effort level cannot be expressed by the work item's harness THEN the system SHALL NOT
+   render that level for that work item, so a human is never offered a level that would resolve
+   to nothing.
 
 ### Requirement 2 — the choices are the operator's, declared and closed
 
@@ -93,31 +99,41 @@ I did not declare.
 
 #### Acceptance criteria (EARS)
 
-1. The system SHALL read the pickable models from `routing.models.<harness>` and the pickable
-   effort levels from `routing.effort.<harness>` in the operator's CLI config, and SHALL NOT
-   infer, discover or fetch either list from a harness, a vendor API or the network.
-2. The declarations SHALL be **per harness**. The system SHALL NOT accept a
-   harness-independent list, because a model id is meaningful only to the harness that has it
-   and attributing one to a harness would be a guess — the same reason a repository is never
-   inferred from prose (decision-120).
-3. WHEN a reply names a token that is not a declared choice for this work item's harness THEN
+1. The system SHALL read the harnesses this instance has from a **top-level `harnesses`**
+   section, the pickable models from a **top-level `models`** section, and the offered effort
+   levels from a **top-level `effort`** section — beside `repositories` and `critics`, not under
+   `routing`, because `routing` configures how an event reaches a session while these configure
+   the machine's installed tooling. The system SHALL NOT infer, discover or fetch either list
+   from a harness, a vendor API or the network.
+2. Each `models[]` row SHALL name the harness it belongs to. The system SHALL NOT attribute a
+   model id to a harness itself — that would be a guess, the same reason a repository is never
+   inferred from prose (decision-120) — and SHALL reject a row naming an undeclared harness.
+3. The effort vocabulary SHALL be the-loop's own fixed enum, identical across harnesses, and
+   `effort[]` SHALL declare which of those levels this instance offers. The system SHALL NOT
+   accept a per-harness effort flag from the operator's config.
+4. WHEN a reply names a token that is not a declared choice for this work item's harness THEN
    the system SHALL ignore it and record no choice — no text from a comment SHALL ever reach
    an argv.
-4. The system SHALL resolve a declared **model** to argv from the operator's declaration: the
-   entry's own `args` when it has them, otherwise the harness adapter's model flag followed by
-   the entry's id.
-5. The system SHALL resolve a declared **effort level** to the entry's own `args`. IF an
-   effort entry carries no `args` and its harness's adapter exposes no effort flag THEN
-   config validation SHALL reject that entry, naming it — the-loop SHALL NOT invent an effort
-   flag, and no adapter it ships today has one.
-6. IF a declared model entry carries no `args` and its harness's adapter has no model flag
-   THEN config validation SHALL reject that entry, naming it — the failure SHALL be reported
-   at validation, never discovered at spawn.
-7. WHEN more choices are declared in a section than the checklist renders THEN the system
+5. The system SHALL resolve a declared **model** to argv through its harness adapter's model
+   flag followed by the row's id. IF a row carries explicit `args` AND its harness has a model
+   flag THEN config validation SHALL reject the row — a harness the-loop adapts is normalized,
+   never hand-written. Explicit `args` SHALL be accepted only for a harness with no model flag,
+   and a row that is neither SHALL be rejected at validation, never discovered at spawn.
+6. The system SHALL resolve an **effort level** to argv through its harness adapter
+   (`effort_args(level)`), never from the operator's config. IF an adapter cannot express a level
+   THEN it SHALL return no arguments and the level SHALL NOT be offered for that harness (R1.8).
+7. The system SHALL validate every effort mapping it asserts against the harness itself, by the
+   same probe R7 applies to models — a mapping the-loop claims about a harness CLI SHALL be
+   checked, never trusted.
+8. WHEN more choices are declared in a section than the checklist renders THEN the system
    SHALL render the first N and SHALL say how many were not shown, rather than truncating
    silently (the `CANDIDATE_LIMIT` convention kickoff already uses).
-8. IF no models and no effort levels are declared for any harness THEN the system SHALL
-   behave exactly as it does today, everywhere.
+9. IF no models and no effort levels are declared THEN the system SHALL behave exactly as it
+   does today, everywhere.
+10. WHEN `harnesses[].args` is present for a harness THEN it SHALL be that harness's launch
+    arguments; otherwise `routing.harnessArgs.<harness>` SHALL be read with a deprecation
+    warning — the warn-never-fail shim `routing.runner` (issue-156) and the repository list
+    (issue-348) already established. An un-migrated config SHALL NOT fail to start.
 
 ### Requirement 3 — the choices are merged onto the operator's arguments, never a replacement
 
@@ -127,11 +143,11 @@ permission change.
 
 #### Acceptance criteria (EARS)
 
-1. WHEN a work item has a frozen choice THEN the effective arguments SHALL be
-   `routing.harnessArgs.<harness>`, then the model entry's arguments, then the effort entry's
-   arguments — in that order, each contributing nothing when there is no choice.
-2. The system SHALL NOT remove, rewrite or reorder any argument the operator declared in
-   `routing.harnessArgs.<harness>`.
+1. WHEN a work item has a frozen choice THEN the effective arguments SHALL be the harness's
+   launch arguments (R2.10), then the model's resolved arguments, then the effort level's
+   resolved arguments — in that order, each contributing nothing when there is no choice.
+2. The system SHALL NOT remove, rewrite or reorder any argument the operator declared as that
+   harness's launch arguments.
 3. The system SHALL NOT add a permission-widening argument that the operator did not declare,
    under any selection — a choice SHALL only ever contribute the arguments its declaration
    carries.
@@ -202,10 +218,10 @@ that a work item never dies in a pane nobody is watching.
 
 #### Acceptance criteria (EARS)
 
-1. The system SHALL provide a command (`the-loop models check`) that, for every declared
-   model and effort level, runs the harness's own cheapest non-interactive invocation with
-   those arguments and records the verdict as `ok`, `refused` or `unknown` (the harness could
-   not be run at all).
+1. The system SHALL provide a command (`the-loop models check`) that, for every declared model
+   row and every offered effort level on every declared harness, runs that harness's own cheapest
+   non-interactive invocation with the resolved arguments and records the verdict as `ok`,
+   `refused` or `unknown` (the harness could not be run at all).
 2. The system SHALL cache each verdict in the machine-local state, keyed by harness, id and
    the arguments probed, with a bounded lifetime, and SHALL refresh a verdict whose
    declaration has changed.
@@ -300,6 +316,10 @@ into operator-owned configuration rather than a passthrough.
   spawn contract for **every** work item, not only those choosing a model, so it is proposed
   as a **prerequisite work item** rather than folded in here. This work item is written to be
   correct under either ordering (R4.3).
+- **Folding `routing.harnessTrust`, `routing.harnessPlugins` and `routing.defaultHarness` into
+  `harnesses[]`.** They belong there by the same argument that moved these three sections out of
+  `routing`, but it is a breaking config migration with its own tests. This work item takes only
+  what it needs — `name`, `default` and `args` — and leaves the rest to a follow-up.
 - **A model choice for standing sessions.** They already have per-entry `harnessArgs`
   (issue-277) and are not work items.
 - **Changing an already-running session's model in place.** No harness exposes that; R4.3
@@ -317,8 +337,11 @@ into operator-owned configuration rather than a passthrough.
    Recommended: raise it, land it first, and drop R4.3's re-launch to a safety net that
    nothing exercises. The alternative is to land this work item first and carry the re-launch
    as a bridge. The owner's call.
-2. **What lifetime should an availability verdict have?** Proposed: 24 hours, plus
-   invalidation whenever the declaration's arguments change, plus the one re-probe of R7.5.
+2. **What lifetime should an availability verdict have?** Proposed: 24 hours, plus invalidation
+   whenever the declaration's arguments change, plus the one re-probe of R7.5.
+3. **Is `low | medium | high` the right effort enum?** Three levels is the smallest useful
+   vocabulary; adding one later is easier than removing one.
+4. **Does the `harnesses[]` consolidation follow-up get raised now?**
 
 ## Review comments
 
@@ -328,6 +351,14 @@ into operator-owned configuration rather than a passthrough.
 |---|---|
 | "handle the error condition when the user chooses a model that's not available in the harness" | **R7**, new: probe, cache, do not offer a `refused` choice, fall back visibly, re-probe once on a dead session, report in `diagnose`. |
 | "Should we let the user specify the models per harness or overall for all harnesses?" | **Per harness** — R2.2, with the reason: a harness-independent list would make the-loop attribute an id to a harness, which is a guess. |
-| "this couples model and effort … keep model and effort as 2 separate inputs" | **Accepted** — two declarations (`routing.models`, `routing.effort`), two checklist sections, two frozen keys, resolved independently (R1.2, R1.5, R2.1, R3.1). No cross product. |
-| "just models" (on the `harnessModels` vs `models` question) | **Accepted** — `routing.models`, and `routing.effort` beside it. |
+| "this couples model and effort … keep model and effort as 2 separate inputs" | **Accepted** — two declarations (`models[]`, `effort[]` — top-level since revision 3), two checklist sections, two frozen keys, resolved independently (R1.2, R1.5, R2.1, R3.1). No cross product. |
+| "just models" (on the `harnessModels` vs `models` question) | **Accepted** — `models`, with `effort` beside it. |
 | "Why do we start a session before the phase selection is complete? … We ideally shouldn't" | **Agreed.** Answered in `design.md` § *Why a session exists before the gate, and why it should not*; proposed as a prerequisite work item, with R4.3 keeping this work item correct under either ordering. |
+
+### 2026-09-13 — @MadaraUchiha-314, second round on PR #359
+
+| Feedback | Disposition |
+|---|---|
+| "separate section for harnesses, a separate section for models, a separate list for efforts" | **Accepted** — three top-level sections (R2.1). `models[]` rows carry `harness:` rather than nesting (R2.2), the shape `critics[]` already uses. |
+| "the-loop should take care of normalizing" the effort enums | **Accepted** — the enum is the-loop's, the translation is `adapter.effort_args(level)`, an inexpressible level is not offered (R1.8, R2.3, R2.6), and every mapping the-loop asserts is probe-validated (R2.7) rather than invented. |
+| "putting it under routing key doesn't make any sense to me" | **Agreed** — `routing` configures event delivery; these configure installed tooling. `harnesses[].args` takes over from `routing.harnessArgs.<harness>` behind a warn-never-fail shim (R2.10); the other three per-harness keys are a named follow-up, out of scope here. |

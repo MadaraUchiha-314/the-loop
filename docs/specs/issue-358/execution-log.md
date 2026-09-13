@@ -35,7 +35,7 @@ approves the pull request and a named human signs off the security review.
 |-------|---------|----------------------|-------|
 | phase-selection | 2026-09-13 | — | recorded, not answered — no authorized `execute` reaches a cloud session |
 | requirements-definition | 2026-09-13 | | [`requirements.md`](requirements.md) — six requirements, six abuse cases |
-| design | 2026-09-13 | | [`design.md`](design.md) — revision 2 after the owner's review of PR #359 (model/effort split, availability, `routing.models`, the spawn-order answer); awaiting approval |
+| design | 2026-09-13 | | [`design.md`](design.md) — revision 3 after two rounds of the owner's review on PR #359 (model/effort split and availability in r2; three top-level sections, a flat `models[]`, and the-loop-owned effort normalization in r3); awaiting approval |
 | test-planning | | | not started — downstream of an unapproved design |
 | tasks-breakdown | | | not started |
 | implementation | | | **blocked by the owner's instruction** until the design is approved |
@@ -81,8 +81,9 @@ approves the pull request and a named human signs off the security review.
   not accept** is now requirement 7 — probe with the harness's own cheapest invocation, cache
   the verdict, withhold a refused choice from the checklist, fall back visibly, re-probe once
   on a dead session — the declarations stay **per harness** (a flat list would make the-loop
-  attribute an id to a harness, which is a guess), and the key is **`routing.models`** with
-  `routing.effort` beside it.
+  attribute an id to a harness, which is a guess), and the keys were renamed from
+  `harnessModels` to `models` with `effort` beside it — still under `routing` at that point,
+  which the owner's second round then corrected.
 - **The fifth is architectural.** *"Why do we start a session before the phase selection is
   complete? … We ideally shouldn't."* Verified in the code: `dispatcher._spawn_tmux` spawns
   and *then* calls `graphlink.on_spawn`, and the checklist is posted by the **daemon's** own
@@ -94,6 +95,37 @@ approves the pull request and a named human signs off the security review.
   work item; R4.3's re-launch keeps this work item correct under either ordering.
 - **Checkpoint/tests:** `markdownlint-cli2` on the three files, clean. Still no code.
 - **Next:** the owner's decision on the prerequisite ticket, and approval of the design.
+- **Blockers:** the owner's instruction to hold implementation until the design is approved.
+
+### 2026-09-13 — the owner's second round, and revision 3
+
+- **Phase:** design (revision 3)
+- **Decision recorded:** the owner rejected the *shape* of revision 2's declaration on three
+  counts, and each correction makes the design smaller:
+  1. **Three top-level sections** — `harnesses`, `models`, `effort` — not one nested map under
+     `routing`. `routing` configures how an event reaches a session; which harnesses an instance
+     has and what they can run is installed-tooling configuration, which is where `repositories`
+     and `critics[]` already live.
+  2. **A flat `models[]` whose rows name a harness.** My earlier objection to a
+     harness-independent list was that the-loop would have to *attribute* an id to a harness — a
+     guess. A `harness:` field on the row removes the guess without nesting, and `critics[]` has
+     had exactly this shape since issue-108.
+  3. **the-loop normalizes effort.** Revision 2 had the operator hand-writing
+     `["--thinking-effort", "high"]` per harness, which was worse than the coupling it replaced.
+     The enum is now the-loop's (`low | medium | high`), the translation is
+     `adapter.effort_args(level)`, and a level a harness cannot express is simply not offered
+     there.
+- **The one thing this design cannot settle from the codebase**, stated as such rather than
+  papered over: no adapter has an effort flag today, so the per-harness mapping table is read
+  from each harness CLI's own `--help` at implementation and validated by the same probe R7
+  applies to models. A spec does not invent a flag.
+- **Scope held.** `harnesses[].args` takes over from `routing.harnessArgs.<harness>` behind the
+  warn-never-fail shim issue-156 and issue-348 established, because R3's merge is onto it. The
+  other three per-harness keys (`harnessTrust`, `harnessPlugins`, `defaultHarness`) belong in
+  `harnesses[]` by the same argument and are a named follow-up, not this work item.
+- **Checkpoint/tests:** `markdownlint-cli2` on the three files, clean. Still no code.
+- **Next:** the owner's approval of the design, and their answers on the effort enum, the verdict
+  lifetime, the prerequisite ordering ticket and the `harnesses[]` consolidation follow-up.
 - **Blockers:** the owner's instruction to hold implementation until the design is approved.
 
 ## Verification results
@@ -112,6 +144,7 @@ approves the pull request and a named human signs off the security review.
 |-------|-----------------------------|----------|---------|------|
 | 1 | self | the-loop | the requirements' five reporter properties re-checked against the design's components; the merge order, the fail-closed table and the abuse-case table re-read against `_tmux_for`'s existing behaviour | — |
 | 2 | human (owner) | @MadaraUchiha-314 | new findings → all five addressed in revision 2 | [PR #359 review](https://github.com/MadaraUchiha-314/the-loop/pull/359) |
+| 3 | human (owner) | @MadaraUchiha-314 | new findings on the declaration's shape → all three addressed in revision 3 | [PR #359](https://github.com/MadaraUchiha-314/the-loop/pull/359#discussion_r4000531271) |
 
 ## Security review (gate)
 
