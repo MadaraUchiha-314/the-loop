@@ -8,64 +8,119 @@ overrides: {}
 riskTier: 4
 ---
 
-# Design: per-work-item model choice, answered at the phase-selection gate
+# Design: per-work-item model and effort choice, answered at the phase-selection gate
 
 > Phase 2 of 3 (requirements → design → tasks). Derives from
-> [`requirements.md`](requirements.md). MUST be reviewed and approved before moving to
-> tasks breakdown.
+> [`requirements.md`](requirements.md). MUST be reviewed and approved before moving to tasks
+> breakdown.
 >
-> **Presented for approval together with the requirements.** No authorized
-> `the-loop execute` reaches a cloud session, so neither gate can be answered here; the
-> owner asked to approve the design before any implementation, and this document is that
-> ask. Nothing below is implemented.
+> **Revision 2** — rewritten against the owner's review of PR #359. Model and effort are now
+> two independent inputs, availability is a designed mechanism rather than an unexamined case,
+> the key is `routing.models`, and there is a new section on **why a session exists before the
+> gate is answered and why it should not**. Still **presented for approval with the
+> requirements**, and still nothing implemented: no authorized `the-loop execute` reaches a
+> cloud session, so neither gate can be answered here.
 
 ## Overview
 
-**A model choice is a fourth question on the phase-selection checklist, resolved against a
-closed set the operator declared, frozen by the same signed reply, and read at spawn time
-by the dispatcher exactly as `sessionPerPr` already is.**
+**Two independent questions — which model, and how much effort — are added to the
+phase-selection checklist, resolved against two closed sets the operator declared, frozen by
+the same signed reply, and read at spawn time by the dispatcher exactly as `sessionPerPr`
+already is.**
 
-The change reuses three mechanisms that already exist and adds no fourth:
+The change reuses three mechanisms and adds one:
 
 | Existing mechanism | What it already does | What this work item adds |
 |---|---|---|
-| `phase-selection` ([selection.py](../../../cli/the_loop/graph/hooks/selection.py)) | asks three per-work-item questions, freezes the answers on one authorized reply | a `model-*` row group |
-| the frozen record (`control_store.frozen_graph`) | carries `surface` and `sessionPerPr` | carries `model` |
+| `phase-selection` ([selection.py](../../../cli/the_loop/graph/hooks/selection.py)) | asks three per-work-item questions, freezes the answers on one authorized reply | a `model-*` section and an independent `effort-*` section |
+| the frozen record (`control_store.frozen_graph`) | carries `surface` and `sessionPerPr` | carries `model` and `effort` |
 | `_tmux_for` ([dispatcher.py](../../../cli/the_loop/webhook/dispatcher.py)) | overrides one operator default per work item | `_adapter_for` overrides `harnessArgs` the same way |
+| — | — | **availability**: a cached verdict per declared choice, so a model the harness refuses is never offered (R7) |
 
-The only genuinely new object is the **declaration**: `routing.harnessModels`, a per-harness
-list of pickable models in the operator's CLI config. It is the answer to the owner's
-first question — the-loop discovers nothing.
+The declarations are two per-harness lists in the operator's CLI config. They are the answer
+to the owner's first question — the-loop discovers nothing; it validates what it is told.
 
 ```mermaid
 flowchart LR
   subgraph operator["operator's machine — trusted"]
-    cfg["cli-config.yaml<br/>routing.harnessModels.claude[]<br/>routing.harnessArgs.claude[]"]
+    cfg["cli-config.yaml<br/>routing.models.claude[]<br/>routing.effort.claude[]<br/>routing.harnessArgs.claude[]"]
+    probe["availability cache<br/>(harness, id) → ok · refused · unknown"]
   end
   subgraph ticket["the work item — untrusted text"]
-    chk["phase-selection checklist<br/>- [ ] model-fable<br/>- [ ] model-opus"]
+    chk["phase-selection checklist<br/>model-fable · model-opus<br/>effort-high · effort-low"]
     rep["authorized reply:<br/>the-loop execute"]
   end
   subgraph state["portable state"]
-    frozen["frozen graph<br/>surface · sessionPerPr · model"]
+    frozen["frozen record<br/>surface · sessionPerPr<br/>model · effort"]
   end
   subgraph daemon["dispatcher"]
     res["_adapter_for()"]
     tmux["tmux + harness argv"]
-    reg["session record<br/>model · harnessArgs"]
+    reg["session record<br/>model · effort · harnessArgs"]
   end
+  cfg --> probe
   cfg -->|"renders the rows"| chk
+  probe -->|"withholds a refused row"| chk
   chk -->|"tick state at reply time"| rep
-  rep -->|"token, matched against the declared set"| frozen
+  rep -->|"two tokens, each matched against its declared set"| frozen
   cfg -->|"the argv itself"| res
-  frozen -->|"which entry"| res
+  probe -->|"veto"| res
+  frozen -->|"which entries"| res
   res --> tmux
   res --> reg
 ```
 
-Read the two arrows into `_adapter_for` together: the work item chooses **which declared
-entry**, and the operator's config supplies **the argv**. No string from a comment is ever
-part of a command line.
+Read the arrows into `_adapter_for` together: the work item chooses **which declared
+entries**, the cache may **veto** one, and the operator's config supplies **the argv**. No
+string from a comment is ever part of a command line.
+
+## Why a session exists before the gate, and why it should not
+
+**The owner is right, and the fix does not belong to this work item.** Today
+`dispatcher._spawn_tmux` spawns the tmux session and *then* calls `graphlink.on_spawn`, which
+enters the graph — whose start node is `phase-selection`, whose entry hook posts the
+checklist. So a session exists, and a workspace has been checked out, before anyone has said
+what the work item should do.
+
+The current order is deliberate, and its reason is in the code
+([dispatcher.py:2466](../../../cli/the_loop/webhook/dispatcher.py)): *"a failed spawn must not
+leave a labelled ticket pointing at a node nobody stands on."* That was sound when the graph
+was entered nowhere else. It is also load-bearing in one other way: the arming comment rides
+into the first gate (issue-199), which is how `the-loop contribute` carries its goal.
+
+What makes the reorder possible is a fact worth stating plainly: **the checklist is posted by
+the daemon, not by the agent.** `selection.py` posts it through the CLI's own github
+integration (`_resolve(ctx).call("post-comment")`). Nothing about phase selection needs a
+harness session to exist.
+
+```mermaid
+flowchart TB
+  subgraph today["today"]
+    a1["authorized start"] --> a2["checkout + spawn tmux"] --> a3["on_spawn: enter graph"] --> a4["post checklist"] --> a5["wait for execute"] --> a6["session already running,<br/>on the default model"]
+  end
+  subgraph proposed["proposed (prerequisite ticket)"]
+    b1["authorized start"] --> b2["enter graph"] --> b3["post checklist"] --> b4["wait for execute"] --> b5["freeze selection"] --> b6["checkout + spawn tmux<br/>on the chosen model"]
+  end
+```
+
+The proposed order is strictly better for four reasons, only one of which is this work item's:
+the first spawn carries the frozen choice (no re-launch); the spawn prompt's `$graph_context`
+names the node the session will actually work on instead of a gate it must wait at; no tmux
+session and no checkout are spent on a work item nobody has configured yet; and the original
+rationale is preserved, because a pointer standing on `phase-selection` is a node the **daemon
+itself** services.
+
+**It is not folded in here** because it changes the spawn contract for every work item — the
+arming path, `on_spawn`'s idempotency, the issue-199 comment hand-off, the announce and
+conversation-open side effects, and every test that assumes a session exists at gate time.
+Recommended: raise it as a prerequisite work item, land it first, and this design loses its
+one real cost. Until then the bridge below covers it, and the bridge is worth keeping either
+way as a safety net.
+
+**The bridge (R4.3).** While a session can exist before the gate, the dispatcher compares the
+session record's recorded arguments with the currently resolved ones and, on a difference,
+re-launches the session — resuming its conversation — instead of delivering into it. In the
+common case that happens on the execute comment's own delivery, before any work has been done.
 
 ## Architecture
 
@@ -73,23 +128,30 @@ part of a command line.
 
 | Component | File | Status |
 |---|---|---|
-| the vocabulary: declared models, resolution, merge | `cli/the_loop/harnessmodels.py` | new |
-| the adapter's model flag, asked by name | `cli/the_loop/harness/__init__.py` | extended |
+| the vocabulary: declared models and efforts, resolution, merge | `cli/the_loop/modelchoice.py` | new |
+| the availability probe and its cache | `cli/the_loop/modelprobe.py` | new |
+| `the-loop models check` / `models list` | `cli/the_loop/commands/models_cmd.py` | new |
+| the adapter's model and effort flags, asked by name | `cli/the_loop/harness/__init__.py`, `harness/base.py` | extended |
 | an adapter copy carrying different args | `cli/the_loop/harness/base.py` | extended |
-| the checklist rows, the parse, the frozen key | `cli/the_loop/graph/hooks/selection.py` | extended |
+| the two checklist sections, the parse, the frozen keys | `cli/the_loop/graph/hooks/selection.py` | extended |
 | seeding the hook's config | `cli/the_loop/graph/bootstrap.py` | extended |
 | resolution at spawn / respawn / drift | `cli/the_loop/webhook/dispatcher.py` | extended |
-| the two recorded fields | `cli/the_loop/sessions/registry.py` | extended |
+| the three recorded fields | `cli/the_loop/sessions/registry.py` | extended |
 | the `Model` column | `cli/the_loop/commands/sessions_cmd.py` | extended |
+| the verdict report | `cli/the_loop/commands/diagnose_cmd.py` | extended |
 | the JSON contract | `cli/the_loop/api/routes.py`, `docs/api-specs/openapi/the-loop.v1.yaml` | extended |
-| the declaration's schema | `cli/the_loop/schemas/cli-config.schema.json` | extended |
+| the declarations' schema | `cli/the_loop/schemas/cli-config.schema.json` | extended |
 
-`harnessmodels.py` exists for the reason `prsessions.py` exists: its two readers cannot see
-each other. The selection hook cannot import the dispatcher — `dispatcher → graphlink →
-graph` makes that a cycle — and a second copy of the resolution rule is how the checklist
-and the daemon come to disagree about what `fable` means. The module imports no ingress and
-no graph; it asks `the_loop.harness` one question (`model_flag(name)`) and otherwise reads
-only mappings.
+`modelchoice.py` exists for the reason `prsessions.py` exists: its two readers cannot see each
+other. The selection hook cannot import the dispatcher — `dispatcher → graphlink → graph` makes
+that a cycle — and a second copy of the resolution rule is how the checklist and the daemon
+come to disagree about what `fable` means. It imports no ingress and no graph; it asks
+`the_loop.harness` for a flag by name (verified cycle-free: `the_loop.harness` pulls only
+stdlib, `trust` and `harness_plugins`) and otherwise reads mappings.
+
+`modelprobe.py` is separate because it is the only part that **runs a process**. Keeping the
+pure resolution rules out of reach of a subprocess call is what lets every rule above be unit
+tested without a harness installed.
 
 ### The life of one choice
 
@@ -97,131 +159,189 @@ only mappings.
 sequenceDiagram
   participant H as authorized human
   participant G as phase-selection gate
+  participant P as availability cache
   participant S as portable state
   participant D as dispatcher
   participant T as tmux session
 
-  Note over D,T: session already exists on the operator's default — it is what posted the checklist
-  G->>H: checklist, incl. one row per declared model
-  H->>G: ticks `model-fable`, replies `the-loop execute`
-  G->>G: authorize · parse · match against the declared set
-  G->>S: freeze {phases, surface, sessionPerPr, model: "fable"}
-  G->>H: confirmation — "this item will run on fable"
-  D->>S: read frozen record (the execute comment's own delivery)
-  D->>D: resolved args ≠ session.harnessArgs → drift
-  D->>T: re-launch, resuming the conversation, with `--model fable`
-  D->>S: record model + effective args on the session
+  G->>P: which declared choices are offerable?
+  P-->>G: fable ok · opus ok · o1-mini refused
+  G->>H: checklist — two sections, refused rows withheld
+  H->>G: ticks `model-fable` and `effort-high`, replies `the-loop execute`
+  G->>G: authorize · parse each section · match against its declared set
+  G->>S: freeze {phases, surface, sessionPerPr, model: "fable", effort: "high"}
+  G->>H: confirmation — "this item will run on fable, at high effort"
+  D->>S: read the frozen record
+  D->>P: still offerable?
+  D->>T: spawn (or re-launch, resuming) with harnessArgs + fable + high
+  D->>S: record model, effort and effective args on the session
 ```
-
-The re-launch on drift (R4.3) is the design's one real cost, and it is what makes the
-choice take effect at all: the gate is answered *after* a session exists, because the
-session is what posts the checklist. A resume keeps the conversation, so the item loses
-nothing but a few seconds of boot — and in the common case the re-launch happens on the
-execute comment's own delivery, before any work has been done.
 
 ## Components & interfaces
 
-### `harnessmodels.py` — the vocabulary
+### `modelchoice.py` — the vocabulary
 
 ```python
 @dataclass(frozen=True)
-class DeclaredModel:
-    """One pickable model, exactly as the operator declared it."""
+class DeclaredChoice:
+    """One pickable model or effort level, exactly as the operator declared it."""
     id: str                 # the token the checklist renders and a reply names
+    kind: str               # "model" | "effort"
     harness: str            # which harness it is declared under
-    args: Tuple[str, ...]   # resolved argv: the entry's own, else (model_flag, id)
+    args: Tuple[str, ...]   # resolved argv: the entry's own, else (flag, id)
     about: str = ""         # one line rendered beside the row
 
-def declared_models(cli_config: Mapping, harness: str) -> List[DeclaredModel]: ...
-def resolve_model(token: str, declared: Sequence[DeclaredModel]) -> Optional[DeclaredModel]: ...
-def effective_args(base: Sequence[str], chosen: Optional[DeclaredModel]) -> List[str]: ...
+def declared_choices(cli_config: Mapping, harness: str, kind: str) -> List[DeclaredChoice]: ...
+def resolve_choice(token: str, declared: Sequence[DeclaredChoice]) -> Optional[DeclaredChoice]: ...
+def effective_args(base: Sequence[str], *chosen: Optional[DeclaredChoice]) -> List[str]: ...
 ```
 
-- `declared_models` is **fail-closed in the shrinking direction**, the rule `repos.py`
-  already follows: a malformed entry contributes nothing, so a fault can only remove a
-  choice — it can never invent one.
-- `resolve_model` matches on `id`, exactly, case-sensitively. It takes the declared list as
-  an argument rather than re-reading config, so every caller is provably resolving against
-  the same set it rendered.
-- `effective_args` is `list(base) + list(chosen.args)` and nothing else (R3.1, R3.2).
+- One type for both kinds, with `kind` on it, because the two differ in exactly one rule — an
+  effort entry has no flag to fall back on — and two near-identical types would be two places
+  to fix the next bug in.
+- `declared_choices` is **fail-closed in the shrinking direction**, the rule `repos.py` already
+  follows: a malformed entry contributes nothing, so a fault can only remove a choice — it can
+  never invent one.
+- `resolve_choice` matches on `id`, exactly, case-sensitively, and takes the declared list as an
+  argument rather than re-reading config, so every caller is provably resolving against the same
+  set it rendered.
+- `effective_args` is `list(base) + …` in argument order and nothing else (R3.1, R3.2). Variadic
+  so the call site reads `effective_args(base, model, effort)` and a `None` contributes nothing.
 
-### `routing.harnessModels` — the declaration
+### `routing.models` and `routing.effort` — the declarations
 
 ```yaml
 routing:
   harnessArgs:
     claude: ["--dangerously-skip-permissions"]     # unchanged, still applies to everything
-  harnessModels:                                   # NEW (issue-358)
+  models:                                          # NEW (issue-358)
     claude:
       - id: fable
         about: fast and cheap — good for small, well-specified items
       - id: opus
         about: the default for anything with real design in it
-      - id: opus-deep                              # the "effort" axis, same mechanism
-        args: ["--model", "opus", "--thinking", "high"]
     cursor:
       - id: gpt-5.5
+  effort:                                          # NEW — independent of the above
+    claude:
+      - id: high
+        args: ["--thinking-effort", "high"]        # the operator's own flag; none is assumed
+      - id: low
+        args: ["--thinking-effort", "low"]
 ```
 
-An entry with no `args` resolves to `[<adapter.model_flag>, <id>]` — `--model fable` for
-Claude Code, `-m gpt-5.5` for Cursor (R2.3). An entry with `args` is taken verbatim, which
-is what lets a harness the-loop has no model flag for, or a choice that is a model *and* an
-effort, ride the same list without a second key (R2.5 rejects the third case: no `args` and
-no flag is a config error, named at validation).
+**Two lists, not their product.** Three models and two efforts are five declarations and two
+questions — the coupled shape the first revision proposed would have needed six entries and
+would have grown multiplicatively with every model added. The checklist asks twice, the frozen
+record answers twice, and `effective_args` concatenates.
 
-The key sits beside `harnessArgs`, `harnessTrust` and `harnessPlugins` because it is the
-same kind of thing — per-harness operator policy — and in `cli-config.yaml` rather than the
-harness config because it is executable configuration on the machine that runs the daemon,
-which decision-123 already settled for `critics[]`.
+A **model** entry with no `args` resolves to `[<adapter.model_flag>, <id>]` — `--model fable`
+for Claude Code, `-m gpt-5.5` for Cursor (R2.4). An **effort** entry needs its own `args`,
+because `HarnessAdapter.effort_flag` is empty for both adapters the-loop ships: no harness it
+adapts exposes a common effort flag, so there is nothing to derive from and the-loop will not
+invent one. The field exists on the adapter so that a harness which grows one is a one-line
+change rather than a special case.
 
-### `selection.py` — the rows, the parse, the freeze
+**Per harness, not global** (R2.2, the owner's second question). A model id is meaningful only
+to the harness that has it: `fable` is Claude Code's, `gpt-5.5` is Cursor's, and the flag
+differs too. A single flat list would force the-loop to attribute each id to a harness — a
+guess, which is the thing decision-120 forbade for repositories and decision-123 for critics.
+The cost is one extra key for an operator who uses one harness; the alternative is a
+mis-attributed id reaching an argv.
+
+The keys sit beside `harnessArgs`, `harnessTrust` and `harnessPlugins` — same kind of thing,
+per-harness operator policy — and in `cli-config.yaml` rather than the harness config because
+they are executable configuration on the machine that runs the daemon, which decision-123
+already settled.
+
+### `modelprobe.py` — availability (R7)
+
+The mechanism that answers *"what if the harness does not have that model?"*: **do not offer
+it, and never spawn on it.**
+
+```python
+@dataclass(frozen=True)
+class Verdict:
+    harness: str
+    kind: str
+    id: str
+    args_digest: str        # the declaration probed — a changed declaration invalidates
+    verdict: str            # "ok" | "refused" | "unknown"
+    checked_at: str
+
+def probe(choice: DeclaredChoice, adapter: HarnessAdapter) -> Verdict: ...
+def offerable(choice: DeclaredChoice, cache: VerdictCache) -> bool: ...
+```
+
+- **How it probes.** `adapter.oneshot_argv(PROBE_PROMPT, …)` plus the choice's own args — the
+  harness's own cheapest non-interactive invocation, the same surface critics already use. The
+  prompt is a fixed the-loop constant; **no text from a work item is ever sent** (the
+  requirements' egress rule). A non-zero exit or an error envelope is `refused`; a binary that
+  is not on PATH, or a run that could not start, is `unknown`.
+- **When it probes.** `the-loop models check` (explicitly), at daemon start, and on the single
+  stale-verdict path of R7.5 — never inline in a delivery. A verdict's lifetime is bounded
+  (proposed 24h, open question 2) and any change to the declaration's args invalidates it
+  through `args_digest`.
+- **What `unknown` means.** Offerable. An operator on a machine with no harness binary, or no
+  network at probe time, must not lose a capability they declared (R7.6).
+- **Where it is stored.** The machine-local state beside the session registry, never the
+  portable tree: a verdict is a fact about *this machine's* harness installation, and it must
+  not travel in a repository or be writable by an agent session.
+- **The one loop it closes.** A choice cached `refused` that still reaches resolution — a
+  frozen record older than the verdict, or a hand-edited one — spawns on `harnessArgs`
+  unchanged, posts one comment naming the refused choice and what ran instead, and is not
+  retried until its verdict changes (R7.4). That is what stops the failure mode the owner
+  named: a work item dying in a pane nobody is watching, forever.
+
+### `selection.py` — the sections, the parse, the freeze
 
 Four changes, each mirroring what `pr-sessions-*` does today:
 
-1. **Tokens.** `MODEL_TOKENS = {f"model-{m.id}": m.id for m in declared}`, added to
-   `_NON_PHASE_TOKENS` so a model row is never read as a phase skip and never as a refusal.
-2. **Rendering.** A section of its own, below the `pr-sessions-*` rows, rendered only when
-   the harness has declared choices (R1.6), capped at `CANDIDATE_LIMIT` with an
-   "…and N more" line (R2.4). The operator's default — meaning "no entry", i.e. plain
-   `harnessArgs` — is described in the section's prose rather than given a row, so there is
-   nothing to tick for "leave it alone".
-3. **Parse.** `_parse_model(body, declared) -> str`: exactly one ticked row is a choice;
-   zero, several, an unknown token, or an unreadable body is `""` (R1.4).
-4. **Freeze and confirm.** `_frozen_graph` gains `"model": <id or "">`, and the
-   confirmation comment names the outcome in both directions (R1.5).
+1. **Tokens.** `MODEL_TOKENS = {f"model-{c.id}": c.id}` and `EFFORT_TOKENS = {f"effort-{c.id}":
+   c.id}`, both added to `_NON_PHASE_TOKENS` so such a row is never read as a phase skip and
+   never as a refusal.
+2. **Rendering.** Two sections, each rendered only when its list has offerable entries (R1.7),
+   each capped at `CANDIDATE_LIMIT` with an "…and N more" line (R2.7). "Leave it alone" is
+   described in each section's prose rather than given a row, so there is nothing to tick for
+   the default.
+3. **Parse.** `_parse_choice(body, tokens) -> str`, called **once per section**: exactly one
+   ticked row is a choice; zero, several, an unknown token, or an unreadable body is `""`
+   (R1.5). Per-section resolution is what keeps an ambiguous model from discarding a valid
+   effort.
+4. **Freeze and confirm.** `_frozen_graph` gains `"model"` and `"effort"`, and the confirmation
+   comment names both outcomes in both directions (R1.6).
 
 `""` is the right literal for "no choice", and it is deliberately *not* the id of a default
-entry: the frozen record then says "this item chose nothing", which is what makes a later
-change to the operator's default apply to it.
+entry: the frozen record then says "this item chose nothing", which is what makes a later change
+to the operator's default apply to it.
 
-### `dispatcher.py` — resolution, and the drift check
+### `dispatcher.py` — resolution, and the bridge
 
 ```python
 def _adapter_for(self, work_item: WorkItemRef, harness: str) -> Optional[HarnessAdapter]:
-    """The operator's adapter with THIS work item's own model applied."""
+    """The operator's adapter with THIS work item's own model and effort applied."""
 ```
 
-The body is `_tmux_for`'s, one field over: read `control_store.frozen_graph(work_item)`,
-take `model`, resolve it against `declared_models(config, harness)`, and return
-`adapter.with_args(effective_args(adapter.extra_args, chosen))` — or the adapter itself when
-there is no choice, so the no-choice path allocates nothing and behaves identically to today
-(R6.1). Every failure — unreadable record, unknown id, no declaration — returns the adapter
-unchanged and logs once (R4.5).
+The body is `_tmux_for`'s, two fields over: read `control_store.frozen_graph(work_item)`, take
+`model` and `effort`, resolve each against its declared set, drop any whose cached verdict is
+`refused`, and return `adapter.with_args(effective_args(adapter.extra_args, model, effort))` —
+or the adapter itself when there is no choice, so the no-choice path allocates nothing and
+behaves identically to today (R6.1). Every failure returns the adapter unchanged and logs once
+(R4.5).
 
-`HarnessAdapter.with_args(args)` returns a shallow copy sharing `trust` and `plugins`. It is
-a method rather than a `replace()` at each call site so that an adapter subclass can never
-be rebuilt with half its configuration.
+`HarnessAdapter.with_args(args)` returns a shallow copy sharing `trust` and `plugins`. A method
+rather than a `replace()` at each call site, so an adapter subclass can never be rebuilt with
+half its configuration.
 
-Three call sites switch from `self.adapters.get(...)` to `self._adapter_for(...)`:
-`_spawn_for`, `_spawn_endpoint` and `_respawn_tmux` — which is the whole of R4.1 and R4.2,
-because a respawn already re-derives everything else from the record rather than from the
-dead session.
+Three call sites switch from `self.adapters.get(...)` to `self._adapter_for(...)`: `_spawn_for`,
+`_spawn_endpoint` and `_respawn_tmux` — the whole of R4.1 and R4.2, because a respawn already
+re-derives everything else from the record rather than from the dead session.
 
-**The drift check** (R4.3) sits at the top of the deliver-into-a-live-session path: if the
-session record's `harnessArgs` differ from the resolved ones, the delivery becomes a respawn
-(resume) instead of a paste, and emits `session.model_changed` with both values (R4.4). It
-compares *recorded* against *resolved*, never against the config, so a session launched
-before this change (no recorded args) is left alone until something else respawns it.
+**The bridge** (R4.3) sits at the top of the deliver-into-a-live-session path: if the session
+record's `harnessArgs` differ from the resolved ones, the delivery becomes a respawn (resume)
+instead of a paste, and emits `session.choice_changed` with both values (R4.4). It compares
+*recorded* against *resolved*, never against the config, so a session launched before this
+change (no recorded args) is left alone until something else respawns it.
 
 ### The session record
 
@@ -230,173 +350,211 @@ before this change (no recorded args) is left alone until something else respawn
   "harness": "claude",
   "harnessSessionId": "…",
   "model": "fable",
-  "harnessArgs": ["--dangerously-skip-permissions", "--model", "fable"]
+  "effort": "high",
+  "harnessArgs": ["--dangerously-skip-permissions", "--model", "fable", "--thinking-effort", "high"]
 }
 ```
 
-Both keys are **omitted when empty**, so every record written before this change round-trips
-byte-identically and parses unchanged (R5.4) — the rule `pullRequests` already follows.
-`the-loop sessions list` gains a `Model` column showing `-` when absent (R5.2), and the two
-fields appear in the JSON form, the control-plane API response and the OpenAPI contract
-(R5.3), which this repository regenerates its API documentation from.
+All three keys are **omitted when empty**, so every record written before this change
+round-trips byte-identically and parses unchanged (R5.4) — the rule `pullRequests` already
+follows. `the-loop sessions list` gains a `Model` column showing `-` when absent (R5.2), and the
+fields appear in the JSON form, the control-plane API response and the OpenAPI contract (R5.3),
+which this repository regenerates its API documentation from.
 
 ## UI/UX design
 
-N/A — no product UI. The two human surfaces are text: the checklist section rendered by
-`selection.py`, and the `Model` column in `sessions list`. Both are specified above in the
-form they are read in.
+N/A — no product UI. The three human surfaces are text: the two checklist sections rendered by
+`selection.py`, the `Model` column in `sessions list`, and the verdict table in
+`the-loop models check` / `diagnose`. Each is specified above in the form it is read in.
 
 ## Data models
 
 | Where | Key | Type | Default | Validated by |
 |---|---|---|---|---|
-| `cli-config.yaml` | `routing.harnessModels.<harness>[]` | `{id, args?, about?}` | absent | `cli-config.schema.json` + `scripts/validate_config.py` |
-| portable frozen graph | `model` | string | `""` | re-validated on read against the declared set |
-| session record | `model` | string | omitted | — |
+| `cli-config.yaml` | `routing.models.<harness>[]` | `{id, args?, about?}` | absent | `cli-config.schema.json` + `scripts/validate_config.py` |
+| `cli-config.yaml` | `routing.effort.<harness>[]` | `{id, args, about?}` | absent | as above; `args` required while no adapter has an effort flag |
+| portable frozen record | `model`, `effort` | string | `""` | re-validated on read against the declared set |
+| machine-local state | availability cache | `Verdict[]` | empty | re-validated against the declared set on read |
+| session record | `model`, `effort` | string | omitted | — |
 | session record | `harnessArgs` | string[] | omitted | — |
 
 Schema constraints worth stating because they are the guard, not decoration: `id` matches
-`^[A-Za-z0-9][A-Za-z0-9._:-]*$` (so an id can never be a flag, a path or a shell fragment),
-ids are unique within a harness, and `args` is an array of strings with no placeholder
-substitution of any kind — unlike `critics[].args`, nothing here is templated, so there is
-no `{…}` to expand.
+`^[A-Za-z0-9][A-Za-z0-9._:-]*$` (so an id can never be a flag, a path or a shell fragment), ids
+are unique within a harness **and within a kind**, and `args` is an array of strings with **no
+placeholder substitution of any kind** — unlike `critics[].args`, nothing here is templated, so
+there is no `{…}` to expand.
 
 ## Error handling
 
 | Situation | Behaviour | Surfaced as |
 |---|---|---|
-| declared entry with no `args` and a harness with no model flag | config validation fails, naming the entry | `the-loop diagnose` / `validate_config.py`, at startup — never at spawn (R2.5) |
+| a model entry with no `args` and a harness with no model flag | config validation fails, naming the entry | `validate_config.py` / `diagnose`, at startup — never at spawn (R2.6) |
+| an effort entry with no `args` | config validation fails, naming the entry | as above (R2.5) |
 | `harnessArgs.<harness>` already carries the same flag | validation warns, naming both | as above (R3.4) |
-| reply ticks several model rows | the operator's default | named in the gate's confirmation comment (R1.4) |
-| reply names an undeclared token | the operator's default | debug log; the token never reaches argv (R2.2) |
-| frozen record unreadable, or names an id no longer declared | the operator's default | one `warning`, same shape as `_tmux_for`'s (R4.5) |
-| the checklist comment cannot be read at execute time | the operator's default | existing warning path, unchanged |
+| a declared choice the harness refuses | not offered; if resolved anyway, spawn on `harnessArgs` + one comment naming it | `models check`, the checklist's absence, the comment (R7.3, R7.4) |
+| the harness cannot be probed at all | `unknown` — offered, never blocking | `models check` / `diagnose` report it as unprobed (R7.6) |
+| a section with several ticked rows | no choice for that section | named in the gate's confirmation comment (R1.5) |
+| a reply naming an undeclared token | no choice for that section | debug log; the token never reaches argv (R2.3) |
+| frozen record unreadable, or names an id no longer declared | the operator's arguments unchanged | one `warning`, same shape as `_tmux_for`'s (R4.5) |
+| a session dead with a non-default choice and nothing to resume | re-probe that choice once, then respawn | `models check` cache update + the R7.4 comment if it is now refused |
+| the checklist comment cannot be read at execute time | the operator's arguments unchanged | existing warning path, unchanged |
 
 Every row resolves to *the operator's configuration unchanged*. There is no failure mode in
-which the-loop runs a session on a model nobody declared.
+which the-loop runs a session on a model nobody declared, and none in which it retries a
+refused one indefinitely.
 
 ## Security design
 
-- **AuthN/AuthZ:** none added. The model row is authorized by the reply that carries the
-  execute keyword — `routing.authorizedUsers`, the same boundary the phase skips, the
-  surface and `sessionPerPr` already answer to, with the-loop's own self-marked comments
-  dropped before authorization is considered.
-- **Input validation & injection surfaces:** the one untrusted ingress is the checklist
-  body. It is matched by `_CHECK_LINE` — an existing regex whose token grammar admits no
-  whitespace, quotes or metacharacters — and the token is then used as a **key into the
-  operator's declared list**. What reaches argv is `DeclaredModel.args`, built from
-  `cli-config.yaml`. Command injection is therefore not mitigated but *absent*: there is no
-  data path from comment text to a command line. Nothing is run through a shell (tmux is
-  execed with an argv), and no value is interpolated into a path, a prompt or a ref.
-- **Secrets handling:** none involved. A model id is not a credential, and this work item
-  reads and writes no secret, token or environment variable.
-- **Least privilege:** a model choice contributes only the arguments its declaration
-  carries (R3.3). the-loop adds no permission flag of its own here, which is the same
-  promise `harnessArgs` already makes and the reason `harnessTrust.acceptBypassPermissions`
-  defaults to following the operator's own args rather than widening them.
+- **AuthN/AuthZ:** none added. Both rows are authorized by the reply that carries the execute
+  keyword — `routing.authorizedUsers`, the same boundary the phase skips, the surface and
+  `sessionPerPr` already answer to, with the-loop's own self-marked comments dropped before
+  authorization is considered.
+- **Input validation & injection surfaces:** the one untrusted ingress is the checklist body. It
+  is matched by `_CHECK_LINE` — an existing regex whose token grammar admits no whitespace,
+  quotes or metacharacters — and each token is then used as a **key into the operator's declared
+  list**. What reaches argv is `DeclaredChoice.args`, built from `cli-config.yaml`. Command
+  injection is therefore not mitigated but *absent*: there is no data path from comment text to
+  a command line. Nothing is run through a shell (tmux and the probe are both exec'd with an
+  argv), and no value is interpolated into a path, a prompt or a ref.
+- **The probe's egress:** `modelprobe` is the one component that starts a process and talks to a
+  vendor. It sends a fixed the-loop constant as its prompt and the declared args, never any
+  repository or work-item text, and it runs off the delivery path. Its cache lives in the
+  machine-local tree, so it is not agent-writable and does not travel in a repository.
+- **Secrets handling:** none involved. A model id is not a credential, and this work item reads
+  and writes no secret, token or environment variable. The probe inherits the daemon's
+  environment exactly as a critic run does — it adds no variable of its own.
+- **Least privilege:** a choice contributes only the arguments its declaration carries (R3.3).
+  the-loop adds no permission flag of its own here, the same promise `harnessArgs` already makes
+  and the reason `harnessTrust.acceptBypassPermissions` defaults to following the operator's own
+  args rather than widening them.
 - **Fail-closed behaviour:** every ambiguity resolves to `routing.harnessArgs.<harness>`
-  unchanged — the operator's stated configuration, which is the closed direction here (the
-  *narrowest* model would be a different and wrong reading of "closed": it would let a
-  malformed reply silently downgrade a tier-5 work item's model).
+  unchanged — the operator's stated configuration, which is the closed direction here. The
+  *narrowest* model would be a different and wrong reading of "closed": it would let a malformed
+  reply silently downgrade a tier-5 work item.
 - **Abuse-case coverage:**
 
   | Abuse case (requirements) | Mechanism | Negative test |
   |---|---|---|
   | A1 unauthorized user ticks and executes | existing `_authorized_comments` filter, upstream of any parse | `test_selection.py::unauthorized_reply_freezes_nothing` |
-  | A2 reply names a flag / path / metacharacter | token grammar + lookup into the declared set | `test_harnessmodels.py::undeclared_token_resolves_to_default` |
-  | A3 a declared entry widens permissions | applied as declared, and only from the declaration | `test_harnessmodels.py::args_come_only_from_config` |
-  | A4 hand-edited portable record | re-validated on read against the declared set | `test_dispatcher_model.py::forged_frozen_model_is_ignored` |
-  | A5 a label named after a model | no label is read anywhere in this path | `test_dispatcher_model.py::label_does_not_select_a_model` |
-  | A6 checklist comment unreadable | existing empty-body path resolves to the default | `test_selection.py::unreadable_checklist_keeps_the_default` |
+  | A2 reply names a flag / path / metacharacter | token grammar + lookup into the declared set | `test_modelchoice.py::undeclared_token_resolves_to_nothing` |
+  | A3 a declared entry widens permissions | applied as declared, and only from the declaration | `test_modelchoice.py::args_come_only_from_config` |
+  | A4 hand-edited portable record | re-validated on read against the declared set | `test_dispatcher_choice.py::forged_frozen_choice_is_ignored` |
+  | A5 a label named after a model | no label is read anywhere in this path | `test_dispatcher_choice.py::label_does_not_select_a_model` |
+  | A6 checklist comment unreadable | existing empty-body path resolves to no choice | `test_selection.py::unreadable_checklist_keeps_the_default` |
+  | A7 forged availability verdict | resolution is against the declared set; a verdict can only withhold | `test_modelprobe.py::forged_verdict_cannot_introduce_a_choice` |
 
 ## Testing strategy
 
-Unit tests carry the resolution rules (`harnessmodels.py`: declaration parsing, unknown
-tokens, the `args`-vs-`model_flag` fork, the merge order) and the schema validation
-(`validate_config.py` rejecting an entry with no flag and no args, warning on a duplicated
-flag). Selection-hook tests cover rendering (rows present only when declared, capped,
-default described in prose), parsing (one tick, no tick, two ticks, unknown token) and the
-frozen record. Dispatcher tests cover spawn, respawn and drift with a fake registry and a
-stub tmux, plus every abuse case above as a negative test.
+Unit tests carry the resolution rules (`modelchoice.py`: declaration parsing per kind, unknown
+tokens, the `args`-vs-flag fork, the three-part merge order) and the schema validation
+(`validate_config.py` rejecting a model entry with no flag and no args, rejecting an effort entry
+with no args, warning on a duplicated flag). `modelprobe` tests use a stub adapter: `ok`,
+`refused`, `unknown`, digest invalidation, and the withhold-not-introduce rule. Selection-hook
+tests cover rendering (each section present only when offerable, capped, default in prose),
+per-section parsing (one tick, no tick, two ticks, unknown token, an ambiguous model beside a
+valid effort) and the two frozen keys. Dispatcher tests cover spawn, respawn, the bridge and the
+refused-at-resolution fallback with a fake registry and a stub tmux, plus every abuse case above
+as a negative test.
 
-Two integration scenarios carry Gherkin docstrings under `cli/tests/test_*_integration.py`
+Three integration scenarios carry Gherkin docstrings under `cli/tests/test_*_integration.py`
 per `testing.integrationTestGlobs`:
 
-- `Scenario: a work item that chose a model is respawned on it` — freeze a choice, kill the
-  session, deliver an event, assert the argv the runner was handed.
+- `Scenario: a work item that chose a model and an effort is respawned on both` — freeze both,
+  kill the session, deliver an event, assert the argv the runner was handed.
 - `Scenario: an unauthorized reply cannot choose a model` — same setup, unauthorized author,
   assert the frozen record and the argv are untouched.
+- `Scenario: a model the harness refuses is never spawned` — cache a `refused` verdict against a
+  frozen choice, deliver an event, assert the argv is the operator's own and that one comment
+  names the refusal.
 
-Evidence: the argv assembled at each spawn (captured from the stubbed runner), the
-before/after `sessions list` table, and the config-validation output for the two rejected
-declarations. The executable detail — the full matrix, the verification environment, the
-`n/a` rows and their reasons — belongs to `testing-plan.md`, which is not authored yet
-because this design is not approved.
+Evidence: the argv assembled at each spawn (captured from the stubbed runner), the before/after
+`sessions list` table, the `models check` verdict table, and the config-validation output for the
+three rejected declarations. The executable detail — the full matrix, the verification
+environment, the `n/a` rows and their reasons — belongs to `testing-plan.md`, which is not
+authored yet because this design is not approved.
 
 ## Trade-offs & decisions
 
-**The owner's three questions, answered.**
+**The owner's questions, answered.**
 
 1. *How does the-loop discover all possible models?* **It does not, by design.** No harness
-   offers a stable machine-readable list of what a given account may run; the set moves with
-   the vendor, the plan and the CLI version, and a list fetched over the network would be an
-   ingress this daemon does not need. So the operator declares the few they actually use —
-   the same posture `repositories` took in decision-120 ("nothing of the member's text ever
-   becomes a repository") and `critics[]` in decision-123. It also disposes of the UX half
-   of the question: the list is short because a human curated it, and the checklist caps and
-   counts rather than paging.
-2. *How does it work for claude vs cursor vs codex?* Through the adapter, which already owns
-   this knowledge: `HarnessAdapter.model_flag` is `--model` for Claude Code and `-m` for
-   Cursor, and `oneshot_argv(prompt, model)` already uses it for critics. A harness with no
-   adapter, or no flag, is served by an entry's explicit `args`; a declaration that is
-   neither is a config error rather than a runtime guess. Adding codex later is an adapter
-   plus a `model_flag`, and this feature works for it with no further change.
-3. *Model choice and effort choice in the phase-selection lifecycle.* Both, in one
-   mechanism: a declared choice is a **named argv**, so `opus-deep` carries a model and an
-   effort flag together. A separate effort axis is deliberately not modelled — no harness
-   the-loop adapts exposes a common effort flag, so the vocabulary would have one member and
-   would have to be renegotiated for the second.
+   offers a stable machine-readable list of what a given account may run; the set moves with the
+   vendor, the plan and the CLI version, and a list fetched over the network would be an ingress
+   this daemon does not need. So the operator declares the few they use — the posture
+   `repositories` took in decision-120 and `critics[]` in decision-123 — and the-loop
+   **validates** that declaration against the harness (R7) instead of enumerating it. That also
+   disposes of the UX half: the list is short because a human curated it, and the checklist caps
+   and counts rather than paging.
+2. *How does it work for claude vs cursor vs codex?* Through the adapter, which already owns this
+   knowledge: `HarnessAdapter.model_flag` is `--model` for Claude Code and `-m` for Cursor, and
+   `oneshot_argv(prompt, model)` already uses it for critics. A harness with no adapter, or no
+   flag, is served by an entry's explicit `args`; a declaration that is neither is a config error
+   rather than a runtime guess. Adding codex later is an adapter plus a `model_flag`, and this
+   feature works for it with no further change.
+3. *What happens when the chosen model is not available in the harness?* **R7**: probe each
+   declared choice with the harness's own cheapest invocation, cache the verdict, withhold a
+   `refused` choice from the checklist so a human cannot pick it, fall back visibly if one is
+   resolved anyway, and re-probe once on a dead session so a stale `ok` cannot become a respawn
+   loop. The failure surfaces at `models check` and `diagnose`, not in an unattended pane.
+4. *Per harness or overall?* **Per harness** — a model id is meaningful only to the harness that
+   has it, and a flat list would make the-loop attribute ids to harnesses, which is a guess. One
+   extra key for a single-harness operator.
+5. *Model and effort coupled?* **No — two inputs, two lists, two questions.** The first revision
+   coupled them into one named argv, which would have made the operator declare the cross
+   product. They are now independent all the way through: declaration, checklist section, frozen
+   key, and concatenation order.
+6. *Why does a session exist before the gate is answered?* It should not; see the section above.
+   Proposed as a prerequisite work item, with the bridge keeping this design correct either way.
 
 **What this costs.**
 
-- **One re-launch per work item that chooses a non-default model.** The choice is made after
-  the session exists, so it lands on the execute comment's own delivery. The alternative —
-  choosing before the spawn — requires an authorized channel that exists before a session
-  does, which today is either a label (refused, R's security section) or the kickoff
-  (out of scope, open question 2).
-- **A second place where argv is assembled.** `_adapter_for` joins `build_adapters` as a
-  place the harness command line is decided. Contained by keeping the merge itself in
-  `harnessmodels.effective_args`, which both call.
-- **A larger config surface.** One key, with a shape a reader can hold in their head, on a
-  file that already carries `harnessArgs`, `harnessTrust` and `harnessPlugins`.
+- **A probe that runs the harness.** One cheap non-interactive call per declared choice per
+  verdict lifetime, off the delivery path. It is the first time the-loop runs a harness to learn
+  something rather than to do work, and it is why `modelprobe` is a module of its own.
+- **A second place where argv is assembled.** `_adapter_for` joins `build_adapters` as a place
+  the harness command line is decided. Contained by keeping the merge itself in
+  `modelchoice.effective_args`, which both call.
+- **Two new config keys**, with a shape a reader can hold in their head, on a file that already
+  carries `harnessArgs`, `harnessTrust` and `harnessPlugins`.
+- **The bridge**, for as long as a session can exist before the gate. It is a dozen lines and a
+  safety net afterwards, not a permanent mechanism.
 
 **Rejected alternatives.**
 
 | Alternative | Why not |
 |---|---|
 | `routing.harnessArgsByLabel` (the ticket's proposal) | a label rides GitHub's permission model, not `authorizedUsers`, and the payload does not attribute a label to a person — so it would let anyone with triage rights choose an unattended agent's argv. Same argument as issue-177's, with an argv at the end of it. |
-| a `the-loop model: <id>` control keyword | works before a session exists, which is attractive — but it is a second surface for a per-work-item decision the gate already collects three of, and the control parser is deliberately argument-free except for `@login` (issue-307). Revisit only if open question 1's re-launch proves costly. |
+| one coupled model+effort choice (revision 1) | the operator would declare the cross product; the owner's review rejected it, and it would grow multiplicatively. |
+| a harness-independent model list | the-loop would have to attribute each id to a harness. A guess, and guesses are what decision-120 and decision-123 exist to refuse. |
+| enumerating models from the harness or a vendor API | no stable machine-readable source; a network ingress this daemon does not need; and it would go stale between the fetch and the spawn anyway. R7 validates instead. |
+| a `the-loop model: <id>` control keyword | works before a session exists, which is attractive — but it is a second surface for a per-work-item decision the gate already collects three of, and the control parser is deliberately argument-free except for `@login` (issue-307). The ordering fix removes the motivation. |
 | free-form args in the reply (`the-loop execute --model X`) | comment text into argv. Refused outright. |
 | a per-work-item key in the repository's harness config | the harness config is the *agent's* file and a pull request can edit it; decision-123 put executable configuration in the operator's file precisely so it cannot be. |
 | changing the running session's model in place | no harness exposes it. |
 
-**Durable decisions to record** (at implementation, as `docs/decisions/decision-124.md`):
-the model choice is a phase-selection question, not a label; the pickable set is declared by
-the operator and never discovered; and a declared choice is a named argv, which is how the
-effort axis is served without its own vocabulary.
+**Durable decisions to record** (at implementation, as `docs/decisions/decision-124.md`): the
+choice is a phase-selection question, not a label; the pickable sets are declared per harness by
+the operator and validated rather than discovered; model and effort are independent inputs; and a
+choice the harness refuses is withheld from the checklist rather than failed at spawn.
 
 ## Open questions
 
-1. **Is the re-launch acceptable?** (requirements, open question 1.) The alternative is to
-   accept that the first session of a work item runs on the default until it next dies.
-2. **Should the confirmation comment also say the argv?** It names the model today in this
-   design. Naming the arguments would be more honest about what the operator declared, and
-   would also print `--dangerously-skip-permissions` onto a public ticket. Proposed: name
-   the model only.
-3. **`harnessModels` or `models`?** Proposed `harnessModels`, for symmetry with the three
-   sibling keys.
+1. **Is the prerequisite ordering ticket wanted, and does this work item wait for it?**
+   Recommended: raise it, land it first, and the bridge becomes a safety net nothing exercises.
+2. **What lifetime should an availability verdict have?** Proposed 24 hours, plus invalidation on
+   a changed declaration, plus the one re-probe of R7.5.
+3. **Should the confirmation comment also say the argv?** It names the model and the effort in
+   this design. Naming the arguments would be more honest about what the operator declared, and
+   would also print `--dangerously-skip-permissions` onto a public ticket. Proposed: the ids only.
 
 ## Review comments
 
-> Appended by the-loop's `record-feedback` hook when a human gate approves with
-> comments (issue-109).
+### 2026-09-13 — @MadaraUchiha-314, review of PR #359
+
+| Feedback | Where it landed |
+|---|---|
+| handle a model the harness does not have | R7 and § `modelprobe.py`; trade-off 3; the refused-at-resolution rows of § Error handling; scenario 3 and abuse case A7 |
+| per harness or overall? | § *Per harness, not global*; trade-off 4; R2.2 |
+| model and effort are coupled — keep them separate | § *Two lists, not their product*; the two checklist sections; the three-part merge order; trade-off 5 |
+| "just models" | `routing.models` (+ `routing.effort`), and the module renamed `modelchoice.py` |
+| why is a session started before phase selection? we ideally shouldn't | § *Why a session exists before the gate, and why it should not* — agreed, with the code's own stated rationale, the reorder diagram, and a prerequisite ticket proposed; the bridge keeps this design correct under either ordering |

@@ -35,7 +35,7 @@ approves the pull request and a named human signs off the security review.
 |-------|---------|----------------------|-------|
 | phase-selection | 2026-09-13 | — | recorded, not answered — no authorized `execute` reaches a cloud session |
 | requirements-definition | 2026-09-13 | | [`requirements.md`](requirements.md) — six requirements, six abuse cases |
-| design | 2026-09-13 | | [`design.md`](design.md) — awaiting the owner's approval before anything is implemented |
+| design | 2026-09-13 | | [`design.md`](design.md) — revision 2 after the owner's review of PR #359 (model/effort split, availability, `routing.models`, the spawn-order answer); awaiting approval |
 | test-planning | | | not started — downstream of an unapproved design |
 | tasks-breakdown | | | not started |
 | implementation | | | **blocked by the owner's instruction** until the design is approved |
@@ -47,7 +47,7 @@ approves the pull request and a named human signs off the security review.
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| — | the spec pass (requirements + design) | open |
+| [#359](https://github.com/MadaraUchiha-314/the-loop/pull/359) | the spec pass (requirements + design), revision 2 after review | open |
 
 ## Progress entries
 
@@ -72,6 +72,30 @@ approves the pull request and a named human signs off the security review.
 - **Blockers:** the owner's instruction to hold implementation until the design is
   approved.
 
+### 2026-09-13 — the owner's review, and revision 2
+
+- **Phase:** design (revision 2)
+- **Decision recorded:** the owner reviewed PR #359 with five points. Four are folded into
+  the artifacts: **model and effort are two independent inputs** (the coupled `opus-deep`
+  shape would have made the operator declare the cross product), **a model the harness will
+  not accept** is now requirement 7 — probe with the harness's own cheapest invocation, cache
+  the verdict, withhold a refused choice from the checklist, fall back visibly, re-probe once
+  on a dead session — the declarations stay **per harness** (a flat list would make the-loop
+  attribute an id to a harness, which is a guess), and the key is **`routing.models`** with
+  `routing.effort` beside it.
+- **The fifth is architectural.** *"Why do we start a session before the phase selection is
+  complete? … We ideally shouldn't."* Verified in the code: `dispatcher._spawn_tmux` spawns
+  and *then* calls `graphlink.on_spawn`, and the checklist is posted by the **daemon's** own
+  github integration, not by the agent — so nothing about phase selection needs a session to
+  exist. The current order's stated reason is "a failed spawn must not leave a labelled ticket
+  pointing at a node nobody stands on", which entering the graph on the *arming* preserves.
+  Answered in `design.md` § *Why a session exists before the gate, and why it should not* and
+  proposed as a **prerequisite work item**, because it changes the spawn contract for every
+  work item; R4.3's re-launch keeps this work item correct under either ordering.
+- **Checkpoint/tests:** `markdownlint-cli2` on the three files, clean. Still no code.
+- **Next:** the owner's decision on the prerequisite ticket, and approval of the design.
+- **Blockers:** the owner's instruction to hold implementation until the design is approved.
+
 ## Verification results
 
 > Not applicable to this pass: nothing is implemented. The `verification` node will record
@@ -87,6 +111,7 @@ approves the pull request and a named human signs off the security review.
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
 |-------|-----------------------------|----------|---------|------|
 | 1 | self | the-loop | the requirements' five reporter properties re-checked against the design's components; the merge order, the fail-closed table and the abuse-case table re-read against `_tmux_for`'s existing behaviour | — |
+| 2 | human (owner) | @MadaraUchiha-314 | new findings → all five addressed in revision 2 | [PR #359 review](https://github.com/MadaraUchiha-314/the-loop/pull/359) |
 
 ## Security review (gate)
 
