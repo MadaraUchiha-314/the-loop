@@ -82,6 +82,11 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from ...authz import mark_self_authored
+from ...modelchoice import (
+    candidate_harnesses,
+    declared_effort,
+    declared_models,
+)
 from ...prsessions import (
     SESSION_PER_PR_ALWAYS,
     SESSION_PER_PR_CROSS_REPOSITORY,
@@ -161,10 +166,32 @@ PR_SESSIONS_ROW_TEXT = {
     "its own session, this repository's included.",
 }
 
-#: Tokens the checklist carries that are NOT phases (issue-183, issue-260). One
-#: set, because the parse rule is one rule: a row here is never a declared skip
-#: and never a refusal, whichever way it is ticked.
+#: The two choice sections (issue-358). A model row is `model-<provider's name>`
+#: and an effort row is `effort-<level>`, so what a reader ticks is the token the
+#: reply is matched on — and neither can be confused with a phase.
+MODEL_PREFIX = "model-"
+EFFORT_PREFIX = "effort-"
+
+#: How many rows a choice section renders before "…and N more". The same number
+#: the kickoff picker uses, and for the same reason: a list a human reads on a
+#: phone stops being a choice somewhere around a dozen. Declared here rather than
+#: imported, so a graph hook keeps depending on no channel.
+CANDIDATE_LIMIT = 12
+
+#: Tokens the checklist carries that are NOT phases (issue-183, issue-260,
+#: issue-358). One rule, because the parse rule is one rule: a row here is never
+#: a declared skip and never a refusal, whichever way it is ticked. The two
+#: choice groups are matched by PREFIX rather than listed, because their members
+#: come from the operator's config rather than from the graph.
 _NON_PHASE_TOKENS = {SURFACE_TOKEN, *PR_SESSIONS_TOKENS}
+
+
+def _is_non_phase(token: str) -> bool:
+    return (
+        token in _NON_PHASE_TOKENS
+        or token.startswith(MODEL_PREFIX)
+        or token.startswith(EFFORT_PREFIX)
+    )
 
 
 def _pr_sessions_default(ctx: HookContext) -> str:
@@ -178,6 +205,152 @@ def _pr_sessions_default(ctx: HookContext) -> str:
     shipped default.
     """
     return session_per_pr_mode((ctx.config or {}).get("sessionPerPr"))
+
+
+def _harness_for(ctx: HookContext) -> str:
+    """The harness this work item will run on — whose column of the availability
+    matrix is the one that matters (issue-358).
+
+    Seeded into the hook's config by ``graph/bootstrap.py``, the same way
+    ``sessionPerPr`` is: the gate must not import the dispatcher, and it needs no
+    more than the name.
+    """
+    return str((ctx.config or {}).get("harness") or "")
+
+
+def _offerable(ctx: HookContext, kind: str, names: List[str]) -> List[str]:
+    """``names``, less the ones this work item's harness is known to refuse.
+
+    The whole of R7.3 at the gate: a model the harness cannot run is not shown, so
+    nobody can pick it. Unprobed and unreadable both stay offerable — the probe
+    exists to stop a work item dying on a refused model, not to make an
+    unprobeable machine useless.
+
+    The cache is read through the hook's config rather than built here, so a
+    ``check`` run outside a deployment (no cache, no harness) offers everything
+    and blocks nothing.
+    """
+    harness = _harness_for(ctx)
+    cache_path = str((ctx.config or {}).get("verdictCache") or "")
+    if not harness or not cache_path:
+        return list(names)
+    try:
+        from ...modelprobe import VerdictCache, offerable
+
+        cache = VerdictCache(cache_path)
+        return [name for name in names if offerable(kind, name, harness, cache)]
+    except Exception as exc:  # noqa: BLE001 — never withhold a choice over a fault
+        logger.debug("could not read the availability cache: %s", exc)
+        return list(names)
+
+
+def _model_rows(ctx: HookContext) -> List[str]:
+    """The models offerable for THIS work item, in declaration order.
+
+    Narrowed twice, both in the shrinking direction: by an entry's own
+    ``harnesses`` (the operator's restriction) and by the probe's verdict (the
+    measurement). Neither can add a model the operator did not declare.
+    """
+    config = ctx.config or {}
+    harness = _harness_for(ctx)
+    names = [
+        name
+        for name in declared_models(config)
+        if not harness or harness in candidate_harnesses(config, name)
+    ]
+    return _offerable(ctx, "model", names)
+
+
+def _effort_rows(ctx: HookContext) -> List[str]:
+    """The effort levels offerable for THIS work item, in the loop's enum order.
+
+    A level the work item's harness cannot express resolves to no arguments, which
+    the probe records as ``refused`` — so it is simply not shown here, rather than
+    offered and then silently dropped.
+    """
+    return _offerable(ctx, "effort", declared_effort(ctx.config or {}))
+
+
+def _about(ctx: HookContext, name: str) -> str:
+    """A declared model's one-line ``about``, flattened for a checklist row."""
+    for entry in (ctx.config or {}).get("models") or []:
+        if isinstance(entry, dict) and str(entry.get("name") or "") == name:
+            return " ".join(str(entry.get("about") or "").split())
+    return ""
+
+
+def _choice_lines(ctx: HookContext) -> List[str]:
+    """The two choice sections of the checklist body (issue-358).
+
+    Two sections, never one: a work item chooses a model and an effort level
+    **separately**, and a reader scanning boxes must never have to work out which
+    of two coupled things a row means. Each appears only when it has something to
+    offer, so an install that declared neither gets a byte-identical checklist to
+    the one it gets today.
+    """
+    lines: List[str] = []
+    models = _model_rows(ctx)
+    effort = _effort_rows(ctx)
+    for kind, prefix, names, heading, tail in (
+        (
+            "model",
+            MODEL_PREFIX,
+            models,
+            "**Which model should this work item run on?** Not a phase — it is "
+            "what the session is. **Tick at most one:**",
+            "Leave them alone and this work item runs on the model this harness "
+            "is configured with.",
+        ),
+        (
+            "effort",
+            EFFORT_PREFIX,
+            effort,
+            "**How hard should it think?** Also not a phase, and independent of "
+            "the model above. **Tick at most one:**",
+            "Leave them alone and the harness's own default effort stands.",
+        ),
+    ):
+        if not names:
+            continue
+        lines += [heading, ""]
+        for name in names[:CANDIDATE_LIMIT]:
+            about = _about(ctx, name) if kind == "model" else ""
+            lines.append(f"- [ ] `{prefix}{name}`" + (f" — {about}" if about else ""))
+        if len(names) > CANDIDATE_LIMIT:
+            lines.append(
+                f"- …and {len(names) - CANDIDATE_LIMIT} more not shown "
+                f"(`the-loop models check` lists them all)."
+            )
+        lines += [
+            "",
+            tail + " Ticking more than one means the same thing — two ticks are not a "
+            "choice, and guessing which one you meant is how a work item ends up "
+            "somewhere nobody asked for.",
+            "",
+        ]
+    return lines
+
+
+def _parse_choice(body: str, prefix: str, offered: List[str]) -> str:
+    """The chosen name from one section — ``""`` for anything ambiguous.
+
+    Exactly one ticked row that names an offered choice is a choice. **Everything
+    else is no choice**: none ticked, several ticked, a name that is not offered,
+    a body the-loop could not read. Resolved per section, so an ambiguous model
+    never discards a valid effort.
+
+    ``""`` is deliberately not the id of a default: the frozen record then says
+    *this item chose nothing*, which is what lets a later change to the operator's
+    configuration apply to it.
+    """
+    ticked = [
+        token[len(prefix) :]
+        for match in _CHECK_LINE.finditer(body)
+        for token in [match.group("token")]
+        if token.startswith(prefix) and match.group("mark").strip()
+    ]
+    chosen = [name for name in dict.fromkeys(ticked) if name in offered]
+    return chosen[0] if len(chosen) == 1 else ""
 
 
 def _asks_surface(ctx: HookContext) -> bool:
@@ -346,6 +519,7 @@ def _checklist_body(ctx: HookContext) -> str:
         "`session.pr_session_declined`.",
         "",
     ]
+    lines += _choice_lines(ctx)
     lines += [
         "A doc fix usually needs little more than implementation and "
         "verification; a feature usually needs every phase. Reply "
@@ -431,6 +605,8 @@ def _frozen_graph(
     surface: str = DEFAULT_SURFACE,
     opt_ins: Optional[List[str]] = None,
     session_per_pr: str = SESSION_PER_PR_CROSS_REPOSITORY,
+    model: str = "",
+    effort: str = "",
 ) -> Dict[str, Any]:
     """The graph this work item will actually walk, as a record.
 
@@ -470,6 +646,12 @@ def _frozen_graph(
         # make every reader re-derive the operator's default; carrying the
         # answer means the routing a work item agreed to is a recorded fact.
         "sessionPerPr": session_per_pr,
+        # What this work item runs AS (issue-358). Empty means "chose nothing",
+        # which is a different fact from "chose the default": the dispatcher then
+        # launches on the harness's own arguments, and a later change to those
+        # applies to this item like any other.
+        "model": model,
+        "effort": effort,
         "nodes": nodes,
     }
 
@@ -498,11 +680,12 @@ def _parse_selection(
     refused: List[str] = []
     for match in _CHECK_LINE.finditer(body):
         token = match.group("token")
-        if token in _NON_PHASE_TOKENS:
-            # Not a phase (issue-183, issue-260). An unticked surface or
-            # pr-sessions row means "the default", never "skip a node" — and it
-            # must not fall through to the refused list either, or every default
-            # selection would report a phase it never asked to drop.
+        if _is_non_phase(token):
+            # Not a phase (issue-183, issue-260, issue-358). An unticked
+            # surface, pr-sessions, model or effort row means "the default",
+            # never "skip a node" — and it must not fall through to the refused
+            # list either, or every default selection would report a phase it
+            # never asked to drop.
             continue
         ticked = bool(match.group("mark").strip())
         if token in opt_in:
@@ -564,6 +747,10 @@ def _confirmation(
     opt_ins: Optional[List[str]] = None,
     offered: Optional[List[str]] = None,
     session_per_pr: str = SESSION_PER_PR_CROSS_REPOSITORY,
+    model: str = "",
+    effort: str = "",
+    model_offered: Optional[List[str]] = None,
+    effort_offered: Optional[List[str]] = None,
 ) -> str:
     lines = ["🤖 _the-loop_ — **phase selection recorded**", ""]
     if skips:
@@ -620,6 +807,30 @@ def _confirmation(
         "",
         f"Pull requests delivering this work item: **`{session_per_pr}`** — "
         + PR_SESSIONS_ROW_TEXT[session_per_pr],
+    ]
+    # Named in BOTH directions (issue-358, R1.6): "the harness's own default" is
+    # an outcome a human should be able to read back, and it is also what a
+    # reader sees when two rows were ticked — so saying it is how an ambiguous
+    # reply becomes visible instead of silent.
+    if model_offered:
+        lines += [
+            "",
+            (
+                f"Model: **`{model}`**."
+                if model
+                else "Model: **the harness's own** — no single row was ticked."
+            ),
+        ]
+    if effort_offered:
+        lines += [
+            "",
+            (
+                f"Effort: **`{effort}`**."
+                if effort
+                else "Effort: **the harness's own** — no single row was ticked."
+            ),
+        ]
+    lines += [
         "",
         "Starting the loop.",
     ]
@@ -673,6 +884,14 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
     # be delivered by pull requests, and a contribution's are usually in
     # somebody else's repository — the case the modes differ most about.
     session_per_pr = _parse_pr_sessions(body, _pr_sessions_default(ctx))
+    # Two independent questions (issue-358), resolved per section: an ambiguous
+    # model must never discard a valid effort, and neither may be read off a row
+    # that was not offered — the reply names a key into what the operator
+    # declared, never a string that reaches an argv.
+    model_offered = _model_rows(ctx)
+    effort_offered = _effort_rows(ctx)
+    model = _parse_choice(body, MODEL_PREFIX, model_offered)
+    effort = _parse_choice(body, EFFORT_PREFIX, effort_offered)
     actor = str(reply["author"]).lstrip("@")
 
     confirmation_error = ""
@@ -689,6 +908,10 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
                 opt_ins=opt_ins,
                 offered=opt_in,
                 session_per_pr=session_per_pr,
+                model=model,
+                effort=effort,
+                model_offered=model_offered,
+                effort_offered=effort_offered,
             ),
         )
     except Exception as exc:  # noqa: BLE001
@@ -717,8 +940,16 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
             "decision": DECISION_KEY,
             "surface": surface,
             "sessionPerPr": session_per_pr,
+            "model": model,
+            "effort": effort,
             "frozenGraph": _frozen_graph(
-                ctx, skips, surface, opt_ins=opt_ins, session_per_pr=session_per_pr
+                ctx,
+                skips,
+                surface,
+                opt_ins=opt_ins,
+                session_per_pr=session_per_pr,
+                model=model,
+                effort=effort,
             ),
             "selectionSource": source,
             **({"error": confirmation_error} if confirmation_error else {}),

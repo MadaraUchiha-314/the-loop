@@ -194,6 +194,39 @@ def build_runtime(
     config["sessionPerPr"] = session_per_pr_mode(
         (routing.get("tmux") or {}).get("sessionPerPr")
     )
+    # What this work item could run AS (issue-358). The gate renders one row per
+    # offerable model and effort level, so it needs three facts and no more: the
+    # operator's two declared lists, the harness this item will run on (whose
+    # column of the availability matrix is the one that matters), and where the
+    # probed verdicts are cached. Seeded here for the same reason `sessionPerPr`
+    # is — a graph hook must not import the dispatcher, and it needs nothing of it.
+    if cli_cfg:
+        from ..modelchoice import (
+            EFFORT_KEY,
+            HARNESSES_KEY,
+            MODELS_KEY,
+            declared_harnesses,
+        )
+        from ..state import layout_from_config
+
+        config[MODELS_KEY] = cli_cfg.get(MODELS_KEY) or []
+        config[EFFORT_KEY] = cli_cfg.get(EFFORT_KEY) or []
+        config[HARNESSES_KEY] = cli_cfg.get(HARNESSES_KEY) or []
+        declared = declared_harnesses(cli_cfg)
+        default_harness = next(
+            (
+                str(entry.get("name"))
+                for entry in (cli_cfg.get(HARNESSES_KEY) or [])
+                if isinstance(entry, dict) and entry.get("default") is True
+            ),
+            "",
+        )
+        config["harness"] = (
+            default_harness
+            or str(routing.get("defaultHarness") or "")
+            or (declared[0] if declared else "")
+        )
+        config["verdictCache"] = layout_from_config(cli_cfg).verdict_cache
     if authorized_users is None and cli_cfg:
         # The `github` projection of the person entries (issue-309): the
         # gates read logins, whatever else an entry declares.
