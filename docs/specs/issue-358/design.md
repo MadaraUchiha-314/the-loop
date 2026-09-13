@@ -490,9 +490,15 @@ change (no recorded args) is left alone until something else respawns it.
 
 All three keys are **omitted when empty**, so every record written before this change
 round-trips byte-identically and parses unchanged (R5.4) — the rule `pullRequests` already
-follows. `the-loop sessions list` gains a `Model` column showing `-` when absent (R5.2), and the
-fields appear in the JSON form, the control-plane API response and the OpenAPI contract (R5.3),
-which this repository regenerates its API documentation from.
+follows. `the-loop sessions list` gains a `Model` column showing `-` when absent (R5.2), with an
+effort level in the same cell, because the pair is how an operator thinks about it.
+
+**One correction found in implementation:** the fields reach the JSON form, the control-plane API
+and the SDK **without a contract change**, because `/api/v1/sessions` types its response as an
+array of untyped objects and `core.list_sessions` returns the registry's record verbatim. So R5.3
+is satisfied by the record change alone, and there is no OpenAPI edit to make — an earlier draft
+of this section claimed one. The fields are covered by a JSON-shape test instead of a contract
+diff.
 
 ## UI/UX design
 

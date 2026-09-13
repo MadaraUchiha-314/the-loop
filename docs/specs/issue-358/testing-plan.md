@@ -33,7 +33,7 @@ Three things carry the risk, and the matrix is shaped around them:
 |---|------|----------|------------------------|---------------|
 | T1 | Unit | yes | `modelchoice` resolution and merge order; `modelprobe` verdicts, digest invalidation and the withhold-not-introduce rule; adapter `effort_args`/`with_args`; `selection.py` rendering and per-section parsing; registry round-trip | `make test` (`uv run --project cli python -m pytest -q cli`) |
 | T2 | Integration (scenario) | yes | the four end-to-end behaviours below, Gherkin-documented, against a fake registry and a stub tmux | `uv run --project cli python -m pytest -q cli/tests/test_*_integration.py` |
-| T3 | Contract (OpenAPI) | yes | the session schema gains `model`, `effort`, `harnessArgs`; the spec parses and matches what the API returns | `make validate` + the API route tests |
+| T3 | Contract (OpenAPI) | yes | that the surface did **not** need a contract change: `/api/v1/sessions` types its response as untyped objects, so the three new record fields flow through and the contract-parity assertion still holds | `make validate` + `test_api_contract_parity.py` |
 | T4 | End-to-end | n/a — an end-to-end run needs a real harness, a real tmux server and a real GitHub repository. The verification environment section says why that is out of scope here and what stands in for it (T2 with stubs at the same seams). | | |
 | T5 | UI / visual | n/a — no product UI. The three human surfaces are text (checklist body, `sessions list` table, `models check` matrix) and are asserted as strings in T1/T2. | | |
 | T6 | Snapshot | n/a — the one rendered artifact that would justify a snapshot is the checklist body, and T1 asserts its rows individually, which fails more usefully than a whole-body diff. | | |

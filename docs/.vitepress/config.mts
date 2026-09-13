@@ -125,6 +125,7 @@ const cliSidebar = [
       { text: "install", link: "/cli/commands/install" },
       { text: "upgrade", link: "/cli/commands/upgrade" },
       { text: "migrate-config", link: "/cli/commands/migrate-config" },
+      { text: "models", link: "/cli/commands/models" },
     ],
   },
   {
