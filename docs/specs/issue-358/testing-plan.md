@@ -101,20 +101,32 @@ redaction rule still applies to anything unexpected in captured output.
 
 ## Verification activities
 
-- [ ] T1 — `make test`
-- [ ] T2 — `uv run --project cli python -m pytest -q cli/tests/test_*_integration.py`
-- [ ] T3 — `make validate`
-- [ ] T8 — `uv run --project cli python -m pytest -q cli -k abuse`
-- [ ] T10 — `make test` (the migration cases)
-- [ ] lint/format/typecheck parity — `make check`
+- [x] T1 — `make test`
+- [x] T2 — `uv run --project cli python -m pytest -q cli/tests/test_spawn_gate_integration.py cli/tests/test_dispatcher_choice.py`
+- [x] T3 — `make validate` (+ the two parity tests inside T1)
+- [x] T8 — `uv run --project cli python -m pytest -q cli -k abuse`
+- [x] T10 — `uv run --project cli python -m pytest -q cli/tests/test_dispatcher_choice.py -k "before_this_feature or declared_nothing or deprecated"`
+- [x] lint/format/typecheck parity — `ruff check`, `ruff format --check`, `pyright`, `markdownlint`
 
 ## Verification results
 
-_Not yet executed._
+Executed on the work item's branch at `3c14f33`. Full record:
+[`evidence/verification.md`](evidence/verification.md).
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1 unit | `make test` | **pass** — 3603 passed, 1 skipped (3539 before this work item, so 64 new tests and none broken) | [`verification.md`](evidence/verification.md) § T1 |
+| T2 integration | `pytest cli/tests/test_spawn_gate_integration.py cli/tests/test_dispatcher_choice.py` | **pass** — 19 passed; the four Gherkin scenarios named in the matrix | [`verification.md`](evidence/verification.md) § T2 |
+| T3 contract | `make validate` + `test_api_contract_parity.py`, `test_config_schema_parity.py` | **pass**, and the row changed meaning: there was no OpenAPI edit to make | [`verification.md`](evidence/verification.md) § T3 |
+| T8 security | `pytest cli -k abuse` | **pass** — 38 passed; the seven abuse cases, one new finding fixed | [`security-review.md`](evidence/security-review.md) |
+| T10 migration | `pytest cli/tests/test_dispatcher_choice.py -k "before_this_feature or declared_nothing or deprecated"` | **pass** — 3 passed, plus the record-level half in `test_routing.py` | [`verification.md`](evidence/verification.md) § T10 |
+| tooling parity | `ruff check`, `ruff format --check`, `pyright`, `markdownlint` | **pass** — the same commands CI runs | [`verification.md`](evidence/verification.md) § Tooling parity |
+
+**Not executed:** T4 (end-to-end) stayed `n/a` as planned — no real harness, tmux server or
+repository in CI, with T2 standing in at the same seams. A **live** `models check` against a
+vendor was also deliberately not run: the probe spends real tokens and a suite depending on an
+account fails for reasons unrelated to the change, so `test_modelprobe.py` decides each outcome
+with a stub adapter instead.
 
 ## Review comments
 

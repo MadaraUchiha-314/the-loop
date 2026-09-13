@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: "github:MadaraUchiha-314/the-loop#358"
-phase: design
+phase: needs-review
 status: in-progress
 ---
 
@@ -38,9 +38,9 @@ approves the pull request and a named human signs off the security review.
 | design | 2026-09-13 | | [`design.md`](design.md) — revision 6 after five rounds of the owner's review on PR #359 (model/effort split and availability in r2; three top-level sections, a flat `models[]`, and the-loop-owned effort normalization in r3); awaiting approval |
 | test-planning | | | not started — downstream of an unapproved design |
 | tasks-breakdown | | | not started |
-| implementation | | | **blocked by the owner's instruction** until the design is approved; scope now includes R8 (spawn after the gate) |
-| verification | | | |
-| needs-review | | | |
+| implementation | 2026-09-13 | | eight commits, one per reviewable chunk, on `claude/github-issue-358-eecbix`; scope includes R8 (spawn after the gate) |
+| verification | 2026-09-13 | | [`testing-plan.md`](testing-plan.md) § Verification results; [`evidence/verification.md`](evidence/verification.md), [`evidence/security-review.md`](evidence/security-review.md) |
+| needs-review | 2026-09-13 | | PR #359 updated; tier 4, so the owner's approval is the gate and the named security sign-off |
 | complete | | | |
 
 ## Pull requests
@@ -216,10 +216,42 @@ approves the pull request and a named human signs off the security review.
   lifetime and the `harnesses[]` consolidation follow-up.
 - **Blockers:** the implementation hold.
 
+### 2026-09-13 — implementation and verification
+
+- **Phase:** implementation → verification → needs-review
+- **Did:** the seventeen tasks of [`tasks.md`](tasks.md), in eight commits so each is
+  reviewable on its own — the adapter seam and the two new modules, the three config
+  sections, **R8** (its own commit, widest blast radius), the gate's two sections, the
+  effort-enum widening, resolution + recording + the drift net, the surfaces, the abuse
+  table, and the docs. Ran every activity of the testing plan; recorded the results there
+  and the raw evidence under [`evidence/`](evidence/).
+- **Checkpoint/tests:** 3603 passed, 1 skipped (3539 before this work item). `ruff check`,
+  `ruff format --check`, `pyright`, `markdownlint` and `validate_config.py` all clean — the
+  same commands CI runs.
+- **Three things the repository's own guards caught**, which is the part worth recording:
+  an unregistered event type, an unclassified state path, and a schema keyword the
+  hand-rolled validator did not know. The third was a real bug in the keyword guard — it
+  descended into `examples`/`default`/`enum` and reported a sample object's field names as
+  JSON Schema keywords — exposed because `harnesses` is the first section with
+  object-valued examples.
+- **Two things I got wrong and corrected in place:** the design claimed an OpenAPI edit
+  that does not exist (`/api/v1/sessions` types its response as untyped objects, so the
+  three record fields flow through without one), and a test expectation of mine asserted
+  that `model-opus-5;rm -rf /` yields nothing — it yields `opus-5`, because the token
+  grammar stops at the `;`. The test now asserts the property that matters: a row can only
+  ever yield a name the operator declared.
+- **One finding from writing the abuse tests**, not from the design: `harnesses:` on a model
+  was enforced only where the checklist is rendered, so a hand-edited frozen record could
+  have put a cursor-only model onto claude. Now enforced where the argv is built as well.
+- **Next:** the owner's review of PR #359. Tier 4, so their approval is both the PR gate and
+  the named security sign-off.
+- **Blockers:** none.
+
 ## Verification results
 
-> Not applicable to this pass: nothing is implemented. The `verification` node will record
-> against `testing-plan.md`, which is derived once the design is approved.
+> Recorded in [`testing-plan.md`](testing-plan.md) § Verification results, against the matrix
+> rows it planned — this section stays as the template left it, which is the rule when a
+> `testing-plan.md` exists.
 
 ## Design critic review
 
@@ -236,21 +268,38 @@ approves the pull request and a named human signs off the security review.
 | 4 | human (owner) | @MadaraUchiha-314 | the spawn-order change is to land in this PR → R8 | [PR #359](https://github.com/MadaraUchiha-314/the-loop/pull/359#discussion_r4000541107) |
 | 5 | human (owner) | @MadaraUchiha-314 | a model is not tied to a harness → revision 5; the probe measures the matrix | [PR #359](https://github.com/MadaraUchiha-314/the-loop/pull/359#discussion_r4000531271) |
 | 6 | human (owner) | @MadaraUchiha-314 | link a model to supported harnesses → revision 6, as an optional narrowing that the probe still confirms | [PR #359](https://github.com/MadaraUchiha-314/the-loop/pull/359#discussion_r4000724428) |
+| 7 | human (owner) | @MadaraUchiha-314 | the real reasoning levels in Claude Code and Codex → the effort enum widened from three invented words to Claude's own five | [PR #359](https://github.com/MadaraUchiha-314/the-loop/pull/359#issuecomment-5656065048) |
+| 8 | self | the-loop | the abuse table written against the real path rather than a mock, which surfaced the narrowing gap; the OpenAPI claim re-checked against the actual contract and corrected | [`evidence/security-review.md`](evidence/security-review.md) |
 
 ## Security review (gate)
 
-- **Mechanism:** the-loop checklist, at the requirements and design phases (the gated
-  sections of both artifacts).
-- **Outcome:** the one new trust boundary — comment text reaching an argv — is designed out
-  rather than mitigated: a reply yields a token that is a key into the operator's declared
-  list, and the argv comes from `cli-config.yaml`. Six abuse cases, each with a named
-  negative test in the testing strategy.
-- **Human sign-off:** pending — risk tier 4 requires a named human sign-off, which is the
-  owner's review of this spec and of the implementation PR that follows it.
+- **Mechanism:** the-loop checklist — [`evidence/security-review.md`](evidence/security-review.md).
+- **Outcome:** **pass, with one finding fixed in the same PR.** The one new trust boundary —
+  comment text reaching an argv — is designed out rather than mitigated: a reply yields a token
+  that is a key into the operator's declared list, and the argv comes from `cli-config.yaml`
+  plus the adapter's own flag. Seven abuse cases, each with a negative test against the real
+  path. The finding: `harnesses:` on a model was enforced only where the checklist is rendered,
+  so a hand-edited frozen record could have put a cursor-only model onto claude; it is now
+  enforced where the argv is built too. Also audited: the probe's egress (a fixed prompt, off
+  the delivery path, machine-local cache) and every fail-closed direction.
+- **Human sign-off:** pending — risk tier 4 requires a named sign-off, which is the owner's
+  approval of [PR #359](https://github.com/MadaraUchiha-314/the-loop/pull/359).
 
 ## Final validation evidence
 
-Pending implementation.
+Mapped onto the acceptance criteria; the raw record is
+[`testing-plan.md`](testing-plan.md) § Verification results.
+
+| Requirement | Proved by |
+|---|---|
+| R1 an authorized human picks model and effort | `test_selection_choices.py` — rendering, per-section parsing, the confirmation naming both outcomes; `test_abuse_an_unauthorized_reply_freezes_nothing` |
+| R2 the choices are the operator's, declared and closed | `test_modelchoice.py` (33 cases: the two shapes, malformed entries, narrowing, the enum, the merge) |
+| R3 merged onto the operator's arguments, never a replacement | `test_the_merge_order_is_base_then_model_then_effort`, `test_the_operators_own_arguments_are_never_rewritten`, `test_a_frozen_choice_reaches_the_argv_in_order` |
+| R4 the choice survives the session | `test_dispatcher_choice.py` — resolution at spawn, re-resolution on respawn, the drift net, and every fault path resolving to the operator's arguments |
+| R5 a human can see what it is running on | `test_routing.py` round-trip + legacy record; the `Model` column; `test_models_cmd.py` |
+| R6 a work item that chose nothing is unchanged | `test_a_work_item_that_chose_nothing_gets_the_shared_adapter_untouched`, `test_an_install_that_declared_nothing_behaves_exactly_as_before` |
+| R7 a model the harness refuses is never offered or spawned | `test_modelprobe.py` (13 cases), `test_an_unavailable_model_is_withheld_from_the_checklist`, `test_a_model_the_harness_refuses_is_never_spawned_onto` |
+| R8 the session is spawned after the gate | `test_spawn_gate_integration.py` (4 scenarios), `test_graphlink.py` (6 `on_arm` cases) |
 
 ## Capability docs
 
@@ -261,10 +310,18 @@ Pending implementation.
 
 | Capability doc | What changed | History row |
 |----------------|--------------|-------------|
-| — | none in this pass; three named for the implementation pass | — |
+| [`interactive-sessions.md`](../../capabilities/interactive-sessions.md) | four new behaviour rules: no session while parked at a human start gate, the resolved launch arguments, the drift re-launch, and the three recorded fields with the `Model` column | issue-358 |
+| [`process-graph.md`](../../capabilities/process-graph.md) | the gate's two new per-work-item questions and their fail-closed resolution; the deferred spawn and the narrowness of the deferral rule | issue-358 |
+| [`cli.md`](../../capabilities/cli.md) | `the-loop models list\|check`, and the `Model` column on `sessions list` | issue-358 |
 
 ## Documentation
 
 | Document | What changed |
 |----------|--------------|
-| — | none in this pass. The implementation pass documents the three new top-level sections (`harnesses`, `models`, `effort`) in the CLI configuration reference under `docs/config/cli/`, notes the `routing.harnessArgs` deprecation in `routing-options.md`, updates the phase-selection section of the operating model, and extends `skills/the-loop/templates/cli-config.yaml`. |
+| [`docs/config/cli/harnesses-options.md`](../../config/cli/harnesses-options.md) | new page for the three top-level sections, with the two rules that carry the design (a declaration may narrow, only the probe may confirm; the-loop owns the effort vocabulary, the provider owns the model name) and the warning that no adapter has an effort mapping yet |
+| [`docs/cli/commands/models.md`](../../cli/commands/models.md) | new page for `models list\|check`: the verdict table, the exit codes, and the warning that `check` runs your harness and may cost tokens |
+| [`docs/cli/state.md`](../../cli/state.md) | the availability verdict cache — its shape, why it is machine-local, and that deleting it is safe |
+| [`skills/the-loop/SKILL.md`](../../../skills/the-loop/SKILL.md) | the gate answers four non-phase questions now, and an armed work item with **no session** is normal — a session that reads the absence as a fault is the failure this had to pre-empt |
+| [`skills/the-loop/reference/workflow.md`](../../../skills/the-loop/reference/workflow.md) | two new sections beside the `pr-sessions-*` one: the model/effort rows, and why the spawn now follows the gate |
+| [`skills/the-loop/templates/cli-config.yaml`](../../../skills/the-loop/templates/cli-config.yaml) | all three sections, commented, with empty defaults so an upgrade changes nothing |
+| [`docs/decisions/decision-124.md`](../../decisions/decision-124.md) | the five decisions this work item made, each with the review round that forced it |
