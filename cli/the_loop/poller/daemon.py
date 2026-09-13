@@ -150,6 +150,10 @@ def _build_dispatcher(
         ),
         config=routing,
         opener=conversation_opener(getter),
+        # The three top-level choice sections (issue-358) — see the receiver's
+        # copy of this call: the poller composes the same dispatcher, so a work
+        # item's model resolves identically whichever ingress found it.
+        cli_config=getter() or {},
     )
     return dispatcher, routing
 

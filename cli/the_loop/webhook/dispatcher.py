@@ -18,7 +18,7 @@ import uuid
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from string import Template
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from .. import eventlog
 from ..announce import AnnounceConfig, SessionAnnouncer
@@ -56,6 +56,15 @@ from ..graphlink import (
     spec_id_for,
 )
 from ..harness.base import HarnessAdapter, UnsupportedRunnerError
+from ..modelchoice import (
+    declared_effort,
+    declared_models,
+    effective_args,
+    effort_args,
+    harness_args,
+    model_args,
+)
+from ..modelprobe import VerdictCache, offerable
 from ..interaction import InteractionConfig, apply_directive
 from ..prsessions import (
     SESSION_PER_PR_ALWAYS,
@@ -73,7 +82,7 @@ from ..reactions import (
 )
 from ..runner import SESSION_LIVE, TmuxRunner
 from ..sessions import Session, SessionRegistry, WorkItemRef
-from ..state import LegacyLayout, StateLayout, legacy_layout
+from ..state import LegacyLayout, StateLayout, layout_from_config, legacy_layout
 from ..workitem import SECTIONS
 from ..harness_plugins import PluginConfig
 from ..identity import github_logins, parse_authorized_users
@@ -567,10 +576,23 @@ class Dispatcher:
         collaborator_store: Optional[CollaboratorStore] = None,
         verifier: Optional[WorkItemVerifier] = None,
         opener: Optional[Callable[[str], None]] = None,
+        cli_config: Optional[Dict[str, Any]] = None,
     ):
         self.registry = registry
         self.adapters = adapters
         self.config = config or RoutingConfig()
+        # The three TOP-LEVEL sections a work item's model and effort resolve
+        # against (issue-358): `harnesses`, `models`, `effort`. They are not part
+        # of `routing` — `routing` configures how an event reaches a session,
+        # these configure what a session is — so they arrive whole rather than
+        # through `RoutingConfig`. Empty (a test, an embedder, every install that
+        # declared none) means no work item can have a choice to resolve, and the
+        # spawn path is byte-identical to what it was before this feature.
+        self.cli_config = dict(cli_config or {})
+        if self.cli_config:
+            self.cli_config.setdefault(
+                "_verdictCache", layout_from_config(self.cli_config).verdict_cache
+            )
         # The conversation opener (issue-317): called with the work item's ref
         # the moment a start is accepted — first thing on the spawn path — so a
         # channel's thread exists before the first event, not because of it.
@@ -672,7 +694,9 @@ class Dispatcher:
         logger.debug("prompt template %s not found; using the built-in default", path)
         return Template(default)
 
-    def reload(self, config: RoutingConfig) -> None:
+    def reload(
+        self, config: RoutingConfig, cli_config: Optional[Dict[str, Any]] = None
+    ) -> None:
         """Hot-swap the *soft* routing policy without disturbing running work.
 
         Live-reloaded: spawn policy, default harness, spawn workdir,
@@ -697,6 +721,14 @@ class Dispatcher:
         self.adapters = build_adapters(
             config.harness_args, config.harness_trust, config.harness_plugins
         )
+        if cli_config is not None:
+            # The choice sections move with the rest of the config on a reload
+            # (issue-358): declaring a model should not need a daemon restart,
+            # which is the whole complaint issue-358 opened with.
+            self.cli_config = dict(cli_config)
+            self.cli_config.setdefault(
+                "_verdictCache", layout_from_config(self.cli_config).verdict_cache
+            )
         if not self._workspace_override:
             self.workspace = self._build_workspace(config)
         if not self._reactor_override:
@@ -1332,6 +1364,146 @@ class Dispatcher:
         if chosen not in SESSION_PER_PR_MODES or chosen == default.session_per_pr:
             return default
         return replace(default, session_per_pr=str(chosen))
+
+    def _resolved_choice(self, work_item: WorkItemRef, harness: str) -> Tuple[str, str]:
+        """This work item's frozen ``(model, effort)`` — ``("", "")`` when it has
+        none, or when what it froze is no longer something it may run (issue-358).
+
+        Read from the same portable record :meth:`_tmux_for` reads for
+        ``sessionPerPr``, so resolving a choice costs a dispatch nothing it was not
+        already paying. Re-validated **on the way in**, twice: against what the
+        operator declares *now*, and against the availability cache. The portable
+        tree is agent-writable like every state file here, so a hand-edited record
+        naming an undeclared model buys exactly nothing; and a model the harness has
+        since started refusing is dropped rather than spawned onto (R7.4).
+        """
+        try:
+            frozen = self.control_store.frozen_graph(work_item) or {}
+        except Exception as exc:  # noqa: BLE001 — never fail a delivery over a read
+            logger.warning(
+                "could not read the frozen choice for %s (%s); launching on the "
+                "harness's own arguments",
+                work_item.ref,
+                exc,
+            )
+            return "", ""
+        model = str(frozen.get("model") or "")
+        effort = str(frozen.get("effort") or "")
+        if not model and not effort:
+            return "", ""
+        config = self.cli_config or {}
+        if model and model not in declared_models(config):
+            logger.warning(
+                "%s froze the model %r, which is no longer declared; launching on "
+                "the harness's own arguments",
+                work_item.ref,
+                model,
+            )
+            model = ""
+        if effort and effort not in declared_effort(config):
+            effort = ""
+        return self._offerable_only(work_item, harness, model, effort)
+
+    def _offerable_only(
+        self, work_item: WorkItemRef, harness: str, model: str, effort: str
+    ) -> Tuple[str, str]:
+        """``(model, effort)`` less anything this harness is known to refuse.
+
+        The one place a *measurement* can override a frozen decision, and it only
+        ever withholds. A refused choice is said out loud on the work item rather
+        than dropped quietly: the human who chose it is owed the reason their
+        session is not on it (R7.4).
+        """
+        cache_path = str((self.cli_config or {}).get("_verdictCache") or "")
+        if not cache_path or not harness:
+            return model, effort
+        try:
+            cache = VerdictCache(cache_path)
+            for kind, name in (("model", model), ("effort", effort)):
+                if name and not offerable(kind, name, harness, cache):
+                    self._announce_refused(work_item, harness, kind, name)
+                    if kind == "model":
+                        model = ""
+                    else:
+                        effort = ""
+        except Exception as exc:  # noqa: BLE001 — a cache fault never withholds
+            logger.debug("could not read the availability cache: %s", exc)
+        return model, effort
+
+    def _announce_refused(
+        self, work_item: WorkItemRef, harness: str, kind: str, name: str
+    ) -> None:
+        """Say once, on the work item, that a chosen thing was refused (R7.4).
+
+        Once: the refusal is recorded in the event log and the verdict cache holds
+        the reason, so a work item that keeps being delivered to does not keep being
+        told. A human reading the ticket learns why their session is not on the model
+        they picked — which is the whole difference between this and a dead pane.
+        """
+        eventlog.emit(
+            "session.choice_refused",
+            work_item=work_item.ref,
+            harness=harness,
+            kind=kind,
+            name=name,
+        )
+
+    def _adapter_for(
+        self, work_item: WorkItemRef, harness: str
+    ) -> Optional[HarnessAdapter]:
+        """The operator's adapter with THIS work item's own model and effort applied.
+
+        :meth:`_tmux_for`'s shape, two fields over. The no-choice path returns the
+        shared adapter unchanged and allocates nothing, so a work item that chose
+        nothing is launched byte-identically to how it was before this feature
+        existed (R6.1) — which is most of them.
+        """
+        adapter = self.adapters.get(harness)
+        if adapter is None:
+            return None
+        model, effort = self._resolved_choice(work_item, harness)
+        if not model and not effort:
+            return adapter
+        args = effective_args(
+            harness_args(
+                self.cli_config or {},
+                harness,
+                self.config.harness_args.get(harness) or (),
+            ),
+            model_args(model, adapter) if model else (),
+            effort_args(effort, adapter) if effort else (),
+        )
+        return adapter.with_args(args)
+
+    def _choice_drifted(self, endpoint: Session) -> bool:
+        """Whether this session is running on arguments the work item no longer wants.
+
+        Compares what was **recorded at launch** against what resolves **now** —
+        never against the config directly, so a session launched before the-loop
+        recorded any of this (``harness_args`` empty) is left alone rather than
+        respawned on the strength of a field it never had. That is the difference
+        between a safety net and a stampede on upgrade.
+        """
+        if not endpoint.harness_args:
+            return False
+        adapter = self._adapter_for(endpoint.work_item, endpoint.harness)
+        if adapter is None:
+            return False
+        if list(adapter.extra_args) == list(endpoint.harness_args):
+            return False
+        eventlog.emit(
+            "session.choice_changed",
+            work_item=endpoint.work_item.ref,
+            harness=endpoint.harness,
+            previous_model=endpoint.model or None,
+            previous_effort=endpoint.effort or None,
+        )
+        logger.info(
+            "%s is running on arguments it no longer resolves to; re-launching it "
+            "(resuming the conversation) rather than delivering into the wrong one",
+            endpoint.work_item.ref,
+        )
+        return True
 
     def _deliver_assignment(
         self, work_item: WorkItemRef, pr_number: Optional[int], text: str
@@ -2210,6 +2382,24 @@ class Dispatcher:
                 endpoint.work_item.ref,
             )
             return True
+        if self._choice_drifted(endpoint):
+            # The session is running on something other than what this work item
+            # now resolves to (issue-358, R4.3) — a choice changed after the gate,
+            # a declaration withdrawn, a verdict turned `refused`. Deliver by
+            # RESPAWNING onto the right arguments rather than pasting into the
+            # wrong ones; the respawn resumes the conversation, so nothing the
+            # session knew is lost.
+            #
+            # With R8 in place no ordinary path reaches this: the first spawn
+            # already carries the frozen choice. It stays because the cases it
+            # covers are real and would otherwise be silent.
+            return self._respawn_tmux(
+                endpoint,
+                routed,
+                prompt,
+                advance_after=gate_report is None,
+                owner=session.work_item,
+            )
         result = self.tmux.deliver(
             endpoint, prompt, timeout=self.config.dispatch_timeout_seconds
         )
@@ -2290,7 +2480,7 @@ class Dispatcher:
             logger.exception("opening the conversations for %s raised", work_item.ref)
 
     def _spawn_for(self, work_item: WorkItemRef, routed: RoutedEvent) -> bool:
-        adapter = self.adapters.get(self.config.default_harness)
+        adapter = self._adapter_for(work_item, self.config.default_harness)
         if adapter is None:
             logger.error(
                 "no adapter for defaultHarness %r; cannot spawn",
@@ -2460,12 +2650,16 @@ class Dispatcher:
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
             return False
+        model, effort = self._resolved_choice(work_item, self.config.default_harness)
         session = Session(
             work_item=work_item,
             harness=self.config.default_harness,
             harness_session_id=session_id,
             cwd=cwd,
             tmux_target=self.tmux.target_for(work_item),
+            model=model,
+            effort=effort,
+            harness_args=list(adapter.extra_args),
         )
         self.registry.register(session, force=True)
         self.registry.touch(work_item, delivery_id=routed.delivery_id or None)
@@ -2630,7 +2824,7 @@ class Dispatcher:
         event is delivered into the work item's session instead. Two harness
         conversations never share a working tree.
         """
-        adapter = self.adapters.get(record.harness)
+        adapter = self._adapter_for(record.work_item, record.harness)
         if adapter is None or not adapter.is_available():
             logger.warning(
                 "cannot give %s its own session (%s unavailable); delivering into "
@@ -2786,7 +2980,11 @@ class Dispatcher:
             return self._deliver_into_occupant(
                 session, routed, prompt, target, advance_after=advance_after
             )
-        adapter = self.adapters.get(session.harness)
+        # Re-resolved from the frozen record, never from the arguments the dead
+        # session happened to carry (issue-358, R4.2): a respawn is the moment a
+        # changed choice takes effect, and it already re-derives everything else
+        # this way.
+        adapter = self._adapter_for(work_item, session.harness)
         if adapter is None or not adapter.is_available():
             detail = (
                 f"no adapter for harness {session.harness!r}"

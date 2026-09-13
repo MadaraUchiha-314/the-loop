@@ -2833,3 +2833,47 @@ def test_a_closing_keyword_from_an_undeclared_repository_reaches_nothing():
 def test_undeclared_repository_is_in_the_event_catalog():
     """Every reason the ingress emits is described where operators read it."""
     assert "undeclared-repository" in EVENT_TYPES["routing.dropped"]
+
+
+# -- what a session was launched as (issue-358) ----------------------------------
+
+
+def test_the_launch_fields_round_trip():
+    """`the-loop sessions list` answers "what is this running on?" from the record,
+    so the record has to carry it."""
+    session = make_session()
+    session.model = "fable-5.1"
+    session.effort = "xhigh"
+    session.harness_args = ["--dangerously-skip-permissions", "--model", "fable-5.1"]
+
+    restored = Session.from_dict(session.to_dict())
+    assert restored.model == "fable-5.1"
+    assert restored.effort == "xhigh"
+    assert restored.harness_args == [
+        "--dangerously-skip-permissions",
+        "--model",
+        "fable-5.1",
+    ]
+
+
+def test_a_session_with_no_choice_writes_none_of_the_three_keys():
+    """Absent rather than empty, the rule `pullRequests` already follows: every
+    record written before issue-358 round-trips byte-identically."""
+    data = make_session().to_dict()
+    assert "model" not in data
+    assert "effort" not in data
+    assert "harnessArgs" not in data
+
+
+def test_a_record_written_before_the_launch_fields_still_parses(tmp_path):
+    """R5.4 — an upgrade must never make an existing registry unreadable."""
+    registry = SessionRegistry(tmp_path)
+    registry.register(make_session())
+    path = tmp_path / "github-octo-repo-15.json"
+    data = json.loads(path.read_text())
+    assert "model" not in data  # written by this version, with no choice made
+    path.write_text(json.dumps(data))
+
+    record = registry.find_by_work_item(REF)
+    assert record is not None
+    assert record.model == "" and record.effort == "" and record.harness_args == []

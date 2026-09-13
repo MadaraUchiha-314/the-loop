@@ -167,6 +167,11 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
         # The bus (issue-317): a start opens the work item's conversation on
         # every configured channel. Reads the config per call, like the publisher.
         opener=conversation_opener(lambda: cli_config.load_cli_config(_config_path())),
+        # The three top-level choice sections (issue-358): `harnesses`, `models`,
+        # `effort`. Taken whole rather than through `RoutingConfig`, because they
+        # are not routing policy — and refreshed on every reload below, so
+        # declaring a model needs no daemon restart.
+        cli_config=cli_config.load_cli_config(_config_path()),
     )
     # The repository bound (issue-348). Read from the whole document, not from
     # `routing`: it is the one declaration every ingress reads, and the poller reads
@@ -212,7 +217,7 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
         """
         gh_cfg = ((cfg.get("webhooks") or {}).get("ghWebhook")) or {}
         new = RoutingConfig.from_mapping(cfg.get("routing") or {}, layout)
-        dispatcher.reload(new)
+        dispatcher.reload(new, cli_config=cfg)
         router.events = resolve_events(gh_cfg)
         warn_on_missing_lifecycle_events(router.events)
         router.auto_execute_label = new.auto_execute_label
