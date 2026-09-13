@@ -14,7 +14,9 @@ riskTier: 4
 > [`requirements.md`](requirements.md). MUST be reviewed and approved before moving to tasks
 > breakdown.
 >
-> **Revision 3** — the declarations moved out of `routing` into three top-level sections
+> **Revision 4** — the spawn-order change is now **in scope as R8** (§ *Spawning after the
+> gate, not before*), on the owner's "implement in this same PR". Revision 3 moved the
+> declarations out of `routing` into three top-level sections
 > (`harnesses`, `models`, `effort`), `models` became a flat list whose rows name a harness, and
 > **effort is normalized by the-loop** rather than described per harness by the operator — all
 > three from the owner's second round of review on PR #359. Revision 2 split model from effort
@@ -79,53 +81,95 @@ Read the arrows into `_adapter_for` together: the work item chooses **which decl
 entries**, the cache may **veto** one, and the operator's config supplies **the argv**. No
 string from a comment is ever part of a command line.
 
-## Why a session exists before the gate, and why it should not
+## Spawning after the gate, not before (R8)
 
-**The owner is right, and the fix does not belong to this work item.** Today
+**In scope, on the owner's instruction** ("implement in this same PR"). Today
 `dispatcher._spawn_tmux` spawns the tmux session and *then* calls `graphlink.on_spawn`, which
-enters the graph — whose start node is `phase-selection`, whose entry hook posts the
-checklist. So a session exists, and a workspace has been checked out, before anyone has said
-what the work item should do.
+enters the graph — whose start node is `phase-selection`, whose entry hook posts the checklist.
+So a harness session exists, and has been told to wait, before anyone has said what the work
+item should do.
 
 The current order is deliberate, and its reason is in the code
 ([dispatcher.py:2466](../../../cli/the_loop/webhook/dispatcher.py)): *"a failed spawn must not
-leave a labelled ticket pointing at a node nobody stands on."* That was sound when the graph
-was entered nowhere else. It is also load-bearing in one other way: the arming comment rides
-into the first gate (issue-199), which is how `the-loop contribute` carries its goal.
+leave a labelled ticket pointing at a node nobody stands on."* That was sound when the graph was
+entered nowhere else. It is load-bearing in one other way too: the arming comment rides into the
+first gate (issue-199), which is how `the-loop contribute` carries its goal.
 
-What makes the reorder possible is a fact worth stating plainly: **the checklist is posted by
-the daemon, not by the agent.** `selection.py` posts it through the CLI's own github
-integration (`_resolve(ctx).call("post-comment")`). Nothing about phase selection needs a
-harness session to exist.
+What makes the reorder possible is one fact: **the checklist is posted by the daemon, not by the
+agent.** `selection.py` posts it through the CLI's own github integration
+(`_resolve(ctx).call("post-comment")`). Nothing about phase selection needs a harness session.
 
 ```mermaid
 flowchart TB
   subgraph today["today"]
-    a1["authorized start"] --> a2["checkout + spawn tmux"] --> a3["on_spawn: enter graph"] --> a4["post checklist"] --> a5["wait for execute"] --> a6["session already running,<br/>on the default model"]
+    a1["authorized start"] --> a2["prepare workspace"] --> a3["spawn tmux + harness"] --> a4["on_spawn: enter graph"] --> a5["post checklist"] --> a6["session waits at the gate,<br/>already on the default model"]
   end
-  subgraph proposed["proposed (prerequisite ticket)"]
-    b1["authorized start"] --> b2["enter graph"] --> b3["post checklist"] --> b4["wait for execute"] --> b5["freeze selection"] --> b6["checkout + spawn tmux<br/>on the chosen model"]
+  subgraph proposed["proposed — R8"]
+    b1["authorized start"] --> b2["prepare workspace"] --> b3["on_arm: enter graph"] --> b4["post checklist"] --> b5["NO spawn — pointer parked"] --> b6["authorized execute<br/>freezes the selection"] --> b7["spawn tmux + harness<br/>on the chosen model"]
   end
 ```
 
-The proposed order is strictly better for four reasons, only one of which is this work item's:
-the first spawn carries the frozen choice (no re-launch); the spawn prompt's `$graph_context`
-names the node the session will actually work on instead of a gate it must wait at; no tmux
-session and no checkout are spent on a work item nobody has configured yet; and the original
-rationale is preserved, because a pointer standing on `phase-selection` is a node the **daemon
-itself** services.
+**One correction to what I claimed before folding this in.** The reorder saves the **harness
+session**, not the checkout: `graphlink._guarded` verifies the checkout belongs to the work item
+and the pointer is written to `graph-state.json` **under the checkout's spec directory**, so the
+workspace must be prepared before the graph can be entered at all. That is no regression — the
+checkout already happens before the checklist today — but "no checkout is spent" was wrong and is
+struck. What is saved is a tmux session plus a harness process, per work item, for as long as the
+gate goes unanswered.
 
-**It is not folded in here** because it changes the spawn contract for every work item — the
-arming path, `on_spawn`'s idempotency, the issue-199 comment hand-off, the announce and
-conversation-open side effects, and every test that assumes a session exists at gate time.
-Recommended: raise it as a prerequisite work item, land it first, and this design loses its
-one real cost. Until then the bridge below covers it, and the bridge is worth keeping either
-way as a safety net.
+### What changes
 
-**The bridge (R4.3).** While a session can exist before the gate, the dispatcher compares the
-session record's recorded arguments with the currently resolved ones and, on a difference,
-re-launches the session — resuming its conversation — instead of delivering into it. In the
-common case that happens on the execute comment's own delivery, before any work has been done.
+`graphlink.on_spawn` does two things today — *enter the graph* and *bind the session*. They
+separate:
+
+| Seam | When | What it does |
+|---|---|---|
+| `graphlink.on_arm(work_item, cwd, routed)` | after the workspace is prepared, before any spawn | `rt.start()`, evaluate a **start node that is a human gate** with the arming event attached (issue-199, unchanged), report whether the pointer is parked there |
+| `graphlink.on_spawn(work_item, cwd, session_id, runner)` | after a session exists | `_bind_session` only — the re-bind a respawn already needs |
+
+`_spawn_for` gains one early return: when `on_arm` reports the pointer parked at a
+daemon-serviced start gate, it emits `session.spawn_deferred` and returns **without** spawning.
+The work item is then visible in `the-loop check` (waiting at that node) and in the checklist
+comment on the ticket; it has no session, which is the point.
+
+**When the gate is answered**, the `execute` comment is routed as it is today, the gate freezes
+the selection and the pointer advances — and because the work item now has no session, the
+ordinary "no session for this work item" path spawns one, resolving the model through
+`_adapter_for` from the record that was just frozen. The first spawn is therefore already on the
+chosen model, and the drift re-launch (R4.3) becomes a safety net that no ordinary path
+exercises.
+
+### The narrow rule, and why it cannot strand a work item
+
+A spawn is deferred **only** while both hold: the pointer has never advanced past the graph's
+start node, **and** that start node is a human gate (`_entered_a_human_gate`, the predicate
+`on_spawn` already uses). Everything else spawns exactly as today:
+
+- a **mid-graph** work item — any pointer that has moved — always spawns and respawns;
+- a **crashed** session on a mid-graph item respawns, because deferral cannot apply to it;
+- graph linkage disabled (`routing.graph.enabled: false`), no spec-id convention, a foreign
+  checkout, a spec dir outside the checkout — every existing `_guarded` skip path means `on_arm`
+  reports nothing parked, so the spawn happens as it does now;
+- an **inner (per-PR) loop**, whose start node is not a human gate, is untouched.
+
+The original rationale survives: a pointer parked on `phase-selection` is standing on a node the
+**daemon itself** services, so there is no labelled ticket pointing at a node nobody stands on.
+
+### What it costs
+
+The blast radius is the honest cost, and it is why I had proposed splitting this out: the arming
+path, `on_spawn`'s idempotency contract, the issue-199 comment hand-off, the announce and
+conversation-open side effects (announce moves with the spawn, conversations stay at arm time),
+and every existing test that assumes a session exists once a work item is armed. The behaviour
+change is also user-visible: an armed work item no longer has a tmux session until its gate is
+answered, so `sessions list` shows nothing for it and `the-loop check` is where it is followed.
+That is the line to document loudest.
+**The safety net (R4.3).** The dispatcher compares the session record's recorded arguments with
+the currently resolved ones and, on a difference, re-launches the session — resuming its
+conversation — instead of delivering into it. With R8 in place no ordinary path reaches it: the
+first spawn already carries the frozen choice. It still earns its keep for a choice changed after
+the gate (an operator re-freezing, a declaration withdrawn, a verdict turning `refused`) and for
+every session launched before this change, which carries no recorded arguments at all.
 
 ## Architecture
 
@@ -140,7 +184,8 @@ common case that happens on the execute comment's own delivery, before any work 
 | an adapter copy carrying different args | `cli/the_loop/harness/base.py` | extended |
 | the two checklist sections, the parse, the frozen keys | `cli/the_loop/graph/hooks/selection.py` | extended |
 | seeding the hook's config | `cli/the_loop/graph/bootstrap.py` | extended |
-| resolution at spawn / respawn / drift | `cli/the_loop/webhook/dispatcher.py` | extended |
+| resolution at spawn / respawn / drift, and the deferred spawn (R8) | `cli/the_loop/webhook/dispatcher.py` | extended |
+| the `on_arm` / `on_spawn` split (R8) | `cli/the_loop/graphlink.py` | extended |
 | the three recorded fields | `cli/the_loop/sessions/registry.py` | extended |
 | the `Model` column | `cli/the_loop/commands/sessions_cmd.py` | extended |
 | the verdict report | `cli/the_loop/commands/diagnose_cmd.py` | extended |
@@ -495,9 +540,12 @@ warning on a duplicated flag and on a deprecated `routing.harnessArgs`). `modelp
 `refused`, `unknown`, digest invalidation, and the withhold-not-introduce rule. Selection-hook
 tests cover rendering (each section present only when offerable, capped, default in prose),
 per-section parsing (one tick, no tick, two ticks, unknown token, an ambiguous model beside a
-valid effort) and the two frozen keys. Dispatcher tests cover spawn, respawn, the bridge and the
+valid effort) and the two frozen keys. Dispatcher tests cover spawn, respawn, the safety-net re-launch and the
 refused-at-resolution fallback with a fake registry and a stub tmux, plus every abuse case above
-as a negative test.
+as a negative test. R8 gets its own set on the `on_arm`/`on_spawn` split: deferral at a
+human-gate start node, no deferral for every existing `_guarded` skip path, no deferral once the
+pointer has moved, the arming event still reaching the first gate (issue-199), and the announce
+side effect moving with the spawn while conversations stay at arm time.
 
 Three integration scenarios carry Gherkin docstrings under `cli/tests/test_*_integration.py`
 per `testing.integrationTestGlobs`:
@@ -509,6 +557,12 @@ per `testing.integrationTestGlobs`:
 - `Scenario: a model the harness refuses is never spawned` — cache a `refused` verdict against a
   frozen choice, deliver an event, assert the argv is the operator's own and that one comment
   names the refusal.
+- `Scenario: an armed work item gets no session until its gate is answered` — arm an item, assert
+  the checklist was posted and no tmux session was created; then answer the gate as an authorized
+  user and assert exactly one spawn, carrying the frozen choice (R8.1, R8.2).
+- `Scenario: a mid-graph work item still respawns` — advance the pointer past the start node, kill
+  the session, deliver an event, assert the respawn happened (R8.3 — the rule that keeps deferral
+  from stranding anything).
 
 Evidence: the argv assembled at each spawn (captured from the stubbed runner), the before/after
 `sessions list` table, the `models check` verdict table, and the config-validation output for the
@@ -559,8 +613,13 @@ authored yet because this design is not approved.
 7. *Why were these under `routing`?* They should not have been. `routing` answers how an event
    reaches a session; the harnesses an instance has and what they can run is installed-tooling
    configuration, like `repositories` and `critics[]`. Three top-level sections now.
-8. *Why does a session exist before the gate is answered?* It should not; see the section above.
-   Proposed as a prerequisite work item, with the bridge keeping this design correct either way.
+8. *Why does a session exist before the gate is answered?* It should not, and on your
+   instruction the fix is **in this work item** (R8, § *Spawning after the gate, not before*): the
+   graph is entered when the work item is armed, the spawn is deferred while the pointer is parked
+   on a daemon-serviced start gate, and the first spawn therefore already carries the frozen
+   choice. One claim of mine is struck in the process — the checkout is still needed at arm time,
+   because the pointer lives in it, so what is saved is the tmux session and the harness process,
+   not the clone.
 
 **What this costs.**
 
@@ -572,8 +631,13 @@ authored yet because this design is not approved.
   `modelchoice.effective_args`, which both call.
 - **Two new config keys**, with a shape a reader can hold in their head, on a file that already
   carries `harnessArgs`, `harnessTrust` and `harnessPlugins`.
-- **The bridge**, for as long as a session can exist before the gate. It is a dozen lines and a
-  safety net afterwards, not a permanent mechanism.
+- **R8's blast radius.** Deferring the spawn touches the arming path, `on_spawn`'s idempotency,
+  the issue-199 comment hand-off, the announce/conversation-open side effects, and every test that
+  assumes an armed work item has a session. It is the largest part of this work item and the
+  reason it was first proposed as a ticket of its own; the deferral rule is deliberately narrow so
+  that nothing mid-graph can be stranded by it.
+- **A user-visible behaviour change**: an armed work item has no tmux session until its gate is
+  answered, so it appears in `the-loop check` rather than `sessions list`.
 
 **Rejected alternatives.**
 
@@ -600,8 +664,8 @@ than failed at spawn.
 
 ## Open questions
 
-1. **Is the prerequisite ordering ticket wanted, and does this work item wait for it?**
-   Recommended: raise it, land it first, and the bridge becomes a safety net nothing exercises.
+1. ~~Is the prerequisite ordering ticket wanted?~~ **Answered by the owner: implement it in this
+   PR.** R8 and § *Spawning after the gate, not before*.
 2. **What lifetime should an availability verdict have?** Proposed 24 hours, plus invalidation on
    a changed declaration, plus the one re-probe of R7.5.
 3. **Should the confirmation comment also say the argv?** It names the model and the effort level
@@ -624,7 +688,7 @@ than failed at spawn.
 | per harness or overall? | § *Per harness, not global*; trade-off 4; R2.2 |
 | model and effort are coupled — keep them separate | § *Two lists, not their product*; the two checklist sections; the three-part merge order; trade-off 5 |
 | "just models" | `models[]` (+ `effort[]`), and the module renamed `modelchoice.py` |
-| why is a session started before phase selection? we ideally shouldn't | § *Why a session exists before the gate, and why it should not* — agreed, with the code's own stated rationale, the reorder diagram, and a prerequisite ticket proposed; the bridge keeps this design correct under either ordering |
+| why is a session started before phase selection? we ideally shouldn't | § *Spawning after the gate, not before* — agreed, and now **in scope as R8** on the owner's "implement in this same PR" |
 
 ### 2026-09-13 — @MadaraUchiha-314, second round on PR #359
 
@@ -634,3 +698,4 @@ than failed at spawn.
 | "the-loop should take care of normalizing" the effort enums | the enum is the-loop's (`low \| medium \| high`); `adapter.effort_args(level)` translates; a level a harness cannot express is not offered; the mapping table is probed, never invented — trade-off 6 |
 | "putting it under routing key doesn't make any sense to me" | agreed — top level, beside `repositories` and `critics`; `routing` is event delivery. `harnesses[].args` is the new home for `routing.harnessArgs.<harness>`, with the warn-never-fail shim issue-156 and issue-348 used; the other three per-harness keys are a named follow-up — trade-off 7 |
 | (implicit) the nested per-harness map | replaced by a flat `models[]` whose rows carry `harness:` — the shape `critics[]` already uses; trade-off 4 |
+| "implement in this same PR" (the spawn-order change) | **R8** and § *Spawning after the gate, not before*: the `on_arm`/`on_spawn` split, the narrow deferral rule, the struck claim about the checkout, and the blast radius stated as the cost |

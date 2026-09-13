@@ -15,7 +15,8 @@ riskTier: 4
 > (<https://kiro.dev/docs/specs/>). This phase MUST be reviewed and approved by the
 > required collaborators before moving to design.
 >
-> **Revision 3** — the declarations are three **top-level** sections (`harnesses`, `models`,
+> **Revision 4** — the spawn-order change is **in scope as R8**, on the owner's "implement in
+> this same PR". Revision 3 made the declarations three **top-level** sections (`harnesses`, `models`,
 > `effort`), `models` is a flat list whose rows name a harness, and **the effort vocabulary is
 > the-loop's own**, translated per harness by the adapter rather than spelled out by the operator
 > (owner's second round on PR #359). Revision 2 split model from effort and added the availability
@@ -170,10 +171,10 @@ crash, a restart or a `the-loop sessions reset`, so that I never re-type it.
 3. WHILE a session is running with arguments that differ from the currently resolved effective
    arguments, the system SHALL re-launch it — resuming its conversation — on the next event
    delivered to that work item, rather than delivering into a session running on the wrong
-   model. *(Needed only while a session is spawned **before** the gate is answered; see the
-   prerequisite in `design.md`. Once the gate precedes the spawn, this criterion is a safety
-   net that no ordinary path exercises, and it is what makes the feature correct under either
-   ordering.)*
+   model. *(With R8 in place no ordinary path reaches this: the first spawn already carries the
+   frozen choice. It still covers a choice changed after the gate — an operator re-freezing, a
+   declaration withdrawn, a verdict turning `refused` — and every session launched before this
+   change, which carries no recorded arguments at all.)*
 4. WHEN such a re-launch happens THEN the system SHALL emit an event-log record naming the
    work item, the previous choice and the new one, so the change is auditable.
 5. IF the frozen record is missing, unreadable, or names a choice no longer declared THEN the
@@ -240,6 +241,40 @@ that a work item never dies in a pane nobody is watching.
    SHALL NOT remove a capability the operator declared.
 7. WHEN `the-loop diagnose` runs THEN it SHALL report each declared choice and its cached
    verdict, so an operator can see what their config actually buys them.
+
+### Requirement 8 — the session is spawned after the gate is answered, not before
+
+**User story:** As the operator, I want a work item to get its harness session only once I have
+said what it should do, so that the first session already runs on the model I chose and no tmux
+session sits waiting at a gate.
+
+*In scope on the owner's instruction ("implement in this same PR"). It is what makes R4.3's
+re-launch a safety net rather than an ordinary path.*
+
+#### Acceptance criteria (EARS)
+
+1. WHEN a work item is armed and the graph's pointer is placed on a **start node that is a human
+   gate** THEN the system SHALL enter the graph, let that node's hooks post their comment, and
+   SHALL NOT spawn a session.
+2. WHEN that gate is answered by an authorized user and the pointer advances past it THEN the
+   system SHALL spawn the work item's session, with the effective arguments of R3.1 resolved from
+   the record the gate has just frozen.
+3. The system SHALL defer a spawn **only** while the pointer has never advanced past the graph's
+   start node AND that start node is a human gate. A work item whose pointer has moved SHALL
+   always be able to spawn and respawn.
+4. WHEN a spawn is deferred THEN the system SHALL emit an event-log record naming the work item
+   and the node it is parked on, and `the-loop check` SHALL report it as waiting there.
+5. The arming event SHALL still be handed to that first gate (issue-199), so a `the-loop
+   contribute` comment's goal still arrives with the command that arms the item.
+6. IF graph linkage is disabled, the work item has no spec-id convention, the checkout does not
+   belong to the work item, or the spec directory resolves outside the checkout THEN the system
+   SHALL spawn exactly as it does today — every existing skip path SHALL mean "nothing is
+   deferred".
+7. The workspace SHALL still be prepared before the graph is entered, because the pointer is
+   written under the checkout's spec directory. Deferral SHALL save the harness session, not the
+   checkout.
+8. WHILE a work item's spawn is deferred, the system SHALL NOT report it as having a session —
+   `sessions list` SHALL not invent one.
 
 ## Non-functional requirements
 
@@ -311,11 +346,6 @@ into operator-owned configuration rather than a passthrough.
 
 ## Out of scope
 
-- **Moving the spawn to after the gate.** The owner's review asks why a session exists before
-  phase selection is answered. It should not, and `design.md` says how — but that changes the
-  spawn contract for **every** work item, not only those choosing a model, so it is proposed
-  as a **prerequisite work item** rather than folded in here. This work item is written to be
-  correct under either ordering (R4.3).
 - **Folding `routing.harnessTrust`, `routing.harnessPlugins` and `routing.defaultHarness` into
   `harnesses[]`.** They belong there by the same argument that moved these three sections out of
   `routing`, but it is a breaking config migration with its own tests. This work item takes only
@@ -333,10 +363,8 @@ into operator-owned configuration rather than a passthrough.
 
 ## Open questions
 
-1. **Is the prerequisite ordering ticket wanted, and does this work item wait for it?**
-   Recommended: raise it, land it first, and drop R4.3's re-launch to a safety net that
-   nothing exercises. The alternative is to land this work item first and carry the re-launch
-   as a bridge. The owner's call.
+1. ~~Is the prerequisite ordering ticket wanted?~~ **Answered: the owner asked for it in this
+   PR.** It is R8.
 2. **What lifetime should an availability verdict have?** Proposed: 24 hours, plus invalidation
    whenever the declaration's arguments change, plus the one re-probe of R7.5.
 3. **Is `low | medium | high` the right effort enum?** Three levels is the smallest useful
@@ -362,3 +390,4 @@ into operator-owned configuration rather than a passthrough.
 | "separate section for harnesses, a separate section for models, a separate list for efforts" | **Accepted** — three top-level sections (R2.1). `models[]` rows carry `harness:` rather than nesting (R2.2), the shape `critics[]` already uses. |
 | "the-loop should take care of normalizing" the effort enums | **Accepted** — the enum is the-loop's, the translation is `adapter.effort_args(level)`, an inexpressible level is not offered (R1.8, R2.3, R2.6), and every mapping the-loop asserts is probe-validated (R2.7) rather than invented. |
 | "putting it under routing key doesn't make any sense to me" | **Agreed** — `routing` configures event delivery; these configure installed tooling. `harnesses[].args` takes over from `routing.harnessArgs.<harness>` behind a warn-never-fail shim (R2.10); the other three per-harness keys are a named follow-up, out of scope here. |
+| "implement in this same PR" (the spawn-order change) | **Accepted, now in scope as R8.** The graph is entered when the work item is armed; the spawn is deferred while the pointer is parked on a daemon-serviced start gate; the deferral rule is narrow enough that nothing mid-graph can be stranded. One earlier claim is struck: the checkout is still needed at arm time, so deferral saves the harness session, not the clone. |

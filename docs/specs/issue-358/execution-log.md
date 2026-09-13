@@ -35,10 +35,10 @@ approves the pull request and a named human signs off the security review.
 |-------|---------|----------------------|-------|
 | phase-selection | 2026-09-13 | — | recorded, not answered — no authorized `execute` reaches a cloud session |
 | requirements-definition | 2026-09-13 | | [`requirements.md`](requirements.md) — six requirements, six abuse cases |
-| design | 2026-09-13 | | [`design.md`](design.md) — revision 3 after two rounds of the owner's review on PR #359 (model/effort split and availability in r2; three top-level sections, a flat `models[]`, and the-loop-owned effort normalization in r3); awaiting approval |
+| design | 2026-09-13 | | [`design.md`](design.md) — revision 4 after three rounds of the owner's review on PR #359 (model/effort split and availability in r2; three top-level sections, a flat `models[]`, and the-loop-owned effort normalization in r3); awaiting approval |
 | test-planning | | | not started — downstream of an unapproved design |
 | tasks-breakdown | | | not started |
-| implementation | | | **blocked by the owner's instruction** until the design is approved |
+| implementation | | | **blocked by the owner's instruction** until the design is approved; scope now includes R8 (spawn after the gate) |
 | verification | | | |
 | needs-review | | | |
 | complete | | | |
@@ -128,6 +128,37 @@ approves the pull request and a named human signs off the security review.
   lifetime, the prerequisite ordering ticket and the `harnesses[]` consolidation follow-up.
 - **Blockers:** the owner's instruction to hold implementation until the design is approved.
 
+### 2026-09-13 — the spawn order folded in as R8
+
+- **Phase:** design (revision 4)
+- **Decision recorded:** asked whether to raise the spawn-order reorder as a prerequisite ticket
+  and whether this work item should wait for it, the owner answered **"implement in this same
+  PR."** So it is in scope as **requirement 8**: the graph is entered when a work item is armed,
+  the spawn is **deferred** while the pointer is parked on a start node that is a human gate, and
+  the session is spawned when the gate is answered — already carrying the frozen model. R4.3's
+  re-launch drops to a safety net for a choice changed *after* the gate and for sessions launched
+  before this change.
+- **The seam:** `graphlink.on_spawn` does two things today — enter the graph and bind the session —
+  and they split into `on_arm` (start, evaluate a human start gate with the arming event attached,
+  report whether the pointer is parked) and `on_spawn` (bind only).
+- **Claim struck.** I had written that the reorder spends "no tmux session and no checkout" on an
+  unconfigured work item. Verified against `graphlink._guarded`: the checkout is validated and the
+  pointer is written under the checkout's spec directory, so the workspace must be prepared before
+  the graph can be entered. Deferral saves the harness session and the tmux session, not the
+  clone — no regression either way, since the checkout already precedes the checklist today.
+- **The deferral rule is deliberately narrow** — only while the pointer has never advanced past a
+  human-gate start node — so nothing mid-graph, no inner PR loop and no existing `_guarded` skip
+  path can be stranded by it. The blast radius (the arming path, `on_spawn`'s idempotency, the
+  issue-199 hand-off, announce/conversation-open, and every test that assumes an armed item has a
+  session) is recorded as this work item's largest cost.
+- **Checkpoint/tests:** `markdownlint-cli2` on the three files, clean. Still no code — the owner's
+  hold on implementation until the design is approved has not been lifted, and "implement in this
+  same PR" answers *where the change belongs*, not *start now*; confirmation requested on the
+  thread.
+- **Next:** the owner's approval of the design, and their answers on the effort enum, the verdict
+  lifetime and the `harnesses[]` consolidation follow-up.
+- **Blockers:** the implementation hold.
+
 ## Verification results
 
 > Not applicable to this pass: nothing is implemented. The `verification` node will record
@@ -145,6 +176,7 @@ approves the pull request and a named human signs off the security review.
 | 1 | self | the-loop | the requirements' five reporter properties re-checked against the design's components; the merge order, the fail-closed table and the abuse-case table re-read against `_tmux_for`'s existing behaviour | — |
 | 2 | human (owner) | @MadaraUchiha-314 | new findings → all five addressed in revision 2 | [PR #359 review](https://github.com/MadaraUchiha-314/the-loop/pull/359) |
 | 3 | human (owner) | @MadaraUchiha-314 | new findings on the declaration's shape → all three addressed in revision 3 | [PR #359](https://github.com/MadaraUchiha-314/the-loop/pull/359#discussion_r4000531271) |
+| 4 | human (owner) | @MadaraUchiha-314 | the spawn-order change is to land in this PR → R8 | [PR #359](https://github.com/MadaraUchiha-314/the-loop/pull/359#discussion_r4000541107) |
 
 ## Security review (gate)
 
