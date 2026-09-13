@@ -35,7 +35,7 @@ approves the pull request and a named human signs off the security review.
 |-------|---------|----------------------|-------|
 | phase-selection | 2026-09-13 | — | recorded, not answered — no authorized `execute` reaches a cloud session |
 | requirements-definition | 2026-09-13 | | [`requirements.md`](requirements.md) — six requirements, six abuse cases |
-| design | 2026-09-13 | | [`design.md`](design.md) — revision 4 after three rounds of the owner's review on PR #359 (model/effort split and availability in r2; three top-level sections, a flat `models[]`, and the-loop-owned effort normalization in r3); awaiting approval |
+| design | 2026-09-13 | | [`design.md`](design.md) — revision 5 after four rounds of the owner's review on PR #359 (model/effort split and availability in r2; three top-level sections, a flat `models[]`, and the-loop-owned effort normalization in r3); awaiting approval |
 | test-planning | | | not started — downstream of an unapproved design |
 | tasks-breakdown | | | not started |
 | implementation | | | **blocked by the owner's instruction** until the design is approved; scope now includes R8 (spawn after the gate) |
@@ -159,6 +159,34 @@ approves the pull request and a named human signs off the security review.
   lifetime and the `harnesses[]` consolidation follow-up.
 - **Blockers:** the implementation hold.
 
+### 2026-09-13 — a model is not tied to a harness (revision 5)
+
+- **Phase:** design (revision 5)
+- **Decision recorded:** *"Let's not tie model to harness. Let's just keep it models … and the
+  models will be like opus 5, fable 5.1, gpt 5.6 sol — use whatever naming convention each of the
+  model providers follow."* Accepted, and it **retires an objection I had raised twice** rather
+  than working around it: `models` is now a plain list of provider-named strings, and the
+  `harness:` field revision 3 introduced is gone.
+- **Why the objection dissolves.** I had argued that an untied list forces the-loop to *attribute*
+  a name to a harness, and attribution is a guess (the decision-120 rule). What I had missed is
+  that **R7's availability probe already replaces the guess with a measurement**: it asks each
+  harness whether it can actually run a name and caches the answer, so the cache is a name ×
+  harness matrix and resolution reads exactly one cell — this work item's harness, this name. A
+  name the harness cannot run comes back `refused`, which R7 already defines as "not offered, never
+  spawned". Nothing is attributed; the operator writes one flat list.
+- **The deliberate asymmetry, now stated in the design:** a model *name* is the provider's
+  identifier, so the-loop copies it verbatim and neither normalizes nor parses it; an effort
+  *level* is a the-loop concept three harnesses spell differently, so the-loop owns that
+  vocabulary. Opposite answers to "who owns the name", each for a stated reason.
+- **Two things got smaller.** There is no declared-choice record left — a declaration carries
+  nothing but a name — and there is no `args` escape hatch on a model: a harness with no
+  `model_flag` is simply offered no model section rather than given a hand-written flag.
+- **Checkpoint/tests:** `markdownlint-cli2` on the three files, clean. Still no code; the
+  implementation hold has not been lifted.
+- **Next:** the owner's approval of the design, and their answers on the effort enum, the verdict
+  lifetime and the `harnesses[]` consolidation follow-up.
+- **Blockers:** the implementation hold.
+
 ## Verification results
 
 > Not applicable to this pass: nothing is implemented. The `verification` node will record
@@ -177,6 +205,7 @@ approves the pull request and a named human signs off the security review.
 | 2 | human (owner) | @MadaraUchiha-314 | new findings → all five addressed in revision 2 | [PR #359 review](https://github.com/MadaraUchiha-314/the-loop/pull/359) |
 | 3 | human (owner) | @MadaraUchiha-314 | new findings on the declaration's shape → all three addressed in revision 3 | [PR #359](https://github.com/MadaraUchiha-314/the-loop/pull/359#discussion_r4000531271) |
 | 4 | human (owner) | @MadaraUchiha-314 | the spawn-order change is to land in this PR → R8 | [PR #359](https://github.com/MadaraUchiha-314/the-loop/pull/359#discussion_r4000541107) |
+| 5 | human (owner) | @MadaraUchiha-314 | a model is not tied to a harness → revision 5; the probe measures the matrix | [PR #359](https://github.com/MadaraUchiha-314/the-loop/pull/359#discussion_r4000531271) |
 
 ## Security review (gate)
 
