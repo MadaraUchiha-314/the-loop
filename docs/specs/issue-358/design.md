@@ -375,7 +375,7 @@ harness a work item will run on.
 
 A model name resolves to `[<adapter.model_flag>, <name>]` and nothing else. There is **no `args`
 escape hatch on a model** — a harness with no `model_flag` cannot be handed a model at all, so it
-is offered no model section rather than given a hand-written flag (R2.5). One way to do the
+is offered no model section rather than given a hand-written flag (R2.7). One way to do the
 ordinary thing, and no way to do an extraordinary one.
 
 ### `modelprobe.py` — availability (R7)
