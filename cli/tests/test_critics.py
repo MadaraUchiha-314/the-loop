@@ -77,6 +77,25 @@ def test_oneshot_argv_without_a_model_is_the_plain_one_shot_run():
     ]
 
 
+def test_cursor_oneshot_argv_uses_the_long_model_flag():
+    """issue-360: ``cursor-agent`` has no ``-m``; only ``--model``.
+
+    The short form was never a cursor-agent option, so every critic declared
+    with ``model:`` on ``harness: cursor`` died on ``error: unknown option
+    '-m'`` before a review ran. Asserted on the argv rather than on the class
+    attribute because the argv is what reaches the process.
+    """
+    argv = CursorAgentAdapter().oneshot_argv("review this", model="gpt-5.6-sol")
+    assert argv == [
+        "-p",
+        "review this",
+        "--output-format",
+        "json",
+        "--model",
+        "gpt-5.6-sol",
+    ]
+
+
 # ------------------------------------------------------------- loading (R1, R4)
 
 
@@ -206,7 +225,7 @@ def test_builtin_harness_derives_argv_from_the_adapter():
         "review the diff",
         "--output-format",
         "json",
-        "-m",
+        "--model",
         "gpt-5.5",
     ]
 

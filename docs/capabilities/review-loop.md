@@ -74,6 +74,10 @@ critique it, and how that critique gets back (issue-108).
   invocation SHALL be derived from that adapter's own one-shot argv, with `model` passed
   through the harness's model flag. Adding a harness adapter therefore makes it usable as a
   critic with no critic-side change.
+- An adapter's `model_flag` SHALL be a spelling that harness's own `--help` lists, and the
+  **long** form where the CLI offers both: it is passed through untouched to a process
+  the-loop does not parse for, so a wrong flag is not a degraded run but a dead one —
+  `cursor-agent` rejects `-m` outright (issue-360). Both shipped adapters are `--model`.
 - WHEN `command` is set it SHALL be the **executable** (argv[0]) — never a shell line — and
   it SHALL take precedence over `harness`. Arguments live in `args`.
 - `args` placeholders SHALL be substituted **element-wise** from a closed set: `{prompt}`,
@@ -155,6 +159,7 @@ Pointers, not copies:
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-360 | The cursor adapter's model flag was `-m`, which `cursor-agent` has no option for (2026-09-14): every critic declared `harness: cursor` **with** a `model:` died on `error: unknown option '-m'` before a review ran, while the same critic with no model ran fine — so the roster looked healthy and the rounds were simply missing. Now `--model`, the spelling `cursor-agent --help` lists, and the rule that a `model_flag` is a spelling the harness's own `--help` carries is written into this doc rather than left as adapter folklore | [spec](../specs/issue-360/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/360) |
 | issue-352 | The critic roster moved to the operator (2026-09-12): `reviews.critics[]` in the harness config became the top-level `critics[]` in the CLI config, same entry shape, read by `the-loop critic list\|run` through the resolved CLI config and never from a repository. A critic entry committed to a repository is inert. The `autonomy` block left the harness config in the same change: `.the-loop/**` is a fixed sensitive path, not a configured one. Third pass: the round counts followed the roster — `reviews` (`selfReviewCount`, `criticReviewCount`, `stopOnNoNewFindings`, `escalateOnRepeatFinding`) is now the CLI config's top-level `reviews`, read by the agent with `the-loop critic policy`; the defaults (3/3, true, true) apply when the operator set none or the CLI is not installed | [spec](../specs/issue-352/), [decision-123](../decisions/decision-123.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/352) |
 | issue-188 | The design critic round (2026-08-10): an **opt-in** `design-critic-review` node between `design` and `test-planning`, reviewing the locked `design.md` against the requirements while a structural finding still costs an edit; off unless an authorized human ticks it at `phase-selection`, gating the execution log's own `## Design critic review` section, `stage: critic-review` so it routes to a frontier model; the procedure, the `unavailable` rule and the reply-first-then-fix protocol unchanged | [spec](../specs/issue-188/), [decision-071](../decisions/decision-071.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/188) |
 | issue-108 | Minted this capability. Made `reviews.critics[]` runnable — `command`/`args` with element-wise placeholders (or a built-in `harness` deriving them), `env`/`cwd`/`outputFormat`/`timeoutSeconds`/`enabled` — added `the-loop critic list\|run` returning one JSON envelope on stdout, and wrote the critic-round procedure (including the `unavailable` outcome) into `reference/reviewing.md`. | [spec](../specs/issue-108/), [decision-043](../decisions/decision-043.md) |

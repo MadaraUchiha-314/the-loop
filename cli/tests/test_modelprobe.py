@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from the_loop.harness import ClaudeCodeAdapter
+from the_loop.harness import ClaudeCodeAdapter, CursorAgentAdapter
 from the_loop.modelprobe import (
     OK,
     REFUSED,
@@ -18,8 +18,10 @@ from the_loop.modelprobe import (
     VERDICT_TTL_SECONDS,
     Verdict,
     VerdictCache,
+    digest,
     offerable,
     probe,
+    resolved_args,
 )
 
 
@@ -108,6 +110,32 @@ def test_a_changed_argv_invalidates_the_verdict(tmp_path):
     same = cache.get("claude", "model", "opus-5", args_digest="abc")
     assert same is not None and same.verdict == REFUSED
     assert cache.get("claude", "model", "opus-5", args_digest="different") is None
+
+
+def test_a_verdict_probed_with_the_old_cursor_flag_no_longer_withholds(tmp_path):
+    """issue-360: the `-m` era's `refused` verdicts expire on their own.
+
+    Every cursor model probed before the flag was fixed came back `refused` —
+    `cursor-agent` exited non-zero on `-m` before it had an opinion about any
+    name — and a standing `refused` withholds the choice from the checklist. No
+    migration is needed because the verdict records the argv it was taken
+    against: the digest of `("-m", name)` is not the digest of
+    `("--model", name)`, so the stale answer stops applying the moment the
+    adapter is fixed, and the next `models check` asks again.
+    """
+    cache = VerdictCache(str(tmp_path / "v.json"))
+    name = "gpt-5.6-sol"
+    cache.put(
+        Verdict("cursor", "model", name, digest(("-m", name)), REFUSED, time.time())
+    )
+
+    assert not offerable(
+        "model", name, "cursor", cache, args_digest=digest(("-m", name))
+    )
+
+    now = resolved_args("model", name, CursorAgentAdapter())
+    assert now == ("--model", name)
+    assert offerable("model", name, "cursor", cache, args_digest=digest(now))
 
 
 def test_a_stale_verdict_is_not_returned(tmp_path):
