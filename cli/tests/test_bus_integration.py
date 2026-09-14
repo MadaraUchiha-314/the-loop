@@ -568,7 +568,6 @@ def _parked_checkout(root, ref, node="requirements-approval"):
     )
     spec = root / "docs" / "specs" / f"issue-{ref.number}"
     spec.mkdir(parents=True)
-    (spec / "execution-log.md").write_text("# Execution Log\n", encoding="utf-8")
     (spec / "requirements.md").write_text(
         "---\nstatus: draft\n---\n\n# R\n", encoding="utf-8"
     )

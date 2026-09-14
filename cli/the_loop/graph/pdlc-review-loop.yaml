@@ -81,7 +81,7 @@ nodes:
     actor: human
     required: true          # stating what to review for is a human act; never skippable
     command: review-pr
-    entry: [log-entry, post-review-brief, deliver-assignment]
+    entry: [post-review-brief, deliver-assignment]
     exit: [classify-review-brief]
 
   # One review round: answer every question, examine every angle, run every
@@ -97,7 +97,7 @@ nodes:
     actor: agent
     command: review-pr
     stage: critic-review
-    entry: [set-phase-label, log-entry, deliver-assignment]
+    entry: [set-phase-label, deliver-assignment]
     exit: []
 
   # The conversation, expressed as an edge — the ad-hoc loop's `review` node,
@@ -114,7 +114,6 @@ nodes:
     session: inherit
     command: review-pr
     entry:
-      - log-entry
       - request-review
       - {hook: notify, with: {event: decision-pending}}
     exit:
@@ -126,7 +125,7 @@ nodes:
     command: review-pr
     stage: complete
     terminal: true
-    entry: [set-phase-label, log-entry]
+    entry: [set-phase-label]
     exit: []
 
   # The teardown node (issue-186), identical to the other work-item-level
@@ -137,7 +136,7 @@ nodes:
     phase: cleanup
     actor: code
     terminal: true
-    entry: [set-phase-label, log-entry]
+    entry: [set-phase-label]
     exit: []
 
   - id: escalated

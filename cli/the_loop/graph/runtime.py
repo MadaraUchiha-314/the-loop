@@ -48,7 +48,7 @@ def _exclude_spec_root(repo: Path, spec_root: str) -> str:
 
     A contribution can join a repository that never adopted the-loop (issue-185,
     PR #187 review). Its working checkout still needs the spec tree —
-    ``graph-state.json``, ``execution-log.md``, ``contribution.md`` are how the
+    ``graph-state.json``, ``tasks.md``, ``contribution.md`` are how the
     runtime and its gates work at all — but none of that may reach the
     repository's history: the contribution PR carries only the intervention.
     Rather than trusting every session to remember not to ``git add`` it, the
@@ -129,7 +129,7 @@ def _degradations(outcome: ChainOutcome) -> List[Tuple[str, str]]:
 
     the-loop's outbound hooks are best-effort by contract: a GitHub outage must
     not wedge a work item, so `post-phase-selection`, `set-phase-label`,
-    `request-review`, `publish-artifact`, `log-entry` and `notify` all catch,
+    `request-review`, `publish-artifact` and `notify` all catch,
     record ``data["error"]`` and return ``pass``. Nothing read that field
     (issue-194), so the only trace of a *deterministically* failing call — an
     unusable ref, a missing token — was a warning on a logger nothing
@@ -299,7 +299,9 @@ class Runtime:
         review, so a reviewer's "this section is thin" reaches the agent that
         wrote it with its context intact. If that session has died the fallback
         is a **fresh** one seeded with the work item's artifacts — never a block:
-        requirements.md, design.md and the execution log are enough to restart.
+        requirements.md, design.md and tasks.md are enough to restart (the third
+        was the execution log until issue-365 retired it; the task list carries
+        what the narrative claimed to — what is done, and what is next).
         """
         if node.session != "inherit":
             return None, "new"
@@ -311,7 +313,7 @@ class Runtime:
                 "seed_artifacts": [
                     "requirements.md",
                     "design.md",
-                    "execution-log.md",
+                    "tasks.md",
                 ]
             },
             "fresh-with-artifacts",
@@ -1087,8 +1089,8 @@ def _announce_force(runtime: "Runtime", item: WorkItem, record: Dict[str, Any]) 
     """Post the force to the ticket — the audit record a human actually reads.
 
     Best-effort: an integration outage must not prevent the operator unblocking
-    their work item. The other three records (graph state, execution log, event
-    log) are already durable, so a failure here degrades the trail rather than
+    their work item. The other two records (graph state and the event log) are
+    already durable, so a failure here degrades the trail rather than
     losing it.
 
     Returns the error when the comment did not go up, ``""`` otherwise — the

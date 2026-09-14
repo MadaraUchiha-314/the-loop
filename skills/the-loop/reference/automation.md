@@ -243,7 +243,7 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   writes one for you** (issue-352, decision-123; this replaces issue-193's adoption).
   the-loop is routinely pointed at a repository that never ran `/the-loop:init`. The
   harness config is the agent's file: read it when it is there, fall back to the schema's
-  defaults when it is not, and say which in the execution log. The CLI neither reads nor
+  defaults when it is not, and say which in the PR briefing. The CLI neither reads nor
   writes it — it takes the spec directory, the critics and the graph hooks from the
   operator's `cli-config.yaml` — so a spawned session finds exactly what the repository
   committed, never a file the daemon planted. A **contribution** or a **review** (guest

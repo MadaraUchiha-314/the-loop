@@ -31,7 +31,7 @@ path, so no work item in flight has to be migrated to gain the feature.
 The vacuous pass has one gap that only shows up across repositories — a
 contribution that was *planned* and never opened is indistinguishable from one
 that was never planned. So a work item may **declare** the repositories it
-contributes to, in ``execution-log.md``'s front matter (``repos:``), and this
+contributes to, in ``tasks.md``'s front matter (``repos:``), and this
 gate then holds until each of them has an inner loop. Declaring nothing keeps
 the pre-issue-183 behaviour exactly.
 """
@@ -107,12 +107,15 @@ def inner_loop_state_dir(spec_dir: Path, pr_number: int, repo: str = "") -> Path
 def declared_repos(spec_dir: Path) -> List[str]:
     """The repositories this work item says it contributes to (issue-183).
 
-    ``execution-log.md``'s front-matter ``repos:`` — checked in, human-authored,
-    and read exactly like every other gate input: no network, no registry. An
-    absent or non-list value is *no declaration*, not an empty one, and the gate
-    behaves as it did before this key existed.
+    ``tasks.md``'s front-matter ``repos:`` — checked in, human-authored, and read
+    exactly like every other gate input: no network, no registry. It lives on the
+    last artifact locked before ``implementation``, which is the node this gate
+    holds, and beside the plan that says what each repository receives (it was
+    the execution log's until issue-365 retired that file). An absent file, an
+    absent key or a non-list value is *no declaration*, not an empty one, and the
+    gate behaves as it did before this key existed.
     """
-    raw = read_front_matter(spec_dir / "execution-log.md").get("repos")
+    raw = read_front_matter(spec_dir / "tasks.md").get("repos")
     if not isinstance(raw, list):
         return []
     return [str(entry).strip() for entry in raw if str(entry).strip()]
@@ -216,10 +219,10 @@ def await_inner_loops(ctx: HookContext) -> HookResult:
             messages=[
                 Message(
                     text=(
-                        f"execution-log.md declares a repository the-loop cannot "
+                        f"tasks.md declares a repository the-loop cannot "
                         f"use: {exc}. `repos:` entries are <owner>/<repo>."
                     ),
-                    path=str(spec_dir / "execution-log.md"),
+                    path=str(spec_dir / "tasks.md"),
                 )
             ],
             data={"declared": list(declared)},

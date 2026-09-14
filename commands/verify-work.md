@@ -17,7 +17,7 @@ the environment the plan references is usually described there.
 ## Steps
 
 1. **Locate & load.** Resolve `$ARGUMENTS` to `docs/specs/<id>/` and read
-   `testing-plan.md`, `tasks.md` and `execution-log.md`. Every task should be ticked; if
+   `testing-plan.md` and `tasks.md`. Every task should be ticked; if
    the DAG is unfinished, say so and stop — verification proves finished work.
 
    **No `testing-plan.md`?** Then `test-planning` was declared skipped for this work item
@@ -25,8 +25,8 @@ the environment the plan references is usually described there.
    declared away by a human, and re-creating its artifact from this side of the gate is
    exactly what that declaration refused. Verify the change on its merits instead (run the
    project's linters/tests, exercise what changed), and record the results in
-   **`execution-log.md`'s `## Verification results`** section — the node gates that
-   section in place of the plan and blocks until it holds something. Everything below
+   **`evidence/verification.md`'s `## Verification results`** section — the node gates
+   that file in place of the plan and blocks until it holds something. Everything below
    about *what* to run and *how* to record it still applies; only the file changes.
 
 2. **Bring up the environment** declared in the plan's **Verification environment**:
@@ -51,15 +51,15 @@ the environment the plan references is usually described there.
    be redacted is not committed, and the results row says so. A secret that reaches a
    commit is rotated, not merely edited out.
 
-5. **Record the results.** Fill the plan's **Verification results** table — or the
-   execution log's, when the plan was declared away (step 1): per activity,
+5. **Record the results.** Fill the plan's **Verification results** table — or
+   `evidence/verification.md`'s, when the plan was declared away (step 1): per activity,
    the exact command or manual procedure, the outcome, and a link to the committed
    evidence. When the change adds or alters integration behaviour, run
    `the-loop scenarios --format markdown` for the reviewer briefing and reference it here.
 
 6. **Advance the phase.** Set the ticket label to `loop:verification` while
-   running, mirror `phase: verification` in the execution log, and tell the graph when the
-   node's work is done: `the-loop graph complete <id>`.
+   running, and tell the graph when the node's work is done:
+   `the-loop graph complete <id>`.
 
 7. **Next step:** the review chain — `/the-loop:execute-tasks <id>` step 4 onward
    (self/critic review, security review, evidence, capability docs, reviewer briefing),

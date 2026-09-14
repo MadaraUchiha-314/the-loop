@@ -30,6 +30,7 @@ import copy
 import pytest
 
 from the_loop.graph import hooks  # noqa: F401 — registers the built-ins
+from the_loop.graph.contract import HookResult
 from the_loop.graph.model import (
     GraphConfigError,
     PDLC_CONTRIBUTION_LOOP,
@@ -37,10 +38,28 @@ from the_loop.graph.model import (
     compile_graph,
     load_graph,
 )
+from the_loop.graph.registry import hook
 from the_loop.graph.runtime import Runtime, declare_skips
 from the_loop.graph.state import GraphState
 
 WORK_ITEM = "issue-1"
+
+TRACE = "trace-entry"
+
+
+@hook(TRACE)
+def _trace(ctx):
+    """Record that this node's chain ran, so M3 can assert one never did.
+
+    A test-local stand-in for any entry hook with a visible side effect. It was
+    `log-entry` — the hook that appended a checkpoint to the execution log —
+    until issue-365 retired the log and the hook with it.
+    """
+    path = ctx.work_item.spec_dir / "trace.txt"
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(f"{ctx.boundary} {ctx.node_id}\n")
+    return HookResult.ok(TRACE)
+
 
 #: A miniature of the shipped shape: two skippable spec nodes (one authoring,
 #: one human gate), a non-skippable implementation node that re-gates the
@@ -53,7 +72,7 @@ GRAPH = {
             "phase": "requirements-definition",
             "skippable": True,
             "produces": ["requirements.md"],
-            "entry": ["log-entry"],
+            "entry": ["set-phase-label", TRACE],
             "exit": [{"hook": "validate-artifacts", "with": {"locked": True}}],
         },
         {
@@ -67,7 +86,7 @@ GRAPH = {
             "phase": "tasks-breakdown",
             "skippable": True,
             "produces": ["tasks.md"],
-            "entry": ["log-entry"],
+            "entry": ["set-phase-label", TRACE],
             "exit": [{"hook": "validate-artifacts", "with": {"locked": True}}],
         },
         {
@@ -310,14 +329,18 @@ def test_advance_routes_through_skips_after_a_satisfied_node(runtime, repo):
     assert state.nodes["tasks"].outcome == "skipped"
 
 
-def test_a_skipped_node_gets_no_phase_label_and_no_log_entry(runtime, repo):
-    """R3.5 — a skipped node's entry hooks never run; the landing node's do."""
-    (_spec_dir(repo) / "execution-log.md").write_text("# log\n")
+def test_a_skipped_node_runs_none_of_its_entry_hooks(runtime, repo):
+    """R3.5 — a skipped node's entry hooks never run; the landing node's do.
+
+    Which is also why each review-chain gate reads a record of its own
+    (issue-365): a declared skip removes that node's assertion and nothing else,
+    because the node is routed past before its chain is ever entered.
+    """
     _declare(repo, "requirements", "approval")
     runtime.start(WORK_ITEM)
-    log = (_spec_dir(repo) / "execution-log.md").read_text()
-    assert "entry requirements" not in log
-    assert "entry tasks" in log
+    trace = (_spec_dir(repo) / "trace.txt").read_text()
+    assert "entry requirements" not in trace
+    assert "entry tasks" in trace
 
 
 def test_advance_on_a_fresh_item_lands_past_declared_skips(runtime, repo):
@@ -1242,7 +1265,10 @@ def test_the_shipped_outer_loop_offers_the_design_critic_round():
         if isinstance(spec, dict) and spec["hook"] == "validate-artifacts"
     ]
     assert gated == [
-        {"validates": "execution-log.md", "sections": ["Design critic review"]}
+        {
+            "validates": "evidence/design-critic-review.md",
+            "sections": ["Design critic review"],
+        }
     ]
 
 

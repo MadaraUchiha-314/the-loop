@@ -333,7 +333,7 @@ loop), as is any value that is not `<owner>/<repo>` — the value becomes a dire
 so it is validated rather than sanitized.
 
 A work item can also **declare** the repositories it contributes to, in
-`docs/specs/<id>/execution-log.md`'s front matter:
+`docs/specs/<id>/tasks.md`'s front matter:
 
 ```yaml
 repos:

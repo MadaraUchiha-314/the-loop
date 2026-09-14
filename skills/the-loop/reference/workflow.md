@@ -161,9 +161,9 @@ So the decision is split three ways (decision-067):
   declaring the security review or the approval gate away — the trade it accepts is
   written down there in full.
 - **A kept gate keeps a subject.** Skipping `test-planning` removes the document, never
-  the verifying: `verification` then gates the shared `execution-log.md` for a non-empty
+  the verifying: `verification` then gates `evidence/verification.md` for a non-empty
   `Verification results` section instead of `testing-plan.md`, and blocks until it is
-  written. (Declaratively, via `onlyWhenSkipped:` on the hook entry — it applies only
+  written. That file is produced by no node, so it can never itself be a planned absence. (Declaratively, via `onlyWhenSkipped:` on the hook entry — it applies only
   while the plan is a *planned absence*, so a plan that exists is gated exactly as
   before.)
 - **A human selects from it, at the loop's own first phase.** `phase-selection` is where
@@ -236,8 +236,8 @@ for the same reason it never declares a skip.
 design critic round) — a different model reading the **completed `design.md`** against
 the requirements, after `design` and before `test-planning` (it is locked later, at
 `design-approval` — issue-281), so a structural finding costs an edit rather than a
-rewrite. It records into the execution log's `## Design critic review`
-section and blocks until that section is written. Like declared skips, opt-in phases are
+rewrite. It records into `evidence/design-critic-review.md`
+and blocks until that section is written. Like declared skips, opt-in phases are
 outer-loop only: neither `pdlc-pr-loop` nor `pdlc-contribution-loop` declares one.
 
 ## Several repositories, one work item (issue-183)
@@ -260,8 +260,9 @@ discussion-only pull request in the repository holding the spec chain.
   (`Closes <owner>/<repo>#<n>`, the URL form, or GitHub's own linkage). Routing honours a
   qualified reference to another repository; it does not widen which events reach the
   daemon, nor which work items are armed.
-- **Declare the repositories, and the gate holds for them.** `execution-log.md`'s front
-  matter takes `repos: [<owner>/<repo>, …]`; `await-inner-loops` then holds the outer
+- **Declare the repositories, and the gate holds for them.** `tasks.md`'s front
+  matter takes `repos: [<owner>/<repo>, …]` — the last artifact locked before
+  `implementation`, which is the node the gate holds; `await-inner-loops` then holds the outer
   `implementation` node until each declared repository has an inner loop *and* every
   started loop has finished. Without the declaration, a pull request that was planned and
   never opened is indistinguishable from a work item that needed none.
@@ -407,13 +408,13 @@ Two rules keep the intervention light without losing rigor:
   `contribution.md` (goal, success criteria, context, approach, verification plan —
   bundled template), iterated with the human at `plan-approval`, which locks it on the
   human's one approval (issue-281). Requirements-and-design thinking still happens; it lands in sections
-  rather than files. The review chain gates the shared execution log exactly as the
+  rather than files. The review chain gates the same `evidence/` records exactly as the
   other loops do. **Never bloat the existing item's thread**: gates' comments only,
   each self-marked; work products live in the repository.
 - **Done means the criteria are met.** The frozen criteria are checkboxes in
   `contribution.md`; `verification` blocks until every one is ticked and
-  `Verification results` records how each was proved — in the execution log instead
-  when the planning phases were declared away (a kept gate keeps a subject).
+  `Verification results` records how each was proved — in `evidence/verification.md`
+  instead when the planning phases were declared away (a kept gate keeps a subject).
 - **An unadopted repository stays clean.** The target may carry no
   `.the-loop/harness-config.yaml` at all: everything then runs on the defaults
   (specs at `docs/specs/`, labels `loop:`-prefixed), and the spec tree is **working
@@ -554,16 +555,17 @@ copy of its contents. The checked-in file is the single source of truth.
 - **Test-first discipline**: the invariant is **no production code without a failing
   test that motivates it** — red→green→refactor per task, tests written alongside the
   implementation, and a bug fix reproduces the bug red before fixing it. There is no
-  other mode. Each task's checkpoint in the execution log records the
-  **test command and its red→green transition** as evidence — "did a test fail first?"
-  is a recorded fact, not an assumption.
+  other mode. Each task's commit records the **test command and its red→green
+  transition** in its message — "did a test fail first?" is a recorded fact in git, not an
+  assumption, and not a second copy written into a log.
 - **Keep `tasks.md` checkmarks current**: as each task is completed, tick its `- [ ]` →
   `- [x]` so the ticket/spec always shows what is done vs. outstanding.
 - **Abuse cases are tests.** Security-relevant tasks (touching a trust boundary from
   `design.md` §Security design) name the negative test proving the boundary holds,
   red→green like any other task (`reference/security.md`).
-- Maintain `docs/specs/<id>/execution-log.md` (checked in): append progress, and **run
-  tests at logical checkpoints** — self-checking as you go.
+- **Run tests at logical checkpoints** — self-checking as you go. Write no progress log:
+  the harness keeps the transcript, git keeps the commits, and `graph-state.json` keeps
+  the pointer (issue-365, decision-126).
 - Use the configured tooling (see `tooling.md`); same commands as CI.
 - Apply the **minimalism** ladder (see `minimalism.md`) to avoid generating bloat — least
   code that correctly does the job; justify any new dependency in `design.md`.
@@ -613,8 +615,9 @@ A work item outlives any single context window. The loop manages the window
 mid-task (see `context.md` for the full protocol, the clearing-vs-compaction
 distinction and per-harness mechanics):
 
-- **Never reset without a checkpoint** — checkmarks current, an execution-log entry
-  with a concrete **Next:**, phase label in sync, WIP committed or noted.
+- **Never reset without a checkpoint** — checkmarks current, WIP committed, phase label
+  in sync. The next window's **Next:** is the first unticked task, derived rather than
+  written.
 - **Phase boundaries clear** (fixed):
   once `tasks.md` clears its gate, start implementation on a **fresh window** that
   re-reads the approved spec from disk — the same separation Claude Code's plan mode makes
@@ -641,10 +644,10 @@ capability docs** under `docs/capabilities/` (the loop's fixed convention, index
 - **Fold-in happens in the same PR** as the work item: when implementation changes a
   capability's behaviour, update the affected capability doc(s) (minting new ones for
   first-touched capabilities and updating the index) before requesting review. A work
-  item that affects no capability records "none affected" in its execution log. That
-  record lives in the log's **`## Capability docs`** section, which the `capability-docs`
-  node gates (issue-167) — so it is written, not implied, and the section is never
-  deleted to shorten the log.
+  item that affects no capability records "none affected" in
+  `evidence/documentation.md`'s **`## Capability docs`** section, which the
+  `capability-docs` node gates (issue-167) — so it is written, not implied, and the
+  section is never deleted to shorten the record.
 - **The taxonomy is emergent and review-driven:** structure/organization feedback
   arrives as PR review comments on the capability-doc diffs and is handled like any
   other finding (reply-first-then-fix).
@@ -659,11 +662,11 @@ fold in the same way, in the same PR:
 - **What counts:** `README.md`; the published site under `docs/` (its home page, guide and
   any page the change contradicts); and `skills/the-loop/SKILL.md` with its `reference/`
   docs when the change is to the operating model itself.
-- **The record is the execution log's `## Documentation` section**, which the
-  `capability-docs` node gates alongside `## Capability docs` (issue-174,
+- **The record is `evidence/documentation.md`'s `## Documentation` section**, which the
+  `capability-docs` node gates alongside `## Capability docs` in the same file (issue-174,
   [decision-066](../../../docs/decisions/decision-066.md)) — so it is written, not implied.
   A work item that changed no user-facing doc records that **with the reason**; the
-  section is never deleted to shorten the log.
+  section is never deleted to shorten the record.
 - **Delegate rather than duplicate.** The README summarises and links the site; the site
   carries the detail. Two copies of a fact is one copy that rots — which is why the gate is
   "update what the change made wrong", not "restate everything everywhere".
@@ -691,7 +694,8 @@ its own front page still described one loop and three.
   harness parses. A round that cannot run is recorded `unavailable` and does **not**
   count toward `criticReviewCount`. See `reviewing.md` § Running a critic round.
 - **All reviews happen as comments** in the PR and/or ticket (paper trail). Record every
-  round in the execution log's review table.
+  round in the review table of the record its node gates (`evidence/self-review.md`,
+  `evidence/critic-review.md`).
 
 ## Evidence, the ready-to-ship gate & risk tiers
 
@@ -708,10 +712,11 @@ must ALL hold:
   and committed artifact;
 - the **security review has passed** (always required) — run via the built-in
   security-review skill when the harness has one, else the-loop's checklist, recorded
-  in the execution log's Security review section; an unresolved security finding blocks
+  in `evidence/security-review.md`; an unresolved security finding blocks
   completion regardless of risk tier (`reference/security.md`);
 - the **affected capability docs are updated in the same PR** (or "none affected" is
-  recorded in the execution log) — the organized view of specs must not rot; **and**
+  recorded in `evidence/documentation.md`) — the organized view of specs must not rot;
+  **and**
 - the **R10 reviewer briefing** is posted/updated in the PR — a condensed, prioritized
   summary (where to focus), mermaid diagram(s), and the low-level decisions — produced
   from the-loop's internal
@@ -742,9 +747,9 @@ signal instead of a firehose of approvals. Then move to `complete`.
 
 ## Resumability
 
-Because the specs and execution log are checked in, the-loop can resume a work item
-exactly where it left off — read the execution log's `phase` and the specs' `status`,
-and continue. Context management (`context.md`) is this same property applied *within*
+Because the specs and `graph-state.json` are checked in, the-loop can resume a work item
+exactly where it left off — read the state file's current node, the specs' `status` and
+`tasks.md`'s first unticked task, and continue. Context management (`context.md`) is this same property applied *within*
 a session: the checked-in artifacts are what make clearing the window affordable.
 
 ## DAG orchestration across work items

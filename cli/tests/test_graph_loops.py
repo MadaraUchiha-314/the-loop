@@ -121,13 +121,18 @@ def test_a_corrupt_inner_state_holds_the_gate_rather_than_passing_it(tmp_path):
 
 
 def _log(spec_dir, repos=None):
-    """The work item's execution log, optionally declaring its repositories."""
-    front = ["---", "type: execution-log", "workItem: issue-15"]
+    """The work item's task list, optionally declaring its repositories.
+
+    `repos:` lived in the execution log's front matter until issue-365 retired
+    that file; it is read from `tasks.md` — the last artifact locked before the
+    `implementation` node this gate holds.
+    """
+    front = ["---", "type: tasks", "workItem: issue-15"]
     if repos is not None:
         front.append("repos:")
         front.extend(f"  - {repo}" for repo in repos)
-    front += ["---", "", "# Execution Log", ""]
-    (spec_dir / "execution-log.md").write_text("\n".join(front), encoding="utf-8")
+    front += ["---", "", "# Tasks", ""]
+    (spec_dir / "tasks.md").write_text("\n".join(front), encoding="utf-8")
 
 
 def _inner_state_in(spec_dir, repo, pr_number, current):
@@ -194,12 +199,31 @@ def test_two_repositories_pull_request_seven_do_not_collide(tmp_path):
     assert result.data["inner_loops"] == 2
 
 
-def test_declared_repos_are_read_from_the_execution_log(tmp_path):
+def test_declared_repos_are_read_from_the_task_list(tmp_path):
     ctx = _ctx(tmp_path)
     _log(ctx.work_item.spec_dir, ["octo/app", "octo/infra"])
     assert declared_repos(ctx.work_item.spec_dir) == ["octo/app", "octo/infra"]
     _log(ctx.work_item.spec_dir)
     assert declared_repos(ctx.work_item.spec_dir) == []
+
+
+def test_every_shape_of_absence_is_no_declaration_not_an_empty_one(tmp_path):
+    """R3.2 — no tasks.md, no `repos:` key, and a non-list value all behave as
+    they did before the key existed: the gate waits for nothing it was not told
+    about. A work item that declared `tasks-breakdown` away is the first case.
+    """
+    ctx = _ctx(tmp_path)
+    spec_dir = ctx.work_item.spec_dir
+    assert not (spec_dir / "tasks.md").exists()
+    assert declared_repos(spec_dir) == []
+
+    (spec_dir / "tasks.md").write_text("# Tasks\n", encoding="utf-8")
+    assert declared_repos(spec_dir) == []
+
+    (spec_dir / "tasks.md").write_text(
+        "---\nrepos: octo/app\n---\n\n# Tasks\n", encoding="utf-8"
+    )
+    assert declared_repos(spec_dir) == []
 
 
 def test_await_waits_for_a_declared_repo_with_no_loop(tmp_path):

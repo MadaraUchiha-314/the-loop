@@ -68,8 +68,8 @@ carries — one drawing, one source. Drawn with [Excalidraw](https://excalidraw.
 the SVG (which embeds the scene) and the `.excalidraw` source under `docs/assets/` re-open
 on excalidraw.com to edit.*
 
-A work item's position in the outer loop is tracked on the ticket by a `loop:<phase>` label
-and mirrored in its execution log:
+A work item's position in the outer loop is tracked on the ticket by a `loop:<phase>`
+label, with the fine detail in its `graph-state.json`:
 
 ```text
 not-started → brainstorming (optional) → requirements-definition → design
@@ -134,8 +134,8 @@ intent and outcome sit in one diff. Evidence is committed under
   same pull request as the work item.
 - **The user-facing docs ship with the change too**: the README, this site and the
   operating-model skill are updated in the same pull request as the change that made them
-  wrong, recorded in the execution log's `## Documentation` section — which the
-  `capability-docs` node gates.
+  wrong, recorded in `evidence/documentation.md`'s `## Documentation` section — which
+  the `capability-docs` node gates.
 - **UI/UX design is a first-class artifact**: for user-facing work the design phase tracks
   Figma links and/or self-contained HTML+CSS+JS prototypes, iterated with the designer
   on the rendered output until the designer signs off.

@@ -5,6 +5,15 @@ workItem: ""
 status: draft                # draft | in-review | approved
 approvedBy: []
 overrides: {}
+# repos:                     # OPTIONAL (issue-183; moved here from the retired execution
+#   - <owner>/<repo>         #   log by issue-365). The CONTRIBUTING repositories this work
+#   - <owner>/<other>        #   item raises pull requests in — one inner loop each, state
+                             #   under pr-loops/<owner>__<repo>/pr-<n>/ in the ORIGIN
+                             #   repository (the one the ticket was created in).
+                             #   `await-inner-loops` then holds `implementation` until each
+                             #   declared repository has a loop AND every started loop has
+                             #   finished. Omit for single-repository work: the gate then
+                             #   behaves exactly as it did before the key existed.
 ---
 
 <!-- Written per the `the-loop:writing` skill: front-load each section's

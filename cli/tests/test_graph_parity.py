@@ -26,17 +26,17 @@ P3  every gated name has a template that can satisfy it      the template cannot
 ==  =======================================================  ==========================
 
 P5 (issue-167) is the same three questions asked of ``validates:`` — the artifacts a node
-*asserts against* without authoring, which is how the six review-chain nodes gate their
-sections of the shared ``execution-log.md``. It also asks the question whose absence let
+*asserts against* outside the phase contract, which is how the six review-chain nodes gate
+their own record under ``evidence/``. It also asks the question whose absence let
 issue-167 through in the first place: **a gate that declares content checks must resolve
 something to check them against.** Six nodes declared ``sections:`` and no artifact at
 all, so their ``validate-artifacts`` returned *skipped* on every run — including
 ``security-review``, which the graph itself calls "never skippable, at any risk tier".
 
-The exclusions in P1 are data-driven, not an allow-list: an entry with no ``phase``
-(``execution-log.md``) is outside the node-artifact contract because the manifest itself
-says so, and a ``pathPattern`` ending in ``/`` is a directory of design artifacts, not a
-gated file.
+The exclusions in P1 are data-driven, not an allow-list: an entry with no ``phase`` (the
+``evidence/`` gate records) is outside the node-artifact contract because the manifest
+itself says so, and a ``pathPattern`` ending in ``/`` is a directory of design artifacts,
+not a gated file.
 
 Pure filesystem reads through the compiled graph — no network, no subprocess — so this
 exercises the same contract the runtime does. Skipped when the plugin tree is absent, as
@@ -64,9 +64,12 @@ pytestmark = pytest.mark.skipif(
     reason="plugin tree not present (source distribution)",
 )
 
-#: ``docs/specs/<id>/requirements.md`` → ``requirements.md``. A pattern ending in ``/``
-#: is a directory (the design-artifacts folder) and never matches.
-_SPEC_FILE = re.compile(r"^docs/specs/<id>/(?P<name>[^/]+\.[^/]+)$")
+#: ``docs/specs/<id>/requirements.md`` → ``requirements.md``, and
+#: ``docs/specs/<id>/evidence/self-review.md`` → ``evidence/self-review.md`` — the name is
+#: whatever ``produces:``/``validates:`` would write, so a gate record one directory down
+#: is matched rather than silently excluded (issue-365). A pattern ending in ``/`` is a
+#: directory (the design-artifacts and evidence folders) and never matches.
+_SPEC_FILE = re.compile(r"^docs/specs/<id>/(?P<name>[^/]+(?:/[^/]+)*\.[^/]+)$")
 
 
 def _graph():
@@ -76,7 +79,7 @@ def _graph():
 def _loops():
     """Both shipped loops (issue-172): the P5 assertions hold of each.
 
-    The inner loop's review nodes gate the same shared execution log through the
+    The inner loop's review nodes gate the same ``evidence/`` records through the
     same ``validates:`` vocabulary, so an authoring slip there would be the same
     issue-167 defect one graph over.
     """
@@ -291,9 +294,10 @@ def test_p5a_every_content_gate_resolves_an_artifact_to_read() -> None:
 def test_p5b_every_validated_artifact_is_tracked_by_the_manifest() -> None:
     """P2's question, asked of the artifacts a node asserts against.
 
-    Phase-insensitive on purpose: a validated artifact is *shared* — ``execution-log.md``
-    is gated by six nodes and authored by none — which is exactly why the manifest tracks
-    it without a ``phase`` and why P1/P2 exclude it. Tracked at all is the requirement.
+    Phase-insensitive on purpose: a validated artifact belongs to a gate rather than to a
+    phase — most of the nodes that gate one carry no ``phase`` at all — which is exactly
+    why the manifest tracks these without one and why P1/P2 exclude them. Tracked at all
+    is the requirement.
     """
     tracked = {
         match.group("name")
@@ -311,8 +315,8 @@ def test_p5c_every_validated_section_exists_in_that_artifacts_template() -> None
     """P3's question, asked of the artifacts a node asserts against.
 
     This is the latent half of issue-167: ``capability-docs`` gates a ``Capability docs``
-    section that ``templates/execution-log.md`` did not offer. Invisible while the node
-    skipped — and a block for *every* work item the moment it stopped.
+    section its bundled template did not offer. Invisible while the node skipped — and a
+    block for *every* work item the moment it stopped.
     """
     problems: List[str] = []
     for name, gates in sorted(_validated().items()):

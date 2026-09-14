@@ -37,7 +37,7 @@ def house_rules(ctx):
 GRAPH = {
     "start": "work",
     "nodes": [
-        {"id": "work", "entry": ["log-entry"], "exit": []},
+        {"id": "work", "entry": ["set-phase-label"], "exit": []},
         {"id": "done", "terminal": True},
     ],
     "edges": [{"from": "work", "to": "done", "on": "pass"}],
@@ -284,7 +284,7 @@ def test_apply_appends_to_the_declared_boundary(tmp_path):
             attach=[{"hook": "x-house-rules", "node": "work", "boundary": "entry"}],
         ),
     )
-    assert graph.node("work").entry == ("log-entry", {"hook": "x-house-rules"})
+    assert graph.node("work").entry == ("set-phase-label", {"hook": "x-house-rules"})
     assert graph.node("work").exit == ()
     assert graph.hook_for("x-house-rules") is graph.extension_hooks["x-house-rules"]
 
@@ -344,7 +344,7 @@ def test_two_repositories_keep_their_own_implementations(tmp_path):
 
 def test_hook_for_falls_through_to_the_shipped_registry():
     graph = compile_graph(GRAPH)
-    assert graph.hook_for("log-entry") is not None
+    assert graph.hook_for("set-phase-label") is not None
     with pytest.raises(KeyError, match="unknown hook"):
         graph.hook_for("x-nothing")
 

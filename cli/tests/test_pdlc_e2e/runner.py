@@ -375,7 +375,9 @@ class ScenarioRun:
                 f"{self.scenario.name}: an emit step names no artifact"
             )
         source = self.scenario.directory / "artifacts" / str(params["fixture"])
-        shutil.copyfile(source, self.spec_dir / artifact)
+        target = self.spec_dir / artifact
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
 
     def _step_complete(self, params: Dict[str, Any]) -> None:
         node = str(params.get("node") or "")
@@ -513,8 +515,7 @@ class ScenarioRun:
             "labels",
             "events",
             "lockedBeforeImplementation",
-            "executionLogSections",
-            "executionLogEntries",
+            "evidenceSections",
         }
         unknown = set(expect) - known
         if unknown:
@@ -574,10 +575,8 @@ class ScenarioRun:
                         f"{self.scenario.name}: {name} was not locked when "
                         f"implementation was entered (status: {status})"
                     )
-        if "executionLogSections" in expect:
-            self._assert_log_sections(list(expect["executionLogSections"]))
-        if "executionLogEntries" in expect:
-            self._assert_log_entries(list(expect["executionLogEntries"]))
+        if "evidenceSections" in expect:
+            self._assert_evidence_sections(dict(expect["evidenceSections"]))
 
     def _assert_nodes(self, wanted: List[str]) -> None:
         actual = self.node_trace()
@@ -600,35 +599,26 @@ class ScenarioRun:
         if divergence:
             raise ScenarioAssertionError(f"{self.scenario.name}: {divergence}")
 
-    def _assert_log_entries(self, wanted: List[str]) -> None:
-        """The execution log mirrors the walk (R1.3): each named node's entry
-        checkpoint (the `log-entry` hook's appended heading) appears, in order."""
-        path = self.spec_dir / "execution-log.md"
-        text = path.read_text(encoding="utf-8") if path.is_file() else ""
-        cursor = 0
-        for node in wanted:
-            marker = f"— entry {node}"
-            found = text.find(marker, cursor)
-            if found < 0:
-                raise ScenarioAssertionError(
-                    f"{self.scenario.name}: the execution log has no entry "
-                    f"checkpoint for {node!r} after offset {cursor} — the log "
-                    "does not mirror the walk"
-                )
-            cursor = found + len(marker)
+    def _assert_evidence_sections(self, wanted: Dict[str, Any]) -> None:
+        """Each gate's record carries the section its node blocks on (R1.3).
 
-    def _assert_log_sections(self, wanted: List[str]) -> None:
-        path = self.spec_dir / "execution-log.md"
-        if not path.is_file():
-            raise ScenarioAssertionError(
-                f"{self.scenario.name}: no execution-log.md to assert sections on"
-            )
-        _, body = split_front_matter(path.read_text(encoding="utf-8"))
-        found = sections(body)
-        for section in wanted:
-            match = next((h for h in found if h.strip() == section.strip()), None)
-            if match is None or not found[match].strip():
+        One file per gating node since issue-365; these were sections of a
+        single execution log, which no scenario writes or reads any more.
+        """
+        for name, want in sorted(wanted.items()):
+            path = self.spec_dir / str(name)
+            if not path.is_file():
                 raise ScenarioAssertionError(
-                    f"{self.scenario.name}: execution-log.md section "
-                    f"{section!r} is " + ("missing" if match is None else "empty")
+                    f"{self.scenario.name}: no {name} to assert sections on"
                 )
+            _, body = split_front_matter(path.read_text(encoding="utf-8"))
+            found = sections(body)
+            for section in list(want):
+                match = next(
+                    (h for h in found if h.strip() == str(section).strip()), None
+                )
+                if match is None or not found[match].strip():
+                    raise ScenarioAssertionError(
+                        f"{self.scenario.name}: {name} section {section!r} is "
+                        + ("missing" if match is None else "empty")
+                    )

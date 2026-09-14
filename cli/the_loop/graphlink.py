@@ -634,8 +634,8 @@ class GraphLink:
 
         Called **before** anything is torn down, because the node's entry chain
         writes into the very checkout the cleanup then removes: the phase label
-        reaches the ticket and the execution-log checkpoint reaches the working
-        tree while that tree still exists.
+        reaches the ticket and the graph state reaches the working tree while
+        that tree still exists.
 
         One deliberate difference from every other entry point here: the
         ``_awaiting_start`` gate is not applied. That gate exists to stop work
@@ -1179,8 +1179,8 @@ class GraphLink:
         repository's issue #15 would drive `docs/specs/issue-15` in whatever
         checkout the daemon is pointed at. Under the default
         ``spawnWorkdir: "."`` that checkout is the operator's own repo, which
-        means unrelated inbound events would write graph state and execution-log
-        entries into their work items (issue-113, A6).
+        means unrelated inbound events would write graph state into their work
+        items (issue-113, A6).
 
         Read from the checkout's ``origin`` remote via git itself rather than by
         parsing ``.git/config``, because the config a worktree uses is not the

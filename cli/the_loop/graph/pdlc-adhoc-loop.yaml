@@ -33,9 +33,7 @@
 #     an authorized user's explicit keyword, frozen into graph-state.json's
 #     `loop` field, with the arming comment left standing on the thread.
 #
-# WHAT IT KEEPS, and why each is free: `log-entry` skips when the work item has
-# no execution-log.md (so an ad-hoc item writes none by default, and an operator
-# who keeps one gets the usual trail); `verify-tests` skips when a node declares
+# WHAT IT KEEPS, and why each is free: `verify-tests` skips when a node declares
 # no command (the seam an operator can later point at a test command without a
 # graph change); the phase labels are the EXISTING ones — implementation,
 # complete, cleanup — so adopting this loop changes no repository's
@@ -75,7 +73,7 @@ nodes:
     actor: agent
     command: do-task
     stage: implementation
-    entry: [set-phase-label, log-entry, deliver-assignment]
+    entry: [set-phase-label, deliver-assignment]
     exit:
       - verify-tests
 
@@ -95,7 +93,6 @@ nodes:
     session: inherit
     command: do-task
     entry:
-      - log-entry
       - request-review
       - {hook: notify, with: {event: decision-pending}}
     exit:
@@ -107,7 +104,7 @@ nodes:
     command: do-task
     stage: complete
     terminal: true
-    entry: [set-phase-label, log-entry]
+    entry: [set-phase-label]
     exit: []
 
   # The teardown node (issue-186), identical to the outer and contribution
@@ -118,7 +115,7 @@ nodes:
     phase: cleanup
     actor: code
     terminal: true
-    entry: [set-phase-label, log-entry]
+    entry: [set-phase-label]
     exit: []
 
   - id: escalated

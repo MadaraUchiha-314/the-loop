@@ -41,7 +41,7 @@ worth writing requirements for:
 /the-loop:create-tasks-plan <id>    # tasks.md DAG from requirements + design
 /the-loop:execute-tasks <id>        # implement, self-check, self/critic-review, evidence
 /the-loop:finish-tasks <id>         # cleanup once all tasks are complete
-/the-loop:work-status <id>          # read-only status from specs, tasks, execution log
+/the-loop:work-status <id>          # read-only status from specs, tasks, graph state
 ```
 
 See the full [command reference](/reference/commands) for what each one does.
@@ -56,7 +56,7 @@ docs/specs/<id>/
   requirements.md      # or bugfix.md for bug work
   design.md             # + design/ for UI/UX artifacts, when user-facing
   tasks.md               # the DAG of small, verifiable tasks
-  execution-log.md        # progress log written during execution
+  evidence/               # the record each gate leaves, written as it passes
 ```
 
 The ticket's phase label moves through `not-started → requirements-definition → design

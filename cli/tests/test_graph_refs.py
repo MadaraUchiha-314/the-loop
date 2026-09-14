@@ -167,13 +167,13 @@ def test_degradations_stays_quiet_about_a_legitimate_no_op():
 
 
 def test_degradations_stays_quiet_about_an_ordinary_pass():
-    assert _degradations(_outcome(HookResult.ok("log-entry", appended=True))) == []
+    assert _degradations(_outcome(HookResult.ok("set-phase-label", applied=True))) == []
 
 
 def test_degradations_reports_every_failing_hook_in_order():
     outcome = _outcome(
         HookResult.ok("set-phase-label", applied=False, error="label failed"),
-        HookResult.ok("log-entry", appended=True),
+        HookResult.ok("set-phase-label", applied=True),
         HookResult.ok("post-phase-selection", posted=False, error="comment failed"),
     )
     assert _degradations(outcome) == [

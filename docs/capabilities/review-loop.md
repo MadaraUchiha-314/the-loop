@@ -36,8 +36,10 @@ critique it, and how that critique gets back (issue-108).
 - The loop SHALL stop early when a round yields no new actionable finding (the operator's
   `reviews.stopOnNoNewFindings`) and SHALL escalate when two consecutive rounds surface
   the same finding (the operator's `reviews.escalateOnRepeatFinding`).
-- Every round SHALL be recorded in the execution log's review table with its outcome —
-  new findings · zero · escalated · **unavailable**.
+- Every round SHALL be recorded in the review table of the record its node gates —
+  `evidence/self-review.md`, `evidence/critic-review.md` — with its outcome: new
+  findings · zero · escalated · **unavailable**. One file per gate, so no node can pass
+  on a round another node ran (issue-365).
 
 ### The design critic round (opt-in, issue-188)
 
@@ -49,8 +51,8 @@ critique it, and how that critique gets back (issue-108).
   ([decision-071](../decisions/decision-071.md), [process-graph](process-graph.md)
   § Opt-in phases). The harness SHALL never select it.
 - WHEN it runs THEN its exit gate SHALL require a non-empty **`## Design critic review`**
-  section in `execution-log.md` — a section of its own, not a row of the review table, so
-  the node cannot pass on a round another node recorded.
+  section in `evidence/design-critic-review.md` — a record of its own, so the node cannot
+  pass on a round another node recorded.
 - The **procedure** SHALL be unchanged: attribution prefix, own-comment marker,
   reply-first-then-fix, stop on zero new findings, escalate on a repeated finding, and a
   round that could not run recorded as `unavailable` with its cause.
@@ -120,7 +122,7 @@ critique it, and how that critique gets back (issue-108).
   timeout; the envelope is still printed) and `2` (misconfigured — nothing was spawned).
 - A round that cannot run SHALL be recorded `unavailable` and SHALL NOT count toward the
   operator's `reviews.criticReviewCount`; if no critic can run at all, the gap is stated
-  in the execution log and the PR briefing rather than reported as converged.
+  in that record and the PR briefing rather than reported as converged.
 
 ### Security posture
 
@@ -159,6 +161,7 @@ Pointers, not copies:
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-365 | Review rounds are recorded per gate (2026-09-14): the self-review's rounds in `evidence/self-review.md`, the critic's in `evidence/critic-review.md`, the security round in `evidence/security-review.md` and the design critic's in `evidence/design-critic-review.md` — one file per node in place of the shared execution log's review table, so no node passes on a round another node recorded | [spec](../specs/issue-365/), [decision-126](../decisions/decision-126.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/365) |
 | issue-360 | The cursor adapter's model flag was `-m`, which `cursor-agent` has no option for (2026-09-14): every critic declared `harness: cursor` **with** a `model:` died on `error: unknown option '-m'` before a review ran, while the same critic with no model ran fine — so the roster looked healthy and the rounds were simply missing. Now `--model`, the spelling `cursor-agent --help` lists, and the rule that a `model_flag` is a spelling the harness's own `--help` carries is written into this doc rather than left as adapter folklore | [spec](../specs/issue-360/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/360) |
 | issue-352 | The critic roster moved to the operator (2026-09-12): `reviews.critics[]` in the harness config became the top-level `critics[]` in the CLI config, same entry shape, read by `the-loop critic list\|run` through the resolved CLI config and never from a repository. A critic entry committed to a repository is inert. The `autonomy` block left the harness config in the same change: `.the-loop/**` is a fixed sensitive path, not a configured one. Third pass: the round counts followed the roster — `reviews` (`selfReviewCount`, `criticReviewCount`, `stopOnNoNewFindings`, `escalateOnRepeatFinding`) is now the CLI config's top-level `reviews`, read by the agent with `the-loop critic policy`; the defaults (3/3, true, true) apply when the operator set none or the CLI is not installed | [spec](../specs/issue-352/), [decision-123](../decisions/decision-123.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/352) |
 | issue-188 | The design critic round (2026-08-10): an **opt-in** `design-critic-review` node between `design` and `test-planning`, reviewing the locked `design.md` against the requirements while a structural finding still costs an edit; off unless an authorized human ticks it at `phase-selection`, gating the execution log's own `## Design critic review` section, `stage: critic-review` so it routes to a frontier model; the procedure, the `unavailable` rule and the reply-first-then-fix protocol unchanged | [spec](../specs/issue-188/), [decision-071](../decisions/decision-071.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/188) |

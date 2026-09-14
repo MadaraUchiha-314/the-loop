@@ -85,8 +85,8 @@ def test_a_trivial_tier_item_short_circuits_with_declared_skips(run_scenario):
         When the item walks implementation, verification and the approval gate only
         Then every removed phase is recorded as skipped with provenance, never as a pass
         And the label trail contains only the walked phases and never regresses
-        And verification gates the execution log's Verification results instead of
-            passing vacuously with its testing plan declared away
+        And verification gates evidence/verification.md instead of passing vacuously
+            with its testing plan declared away
     """
     run_scenario("trivial-tier")
 

@@ -93,7 +93,7 @@ GRAPH = {
             "phase": "cleanup",
             "actor": "code",
             "terminal": True,
-            "entry": ["log-entry"],
+            "entry": ["set-phase-label"],
         },
     ],
     "edges": [{"from": "work", "to": "complete", "on": "pass"}],
@@ -110,7 +110,6 @@ NO_CLEANUP = {
 def repo(tmp_path):
     spec = tmp_path / SPEC
     spec.mkdir(parents=True)
-    (spec / "execution-log.md").write_text("# Execution Log\n", encoding="utf-8")
     return tmp_path
 
 
@@ -135,7 +134,9 @@ def test_it_enters_the_cleanup_node_and_runs_its_entry_chain(repo):
 
     assert report is not None and report.node == CLEANUP_NODE
     assert state_of(repo).current_node == CLEANUP_NODE
-    assert CLEANUP_NODE in (repo / SPEC / "execution-log.md").read_text()
+    # The entry chain ran where it can be seen: the transition is in graph state
+    # (the checkpoint used to be an execution-log entry too, until issue-365).
+    assert CLEANUP_NODE in state_of(repo).nodes
 
 
 def test_it_records_no_force_and_forges_no_verdict(repo):
@@ -164,10 +165,10 @@ def test_it_is_idempotent(repo):
     start_at(repo)
     rt = runtime_for(repo)
     rt.cleanup("issue-186", ref=REF.ref)
-    log_after_first = (repo / SPEC / "execution-log.md").read_text()
+    entered_at = state_of(repo).record(CLEANUP_NODE).entered_at
 
     assert rt.cleanup("issue-186", ref=REF.ref) is None
-    assert (repo / SPEC / "execution-log.md").read_text() == log_after_first
+    assert state_of(repo).record(CLEANUP_NODE).entered_at == entered_at
 
 
 def test_a_work_item_that_never_entered_the_graph_is_a_no_op(repo):
@@ -218,7 +219,6 @@ def checkout(root):
     )
     spec = root / SPEC
     spec.mkdir(parents=True)
-    (spec / "execution-log.md").write_text("# Execution Log\n", encoding="utf-8")
     return root
 
 

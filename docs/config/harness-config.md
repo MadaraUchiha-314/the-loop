@@ -38,7 +38,7 @@ setting.
 the-loop is routinely pointed at a repository that never ran `/the-loop:init` — a poller
 source, a webhook delivery, a work item somebody assigned to a cloud session. The agent
 works such a repository under the **schema's defaults** — the same baseline
-`/the-loop:init --defaults` writes — and says so in the execution log. Nothing writes a
+`/the-loop:init --defaults` writes — and says so in the PR briefing. Nothing writes a
 config into the repository on its behalf: until issue-352 the daemon *adopted* an
 unconfigured checkout by planting the-loop's default there before the spawn
 ([issue #193](https://github.com/MadaraUchiha-314/the-loop/issues/193)); a CLI that
@@ -83,7 +83,7 @@ every repository, so not a setting:
 | `reviews.critics[]` | The CLI config's top-level [`critics[]`](/config/cli/critics-options), same entry shape. |
 | `reviews` (`selfReviewCount`, `criticReviewCount`, `stopOnNoNewFindings`, `escalateOnRepeatFinding`) | The CLI config's top-level [`reviews`](/config/cli/critics-options#review-rounds), same four keys — how many rounds a machine runs is the operator's, like which critics it has. The agent reads it with [`the-loop critic policy`](/cli/commands/critic); the defaults (3/3, true, true) apply when the operator set none or the CLI is not installed. |
 | `repository` (`monorepo`, `monorepoTool`, `runScriptsFromRoot`) | Removed — inferred by the skill from the repository itself, every session: `nx.json`, `pnpm-workspace.yaml`, a `workspaces` field; scripts run from the root through the workspace tool when there is one. See the [tooling reference](/operating-model/reference/tooling). |
-| `tooling` (languages, package manager, test runners, lint, type check, release) | Removed — inferred by the skill from manifests, lock files, dev-dependencies and tool config, cross-checked against CI; the per-language matrix is the fallback where no signal exists, and the execution log says what was detected. See the [tooling reference](/operating-model/reference/tooling). |
+| `tooling` (languages, package manager, test runners, lint, type check, release) | Removed — inferred by the skill from manifests, lock files, dev-dependencies and tool config, cross-checked against CI; the per-language matrix is the fallback where no signal exists, and the PR briefing says what was detected. See the [tooling reference](/operating-model/reference/tooling). |
 | `hooks` (`preCommit`, `prePush`, `commitConvention`) | Removed — the git hooks are the repository's own (`.pre-commit-config.yaml`, husky/lefthook, `package.json` scripts, a `Makefile`/`justfile` target), the same commands CI runs; with none, the loop's baseline is lint, typecheck and unit tests. Conventional Commits is a rule, not a setting. See the [tooling reference](/operating-model/reference/tooling). |
 | `observability` (`devLevel`, `runtimeLevel`, `browserLogging`) | Removed — the dev-time == run-time rule stays; the levels are the project's own logging configuration and browser logging uses whatever tool the harness discovers. See the [observability reference](/operating-model/reference/observability). |
 | `graph.hooks` | The CLI config's [`routing.graph.hooks`](/config/cli/routing-options#graph-hooks), same shape; a `path` resolves against each checkout. |

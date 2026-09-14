@@ -11,14 +11,17 @@ lives in :mod:`the_loop.graph.model`; what lives here is the *policy* — what t
 do when none of the accepted names is present, and what to do when more than one
 is.
 
-Some nodes gate an artifact they did **not** author. The six nodes between
-``implementation`` and ``complete`` each own one section of the *shared*
-``execution-log.md``, so ``produces`` — which means "this node wrote it" — has
-nothing to say about them. They declare ``validates:`` instead (issue-167,
-decision-063), and a gate that declares content checks but resolves no artifact
-at all now **blocks**: those six nodes previously reported ``skipped`` on every
-run, and since a skip is not a decision (decision-060) the chain passed straight
-through them — including the ``required: true`` security review.
+Some nodes gate an artifact that is not the deliverable of their phase. The six
+nodes between ``implementation`` and ``complete`` each leave one record under
+``evidence/`` — a review round, a security verdict, the docs they touched — and
+``produces`` (which the manifest binds to a *phase*) has nothing to say about
+them. They declare ``validates:`` instead (issue-167, decision-063), and a gate
+that declares content checks but resolves no artifact at all now **blocks**:
+those six nodes previously reported ``skipped`` on every run, and since a skip is
+not a decision (decision-060) the chain passed straight through them — including
+the ``required: true`` security review. One file each rather than one shared
+record (issue-365, decision-126), so no gate can be satisfied by another node's
+writing.
 """
 
 from __future__ import annotations
@@ -68,8 +71,9 @@ def _does_not_apply(ctx: HookContext) -> str:
     once `test-planning` became selectable, `verification` could be walked with
     no ``testing-plan.md`` to read, and issue-177's planned-absence tolerance
     would have let it report success having asserted nothing (issue-124/167).
-    The conditional entry moves that gate's subject to the execution log instead
-    of losing it.
+    The conditional entry moves that gate's subject to ``evidence/`` instead of
+    losing it — to a file produced by no node, which therefore can never be a
+    planned absence itself.
 
     It can only ever **narrow**. The only thing it consults is
     ``ctx.skipped_artifacts``, which the runtime derives from declarations
@@ -136,9 +140,8 @@ def validate_artifacts(ctx: HookContext) -> HookResult:
     # requirements-definition" — so a missing artifact there is a skip, not a
     # finding. Once the artifact exists, every gate applies normally.
     #
-    # Judged on what the node *authored* when it declares any: a shared artifact
-    # it merely validates says nothing about whether this node ran, and the
-    # execution log exists for every work item.
+    # Judged on what the node *authored* when it declares any: an artifact it
+    # merely validates says nothing about whether this node ran.
     entered = produced or slots
     if ctx.node.get("optional") and not any(slot.present for slot in entered):
         return HookResult.skipped(NAME, "optional node; no artifact was produced")

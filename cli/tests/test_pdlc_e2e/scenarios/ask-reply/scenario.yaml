@@ -21,17 +21,25 @@ steps:
         - [ ] test-planning
         - [ ] design-approval
         - [ ] tasks-breakdown
-  - emit: {artifact: execution-log.md, fixture: execution-log.md}
   - ask: {question: "Which flag should the fixture feature use?"}
   - reply: {text: "Use --fixture.", actor: onika, sessionMissing: true}
   - reply: {text: "Use --fixture.", actor: onika}
   - complete: {node: implementation}
+  # test-planning was declared away above, so `verification` keeps its gate and
+  # moves its subject to evidence/verification.md (issue-179, issue-365).
+  - emit: {artifact: evidence/verification.md, fixture: evidence-verification.md}
   - complete: {node: verification}
+  - emit: {artifact: evidence/self-review.md, fixture: evidence-self-review.md}
   - complete: {node: self-review}
+  - emit: {artifact: evidence/critic-review.md, fixture: evidence-critic-review.md}
   - complete: {node: critic-review}
+  - emit: {artifact: evidence/security-review.md, fixture: evidence-security-review.md}
   - complete: {node: security-review}
+  - emit: {artifact: evidence/final-validation.md, fixture: evidence-final-validation.md}
   - complete: {node: evidence}
+  - emit: {artifact: evidence/documentation.md, fixture: evidence-documentation.md}
   - complete: {node: capability-docs}
+  - emit: {artifact: evidence/pull-requests.md, fixture: evidence-pull-requests.md}
   - complete: {node: reviewer-briefing}
   - comment: {author: owner, body: "approved"}
   - complete: {node: complete}

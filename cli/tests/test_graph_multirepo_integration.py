@@ -64,10 +64,10 @@ def origin(tmp_path):
 
 
 def _declare(spec_dir, repos):
-    (spec_dir / "execution-log.md").write_text(
-        "---\ntype: execution-log\nworkItem: issue-15\nrepos:\n"
+    (spec_dir / "tasks.md").write_text(
+        "---\ntype: tasks\nworkItem: issue-15\nrepos:\n"
         + "".join(f"  - {repo}\n" for repo in repos)
-        + "---\n\n# Execution Log\n",
+        + "---\n\n# Tasks\n",
         encoding="utf-8",
     )
 

@@ -1,4 +1,4 @@
-"""Side-effecting hooks — labels, log entries, review requests, notifications.
+"""Side-effecting hooks — labels, review requests, notifications, publishing.
 
 All ordinary hooks, so what the-loop ships and what could later be added are the
 same kind of thing. Each is best-effort by contract: a Slack outage or a GitHub
@@ -9,7 +9,6 @@ where the hook *is* the transition.
 from __future__ import annotations
 
 import logging
-from datetime import date
 from typing import List
 
 from ...authz import mark_self_authored
@@ -27,7 +26,6 @@ PHASE_LABEL_PREFIX = "loop:"
 
 __all__ = [
     "PHASE_LABEL_PREFIX",
-    "log_entry",
     "notify",
     "publish_artifact",
     "request_review",
@@ -70,24 +68,6 @@ def set_phase_label(ctx: HookContext) -> HookResult:
         logger.warning("could not sync %s: %s", label, exc)
         return HookResult.ok(name, label=label, applied=False, error=str(exc))
     return HookResult.ok(name, label=label, applied=True)
-
-
-@hook("log-entry")
-def log_entry(ctx: HookContext) -> HookResult:
-    """Append a checkpoint to the work item's execution log."""
-    name = "log-entry"
-    path = ctx.work_item.spec_dir / "execution-log.md"
-    if not path.is_file():
-        return HookResult.skipped(name, "no execution log for this work item")
-    heading = f"\n### {date.today().isoformat()} — {ctx.boundary} {ctx.node_id}\n"
-    body = f"\n- **Node:** {ctx.node_id}\n- **Boundary:** {ctx.boundary}\n"
-    try:
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(heading + body)
-    except OSError as exc:
-        logger.warning("could not append to %s: %s", path, exc)
-        return HookResult.ok(name, appended=False, error=str(exc))
-    return HookResult.ok(name, appended=True)
 
 
 @hook("request-review")

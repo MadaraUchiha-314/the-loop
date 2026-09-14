@@ -40,7 +40,6 @@ def _checkout(root, origin="https://github.com/octo/repo.git", spec_dir=""):
     )
     spec = root / (spec_dir or "docs/specs") / "issue-113"
     spec.mkdir(parents=True)
-    (spec / "execution-log.md").write_text("# Execution Log\n")
     return root
 
 
@@ -126,17 +125,17 @@ def test_spawning_a_session_starts_the_work_items_graph(tmp_path, checkout):
       Given a work item with a spec folder and no graph state
       When the dispatcher reports a spawned session for it
       Then the graph's start node is entered and its entry chain runs
-      And the execution log carries the entry checkpoint
+      And graph state records the transition
 
     Requirement: docs/specs/issue-113/requirements.md#AC1
     """
     dispatcher = _dispatcher(tmp_path)
-    log = checkout / "docs" / "specs" / "issue-113" / "execution-log.md"
 
     dispatcher.graphlink.on_spawn(REF, str(checkout))
 
-    assert _state(checkout).current_node == "phase-selection"
-    assert "phase-selection" in log.read_text(), "the entry chain must have run"
+    state = _state(checkout)
+    assert state.current_node == "phase-selection"
+    assert "phase-selection" in state.nodes, "the entry chain must have run"
 
 
 def test_starting_a_graph_twice_never_rewinds_it(tmp_path, checkout):

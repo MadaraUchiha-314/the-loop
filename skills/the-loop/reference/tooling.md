@@ -22,7 +22,7 @@ is the fallback where no signal exists, and the rules that hold whatever the too
 ## Per-language tooling matrix
 
 These are the **fallback defaults** — what the harness uses for a concern only when the
-detection below finds no signal for it, and says so in the execution log.
+detection below finds no signal for it, and says so in the PR briefing.
 
 | Concern | Python | JS/TS | Go (proposed defaults) |
 |---------|--------|-------|------------------------|
@@ -147,11 +147,11 @@ present in the repo (manifests and file extensions say which languages are prese
 
 - Nothing is written into a config. The detected tooling is what this session runs —
   the package manager, test runner, linter, type checker and workspace tool behind every
-  command in the work item — and the execution log records what was detected and from
-  which signal, so the next session and a reviewer can check the inference.
+  command in the work item — and the PR briefing records what was detected and from
+  which signal, so a reviewer can check the inference.
 - Where signals conflict, are absent, or only partially cover a concern (e.g. a test
   runner is inferred but no linter can be determined), use the matrix default for that
-  concern and say so in the execution log ("defaulted — no signal found"), so a guess
+  concern and say so in the PR briefing ("defaulted — no signal found"), so a guess
   is visible as a guess rather than silently applied.
 - Never silently apply a default when the project has _some_ tooling for that concern
   that merely wasn't recognized — prefer surfacing it to the user over guessing wrong.

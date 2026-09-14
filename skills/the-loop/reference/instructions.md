@@ -27,7 +27,7 @@ customInstructions:
   and optionally what it covers (`notes`), so phase-scoped loading knows when the
   doc matters.
 - **`onMissing`** — what to do when a configured doc is absent at its path:
-  `warn` (default) notes the gap in the execution log and continues; `error` stops
+  `warn` (default) notes the gap on the ticket and continues; `error` stops
   and asks the user; `ignore` skips silently.
 
 ## When to read them

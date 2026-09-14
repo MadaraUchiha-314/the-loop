@@ -30,9 +30,12 @@ labels sit unused precisely because past work bypassed the loop.)
    the skill's risk tiers: a trivial (tier 1–2) change is autonomous-complete and needs no
    full spec; a tier 3+ change does. When unsure which, follow the skill.
 3. **Keep the phase label in sync.** Apply and advance the `loop:<phase>` label on the
-   ticket at every transition (`loop:not-started → … → loop:complete`), mirrored in
-   `docs/specs/<id>/execution-log.md`. Using the loop is what keeps these labels populated
-   (see [`docs/reports/labels-and-dashboards.md`](docs/reports/labels-and-dashboards.md)).
+   ticket at every transition (`loop:not-started → … → loop:complete`); the fine detail is
+   `graph-state.json`'s and the runtime writes it. Using the loop is what keeps these
+   labels populated (see
+   [`docs/reports/labels-and-dashboards.md`](docs/reports/labels-and-dashboards.md)).
+   Write **no** progress log — issue-365 retired the execution log; each gate leaves one
+   record under `docs/specs/<id>/evidence/` instead.
 4. **Follow the skill's remaining rules, don't restate them here:** self/critic-review
    before escalating, a paper trail for every human decision, and updating the affected
    capability docs (`docs/capabilities/`) in the same PR as the change. See
