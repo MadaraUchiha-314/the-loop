@@ -1,3 +1,15 @@
+## v16.0.0 (2026-09-14)
+
+### BREAKING CHANGE
+
+- an armed work item no longer has a tmux session until its first
+human gate is answered. It is followed with `the-loop check`; `sessions list`
+shows nothing for it until it spawns.
+
+### Feat
+
+- **issue-358**: per-work-item model and effort choice, and spawning after the gate (#359)
+
 ## v15.0.0 (2026-09-12)
 
 ### BREAKING CHANGE
