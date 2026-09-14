@@ -9,4 +9,4 @@ workItem: "github:MadaraUchiha-314/the-loop#365"
 
 | PR | Repository | Scope / tasks | Status |
 |----|------------|---------------|--------|
-| _pending — filled in when the PR is opened_ | this one | tasks 1–13 — the whole work item | open |
+| [#366](https://github.com/MadaraUchiha-314/the-loop/pull/366) | this one | tasks 1–13 — the whole work item | open |
