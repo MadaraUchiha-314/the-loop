@@ -100,10 +100,11 @@ def test_an_undeclared_model_has_no_candidates():
 # -- declared_effort ------------------------------------------------------------
 
 
-def test_effort_is_the_loops_own_enum():
-    """Claude's own effort levels, so the-loop's vocabulary is a superset rather
-    than an invention — a harness with fewer simply offers fewer."""
-    assert EFFORT_LEVELS == ("low", "medium", "high", "xhigh", "max")
+def test_effort_is_the_union_of_what_the_known_harnesses_express():
+    """A normalisation, not an invention. `xhigh` is one concept with two spellings
+    (Claude's `xhigh`, Codex's "Extra high"); `ultra` is Codex's alone, so it is
+    simply not offered for a harness that cannot express it."""
+    assert EFFORT_LEVELS == ("low", "medium", "high", "xhigh", "max", "ultra")
 
 
 def test_declared_effort_keeps_enum_order_not_declaration_order():

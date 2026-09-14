@@ -64,12 +64,25 @@ EFFORT_KEY = "effort"
 #: which of these an instance offers; the *translation* to a given harness is that
 #: harness's adapter (``effort_args``), never the operator's config.
 #:
-#: These five are Claude's own ``output_config.effort`` levels — ``xhigh`` is the
-#: default in Claude Code — so the-loop's vocabulary is a superset rather than an
-#: invention, and a harness with fewer levels simply does not offer the ones it
-#: cannot express. That is the normalisation doing its job: one set of words for
-#: the human, per-harness truth underneath, and every mapping probe-validated.
-EFFORT_LEVELS: Tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
+#: The **union** of what the harnesses the-loop knows about can express, which is
+#: what makes this a normalisation rather than an invention:
+#:
+#: ===========  ======================  =============================
+#: the-loop     Claude Code             Codex
+#: ===========  ======================  =============================
+#: ``low``      low                     Low (its default)
+#: ``medium``   medium                  Medium
+#: ``high``     high                    High
+#: ``xhigh``    xhigh (its default)     **Extra high**
+#: ``max``      max                     Max
+#: ``ultra``    —                       Ultra
+#: ===========  ======================  =============================
+#:
+#: The ``xhigh`` row is the case this vocabulary exists for: one concept, two
+#: spellings. ``ultra`` is the case the union exists for: a level only one harness
+#: has, so it is simply not offered for the other — a harness that cannot express a
+#: level returns no arguments for it, and the gate does not render it.
+EFFORT_LEVELS: Tuple[str, ...] = ("low", "medium", "high", "xhigh", "max", "ultra")
 
 #: A model name's grammar. Deliberately narrow: a name is passed to a harness's model flag
 #: **verbatim**, so the grammar is what makes copying a provider's own spelling safe — a

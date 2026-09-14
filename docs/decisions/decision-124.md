@@ -41,8 +41,17 @@ sit beside `repositories` and `critics`, which are the same kind of fact about a
 "who owns the name", each for its reason. A model name (`opus-5`, `fable-5.1`, `gpt-5.6-sol`)
 is an identifier the-loop neither normalises nor parses for a vendor — it is copied verbatim
 into the harness's own model flag. An effort level is a the-loop concept that harnesses spell
-differently, so the-loop owns the vocabulary (Claude's own five levels, `low` through `max`)
-and each adapter translates it. An operator writing a per-harness effort flag is how two
+differently, so the-loop owns the vocabulary and each adapter translates it. The enum is the
+**union** of what the known harnesses express — and the two interesting rows are why:
+
+| the-loop | Claude Code | Codex |
+|---|---|---|
+| `xhigh` | xhigh *(its default)* | **Extra high** |
+| `ultra` | — | Ultra |
+
+`xhigh` is one concept with two spellings, which is the case for normalising at all. `ultra`
+is a level only one harness has, which is the case for a union rather than an intersection: it
+is offered where it exists and silently absent where it does not. An operator writing a per-harness effort flag is how two
 configs come to disagree about what `high` means.
 
 **4. A model is not tied to a harness: the relation is measured.** `models` is a flat list of
@@ -81,7 +90,10 @@ Nor does it accept operator-written args on a model, or parse a name for its ven
 (`gpt-*` → OpenAI → cursor) — a guess dressed as a convention, which breaks the first time a
 provider renames.
 
-**The open edge.** No adapter the-loop ships has an effort mapping yet, because neither
-`claude` nor `cursor-agent` exposes a thinking-effort flag. Declaring `effort` therefore
-offers nothing today. A mapping is added when a harness has one, read from that CLI's own
-`--help` and then probe-validated like any other claim — never invented.
+**The open edge.** No adapter the-loop *ships* has an effort mapping yet, because neither
+`claude` nor `cursor-agent` exposes a thinking-effort flag on its CLI. Declaring `effort`
+therefore offers nothing today, even though the vocabulary is now known to be right: the level
+names came from the two harnesses' own pickers, not from a guess. A mapping is added when a
+harness exposes one — read from that CLI's `--help`, then probe-validated like any other claim
+about a CLI. Codex has the richest set and no adapter at all yet; adding one is an adapter plus
+a `_EFFORT_ARGS` table, and this feature then works for it with no further change.

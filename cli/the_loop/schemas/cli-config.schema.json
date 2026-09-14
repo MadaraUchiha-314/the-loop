@@ -181,7 +181,7 @@
     },
     "effort": {
       "type": "array",
-      "description": "Which of the-loop's effort levels this instance offers (issue-358). Deliberately the OPPOSITE of `models`: an effort level is a the-loop concept that harnesses spell differently, so the-loop owns the vocabulary (`low`/`medium`/`high`/`xhigh`/`max`, one enum, the same words whatever harness runs \u2014 Claude's own effort levels, so the set is a superset rather than an invention) and each adapter translates it. There are no flags in this section, by design — an operator writing a per-harness effort flag is how two configs come to disagree about what `high` means. A level a given harness cannot express is simply NOT OFFERED for a work item on that harness, and `the-loop models check` says which levels each harness actually supports. No adapter the-loop ships has an effort mapping today; a level is never guessed at.",
+      "description": "Which of the-loop's effort levels this instance offers (issue-358). Deliberately the OPPOSITE of `models`: an effort level is a the-loop concept that harnesses spell differently, so the-loop owns the vocabulary (`low`/`medium`/`high`/`xhigh`/`max`/`ultra`, one enum, the same words whatever harness runs \u2014 the UNION of what the harnesses it knows about express, so the set is a normalisation rather than an invention: Claude spells the fourth level `xhigh` and Codex spells it `Extra high`, and `ultra` is Codex's alone) and each adapter translates it. There are no flags in this section, by design — an operator writing a per-harness effort flag is how two configs come to disagree about what `high` means. A level a given harness cannot express is simply NOT OFFERED for a work item on that harness, and `the-loop models check` says which levels each harness actually supports. No adapter the-loop ships has an effort mapping today; a level is never guessed at.",
       "items": {
         "type": "string",
         "enum": [
@@ -189,7 +189,8 @@
           "medium",
           "high",
           "xhigh",
-          "max"
+          "max",
+          "ultra"
         ]
       },
       "default": [],
@@ -199,7 +200,8 @@
           "medium",
           "high",
           "xhigh",
-          "max"
+          "max",
+          "ultra"
         ]
       ]
     },

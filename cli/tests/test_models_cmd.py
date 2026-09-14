@@ -73,7 +73,14 @@ def test_list_reports_what_is_cached_without_asking_anything(
 def test_list_carries_the_loops_effort_vocabulary(configured, capsys):
     _run(models_cmd.ModelsCommand()._list)
     printed = json.loads(capsys.readouterr().out)
-    assert printed["effortLevels"] == ["low", "medium", "high", "xhigh", "max"]
+    assert printed["effortLevels"] == [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra",
+    ]
 
 
 def test_a_refused_verdict_is_a_non_zero_exit(configured, tmp_path, capsys):

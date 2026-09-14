@@ -379,11 +379,11 @@ into operator-owned configuration rather than a passthrough.
    PR.** It is R8.
 2. **What lifetime should an availability verdict have?** Proposed: 24 hours, plus invalidation
    whenever the declaration's arguments change, plus the one re-probe of R7.5.
-3. ~~Is `low | medium | high` the right effort enum?~~ **Widened to Claude's own five —
-   `low | medium | high | xhigh | max`** — after the owner pointed at the reasoning levels
-   Claude Code and Codex actually offer. A superset the-loop did not invent; a harness with
-   fewer levels offers fewer. *Codex's own set is still unconfirmed* (the screenshots could
-   not be fetched from this session), so its adapter's mapping is empty until it is.
+3. ~~Is `low | medium | high` the right effort enum?~~ **Answered from both harnesses' own
+   pickers: `low | medium | high | xhigh | max | ultra`** — the union of what Claude Code and
+   Codex express. Two rows carry the argument: `xhigh` is one concept with two spellings
+   (Claude's `xhigh`, Codex's "Extra high"), and `ultra` is Codex's alone, so it is offered
+   only where it exists. Neither name was guessed.
 4. **Does the `harnesses[]` consolidation follow-up get raised now?**
 
 ## Review comments

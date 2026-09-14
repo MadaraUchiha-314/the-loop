@@ -110,15 +110,30 @@ models: []                        # EMPTY OFFERS NO MODEL CHOICE — today's beh
 #   harnesses: [cursor]
 #   about: for the OpenAI-shaped work
 
-effort: []                        # one enum, the same words whatever harness runs
+# One enum, the same words whatever harness runs — the UNION of what the harnesses
+# the-loop knows about express, which is what makes it a normalisation rather than
+# an invention:
+#
+#   the-loop     Claude Code            Codex
+#   low          low                    Low (its default)
+#   medium       medium                 Medium
+#   high         high                   High
+#   xhigh        xhigh (its default)    Extra high     <- one concept, two spellings
+#   max          max                    Max
+#   ultra        --                     Ultra          <- Codex's alone
+#
+# A harness that cannot express a level returns no arguments for it, and the row
+# never appears on that work item's checklist.
+effort: []
 # - low
 # - medium
 # - high
 # - xhigh
 # - max
+# - ultra
 # NOTE: no adapter ships an effort mapping yet — neither `claude` nor
-# `cursor-agent` exposes a thinking-effort flag — so declaring these offers
-# nothing until one does. the-loop does not invent a flag.
+# `cursor-agent` exposes a thinking-effort flag on its CLI — so declaring these
+# offers nothing until one does. the-loop does not invent a flag.
 
 webhooks:
   ghWebhook:

@@ -26,6 +26,7 @@ effort:
   - high
   - xhigh
   - max
+  - ultra
 ```
 
 They sit at the top level, beside [`repositories`](/config/cli/repositories-options) and
@@ -173,12 +174,30 @@ picking between two models wants to know.
 
 ### `effort`
 
-- **Type:** `string[]` — each one of `low`, `medium`, `high`, `xhigh`, `max`
+- **Type:** `string[]` — each one of `low`, `medium`, `high`, `xhigh`, `max`, `ultra`
 - **Default:** `[]` — unset offers no effort choice
 
 Which of the-loop's effort levels this instance offers. There are **no flags in this
 section, by design**: an operator writing a per-harness effort flag is how two configs come
 to disagree about what `high` means. The vocabulary is one enum; each adapter translates it.
+
+The enum is the **union** of what the harnesses the-loop knows about can express, which is
+what makes it a normalisation rather than an invention:
+
+| the-loop | Claude Code | Codex |
+|---|---|---|
+| `low` | low | Low *(its default)* |
+| `medium` | medium | Medium |
+| `high` | high | High |
+| `xhigh` | xhigh *(its default)* | **Extra high** |
+| `max` | max | Max |
+| `ultra` | — | Ultra |
+
+Two rows carry the argument for the whole design. **`xhigh`** is one concept with two
+spellings — which is exactly why an operator should not be writing per-harness flags.
+**`ultra`** is a level only one harness has, so it is simply not offered for the other: a
+harness that cannot express a level returns no arguments for it, and the row never appears
+on that work item's checklist.
 
 A level a given harness cannot express is simply not offered for a work item on that
 harness, and `the-loop models check` says which levels each harness supports.

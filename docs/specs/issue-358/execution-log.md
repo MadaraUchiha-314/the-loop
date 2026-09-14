@@ -247,6 +247,31 @@ approves the pull request and a named human signs off the security review.
   the named security sign-off.
 - **Blockers:** none.
 
+### 2026-09-14 — the effort vocabulary, confirmed from both harnesses
+
+- **Phase:** needs-review (a follow-up commit on the same PR)
+- **Decision recorded:** the owner pasted Codex's reasoning picker as text (the screenshots
+  could not be fetched from this session). It names **Low · Medium · High · Extra high**, with
+  **Max and Ultra** behind a "More reasoning…" submenu. So the enum is now the **union** of the
+  two harnesses' own vocabularies: `low | medium | high | xhigh | max | ultra`.
+- **Two rows justify the whole normalisation**, and they are now the documented argument for
+  it rather than an assertion:
+  - `xhigh` — Claude spells it `xhigh`, Codex spells it *"Extra high"*. One concept, two
+    spellings, which is precisely why an operator should not be writing per-harness flags.
+  - `ultra` — Codex has it, Claude does not. A **union** rather than an intersection, so the
+    level is offered where it exists and silently absent where it does not.
+- **What I got right by refusing to guess:** the first revision invented three words; the
+  second took Claude's five; this one has both harnesses' actual pickers. Had `_EFFORT_ARGS`
+  been populated with a guessed flag at any point, the enum would have been wrong twice and
+  the code would have been wrong with it.
+- **Still not shipped:** no adapter has a mapping, because neither CLI exposes a
+  thinking-effort flag. Codex has the richest set and no adapter at all; the mapping table is
+  written down in `decision-124` and the config docs so that adding one is a table, not a
+  redesign.
+- **Checkpoint/tests:** full suite, `ruff`, `pyright`, `markdownlint`, `validate_config.py`.
+- **Next:** the owner's approval.
+- **Blockers:** none.
+
 ## Verification results
 
 > Recorded in [`testing-plan.md`](testing-plan.md) § Verification results, against the matrix
