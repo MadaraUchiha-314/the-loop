@@ -1134,7 +1134,15 @@ class GraphLink:
             state_dir = (
                 rt.state_dir(item) if hasattr(rt, "state_dir") else item.spec_dir
             )
-            if GraphState.path_for(state_dir).is_file():
+            # The POINTER, not the file. A `graph-state.json` that is corrupt,
+            # or that holds only a session binding, loads as a fresh state — and
+            # `start` would then enter the start node exactly as it does with no
+            # file at all. Asking `load` is what makes the guard cover the way
+            # the state file actually degrades (it is deliberately KEPT rather
+            # than deleted when unreadable, R8.3), and it is also the honest
+            # spelling of the question: does this machine hold this work item's
+            # position?
+            if GraphState.load(state_dir, item_id).current_node:
                 return True
             start_phase = str(getattr(rt.graph.node(rt.graph.start), "phase", "") or "")
             advanced = advanced_phase(labels, start_phase)

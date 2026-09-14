@@ -47,6 +47,7 @@ test_a_forgotten_item_is_not_rewound_and_still_gets_a_session PASSED
 test_an_event_on_a_forgotten_item_does_not_advance_it_either PASSED
 test_an_item_with_no_phase_label_still_enters_the_graph PASSED
 test_a_started_item_is_judged_by_its_state_file_not_its_label PASSED
+test_a_corrupt_state_file_refuses_rather_than_rewinding PASSED
 test_abuse_a_forged_complete_label_never_places_a_pointer PASSED
 test_a_published_position_is_restored_byte_for_byte PASSED
 test_the_position_is_published_on_every_graph_write PASSED
@@ -55,7 +56,7 @@ test_a_forgotten_items_old_commands_are_baselined_and_announced_once PASSED
 test_a_new_items_pending_start_command_is_still_forwarded PASSED
 test_abuse_an_unauthorized_command_is_still_never_executed PASSED
 test_a_comment_arriving_during_the_boot_does_not_spawn_a_second_session PASSED
-============================== 12 passed in 0.76s ==============================
+============================== 13 passed in 1.01s ==============================
 ```
 
 ## T12 — the abuse cases
@@ -77,7 +78,7 @@ All checks passed!
 npx --yes markdownlint-cli2@0.18.1 "**/*.md"
 markdownlint-cli2 v0.18.1 (markdownlint v0.38.0)
 Finding: **/*.md !**/node_modules/** !cli/node_modules/** !**/.venv/** !docs/.vitepress/dist/** !docs/.vitepress/cache/** !docs/operating-model/reference/** !docs/specs/*/design/**
-Linting: 1114 file(s)
+Linting: 1117 file(s)
 Summary: 0 error(s)
 uv run ruff format --check cli hooks
 304 files already formatted
@@ -94,5 +95,5 @@ VALID   skills/the-loop/templates/collaborators.yaml
 VALID   .the-loop/cli-config.yaml
 VALID   skills/the-loop/templates/cli-config.yaml
 uv run --project cli python -m pytest -q cli
-3642 passed, 1 skipped in 144.60s (0:02:24)
+3643 passed, 1 skipped in 148.47s (0:02:28)
 ```

@@ -62,6 +62,8 @@ pytest and `make check` output, committed under `evidence/`.
 | T3 | R4.3 | `test_a_zero_grace_window_restores_the_immediate_verdict` |
 | T4 | R1.1, R5.1 | `test_event_labels_reads_an_issue_and_a_pull_request` |
 | T5 | R1.1, R1.2, R1.4 | `test_a_forgotten_item_is_not_rewound_and_still_gets_a_session` |
+| T5 | R1.1 | `test_an_event_on_a_forgotten_item_does_not_advance_it_either` — `advance` reads an empty state as the start node too |
+| T5 | R1.1 | `test_a_corrupt_state_file_refuses_rather_than_rewinding` — a file that will not parse is not a pointer |
 | T5 | R3.1, R3.3 | `test_a_forgotten_items_old_commands_are_baselined_and_announced_once` |
 | T6 | R2.2, R2.3 | `test_a_published_position_is_restored_byte_for_byte` |
 | T7 | R3.2 | `test_a_new_items_pending_start_command_is_still_forwarded` |

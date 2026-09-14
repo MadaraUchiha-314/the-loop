@@ -89,10 +89,10 @@ status: in-progress          # in-progress | complete
   now registered with a `createdAt` an hour old, which is what a session whose harness
   *died* actually looks like. Weakening the window to keep the fixtures would have been
   fixing the test by breaking the feature.
-- **Checkpoint/tests:** red first, then green. `make check`: 3642 passed, 1 skipped (3604
-  before — thirty-eight added); ruff, ruff format, pyright, `validate_config` clean;
+- **Checkpoint/tests:** red first, then green. `make check`: 3643 passed, 1 skipped (3604
+  before — thirty-nine added); ruff, ruff format, pyright, `validate_config` clean;
   markdownlint 0 errors over 1114 files.
-- **Self-review, three passes.** Pass one found the refusal path in `on_spawn` still calling
+- **Self-review, four passes.** Pass one found the refusal path in `on_spawn` still calling
   `_bind_session`, which writes a `graph-state.json` — so the *next* event would find a file,
   skip the guard, and rewind after all. The guard moved from the two entry points into
   `_guarded`, which also closed the `advance` hole above; the binding is simply not recorded
@@ -103,7 +103,15 @@ status: in-progress          # in-progress | complete
   `dispatcher.py:2423` keys the respawn on that flag alone and everything else falls through
   to the release path, so no dispatcher branch was needed; the integration scenario asserts
   the absence of `session.respawned`, `session.resume_failed` and `session.spawned` rather
-  than the presence of the new error string.
+  than the presence of the new error string. Pass four, run while the security review was in
+  flight, found the guard asking the wrong question: it tested whether `graph-state.json`
+  **exists**, but a corrupt file is deliberately *kept* rather than deleted (issue-109 R8.3)
+  and `GraphState.load` reads it as a fresh state — so a file that would not parse passed the
+  guard and `start` walked from the start node exactly as it does with no file at all. The
+  guard now asks `GraphState.load(...).current_node`, which is the honest spelling of "does
+  this machine hold this work item's position?"; `_restore_position` deliberately keeps its
+  *file*-based check, so a corrupt file is never written over and the post-mortem record
+  survives. `test_a_corrupt_state_file_refuses_rather_than_rewinding` is the case.
 - **Out of scope, noted for the owner:** `uv.lock` on `main` still records
   `the-loopy-one 16.0.0` against `cli/pyproject.toml`'s `16.0.1`, so any `uv run` rewrites one
   line and every contributor gets a dirty tree. Reverted here rather than carried into this
@@ -127,8 +135,9 @@ status: in-progress          # in-progress | complete
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
 |-------|-----------------------------|----------|---------|------|
 | 1 | self | the-loop | new findings — the `_bind_session` hole that would have let the second event rewind, the restore ordering against `_outer_loop_name`, and the unverified retry claim; all three fixed | this log, entry 2 |
-| 2 | self | the-loop | zero (converged) | this log, entry 2 |
+| 2 | self | the-loop | new finding — the guard tested the state file's *existence*, which a deliberately-kept corrupt file satisfies; it now tests the pointer | this log, entry 2 |
 | 3 | self | the-loop | zero (converged) | this log, entry 2 |
+| 3b | self | the-loop | zero (converged) | this log, entry 2 |
 | 4 | critic | — | unavailable — no critic is configured in this repository (`critics: []`); does not count toward `reviews.criticReviewCount` | [`.the-loop/cli-config.yaml`](../../../.the-loop/cli-config.yaml) |
 | 5 | security | built-in `security-review` skill | zero — no findings | [`evidence/security-review.md`](evidence/security-review.md) |
 
@@ -139,7 +148,13 @@ status: in-progress          # in-progress | complete
 - **Outcome:** pass — no findings. The four abuse cases of [`bugfix.md`](bugfix.md)
   §Security considerations each name a boundary this change *moves*, and each is argued and
   tested closed: a label can refuse but never place, a portable position writes only into a
-  vacuum, the age rule only withholds, and the notice cannot echo a commenter's body.
+  vacuum, the age rule only withholds, and the notice cannot echo a commenter's body. The
+  review raised one observation rather than a finding — the self-authored marker is
+  typeable by anyone, so an unauthorized commenter can force the *withholding* branch — and
+  it is recorded in both documents as an accepted property, with the reason: its only power
+  is to make the-loop stop, which is the same power the phase label already gives anyone
+  with repo write access, and the marker's forgeability already works in that direction
+  elsewhere (issue-64).
 - **Human sign-off:** n/a — risk tier 3, below the tier-4 threshold. The PR approval is the
   tier-3 gate.
 
@@ -158,9 +173,10 @@ status: in-progress          # in-progress | complete
 | R3.3 — one notice, naming the cutoff | the same scenario's `len(posts.bodies) == 1` (T5) |
 | R4.1 / R4.2 / R4.3 — the grace window, both sides and off | `test_a_session_still_inside_its_grace_window_is_not_reported_missing`, `…_past_its_grace_window_…`, `…_a_zero_grace_window_…`, `test_a_comment_arriving_during_the_boot_does_not_spawn_a_second_session` (T3, T8) |
 | R5.1 / R5.2 — the recovery notice, and its absence | `test_a_recovery_spawn_prompt_says_the_conversation_is_gone`, `test_an_ordinary_spawn_gets_nothing` (T9) |
+| R1.1 — a corrupt state file refuses too | `test_a_corrupt_state_file_refuses_rather_than_rewinding` (T5) |
 | R6.1 — red before, green after | [`evidence/red.md`](evidence/red.md) → [`evidence/verification.md`](evidence/verification.md) |
 
-`make check` green on the final tree: 3642 passed, 1 skipped; 0 type errors; 0 markdown
+`make check` green on the final tree: 3643 passed, 1 skipped; 0 type errors; 0 markdown
 errors. Full transcript in [`evidence/verification.md`](evidence/verification.md).
 
 ## Capability docs

@@ -2,8 +2,11 @@
 
 > Captured **before any production change**, from a `git worktree --detach` of `HEAD`
 > (`88c2ff9`, 16.0.1) with only this work item's test files copied into it and run
-> against the same interpreter. Every scenario below is a piece of the reporter's
-> machine-loss sequence, and every one of them fails on the shipped code.
+> against the same interpreter. Each scenario below is a piece of the reporter's
+> machine-loss sequence. A thirteenth scenario — a corrupt `graph-state.json`, which
+> `GraphState.load` reads as a fresh state — was added afterwards by self-review pass four;
+> it is not in this capture, and its red state is the same `assert 'phase-selection' == ''`
+> as the first failure below.
 
 ## Setup
 

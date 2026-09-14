@@ -214,6 +214,15 @@ boundary, so each is stated with how it fails closed.
 - **R3.3's notice** is written from the-loop's own prose plus values it minted (the ref, a
   timestamp); no commenter's body reaches it, which is what makes `mark_self_authored`
   safe to apply to it (the rule `giveup_notice` already states).
+- **Accepted property, not a defect (found by the security review):** `context_lost`'s
+  second signal is answered by `authz.is_self_authored`, whose marker is a comment body
+  anyone can type — so an unauthorized commenter can force the withholding branch on a work
+  item's first-sight cycle. The consequence is *only* withholding (the thread is baselined,
+  nothing is executed, one fixed-text notice is posted), which is the same power the phase
+  label already gives anyone with repo write access. It is also pre-existing and deliberate
+  in the same direction: the poller has always *dropped* a self-marked comment rather than
+  forwarding it (issue-64). Raising it to an authenticated signal would mean a second marker
+  carrying a secret, which is a worse trade for a guard whose only power is to say *stop*.
 - **R4** changes a timing check on a local tmux probe and touches no boundary.
 - **No new attack surface** otherwise: no new network call, no new credential, no new
   parser, no new write target outside the-loop's own state root.

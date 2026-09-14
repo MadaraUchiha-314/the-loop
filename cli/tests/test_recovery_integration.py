@@ -253,6 +253,34 @@ def test_a_started_item_is_judged_by_its_state_file_not_its_label(
     assert _state(checkout).current_node == "phase-selection"
 
 
+def test_a_corrupt_state_file_refuses_rather_than_rewinding(
+    tmp_path, checkout, github, events
+):
+    """
+    Feature: Surviving a machine loss
+    Scenario: A `graph-state.json` that will not parse is not a pointer
+      Given a work item labelled `loop:design` whose state file is unreadable
+      When the daemon enters the graph for it
+      Then it refuses, because the file is KEPT for post-mortem (issue-109 R8.3)
+           and `GraphState.load` reads it as a fresh state — which `start` would
+           walk from the start node exactly as it walks a missing one
+      And the corrupt file is left on disk untouched
+
+    Requirement: docs/specs/issue-363/bugfix.md#R1.1
+    """
+    dispatcher = _dispatcher(tmp_path)
+    path = GraphState.path_for(checkout / "docs" / "specs" / SPEC)
+    path.write_text("{ this is not json")
+
+    dispatcher.graphlink.on_spawn(
+        REF, str(checkout), routed=_labelled(LABEL, "loop:design")
+    )
+
+    assert path.read_text() == "{ this is not json"
+    assert github.labels == [] and github.posted == []
+    assert "graph.rewind_refused" in events()
+
+
 def test_abuse_a_forged_complete_label_never_places_a_pointer(
     tmp_path, checkout, github, events
 ):
