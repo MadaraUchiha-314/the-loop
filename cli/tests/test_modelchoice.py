@@ -125,7 +125,10 @@ def test_a_level_outside_the_enum_contributes_nothing():
 
 def test_a_model_resolves_through_the_adapters_flag():
     assert model_args("fable-5.1", ClaudeCodeAdapter()) == ("--model", "fable-5.1")
-    assert model_args("gpt-5.6-sol", CursorAgentAdapter()) == ("-m", "gpt-5.6-sol")
+    assert model_args("gpt-5.6-sol", CursorAgentAdapter()) == (
+        "--model",
+        "gpt-5.6-sol",
+    )
 
 
 def test_a_harness_with_no_model_flag_resolves_a_model_to_nothing():
