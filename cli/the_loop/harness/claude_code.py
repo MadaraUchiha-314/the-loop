@@ -26,6 +26,12 @@ class ClaudeCodeAdapter(HarnessAdapter):
     name = "claude"
     default_binary = "claude"
     model_flag = "--model"
+    #: No effort mapping yet (issue-358). Claude Code exposes no CLI flag for
+    #: thinking effort, and a spec does not invent one: until it does, the-loop
+    #: offers no effort levels for this harness rather than passing a flag that
+    #: would be rejected. Filled in from ``claude --help`` when one exists, and
+    #: validated by ``the-loop models check`` like any other claim about a CLI.
+    _EFFORT_ARGS: dict = {}
 
     def prepare_environment(self, cwd: str, root: Optional[str] = None) -> TrustResult:
         """Pre-trust ``cwd``, accept the bypass disclaimer, enable the plugin.

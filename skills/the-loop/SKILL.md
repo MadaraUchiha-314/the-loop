@@ -149,10 +149,18 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   *skipped by declaration* with provenance — never as a pass. **Never answer the
   selection gate or run the skip verb from a working session**: if phases seem
   unnecessary, say so on the ticket and let a human declare it. The same reply also
-  answers the two questions that are **not** phases — where the outer loop is iterated
-  (issue-183) and how many sessions this item's pull requests get (issue-260,
-  `pr-sessions-*`, defaulting to the operator's `routing.tmux.sessionPerPr`) — and the
-  agent never ticks those rows either. See `reference/workflow.md` § Declared skips.
+  answers the questions that are **not** phases — where the outer loop is iterated
+  (issue-183), how many sessions this item's pull requests get (issue-260,
+  `pr-sessions-*`, defaulting to the operator's `routing.tmux.sessionPerPr`), and
+  **which model and how much effort this work item runs on** (issue-358, `model-*` and
+  `effort-*`, offered only where the operator declared them and this machine's harness
+  actually accepts them) — and the agent never ticks those rows either. See
+  `reference/workflow.md` § Declared skips.
+- **An armed work item has no session until its first gate is answered** (issue-358, R8).
+  The checklist is posted by the **daemon**, not by a session, so nothing spawns while the
+  pointer is parked on a human start node — and the session that does spawn already runs
+  on the model the gate froze. A work item in that state is followed with
+  `the-loop check`, not `the-loop sessions list`.
 - **Reference, don't duplicate (single source of truth).** Once
   requirements/design/testing-plan/tasks exist, update the ticket with a **link** to each
   checked-in artifact. Subsequent

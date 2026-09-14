@@ -93,6 +93,14 @@ class StateLayout:
         return str(self.root_path / "local")
 
     @property
+    def verdict_cache(self) -> str:
+        """Availability verdicts: which models and effort levels each harness on
+        THIS machine will actually accept (issue-358). Machine-local by
+        construction — a verdict is a fact about this box's harness installation,
+        so it never travels in a repository and is never agent-writable."""
+        return str(self.root_path / "local" / "model-verdicts.json")
+
+    @property
     def event_log(self) -> str:
         return str(self.root_path / "logs" / "events.jsonl")
 
@@ -221,6 +229,25 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
             "a directory that is not there. Derived on every write and read by "
             "nothing, so a copy is never wrong for long and two machines "
             "conflicting on it may resolve to either side."
+        ),
+    ),
+    GeneratedPath(
+        name="model availability verdicts",
+        attr="verdict_cache",
+        default="<root>/local/model-verdicts.json",
+        portable=False,
+        holds=(
+            "one verdict per (harness, model-or-effort name): ok, refused or "
+            "unknown, the argv it was taken against, and when it was taken "
+            "(issue-358)"
+        ),
+        why=(
+            "a fact about THIS machine's harness installation and this account's "
+            "model access, not about the work. Copied elsewhere it would withhold "
+            "a model another box can run perfectly well, or offer one it cannot — "
+            "and it is re-measurable in a second, so there is nothing to carry. "
+            "Machine-local also keeps it out of reach of an agent session, which "
+            "matters because a verdict can only ever WITHHOLD a declared choice"
         ),
     ),
     GeneratedPath(

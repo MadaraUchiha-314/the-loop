@@ -12,11 +12,12 @@ given directory (``prepare_environment``, issue-90). Extra args come from
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import shutil
 from dataclasses import dataclass
-from typing import List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from ..harness_plugins import PluginConfig
 from ..trust import TrustConfig, TrustResult
@@ -91,6 +92,14 @@ class HarnessAdapter:
     #: when the harness has none, in which case a requested model is ignored
     #: rather than guessed at.
     model_flag: str = ""
+    #: How THIS harness expresses one of the-loop's normalised effort levels
+    #: (``low``/``medium``/``high``, :data:`the_loop.modelchoice.EFFORT_LEVELS`).
+    #: A level this harness cannot express is simply absent, and an absent level
+    #: is NOT offered for this harness rather than being silently dropped
+    #: (issue-358, R2.6/R2.8). Empty on both shipped adapters today: neither CLI
+    #: exposes an effort flag, and a mapping is filled in from a harness's own
+    #: ``--help`` and then validated by the availability probe — never invented.
+    _EFFORT_ARGS: Dict[str, Tuple[str, ...]] = {}
 
     def __init__(
         self,
@@ -106,6 +115,31 @@ class HarnessAdapter:
 
     def is_available(self) -> bool:
         return shutil.which(self.binary) is not None
+
+    def effort_args(self, level: str) -> Tuple[str, ...]:
+        """This harness's argv for a normalised effort level, or ``()``.
+
+        ``()`` means "this harness cannot express that level" — the gate reads
+        that as *do not offer it here*, never as *run without it*. The-loop owns
+        the vocabulary precisely because harnesses spell it differently; the
+        translation is each adapter's, and an adapter that has none says so by
+        returning nothing rather than by having a flag guessed for it.
+        """
+        return tuple(self._EFFORT_ARGS.get(level, ()))
+
+    def with_args(self, extra_args: Sequence[str]) -> "HarnessAdapter":
+        """A copy of this adapter launching with ``extra_args`` instead.
+
+        How a work item's own model and effort reach an argv (issue-358): the
+        dispatcher resolves the frozen choice, merges it onto the harness's
+        launch arguments, and hands the result here. A method rather than a
+        ``replace()`` at each call site, so a subclass can never be rebuilt with
+        half its configuration — ``trust`` and ``plugins`` are carried over, and
+        the binary with them.
+        """
+        clone = copy.copy(self)
+        clone.extra_args = [str(a) for a in extra_args]
+        return clone
 
     def prepare_environment(self, cwd: str, root: Optional[str] = None) -> TrustResult:
         """Put whatever this harness needs on disk to start unattended in ``cwd``.

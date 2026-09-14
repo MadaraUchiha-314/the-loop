@@ -304,6 +304,15 @@ class Session:
     # (issue-156): tmux is the only runner.
     tmux_target: str = ""
     recent_deliveries: List[str] = field(default_factory=list)
+    #: What this session was actually LAUNCHED as (issue-358). ``model`` and
+    #: ``effort`` are the work item's frozen choices, ``harness_args`` the argv
+    #: they merged into — recorded so a human can answer "what is this running
+    #: on?" from `the-loop sessions list` instead of attaching to a pane, and so
+    #: the dispatcher can notice that a session is running on something other
+    #: than what the work item now resolves to.
+    model: str = ""
+    effort: str = ""
+    harness_args: List[str] = field(default_factory=list)
     #: Endpoints for the pull requests delivering this work item (issue-172).
     #: Empty on an endpoint; empty on a record until a PR event routes here.
     pull_requests: List["Session"] = field(default_factory=list)
@@ -336,6 +345,16 @@ class Session:
             "tmuxTarget": self.tmux_target,
             "recentDeliveries": self.recent_deliveries,
         }
+        # Absent rather than empty (issue-358), the rule `pullRequests` already
+        # follows: every record written before this change round-trips
+        # byte-identically, and a reader can tell "launched with nothing extra"
+        # from "written before the-loop recorded this".
+        if self.model:
+            data["model"] = self.model
+        if self.effort:
+            data["effort"] = self.effort
+        if self.harness_args:
+            data["harnessArgs"] = list(self.harness_args)
         url = item.url
         if url:
             # The human's link to the thing this endpoint serves — same
@@ -373,6 +392,9 @@ class Session:
             # is nothing left to branch on.
             tmux_target=data.get("tmuxTarget", ""),
             recent_deliveries=list(data.get("recentDeliveries") or []),
+            model=str(data.get("model") or ""),
+            effort=str(data.get("effort") or ""),
+            harness_args=[str(a) for a in (data.get("harnessArgs") or [])],
             pull_requests=pull_requests,
         )
 

@@ -55,17 +55,27 @@ class _SeqLink:
     """A graph link that records call order — the seam under test is *when*
     the dispatcher talks to the graph relative to the harness."""
 
-    def __init__(self, ctx=None, report=None):
+    def __init__(self, ctx=None, report=None, parked=False):
         self.ctx = ctx
         self.report = report
         self.seq = []
         self.spawn_routed = None
+        self.arm_routed = None
+        # issue-358 R8: True means the pointer parked at a human start gate, so
+        # the dispatcher must NOT spawn. False is the ordinary case.
+        self.parked = parked
 
     def adopt(self, work_item, cwd):
         # issue-201: the real link writes the built-in harness config here, and
         # "here" is the point — before the context read, the prompt render and
         # the spawn. Recorded so the ordering assertions below cover it too.
         self.seq.append("adopt")
+
+    def on_arm(self, work_item, cwd, routed=None):
+        # issue-358 R8: the graph is entered HERE, before any session exists.
+        self.seq.append("arm")
+        self.arm_routed = routed
+        return self.parked
 
     def context(self, work_item, cwd):
         self.seq.append("context")

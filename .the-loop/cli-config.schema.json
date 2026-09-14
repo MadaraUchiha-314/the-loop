@@ -89,6 +89,122 @@
         ]
       ]
     },
+    "harnesses": {
+      "type": "array",
+      "description": "The agent harnesses this instance has, and how each is launched (issue-358). Top level, beside `repositories` and `critics`, because which harnesses a machine has installed is not a routing decision: `routing` configures how an event REACHES a session, this configures what a session is. `models` and `effort` are declared beside it and refer to these names. Today it carries `name`, `default` and `args`; the other three per-harness keys (`routing.harnessTrust`, `routing.harnessPlugins`, `routing.defaultHarness`) belong here by the same argument and are a named follow-up rather than a silent migration.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The harness's name, as the-loop's adapters know it (`claude`, `cursor`). A name with no adapter is declared but unusable, and `the-loop models check` says so rather than failing a spawn."
+          },
+          "default": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether an unmatched event spawns on this harness. Falls back to `routing.defaultHarness` when no entry claims it; two entries claiming it is a config error, because a work item's harness decides which models it may be offered."
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "description": "Extra CLI arguments every session on this harness is launched with — the new home of `routing.harnessArgs.<harness>`, which still works with a deprecation warning. A work item's own model and effort are APPENDED to this list, never merged into it: the-loop does not remove, rewrite or reorder an argument you declared, and never adds a permission flag you did not."
+          }
+        }
+      },
+      "default": [],
+      "examples": [
+        [
+          {
+            "name": "claude",
+            "default": true,
+            "args": [
+              "--dangerously-skip-permissions"
+            ]
+          },
+          {
+            "name": "cursor"
+          }
+        ]
+      ]
+    },
+    "models": {
+      "type": "array",
+      "description": "The models a work item may be put on, in each PROVIDER's own naming convention (issue-358) — `opus-5`, `fable-5.1`, `gpt-5.6-sol`. the-loop neither normalises these names nor parses them for a vendor: the name is passed to the harness's own model flag verbatim, and the grammar (alphanumeric start, then letters/digits/`.`/`_`/`:`/`-`) is what makes that safe — a name can never be a flag, a path or a shell fragment. A name is NOT tied to a harness here: which harness can actually run which name is MEASURED by `the-loop models check` and cached, never declared and never guessed (decision-124). An entry may optionally carry `harnesses` to NARROW where it is offered and probed; narrowing can only ever restrict — the probe remains the only thing that makes a name offerable. An entry that declares no usable name contributes nothing, so a fault can only shrink the set. EMPTY OR UNSET OFFERS NO MODEL CHOICE, which is exactly the behaviour of every install before this key existed.",
+      "items": {
+        "type": [
+          "string",
+          "object"
+        ],
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          },
+          "harnesses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Narrow this model to these declared harnesses: it is offered only on them and probed only against them. A harness named here that is not declared in `harnesses` contributes nothing. This NARROWS; it never confirms — a harness that refuses the model still refuses it."
+          },
+          "about": {
+            "type": "string",
+            "description": "One line rendered beside the model's row on the phase-selection checklist."
+          }
+        }
+      },
+      "default": [],
+      "examples": [
+        [
+          "opus-5",
+          "fable-5.1",
+          {
+            "name": "gpt-5.6-sol",
+            "harnesses": [
+              "cursor"
+            ]
+          }
+        ]
+      ]
+    },
+    "effort": {
+      "type": "array",
+      "description": "Which of the-loop's effort levels this instance offers (issue-358). Deliberately the OPPOSITE of `models`: an effort level is a the-loop concept that harnesses spell differently, so the-loop owns the vocabulary (`low`/`medium`/`high`/`xhigh`/`max`/`ultra`, one enum, the same words whatever harness runs \u2014 the UNION of what the harnesses it knows about express, so the set is a normalisation rather than an invention: Claude spells the fourth level `xhigh` and Codex spells it `Extra high`, and `ultra` is Codex's alone) and each adapter translates it. There are no flags in this section, by design — an operator writing a per-harness effort flag is how two configs come to disagree about what `high` means. A level a given harness cannot express is simply NOT OFFERED for a work item on that harness, and `the-loop models check` says which levels each harness actually supports. No adapter the-loop ships has an effort mapping today; a level is never guessed at.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "ultra"
+        ]
+      },
+      "default": [],
+      "examples": [
+        [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "ultra"
+        ]
+      ]
+    },
     "webhooks": {
       "type": "object",
       "description": "Config for the the-loop CLI webhook receiver(s), started by `the-loop start` when `ghWebhook.enabled` is true (issue-228).",

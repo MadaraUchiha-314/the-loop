@@ -254,6 +254,27 @@ EVENT_TYPES: Dict[str, str] = {
     "session.spawn_failed": (
         "Spawning a session failed (work_item, harness, error; will_retry)."
     ),
+    "session.choice_changed": (
+        "A session was re-launched (resuming its conversation) because the model "
+        "or effort its work item resolves to no longer matches what the session "
+        "was launched with (issue-358, R4.3) — a choice changed after the gate, a "
+        "declaration withdrawn, or a verdict that turned `refused` (work_item, "
+        "harness, previous_model, previous_effort)."
+    ),
+    "session.choice_refused": (
+        "A model or effort level a work item had frozen was withheld because this "
+        "machine's harness refuses it (issue-358, R7.4). The session is launched on "
+        "the harness's own arguments instead, and the choice is not retried until "
+        "its verdict changes (work_item, harness, kind, name)."
+    ),
+    "session.spawn_deferred": (
+        "No session was spawned, on purpose: the work item is parked on its "
+        "graph's first node and that node is a HUMAN gate the daemon services "
+        "itself (issue-358, R8) — `phase-selection`, a contribution's "
+        "`goal-definition`. A session starts once an authorized reply unparks "
+        "the pointer, and it then carries the model that gate froze (work_item, "
+        "harness, gh_event, delivery_id, reason)."
+    ),
     "session.respawned": (
         "A tmux-mode session found dead on delivery was respawned on a fresh "
         "tmux session, and the pending event delivered as its boot prompt "

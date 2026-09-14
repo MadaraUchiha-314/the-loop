@@ -700,3 +700,101 @@ def test_graphlink_threads_its_authorized_users_into_the_attribution(
     )
     link.on_event(REF, str(tmp_path), _routed_comment("operator", _relayed("dana")))
     assert seen["event"]["comments"][0]["author"] == "dana"
+
+
+# -- on_arm: the deferred spawn (issue-358, R8) ----------------------------------
+
+
+class _GateGraph:
+    """The compiled-graph half: a start node and that node's actor."""
+
+    def __init__(self, start, actor):
+        self.start = start
+        self._actor = actor
+
+    def node(self, node_id):
+        actor = self._actor
+        return type("_Node", (), {"actor": actor})()
+
+
+class _GateRuntime(_FakeRuntime):
+    """A runtime whose pointer the test moves, so the parked predicate is real."""
+
+    def __init__(self, start_node="phase-selection", actor="human", current=None):
+        super().__init__()
+        self.current = start_node if current is None else current
+        #: what `advance` moves the pointer to, when the test wants the gate answered
+        self.advances_to: str | None = None
+        self.graph = _GateGraph(start_node, actor)
+
+    def work_item(self, item_id):
+        return item_id
+
+    def state_dir(self, item):
+        return item
+
+    def advance(self, work_item_id, ref="", event=None):
+        self.advanced.append((work_item_id, ref, event))
+        if self.advances_to is not None:
+            self.current = self.advances_to
+        return None
+
+
+def _pointer(monkeypatch, runtime):
+    """Make GraphState.load report the fake runtime's pointer."""
+
+    class _State:
+        def __init__(self, node):
+            self.current_node = node
+
+    monkeypatch.setattr(
+        "the_loop.graph.state.GraphState.load",
+        staticmethod(lambda state_dir, item_id: _State(runtime.current)),
+    )
+
+
+def test_on_arm_defers_while_the_pointer_sits_on_a_human_start_gate(repo, monkeypatch):
+    """R8.1 — the gate's work is the daemon's, so no session is spawned for it."""
+    runtime = _GateRuntime()
+    _pointer(monkeypatch, runtime)
+    link = _link(repo, runtime)
+    assert link.on_arm(REF, str(repo)) is True
+    assert runtime.started, "the graph is still entered — only the spawn waits"
+
+
+def test_on_arm_does_not_defer_once_the_gate_is_answered(repo, monkeypatch):
+    """R8.2 — the advance that answers the gate unparks it, and the caller spawns."""
+    runtime = _GateRuntime()
+    runtime.advances_to = "requirements-definition"
+    _pointer(monkeypatch, runtime)
+    link = _link(repo, runtime)
+    assert link.on_arm(REF, str(repo)) is False
+    assert runtime.advanced, "the arming event is offered to the gate it lands on"
+
+
+def test_on_arm_does_not_defer_an_agent_start_node(repo, monkeypatch):
+    """R8.3 — only a HUMAN gate defers; an agent node is a session's own work."""
+    runtime = _GateRuntime(actor="agent")
+    _pointer(monkeypatch, runtime)
+    assert _link(repo, runtime).on_arm(REF, str(repo)) is False
+
+
+def test_on_arm_does_not_defer_a_pointer_that_has_moved(repo, monkeypatch):
+    """R8.3 — a mid-graph work item can always spawn and respawn."""
+    runtime = _GateRuntime(current="implementation")
+    _pointer(monkeypatch, runtime)
+    assert _link(repo, runtime).on_arm(REF, str(repo)) is False
+
+
+def test_on_arm_does_not_defer_when_the_graph_is_disabled(repo):
+    """R8.6 — every existing skip path means 'nothing is deferred'."""
+    runtime = _GateRuntime()
+    link = _link(repo, runtime, enabled=False)
+    assert link.on_arm(REF, str(repo)) is False
+
+
+def test_on_arm_does_not_defer_when_the_runtime_raises(repo, monkeypatch):
+    """A fault spawns a session rather than withholding one — the safe direction."""
+    runtime = _FakeRuntime(raises=True)
+    link = _link(repo, runtime)
+    assert link.on_arm(REF, str(repo)) is False

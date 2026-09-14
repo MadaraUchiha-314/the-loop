@@ -220,6 +220,27 @@ There are exactly **two** runtime concepts and **one** contract between them.
     repository name THEN the gate SHALL **block** — waiting on it would wait forever. IF no
     repositories are declared THEN the gate SHALL behave exactly as it did before
     issue-183.
+  - Which **model** a work item's sessions run on, and at what **effort**, SHALL be
+    declared per work item at `phase-selection` too (issue-358,
+    [decision-124](../decisions/decision-124.md)) — two independent row groups
+    (`model-<name>`, `effort-<level>`) answered by the same authorized reply, resolved
+    **per section** so an ambiguous model cannot discard a valid effort. A section SHALL
+    be rendered only with something to offer, and SHALL omit any choice this work item's
+    harness is known to refuse, so a human cannot pick one that would leave a session
+    dead. Exactly one ticked row is a choice; none, several, an unknown token and an
+    unreadable checklist all mean **no choice** — which is a different recorded fact from
+    "the default", and is what lets a later change to the operator's configuration apply
+    to the item. Both are written to the frozen record beside `surface` and
+    `sessionPerPr`, and the confirmation names each outcome in both directions.
+  - WHEN a work item is armed and its pointer parks on a **human gate that is the graph's
+    own start node** THEN the graph SHALL be entered and **no session SHALL be spawned**
+    (issue-358, R8). The node's work is the daemon's: `phase-selection` posts its
+    checklist through the CLI's github integration, and the arming event is handed to that
+    first gate exactly as issue-199 established — only earlier. The session is spawned
+    when an authorized reply unparks the pointer, so it carries the model that gate froze.
+    Deferral SHALL apply only while the pointer has never left the start node and that
+    node waits on a human; a pointer that has moved, an agent node, and every existing
+    graph-link skip path SHALL spawn as before.
   - Where the **outer** loop's artifacts are iterated with humans SHALL be declared **per
     work item** at `phase-selection`, by the same authorized reply that freezes the phase
     selection: one extra checklist row (`outer-loop-on-pull-request`) whose resolved value
@@ -838,6 +859,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-358 | `phase-selection` grew two more per-work-item questions — which **model**, and at what **effort** — resolved per section against what this work item's harness can actually run, and frozen beside `surface`/`sessionPerPr`. The spawn also moved to **after** the gate: `graphlink.on_arm` enters the graph when a work item is armed and reports whether the pointer parked on a human start node, and the dispatcher spawns nothing while it has | [spec](../specs/issue-358/), [decision-124](../decisions/decision-124.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/358) |
 | issue-352 | The graph stopped reading the harness config (2026-09-12): `build_runtime` takes the spec directory from the CLI config or `--spec-dir`, the phase label prefix is the constant `loop:`, the origin repository is the work item's ref or the checkout's `origin` remote, `repoInitialized` became `guestLoop` (a contribution or review keeps its spec tree out of git and posts its plan to the thread; the work item's own loops never do), `notify` reads roles from the node's `with:` only, and the operator's hooks come from `routing.graph.hooks` (`load_graph(declaration=…)`, `repoHooks` gone). Adoption (issue-193/201) is retired: no verb writes into `.the-loop/`. `workflow.phases` and its parity test are gone — the graph is the only phase list. The `stage` keys nodes declare are matched against the token-economy guidance's stage table, not against a `tokenEconomy` routing map — that block left the harness config too | [spec](../specs/issue-352/), [decision-123](../decisions/decision-123.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/352) |
 | issue-281 | The gate became the locker (2026-08-25): `validate-artifacts` stopped demanding `locked: true` on any producing node — brainstorming, requirements-definition, design, test-planning, tasks-breakdown, and the contribution loop's scoped-plan gate shape only — and a new `lock-artifacts` hook on the approval nodes' exit chains (after `classify-feedback` and `record-feedback`) writes `status: approved` and merges the approving authors into `approvedBy` as a comment-preserving front-matter splice, verified after the write and failing closed. It consumes the classifier's verdict from the same chain run (never re-reading comments), skips on `changes-requested` or an absent artifact, and declares no outcome, so the classifier alone routes. This ends the double-ask the stacked layers produced: one human approval per gate, and no approval at all for nodes the graph gives no gate | [spec](../specs/issue-281/), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/281) |
 | issue-279 | A fifth shipped loop, `pdlc-review-loop` (2026-08-24): the-loop as a pull request's **reviewer**, never its author. Armed by a ninth control keyword (`the-loop review`) that — alone among the keywords — binds to the pull request itself rather than its linked ticket; gated by a `required: true` brief gate (`review-brief` posts a fill-in template, freezes an authorized reviewer's questions/angles/validations with provenance); each agent round answers the frozen brief in one self-marked comment; the `follow-up` gate reuses `classify-adhoc-reply`, so any authorized reply that is not "done" is another round. No `produces`, no `phase-selection`, no code changed by contract, and no adoption — the contribution loop's guest carve-out generalized to `GUEST_LOOPS` | [spec](../specs/issue-279/), [decision-101](../decisions/decision-101.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/279) |

@@ -125,6 +125,7 @@ const cliSidebar = [
       { text: "install", link: "/cli/commands/install" },
       { text: "upgrade", link: "/cli/commands/upgrade" },
       { text: "migrate-config", link: "/cli/commands/migrate-config" },
+      { text: "models", link: "/cli/commands/models" },
     ],
   },
   {
@@ -169,6 +170,7 @@ const configSidebar = [
       { text: "Configuring the CLI", link: "/config/cli/" },
       { text: "Instance options", link: "/config/cli/instance-options" },
       { text: "Repositories", link: "/config/cli/repositories-options" },
+      { text: "Harnesses, models and effort", link: "/config/cli/harnesses-options" },
       { text: "Webhook options", link: "/config/cli/webhook-options" },
       { text: "Routing options", link: "/config/cli/routing-options" },
       { text: "Standing-session options", link: "/config/cli/standing-sessions-options" },

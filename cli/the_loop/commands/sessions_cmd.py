@@ -519,6 +519,7 @@ class SessionsCommand(Command):
             (
                 "Work item",
                 "Harness",
+                "Model",
                 "Session id",
                 "Tmux",
                 "Status",
@@ -528,10 +529,20 @@ class SessionsCommand(Command):
         ]
         for s in sessions:
             record = s.get("control")
+            # What this session is actually running on (issue-358). `-` means
+            # "the harness's own" — either the work item chose nothing, or the
+            # record predates the-loop recording it. An effort level rides in the
+            # same cell, because the pair is how an operator thinks about it.
+            model = s.get("model") or ""
+            effort = s.get("effort") or ""
+            shown = (
+                f"{model} ({effort})" if model and effort else (model or effort or "-")
+            )
             rows.append(
                 (
                     s["workItem"]["ref"],
                     s["harness"],
+                    shown,
                     s["harnessSessionId"],
                     s["tmuxTarget"] or "-",
                     s["status"],
