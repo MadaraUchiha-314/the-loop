@@ -1,3 +1,20 @@
+## v17.0.0 (2026-09-14)
+
+### BREAKING CHANGE
+
+- the work-item artifact contract no longer includes
+`execution-log.md`. Existing logs are left exactly where they are — they are the
+operator's record of work already done, so `/the-loop:upgrade-the-loop` reports
+them as no longer read and never deletes one. A work item in flight keeps
+walking; its next gate blocks naming the `evidence/<file>.md` to write.
+- the per-work-item state file is `work-item-state.json`. Anything
+outside the-loop that read `graph-state.json` by name must follow; inside it, the
+old name is still read and every reader goes through the constant.
+
+### Feat
+
+- **issue-365**: retire the execution log; each gate keeps one record under evidence/ (#366)
+
 ## v16.0.1 (2026-09-14)
 
 ### Fix
