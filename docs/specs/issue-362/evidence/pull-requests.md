@@ -13,12 +13,14 @@ docs all live here.
 
 | PR | Repository | Scope / tasks | Status |
 |----|------------|---------------|--------|
-| _(recorded on open)_ | `MadaraUchiha-314/the-loop` | Tasks 1–11 — the whole work item: the manifest's four conversation kinds, the kind/finding/probe diagnosis, `read.catchUpSeconds` and the periodic reconcile, `channels status --probe`, and the documentation | open |
+| [#367](https://github.com/MadaraUchiha-314/the-loop/pull/367) | `MadaraUchiha-314/the-loop` | Tasks 1–11 — the whole work item: the manifest's four conversation kinds, the kind/finding/probe diagnosis, `read.catchUpSeconds` and the periodic reconcile, `channels status --probe`, and the documentation | open |
 
 ## The reviewer briefing
 
 The PR description **is** the R10 briefing, produced from
-`skills/the-loop/templates/pr-briefing.md`: TL;DR, where to focus in priority order, a
+`skills/the-loop/templates/pr-briefing.md` — split across the body and the first
+comment, because the whole of it exceeds the body limit of the tool that opened the PR.
+Between them: TL;DR, where to focus in priority order, a
 mermaid map of the three layers, the six key decisions with the trade-off each made, the
 security summary, the evidence table with what T9 did **not** prove, an upgrade note for
 operators whose Slack app predates this change, and three open questions for the reviewer
