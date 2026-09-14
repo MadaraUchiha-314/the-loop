@@ -15,10 +15,11 @@ riskTier: 4
 > (<https://kiro.dev/docs/specs/>). This phase MUST be reviewed and approved by the
 > required collaborators before moving to design.
 >
-> **Revision 2** — the owner's review of PR #366 added R7 (the state file is named for the
-> work item, not the graph) and moved R3's home for the multi-repo declaration from an
-> artifact's front matter to the `phase-selection` gate. R3.1 changed accordingly;
-> everything else stands.
+> **Revision 3** — the owner's second review round rejected R3.1's first answer: a
+> `phase-selection` question is asked before requirements, design and tasks exist, and
+> which repositories a change spans is not knowable until they do. The declaration is the
+> **agent's**, through a CLI verb, once the task DAG says what the change touches.
+> **Revision 2** added R7 (the state file is named for the work item, not the graph).
 
 ## Introduction
 
@@ -87,9 +88,9 @@ so the removal can be approved without approving a silent regression of the revi
 ### R3 — the multi-repo declaration survives
 
 - **R3.1** The system SHALL read the contributing repositories of a work item (issue-183's
-  `repos:`) from the work item's own checked-in state, where an **authorized human** put
-  them by ticking the `phase-selection` checklist — never from an artifact's front matter,
-  which anyone who can edit the file can change.
+  `repos:`) from the work item's own checked-in state, written there by the **agent**
+  through a CLI verb once `design.md` and `tasks.md` say what the change spans. It SHALL
+  NOT be asked at `phase-selection`: that gate runs before any of those artifacts exist.
 - **R3.2** WHEN no such declaration is present THEN `await-inner-loops` SHALL behave exactly
   as it does when the key is absent today — no declaration, not an empty one.
 - **R3.3** WHEN a declared repository is malformed THEN the gate SHALL block naming the
@@ -124,9 +125,13 @@ so the removal can be approved without approving a silent regression of the revi
   deleted.
 - **R7.3** WHEN the outer gate scans for inner-loop state THEN it SHALL find loops under
   **either** name, so a loop started before the rename still holds the gate.
-- **R7.4** WHEN a human ticks repositories at `phase-selection` THEN the system SHALL
-  offer only repositories the **instance** declared, SHALL accept any number, and SHALL
-  treat none as *no declaration*.
+- **R7.4** WHEN the agent declares repositories THEN the system SHALL refuse any value
+  that is not a usable repository path, SHALL refuse one outside the **instance's** own
+  `repositories` when that list is set, SHALL treat the given list as the full set rather
+  than an addition, and SHALL write nothing at all when any entry is refused.
+- **R7.5** The agent SHALL be told the verb exists where it will read it: the skill's
+  multi-repo rule, `reference/workflow.md`, and the commands that run at the moment it is
+  called.
 
 ### R6 — the change is legible and measurable
 
@@ -158,6 +163,7 @@ so the removal can be approved without approving a silent regression of the revi
 | A4 | `verification` still blocks with `test-planning` declared away | verification integration test |
 | A5 | `repos` still drives `await-inner-loops` from its new home | multirepo integration test |
 | A8 | A work item mid-flight keeps its pointer across the rename | state unit tests |
-| A9 | A tick can only ever name a declared repository | selection abuse cases |
+| A9 | A declaration can only ever name a usable, instance-declared repository | `graph repos` abuse cases |
+| A10 | The agent is told the verb exists, where it reads | docs parity + repository grep |
 | A6 | An existing `execution-log.md` on disk changes no outcome | regression test |
 | A7 | The e2e PDLC scenarios pass with no execution-log assertions | `test_pdlc_e2e_integration.py` |

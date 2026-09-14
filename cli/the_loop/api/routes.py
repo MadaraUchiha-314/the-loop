@@ -128,6 +128,17 @@ class GraphSkipBody(BaseModel):
     specDir: str = ""
 
 
+class GraphReposBody(BaseModel):
+    repo: str
+    workItem: str
+    repositories: Optional[List[str]] = None
+    clear: bool = False
+    ref: str = ""
+    pr: Optional[int] = None
+    prRepo: str = ""
+    specDir: str = ""
+
+
 class SessionControlBody(BaseModel):
     ref: str
     verb: str
@@ -488,6 +499,22 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
             body.reason,
             actor=body.actor,
             ref=body.ref,
+            pr=body.pr,
+            pr_repo=body.prRepo,
+            spec_dir=body.specDir,
+        )
+
+    @router.post(
+        f"{API_PREFIX}/graph/repos",
+        operation_id="graphRepos",
+    )
+    def graph_repos(body: GraphReposBody) -> Dict[str, Any]:
+        return core_graphs.repos(
+            body.repo,
+            body.workItem,
+            body.repositories,
+            ref=body.ref,
+            clear=body.clear,
             pr=body.pr,
             pr_repo=body.prRepo,
             spec_dir=body.specDir,

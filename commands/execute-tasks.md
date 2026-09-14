@@ -30,6 +30,12 @@ spec files read from disk, not the drafting conversation (plan-mode style).
    `work-item-state.json`'s current node and the tasks' checkmarks to **resume** rather than
    restart.
 
+   **If the DAG touches a repository other than this one** and `create-tasks-plan` did not
+   already say so, declare them before opening any pull request:
+   `the-loop graph repos <id> --repository <owner>/<repo> …` (the flags are the full set;
+   no flags prints what is declared). `await-inner-loops` holds this node until each
+   declared repository has an inner loop **and** every started loop has finished.
+
 2. **Implementation** (`implementation`). Execute the task DAG autonomously in dependency
    order. **Tick each task in `tasks.md` (`- [ ]` → `- [x]`) as it completes.** Run tests
    (unit/integration per config) at the task checkpoints — self-check as you go — and

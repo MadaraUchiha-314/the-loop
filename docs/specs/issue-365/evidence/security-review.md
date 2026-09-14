@@ -41,5 +41,25 @@ Re-run against the two changes the owner's review asked for, because one of them
 | The widened token grammar (`/`) | bounded — no node id contains a `/`, a token naming no phase was already ignored, and `_is_non_phase` keeps a `repo-` row out of the skip and refusal lists in both tick states. Asserted by `test_abuse_a_repository_row_is_never_read_as_a_phase` |
 | The rename losing a pointer | refused — the pre-rename name is still read, the inner-loop scan globs both names, and no file is deleted. A gate that stopped seeing an inner loop would **release** on work that never finished, which is why the glob takes both |
 
+### Third round — the agent's declaration verb (2026-09-14)
+
+The `phase-selection` rows were reverted, so the second round's "the `repos` channel is
+improved" finding no longer describes what ships. What ships is a verb the **agent** calls,
+which trades a human-authorized channel for a correctly-timed one — so the boundary moves
+to the verb:
+
+| Checklist item | Verdict |
+|---|---|
+| Untrusted input reaching a path | refused at the verb. Every value crosses `repo_state_key` (at least `<owner>/<repo>`, each segment `[A-Za-z0-9._-]+`, never `.` or `..`) **before** `parse_repo_path`, because the name grammar alone accepts `../etc`. Eight abuse cases: `../etc`, `..`, `/etc/passwd`, `octo/app;rm -rf /`, `octo/../../etc`, `octo`, `""`, and a newline-smuggled second entry |
+| Partial application | refused. One bad entry writes nothing and the previous declaration stands, so a correction cannot half-land and leave a gate waiting on a set nobody chose |
+| Widening what the instance works on | refused. A repository outside the instance's `repositories` is rejected naming the set — and the refusal is also a *safety* property: nothing routes events there, so the gate would otherwise wait forever |
+| Who may declare | the agent, which is a real change from the reverted design. The mitigations are that the declaration only ever **adds** waiting (it cannot release a gate that would otherwise hold, since an empty list is the pre-issue-183 behaviour), it is a checked-in diff a human reviews in the pull request, and it is recorded as `graph.repos_declared` in the event log |
+| Concurrent writers | the write takes the same advisory lock every other state write takes, and re-loads inside it |
+
+**Reported, not fixed:** `the_loop.repos.parse_repo_path` accepts `..` as an owner or repo
+name. Nothing is exploitable through it today — ingresses compare keys, and the one place a
+name becomes a path now crosses `repo_state_key` first — but the grammar should refuse it,
+and that is its own ticket rather than a change smuggled into this one.
+
 - **Human sign-off:** n/a for the security round itself (no findings); the work item is
   risk tier 4, so the **PR** still requires the owner's approval before it merges.

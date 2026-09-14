@@ -15,7 +15,8 @@ workItem: "github:MadaraUchiha-314/the-loop#365"
 |-------|----------|---------|------------------------|------|
 | 1 | the-loop (self) | new findings | 3, all fixed before the first push — see below | this PR |
 | 2 | the-loop (self) | zero (converged) | re-read the diff after the fixes; nothing new | this PR |
-| 3 | the-loop (self) | new findings | 1, fixed before the push — see round 3 below | [PR #366](https://github.com/MadaraUchiha-314/the-loop/pull/366) |
+| 3 | the-loop (self) | new findings | 2, fixed before the push — see round 3 below | [PR #366](https://github.com/MadaraUchiha-314/the-loop/pull/366) |
+| 4 | the-loop (self) | new findings | 1, fixed before the push — see round 4 below | [PR #366](https://github.com/MadaraUchiha-314/the-loop/pull/366) |
 
 ### Round 3 finding (after the owner's review round)
 
@@ -32,6 +33,20 @@ A second, smaller one the tests did catch: `WorkItemState.load` read `repos` wit
 comprehension, so a state file carrying `"repos": "octo/app"` deserialized into eight
 one-character repositories. Now a non-list is *no declaration*, which is what every other
 absence in this key means.
+
+### Round 4 finding (after the owner's second review round)
+
+**`parse_repo_path` alone accepted `../etc` as a repository.** Writing the abuse cases for
+`the-loop graph repos` found it: the repository-name grammar admits `..` as an owner, and
+the only thing that refuses it is `repo_state_key` — the boundary `await-inner-loops`
+crosses *later*, at `implementation`. A declaration could therefore be accepted and only
+fail at the gate, which is the shape this whole work item is about (a gate that blocks on
+something it could have refused earlier). The verb now crosses the filesystem boundary
+first, and eight abuse cases pin it.
+
+The looseness in `parse_repo_path` itself is left alone and reported rather than widened
+into scope: every ingress compares repository *keys*, not paths, so the filesystem boundary
+is where it matters — but it is worth its own ticket.
 
 ### Round 1 findings
 

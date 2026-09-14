@@ -87,7 +87,6 @@ from ...modelchoice import (
     declared_effort,
     declared_models,
 )
-from ...repos import declared_repositories
 from ...prsessions import (
     SESSION_PER_PR_ALWAYS,
     SESSION_PER_PR_CROSS_REPOSITORY,
@@ -116,14 +115,8 @@ def _execute_keyword(ctx: HookContext) -> str:
 #: `- [x] design` / `- [ ] design` — one phase line of the checklist. The token
 #: is a node id, so what the user reads is what the graph routes on.
 #:
-#: ``/`` is in the token class for the repository rows alone (issue-365): a
-#: repository is named `owner/repo`, and encoding it as something else would put
-#: an encode/decode step between what the human ticks and what the gate waits
-#: for. No node id contains one, and a token this matches that names no phase is
-#: already ignored — widening the class can only make a row *readable*, never
-#: make it route.
 _CHECK_LINE = re.compile(
-    r"^\s*[-*]\s*\[(?P<mark>[ xX])\]\s*`?(?P<token>[A-Za-z0-9][A-Za-z0-9._/-]*)`?",
+    r"^\s*[-*]\s*\[(?P<mark>[ xX])\]\s*`?(?P<token>[A-Za-z0-9][A-Za-z0-9._-]*)`?",
     re.MULTILINE,
 )
 
@@ -180,14 +173,6 @@ PR_SESSIONS_ROW_TEXT = {
 MODEL_PREFIX = "model-"
 EFFORT_PREFIX = "effort-"
 
-#: The repository rows (issue-365, decision-127). `repo-<owner>/<repo>`, one per
-#: repository this INSTANCE declared (`repositories`, issue-348) — the same
-#: shape the model rows have, and for the same reason: the reply names a key into
-#: what the operator declared, never a free string that becomes a directory name.
-#: Unlike model and effort, **any number may be ticked**: a work item contributes
-#: code to as many repositories as it needs.
-REPO_PREFIX = "repo-"
-
 #: How many rows a choice section renders before "…and N more". The same number
 #: the kickoff picker uses, and for the same reason: a list a human reads on a
 #: phone stops being a choice somewhere around a dozen. Declared here rather than
@@ -207,7 +192,6 @@ def _is_non_phase(token: str) -> bool:
         token in _NON_PHASE_TOKENS
         or token.startswith(MODEL_PREFIX)
         or token.startswith(EFFORT_PREFIX)
-        or token.startswith(REPO_PREFIX)
     )
 
 
@@ -278,23 +262,6 @@ def _model_rows(ctx: HookContext) -> List[str]:
     return _offerable(ctx, "model", names)
 
 
-def _repo_rows(ctx: HookContext) -> List[str]:
-    """The repositories offerable for THIS work item, in declaration order.
-
-    `<owner>/<repo>`, from the instance's top-level ``repositories`` (issue-348)
-    — the one declaration every ingress already reads. The host is dropped
-    because that is the shape `await-inner-loops` waits on and the shape
-    `pr-loops/<owner>__<repo>/` is keyed by; a repository declared with a host is
-    still offered, under its owner and name.
-    """
-    names: List[str] = []
-    for entry in declared_repositories(ctx.config or {}):
-        name = f"{entry.owner}/{entry.repo}"
-        if name not in names:
-            names.append(name)
-    return names
-
-
 def _effort_rows(ctx: HookContext) -> List[str]:
     """The effort levels offerable for THIS work item, in the loop's enum order.
 
@@ -363,60 +330,6 @@ def _choice_lines(ctx: HookContext) -> List[str]:
             "",
         ]
     return lines
-
-
-def _repo_lines(ctx: HookContext) -> List[str]:
-    """The repository section of the checklist body (issue-365).
-
-    Absent when the instance declared no repositories: a question with nothing to
-    offer is a question that cannot be answered, and the checklist is
-    byte-identical to today's without it.
-    """
-    names = _repo_rows(ctx)
-    if not names:
-        return []
-    lines = [
-        "**Which repositories will this work item raise pull requests in?** Not "
-        "a phase either — it is where the code lands. **Tick any number:**",
-        "",
-    ]
-    lines += [f"- [ ] `{REPO_PREFIX}{name}`" for name in names[:CANDIDATE_LIMIT]]
-    if len(names) > CANDIDATE_LIMIT:
-        lines.append(
-            f"- …and {len(names) - CANDIDATE_LIMIT} more not shown "
-            "(this instance's `repositories`)."
-        )
-    lines += [
-        "",
-        "Leave them all unticked and this work item **declares nothing**, which "
-        "is what a single-repository item wants: `implementation` then waits for "
-        "no pull request but its own. Tick one or more and the outer loop holds "
-        "there until each of them has an inner loop **and** every started loop "
-        "has finished — a contribution that was planned and never opened is "
-        "otherwise indistinguishable from one that was never needed.",
-        "",
-    ]
-    return lines
-
-
-def _parse_repos(body: str, offered: List[str]) -> List[str]:
-    """Every ticked repository row that names an offered repository (issue-365).
-
-    Deduplicated, in the order the rows were declared rather than ticked, so the
-    frozen record reads the same however the reply was written. A name that is
-    not offered is **dropped**, exactly as an unoffered model is: the reply names
-    a key into what the operator declared, and this value becomes a directory
-    name and a thing the gate waits on.
-
-    An empty result is *no declaration*, never an empty one — the same meaning
-    an absent `repos:` key carried before this question existed.
-    """
-    ticked = {
-        match.group("token")[len(REPO_PREFIX) :]
-        for match in _CHECK_LINE.finditer(body)
-        if match.group("token").startswith(REPO_PREFIX) and match.group("mark").strip()
-    }
-    return [name for name in offered if name in ticked]
 
 
 def _parse_choice(body: str, prefix: str, offered: List[str]) -> str:
@@ -607,7 +520,6 @@ def _checklist_body(ctx: HookContext) -> str:
         "`session.pr_session_declined`.",
         "",
     ]
-    lines += _repo_lines(ctx)
     lines += _choice_lines(ctx)
     lines += [
         "A doc fix usually needs little more than implementation and "
@@ -696,7 +608,6 @@ def _frozen_graph(
     session_per_pr: str = SESSION_PER_PR_CROSS_REPOSITORY,
     model: str = "",
     effort: str = "",
-    repos: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """The graph this work item will actually walk, as a record.
 
@@ -742,10 +653,6 @@ def _frozen_graph(
         # applies to this item like any other.
         "model": model,
         "effort": effort,
-        # Which repositories this work item raises pull requests in (issue-365).
-        # Empty means it declared none, which is what `await-inner-loops` reads
-        # as "wait for no pull request but this repository's own".
-        "repos": list(repos or ()),
         "nodes": nodes,
     }
 
@@ -845,7 +752,6 @@ def _confirmation(
     effort: str = "",
     model_offered: Optional[List[str]] = None,
     effort_offered: Optional[List[str]] = None,
-    repos: Optional[List[str]] = None,
 ) -> str:
     lines = ["🤖 _the-loop_ — **phase selection recorded**", ""]
     if skips:
@@ -903,18 +809,6 @@ def _confirmation(
         f"Pull requests delivering this work item: **`{session_per_pr}`** — "
         + PR_SESSIONS_ROW_TEXT[session_per_pr],
     ]
-    # Said in both directions (issue-365), for the reason the model line is:
-    # "this item declared no repository" is an outcome a human should be able to
-    # read back, and it is also what a reader sees when a tick named a repository
-    # this instance has not declared.
-    if repos:
-        lines += [
-            "",
-            "Raising pull requests in: "
-            + ", ".join(f"`{r}`" for r in repos)
-            + f" — as @{actor} chose. `implementation` waits until each has an "
-            "inner loop and every started loop has finished.",
-        ]
     # Named in BOTH directions (issue-358, R1.6): "the harness's own default" is
     # an outcome a human should be able to read back, and it is also what a
     # reader sees when two rows were ticked — so saying it is how an ambiguous
@@ -999,11 +893,6 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
     effort_offered = _effort_rows(ctx)
     model = _parse_choice(body, MODEL_PREFIX, model_offered)
     effort = _parse_choice(body, EFFORT_PREFIX, effort_offered)
-    # Any number, unlike the two above (issue-365): a work item contributes code
-    # to as many repositories as it needs, and each ticked one becomes a pull
-    # request `implementation` waits for.
-    repo_offered = _repo_rows(ctx)
-    repos = _parse_repos(body, repo_offered)
     actor = str(reply["author"]).lstrip("@")
 
     confirmation_error = ""
@@ -1024,7 +913,6 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
                 effort=effort,
                 model_offered=model_offered,
                 effort_offered=effort_offered,
-                repos=repos,
             ),
         )
     except Exception as exc:  # noqa: BLE001
@@ -1055,7 +943,6 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
             "sessionPerPr": session_per_pr,
             "model": model,
             "effort": effort,
-            "repos": repos,
             "frozenGraph": _frozen_graph(
                 ctx,
                 skips,
@@ -1064,7 +951,6 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
                 session_per_pr=session_per_pr,
                 model=model,
                 effort=effort,
-                repos=repos,
             ),
             "selectionSource": source,
             **({"error": confirmation_error} if confirmation_error else {}),

@@ -129,7 +129,6 @@ item itself.
     "loop": "pdlc-work-item-loop",
     "workItem": "issue-15",
     "sessionPerPr": "cross-repository",
-    "repos": ["octo/app", "octo/infra"],
     "nodes": [
       {"id": "design", "phase": "design", "skipped": true, "selectable": true},
       {"id": "design-critic-review", "phase": "", "skipped": true, "selectable": true, "optIn": true},
@@ -212,7 +211,6 @@ can rebuild.
 | `loop` | which shipped loop was frozen (`pdlc-work-item-loop`) |
 | `workItem` | the spec-folder id the graph was resolved for |
 | `sessionPerPr` | how many tmux+claude sessions this work item's pull requests get — `never`, `cross-repository` or `always`, chosen on the same checklist and frozen by the same reply ([issue-260](https://github.com/MadaraUchiha-314/the-loop/issues/260)). Absent on a record written before the question existed, which reads as "route by the operator's `routing.tmux.sessionPerPr`" |
-| `repos` | the contributing repositories this work item raises pull requests in, ticked on the same checklist from the instance's own `repositories` and frozen by the same reply ([issue-365](https://github.com/MadaraUchiha-314/the-loop/issues/365)). Empty or absent is **no declaration**, never an empty one: `await-inner-loops` then waits for no pull request but this repository's own |
 | `nodes` | every node in declaration order: `skipped` (routed around), `selectable` (was it ever the user's to choose) and `optIn` (off unless selected — so `skipped: true` here means *nobody asked for it*, not *somebody removed it*) |
 
 Written once, when an authorized user answers the

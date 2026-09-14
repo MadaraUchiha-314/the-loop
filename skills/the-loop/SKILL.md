@@ -199,10 +199,11 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   `pdlc-pr-loop`; the origin repository gets one only if it too receives code. Each inner
   loop's state sits under the origin repo's spec directory, qualified by repository
   (`pr-loops/<owner>__<repo>/pr-<n>/`), and a work item may **declare** those repositories
-  at `phase-selection` — ticking them on the checklist, frozen into
-  `work-item-state.json` by the same signed reply as the surface, the model and
-  the effort — so `await-inner-loops` holds `implementation` until every one of
-  them has finished. See `reference/workflow.md`
+  **once `design.md` and `tasks.md` say what the change spans** —
+  `the-loop graph repos <id> --repository <owner>/<repo> …`, which records them in
+  `work-item-state.json` so `await-inner-loops` holds `implementation` until every
+  one of them has finished. The flags are the full set, so re-running corrects the
+  declaration; declaring none is what a single-repository work item wants. See `reference/workflow.md`
   § Several repositories, one work item.
 - **Ask on the declared channel; iterate artifacts on a durable surface.** A session the CLI daemon
   drives is *told* where its answers come from (`routing.interaction.mode`, rendered into

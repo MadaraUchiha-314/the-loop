@@ -40,4 +40,8 @@ workItem: "github:MadaraUchiha-314/the-loop#365"
 | **Review round** — `docs/cli/state.md` | The portable record's `repos` field documented beside `sessionPerPr` |
 | **Review round** — `docs/cli/commands/graph.md` | The multi-repo declaration example is now the checklist rows and the frozen JSON |
 | **Review round** — `.gitignore`, `.github/workflows/the-loop-gate.yml`, `hooks/the-loop-gate.py`, `ui/src/**` | The renamed state file and lock, including the old lock name kept ignored |
-| **Review round** — `skills/the-loop/templates/tasks.md` | The `repos:` front-matter key removed: the declaration is the gate's now |
+| **Review round** — `skills/the-loop/templates/tasks.md` | The `repos:` front-matter key removed; the Checkpoints section stopped naming the retired log |
+| **Review round 2** — `docs/cli/commands/graph.md` | A `repos` section: the agent's verb, its two bounds, and why it posts no comment |
+| **Review round 2** — `skills/the-loop/SKILL.md`, `reference/workflow.md` | The multi-repo rule now names the verb and the moment to call it — an agent-facing feature nobody tells the agent about does not exist |
+| **Review round 2** — `commands/create-tasks-plan.md`, `commands/execute-tasks.md` | The declaration step at the moment it is knowable, and the fallback reminder |
+| **Review round 2** — `docs/api-specs/openapi/the-loop.v1.yaml` | `POST /api/v1/graph/repos` authored **before** the route existed (contract-first) |

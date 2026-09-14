@@ -53,13 +53,13 @@ A quick textual view of the order, e.g. `1 → 2 → 3` (or a mermaid graph).
 
 ## Checkpoints
 
-At which task boundaries the-loop runs tests/validations and updates the execution log.
-Record each task's test command and its **red→green** transition as evidence.
+At which task boundaries the-loop runs tests/validations. Record each task's test command
+and its **red→green** transition in the commit that carries it — the harness keeps the
+transcript and git keeps the commits, so no progress log is written (issue-365).
 After the last task, the **verification** node executes `testing-plan.md` — ticking each
 activity and recording its command, outcome and committed evidence — and only then do the
 review phases run the self/critic rounds AND the **security review gate**
-(recorded in the execution log) before the work item can be marked
-ready.
+(recorded in `evidence/security-review.md`) before the work item can be marked ready.
 
 ## Review comments
 

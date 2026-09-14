@@ -102,15 +102,22 @@ it can never become a planned absence and `verification` blocks on it unconditio
 which is what issue-179's kept-gate rule requires. `evidence/final-validation.md` is the
 `evidence` node's own record and goes away with that node.
 
-**D3 — `repos` is ticked at `phase-selection` and frozen into `work-item-state.json`**
-(revised after the owner's review; [decision-127](../../decisions/decision-127.md)). It
-first moved to `tasks.md`'s front matter, which kept it an artifact — and this input
-decides which repositories an unattended agent opens pull requests in, so a channel anyone
-who can edit a file can answer is the wrong channel. It is the fifth per-work-item choice
-the one signed reply freezes, beside `surface`, `sessionPerPr`, `model` and `effort`. Rows
-come from the instance's own `repositories` (issue-348), so a tick names a key into what
-the operator declared rather than a string that becomes a directory name; any number may be
-ticked, and none means *no declaration* exactly as an absent key did (R3.2).
+**D3 — `repos` is declared by the agent, through `the-loop graph repos`, once the task DAG
+exists** (revised twice after the owner's review; the reasoning is in
+[decision-127](../../decisions/decision-127.md)). It first moved to `tasks.md`'s front
+matter, then to a `phase-selection` checklist section — and the second was worse than the
+first, because `phase-selection` is the loop's **first** node: it asks before requirements,
+design and tasks exist, at the one moment nobody can know which repositories a change will
+span, and its safe default (tick nothing) is the wrong answer for exactly the work items
+the gate exists to serve.
+
+So the moment is `tasks-breakdown`, the actor is the agent, and the boundary is the verb:
+every value goes through `repo_state_key` (the filesystem boundary that refuses `.` and
+`..`) and through the instance's own `repositories` when that list is set — because nothing
+routes events for an undeclared repository, so its inner loop would never start and the
+gate would wait forever. The flags are the full set, so a declaration can be corrected;
+one bad entry declares nothing at all; declaring none means *no declaration* exactly as an
+absent key did (R3.2).
 
 **D3a — the state file is the work item's.** `graph-state.json` → `work-item-state.json`
 (R7): the pointer and node records are the graph's, but the surface, session, PR-session

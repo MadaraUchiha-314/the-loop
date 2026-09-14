@@ -260,9 +260,17 @@ discussion-only pull request in the repository holding the spec chain.
   (`Closes <owner>/<repo>#<n>`, the URL form, or GitHub's own linkage). Routing honours a
   qualified reference to another repository; it does not widen which events reach the
   daemon, nor which work items are armed.
-- **Declare the repositories, and the gate holds for them.** `tasks.md`'s front
-  matter takes `repos: [<owner>/<repo>, …]` — the last artifact locked before
-  `implementation`, which is the node the gate holds; `await-inner-loops` then holds the outer
+- **Declare the repositories, and the gate holds for them.** **You** declare them,
+  once the design and the task DAG say what the change spans — not at
+  `phase-selection`, where nothing yet does:
+
+  ```bash
+  the-loop graph repos <id> --repository <owner>/<repo> --repository <owner>/<other>
+  ```
+
+  The flags are the **full set**, so re-running corrects a declaration rather than
+  growing it; `--clear` declares none, and no flags prints what is declared. The
+  declaration lands in `work-item-state.json`; `await-inner-loops` then holds the outer
   `implementation` node until each declared repository has an inner loop *and* every
   started loop has finished. Without the declaration, a pull request that was planned and
   never opened is indistinguishable from a work item that needed none.

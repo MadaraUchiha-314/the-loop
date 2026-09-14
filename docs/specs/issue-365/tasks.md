@@ -132,18 +132,30 @@ overrides: {}
   - _Requirements:_ R7.1, R7.2, R7.3
   - _Test:_ T20 (red→green)
 
-- [x] 15. Move `repos` to the `phase-selection` gate
-  - A repository section on the checklist, one row per declared repository, any number
-    ticked; frozen into `work-item-state.json` and the portable record by the same signed
-    reply; `declared_repos` reads the state; the key leaves the `tasks.md` template
+- [x] 15. Move `repos` off artifacts — first attempt, reverted
+  - A repository section on the `phase-selection` checklist. Rejected in review round 2:
+    that gate runs before requirements, design and tasks exist, so it asks at the one
+    moment nobody can answer
   - _Depends on:_ 14
-  - _Requirements:_ R3.1, R7.4
-  - _Test:_ T21, T22 (red→green)
+  - _Requirements:_ R3.1
+  - _Test:_ superseded by task 17
+
+- [x] 17. `the-loop graph repos` — the agent declares, once the DAG exists
+  - `declare_repos` in the runtime (shape boundary + the instance's `repositories`, full
+    set not an append, all-or-nothing); `core.graphs.repos`; the OpenAPI route authored
+    first, then `POST /api/v1/graph/repos`; the CLI verb routed through the service;
+    `graph.repos_declared` in the event catalogue; `repositories` reaches `Runtime.config`
+  - The agent is **told**: the skill's multi-repo rule, `reference/workflow.md`,
+    `create-tasks-plan` (the moment) and `execute-tasks` (the fallback), plus the CLI page
+  - _Depends on:_ 15
+  - _Requirements:_ R3.1, R3.2, R3.3, R7.4, R7.5
+  - _Test:_ T21, T22, T23 (red→green)
 
 - [x] 16. Record the decision and re-document both
-  - `docs/decisions/decision-127.md` + index row; decision-126's superseded bullet
+  - `docs/decisions/decision-127.md` + index row, rewritten after round 2 rather than
+    amended — its reasoning was what was wrong; decision-126's superseded bullet
     cross-linked; capability history rows; the skill, commands, site and `.gitignore`
-  - _Depends on:_ 14, 15
+  - _Depends on:_ 14, 17
   - _Requirements:_ R6.1, R6.2
   - _Test:_ T18, T19
 

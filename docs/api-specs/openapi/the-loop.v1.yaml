@@ -314,6 +314,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/graph/repos:
+    post:
+      summary: Graph Repos
+      operationId: graphRepos
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphReposBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Graphrepos
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/sessions:
     get:
       summary: List Sessions
@@ -1438,6 +1463,63 @@ components:
       - toNode
       - reason
       title: GraphForceBody
+    GraphReposBody:
+      properties:
+        repo:
+          type: string
+          title: Repo
+        workItem:
+          type: string
+          title: Workitem
+        repositories:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Repositories
+          description: The CONTRIBUTING repositories this work item raises pull
+            requests in, as <owner>/<repo>. The list is the full set, not an
+            append, so re-declaring corrects rather than grows it. Omitted/null
+            reads the current declaration back without writing (issue-365).
+            `await-inner-loops` holds `implementation` until each declared
+            repository has an inner loop AND every started loop has finished;
+            declaring none is *no declaration*, which is what a
+            single-repository work item wants.
+        clear:
+          type: boolean
+          title: Clear
+          default: false
+          description: Declare none, explicitly — the state's own default.
+        ref:
+          type: string
+          title: Ref
+          default: ''
+        pr:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Pr
+          description: A pull-request number selects that PR's inner loop
+            (pdlc-pr-loop, issue-172); null/omitted is the work item's outer
+            pdlc-work-item-loop, which is where the declaration belongs.
+        prRepo:
+          type: string
+          title: Prrepo
+          default: ''
+          description: The repository `pr` is in, when the work item's
+            contributions span several and this pull request is not in the
+            repository the ticket was created in (issue-183). Meaningless
+            without `pr`.
+        specDir:
+          type: string
+          title: Specdir
+          default: ''
+      type: object
+      required:
+      - repo
+      - workItem
+      title: GraphReposBody
     GraphSkipBody:
       properties:
         repo:

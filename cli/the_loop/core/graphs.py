@@ -238,6 +238,48 @@ def skip(
     }
 
 
+def repos(
+    repo: str,
+    work_item: str,
+    repositories: Optional[list] = None,
+    ref: str = "",
+    clear: bool = False,
+    pr: Optional[int] = None,
+    pr_repo: str = "",
+    spec_dir: str = "",
+) -> Dict[str, Any]:
+    """Declare (or read) the repositories a work item raises pull requests in.
+
+    The AGENT's channel, unlike ``skip`` and ``force`` (issue-365,
+    decision-127): which repositories a change spans follows from the design and
+    the task DAG, so it is stated once those exist rather than guessed at the
+    work item's first gate. Passing nothing reads the current declaration back.
+    """
+    runtime = _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir)
+    if repositories is None and not clear:
+        from ..graph.state import WorkItemState
+
+        declared = list(
+            WorkItemState.load(
+                runtime.state_dir(runtime.work_item(work_item, ref)), work_item
+            ).repos
+        )
+        return {"workItem": work_item, "declared": declared, "rejected": []}
+    result = graph_runtime.declare_repos(
+        runtime,
+        work_item,
+        [str(r) for r in (repositories or [])],
+        ref=ref,
+        clear=clear,
+    )
+    return {
+        "workItem": result.work_item,
+        "declared": list(result.declared),
+        "rejected": list(result.rejected),
+        "previous": list(result.previous),
+    }
+
+
 def show(
     repo: str, pr: Optional[int] = None, pr_repo: str = "", spec_dir: str = ""
 ) -> Dict[str, Any]:

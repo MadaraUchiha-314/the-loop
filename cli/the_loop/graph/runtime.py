@@ -28,9 +28,11 @@ logger = logging.getLogger("the-loop.graph")
 __all__ = [
     "CLEANUP_NODE",
     "NodeReport",
+    "ReposResult",
     "Runtime",
     "SkipResult",
     "StatusReport",
+    "declare_repos",
     "declare_skips",
     "force",
 ]
@@ -466,19 +468,6 @@ class Runtime:
                     # one human act, one record (issue-183).
                     record["surface"] = chosen
                     state.surface = chosen
-                picked = [
-                    str(r).strip()
-                    for r in (result.data.get("repos") or [])
-                    if str(r).strip()
-                ]
-                if picked:
-                    # Which repositories this work item raises pull requests in
-                    # (issue-365, decision-127) — the fifth thing the one signed
-                    # reply freezes, and the only one `await-inner-loops` reads
-                    # back off the state file. Empty is not written: it is *no
-                    # declaration*, which is the state's own default.
-                    record["repos"] = picked
-                    state.repos = picked
                 per_pr = str(result.data.get("sessionPerPr") or "")
                 if per_pr:
                     # How many sessions this work item's pull requests get
@@ -1173,6 +1162,121 @@ def _announce_skips(
         logger.warning("could not post the skip audit comment: %s", exc)
         return str(exc)
     return ""
+
+
+@dataclass
+class ReposResult:
+    """What a repository declaration did (issue-365, decision-127)."""
+
+    work_item: str
+    declared: List[str] = field(default_factory=list)
+    rejected: List[Dict[str, str]] = field(default_factory=list)
+    previous: List[str] = field(default_factory=list)
+
+
+def declare_repos(
+    runtime: Runtime,
+    work_item_id: str,
+    repos: Optional[List[str]] = None,
+    ref: str = "",
+    clear: bool = False,
+) -> ReposResult:
+    """Declare the repositories this work item raises pull requests in (issue-183).
+
+    **The agent's channel, and deliberately not a human gate's.** Which
+    repositories a change spans is not knowable when the work item starts — it
+    follows from `design.md` and `tasks.md` — so this is called once the task DAG
+    says what the change touches, at `tasks-breakdown` or `implementation`, and
+    `await-inner-loops` reads it back to hold `implementation` until every
+    declared repository's inner loop has finished. The declaration is the PLAN; a
+    session record keyed by repository is the evidence, and only exists once a
+    pull request has been opened. That gap is the whole reason the declaration
+    exists: a contribution planned and never opened is otherwise
+    indistinguishable from one that was never needed.
+
+    **The flags are the full set**, not an append: re-running corrects a
+    declaration rather than growing it, so an agent that learns of a fourth
+    repository states all four. ``clear`` declares none, which is the state's own
+    default and reads as *no declaration*.
+
+    Bounded twice, both in the shrinking direction:
+
+    * **Shape** — every value goes through ``repo_state_key``, the trust boundary
+      between a repository name and the filesystem (issue-183), **and**
+      ``parse_repo_path``, the grammar every repository path passes. The first is
+      what refuses ``.`` and ``..``; without it a value the gate would later
+      block on could be declared here and only fail at ``implementation``.
+    * **The instance's own declaration** — when ``repositories`` is set, a
+      repository outside it is refused. Nothing routes events for an undeclared
+      repository, so its inner loop would never start and the gate would wait
+      forever; refusing here, naming the set, is the difference between a message
+      and a hang.
+
+    No ticket comment: unlike a skip or a force, this takes nothing away and is a
+    checked-in diff a reviewer reads in the pull request.
+    """
+    from ..repos import declared_repositories, parse_repo_path
+    from .hooks.loops import repo_state_key
+
+    item = runtime.work_item(work_item_id, ref)
+    state_dir = runtime.state_dir(item)
+    state = WorkItemState.load(state_dir, work_item_id)
+    previous = list(state.repos)
+    if clear:
+        with state_lock(state_dir):
+            state = WorkItemState.load(state_dir, work_item_id)
+            state.repos = []
+            state.save(state_dir)
+        return ReposResult(work_item=work_item_id, declared=[], previous=previous)
+
+    config = runtime.config or {}
+    allowed = {f"{entry.owner}/{entry.repo}" for entry in declared_repositories(config)}
+    accepted: List[str] = []
+    rejected: List[Dict[str, str]] = []
+    for raw in repos or []:
+        value = str(raw).strip()
+        try:
+            # The filesystem boundary first: this value becomes a directory name
+            # under `pr-loops/`, and `..` is a segment `is_github_name` admits.
+            repo_state_key(value)
+            parsed = parse_repo_path(value, config)
+        except Exception as exc:  # noqa: BLE001 — a malformed entry is not a candidate
+            rejected.append({"repo": value, "why": str(exc)})
+            continue
+        name = f"{parsed.owner}/{parsed.repo}"
+        if allowed and name not in allowed:
+            rejected.append(
+                {
+                    "repo": value,
+                    "why": (
+                        "not in this instance's `repositories` — nothing routes "
+                        f"its events, so its inner loop would never start "
+                        f"({', '.join(sorted(allowed))})"
+                    ),
+                }
+            )
+            continue
+        if name not in accepted:
+            accepted.append(name)
+    if rejected:
+        # All or nothing: a partial declaration is a gate waiting on a set
+        # nobody chose. Report what was wrong and change nothing.
+        return ReposResult(
+            work_item=work_item_id,
+            declared=[],
+            rejected=rejected,
+            previous=previous,
+        )
+    with state_lock(state_dir):
+        state = WorkItemState.load(state_dir, work_item_id)
+        state.repos = accepted
+        state.save(state_dir)
+    eventlog.emit(
+        "graph.repos_declared",
+        work_item=item.ref,
+        repos=accepted,
+    )
+    return ReposResult(work_item=work_item_id, declared=accepted, previous=previous)
 
 
 def declare_skips(

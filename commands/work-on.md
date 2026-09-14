@@ -78,8 +78,8 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
      item as you open it** (`the-loop sessions link-pr --work-item github:OWNER/REPO#N
      --pull-request <pr-number>` — a PR the-loop authored carries none of the linkages
      the router can infer, so its comments and reviews reach nothing without this; see
-     the skill's `reference/automation.md`), record **all** of them in the execution
-     log's **Pull requests** table, and keep working the item in the same session: with
+     the skill's `reference/automation.md`), record **all** of them in
+     `evidence/pull-requests.md`, and keep working the item in the same session: with
      GitHub ticketing each PR routes back to the issue's session, and one PR merging
      does **not** end the work item — closing the **ticket** does.
 
