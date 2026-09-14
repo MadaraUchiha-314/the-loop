@@ -27,7 +27,7 @@ spec files read from disk, not the drafting conversation (plan-mode style).
 
 1. **Locate & load the spec.** Resolve `$ARGUMENTS` to `docs/specs/<id>/` and read
    `requirements.md`, `design.md`, `testing-plan.md` and `tasks.md`. Use
-   `graph-state.json`'s current node and the tasks' checkmarks to **resume** rather than
+   `work-item-state.json`'s current node and the tasks' checkmarks to **resume** rather than
    restart.
 
 2. **Implementation** (`implementation`). Execute the task DAG autonomously in dependency

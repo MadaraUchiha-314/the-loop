@@ -337,7 +337,7 @@ class CheckCommand(Command):
         parser.add_argument(
             "--recompute",
             action="store_true",
-            help="ignore graph state; derive completion from the artifacts alone",
+            help="ignore work-item state; derive completion from the artifacts alone",
         )
         parser.add_argument(
             "--fail-on",

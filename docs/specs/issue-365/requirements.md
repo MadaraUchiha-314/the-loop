@@ -14,6 +14,11 @@ riskTier: 4
 > Phase 1 of 3 (requirements → design → tasks). Following the Kiro spec approach
 > (<https://kiro.dev/docs/specs/>). This phase MUST be reviewed and approved by the
 > required collaborators before moving to design.
+>
+> **Revision 2** — the owner's review of PR #366 added R7 (the state file is named for the
+> work item, not the graph) and moved R3's home for the multi-repo declaration from an
+> artifact's front matter to the `phase-selection` gate. R3.1 changed accordingly;
+> everything else stands.
 
 ## Introduction
 
@@ -29,14 +34,14 @@ the ticket is about one of them:
 flowchart TB
     L["execution-log.md"] --> N["THE NARRATIVE<br/>phase-transitions table · progress entries ·<br/>per-node log-entry appends · context-reset<br/>checkpoints · phase/status front matter"]
     L --> P["THE PROOFS<br/>review cycles · security review · verification<br/>results · final validation evidence · capability<br/>docs · documentation · pull requests · repos:"]
-    N --> NC["re-derives what the harness transcript,<br/>graph-state.json and the loop:&lt;phase&gt; label<br/>already hold — the ticket's cost"]
+    N --> NC["re-derives what the harness transcript,<br/>work-item-state.json and the loop:&lt;phase&gt; label<br/>already hold — the ticket's cost"]
     P --> PC["the only checked-in record that six gates<br/>read — deleting it un-gates them<br/>(issue-167, decision-063)"]
 ```
 
 The **narrative** is the cost the ticket names: a 130-line bundled template materialized
 into every work item, appended to by a `log-entry` hook at 47 node boundaries across five
 graphs, re-read and re-written at every phase, and required in prose before every context
-reset. Every fact in it exists already — the node and phase in `graph-state.json`, the
+reset. Every fact in it exists already — the node and phase in `work-item-state.json`, the
 phase on the ticket's `loop:<phase>` label, and the chronology in the harness's own
 transcript.
 
@@ -82,7 +87,9 @@ so the removal can be approved without approving a silent regression of the revi
 ### R3 — the multi-repo declaration survives
 
 - **R3.1** The system SHALL read the contributing repositories of a work item (issue-183's
-  `repos:`) from a checked-in, human-authored artifact that is **not** the execution log.
+  `repos:`) from the work item's own checked-in state, where an **authorized human** put
+  them by ticking the `phase-selection` checklist — never from an artifact's front matter,
+  which anyone who can edit the file can change.
 - **R3.2** WHEN no such declaration is present THEN `await-inner-loops` SHALL behave exactly
   as it does when the key is absent today — no declaration, not an empty one.
 - **R3.3** WHEN a declared repository is malformed THEN the gate SHALL block naming the
@@ -91,7 +98,7 @@ so the removal can be approved without approving a silent regression of the revi
 ### R4 — resuming a work item does not depend on a narrative
 
 - **R4.1** WHEN a session resumes a work item THEN the-loop SHALL re-enter from
-  `graph-state.json` (current node, phase, attempts), `tasks.md` checkmarks and the ticket,
+  `work-item-state.json` (current node, phase, attempts), `tasks.md` checkmarks and the ticket,
   and SHALL NOT require a prose "Next:" entry.
 - **R4.2** WHEN a node runs with `session: inherit` and the bound session has died THEN the
   fresh session SHALL be seeded with artifacts that still exist after R1.
@@ -106,6 +113,20 @@ so the removal can be approved without approving a silent regression of the revi
   NOT remove it, following the precedent set for the relocated learnings tree.
 - **R5.3** The system SHALL NOT read an execution log that is present — presence SHALL NOT
   change any gate's outcome.
+
+### R7 — the state file is named for the work item, not the graph
+
+- **R7.1** The per-work-item state file SHALL be `work-item-state.json`: the pointer and
+  the node records are the graph's, but the surface, the session, the PR-session mode, the
+  model, the effort and the repositories are facts about the work item.
+- **R7.2** WHEN a state file exists under the pre-rename name THEN the system SHALL read it
+  and SHALL write the current name on the next save — no migration step, and no file
+  deleted.
+- **R7.3** WHEN the outer gate scans for inner-loop state THEN it SHALL find loops under
+  **either** name, so a loop started before the rename still holds the gate.
+- **R7.4** WHEN a human ticks repositories at `phase-selection` THEN the system SHALL
+  offer only repositories the **instance** declared, SHALL accept any number, and SHALL
+  treat none as *no declaration*.
 
 ### R6 — the change is legible and measurable
 
@@ -123,7 +144,7 @@ so the removal can be approved without approving a silent regression of the revi
   about generation cost, and decision-063 exists because those gates once passed silently.
 - **Deleting historical records.** Checked-in execution logs — 132 in this repository — stay.
 - **Replacing the harness transcript.** the-loop does not gain a log of its own in any
-  other form; the chronology belongs to the harness and to `graph-state.json`.
+  other form; the chronology belongs to the harness and to `work-item-state.json`.
 - **Changing `validates:`, `onlyWhenSkipped:` or the skip vocabulary.** They are reused
   as-is.
 
@@ -135,6 +156,8 @@ so the removal can be approved without approving a silent regression of the revi
 | A2 | Every review-chain node still blocks when its proof is missing | graph review-chain integration tests |
 | A3 | A declared skip relaxes only its own node's gate | graph skips tests |
 | A4 | `verification` still blocks with `test-planning` declared away | verification integration test |
-| A5 | `repos:` still drives `await-inner-loops` from its new home | multirepo integration test |
+| A5 | `repos` still drives `await-inner-loops` from its new home | multirepo integration test |
+| A8 | A work item mid-flight keeps its pointer across the rename | state unit tests |
+| A9 | A tick can only ever name a declared repository | selection abuse cases |
 | A6 | An existing `execution-log.md` on disk changes no outcome | regression test |
 | A7 | The e2e PDLC scenarios pass with no execution-log assertions | `test_pdlc_e2e_integration.py` |

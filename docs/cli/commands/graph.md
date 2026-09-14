@@ -104,7 +104,7 @@ on. Leave it and the requirements, design, testing plan and task list are iterat
 work item itself — the default, so a work item whose code lands in *other* repositories
 never opens a pull request here just to hold a discussion. Tick it and they are iterated
 on a pull request in this repository instead. The answer is frozen with the phase
-selection, into `graph-state.json` and the portable record; there is deliberately no
+selection, into `work-item-state.json` and the portable record; there is deliberately no
 config key for it, in either config file. A pull request's own inner loop is never
 configurable.
 
@@ -259,7 +259,7 @@ neither a repository nor a session can widen it.
 
 Tokens outside the vocabulary, and nodes the pointer has already entered or passed, are
 **rejected** and printed as such — a skip is a plan, not an amnesty. Valid declarations
-are recorded in graph state with provenance, announced on the ticket with the self-marker,
+are recorded in work-item state with provenance, announced on the ticket with the self-marker,
 and honoured when the pointer reaches each node: it routes along the node's declared
 `on: skipped` edge, runs none of its hooks, and `check` reports the node as
 *skipped by declaration* — never as a pass. In the outer loop the vocabulary is **every
@@ -332,13 +332,21 @@ flight moves. `--pr-repo` without `--pr` is refused (a repository does not ident
 loop), as is any value that is not `<owner>/<repo>` — the value becomes a directory name,
 so it is validated rather than sanitized.
 
-A work item can also **declare** the repositories it contributes to, in
-`docs/specs/<id>/tasks.md`'s front matter:
+A work item can also **declare** the repositories it contributes to. An authorized
+human ticks them on the `phase-selection` checklist — one row per repository this
+instance declared in its top-level `repositories`:
 
-```yaml
-repos:
-  - octo/app
-  - octo/infra
+```text
+**Which repositories will this work item raise pull requests in?**
+
+- [x] `repo-octo/app`
+- [x] `repo-octo/infra`
+```
+
+and the signed reply freezes them into `docs/specs/<id>/work-item-state.json`:
+
+```json
+{ "repos": ["octo/app", "octo/infra"] }
 ```
 
 `await-inner-loops` then holds the outer `implementation` node until each declared

@@ -1,5 +1,5 @@
 ---
-description: Report the current status of a work item by reading its spec files (requirements/design/tasks), its graph state and the records under evidence/. Read-only.
+description: Report the current status of a work item by reading its spec files (requirements/design/tasks), its work-item state and the records under evidence/. Read-only.
 argument-hint: "<ticket-id | spec-dir> (e.g. 42 | issue-42 | PROJ-42)"
 allowed-tools: Read, Bash, Glob, Grep
 ---
@@ -17,14 +17,14 @@ does not change anything.
    check for a `draft-*` folder (pre-ticket) and say so.
 
 2. **Read the artifacts** (whichever exist): `requirements.md`/`bugfix.md`, `design.md`,
-   `tasks.md`, `graph-state.json` and the records under `evidence/`. Also read the
+   `tasks.md`, `work-item-state.json` and the records under `evidence/`. Also read the
    ticket's current phase label if the
    ticketing integration is available. `requirements.md` and `bugfix.md` are two accepted
    names for the **same** phase-1 artifact — if both are on disk, say so: the
    `requirements-definition` gate blocks on it (decision-045).
 
 3. **Summarize:**
-   - **Phase** — from `graph-state.json`'s current node and the ticket label (flag any
+   - **Phase** — from `work-item-state.json`'s current node and the ticket label (flag any
      mismatch).
    - **Spec status** — which of requirements/design/tasks exist and their `status`
      (draft / approved) and approvers.

@@ -15,13 +15,15 @@ workItem: "github:MadaraUchiha-314/the-loop#365"
 | `capability-docs.md` | "none affected" is recorded in `evidence/documentation.md` | issue-365 |
 | `documentation.md` | The `## Documentation` record moved into `evidence/documentation.md`, same gate | issue-365 |
 | `token-economy.md` | Compaction no longer checkpoints to a log; the log itself is named as the lever removed | issue-365 |
+| `process-graph.md` (review round) | The state file's name, and `phase-selection`'s fifth question | issue-365 (review) |
+| `spec-workflow.md` (review round) | Where the multi-repo declaration lives and who may make it | issue-365 (review) |
 | `testing-and-contracts.md` | The e2e conformance keys: `evidenceSections` replaces two execution-log keys | issue-365 |
 
 ## Documentation
 
 | Document | What changed |
 |----------|--------------|
-| `README.md` | The phase sentence: the label plus `graph-state.json`, no log to mirror |
+| `README.md` | The phase sentence: the label plus `work-item-state.json`, no log to mirror |
 | `CLAUDE.md` | This repository's own rule — keep the label in sync, write no progress log |
 | `skills/the-loop/SKILL.md` | The phase statement, the documentation record, the `repos:` home, the self-check and checkpoint rules, the artifact inventory |
 | `reference/workflow.md` | Nine passages: the kept gate, the design critic's record, `repos:`, the contribution loop, TDD evidence, implementation, resets, the fold-in, the ready-to-ship gate, resumability |
@@ -35,3 +37,7 @@ workItem: "github:MadaraUchiha-314/the-loop#365"
 | `docs/reference/commands.md`, `docs/cli/commands/graph.md`, `docs/architecture/architecture.md`, `docs/config/harness-config.md` | `work-status`' inputs, the `repos:` example, the knowledge-tree listing, two "says so in the execution log" pointers |
 | `docs/specs/index.md`, `docs/.vitepress/config.mts` | What a spec folder holds; the sidebar keeps `execution-log` so historical logs stay browsable |
 | `.the-loop/manifest.yaml`, `.the-loop/harness-config.schema.json` | The role retired and eight `evidence/` entries added; the `onMissing` description |
+| **Review round** — `docs/cli/state.md` | The portable record's `repos` field documented beside `sessionPerPr` |
+| **Review round** — `docs/cli/commands/graph.md` | The multi-repo declaration example is now the checklist rows and the frozen JSON |
+| **Review round** — `.gitignore`, `.github/workflows/the-loop-gate.yml`, `hooks/the-loop-gate.py`, `ui/src/**` | The renamed state file and lock, including the old lock name kept ignored |
+| **Review round** — `skills/the-loop/templates/tasks.md` | The `repos:` front-matter key removed: the declaration is the gate's now |

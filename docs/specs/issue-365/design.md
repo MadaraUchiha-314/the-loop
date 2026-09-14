@@ -22,10 +22,10 @@ flowchart LR
         EL["execution-log.md<br/>130-line template<br/>8 gated sections<br/>+ log-entry × 47"]
     end
     subgraph after["after"]
-        GS["graph-state.json<br/>node · phase · attempts"]
+        GS["work-item-state.json<br/>node · phase · attempts"]
         TR["harness transcript<br/>the chronology"]
         EV["evidence/*.md<br/>one file per gate,<br/>written once, by the<br/>node that gates it"]
-        TA["tasks.md front matter<br/>repos:"]
+        TA["phase-selection<br/>repos ticked, frozen"]
     end
     EL -.->|"narrative — deleted"| GS
     EL -.->|"narrative — deleted"| TR
@@ -36,7 +36,7 @@ flowchart LR
 Three properties carry the whole design:
 
 1. **Nothing is generated twice.** The phase, the current node and the attempt count live
-   in `graph-state.json` and on the `loop:<phase>` label; the chronology lives in the
+   in `work-item-state.json` and on the `loop:<phase>` label; the chronology lives in the
    harness's own transcript. the-loop stops re-deriving both.
 2. **Every gate keeps a subject.** `validate-artifacts` blocks when a content gate resolves
    no artifact ([decision-063](../../decisions/decision-063.md)); that rule and the parity
@@ -67,7 +67,7 @@ inner loops (`pdlc-pr-loop`, `pdlc-contribution-loop`) gate the same names the s
 
 `log-entry` is deleted from `hooks/sideeffects.py` and from all 47 entry chains across the
 five shipped graphs. Nothing replaces it: a node boundary is already an event in
-`event-log` and a transition in `graph-state.json`.
+`event-log` and a transition in `work-item-state.json`.
 
 ## Decisions
 
@@ -102,20 +102,27 @@ it can never become a planned absence and `verification` blocks on it unconditio
 which is what issue-179's kept-gate rule requires. `evidence/final-validation.md` is the
 `evidence` node's own record and goes away with that node.
 
-**D3 — `repos:` moves to `tasks.md`'s front matter.** It needs a checked-in,
-human-authored artifact that exists *before* `implementation`, since `await-inner-loops`
-gates that node. `tasks.md` is the last artifact locked before implementation and the one
-that already enumerates the work per repository, so the declaration sits beside the plan it
-describes. `design.md` was the alternative; it is one gate earlier and one step further
-from the PRs being awaited. Absence keeps meaning "no declaration" (R3.2), so a work item
-that declared `tasks-breakdown` away simply has no multi-repo declaration — the shape a
-multi-repo work item should not be in anyway, and no worse than a log that was never filled
-in.
+**D3 — `repos` is ticked at `phase-selection` and frozen into `work-item-state.json`**
+(revised after the owner's review; [decision-127](../../decisions/decision-127.md)). It
+first moved to `tasks.md`'s front matter, which kept it an artifact — and this input
+decides which repositories an unattended agent opens pull requests in, so a channel anyone
+who can edit a file can answer is the wrong channel. It is the fifth per-work-item choice
+the one signed reply freezes, beside `surface`, `sessionPerPr`, `model` and `effort`. Rows
+come from the instance's own `repositories` (issue-348), so a tick names a key into what
+the operator declared rather than a string that becomes a directory name; any number may be
+ticked, and none means *no declaration* exactly as an absent key did (R3.2).
 
-**D4 — the resume anchor is `graph-state.json` + `tasks.md`.** `reference/context.md`'s
+**D3a — the state file is the work item's.** `graph-state.json` → `work-item-state.json`
+(R7): the pointer and node records are the graph's, but the surface, session, PR-session
+mode, model, effort and now repositories are not. The old name is **read** and the new one
+written (`existing_path`, present-name-wins), and the inner-loop scan globs both — an outer
+gate that stopped seeing a loop started before the rename would release on work that never
+finished.
+
+**D4 — the resume anchor is `work-item-state.json` + `tasks.md`.** `reference/context.md`'s
 checkpoint-then-reset protocol keeps its discipline and loses its prose: before a reset,
 tick the checkmarks, commit, and let the state file say where the pointer is. A fresh
-window re-enters by reading `graph-state.json` (current node), the specs, and the first
+window re-enters by reading `work-item-state.json` (current node), the specs, and the first
 unticked task — which is what "Next:" said, derived rather than written.
 `Runtime.resolve_session`'s fallback seeds `requirements.md`, `design.md`, `tasks.md`
 (`runtime.py:302`).
@@ -151,7 +158,7 @@ The ticket is a token complaint, so the change is measured in tokens.
 | Files written | 1, re-read and re-appended at every phase | ≤ 8, each written once, only for phases walked |
 | Hook appends per work item | one per node boundary (`log-entry`, 15–17 in a full outer walk) | 0 |
 | Checkpoint before a context reset | a prose entry with **Did/Next/Context** | checkmarks + commit |
-| Phase recorded in | front matter **and** `graph-state.json` **and** the label | `graph-state.json` + the label |
+| Phase recorded in | front matter **and** `work-item-state.json` **and** the label | `work-item-state.json` + the label |
 
 A full outer walk stops emitting the phase-transition table, ~15 `log-entry` appends, and
 every progress entry; it keeps ~8 short records it already had to write inside the log.

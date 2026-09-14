@@ -16,7 +16,7 @@ import subprocess
 
 import pytest
 
-from the_loop.graph.state import GraphState
+from the_loop.graph.state import STATE_FILENAME, WorkItemState
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
 from the_loop.webhook.router import RoutedEvent
@@ -115,7 +115,7 @@ def _comment(body, author=REVIEWER):
 
 
 def _state(checkout):
-    return GraphState.load(checkout / "docs" / "specs" / "issue-113", "issue-113")
+    return WorkItemState.load(checkout / "docs" / "specs" / "issue-113", "issue-113")
 
 
 def test_spawning_a_session_starts_the_work_items_graph(tmp_path, checkout):
@@ -171,7 +171,7 @@ def test_an_authorized_reviewers_approval_reaches_the_waiting_gate(tmp_path, che
     """
     spec = checkout / "docs" / "specs" / "issue-113"
     (spec / "requirements.md").write_text("---\nstatus: approved\n---\n\n# R\n")
-    state = GraphState.load(spec, "issue-113")
+    state = WorkItemState.load(spec, "issue-113")
     state.enter("requirements-approval")
     state.save(spec)
 
@@ -194,7 +194,7 @@ def test_an_unauthorized_approval_leaves_the_gate_waiting(tmp_path, checkout):
     """
     spec = checkout / "docs" / "specs" / "issue-113"
     (spec / "requirements.md").write_text("---\nstatus: approved\n---\n\n# R\n")
-    state = GraphState.load(spec, "issue-113")
+    state = WorkItemState.load(spec, "issue-113")
     state.enter("requirements-approval")
     state.save(spec)
 
@@ -245,7 +245,7 @@ def test_an_instance_that_moved_its_specs_still_advances(tmp_path):
       And the daemon's CLI config names routing.graph.specDir: specs
       When the dispatcher reports a spawned session for its work item
       Then the graph's start node is entered under that directory
-      And graph-state.json is written there
+      And work-item-state.json is written there
 
     Requirement: docs/specs/issue-123/requirements.md#R1.1 (re-based by issue-352)
     """
@@ -256,8 +256,8 @@ def test_an_instance_that_moved_its_specs_still_advances(tmp_path):
     )
 
     spec = checkout / "specs" / "issue-113"
-    assert GraphState.load(spec, "issue-113").current_node == "phase-selection"
-    assert (spec / "graph-state.json").is_file(), (
+    assert WorkItemState.load(spec, "issue-113").current_node == "phase-selection"
+    assert (spec / STATE_FILENAME).is_file(), (
         "R2.2 — the runtime must write under the same directory the gate checked"
     )
 
@@ -287,7 +287,9 @@ def test_two_repositories_are_driven_under_the_instances_one_spec_dir(tmp_path):
 
     for checkout in (first, second):
         assert (
-            GraphState.load(checkout / "specs" / "issue-113", "issue-113").current_node
+            WorkItemState.load(
+                checkout / "specs" / "issue-113", "issue-113"
+            ).current_node
             == "phase-selection"
         )
 
@@ -342,7 +344,7 @@ def test_a_ticket_with_no_spec_folder_is_still_held_at_phase_selection(
     _dispatcher(tmp_path).graphlink.on_spawn(REF, str(checkout))
 
     spec = checkout / "docs" / "specs" / "issue-113"
-    assert GraphState.load(spec, "issue-113").current_node == "phase-selection"
+    assert WorkItemState.load(spec, "issue-113").current_node == "phase-selection"
     assert github.labels == ["loop:phase-selection"]
     assert len(github.posted) == 1, "the checklist is the gate's only channel"
     assert "the-loop execute" in github.posted[0]
@@ -372,7 +374,7 @@ def test_the_gate_still_waits_for_an_authorized_human(tmp_path, github):
     )
 
     spec = checkout / "docs" / "specs" / "issue-113"
-    assert GraphState.load(spec, "issue-113").current_node == "phase-selection"
+    assert WorkItemState.load(spec, "issue-113").current_node == "phase-selection"
 
 
 def test_the_spawn_prompt_of_an_unplaced_work_item_forbids_starting_a_phase(

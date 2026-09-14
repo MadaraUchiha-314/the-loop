@@ -37,7 +37,7 @@
 # HOW IT IS CHOSEN (issue-185): an authorized user arms the work item with the
 # `contribute` control keyword (default `the-loop contribute`) instead of
 # `start`. The choice is recorded durably — in the portable control record
-# before the first start, and in graph-state.json's `loop` field from then on.
+# before the first start, and in work-item-state.json's `loop` field from then on.
 # Joining is a declared decision, never a heuristic over the item's history.
 #
 # This file ships WITH THE CLI and is the-loop's own. A repository cannot
@@ -67,7 +67,7 @@ nodes:
   # The contribution loop's own first invariant: no goal, no start. An
   # authorized user states the goal and success criteria in a comment (the
   # arming `the-loop contribute` comment itself qualifies — the gate re-reads
-  # the thread); the gate freezes them into graph state with provenance and
+  # the thread); the gate freezes them into work-item state with provenance and
   # confirms. It never guesses, and it never reads an unauthorized or
   # self-authored body at all.
   # `command:` on this human gate (and the next) is rendered into the session's

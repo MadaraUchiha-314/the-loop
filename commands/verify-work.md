@@ -21,7 +21,7 @@ the environment the plan references is usually described there.
    the DAG is unfinished, say so and stop — verification proves finished work.
 
    **No `testing-plan.md`?** Then `test-planning` was declared skipped for this work item
-   (issue-179) — check `graph-state.json`. Do **not** author one now: the phase was
+   (issue-179) — check `work-item-state.json`. Do **not** author one now: the phase was
    declared away by a human, and re-creating its artifact from this side of the gate is
    exactly what that declaration refused. Verify the change on its merits instead (run the
    project's linters/tests, exercise what changed), and record the results in

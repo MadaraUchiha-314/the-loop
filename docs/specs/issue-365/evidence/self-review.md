@@ -15,6 +15,23 @@ workItem: "github:MadaraUchiha-314/the-loop#365"
 |-------|----------|---------|------------------------|------|
 | 1 | the-loop (self) | new findings | 3, all fixed before the first push — see below | this PR |
 | 2 | the-loop (self) | zero (converged) | re-read the diff after the fixes; nothing new | this PR |
+| 3 | the-loop (self) | new findings | 1, fixed before the push — see round 3 below | [PR #366](https://github.com/MadaraUchiha-314/the-loop/pull/366) |
+
+### Round 3 finding (after the owner's review round)
+
+**A blanket rename clobbered the constant that makes the rename safe.** Sweeping
+`graph-state` → `work-item-state` across the tree rewrote
+`LEGACY_STATE_FILENAME = "graph-state.json"` — the one place the old name has to survive,
+or a work item mid-flight silently loses its pointer. Caught by re-reading the diff rather
+than by a test, because the tests for it were written against the constant and would have
+passed while asserting nothing. Fixed, and the case is now pinned by
+`test_a_work_item_mid_flight_keeps_its_pointer_across_the_rename`, which writes the literal
+old filename.
+
+A second, smaller one the tests did catch: `WorkItemState.load` read `repos` with a list
+comprehension, so a state file carrying `"repos": "octo/app"` deserialized into eight
+one-character repositories. Now a non-list is *no declaration*, which is what every other
+absence in this key means.
 
 ### Round 1 findings
 

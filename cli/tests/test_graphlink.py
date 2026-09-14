@@ -741,14 +741,14 @@ class _GateRuntime(_FakeRuntime):
 
 
 def _pointer(monkeypatch, runtime):
-    """Make GraphState.load report the fake runtime's pointer."""
+    """Make WorkItemState.load report the fake runtime's pointer."""
 
     class _State:
         def __init__(self, node):
             self.current_node = node
 
     monkeypatch.setattr(
-        "the_loop.graph.state.GraphState.load",
+        "the_loop.graph.state.WorkItemState.load",
         staticmethod(lambda state_dir, item_id: _State(runtime.current)),
     )
 

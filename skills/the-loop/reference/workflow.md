@@ -176,7 +176,7 @@ So the decision is split three ways (decision-067):
   what makes it theirs. A checklist inside the execute comment wins over the boxes, for
   anyone who prefers to be explicit; executing with nothing unticked runs the full
   process. Only then does the loop walk any phase — and the selection is **frozen**: the
-  resolved graph is recorded in `graph-state.json` and in the work item's portable
+  resolved graph is recorded in `work-item-state.json` and in the work item's portable
   session record, so it stops being a live comment. Nothing to set up per repository, and
   no second, weaker permission model — which is why this is a comment and not a label
   (decision-067). An operator can make the same declaration from a shell with
@@ -292,7 +292,7 @@ repository *is* a contributing repository, the spec chain simply lands in its ow
 contribution PR and no second PR is opened.
 
 The answer is signed by the same authorized `the-loop execute` that freezes the phase
-selection, recorded in `graph-state.json` and in the portable record, and rendered into
+selection, recorded in `work-item-state.json` and in the portable record, and rendered into
 every assignment and prompt from then on.
 
 **The inner loop has no such choice.** A pull request's loop is iterated on that pull
@@ -316,7 +316,7 @@ Three rows, of which exactly one is ticked:
 
 The row that arrives already ticked is the operator's `routing.tmux.sessionPerPr` — the
 **default**, not the verdict. Leave them alone (or tick none, or tick two) and that default
-stands; tick exactly one and it is this work item's, frozen into `graph-state.json` and the
+stands; tick exactly one and it is this work item's, frozen into `work-item-state.json` and the
 portable record and read by the daemon per work item from then on. A three-repo migration
 and a one-line doc fix on the same machine can now differ, which is the whole point.
 
@@ -378,7 +378,7 @@ work item uses — the auto-execute label, an arming comment, phase selection, `
 execute` — with one difference: the arming keyword is **`the-loop contribute`**
 (configurable, `routing.control.keywords.contribute`), which both arms the item exactly
 as `start` would and selects this loop for its outer walk. The choice is recorded
-durably (the portable control record, then `graph-state.json`'s `loop` field), so every
+durably (the portable control record, then `work-item-state.json`'s `loop` field), so every
 later reader addresses the same graph.
 
 Two required nodes are the loop's structural invariants:
@@ -386,7 +386,7 @@ Two required nodes are the loop's structural invariants:
 - **`goal-definition`** — *no goal, no start.* The gate waits until an **authorized**
   user's comment states a `Goal:` line plus a `Success criteria:` bullet list (the
   `the-loop contribute` comment itself qualifies — the gate re-reads the thread). The
-  goal is frozen into graph state with provenance and confirmed in a comment; the-loop
+  goal is frozen into work-item state with provenance and confirmed in a comment; the-loop
   never invents, infers or completes one. The criteria are the intervention's
   **definition of done**. A goal that rode in with the arming comment releases the gate
   **at spawn** (issue-199): `the-loop contribute` alone carries the item to
@@ -432,7 +432,7 @@ a requester wants a **tactical task done and nothing else**: no spec chain, no p
 gates, no review chain. The arming keyword is **`the-loop do`** (configurable,
 `routing.control.keywords.do`), which arms the item exactly as `start` would and selects
 this loop; the choice is recorded durably (the portable control record, then
-`graph-state.json`'s `loop` field) like every other loop choice. Drive it with
+`work-item-state.json`'s `loop` field) like every other loop choice. Drive it with
 `/the-loop:do-task <id>`.
 
 **Why this is not `contribute`.** `pdlc-contribution-loop` is *defined* by two
@@ -462,7 +462,7 @@ Three rules govern working inside it:
 - **Author nothing.** No `requirements.md`, `design.md`, `testing-plan.md`, `tasks.md`,
   `contribution.md` or `evidence/` tree — none is gated here, and creating one anyway is
   the bloat the loop exists to avoid. The only file the-loop writes into the repository
-  for an ad-hoc item is `<specDir>/<id>/graph-state.json`, a cache. If the task turns out
+  for an ad-hoc item is `<specDir>/<id>/work-item-state.json`, a cache. If the task turns out
   to deserve the PDLC, say so on the thread and propose a **new** work item rather than
   quietly starting a spec chain inside this one.
 - **No phase selection, because there are no phases.** The issue-177/179 invariant — every
@@ -483,9 +483,9 @@ The fifth shipped graph, **`pdlc-review-loop`**, is walked when an authorized us
 the-loop to **review a change rather than make one**. The arming keyword is
 **`the-loop review`** (configurable, `routing.control.keywords.review`), which arms
 exactly as `start` would and selects this loop; typed on a **pull request** it binds the
-review to the pull request itself — control record, spawned session and graph state
+review to the pull request itself — control record, spawned session and work-item state
 alike — even when the PR links a ticket, because the subject of a review is the change.
-The choice is recorded durably (the portable control record, then `graph-state.json`'s
+The choice is recorded durably (the portable control record, then `work-item-state.json`'s
 `loop` field) like every other loop choice. Drive it with `/the-loop:review-pr <id>`.
 
 **Why this is not `contribute` or `do`.** Every other loop exists to change a
@@ -511,7 +511,7 @@ The walk is four nodes: `review-brief → review → follow-up → complete`, wi
   lists — at least one section, in one comment), idempotently, and not at all when the
   brief rode in on the arming comment (the gate re-reads the thread, because the
   control path consumes that comment). The newest **authorized**, non-self-authored
-  brief is frozen into graph state with provenance and confirmed in a comment; the-loop
+  brief is frozen into work-item state with provenance and confirmed in a comment; the-loop
   never invents or completes one.
 - **`review`** (agent, phase `needs-review`) — one round: answer **every** question,
   examine **every** angle, run **every** validation (or state plainly why one could
@@ -533,9 +533,9 @@ Two rules govern working inside it:
   commands to follow. A finding worth fixing is stated as a finding; the fix is a new
   work item somebody arms.
 - **A review is a guest.** Like a contribution, it never adopts the repository it
-  reviews in, and in an unadopted repository the spec tree (the graph-state cache) is
+  reviews in, and in an unadopted repository the spec tree (the work-item-state cache) is
   working state only, excluded from git. The only local file is
-  `<specDir>/<id>/graph-state.json` — never commit it from a review session.
+  `<specDir>/<id>/work-item-state.json` — never commit it from a review session.
 
 ## Link artifacts to the ticket (single source of truth)
 
@@ -564,7 +564,7 @@ copy of its contents. The checked-in file is the single source of truth.
   `design.md` §Security design) name the negative test proving the boundary holds,
   red→green like any other task (`reference/security.md`).
 - **Run tests at logical checkpoints** — self-checking as you go. Write no progress log:
-  the harness keeps the transcript, git keeps the commits, and `graph-state.json` keeps
+  the harness keeps the transcript, git keeps the commits, and `work-item-state.json` keeps
   the pointer (issue-365, decision-126).
 - Use the configured tooling (see `tooling.md`); same commands as CI.
 - Apply the **minimalism** ladder (see `minimalism.md`) to avoid generating bloat — least
@@ -747,7 +747,7 @@ signal instead of a firehose of approvals. Then move to `complete`.
 
 ## Resumability
 
-Because the specs and `graph-state.json` are checked in, the-loop can resume a work item
+Because the specs and `work-item-state.json` are checked in, the-loop can resume a work item
 exactly where it left off — read the state file's current node, the specs' `status` and
 `tasks.md`'s first unticked task, and continue. Context management (`context.md`) is this same property applied *within*
 a session: the checked-in artifacts are what make clearing the window affordable.

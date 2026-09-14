@@ -37,7 +37,7 @@ are at every other human gate:
   the harness cannot brief its own review. Fail closed: an empty
   ``authorizedUsers`` accepts no brief, ever.
 * **The reply produces a fact, never a destination.** The parsed brief is
-  frozen into graph state as a decision with provenance (the same mechanism
+  frozen into work-item state as a decision with provenance (the same mechanism
   that freezes the contribution goal) and echoed in a confirmation comment;
   the routing stays with the graph's one declared ``briefed`` edge. An
   injected "brief" cannot choose phases, name paths, or reach an argv — the
@@ -69,7 +69,7 @@ logger = logging.getLogger("the-loop.graph")
 #: is idempotent across redelivered spawns.
 BRIEF_REQUEST_MARKER = "<!-- the-loop:review-brief-request -->"
 
-#: Where the answered-ness of this gate is recorded in ``GraphState.decisions``.
+#: Where the answered-ness of this gate is recorded in ``WorkItemState.decisions``.
 DECISION_KEY = "review-brief"
 
 #: The three content sections a brief may carry, in the order the issue names
@@ -277,7 +277,7 @@ def _thread_kind(ctx: HookContext) -> str:
 def _state_pulls(ctx: HookContext) -> List[str]:
     """The pull requests the-loop's own state links to this work item.
 
-    The ``pr-loops/`` tree beside the outer graph state (issue-172/183) — the
+    The ``pr-loops/`` tree beside the outer work-item state (issue-172/183) — the
     JSON the loop generates for every PR that walked an inner loop, and the
     owner's "piggyback on that" (PR #280). Two layouts: ``pr-<n>/`` for the
     work item's own repository, ``<owner>__<repo>/pr-<n>/`` for a

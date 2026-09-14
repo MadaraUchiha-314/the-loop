@@ -40,7 +40,7 @@ from the_loop.graph.model import (
 )
 from the_loop.graph.registry import hook
 from the_loop.graph.runtime import Runtime, declare_skips
-from the_loop.graph.state import GraphState
+from the_loop.graph.state import WorkItemState
 
 WORK_ITEM = "issue-1"
 
@@ -132,7 +132,7 @@ def _spec_dir(repo):
 def _declare(repo, *nodes, via="label", token=""):
     """A declaration as the two channels record it — written through the state
     API, the way the snapshot and the verb do."""
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     for node in nodes:
         state.skips[node] = {
             "via": via,
@@ -309,7 +309,7 @@ def test_start_routes_through_declared_skips(runtime, repo):
     _declare(repo, "requirements", "approval", token="spec-chain")
     report = runtime.start(WORK_ITEM)
     assert report is not None
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.current_node == "tasks"
     assert state.nodes["requirements"].outcome == "skipped"
     assert state.nodes["approval"].outcome == "skipped"
@@ -323,7 +323,7 @@ def test_advance_routes_through_skips_after_a_satisfied_node(runtime, repo):
     runtime.start(WORK_ITEM)
     report = runtime.advance(WORK_ITEM)
     assert report.status == "pass"
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.current_node == "implementation"
     assert state.nodes["approval"].outcome == "skipped"
     assert state.nodes["tasks"].outcome == "skipped"
@@ -347,7 +347,7 @@ def test_advance_on_a_fresh_item_lands_past_declared_skips(runtime, repo):
     """The CLI-only path never calls start(); advance must route the same."""
     _declare(repo, "requirements", "approval", "tasks")
     report = runtime.advance(WORK_ITEM)
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert report.node == "implementation"
     assert state.nodes["requirements"].outcome == "skipped"
 
@@ -382,7 +382,7 @@ def test_a_forged_skip_never_routes_the_pointer(runtime, repo):
         "---\nstatus: approved\n---\n\n# R\n"
     )
     runtime.start(WORK_ITEM)
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.current_node == "requirements"
     assert state.nodes.get("security-review") is None or (
         state.nodes["security-review"].outcome != "skipped"
@@ -397,7 +397,7 @@ def test_implementation_gate_tolerates_tasks_md_skipped_and_absent(runtime, repo
     runtime.start(WORK_ITEM)
     report = runtime.advance(WORK_ITEM)
     assert report.status == "pass", report.messages
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.current_node == "security-review"
 
 
@@ -506,7 +506,7 @@ def test_the_gate_waits_until_an_authorized_reply_says_execute(
         WORK_ITEM, ref="github:o/r#1", event=_reply("looks fine")
     )
     assert report.status == "wait"
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.current_node == "phase-selection"
     assert state.skips == {}
 
@@ -519,7 +519,7 @@ def test_an_unauthorized_reply_never_selects(selecting, repo, fake_github):
         event=_reply("- [ ] requirements\nthe-loop execute", author="@drive-by"),
     )
     assert report.status == "wait"
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.skips == {}
 
 
@@ -534,7 +534,7 @@ def test_unticked_phases_become_declared_skips_and_the_loop_starts(
             "- [ ] requirements\n- [ ] approval\n- [x] tasks\n\nthe-loop execute"
         ),
     )
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert set(state.skips) == {"requirements", "approval"}
     assert state.skips["requirements"]["via"] == "selection"
     assert state.skips["requirements"]["by"] == "@owner"
@@ -548,7 +548,7 @@ def test_execute_with_no_checklist_runs_the_full_process(selecting, repo, fake_g
     """Fail closed: a reply that selects nothing removes nothing."""
     selecting.start(WORK_ITEM, ref="github:o/r#1")
     selecting.advance(WORK_ITEM, ref="github:o/r#1", event=_reply("the-loop execute"))
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.skips == {}
     assert state.current_node == "requirements"
 
@@ -562,7 +562,7 @@ def test_unticking_a_protected_phase_is_refused_and_said_so(
         ref="github:o/r#1",
         event=_reply("- [ ] implementation\n- [ ] tasks\nthe-loop execute"),
     )
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert set(state.skips) == {"tasks"}
     assert any("Refused" in p and "implementation" in p for p in fake_github.posted)
 
@@ -572,12 +572,12 @@ def test_a_selection_cannot_excuse_a_node_already_walked(selecting, repo, fake_g
     'a skip is a plan, not an amnesty' rule the CLI verb enforces."""
     selecting.start(WORK_ITEM, ref="github:o/r#1")
     selecting.advance(WORK_ITEM, ref="github:o/r#1", event=_reply("the-loop execute"))
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.current_node == "requirements"  # entered
     declare_skips(
         selecting, WORK_ITEM, ["requirements"], reason="too late", actor="@owner"
     )
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.skips == {}
 
 
@@ -589,7 +589,7 @@ def test_a_github_outage_leaves_the_gate_waiting_not_open(selecting, repo, monke
     selecting.start(WORK_ITEM, ref="github:o/r#1")
     report = selecting.advance(WORK_ITEM, ref="github:o/r#1")
     assert report.status == "wait"
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.current_node == "phase-selection"
     assert state.skips == {}
 
@@ -610,7 +610,7 @@ def test_ticking_in_place_is_the_selection(selecting, repo, fake_github):
         }
     ]
     selecting.advance(WORK_ITEM, ref="github:o/r#1", event=_reply("the-loop execute"))
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert set(state.skips) == {"requirements", "approval"}
     assert state.skips["requirements"]["by"] == "@owner"
     assert state.decisions["phase-selection"]["via"] == "checklist"
@@ -631,7 +631,7 @@ def test_a_checklist_in_the_reply_wins_over_the_boxes(selecting, repo, fake_gith
         ref="github:o/r#1",
         event=_reply("- [ ] tasks\n- [x] requirements\nthe-loop execute"),
     )
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert set(state.skips) == {"tasks"}
     assert state.decisions["phase-selection"]["via"] == "reply"
 
@@ -650,7 +650,7 @@ def test_the_selection_freezes_the_graph_and_publishes_it(selecting, repo, fake_
         ref="github:o/r#1",
         event=_reply("- [ ] requirements\nthe-loop execute"),
     )
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     frozen = state.decisions["phase-selection"]["graph"]
     by_id = {n["id"]: n for n in frozen["nodes"]}
     assert by_id["requirements"]["skipped"] is True
@@ -674,7 +674,7 @@ def test_the_surface_defaults_to_the_work_item(selecting, repo, fake_github):
     leaves the outer loop on the work item."""
     selecting.start(WORK_ITEM, ref="github:o/r#1")
     selecting.advance(WORK_ITEM, ref="github:o/r#1", event=_reply("the-loop execute"))
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.surface == "work-item"
     assert state.decisions["phase-selection"]["surface"] == "work-item"
     assert state.decisions["phase-selection"]["graph"]["surface"] == "work-item"
@@ -691,7 +691,7 @@ def test_ticking_the_surface_row_moves_the_outer_loop_to_a_pull_request(
         ref="github:o/r#1",
         event=_reply("- [x] outer-loop-on-pull-request\nthe-loop execute"),
     )
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.surface == "pull-request"
     assert "on a pull request" in fake_github.posted[-1]
 
@@ -708,7 +708,7 @@ def test_the_surface_row_is_never_read_as_a_phase(selecting, repo, fake_github):
             "- [ ] outer-loop-on-pull-request\n- [ ] requirements\nthe-loop execute"
         ),
     )
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert set(state.skips) == {"requirements"}
     assert state.surface == "work-item"
     assert (
@@ -788,7 +788,9 @@ def test_ticking_a_pr_session_row_freezes_that_mode(repo, fake_github):
         ref="github:o/r#1",
         event=_reply("- [x] pr-sessions-always\nthe-loop execute"),
     )
-    decision = GraphState.load(_spec_dir(repo), WORK_ITEM).decisions["phase-selection"]
+    decision = WorkItemState.load(_spec_dir(repo), WORK_ITEM).decisions[
+        "phase-selection"
+    ]
     assert decision["sessionPerPr"] == "always"
     assert decision["graph"]["sessionPerPr"] == "always"
     assert published[-1]["sessionPerPr"] == "always"
@@ -812,7 +814,9 @@ def test_an_unchosen_or_ambiguous_answer_keeps_the_configured_default(
     runtime = _selecting_with(repo, sessionPerPr="always")
     runtime.start(WORK_ITEM, ref="github:o/r#1")
     runtime.advance(WORK_ITEM, ref="github:o/r#1", event=_reply(reply))
-    decision = GraphState.load(_spec_dir(repo), WORK_ITEM).decisions["phase-selection"]
+    decision = WorkItemState.load(_spec_dir(repo), WORK_ITEM).decisions[
+        "phase-selection"
+    ]
     assert decision["sessionPerPr"] == "always"
 
 
@@ -828,7 +832,7 @@ def test_a_pr_session_row_is_never_read_as_a_phase(selecting, repo, fake_github)
             "- [ ] requirements\nthe-loop execute"
         ),
     )
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert set(state.skips) == {"requirements"}
     assert "pr-sessions" not in fake_github.posted[-1].split("Refused")[-1]
 
@@ -843,7 +847,9 @@ def test_a_token_outside_the_vocabulary_is_ignored_not_obeyed(
         ref="github:o/r#1",
         event=_reply("- [x] pr-sessions-sometimes\nthe-loop execute"),
     )
-    decision = GraphState.load(_spec_dir(repo), WORK_ITEM).decisions["phase-selection"]
+    decision = WorkItemState.load(_spec_dir(repo), WORK_ITEM).decisions[
+        "phase-selection"
+    ]
     assert decision["sessionPerPr"] == "cross-repository"
     assert "pr-sessions-sometimes" not in fake_github.posted[-1]
 
@@ -858,7 +864,8 @@ def test_an_unauthorized_ticker_cannot_freeze_a_mode(selecting, repo, fake_githu
     )
     assert report.status == "wait"
     assert (
-        "phase-selection" not in GraphState.load(_spec_dir(repo), WORK_ITEM).decisions
+        "phase-selection"
+        not in WorkItemState.load(_spec_dir(repo), WORK_ITEM).decisions
     )
 
 
@@ -874,7 +881,7 @@ def test_a_failing_frozen_graph_sink_never_gates_the_selection(
         WORK_ITEM, ref="github:o/r#1", event=_reply("the-loop execute")
     )
     assert report.status == "pass"
-    assert GraphState.load(_spec_dir(repo), WORK_ITEM).current_node == "requirements"
+    assert WorkItemState.load(_spec_dir(repo), WORK_ITEM).current_node == "requirements"
 
 
 def test_the_execute_keyword_is_operator_configurable(repo, fake_github):
@@ -893,7 +900,7 @@ def test_the_execute_keyword_is_operator_configurable(repo, fake_github):
         == "wait"
     )
     runtime.advance(WORK_ITEM, ref="github:o/r#1", event=_reply("loop go"))
-    assert GraphState.load(_spec_dir(repo), WORK_ITEM).current_node == "requirements"
+    assert WorkItemState.load(_spec_dir(repo), WORK_ITEM).current_node == "requirements"
 
 
 def test_an_answered_gate_stays_answered_for_check(selecting, repo, fake_github):
@@ -906,7 +913,7 @@ def test_an_answered_gate_stays_answered_for_check(selecting, repo, fake_github)
         ref="github:o/r#1",
         event=_reply("- [ ] requirements\nthe-loop execute"),
     )
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert "phase-selection" in state.decisions
 
     for recompute in (False, True):
@@ -953,7 +960,7 @@ def test_declare_skips_records_provenance_and_announces(runtime, repo, quiet_ann
     )
     assert result.declared == ["requirements", "approval", "tasks"]
     assert result.rejected == []
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.skips["approval"] == {
         "via": "cli",
         "token": "spec-chain",
@@ -977,7 +984,7 @@ def test_declare_skips_refuses_protected_and_unknown_tokens(
     )
     assert result.declared == ["tasks"]
     assert {r["token"] for r in result.rejected} == {"security-review", "nowhere"}
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert set(state.skips) == {"tasks"}
 
 
@@ -1001,7 +1008,7 @@ def test_declare_skips_refuses_a_node_already_entered_or_passed(
 
 def test_declared_skips_survive_a_state_round_trip(repo):
     state = _declare(repo, "requirements", via="cli")
-    reloaded = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    reloaded = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert reloaded.skips == state.skips
 
 
@@ -1069,7 +1076,7 @@ def test_declaring_every_phase_away_walks_the_item_to_its_terminal(repo):
     _declare(repo, *walked, via="cli", token="everything")
     report = runtime.start(WORK_ITEM)
 
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert report is not None and report.status == "pass", report
     assert state.current_node == "done"
     for node_id in walked:
@@ -1183,7 +1190,7 @@ def selecting_opt_in(repo):
 
 def _select(repo, *nodes, by="@owner"):
     """A selection as the gate records it — through the state API."""
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     for node in nodes:
         state.opt_ins[node] = {
             "via": "selection",
@@ -1292,7 +1299,7 @@ def test_an_unselected_opt_in_node_is_routed_around_with_no_declaration(opting, 
     opting.start(WORK_ITEM)
     report = opting.advance(WORK_ITEM)
     assert report.status == "pass"
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.skips == {}
     assert state.opt_ins == {}
     assert state.current_node == "approval"
@@ -1319,7 +1326,7 @@ def test_a_selected_opt_in_node_is_walked_and_gates_its_artifact(opting, repo):
     )
     opting.start(WORK_ITEM)
     opting.advance(WORK_ITEM)
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.current_node == "deep-review"  # walked, not routed around
     report = opting.advance(WORK_ITEM)
     assert report.node == "deep-review"
@@ -1332,9 +1339,9 @@ def test_a_forged_opt_in_on_a_node_that_is_not_opt_in_is_inert(opting, repo):
     """R1.7, abuse case 2 — the state file is agent-writable; every read is
     filtered through the compiled graph."""
     _select(repo, "approval", "security-review")
-    assert opting.selected(GraphState.load(_spec_dir(repo), WORK_ITEM), "approval") is (
-        False
-    )
+    assert opting.selected(
+        WorkItemState.load(_spec_dir(repo), WORK_ITEM), "approval"
+    ) is (False)
     report = opting.status(WORK_ITEM, recompute=True)
     for node_id in ("approval", "security-review"):
         node = next(n for n in report.nodes if n.node == node_id)
@@ -1344,7 +1351,7 @@ def test_a_forged_opt_in_on_a_node_that_is_not_opt_in_is_inert(opting, repo):
 def test_deleting_a_selection_reverts_to_not_selected_never_pass(opting, repo):
     """Abuse case 3 — removing the record removes a review, never a gate."""
     _select(repo, "deep-review")
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     state.opt_ins = {}
     state.save(_spec_dir(repo))
     node = next(
@@ -1358,7 +1365,7 @@ def test_deleting_a_selection_reverts_to_not_selected_never_pass(opting, repo):
 
 def test_selections_survive_a_state_round_trip(repo):
     _select(repo, "deep-review")
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.opt_ins["deep-review"]["by"] == "@owner"
     assert state.as_dict()["optIns"]["deep-review"]["via"] == "selection"
 
@@ -1386,7 +1393,7 @@ def test_ticking_an_opt_in_row_selects_it(selecting_opt_in, repo, fake_github):
         ref="github:o/r#1",
         event=_reply("- [x] requirements\n- [x] deep-review\n\nthe-loop execute"),
     )
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert set(state.opt_ins) == {"deep-review"}
     assert state.opt_ins["deep-review"]["by"] == "@owner"
     assert state.opt_ins["deep-review"]["via"] == "selection"
@@ -1404,7 +1411,7 @@ def test_leaving_an_opt_in_row_alone_does_not_select_it(
         ref="github:o/r#1",
         event=_reply("- [x] requirements\n- [ ] deep-review\n\nthe-loop execute"),
     )
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.opt_ins == {}
     assert "deep-review" not in state.skips  # not a declaration; nobody removed it
     assert state.current_node == "requirements"
@@ -1422,7 +1429,7 @@ def test_a_reply_that_never_mentions_an_opt_in_phase_does_not_select_it(
     selecting_opt_in.advance(
         WORK_ITEM, ref="github:o/r#1", event=_reply("the-loop execute")
     )
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.opt_ins == {}
     assert state.skips == {}
     assert state.current_node == "requirements"
@@ -1443,7 +1450,7 @@ def test_an_unauthorized_reply_never_selects_an_opt_in_phase(
         },
     )
     assert report.status == "wait"
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.opt_ins == {}
 
 
@@ -1457,7 +1464,7 @@ def test_the_frozen_graph_distinguishes_unasked_for_from_removed(
         ref="github:o/r#1",
         event=_reply("- [ ] requirements\n- [ ] deep-review\n\nthe-loop execute"),
     )
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     frozen = state.decisions["phase-selection"]["graph"]
     by_id = {n["id"]: n for n in frozen["nodes"]}
     assert by_id["deep-review"] == {
@@ -1479,7 +1486,7 @@ def test_a_selection_cannot_add_an_opt_in_node_already_walked(
     selecting_opt_in.advance(
         WORK_ITEM, ref="github:o/r#1", event=_reply("the-loop execute")
     )
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     state.record("deep-review").entered_at = "2026-08-10T00:00:00+00:00"
     state.decisions = {}
     state.save(_spec_dir(repo))
@@ -1488,4 +1495,4 @@ def test_a_selection_cannot_add_an_opt_in_node_already_walked(
         ref="github:o/r#1",
         event=_reply("- [x] deep-review\nthe-loop execute"),
     )
-    assert GraphState.load(_spec_dir(repo), WORK_ITEM).opt_ins == {}
+    assert WorkItemState.load(_spec_dir(repo), WORK_ITEM).opt_ins == {}

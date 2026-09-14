@@ -39,6 +39,9 @@ overrides: {}
 | T16 | Accessibility | n/a — no rendered UI | | |
 | T17 | Manual exploratory | n/a — the loop's own dogfooding of this work item is the exploratory pass: this spec directory carries the new `evidence/` artifacts and no execution log | | |
 | T18 | Repository gates | yes | the whole repository still passes what CI runs: ruff, ruff format, pyright, config validation, the full suite, and markdownlint over every `**/*.md` | `make check` |
+| T20 | Unit | yes | the state file is `work-item-state.json`; one written under the pre-rename name is read and re-saved under the current one, and the current name wins when both exist (R7.1, R7.2) | `uv run --project cli python -m pytest -q cli/tests/test_graph_state.py` |
+| T21 | Unit | yes | the repository rows are the instance's declared repositories, any number ticks, none is *no declaration*, and a tick naming anything else is dropped (R7.4, R3.1) | `uv run --project cli python -m pytest -q cli/tests/test_selection_choices.py` |
+| T22 | Security / abuse case | yes | a repository row can only ever yield a repository the operator declared — a path, a traversal, a command substitution and a shell fragment after a real name all resolve to nothing smuggled (R7.4) | `uv run --project cli python -m pytest -q cli/tests/test_selection_choices.py -k abuse` |
 | T19 | Documentation parity | yes | no shipped surface (graphs, hooks, templates, manifest, commands, skill, docs) names an execution log except where it is deliberately recorded as retired (A1) | `uv run --project cli python -m pytest -q cli/tests/test_writing_parity.py` + repository grep, T18 |
 
 ## Scenarios & requirement trace
@@ -57,6 +60,9 @@ overrides: {}
 | T8 | R5.3 | a work item carrying a legacy `execution-log.md` with every old section still blocks at `self-review` until `evidence/self-review.md` exists |
 | T9 | A7 | the three e2e scenarios' `artifacts/` carry `evidence/*.md`, not `execution-log.md` |
 | T15 | R2.2 | deleting a written proof re-blocks the node on the next run (`status --recompute` derives from artifacts) |
+| T20 | R7.1, R7.2 | `graph-state.json` on disk → the pointer is read, the next save writes `work-item-state.json`, and the old file is kept |
+| T21 | R7.4 | three declared repositories render three rows; two ticked freeze in declaration order; none ticked is `[]` |
+| T22 | R7.4 | `repo-octo/undeclared`, `repo-../../etc`, `repo-$(whoami)/app`, `repo-/etc/passwd` → dropped; `repo-octo/app;rm -rf /` → `octo/app` |
 
 ## Verification environment
 
@@ -91,6 +97,9 @@ above are reproducible.
 | T15 | the security gates still block on a missing proof | `… -k security` | pass | see `evidence/security-review.md` |
 | T18 | the whole repository passes what CI runs | `make lint format-check typecheck validate test` | pass | ruff clean; markdownlint 1131 files, 0 errors; pyright 0 errors; **3609 passed, 1 skipped** |
 | T19 | no shipped surface names an execution log except where it is deliberately recorded as retired | `… -q cli/tests/test_writing_parity.py` + repository grep | pass | the surviving hits are three "…until issue-365 retired it" notes, `upgrade-the-loop`'s operator guidance, the sidebar entry keeping old logs browsable, and this spec chain |
+| T20 | the rename, and the pointer surviving it | `… -q cli/tests/test_graph_state.py` | pass (14) | five new cases; the legacy-name read is the one that matters |
+| T21 | the repository rows | `… -q cli/tests/test_selection_choices.py` | pass (32) | nine new cases |
+| T22 | a tick can only name a declared repository | `… -q cli/tests/test_selection_choices.py -k abuse` | pass | `repo-octo/app;rm -rf /` resolves to `octo/app`, nothing smuggled |
 
 Rows T11–T14, T16 and T17 were declared `n/a` with their reasons in the matrix above and
 were not executed.

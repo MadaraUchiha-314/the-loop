@@ -1,7 +1,7 @@
 # the-loop's own gate, running against the-loop (issue-109, task 35).
 #
-# `--recompute` is deliberate: it ignores graph state entirely and derives
-# completion from the checked-in artifacts, so a work item whose graph-state
+# `--recompute` is deliberate: it ignores work-item state entirely and derives
+# completion from the checked-in artifacts, so a work item whose work-item-state
 # claims a node is complete that the artifacts contradict fails here. Graph
 # state is a cache; this job is where that is enforced.
 name: the-loop gate

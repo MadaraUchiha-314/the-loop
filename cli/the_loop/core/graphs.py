@@ -54,10 +54,10 @@ def _recorded_loop(path: Path, work_item: str, spec_root: str) -> str:
     fact travels with the checkout.
     """
     from ..graph.model import resolve_outer_loop
-    from ..graph.state import GraphState
+    from ..graph.state import WorkItemState
 
     try:
-        state = GraphState.load(path / spec_root / work_item, work_item)
+        state = WorkItemState.load(path / spec_root / work_item, work_item)
         recorded = str(getattr(state, "loop", "") or "")
     except Exception:  # noqa: BLE001 — an unreadable state reads as the default
         return ""

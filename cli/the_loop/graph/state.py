@@ -1,8 +1,14 @@
-"""Graph state — a cache, never an authority.
+"""Work-item state — a cache, never an authority.
 
-``docs/specs/<id>/graph-state.json`` records where a work item is. It is checked
-in, so it survives a machine change, a session change and a multi-day human
-review, and it is reviewable in a PR diff.
+``docs/specs/<id>/work-item-state.json`` records where a work item is. It is
+checked in, so it survives a machine change, a session change and a multi-day
+human review, and it is reviewable in a PR diff.
+
+It was ``graph-state.json`` until issue-365. The name was too narrow for what the
+file had become: the pointer and the node records are the graph's, but the
+surface, the session, the PR-session mode, the model, the effort and (since the
+same issue) the repositories this work item contributes to are facts about the
+**work item**, true whichever loop it walks.
 
 But it is explicitly **not** the source of truth (issue-109, R8.4): the agent can
 write this file, and the agent is the subject of the gates it records. So
@@ -26,22 +32,37 @@ from typing import Any, Dict, Iterator, List, Optional
 
 logger = logging.getLogger("the-loop.graph")
 
-__all__ = ["GraphState", "STATE_FILENAME", "StateLockBusy", "state_lock", "utc_now"]
+__all__ = [
+    "LEGACY_STATE_FILENAME",
+    "STATE_FILENAME",
+    "StateLockBusy",
+    "WorkItemState",
+    "state_lock",
+    "utc_now",
+]
 
-STATE_FILENAME = "graph-state.json"
-LOCK_FILENAME = "graph-state.lock"
+STATE_FILENAME = "work-item-state.json"
+LOCK_FILENAME = "work-item-state.lock"
+
+#: What the file was called until issue-365. **Read** when the current name is
+#: absent, and never written: a work item already in flight keeps its pointer
+#: across the upgrade with no migration step, and its next save writes the
+#: current name beside the old one. Readers that glob for inner-loop states
+#: accept both for the same reason.
+LEGACY_STATE_FILENAME = "graph-state.json"
+
 STATE_VERSION = 1
 
 
 class StateLockBusy(RuntimeError):
-    """Another writer holds the graph-state lock (issue-148)."""
+    """Another writer holds the work-item-state lock (issue-148)."""
 
 
 @contextlib.contextmanager
 def state_lock(spec_dir: Path, timeout: float = 2.0) -> Iterator[None]:
-    """Advisory lock serialising graph-state writers (issue-148, D-concurrency).
+    """Advisory lock serialising state writers (issue-148, D-concurrency).
 
-    `graph-state.json` has two writers now — the daemon's GraphLink and the
+    `work-item-state.json` has two writers now — the daemon's GraphLink and the
     session's `the-loop graph complete` — so the load→mutate→save window is
     held under an `fcntl.flock` on a sibling lock file. Stdlib only; where
     `fcntl` does not exist (non-POSIX) this degrades to no locking, which is
@@ -73,6 +94,13 @@ def state_lock(spec_dir: Path, timeout: float = 2.0) -> Iterator[None]:
             yield
         finally:
             fcntl.flock(fh, fcntl.LOCK_UN)
+
+
+def _string_list(raw: Any) -> List[str]:
+    """Non-empty strings from a list, or ``[]`` for anything that is not one."""
+    if not isinstance(raw, (list, tuple)):
+        return []
+    return [str(entry).strip() for entry in raw if str(entry).strip()]
 
 
 def utc_now() -> str:
@@ -111,7 +139,7 @@ class NodeRecord:
 
 
 @dataclass
-class GraphState:
+class WorkItemState:
     work_item: str
     current_node: str = ""
     nodes: Dict[str, NodeRecord] = field(default_factory=dict)
@@ -142,6 +170,17 @@ class GraphState:
     #: is a recorded fact rather than a live comment. Additive: absent in every
     #: pre-issue-183 state file.
     surface: str = ""
+    #: The CONTRIBUTING repositories this work item raises pull requests in
+    #: (issue-183), ticked by an authorized human at `phase-selection` and frozen
+    #: by the same signed reply as every other per-work-item choice (issue-365,
+    #: decision-127). `await-inner-loops` holds `implementation` until each of
+    #: them has an inner loop AND every started loop has finished. An empty list
+    #: is **no declaration**, never an empty one — the gate then behaves exactly
+    #: as it did before the key existed. It lived in an artifact's front matter
+    #: until issue-365; an artifact is editable by anyone who can edit the file,
+    #: and this input decides which repositories an unattended agent opens pull
+    #: requests in.
+    repos: List[str] = field(default_factory=list)
     #: Which shipped loop this state walks (issue-185): recorded once by
     #: ``Runtime.start`` from the compiled graph's own name, so a contribution
     #: item is addressed by the right graph on every later read. Additive:
@@ -158,12 +197,26 @@ class GraphState:
     def path_for(spec_dir: Path) -> Path:
         return spec_dir / STATE_FILENAME
 
+    @staticmethod
+    def existing_path(spec_dir: Path) -> Optional[Path]:
+        """The state file to READ: the current name, else the pre-issue-365 one.
+
+        Present-name-wins is the whole rule. A work item that has saved since the
+        rename has both files only if somebody kept the old one, and the current
+        name is the one every writer since the rename has touched.
+        """
+        for name in (STATE_FILENAME, LEGACY_STATE_FILENAME):
+            candidate = spec_dir / name
+            if candidate.is_file():
+                return candidate
+        return None
+
     @classmethod
-    def load(cls, spec_dir: Path, work_item: str) -> "GraphState":
+    def load(cls, spec_dir: Path, work_item: str) -> "WorkItemState":
         """Load, or return a fresh state. A corrupt file is **kept**, not deleted
         (R8.3) — it may be the only record of what happened."""
-        path = cls.path_for(spec_dir)
-        if not path.is_file():
+        path = cls.existing_path(spec_dir)
+        if path is None:
             return cls(work_item=work_item)
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
@@ -202,6 +255,10 @@ class GraphState:
                 if isinstance(v, dict)
             },
             surface=str(data.get("surface") or ""),
+            # A list, or nothing at all. A bare string is not half-read into
+            # eight one-character repositories — the shape of `repositories`
+            # itself refuses that, and a non-list here is *no declaration*.
+            repos=_string_list(data.get("repos")),
             loop=str(data.get("loop") or ""),
             version=int(data.get("version", STATE_VERSION)),
         )
@@ -211,7 +268,7 @@ class GraphState:
         spec_dir.mkdir(parents=True, exist_ok=True)
         path = self.path_for(spec_dir)
         payload = json.dumps(self.as_dict(), indent=2, sort_keys=False) + "\n"
-        fd, tmp = tempfile.mkstemp(dir=str(spec_dir), prefix=".graph-state-")
+        fd, tmp = tempfile.mkstemp(dir=str(spec_dir), prefix=".work-item-state-")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 fh.write(payload)
@@ -235,6 +292,7 @@ class GraphState:
             "skips": self.skips,
             "optIns": self.opt_ins,
             "surface": self.surface,
+            "repos": self.repos,
             "loop": self.loop,
         }
 

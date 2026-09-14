@@ -38,7 +38,7 @@ cheap:
 - `tasks.md` checkmarks — exactly which tasks are done vs. outstanding, and therefore
   **what is next**: the first unticked task. This is the resume anchor a window reads
   first, together with the pointer below.
-- `graph-state.json` — the current node, its attempts, the declared skips and any
+- `work-item-state.json` — the current node, its attempts, the declared skips and any
   block: where in the state machine the work item actually is.
 - The phase label on the ticket — the same fact, coarse, where a human sees it.
 - Code, tests and commits — the work itself, on disk and in git.
@@ -61,10 +61,10 @@ of:
 **Write no prose checkpoint.** the-loop kept an append-only execution log for this until
 issue-365 (decision-126): every fact in it — what was done, what is next, where the
 pointer stands — is already in the harness's transcript, the commits, the checkmarks and
-`graph-state.json`, and generating it again cost tokens on every node of every work item.
+`work-item-state.json`, and generating it again cost tokens on every node of every work item.
 
 After the checkpoint, apply the reset the boundary calls for (below). After a clear,
-re-enter through the artifacts: read `graph-state.json` for the current node and
+re-enter through the artifacts: read `work-item-state.json` for the current node and
 `tasks.md` for the first unticked task, then only the spec files that task actually
 needs — `tasks.md` names its requirements, so late tasks rarely need the full
 `requirements.md` re-read.

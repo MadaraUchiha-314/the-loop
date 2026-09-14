@@ -26,7 +26,7 @@ Run the same flow one step at a time:
 | `/the-loop:execute-tasks <id>` | Implement the task DAG; verify against the testing plan; self-check; self/critic-review; present evidence. |
 | `/the-loop:verify-work <id>` | Execute the testing plan after implementation: run the planned activities, record results, commit the evidence. |
 | `/the-loop:finish-tasks <id>` | Cleanup after all tasks complete (close the ticket; extensible). |
-| `/the-loop:work-status <id>` | Read-only status from the specs, task checkmarks, graph state and the gate records under `evidence/`. |
+| `/the-loop:work-status <id>` | Read-only status from the specs, task checkmarks, work-item state and the gate records under `evidence/`. |
 
 ## Loop-specific commands
 

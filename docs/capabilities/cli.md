@@ -99,7 +99,7 @@ self-learning/ML capabilities.
   emitting nothing. The operator SHALL be warned when the receiver is running (it can write
   poll state back) and when `control.requireStartCommand` is false (a first-sight item may
   re-spawn on the next poll cycle) — warnings, not refusals. Nothing in the **repository**
-  is touched: `docs/specs/<id>/graph-state.json` is checked in and re-derived from the
+  is touched: `docs/specs/<id>/work-item-state.json` is checked in and re-derived from the
   artifacts.
 - Everything the CLI **generates** SHALL live under one configured root
   (`state.root`, default `.the-loop`, issue-106), **resolved to an absolute path against
@@ -179,7 +179,7 @@ self-learning/ML capabilities.
   checked-in artifacts and report what is unmet (`--format table|json`). It SHALL be
   **pure** — no network, no subprocess, no mutation — which is what lets the same code run
   on every harness turn *and* in CI, so the gate is the runtime rather than a
-  reimplementation of it. `--recompute` ignores stored graph state and derives the verdict
+  reimplementation of it. `--recompute` ignores stored work-item state and derives the verdict
   from the artifacts alone.
 - `the-loop graph show|hooks|status|advance|run|force` SHALL inspect and drive the process
   graph (see [process-graph](process-graph.md)). `hooks` reports the shipped hooks and the

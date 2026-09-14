@@ -69,7 +69,7 @@ the SVG (which embeds the scene) and the `.excalidraw` source under `docs/assets
 on excalidraw.com to edit.*
 
 A work item's position in the outer loop is tracked on the ticket by a `loop:<phase>`
-label, with the fine detail in its `graph-state.json`:
+label, with the fine detail in its `work-item-state.json`:
 
 ```text
 not-started → brainstorming (optional) → requirements-definition → design

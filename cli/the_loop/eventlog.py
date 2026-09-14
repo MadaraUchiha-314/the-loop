@@ -836,7 +836,7 @@ EVENT_TYPES: Dict[str, str] = {
     "graph.frozen_publish_failed": (
         "The frozen graph could not be written to the portable session record "
         "(work_item, error). Best-effort: the selection itself still stands, "
-        "and graph-state.json keeps the authoritative copy. issue-177."
+        "and work-item-state.json keeps the authoritative copy. issue-177."
     ),
     "graph.node_skipped": (
         "The pointer routed around a declared-skipped node along its "

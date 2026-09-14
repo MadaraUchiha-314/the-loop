@@ -54,7 +54,7 @@ PDLC_ADHOC_LOOP = "pdlc-adhoc-loop"
 PDLC_REVIEW_LOOP = "pdlc-review-loop"
 
 #: Every loop name :func:`load_graph` accepts. The membership check is a
-#: security seam, not bookkeeping: `graph-state.json` is agent-writable and its
+#: security seam, not bookkeeping: `work-item-state.json` is agent-writable and its
 #: `loop` field feeds graph selection (issue-185), so a reader resolving that
 #: field must accept only these names and fall back to the default otherwise.
 SHIPPED_LOOPS = (
@@ -69,7 +69,7 @@ SHIPPED_LOOPS = (
 #: inner one, which is addressed by pull-request number and keeps its own state
 #: layout (``pr-loops/…``) rather than being named. Membership here is what
 #: :func:`resolve_outer_loop` answers, and every reader of the agent-writable
-#: ``GraphState.loop`` goes through it.
+#: ``WorkItemState.loop`` goes through it.
 OUTER_PATH_LOOPS = (
     PDLC_WORK_ITEM_LOOP,
     PDLC_CONTRIBUTION_LOOP,
@@ -139,7 +139,7 @@ def resolve_outer_loop(name: str) -> str:
 
     The one place that decides whether a recorded loop name may choose a graph.
     It exists because the value routinely arrives from somewhere the-loop does
-    not control — ``graph-state.json`` is agent-writable, and a control record
+    not control — ``work-item-state.json`` is agent-writable, and a control record
     is written from a comment — so the check must fail closed and must not be
     re-implemented per reader (it was, three times, before issue-225 added a
     fourth loop and made the copies disagree about what "not the default" means).

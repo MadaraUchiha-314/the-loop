@@ -193,7 +193,10 @@ command reconciles them.
    learnings-tree case again, so it is deliberately not in `manifest.deprecated` either.
    Say what replaced it, because that is what they actually need: each review-chain gate
    now reads one record of its own under `docs/specs/<id>/evidence/`, and the multi-repo
-   `repos:` declaration moved to `tasks.md`'s front matter. A work item **in flight** at
+   `repos:` declaration is ticked at `phase-selection` and frozen into
+   `work-item-state.json` (issue-365, decision-127), which is `graph-state.json`
+   renamed — read under the old name, written under the new one, so nothing needs
+   migrating and no file is deleted. A work item **in flight** at
    upgrade time keeps walking — its next gate blocks on a missing `evidence/<file>.md`
    and the message names the file to write.
 

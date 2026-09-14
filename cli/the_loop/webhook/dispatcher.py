@@ -2340,7 +2340,7 @@ class Dispatcher:
         endpoint = self._endpoint_for(session, routed)
         inner = endpoint is not session
 
-        # Graph state is resolved BEFORE anything is rendered or delivered
+        # Work-item state is resolved BEFORE anything is rendered or delivered
         # (issue-148, R3.1) — and an item parked at a human gate has its gate
         # classify the event FIRST (D4), so approval and reaction cannot race.
         # Both reads/advances are best-effort: a graph fault delivers with the
@@ -2828,7 +2828,7 @@ class Dispatcher:
 
         The spawned endpoint enters its own **inner loop** (`pdlc-pr-loop`,
         issue-172): state under the work item's `pr-loops/pr-<n>/`, never the
-        outer `graph-state.json` — so a PR walks its component-scoped subset of
+        outer `work-item-state.json` — so a PR walks its component-scoped subset of
         the process while the work item's own pointer is untouched until the
         `await-inner-loops` seam reads the inner states back.
 

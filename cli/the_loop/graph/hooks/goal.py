@@ -24,7 +24,7 @@ are at every other human gate:
   the harness cannot answer its own gate. Fail closed: an empty
   ``authorizedUsers`` accepts no goal, ever.
 * **The reply produces a fact, never a destination.** The parsed goal is
-  frozen into graph state as a decision with provenance (the same mechanism
+  frozen into work-item state as a decision with provenance (the same mechanism
   that freezes the phase selection) and echoed in a confirmation comment; the
   routing stays with the graph's one declared ``defined`` edge. An injected
   "goal" cannot choose phases, name paths, or reach an argv.
@@ -53,7 +53,7 @@ logger = logging.getLogger("the-loop.graph")
 #: is idempotent across redelivered spawns.
 GOAL_REQUEST_MARKER = "<!-- the-loop:goal-request -->"
 
-#: Where the answered-ness of this gate is recorded in ``GraphState.decisions``.
+#: Where the answered-ness of this gate is recorded in ``WorkItemState.decisions``.
 DECISION_KEY = "goal-definition"
 
 #: `Goal: <text>` — bold/heading decoration tolerated (`**Goal:**` wraps the

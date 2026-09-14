@@ -13,7 +13,7 @@ import pytest
 from the_loop.graph import hooks  # noqa: F401 — registers the shipped hooks
 from the_loop.graph.model import compile_graph
 from the_loop.graph.runtime import Runtime
-from the_loop.graph.state import GraphState, StateLockBusy, state_lock
+from the_loop.graph.state import WorkItemState, StateLockBusy, state_lock
 from the_loop.graphlink import (
     GraphContext,
     GraphLink,
@@ -73,14 +73,14 @@ def test_a_claim_on_a_satisfied_node_advances(runtime, repo):
     result = runtime.complete("issue-1")
     assert result["moved"] is True
     assert result["currentNode"] == "gate"
-    assert GraphState.load(_spec(repo), "issue-1").current_node == "gate"
+    assert WorkItemState.load(_spec(repo), "issue-1").current_node == "gate"
 
 
 def test_a_claim_is_recorded_in_the_completions_ledger(runtime, repo):
     _write_design(repo)
     runtime.start("issue-1")
     runtime.complete("issue-1", actor="sess-42")
-    ledger = GraphState.load(_spec(repo), "issue-1").completions
+    ledger = WorkItemState.load(_spec(repo), "issue-1").completions
     assert "design" in ledger and ledger["design"]["by"] == "sess-42"
 
 
@@ -91,7 +91,7 @@ def test_a_claim_for_unfinished_work_moves_nothing(runtime, repo):
     runtime.start("issue-1")
     result = runtime.complete("issue-1")
     assert result["moved"] is False and result["status"] == "block"
-    assert GraphState.load(_spec(repo), "issue-1").current_node == "design"
+    assert WorkItemState.load(_spec(repo), "issue-1").current_node == "design"
 
 
 def test_a_claim_before_the_graph_was_entered_is_refused(runtime, repo):
@@ -203,9 +203,9 @@ def test_a_blocked_item_carries_the_blocking_message(runtime, repo):
 def test_context_is_read_only(runtime, repo):
     _write_design(repo)
     runtime.start("issue-1")
-    before = GraphState.load(_spec(repo), "issue-1").as_dict()
+    before = WorkItemState.load(_spec(repo), "issue-1").as_dict()
     _link(repo, runtime).context(REF, str(repo))
-    assert GraphState.load(_spec(repo), "issue-1").as_dict() == before
+    assert WorkItemState.load(_spec(repo), "issue-1").as_dict() == before
 
 
 # -- the $graph_context render ----------------------------------------------------
@@ -288,7 +288,7 @@ def test_the_render_carries_a_gate_verdict():
 def test_on_spawn_records_the_session_binding(runtime, repo):
     _write_design(repo)
     _link(repo, runtime).on_spawn(REF, str(repo), session_id="s-9", runner="tmux")
-    bound = GraphState.load(_spec(repo), "issue-1").session
+    bound = WorkItemState.load(_spec(repo), "issue-1").session
     assert bound == {"id": "s-9", "runner": "tmux", "alive": True}
 
 
@@ -300,7 +300,7 @@ def test_a_spawn_never_evaluates_an_agent_start_node(runtime, repo):
     work that has not started. Here `design.md` is deliberately absent.
     """
     _link(repo, runtime).on_spawn(REF, str(repo), session_id="s-1", runner="tmux")
-    state = GraphState.load(_spec(repo), "issue-1")
+    state = WorkItemState.load(_spec(repo), "issue-1")
     assert state.current_node == "design" and state.parked is None
     assert state.nodes["design"].attempts == 1 and not state.nodes["design"].last_block
 
@@ -310,7 +310,7 @@ def test_on_close_marks_the_binding_dead(runtime, repo):
     link = _link(repo, runtime)
     link.on_spawn(REF, str(repo), session_id="s-9", runner="tmux")
     link.on_close(REF, str(repo))
-    bound = GraphState.load(_spec(repo), "issue-1").session
+    bound = WorkItemState.load(_spec(repo), "issue-1").session
     assert bound is not None and bound["alive"] is False
 
 

@@ -21,7 +21,7 @@ from .chain import ChainOutcome, run_chain
 from .contract import BLOCK, PASS, SKIP, WAIT, HookContext, WorkItem
 from .model import Graph, artifact_names, load_graph
 from .refs import derive_ref
-from .state import GraphState, StateLockBusy, state_lock, utc_now
+from .state import WorkItemState, StateLockBusy, state_lock, utc_now
 
 logger = logging.getLogger("the-loop.graph")
 
@@ -48,7 +48,7 @@ def _exclude_spec_root(repo: Path, spec_root: str) -> str:
 
     A contribution can join a repository that never adopted the-loop (issue-185,
     PR #187 review). Its working checkout still needs the spec tree —
-    ``graph-state.json``, ``tasks.md``, ``contribution.md`` are how the
+    ``work-item-state.json``, ``tasks.md``, ``contribution.md`` are how the
     runtime and its gates work at all — but none of that may reach the
     repository's history: the contribution PR carries only the intervention.
     Rather than trusting every session to remember not to ``git add`` it, the
@@ -216,7 +216,7 @@ class Runtime:
         self.graph = graph or load_graph(repo=self.repo)
         self.spec_root = spec_root
         self.config = dict(config or {})
-        # Where this runtime's graph-state lives, RELATIVE to the work item's
+        # Where this runtime's work-item-state lives, RELATIVE to the work item's
         # spec directory (issue-172). "" is the outer loop's state beside the
         # artifacts; an inner loop passes "pr-loops/pr-<n>" so each pull
         # request's pdlc-pr-loop keeps its own pointer while every artifact
@@ -229,7 +229,7 @@ class Runtime:
         return self.repo / self.spec_root / work_item_id
 
     def state_dir(self, item: WorkItem) -> Path:
-        """Where this runtime's graph state lives for ``item``.
+        """Where this runtime's work-item state lives for ``item``.
 
         The artifacts and the state deliberately split here: hooks resolve
         against ``item.spec_dir`` (the shared spec chain), state against this.
@@ -291,7 +291,7 @@ class Runtime:
         )
 
     def resolve_session(
-        self, node, state: "GraphState"
+        self, node, state: "WorkItemState"
     ) -> Tuple[Optional[Dict[str, Any]], str]:
         """The session a node runs in, and how it was arrived at (R7.3, R7.4).
 
@@ -360,7 +360,7 @@ class Runtime:
                 error=error,
             )
 
-    def _surface(self, state: "GraphState") -> str:
+    def _surface(self, state: "WorkItemState") -> str:
         """This work item's collaboration surface, as frozen at selection.
 
         Read from the state rather than from any config (issue-183, owner's call
@@ -372,7 +372,7 @@ class Runtime:
 
     # -- declared skips (issue-177) --------------------------------------------
 
-    def declared_skips(self, state: "GraphState") -> Dict[str, Dict[str, Any]]:
+    def declared_skips(self, state: "WorkItemState") -> Dict[str, Dict[str, Any]]:
         """The declarations the runtime will honour — the ONE defensive read.
 
         ``state.skips`` is agent-writable, like everything in the state file,
@@ -399,7 +399,7 @@ class Runtime:
                 out[node.id] = {"via": NOT_SELECTED}
         return out
 
-    def selected(self, state: "GraphState", node_id: str) -> bool:
+    def selected(self, state: "WorkItemState", node_id: str) -> bool:
         """Did a human select this opt-in node (issue-188)?
 
         The mirror of :meth:`declared_skips`' filter, and defensive for the same
@@ -413,7 +413,7 @@ class Runtime:
             return False
         return isinstance((state.opt_ins or {}).get(node_id), Mapping)
 
-    def invalid_skips(self, state: "GraphState") -> List[str]:
+    def invalid_skips(self, state: "WorkItemState") -> List[str]:
         """Declared node ids the graph refuses — surfaced, never honoured."""
         valid = self.declared_skips(state)
         return [n for n in (state.skips or {}) if n not in valid]
@@ -431,7 +431,7 @@ class Runtime:
         return frozenset(names)
 
     def _record_selected_skips(
-        self, state: "GraphState", item: WorkItem, outcome: ChainOutcome
+        self, state: "WorkItemState", item: WorkItem, outcome: ChainOutcome
     ) -> bool:
         """Record the skips a passing chain declared (issue-177).
 
@@ -466,11 +466,24 @@ class Runtime:
                     # one human act, one record (issue-183).
                     record["surface"] = chosen
                     state.surface = chosen
+                picked = [
+                    str(r).strip()
+                    for r in (result.data.get("repos") or [])
+                    if str(r).strip()
+                ]
+                if picked:
+                    # Which repositories this work item raises pull requests in
+                    # (issue-365, decision-127) — the fifth thing the one signed
+                    # reply freezes, and the only one `await-inner-loops` reads
+                    # back off the state file. Empty is not written: it is *no
+                    # declaration*, which is the state's own default.
+                    record["repos"] = picked
+                    state.repos = picked
                 per_pr = str(result.data.get("sessionPerPr") or "")
                 if per_pr:
                     # How many sessions this work item's pull requests get
                     # (issue-260) — the third thing the one signed reply freezes.
-                    # No `GraphState` field of its own, unlike `surface`: nothing
+                    # No `WorkItemState` field of its own, unlike `surface`: nothing
                     # here reads it back, and the reader that does is the daemon,
                     # through the frozen graph the sink below publishes.
                     record["sessionPerPr"] = per_pr
@@ -546,7 +559,7 @@ class Runtime:
         Same shape as the assignment channel (issue-172): the **daemon** injects
         a callable, because the registry is the daemon's and the runtime is
         repo-scoped. On the CLI path there is no sink and the frozen graph lives
-        in `graph-state.json` alone, which is checked in and reviewable anyway.
+        in `work-item-state.json` alone, which is checked in and reviewable anyway.
         Best-effort: a failed publish never gates the selection.
         """
         sink = self.config.get("frozenGraphSink")
@@ -567,7 +580,7 @@ class Runtime:
 
     def _route_skips(
         self,
-        state: "GraphState",
+        state: "WorkItemState",
         item: WorkItem,
         node_id: str,
         skips: Mapping[str, Any],
@@ -645,12 +658,12 @@ class Runtime:
     def status(self, work_item_id: str, recompute: bool = False) -> StatusReport:
         """Every node's verdict, in declaration order.
 
-        ``recompute`` ignores graph state entirely and derives completion from
+        ``recompute`` ignores work-item state entirely and derives completion from
         the artifacts alone (R8.4) — this is what CI uses, and it is why a
         tampered or optimistic state file cannot survive review.
         """
         item = self.work_item(work_item_id)
-        state = GraphState.load(self.state_dir(item), work_item_id)
+        state = WorkItemState.load(self.state_dir(item), work_item_id)
         # Declared skips are honoured in BOTH modes (issue-177): a declaration
         # is a recorded human input with an off-repo audit trail, not the state
         # file scoring itself — while an invalid declaration is honoured in
@@ -681,7 +694,7 @@ class Runtime:
             messages = [m.render() for m in outcome.messages]
             if node.id in refused:
                 messages.append(
-                    "graph state declares a skip on this node, which is not "
+                    "work-item state declares a skip on this node, which is not "
                     "skippable — the declaration is refused and has no effect"
                 )
             reports.append(
@@ -735,7 +748,7 @@ class Runtime:
         left untouched, so a redelivered spawn can never rewind it.
         """
         item = self.work_item(work_item_id, ref)
-        state = GraphState.load(self.state_dir(item), work_item_id)
+        state = WorkItemState.load(self.state_dir(item), work_item_id)
         if state.current_node:
             return None
 
@@ -818,7 +831,7 @@ class Runtime:
             )
             return None
         item = self.work_item(work_item_id, ref)
-        state = GraphState.load(self.state_dir(item), work_item_id)
+        state = WorkItemState.load(self.state_dir(item), work_item_id)
         if not state.current_node:
             return None  # never entered the graph: there is no walk to end
         if state.current_node == CLEANUP_NODE:
@@ -868,7 +881,7 @@ class Runtime:
         Claims name the node they are about (R1.4/R1.5): a replayed claim for a
         node the pointer has already left is a recorded no-op, and a claim for a
         node that is neither current nor past is refused naming the current one.
-        The whole load→evaluate→save window runs under the graph-state lock —
+        The whole load→evaluate→save window runs under the work-item-state lock —
         this verb is the second writer beside the daemon's GraphLink.
         """
         item = self.work_item(work_item_id, ref)
@@ -882,14 +895,14 @@ class Runtime:
                 "outcome": "",
                 "moved": False,
                 "currentNode": "",
-                "messages": ["another the-loop process holds the graph-state lock"],
+                "messages": ["another the-loop process holds the work-item-state lock"],
                 "reason": "busy",
             }
 
     def _complete_locked(
         self, item: WorkItem, work_item_id: str, ref: str, node: str, actor: str
     ) -> Dict[str, Any]:
-        state = GraphState.load(self.state_dir(item), work_item_id)
+        state = WorkItemState.load(self.state_dir(item), work_item_id)
         if not state.current_node:
             return {
                 "node": node or "",
@@ -927,7 +940,7 @@ class Runtime:
         state.completions[claimed] = {"at": utc_now(), "by": actor or "cli"}
         state.save(self.state_dir(item))
         report = self.advance(work_item_id, ref=ref)
-        after = GraphState.load(self.state_dir(item), work_item_id).current_node
+        after = WorkItemState.load(self.state_dir(item), work_item_id).current_node
         return {
             "node": claimed,
             "status": report.status,
@@ -952,7 +965,7 @@ class Runtime:
         arrived; without it the gate has nothing to classify and waits forever.
         """
         item = self.work_item(work_item_id, ref)
-        state = GraphState.load(self.state_dir(item), work_item_id)
+        state = WorkItemState.load(self.state_dir(item), work_item_id)
         skips = self.declared_skips(state)
         if state.current_node:
             node_id = state.current_node
@@ -1089,7 +1102,7 @@ def _announce_force(runtime: "Runtime", item: WorkItem, record: Dict[str, Any]) 
     """Post the force to the ticket — the audit record a human actually reads.
 
     Best-effort: an integration outage must not prevent the operator unblocking
-    their work item. The other two records (graph state and the event log) are
+    their work item. The other two records (work-item state and the event log) are
     already durable, so a failure here degrades the trail rather than
     losing it.
 
@@ -1191,7 +1204,7 @@ def declare_skips(
         raise ValueError("name at least one node or skip set to declare")
 
     item = runtime.work_item(work_item_id, ref)
-    state = GraphState.load(runtime.state_dir(item), work_item_id)
+    state = WorkItemState.load(runtime.state_dir(item), work_item_id)
 
     accepted, bad_tokens = runtime.graph.expand_skip_tokens(tokens)
     rejected: List[Dict[str, str]] = [
@@ -1309,7 +1322,7 @@ def force(
     target = runtime.graph.node(to_node)  # raises GraphConfigError, listing valid ids
 
     item = runtime.work_item(work_item_id, ref)
-    state = GraphState.load(runtime.state_dir(item), work_item_id)
+    state = WorkItemState.load(runtime.state_dir(item), work_item_id)
     from_node = state.current_node or runtime.graph.start
 
     warnings: List[str] = []
@@ -1361,7 +1374,7 @@ def force(
     failed = _announce_force(runtime, item, record)
     if failed:
         # Deliberately not in `record["warnings"]`: that list is the audit record
-        # of what this force BYPASSED, written to graph state before the comment
+        # of what this force BYPASSED, written to work-item state before the comment
         # was attempted. This is a warning about the reporting, and it belongs
         # only to the result the operator is reading right now.
         warnings = warnings + [f"could not post the audit comment: {failed}"]

@@ -188,7 +188,7 @@ reset 1 work item
 
 The event log is **appended to, never rewritten** — the reset itself lands in it as
 `session.reset`, so "someone reset this" is a visible cause rather than an unexplained gap.
-And nothing in your repository is touched: `docs/specs/<id>/graph-state.json`, the spec
+And nothing in your repository is touched: `docs/specs/<id>/work-item-state.json`, the spec
 artifacts and the phase label are checked in on the work item's branch, and the process
 graph [re-derives](/capabilities/process-graph) the current node from the artifacts anyway.
 

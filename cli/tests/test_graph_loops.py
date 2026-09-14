@@ -26,7 +26,7 @@ from the_loop.graph.hooks.loops import (
 )
 from the_loop.graph.contract import HookContext, WorkItem
 from the_loop.graph.model import PDLC_PR_LOOP, PDLC_WORK_ITEM_LOOP, load_graph
-from the_loop.graph.state import GraphState
+from the_loop.graph.state import STATE_FILENAME, WorkItemState
 from the_loop.graphlink import GraphLink, GraphLinkConfig
 from the_loop.sessions import WorkItemRef
 from the_loop.webhook.router import RoutedEvent
@@ -77,7 +77,7 @@ def _ctx(tmp_path, config=None):
 def _inner_state(spec_dir, pr_number, current):
     state_dir = inner_loop_state_dir(spec_dir, pr_number)
     state_dir.mkdir(parents=True, exist_ok=True)
-    (state_dir / "graph-state.json").write_text(
+    (state_dir / STATE_FILENAME).write_text(
         json.dumps({"workItem": "issue-15", "currentNode": current})
     )
 
@@ -121,24 +121,22 @@ def test_a_corrupt_inner_state_holds_the_gate_rather_than_passing_it(tmp_path):
 
 
 def _log(spec_dir, repos=None):
-    """The work item's task list, optionally declaring its repositories.
+    """The work item's state, optionally declaring its repositories.
 
-    `repos:` lived in the execution log's front matter until issue-365 retired
-    that file; it is read from `tasks.md` — the last artifact locked before the
-    `implementation` node this gate holds.
+    `repos` lived in an artifact's front matter until issue-365 (decision-127)
+    moved it to `work-item-state.json`, where every other per-work-item choice
+    the signed `phase-selection` reply freezes already is.
     """
-    front = ["---", "type: tasks", "workItem: issue-15"]
+    state = WorkItemState(work_item="issue-15")
     if repos is not None:
-        front.append("repos:")
-        front.extend(f"  - {repo}" for repo in repos)
-    front += ["---", "", "# Tasks", ""]
-    (spec_dir / "tasks.md").write_text("\n".join(front), encoding="utf-8")
+        state.repos = list(repos)
+    state.save(spec_dir)
 
 
 def _inner_state_in(spec_dir, repo, pr_number, current):
     state_dir = inner_loop_state_dir(spec_dir, pr_number, repo)
     state_dir.mkdir(parents=True, exist_ok=True)
-    (state_dir / "graph-state.json").write_text(
+    (state_dir / STATE_FILENAME).write_text(
         json.dumps({"workItem": "issue-15", "currentNode": current})
     )
 
@@ -199,31 +197,34 @@ def test_two_repositories_pull_request_seven_do_not_collide(tmp_path):
     assert result.data["inner_loops"] == 2
 
 
-def test_declared_repos_are_read_from_the_task_list(tmp_path):
+def test_declared_repos_are_read_from_the_work_item_state(tmp_path):
     ctx = _ctx(tmp_path)
     _log(ctx.work_item.spec_dir, ["octo/app", "octo/infra"])
-    assert declared_repos(ctx.work_item.spec_dir) == ["octo/app", "octo/infra"]
+    assert declared_repos(ctx.work_item.spec_dir, "issue-15") == [
+        "octo/app",
+        "octo/infra",
+    ]
     _log(ctx.work_item.spec_dir)
-    assert declared_repos(ctx.work_item.spec_dir) == []
+    assert declared_repos(ctx.work_item.spec_dir, "issue-15") == []
 
 
 def test_every_shape_of_absence_is_no_declaration_not_an_empty_one(tmp_path):
-    """R3.2 — no tasks.md, no `repos:` key, and a non-list value all behave as
-    they did before the key existed: the gate waits for nothing it was not told
-    about. A work item that declared `tasks-breakdown` away is the first case.
+    """R3.2 — no state file, a state file that ticked nothing, and a `repos`
+    value that is not a list all behave as they did before the key existed: the
+    gate waits for nothing it was not told about.
     """
     ctx = _ctx(tmp_path)
     spec_dir = ctx.work_item.spec_dir
-    assert not (spec_dir / "tasks.md").exists()
-    assert declared_repos(spec_dir) == []
+    assert not (spec_dir / STATE_FILENAME).exists()
+    assert declared_repos(spec_dir, "issue-15") == []
 
-    (spec_dir / "tasks.md").write_text("# Tasks\n", encoding="utf-8")
-    assert declared_repos(spec_dir) == []
+    WorkItemState(work_item="issue-15").save(spec_dir)
+    assert declared_repos(spec_dir, "issue-15") == []
 
-    (spec_dir / "tasks.md").write_text(
-        "---\nrepos: octo/app\n---\n\n# Tasks\n", encoding="utf-8"
+    (spec_dir / STATE_FILENAME).write_text(
+        json.dumps({"workItem": "issue-15", "repos": "octo/app"}), encoding="utf-8"
     )
-    assert declared_repos(spec_dir) == []
+    assert declared_repos(spec_dir, "issue-15") == []
 
 
 def test_await_waits_for_a_declared_repo_with_no_loop(tmp_path):
@@ -355,9 +356,9 @@ def test_starting_an_inner_loop_leaves_the_outer_pointer_untouched(repo):
     report = inner.start("issue-15", PR.ref)
     assert report is not None and report.node == "implementation"
 
-    inner_state = GraphState.load(inner_loop_state_dir(spec, 16), "issue-15")
+    inner_state = WorkItemState.load(inner_loop_state_dir(spec, 16), "issue-15")
     assert inner_state.current_node == "implementation"
-    outer_state = GraphState.load(spec, "issue-15")
+    outer_state = WorkItemState.load(spec, "issue-15")
     assert outer_state.current_node == ""  # the work item never entered here
 
 
@@ -365,8 +366,8 @@ def test_two_inner_loops_keep_separate_pointers(repo):
     spec = repo / "docs" / "specs" / "issue-15"
     build_runtime(repo, pr_number=16).start("issue-15", PR.ref)
     build_runtime(repo, pr_number=17).start("issue-15", "github:octo/repo#17")
-    assert GraphState.load(inner_loop_state_dir(spec, 16), "issue-15").current_node
-    assert GraphState.load(inner_loop_state_dir(spec, 17), "issue-15").current_node
+    assert WorkItemState.load(inner_loop_state_dir(spec, 16), "issue-15").current_node
+    assert WorkItemState.load(inner_loop_state_dir(spec, 17), "issue-15").current_node
 
 
 # -- graphlink: the daemon's inner-loop entry points ----------------------------
@@ -417,10 +418,10 @@ def test_on_pr_spawn_enters_the_inner_loop_only(checkout):
     link.on_pr_spawn(WI, PR, str(checkout), session_id="s-1", runner="tmux")
 
     spec = checkout / "docs" / "specs" / "issue-15"
-    inner = GraphState.load(inner_loop_state_dir(spec, 16), "issue-15")
+    inner = WorkItemState.load(inner_loop_state_dir(spec, 16), "issue-15")
     assert inner.current_node == "implementation"
     assert inner.session == {"id": "s-1", "runner": "tmux", "alive": True}
-    assert GraphState.load(spec, "issue-15").current_node == ""  # outer untouched
+    assert WorkItemState.load(spec, "issue-15").current_node == ""  # outer untouched
 
 
 def test_on_pr_event_advances_the_inner_loop_not_the_outer(checkout):
@@ -429,9 +430,9 @@ def test_on_pr_event_advances_the_inner_loop_not_the_outer(checkout):
     link.on_pr_event(WI, PR, str(checkout), _routed_comment())
 
     spec = checkout / "docs" / "specs" / "issue-15"
-    inner = GraphState.load(inner_loop_state_dir(spec, 16), "issue-15")
+    inner = WorkItemState.load(inner_loop_state_dir(spec, 16), "issue-15")
     assert inner.nodes["implementation"].attempts >= 1
-    assert GraphState.load(spec, "issue-15").current_node == ""
+    assert WorkItemState.load(spec, "issue-15").current_node == ""
 
 
 def test_a_merged_pr_completes_its_inner_loop_audited_as_forced(checkout):
@@ -440,7 +441,7 @@ def test_a_merged_pr_completes_its_inner_loop_audited_as_forced(checkout):
     link.on_pr_close(WI, PR, str(checkout), merged=True)
 
     spec = checkout / "docs" / "specs" / "issue-15"
-    inner = GraphState.load(inner_loop_state_dir(spec, 16), "issue-15")
+    inner = WorkItemState.load(inner_loop_state_dir(spec, 16), "issue-15")
     assert inner.current_node == "complete"
     # A force moves the pointer, never forges a verdict (issue-109 R10): the
     # transition is on the record for `check --recompute` and the PR diff.
@@ -458,7 +459,7 @@ def test_an_unmerged_close_leaves_the_inner_loop_where_it_was(checkout):
     link.on_pr_close(WI, PR, str(checkout), merged=False)
 
     spec = checkout / "docs" / "specs" / "issue-15"
-    inner = GraphState.load(inner_loop_state_dir(spec, 16), "issue-15")
+    inner = WorkItemState.load(inner_loop_state_dir(spec, 16), "issue-15")
     assert inner.current_node == "implementation"
     assert await_inner_loops(_ctx_for(spec)).status == "wait"
 

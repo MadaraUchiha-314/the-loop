@@ -30,7 +30,7 @@
 #     to declare away;
 #   * no review chain. That is a genuine reduction in guardrails, and the
 #     mitigation is ATTRIBUTION rather than a gate: the mode is selected only by
-#     an authorized user's explicit keyword, frozen into graph-state.json's
+#     an authorized user's explicit keyword, frozen into work-item-state.json's
 #     `loop` field, with the arming comment left standing on the thread.
 #
 # WHAT IT KEEPS, and why each is free: `verify-tests` skips when a node declares
@@ -45,7 +45,7 @@
 #
 # HOW IT IS CHOSEN: an authorized user arms the work item with the `do` control
 # keyword (default `the-loop do`) instead of `start`. Recorded durably — in the
-# portable control record before the first start, and in graph-state.json's
+# portable control record before the first start, and in work-item-state.json's
 # `loop` field from then on. Declared, never inferred from the item's size,
 # labels or history.
 #

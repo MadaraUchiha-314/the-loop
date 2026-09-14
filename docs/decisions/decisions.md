@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [127](decision-127.md) | The state file is the work item's, not the graph's — and the repositories it contributes to are a choice the `phase-selection` gate freezes | proposed | 2026-09-14 |
 | [126](decision-126.md) | The execution log is retired; each gate keeps one record of its own under `evidence/` | proposed | 2026-09-14 |
 | [125](decision-125.md) | An adapter's flags are the spelling the harness's own `--help` lists, declared once and never derived at runtime | proposed | 2026-09-14 |
 | [124](decision-124.md) | A work item picks its model at the gate; the harness is asked what it can run | proposed | 2026-09-13 |

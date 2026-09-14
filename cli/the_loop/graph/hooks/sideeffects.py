@@ -53,7 +53,7 @@ def set_phase_label(ctx: HookContext) -> HookResult:
     """Keep the ticket's phase label in sync (R5.5, R9.2).
 
     A node without a `phase` declares no label, and creates none — labels stay
-    coarse while graph state carries the fine detail.
+    coarse while work-item state carries the fine detail.
     """
     name = "set-phase-label"
     phase = str(ctx.node.get("phase") or "")

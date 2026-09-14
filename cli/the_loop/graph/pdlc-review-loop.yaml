@@ -19,7 +19,7 @@
 #   VALIDATIONS answers none of them. The gate posts a fill-in template on the
 #   thread (idempotently), an authorized reviewer answers it — the arming
 #   comment itself qualifies, the gate re-reads the thread — and the parsed
-#   brief is frozen into graph state with provenance before anything runs.
+#   brief is frozen into work-item state with provenance before anything runs.
 #
 # WHAT IT DELIBERATELY DOES NOT HAVE, in one place so a reviewer can check it:
 #
@@ -47,7 +47,7 @@
 #
 # A REVIEW IS A GUEST (like a contribution, PR #187): it never adopts the
 # repository it reviews in, and in a repository that never initialized the-loop
-# the spec tree (the graph-state cache) is git-excluded at Runtime.start. The
+# the spec tree (the work-item-state cache) is git-excluded at Runtime.start. The
 # phases it does carry are the EXISTING ones — needs-review, complete, cleanup
 # — so adopting this loop changes no repository's workflow.phases and no
 # dashboard.
@@ -56,7 +56,7 @@
 # `review` control keyword (default `the-loop review`) instead of `start` —
 # typed on the pull request to review, which becomes the work item itself even
 # when it links a ticket. Recorded durably — in the portable control record
-# before the first start, and in graph-state.json's `loop` field from then on.
+# before the first start, and in work-item-state.json's `loop` field from then on.
 # Declared, never inferred from the thread's state, labels or history.
 #
 # This file ships WITH THE CLI and is the-loop's own. A repository cannot

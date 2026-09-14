@@ -61,7 +61,7 @@ from the_loop.graph.model import (
     load_graph,
     resolve_outer_loop,
 )
-from the_loop.graph.state import GraphState
+from the_loop.graph.state import WorkItemState
 
 WORK_ITEM = "issue-9"
 REF = "github:o/r#9"
@@ -568,13 +568,13 @@ def test_build_runtime_loads_the_review_loop_by_name(repo):
 
 def test_start_records_which_loop_the_state_walks(runtime, repo, fake_github):
     runtime.start(WORK_ITEM, ref=REF)
-    assert GraphState.load(_spec_dir(repo), WORK_ITEM).loop == PDLC_REVIEW_LOOP
+    assert WorkItemState.load(_spec_dir(repo), WORK_ITEM).loop == PDLC_REVIEW_LOOP
 
 
 def test_core_verbs_address_a_review_item_with_no_new_flags(repo):
     from the_loop.core import graphs as core_graphs
 
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     state.loop = PDLC_REVIEW_LOOP
     state.save(_spec_dir(repo))
     report = core_graphs.check(str(repo), WORK_ITEM)
@@ -606,7 +606,7 @@ def test_graphlink_prefers_state_then_control_record(tmp_path):
         == PDLC_REVIEW_LOOP
     )
     # Once started, the state is the fact: a later control command is inert.
-    state = GraphState.load(spec, WORK_ITEM)
+    state = WorkItemState.load(spec, WORK_ITEM)
     state.loop = PDLC_REVIEW_LOOP
     state.save(spec)
     store.record(ref, "start", actor="owner")
@@ -796,14 +796,14 @@ class TestReviewWalk:
         """
         fake_github.comments = [{"user": {"login": "owner"}, "body": BRIEF_COMMENT}]
         runtime.start(WORK_ITEM, ref=REF)
-        state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+        state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
         assert state.current_node == "review-brief"
         assert state.loop == PDLC_REVIEW_LOOP
         # The template was never posted — the arming comment carried the brief.
         assert not any(BRIEF_REQUEST_MARKER in body for body in fake_github.posted)
 
         runtime.advance(WORK_ITEM, ref=REF)  # the brief freezes; review begins
-        state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+        state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
         assert state.current_node == "review"
         frozen = state.decisions["review-brief"]["brief"]
         assert frozen["by"] == "@owner"
@@ -812,7 +812,9 @@ class TestReviewWalk:
         assert not list(_spec_dir(repo).glob("*.md"))
 
         runtime.advance(WORK_ITEM, ref=REF)  # round posted; wait for the reviewer
-        assert GraphState.load(_spec_dir(repo), WORK_ITEM).current_node == "follow-up"
+        assert (
+            WorkItemState.load(_spec_dir(repo), WORK_ITEM).current_node == "follow-up"
+        )
 
         report = runtime.advance(
             WORK_ITEM, ref=REF, event=_reply("and the retries?", author="@nobody")
@@ -820,11 +822,11 @@ class TestReviewWalk:
         assert report.status == "wait"
 
         runtime.advance(WORK_ITEM, ref=REF, event=_reply("and the retries?"))
-        assert GraphState.load(_spec_dir(repo), WORK_ITEM).current_node == "review"
+        assert WorkItemState.load(_spec_dir(repo), WORK_ITEM).current_node == "review"
 
         runtime.advance(WORK_ITEM, ref=REF)
         runtime.advance(WORK_ITEM, ref=REF, event=_reply("lgtm, we're done"))
-        assert GraphState.load(_spec_dir(repo), WORK_ITEM).current_node == "complete"
+        assert WorkItemState.load(_spec_dir(repo), WORK_ITEM).current_node == "complete"
 
     def test_with_no_brief_the_loop_asks_and_waits(self, runtime, repo, fake_github):
         """
@@ -844,11 +846,12 @@ class TestReviewWalk:
         report = runtime.advance(WORK_ITEM, ref=REF)
         assert report.status == "wait"
         assert (
-            GraphState.load(_spec_dir(repo), WORK_ITEM).current_node == "review-brief"
+            WorkItemState.load(_spec_dir(repo), WORK_ITEM).current_node
+            == "review-brief"
         )
 
         runtime.advance(WORK_ITEM, ref=REF, event=_reply("Angles:\n- migration safety"))
-        assert GraphState.load(_spec_dir(repo), WORK_ITEM).current_node == "review"
+        assert WorkItemState.load(_spec_dir(repo), WORK_ITEM).current_node == "review"
 
 
 # -- the host (issue-311, R3) ----------------------------------------------------

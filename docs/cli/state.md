@@ -92,7 +92,7 @@ The same table is declared in code, in
 (`GENERATED_PATHS`), and a test fails the build when a new generated path is added without
 classifying it, or when this page and the declaration disagree.
 
-One more file belongs to this picture but lives elsewhere: `docs/specs/<id>/graph-state.json`
+One more file belongs to this picture but lives elsewhere: `docs/specs/<id>/work-item-state.json`
 is checked in by design — the [process graph](/capabilities/process-graph) records where a
 work item is, and it must survive a machine change, a session change and a multi-day human
 review. It is a cache, never an authority, so a stale copy degrades to a recompute. The
@@ -129,6 +129,7 @@ item itself.
     "loop": "pdlc-work-item-loop",
     "workItem": "issue-15",
     "sessionPerPr": "cross-repository",
+    "repos": ["octo/app", "octo/infra"],
     "nodes": [
       {"id": "design", "phase": "design", "skipped": true, "selectable": true},
       {"id": "design-critic-review", "phase": "", "skipped": true, "selectable": true, "optIn": true},
@@ -211,6 +212,7 @@ can rebuild.
 | `loop` | which shipped loop was frozen (`pdlc-work-item-loop`) |
 | `workItem` | the spec-folder id the graph was resolved for |
 | `sessionPerPr` | how many tmux+claude sessions this work item's pull requests get — `never`, `cross-repository` or `always`, chosen on the same checklist and frozen by the same reply ([issue-260](https://github.com/MadaraUchiha-314/the-loop/issues/260)). Absent on a record written before the question existed, which reads as "route by the operator's `routing.tmux.sessionPerPr`" |
+| `repos` | the contributing repositories this work item raises pull requests in, ticked on the same checklist from the instance's own `repositories` and frozen by the same reply ([issue-365](https://github.com/MadaraUchiha-314/the-loop/issues/365)). Empty or absent is **no declaration**, never an empty one: `await-inner-loops` then waits for no pull request but this repository's own |
 | `nodes` | every node in declaration order: `skipped` (routed around), `selectable` (was it ever the user's to choose) and `optIn` (off unless selected — so `skipped: true` here means *nobody asked for it*, not *somebody removed it*) |
 
 Written once, when an authorized user answers the
@@ -222,7 +224,7 @@ handle. It is also the answer to "what did we agree this item would do?" without
 checkout and without re-reading a comment thread anyone can still edit.
 
 **If you delete it:** the loop keeps walking exactly the same phases —
-`docs/specs/<id>/graph-state.json` in the repository is the authoritative copy of those.
+`docs/specs/<id>/work-item-state.json` in the repository is the authoritative copy of those.
 You lose the portable, checkout-free view of the item's agreed shape, and `sessionPerPr`
 with it: this file is the **only** copy the daemon reads, so the item's pull requests fall
 back to routing by the operator's configured default.
@@ -732,7 +734,7 @@ flight is still holding a conversation the old code started.
 | `<root>/gh-webhook.pid` | untouched. Reset does not stop the daemon — it warns when one is running, because a daemon holds poll state in memory and can write it back |
 | the workspace checkout | removed unless [`workspace.keepCheckoutOnClose`](/config/cli/routing-options#workspace-keepcheckoutonclose) |
 
-Nothing in your **repository** is touched: `docs/specs/<id>/graph-state.json` is checked in
+Nothing in your **repository** is touched: `docs/specs/<id>/work-item-state.json` is checked in
 on the work item's branch and re-derived from the artifacts, so wiping local state never
 rewrites the record of the work itself.
 

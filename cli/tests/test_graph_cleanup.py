@@ -28,7 +28,7 @@ from the_loop.graph.model import (
     load_graph,
 )
 from the_loop.graph.runtime import CLEANUP_NODE, Runtime
-from the_loop.graph.state import GraphState
+from the_loop.graph.state import WorkItemState
 from the_loop.graphlink import GraphLink, GraphLinkConfig
 from the_loop.sessions import WorkItemRef
 
@@ -118,7 +118,7 @@ def runtime_for(repo, graph=GRAPH):
 
 
 def state_of(repo):
-    return GraphState.load(repo / SPEC, "issue-186")
+    return WorkItemState.load(repo / SPEC, "issue-186")
 
 
 def start_at(repo, node="work"):
@@ -241,13 +241,13 @@ def test_link_the_cleanup_transition_is_recorded_even_though_the_item_is_disarme
         store,
         ["octocat"],
     )
-    state = GraphState.load(root / SPEC, "issue-186")
+    state = WorkItemState.load(root / SPEC, "issue-186")
     state.enter("implementation")
     state.save(root / SPEC)
 
     link.on_cleanup(REF, str(root), reason="cleanup requested")
 
-    assert GraphState.load(root / SPEC, "issue-186").current_node == CLEANUP_NODE
+    assert WorkItemState.load(root / SPEC, "issue-186").current_node == CLEANUP_NODE
 
 
 def test_link_a_foreign_checkout_is_still_refused(tmp_path):
@@ -269,14 +269,14 @@ def test_link_a_foreign_checkout_is_still_refused(tmp_path):
     )
     spec = root / SPEC
     spec.mkdir(parents=True)
-    state = GraphState(work_item="issue-186")
+    state = WorkItemState(work_item="issue-186")
     state.enter("implementation")
     state.save(spec)
     link = GraphLink(GraphLinkConfig(), ControlConfig(enabled=False), None, [])
 
     link.on_cleanup(REF, str(root))
 
-    assert GraphState.load(spec, "issue-186").current_node == "implementation"
+    assert WorkItemState.load(spec, "issue-186").current_node == "implementation"
 
 
 def test_link_a_work_item_with_no_spec_directory_is_a_no_op(tmp_path):

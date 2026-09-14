@@ -34,7 +34,7 @@ detail — do not lose it.
 
 Keep the work item's phase **label** in the ticketing system in sync at every
 transition (label = `loop:<phase>`, e.g. `loop:design` — fixed, issue-352). The fine
-detail — current node, attempts, declared skips — is `graph-state.json`'s, and is written
+detail — current node, attempts, declared skips — is `work-item-state.json`'s, and is written
 by the runtime rather than mirrored by you (`brainstorming` is optional — enter it only
 when the work needs a scratchpad; otherwise start at `requirements-definition`):
 
@@ -50,7 +50,7 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
 ## The loop
 
 1. **Resume or start.** Look in `docs/specs/<id>/` for existing `brainstorm.md`,
-   `requirements.md`/`bugfix.md`, `design.md`, `tasks.md`. Use `graph-state.json`'s
+   `requirements.md`/`bugfix.md`, `design.md`, `tasks.md`. Use `work-item-state.json`'s
    current node, the specs' `status` and the first unticked task to resume from where you
    left off rather than restarting.
 

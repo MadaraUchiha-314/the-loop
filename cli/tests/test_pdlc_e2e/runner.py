@@ -38,7 +38,7 @@ from the_loop.graph.frontmatter import read_front_matter, sections, split_front_
 from the_loop.graph.integrations import IntegrationError
 from the_loop.graph.model import PDLC_WORK_ITEM_LOOP, load_graph
 from the_loop.graph.runtime import Runtime
-from the_loop.graph.state import GraphState
+from the_loop.graph.state import WorkItemState
 from the_loop.runner import TmuxResult
 from the_loop.sessions.registry import Session, SessionRegistry
 from the_loop.state import layout_from_config
@@ -473,8 +473,8 @@ class ScenarioRun:
 
     # -- the observable trace ----------------------------------------------------
 
-    def state(self) -> GraphState:
-        return GraphState.load(self.spec_dir, self.scenario.work_item)
+    def state(self) -> WorkItemState:
+        return WorkItemState.load(self.spec_dir, self.scenario.work_item)
 
     def events(self) -> List[Dict[str, Any]]:
         if not self.events_path.is_file():

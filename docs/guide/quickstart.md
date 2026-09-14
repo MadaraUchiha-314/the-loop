@@ -41,7 +41,7 @@ worth writing requirements for:
 /the-loop:create-tasks-plan <id>    # tasks.md DAG from requirements + design
 /the-loop:execute-tasks <id>        # implement, self-check, self/critic-review, evidence
 /the-loop:finish-tasks <id>         # cleanup once all tasks are complete
-/the-loop:work-status <id>          # read-only status from specs, tasks, graph state
+/the-loop:work-status <id>          # read-only status from specs, tasks, work-item state
 ```
 
 See the full [command reference](/reference/commands) for what each one does.
@@ -100,7 +100,7 @@ Three things to know before you use it:
   can never answer its own gate.
 - **No review chain runs.** No self-review, no critic round, no security-review gate.
   That is the point, and it is recorded: the loop this item walked is frozen in its
-  `graph-state.json`, and your arming comment stays on the thread — so a reviewer of the
+  `work-item-state.json`, and your arming comment stays on the thread — so a reviewer of the
   resulting change can see that no automated review ran and who decided that. Lint,
   type-check and tests still run.
 - **It is not a smaller `work-on`, and not `the-loop contribute`.** `contribute` joins

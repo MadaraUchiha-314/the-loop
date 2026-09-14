@@ -5,12 +5,6 @@ workItem: "github:MadaraUchiha-314/the-loop#365"
 status: in-review             # draft | in-review | approved
 approvedBy: []
 overrides: {}
-# repos:                     # OPTIONAL (issue-183, moved here from the retired execution
-#   - <owner>/<repo>         #   log by issue-365). The CONTRIBUTING repositories this work
-                             #   item raises pull requests in — one inner loop each, state
-                             #   under pr-loops/<owner>__<repo>/pr-<n>/ in the ORIGIN repo.
-                             #   Omit for single-repository work: `await-inner-loops` then
-                             #   behaves exactly as it did before the key existed.
 ---
 
 # Tasks: retire the execution log
@@ -127,6 +121,31 @@ overrides: {}
   - _Depends on:_ 1–12
   - _Requirements:_ all
   - _Test:_ T18 (`make check`)
+
+## Review round 1 — the owner's review of PR #366
+
+- [x] 14. Rename the state file and the concept
+  - `graph-state.json` → `work-item-state.json`, `GraphState` → `WorkItemState`, the lock
+    with them; the pre-rename name is **read** and never written, and the inner-loop scan
+    globs both
+  - _Depends on:_ 13
+  - _Requirements:_ R7.1, R7.2, R7.3
+  - _Test:_ T20 (red→green)
+
+- [x] 15. Move `repos` to the `phase-selection` gate
+  - A repository section on the checklist, one row per declared repository, any number
+    ticked; frozen into `work-item-state.json` and the portable record by the same signed
+    reply; `declared_repos` reads the state; the key leaves the `tasks.md` template
+  - _Depends on:_ 14
+  - _Requirements:_ R3.1, R7.4
+  - _Test:_ T21, T22 (red→green)
+
+- [x] 16. Record the decision and re-document both
+  - `docs/decisions/decision-127.md` + index row; decision-126's superseded bullet
+    cross-linked; capability history rows; the skill, commands, site and `.gitignore`
+  - _Depends on:_ 14, 15
+  - _Requirements:_ R6.1, R6.2
+  - _Test:_ T18, T19
 
 ## Execution DAG
 

@@ -102,7 +102,7 @@ sub-agents.
 
 ### 9. Compaction & filesystem-as-memory
 
-the-loop already persists durable state to disk (the spec chain, `graph-state.json`, the
+the-loop already persists durable state to disk (the spec chain, `work-item-state.json`, the
 capability docs) — that is *why* resumability works, and it is a **token** strategy:
 offload state to disk, keep the window lean. For long runs: tick the checkmarks, commit,
 then compact/reset the window with a "preserve the spec + open threads" instruction rather

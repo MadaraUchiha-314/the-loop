@@ -159,8 +159,8 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
         note={note}
         emptyMessage={
           view.repoPath
-            ? "The checkout has no graph state for this item yet — it starts at phase-selection."
-            : "No session on this machine recorded a checkout, so the graph state cannot be read from here."
+            ? "The checkout has no work-item state for this item yet — it starts at phase-selection."
+            : "No session on this machine recorded a checkout, so the work-item state cannot be read from here."
         }
       />
 

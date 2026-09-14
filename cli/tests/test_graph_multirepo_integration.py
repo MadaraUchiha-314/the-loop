@@ -23,7 +23,7 @@ from the_loop.control import ControlConfig
 from the_loop.graph.bootstrap import build_runtime
 from the_loop.graph.contract import HookContext, WorkItem
 from the_loop.graph.hooks.loops import await_inner_loops, inner_loop_state_dir
-from the_loop.graph.state import GraphState
+from the_loop.graph.state import STATE_FILENAME, WorkItemState
 from the_loop.graphlink import GraphLink, GraphLinkConfig
 from the_loop.sessions import WorkItemRef
 from the_loop.webhook.router import extract_work_items
@@ -64,12 +64,14 @@ def origin(tmp_path):
 
 
 def _declare(spec_dir, repos):
-    (spec_dir / "tasks.md").write_text(
-        "---\ntype: tasks\nworkItem: issue-15\nrepos:\n"
-        + "".join(f"  - {repo}\n" for repo in repos)
-        + "---\n\n# Tasks\n",
-        encoding="utf-8",
-    )
+    """The repositories, where the signed `phase-selection` reply freezes them.
+
+    `work-item-state.json` since issue-365 (decision-127); an artifact's front
+    matter before that.
+    """
+    state = WorkItemState.load(spec_dir, "issue-15")
+    state.repos = list(repos)
+    state.save(spec_dir)
 
 
 def _link():
@@ -125,10 +127,10 @@ def test_the_inner_loop_of_a_foreign_pr_lands_under_the_origin_spec_chain(origin
     _link().on_pr_spawn(WI, FOREIGN_PR, str(origin), session_id="s-1", runner="tmux")
 
     spec = origin / "docs" / "specs" / "issue-15"
-    inner = GraphState.load(inner_loop_state_dir(spec, 7, "octo/infra"), "issue-15")
+    inner = WorkItemState.load(inner_loop_state_dir(spec, 7, "octo/infra"), "issue-15")
     assert inner.current_node == "implementation"
-    assert (spec / "pr-loops" / "octo__infra" / "pr-7" / "graph-state.json").is_file()
-    assert GraphState.load(spec, "issue-15").current_node == ""
+    assert (spec / "pr-loops" / "octo__infra" / "pr-7" / STATE_FILENAME).is_file()
+    assert WorkItemState.load(spec, "issue-15").current_node == ""
 
 
 def test_two_repositories_share_a_pr_number_without_sharing_a_loop(origin):
@@ -147,11 +149,11 @@ def test_two_repositories_share_a_pr_number_without_sharing_a_loop(origin):
     link.on_pr_close(WI, ORIGIN_PR, str(origin), merged=True)
 
     spec = origin / "docs" / "specs" / "issue-15"
-    assert GraphState.load(inner_loop_state_dir(spec, 7), "issue-15").current_node == (
-        "complete"
-    )
+    assert WorkItemState.load(
+        inner_loop_state_dir(spec, 7), "issue-15"
+    ).current_node == ("complete")
     assert (
-        GraphState.load(
+        WorkItemState.load(
             inner_loop_state_dir(spec, 7, "octo/infra"), "issue-15"
         ).current_node
         == "implementation"

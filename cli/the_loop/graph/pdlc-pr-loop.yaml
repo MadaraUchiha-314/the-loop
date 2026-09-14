@@ -12,8 +12,8 @@
 # looks for, so an inner loop that has not finished holds the work item at
 # `implementation`.
 #
-# State lives at docs/specs/<id>/pr-loops/pr-<number>/graph-state.json — beside
-# the outer graph-state.json, checked in on the work item's branch, a cache and
+# State lives at docs/specs/<id>/pr-loops/pr-<number>/work-item-state.json — beside
+# the outer work-item-state.json, checked in on the work item's branch, a cache and
 # never an authority (decision-041). Artifacts resolve against the SAME spec
 # directory as the outer loop: a PR contributes to the work item's one spec
 # chain, it does not get a spec chain of its own.

@@ -73,7 +73,7 @@ live in `docs/specs/<id>/`:
    gate and needs no human sign-off** (issue-281) — it advances on shape alone.
 
 The work item's **phase** is tracked on the ticket via a label (`loop:<phase>` — a fixed
-vocabulary, issue-352) and in `graph-state.json`, which is where the fine detail lives
+vocabulary, issue-352) and in `work-item-state.json`, which is where the fine detail lives
 (current node, attempts, declared skips). Nothing else records it (`brainstorming` is
 optional):
 
@@ -199,8 +199,10 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   `pdlc-pr-loop`; the origin repository gets one only if it too receives code. Each inner
   loop's state sits under the origin repo's spec directory, qualified by repository
   (`pr-loops/<owner>__<repo>/pr-<n>/`), and a work item may **declare** those repositories
-  in `tasks.md`'s front matter (`repos:`) so `await-inner-loops` holds
-  `implementation` until every one of them has finished. See `reference/workflow.md`
+  at `phase-selection` — ticking them on the checklist, frozen into
+  `work-item-state.json` by the same signed reply as the surface, the model and
+  the effort — so `await-inner-loops` holds `implementation` until every one of
+  them has finished. See `reference/workflow.md`
   § Several repositories, one work item.
 - **Ask on the declared channel; iterate artifacts on a durable surface.** A session the CLI daemon
   drives is *told* where its answers come from (`routing.interaction.mode`, rendered into
@@ -230,7 +232,7 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   briefing). See `reference/collaboration.md` § loop prevention.
 - **Self-check continuously.** Keep `tasks.md` checkmarks and the phase label in sync,
   and run tests at logical checkpoints. **Write no progress log**: the harness already
-  keeps a transcript of what happened and `graph-state.json` holds where the work stands,
+  keeps a transcript of what happened and `work-item-state.json` holds where the work stands,
   so re-deriving either is a cost with no reader (issue-365, decision-126).
 - **Manage the context window deliberately (checkpoint, then reset).** Never reset
   context without first checkpointing (checkmarks ticked, phase label, WIP

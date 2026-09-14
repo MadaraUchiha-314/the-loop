@@ -21,7 +21,7 @@ twice.
 
 Best-effort by design: a failed delivery is reported and never blocks the
 node. The assignment is convenience for the worker; the state it describes is
-durable in ``graph-state.json`` and re-rendered into every event prompt, so a
+durable in ``work-item-state.json`` and re-rendered into every event prompt, so a
 lost paste costs a nudge, never the process.
 """
 

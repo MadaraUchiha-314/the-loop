@@ -81,7 +81,7 @@ reaches complete](docs/assets/the-loop-workflow.svg)
 excalidraw.com to edit.*
 
 The work item's position is tracked by a `loop:<phase>` label on the ticket, with the fine
-detail — current node, attempts, declared skips — in its `graph-state.json`:
+detail — current node, attempts, declared skips — in its `work-item-state.json`:
 
 ```text
 not-started → brainstorming (optional) → requirements-definition → design → test-planning

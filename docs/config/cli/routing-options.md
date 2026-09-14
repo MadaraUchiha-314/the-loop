@@ -276,7 +276,7 @@ The item ends when the requester says it is done, or when they close it.
 :::note Typing this word is the declaration
 There is no separate setting that turns the process off for a work item. The keyword
 *is* the decision, and it is recorded like every other one — in the portable control
-record, then in `graph-state.json`'s `loop` field — so a reviewer of the resulting
+record, then in `work-item-state.json`'s `loop` field — so a reviewer of the resulting
 change can see that no review chain ran, and who decided that. Set this option to an
 empty string to remove the word from the vocabulary entirely.
 :::

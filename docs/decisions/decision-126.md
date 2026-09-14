@@ -14,7 +14,7 @@ transitions table; append-only progress entries; a `log-entry` hook appending a 
 at 47 node boundaries across five shipped graphs; a `phase:` front-matter field mirroring
 the ticket label; and a prose entry — *Did / Checkpoint / Next / Blockers* — demanded
 before every context reset. Every fact in it existed elsewhere first: the current node,
-attempts and declared skips in `graph-state.json`, the coarse phase on the `loop:<phase>`
+attempts and declared skips in `work-item-state.json`, the coarse phase on the `loop:<phase>`
 label, the chronology in the harness's own transcript, the red→green evidence in the
 commits.
 
@@ -47,15 +47,17 @@ generated again."*
 And with it:
 
 - The `log-entry` hook is deleted from the registry and from all 47 entry chains. A node
-  boundary is already an event in the event log and a transition in `graph-state.json`.
+  boundary is already an event in the event log and a transition in `work-item-state.json`.
 - The bundled `execution-log.md` template is deleted; the `execution-log` role leaves
   `.the-loop/manifest.yaml`.
-- The multi-repo `repos:` declaration (issue-183) moves to **`tasks.md`**'s front matter —
-  the last artifact locked before `implementation`, which is the node `await-inner-loops`
-  holds. Absence still means *no declaration*, never an empty one.
+- The multi-repo `repos:` declaration (issue-183) leaves the log. It shipped in
+  **`tasks.md`**'s front matter and moved again the same day, on the owner's review, to
+  the `phase-selection` gate and `work-item-state.json` — see
+  [decision-127](decision-127.md), which supersedes this bullet and the alternative below.
+  Absence still means *no declaration*, never an empty one.
 - The **checkpoint-then-reset** protocol keeps its discipline and loses its prose: tick the
   checkmarks, commit, keep the label in sync. A fresh window re-enters from
-  `graph-state.json` and the first unticked task — which is what "Next:" said, derived
+  `work-item-state.json` and the first unticked task — which is what "Next:" said, derived
   rather than written.
 - `resolve_session`'s dead-session fallback seeds `requirements.md`, `design.md`,
   `tasks.md`.
@@ -97,8 +99,10 @@ satisfiable by another node's writing. It also costs more tokens than it saves: 
 re-read and re-appended at six gates, against six files each written once.
 
 **Put `repos:` in `design.md`.** Defensible (which repositories receive code is a design
-fact) but one gate further from the PRs being awaited. `tasks.md` is the artifact the
-`implementation` node consumes, and the one that says what each repository receives.
+fact) but one gate further from the PRs being awaited. `tasks.md` was chosen instead — the
+artifact the `implementation` node consumes. Both are superseded by
+[decision-127](decision-127.md): the owner's review moved the declaration off artifacts
+altogether, onto the gate that already freezes every other per-work-item choice.
 
 ## Consequences
 

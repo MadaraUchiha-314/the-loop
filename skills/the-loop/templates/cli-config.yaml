@@ -184,7 +184,7 @@ routing:
       # the AD-HOC loop: work -> review -> complete, with no spec chain, no
       # phase-selection gate, no artifact gates and NO REVIEW CHAIN. Typing the
       # word IS the declaration that this work item runs without the PDLC, and it
-      # is recorded (control record, then graph-state.json) so a reviewer can see
+      # is recorded (control record, then work-item-state.json) so a reviewer can see
       # who decided that. Set to "" to remove the word from the vocabulary.
       do: "the-loop do"
       # REVIEWER, NOT AUTHOR (issue-279). Arms the item exactly as `start` does

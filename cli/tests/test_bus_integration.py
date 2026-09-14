@@ -550,7 +550,7 @@ def _parked_checkout(root, ref, node="requirements-approval"):
     """
     import subprocess
 
-    from the_loop.graph.state import GraphState
+    from the_loop.graph.state import WorkItemState
 
     root.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-q", str(root)], check=True)
@@ -571,7 +571,7 @@ def _parked_checkout(root, ref, node="requirements-approval"):
     (spec / "requirements.md").write_text(
         "---\nstatus: draft\n---\n\n# R\n", encoding="utf-8"
     )
-    state = GraphState.load(spec, f"issue-{ref.number}")
+    state = WorkItemState.load(spec, f"issue-{ref.number}")
     state.enter(node)
     state.park(node, "awaiting an authorized human")
     state.save(spec)
@@ -617,13 +617,13 @@ def test_an_approval_from_slack_reaches_the_gate_under_the_default_control_polic
 
     Requirement: docs/specs/issue-321/bugfix.md R1.1, R1.2, R1.8 (A5)
     """
-    from the_loop.graph.state import GraphState
+    from the_loop.graph.state import STATE_FILENAME, WorkItemState
     from the_loop.sessions import WorkItemRef
 
     ref = WorkItemRef.parse("github:o/r#7")
     checkout = _parked_checkout(tmp_path / "checkout", ref)
     spec = checkout / "docs" / "specs" / "issue-7"
-    before = (spec / "graph-state.json").read_bytes()
+    before = (spec / STATE_FILENAME).read_bytes()
 
     records, deliveries = [], []
     _ledger_writer(monkeypatch, records)
@@ -657,8 +657,8 @@ def test_an_approval_from_slack_reaches_the_gate_under_the_default_control_polic
         ),
         [OPERATOR],
     ) == [{"author": OPERATOR, "body": body.strip()}]
-    assert (spec / "graph-state.json").read_bytes() == before
-    assert GraphState.load(spec, "issue-7").current_node == "requirements-approval"
+    assert (spec / STATE_FILENAME).read_bytes() == before
+    assert WorkItemState.load(spec, "issue-7").current_node == "requirements-approval"
 
 
 def test_a_reply_for_a_work_item_with_no_session_record_is_left_to_the_ledger(

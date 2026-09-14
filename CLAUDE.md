@@ -31,7 +31,7 @@ labels sit unused precisely because past work bypassed the loop.)
    full spec; a tier 3+ change does. When unsure which, follow the skill.
 3. **Keep the phase label in sync.** Apply and advance the `loop:<phase>` label on the
    ticket at every transition (`loop:not-started → … → loop:complete`); the fine detail is
-   `graph-state.json`'s and the runtime writes it. Using the loop is what keeps these
+   `work-item-state.json`'s and the runtime writes it. Using the loop is what keeps these
    labels populated (see
    [`docs/reports/labels-and-dashboards.md`](docs/reports/labels-and-dashboards.md)).
    Write **no** progress log — issue-365 retired the execution log; each gate leaves one
