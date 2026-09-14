@@ -39,6 +39,7 @@ channels:
     read:
       mode: socket                           # poll | socket | off
       intervalSeconds: 30
+      catchUpSeconds: 900                    # socket mode: how often it re-reads the threads
     reactions:                               # acknowledge an accepted message on itself
       enabled: true
       received: eyes                         # 👀 the moment it is accepted
@@ -359,6 +360,26 @@ accident.
 
 Poll-mode cadence. A cycle with no bound threads and no kickoff grant makes no API call
 at all.
+
+### `slack.read.catchUpSeconds`
+
+- **Type:** `integer` (minimum 0)
+- **Default:** `900`
+
+Socket-mode **reconcile** cadence ([issue-362](https://github.com/MadaraUchiha-314/the-loop/issues/362)):
+how often the listener re-reads every bound thread and the kickoff cursor on top of the
+messages Slack pushes to it and the one read it runs at connect. It is the ceiling on how
+late a missed envelope can be, whatever missed it — a message event the Slack app is not
+subscribed to (see [which events your channel needs](/guide/slack#which-events-your-channel-needs)),
+a Socket Mode reconnect gap, an acknowledgement that raced a restart. Before issue-362 the
+cycle ran only at connect, so a missed message waited for the next daemon start.
+
+`0` means connect-only, which is 16.0.1's behaviour. A non-zero value below `60` is raised
+to `60` with a warning: a reconcile is a safety net, not a second poll transport, and each
+cycle costs one `conversations.history` plus one `conversations.replies` per bound thread.
+Read **only** in socket mode — `poll` already re-reads every
+[`intervalSeconds`](#slackreadintervalseconds). A cycle processes exactly what the
+shared cursors say is new, so nothing is delivered twice.
 
 ## The slash command
 

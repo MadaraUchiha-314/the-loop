@@ -31,6 +31,18 @@ the-loop channels manifest  # the Slack app manifest to import (scopes, events, 
   **`longMessages`** line beside `maxChars` — what happens to text longer than the cap
   (`digest`: the ask first, choices numbered, code and traces as pointers, cut at a
   sentence, the link for the rest; `truncate`: the first `maxChars` characters).
+  Since [issue-362](https://github.com/MadaraUchiha-314/the-loop/issues/362) the
+  `read:` line also names socket mode's **reconcile cadence**
+  (`read.catchUpSeconds`), and a **`channel kind:`** line says what kind of
+  conversation the configured id is — read from the id's own prefix, so `status`
+  still calls nothing — with the bot scope and bot event that kind needs; a `D…`
+  gets a `[!]` finding, because a Slack app imported from a pre-issue-362 manifest
+  cannot receive a direct message's events at all. **`--probe`** replaces the guess
+  with the measured answer: one `conversations.info` on the configured channel and
+  one `auth.test` for the scopes the app was actually granted, printed by name. A
+  probe that cannot run (no bot token, no channel, an API error) says why, and
+  `status` still exits 0 — a diagnostic never fails the command, and no token is
+  ever printed. See [which events your channel needs](/guide/slack#which-events-your-channel-needs).
 - **`threads`** lists the **conversations**: one line per work item with the Slack
   channel id, the thread ts, when it was opened, how (`event` — the-loop opened a root
   for the first event it delivered; `kickoff` — a member's top-level message became the
@@ -99,6 +111,7 @@ on a message that was dropped.
 | Flag | Default | Meaning |
 |------|---------|---------|
 | *(action)* | required | One of `status`, `threads`, `poll`, `listen`, `manifest`. |
+| `--probe` | off | `status` only: ask Slack what the configured channel is and which bot scopes the app was granted, and report what it cannot receive. Two calls, no token printed, exit 0 whatever happens. |
 | `--work-item REF` | *(all)* | `threads` only: show one work item's conversation. |
 | `--json` | off | `threads` only: print the records as JSON. |
 

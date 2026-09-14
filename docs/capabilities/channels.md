@@ -285,10 +285,11 @@ flowchart LR
   acts once; every refusal and failure is an outcome and an event, never an exception to
   the listener. Slash commands arrive over Socket Mode only, and `channels status` says
   which families this channel may run. The Slack **app manifest** — bot user, scopes
-  (`chat:write`, `channels:history`, `groups:history`, `reactions:write`, `commands`),
-  events, interactivity, Socket Mode, the command — ships in the package and is printed
-  by `the-loop channels manifest`; the [Slack integration guide](../guide/slack.md) is
-  the operator's map of every mode of interaction.
+  (`chat:write`, `channels:history`, `groups:history`, `im:history`, `mpim:history`,
+  `reactions:write`, `commands`), events, interactivity, Socket Mode, the command — ships
+  in the package and is printed by `the-loop channels manifest`; the
+  [Slack integration guide](../guide/slack.md) is the operator's map of every mode of
+  interaction.
 - **The service hosts the listener** (issue-334, the owner's review of PR #336). WHEN
   `the-loop start` runs with `channels.slack.enabled` and `read.mode: socket` under
   `service.hostIngresses` (the default) THEN the service's lifespan SHALL run
@@ -301,6 +302,32 @@ flowchart LR
   listen` is the foreground form, takes the same lock, and refuses to run beside a hosted
   listener; with `hostIngresses: false` the `start` row is `manual` and names it. The
   listener has no standalone daemon form and is not in the daemons API's enumeration.
+- **Every kind of conversation is a channel** (issue-362). Slack emits a different
+  message event per conversation kind and delivers only what the app subscribed to, so
+  the shipped manifest SHALL carry all four pairs — `channels:history`/`message.channels`
+  (public), `groups:history`/`message.groups` (private), `im:history`/`message.im` (a
+  direct message with the bot), `mpim:history`/`message.mpim` (a group DM). The
+  listener's filter stays **kind-agnostic**: a DM message reaches the inbound pipeline
+  through exactly the path a public-channel message takes, with no DM branch, and the
+  allow-list authorizes its author as it always did. Reading a DM was never the missing
+  half — the bot token's history scopes already allowed it, which is why the catch-up
+  read recovered everything at restart; being *subscribed* to one was.
+- **A channel whose events the app cannot receive is reported** (issue-362). WHEN
+  `channels status` runs THEN it SHALL name the configured channel's conversation kind
+  from the id's own prefix (`D…` an IM; `G…` a private channel or a group DM; `C…` public
+  or private) with the bot scope and bot event that kind needs, making **no** API call —
+  `status` keeps its contract of reading the state file and calling nothing; AND WHEN the
+  prefix is `D…` THEN it SHALL print a `[!]` finding, because that is the one kind a
+  pre-issue-362 app certainly cannot serve. WHEN `channels status --probe` runs, and once
+  when the Socket Mode listener connects, THEN the system SHALL call `conversations.info`
+  on the configured channel and read the bot's granted scopes from `auth.test`'s
+  `x-oauth-scopes` response header, and SHALL report a finding naming the channel, its
+  kind, the missing scope, the missing event and the consequence — at `warning` in the
+  listener, as a `[!]` line in `status`. A finding needs **every** candidate kind's scope
+  to be missing, and unreadable scopes yield **none**: a warning that fires on a working
+  configuration is one people learn to route around. The probe is two fixed calls, prints
+  token presence only, and never fails its caller — a probe that cannot run says why and
+  `status` still exits 0.
 - **Downtime is reconciled from the shared cursors** (issue-334, the owner's review of
   PR #336). WHEN the Socket Mode listener connects THEN it SHALL run one read cycle
   (`poll_once`) over every bound thread and the kickoff cursor before it starts waiting
@@ -309,7 +336,14 @@ flowchart LR
   redelivers a message whose `ts` is at or before the thread's cursor THEN the socket
   handler SHALL drop it as `duplicate`. `poll_once` SHALL run in `socket` mode as well
   as `poll` (only `off` refuses), so `the-loop channels poll` is a reconciliation an
-  operator may schedule beside a listener. A slash command or button press issued while
+  operator may schedule beside a listener. Since issue-362 the listener SHALL ALSO run
+  that cycle every `channels.slack.read.catchUpSeconds` (default 900; `0` = connect-only;
+  a non-zero value below 60 raised to 60) for as long as it runs, so a missed envelope
+  costs at most one interval instead of the process's lifetime — whatever missed it: an
+  event the app is not subscribed to, a Socket Mode reconnect gap, an acknowledgement
+  that raced a restart. The deadline is carried through the listener's existing
+  one-second tick on a monotonic clock, so a stop is still honoured within a tick, and a
+  cycle that raises is logged and the listener lives on. A slash command or button press issued while
   nothing was connected fails visibly to the member and is not recovered — an
   interactive gesture is re-issued, never replayed. A keyword or gate answer already on
   the ledger survives any downtime: the ledger's ingress executes it on its next cycle.
@@ -388,6 +422,7 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-362 | A **direct message is a channel like any other**. The shipped app manifest now carries all four conversation kinds — `im:history`/`message.im` and `mpim:history`/`message.mpim` beside the public and private pairs — closing a failure in which a `D…` channel bound threads, posted, reacted and answered button presses normally while **nothing anyone typed was ever delivered**: Slack emits `message.im` in a DM, the app was subscribed only to `message.channels`/`message.groups`, and the bot token's own history scopes still let the connect-time catch-up read recover everything hours later, so nothing ever logged an error. Two things make the class of failure loud instead: `channels status` names the conversation kind from the id's prefix with no API call and flags a `D…`, and `--probe` (also run once when the listener connects, logging at `warning`) measures it against the installed app with `conversations.info` + `auth.test`'s `x-oauth-scopes` — a finding needs every candidate kind's scope missing, and unreadable scopes yield none. Third, socket mode now **reconciles periodically** rather than only at connect (`read.catchUpSeconds`, default 900, `0` = connect-only, a non-zero value under 60 raised to 60), bounding every cause of a missed envelope. The listener's filter stays kind-agnostic — no DM branch — and no grant, state or config version changes | [spec](../specs/issue-362/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/362) |
 | issue-349 | An unresolved kickoff is **asked about** rather than refused: the declared repositories arrive as Block Kit options (buttons at five or fewer, a static select above), and the pick finishes opening the work item through exactly the path a resolved prefix takes — same `work-item.create` event, same ledger record, same binding, same Start button. The held message is a fourth map in the channel state (`pending`), keyed by the message `ts`, expiring after a day, capped at fifty, and claimed under the state lock before the create so a double press opens one issue; only the message's own author may answer, and an unauthorized presser is refused above the record read. `read.mode: socket` is required — in `poll` mode the typed prefix stays the only route and `channels status` says so — and `KickoffTarget.text` now means the same thing on every outcome, which makes a message that is nothing but an ambiguous or unknown prefix an `empty-message` refusal. No new grant, scope, config key or schema change | [spec](../specs/issue-349/), [decision-122](../decisions/decision-122.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/349) |
 | issue-348 | The kickoff resolves against the **top-level `repositories`** instead of `kickoff.repo` + `polling.sources[].repos`: one declaration, read by every ingress (issue-348). `kickoff.repo` keeps its job as the channel's default target but no longer declares a repository — a fallback outside the declared list is refused as `unknown-repo` — and the slash command's `may_target` reads the same list. The builder moved from `channels/repos.py` to `the_loop/repos.py`, since a receiver and a poller now read it too | [spec](../specs/issue-348/), [decision-121](../decisions/decision-121.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/348) |
 | issue-341 | A Slack kickoff **names its own repository**: a first-line `<repo>:` prefix — a bare name, an `owner/repo` or a `host/owner/repo` — resolved against the set the operator already declared (`kickoff.repo` + every `polling.sources[].repos` entry, now built once in `channels/repos.py` and shared with the slash command's `may_target`), stripped from the issue, with `kickoff.labels` unchanged. A qualified prefix matching none, a bare one matching several, or a prefix with no message after it is **refused in the thread with the candidates named**, never guessed; a bare word matching none is not a prefix, so `fix: …` still goes to `kickoff.repo`. `kickoff.repo` is demoted to the fallback and is no longer a precondition for reading top-level messages, making grant-without-target a valid prefix-only configuration instead of a dead one. Refusals sit below the allow-list, so the repository list never reaches an unlisted member. No schema key, grant, scope or state added | [spec](../specs/issue-341/), [decision-120](../decisions/decision-120.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/341) |

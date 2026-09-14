@@ -64,13 +64,17 @@ oauth_config:
       - chat:write          # post into the channel and its threads
       - channels:history    # read thread replies and kickoffs in a public channel
       - groups:history      # the same in a private channel
+      - im:history          # the same in a direct message with the bot (issue-362)
+      - mpim:history        # the same in a group direct message (issue-362)
       - reactions:write     # acknowledge an accepted message on itself (issue-325)
       - commands            # the /the-loop slash command (issue-334)
 settings:
   event_subscriptions:
     bot_events:
-      - message.channels
-      - message.groups
+      - message.channels    # a public channel
+      - message.groups      # a private channel
+      - message.im          # a direct message with the bot (issue-362)
+      - message.mpim        # a group direct message (issue-362)
   interactivity:
     is_enabled: true        # Approve / Request changes, Execute / Start buttons (read.mode: socket)
   org_deploy_enabled: false
@@ -85,9 +89,11 @@ Builder workflow; [why](#why-not-slack-workflow-builder).)
 ### Upgrading the app you already have (1b)
 
 An app created for an earlier the-loop (issue-245 / issue-309 — thread replies and
-buttons, no command) needs three things added: the `commands` scope and the `/the-loop`
-command, the private-channel scope and event (`groups:history`, `message.groups`), and —
-if it never used Socket Mode — Socket Mode itself. Two ways, pick one:
+buttons, no command) needs four things added: the `commands` scope and the `/the-loop`
+command, the private-channel scope and event (`groups:history`, `message.groups`), the
+**direct-message** scopes and events (`im:history` / `mpim:history`, `message.im` /
+`message.mpim` — [issue-362](https://github.com/MadaraUchiha-314/the-loop/issues/362)),
+and — if it never used Socket Mode — Socket Mode itself. Two ways, pick one:
 
 - **Replace the manifest** (recommended, one step). At
   [api.slack.com/apps](https://api.slack.com/apps) open the app → *App Manifest* → paste
@@ -100,10 +106,10 @@ if it never used Socket Mode — Socket Mode itself. Two ways, pick one:
 
   | Page | Add |
   |------|-----|
-  | *OAuth & Permissions → Bot Token Scopes* | `commands`, `groups:history` (and `reactions:write` if the app predates issue-325) |
+  | *OAuth & Permissions → Bot Token Scopes* | `commands`, `groups:history`, `im:history`, `mpim:history` (and `reactions:write` if the app predates issue-325) |
   | *Socket Mode* | *Enable Socket Mode* (if not already) |
   | *Slash Commands → Create New Command* | command `/the-loop`, any description and usage hint; **no Request URL** is needed in Socket Mode |
-  | *Event Subscriptions → Subscribe to bot events* | `message.groups` (beside the existing `message.channels`) |
+  | *Event Subscriptions → Subscribe to bot events* | `message.groups`, `message.im`, `message.mpim` (beside the existing `message.channels`) |
   | *Interactivity & Shortcuts* | on (it already is if the buttons worked) |
 
 After either path: the **bot token** stays the one you have unless Slack issues a new one
@@ -113,6 +119,9 @@ the app has none; then set `read.mode: socket` and the grants you want in
 `channels.slack.publish`, restart `the-loop channels listen`, and check
 `the-loop channels status` — its `commands:` line should read *`/the-loop` over Socket
 Mode* with the families you granted. `/the-loop help` in Slack is the end-to-end test.
+If your channel is a **direct message**, run `the-loop channels status --probe` too — it
+asks Slack what the channel is and which scopes the app was granted, and says so when the
+two do not match (see [Which events your channel needs](#which-events-your-channel-needs)).
 
 ### 2. Mint the two tokens
 
@@ -129,7 +138,10 @@ Mode* with the families you granted. `/the-loop help` in Slack is the end-to-end
 Both can live in the `.env` file the CLI config names
 ([`env.file`](/config/cli/#env-file)); neither ever appears in a config, a state file, the
 event log or `channels status` output. Invite the bot to the channel it will post in, and
-copy that channel's **id** (`C…`, from the channel's details pane).
+copy that conversation's **id** from its details pane. A public or private channel is
+`C…` or `G…`; the **direct message** with the bot is `D…`, and works as a channel in
+every respect — see [Which events your channel needs](#which-events-your-channel-needs)
+for what a DM requires of the app.
 
 ### 3. Configure the channel
 
@@ -159,6 +171,56 @@ channels:
 become** — the channel's authority, one grant per kind of act, all off except
 `work-item.reply` until you write them down. Every option is in the
 [channels options](/config/cli/channels-options).
+
+### Which events your channel needs
+
+Slack emits a **different message event per kind of conversation** and delivers only the
+ones your app subscribed to. The kind is in the channel id's first character:
+
+| Conversation | Id | Bot scope | Bot event |
+|---|---|---|---|
+| public channel | `C…` | `channels:history` | `message.channels` |
+| private channel | `C…` or `G…` | `groups:history` | `message.groups` |
+| direct message with the bot | `D…` | `im:history` | `message.im` |
+| group direct message | `G…` | `mpim:history` | `message.mpim` |
+
+**The manifest above carries all four**, so an app imported from it works in any of them.
+An app created before
+[issue-362](https://github.com/MadaraUchiha-314/the-loop/issues/362) carries only the
+first two — and a DM configured on such an app fails in the quietest way the-loop has:
+the bot posts, opens threads and answers button presses normally, `channels status`
+reports everything green, and **nothing anyone types is delivered** until the listener
+next starts or reconciles. Reading a DM is not the problem (the bot token can already do
+that, which is why the catch-up read recovers everything); being *told* about one is.
+
+`the-loop channels status` names the conversation kind from the id alone, and calls out a
+`D…` because that is the case a pre-issue-362 app certainly cannot serve:
+
+```console
+$ the-loop channels status
+  channel:      D0AU0SGP30T
+  read:         socket, reconciling every 900s
+  channel kind: direct message — needs bot scope im:history and bot event message.im
+  [!] channel D0AU0SGP30T is a direct message: it needs the bot scope im:history and
+      the bot event message.im, which the-loop's app manifest did not always carry …
+```
+
+`--probe` replaces the guess with the measured answer — one `conversations.info` on your
+own channel and one `auth.test` for the scopes the app was actually granted (no token is
+ever printed):
+
+```console
+$ the-loop channels status --probe
+  channel kind: direct message — needs bot scope im:history and bot event message.im
+  probe:        conversations.info says im; granted bot scopes: chat:write, channels:history, …
+  [!] channel D0AU0SGP30T is a direct message and the app lacks the bot scope im:history —
+      Slack never delivers message.im, so replies and kickoffs are only read when the
+      listener starts or reconciles. …
+```
+
+The listener runs the same probe once when it connects and logs each finding as a
+warning, so an operator who never runs `status` still hears about it. Fix it by
+[replacing the manifest](#upgrading-the-app-you-already-have-1b) and reinstalling.
 
 ### 4. Run it
 
@@ -523,7 +585,7 @@ What happens to what members did while the-loop was stopped, restarting or upgra
 |------|------------------------|-----------------|
 | a keyword or gate answer **already recorded on the ledger** | it is a GitHub comment; nothing is lost | the ledger's ingress executes it on its next cycle — the GitHub side reconciles with its own cursors |
 | a thread reply or kickoff message, `read.mode: poll` | stays on Slack | the next poll cycle reads every bound thread from its saved cursor and processes what accumulated, once |
-| a thread reply or kickoff message, `read.mode: socket` | Slack retries the undelivered event a few times over a few minutes; beyond that it stays on Slack | the listener runs one **catch-up read** over every bound thread and the kickoff cursor the moment it connects (`channel.caught_up`), so what accumulated is processed once; a retry Slack then delivers of a message the catch-up already handled is dropped as `duplicate` |
+| a thread reply or kickoff message, `read.mode: socket` | Slack retries the undelivered event a few times over a few minutes; beyond that it stays on Slack | the listener runs a **catch-up read** over every bound thread and the kickoff cursor the moment it connects (`channel.caught_up`), and again every [`read.catchUpSeconds`](/config/cli/channels-options#slack-read-catchupseconds) (default 900) while it runs, so what accumulated is processed once; a retry Slack then delivers of a message the catch-up already handled is dropped as `duplicate` |
 | a `/the-loop` command or a button press | fails **visibly** to the member in Slack — no listener was connected to take it | the member issues it again; nothing was half-done |
 
 **There is no dead-letter queue, on purpose.** A message the-loop *read but could not act
@@ -535,9 +597,13 @@ the member's own message, and **not retried**: a retried kickoff opens a second 
 retried gate answer answers twice, a retried keyword starts twice. The cursor advances,
 and the person who typed it posts again — the safe retry for a message that is an
 instruction. The two transports share the per-thread cursors in the channel state, so
-the same message is never processed twice whichever path read it. In a socket deployment you may
-also run `the-loop channels poll` from cron beside the listener as a reconciliation for a
-long outage — it is the same read cycle. This is the standard shape for a robust Slack
+the same message is never processed twice whichever path read it. A socket listener **reconciles on its own** every
+`read.catchUpSeconds` (default 15 minutes; `0` turns it off), which is the same read
+cycle and the ceiling on how late any missed envelope can be — a subscription the app
+does not carry, a Socket Mode reconnect gap, an acknowledgement that raced a restart.
+Before [issue-362](https://github.com/MadaraUchiha-314/the-loop/issues/362) that cycle
+ran only at connect, so "missed" meant "until someone restarts the daemon". You may still
+run `the-loop channels poll` from cron beside the listener; it is the same cycle again. This is the standard shape for a robust Slack
 integration, and the one the-loop already uses with GitHub: push for latency, a
 cursor-based pull for completeness.
 

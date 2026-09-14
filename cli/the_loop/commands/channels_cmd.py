@@ -1,7 +1,8 @@
 """``the-loop channels`` — operate the communication channels (issue-245).
 
 Five actions: ``status`` (what is configured, with token *presence* only —
-never values), ``threads`` (which Slack thread carries which work item's
+never values; ``--probe`` also asks Slack what the configured channel is and
+which bot scopes the app holds, issue-362), ``threads`` (which Slack thread carries which work item's
 conversation, issue-312 — reads the state file, calls nothing), ``poll`` (one
 synchronous read cycle, for cron and daemon-less deployments, R4.1), ``listen``
 (Socket Mode in the foreground — push, no polling, no exposed endpoint, R4.2;
@@ -26,8 +27,12 @@ from ..channels.events import SUBSCRIBABLE_EVENTS
 from ..channels.slack import (
     REACTION_STATES,
     SlackChannelConfig,
+    kind_summary,
+    probe_subscription,
     run_socket_listener,
     slack_state_path,
+    subscription_findings,
+    unchecked_advice,
 )
 from ..repos import declared_repositories
 from ..channels.state import ChannelState, canonical
@@ -37,7 +42,7 @@ def _presence(env_name: str) -> str:
     return "set" if os.environ.get(env_name) else "unset"
 
 
-def _status(config: dict) -> int:
+def _status(config: dict, probe: bool = False) -> int:
     from ..channels.base import ledger_name
     from ..channels.events import PUBLISHABLE_EVENTS
 
@@ -62,14 +67,22 @@ def _status(config: dict) -> int:
             "note (13.10.0)"
         )
     )
-    print(
-        f"  read:         {slack.read_mode}"
-        + (
-            f" every {slack.read_interval_seconds:g}s"
-            if slack.read_mode == "poll"
-            else ""
+    # What the read mode costs an operator who is waiting (issue-362): poll says
+    # its cadence, socket says how often it RECONCILES on top of its push reads —
+    # which is the ceiling on how late a missed envelope can be.
+    if slack.read_mode == "poll":
+        cadence = f" every {slack.read_interval_seconds:g}s"
+    elif slack.read_mode == "socket":
+        cadence = (
+            f", reconciling every {slack.catch_up_seconds}s"
+            if slack.catch_up_seconds
+            else ", reconciling only at connect (read.catchUpSeconds: 0)"
         )
-    )
+    else:
+        cadence = ""
+    print(f"  read:         {slack.read_mode}{cadence}")
+    for line in _subscription_lines(slack, probe):
+        print(line)
     for line in _button_lines(slack):
         print(line)
     # Where a top-level message becomes an issue (issue-341): the message's own
@@ -167,6 +180,39 @@ def _status(config: dict) -> int:
             f"  [{tick}] {name} — {SUBSCRIBABLE_EVENTS.get(name) or _publish_meaning(name)}"
         )
     return 0
+
+
+def _subscription_lines(slack: SlackChannelConfig, probe: bool) -> list:
+    """What kind of conversation the channel is, and whether the app can hear it
+    (issue-362 R2). Slack emits a different message event per conversation kind
+    and delivers only what the app subscribed to, so a channel configured with a
+    kind the app is not subscribed to reads as healthy while nothing typed in it
+    arrives — the defect issue-362 reported.
+
+    The first line costs **nothing**: the id's own prefix says the kind, which
+    keeps `status`'s contract that it reads the state file and calls nothing.
+    `--probe` adds the measured answer from `conversations.info` + `auth.test`.
+    """
+    if not slack.channel:
+        return []
+    lines = [f"  channel kind: {kind_summary(slack.channel)}"]
+    if not probe:
+        lines += [f"  [!] {advice}" for advice in unchecked_advice(slack.channel)]
+        return lines
+    result = probe_subscription(slack)
+    if result.get("skipped"):
+        return lines + [f"  probe:        not probed — {result['skipped']}"]
+    kind = result["kind"]
+    scopes = result["scopes"]
+    lines.append(
+        f"  probe:        conversations.info says {kind}; granted bot scopes: "
+        + (", ".join(scopes) if scopes else "(the response carried no x-oauth-scopes)")
+    )
+    lines += [
+        f"  [!] {finding}"
+        for finding in subscription_findings(slack.channel, (kind,), scopes)
+    ]
+    return lines
 
 
 def _button_lines(slack: SlackChannelConfig) -> list:
@@ -280,9 +326,18 @@ class ChannelsCommand(Command):
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         sub = parser.add_subparsers(dest="channels_command", required=True)
-        sub.add_parser(
+        status = sub.add_parser(
             "status",
             help="Resolved channel config and conversation counts (no secrets)",
+        )
+        status.add_argument(
+            "--probe",
+            action="store_true",
+            help=(
+                "Ask Slack what the configured channel is and which bot scopes "
+                "the app was granted, and report what it cannot receive "
+                "(conversations.info + auth.test; never prints a token)"
+            ),
         )
         threads = sub.add_parser(
             "threads",
@@ -327,7 +382,7 @@ class ChannelsCommand(Command):
         eventlog.configure_from_file("channels")
         config = _cli_config()
         if args.channels_command == "status":
-            return _status(config)
+            return _status(config, probe=args.probe)
         if args.channels_command == "threads":
             return _threads(config, args.work_item, args.json)
         if args.channels_command == "manifest":
