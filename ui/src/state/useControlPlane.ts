@@ -302,7 +302,7 @@ export async function fetchGraphs(
     const session = sessionByRef.get(ref);
     const repo = session?.cwd;
     const spec = specId(recordByRef.get(ref) ?? { ref });
-    // No checkout on this machine means no graph state to read. The row still
+    // No checkout on this machine means no work-item state to read. The row still
     // renders — `railFromFrozen` covers it — so this is a skip, not a failure.
     if (!repo || !spec) continue;
 

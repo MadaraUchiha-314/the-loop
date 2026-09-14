@@ -41,7 +41,7 @@ test-first discipline, the paper trail, review depth — is never traded for tok
   (the loading map in `reference/token-economy.md`).
 - **Sub-agent delegation:** verbose work (tests, doc fetches, log/file scans) SHOULD run in
   a fresh-context sub-agent that returns a summary.
-- **Compaction:** long runs SHALL checkpoint durable state to `execution-log.md` and
+- **Compaction:** long runs SHALL checkpoint (checkmarks ticked, WIP committed) and
   compact/reset the window preserving the spec + open threads, leaning on the-loop's
   filesystem-as-memory — the boundaries are the fixed context rule (clear at a phase
   boundary, compact after each task, never clear mid-task; [spec-workflow](spec-workflow.md)).
@@ -71,6 +71,7 @@ Pointers, not copies:
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-365 | The execution log was retired as a token lever in its own right (2026-09-14): a 130-line template per work item, a checkpoint appended at every node boundary and a prose entry demanded before every context reset, all re-deriving what the transcript, the commits and `work-item-state.json` already held. State worth offloading to disk is state something reads | [spec](../specs/issue-365/), [decision-126](../decisions/decision-126.md), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/365) |
 | issue-352 | The `tokenEconomy` block left the harness config (2026-09-12): the levers are guidance, never configured — the harness runs the operator's model (no routing table), thinking effort and verbosity follow the reference's stage table, and disclosure, sub-agent delegation, compaction and telemetry are practices, not switches. `externalTools` left with it; caveman/ponytail are implemented natively, not registered | [spec](../specs/issue-352/), [decision-123](../decisions/decision-123.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/352) |
 | issue-156 | Process runner removed; tmux is the only runner (2026-08-05): the cost model inverted — the resident TUI amortizes context across a work item's events instead of re-priming per event, and window growth is managed inside the session (compaction/clears). | [spec](../specs/issue-156/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |
 | issue-37 | Introduced the token-economy capability: `tokenEconomy` config (model routing, thinking effort, output verbosity, progressive disclosure, sub-agents, compaction, telemetry), the `token-economy.md` reference, best-effort usage telemetry in the CLI, and registration of caveman/ponytail. | [spec](../specs/issue-37/), PR #41 |

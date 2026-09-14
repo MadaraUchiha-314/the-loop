@@ -3,7 +3,7 @@
  *
  * The board is two rounds: four flat list calls, then one `POST /graph/check`
  * per loop — and the second round is where a work item's position on its loop
- * comes from, read off `graph-state.json` on the workstation. That is why a
+ * comes from, read off `work-item-state.json` on the workstation. That is why a
  * stream which only replayed `GET /api/v1/events` would not refresh the board:
  * the rail would go stale while the event list scrolled, which is a screen that
  * looks live and lies.

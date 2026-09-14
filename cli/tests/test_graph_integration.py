@@ -21,7 +21,7 @@ from the_loop.graph.hooks.feedback import (
 )
 from the_loop.graph.model import compile_graph
 from the_loop.graph.runtime import Runtime, force
-from the_loop.graph.state import GraphState
+from the_loop.graph.state import WorkItemState
 
 GRAPH = {
     "start": "design",
@@ -91,7 +91,7 @@ def test_a_work_item_walks_from_a_blocked_node_to_a_gate(repo):
     )
     second = runtime.advance("issue-1")
     assert second.status == "pass"
-    assert GraphState.load(_spec(repo), "issue-1").current_node == "design-approval"
+    assert WorkItemState.load(_spec(repo), "issue-1").current_node == "design-approval"
 
 
 def test_an_unauthorized_comment_is_not_read_and_the_gate_stays_waiting(repo):

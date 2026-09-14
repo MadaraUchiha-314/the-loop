@@ -111,11 +111,12 @@ alone does not fix that; structure plus a test does.
 - A work item SHALL update the **user-facing documentation** its change made wrong — the
   root `README.md`, this site under `docs/`, and `skills/the-loop/SKILL.md` with its
   `reference/` docs — **in the same PR** as the change, and SHALL record what it changed in
-  the execution log's **`## Documentation`** section.
+  **`evidence/documentation.md`**'s `## Documentation` section.
 - That section SHALL be gated by the outer loop's `capability-docs` node, alongside
-  `## Capability docs` ([decision-066](../decisions/decision-066.md)). A work item that
-  changed no user-facing document SHALL say so **with the reason**; the section is never
-  deleted to shorten the log.
+  `## Capability docs` in the same file
+  ([decision-066](../decisions/decision-066.md)). A work item that changed no user-facing
+  document SHALL say so **with the reason**; the section is never deleted to shorten the
+  record.
 - The gate SHALL live on the existing node rather than a new one, and the node SHALL keep
   its id, `stage` and phase — `stage: capability-docs` is the key the token-economy
   guidance's stage table is written against.
@@ -165,6 +166,7 @@ because nothing read them before `complete`.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-365 | The `## Documentation` record moved out of the retired execution log (2026-09-14) into `evidence/documentation.md`, gated by the same `capability-docs` node alongside `## Capability docs` | [spec](../specs/issue-365/), [decision-126](../decisions/decision-126.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/365) |
 | issue-174 | The root `README.md` rewritten to lead with the graph, the two loops and the CLI and to delegate everything else to this site; the site's three entry pages brought current (two loops, the four-artifact chain, `testing-plan.md`); the workflow diagram regenerated from a committed generator after owner review found it three releases stale; and updating the user-facing docs became a completion gate — `## Documentation` joins `## Capability docs` on the `capability-docs` node | [spec](../specs/issue-174/), [decision-066](../decisions/decision-066.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/174) |
 | issue-117 | The CLI documented as a product (onboarding path + one page per command), Config made a top-level section split by area, the `cli/README.md` → `docs/cli.md` copy retired, and the docs↔code parity test added — which is what forced `check`/`graph`/`migrate-config` and `integrations`/`workspace`/`routing.graph`/`polling.maxRetries` to be written, and `ghBinary` to be removed | [spec](../specs/issue-117/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/117) |
 | issue-73 | `CLAUDE.md` added so the-loop's own cloud/web sessions run the loop instead of shipping one-off PRs | [issue](https://github.com/MadaraUchiha-314/the-loop/issues/73) |

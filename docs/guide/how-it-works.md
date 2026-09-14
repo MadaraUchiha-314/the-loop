@@ -44,8 +44,8 @@ Inspect it with [`the-loop graph`](/cli/commands/graph) and read the full behavi
   repo, and the only file the CLI reads — see the [configuration reference](/config/).
 - **Everything the-loop manages** is tracked in `.the-loop/manifest.yaml`.
 - **Templates** for epics, stories, bugs, the optional `brainstorm` root artifact and the
-  spec artifacts (`requirements`/`bugfix`, `design`, `testing-plan`, `tasks`,
-  `execution-log`) are **internal to the-loop** — they ship with the plugin under
+  spec artifacts (`requirements`/`bugfix`, `design`, `testing-plan`, `tasks`) and the
+  gate records under `evidence/` are **internal to the-loop** — they ship with the plugin under
   `skills/the-loop/templates/` and are read from there when an artifact is authored, rather
   than being copied into every project.
 - **Config schemas are internal too.** `harness-config.schema.json`,
@@ -82,7 +82,7 @@ docs/
   learnings/         learnings.md + learning-<nnn>.md + topics/
   specs/<id>/        brainstorm.md (optional), requirements.md|bugfix.md, design.md,
                      design/ (optional UI/UX artifacts), testing-plan.md, tasks.md,
-                     execution-log.md, evidence/
+                     evidence/
 ```
 
 Those directories are the loop's fixed convention, not a setting: `docs/specs/<id>/`,

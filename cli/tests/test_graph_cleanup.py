@@ -28,7 +28,7 @@ from the_loop.graph.model import (
     load_graph,
 )
 from the_loop.graph.runtime import CLEANUP_NODE, Runtime
-from the_loop.graph.state import GraphState
+from the_loop.graph.state import WorkItemState
 from the_loop.graphlink import GraphLink, GraphLinkConfig
 from the_loop.sessions import WorkItemRef
 
@@ -93,7 +93,7 @@ GRAPH = {
             "phase": "cleanup",
             "actor": "code",
             "terminal": True,
-            "entry": ["log-entry"],
+            "entry": ["set-phase-label"],
         },
     ],
     "edges": [{"from": "work", "to": "complete", "on": "pass"}],
@@ -110,7 +110,6 @@ NO_CLEANUP = {
 def repo(tmp_path):
     spec = tmp_path / SPEC
     spec.mkdir(parents=True)
-    (spec / "execution-log.md").write_text("# Execution Log\n", encoding="utf-8")
     return tmp_path
 
 
@@ -119,7 +118,7 @@ def runtime_for(repo, graph=GRAPH):
 
 
 def state_of(repo):
-    return GraphState.load(repo / SPEC, "issue-186")
+    return WorkItemState.load(repo / SPEC, "issue-186")
 
 
 def start_at(repo, node="work"):
@@ -135,7 +134,9 @@ def test_it_enters_the_cleanup_node_and_runs_its_entry_chain(repo):
 
     assert report is not None and report.node == CLEANUP_NODE
     assert state_of(repo).current_node == CLEANUP_NODE
-    assert CLEANUP_NODE in (repo / SPEC / "execution-log.md").read_text()
+    # The entry chain ran where it can be seen: the transition is in graph state
+    # (the checkpoint used to be an execution-log entry too, until issue-365).
+    assert CLEANUP_NODE in state_of(repo).nodes
 
 
 def test_it_records_no_force_and_forges_no_verdict(repo):
@@ -164,10 +165,10 @@ def test_it_is_idempotent(repo):
     start_at(repo)
     rt = runtime_for(repo)
     rt.cleanup("issue-186", ref=REF.ref)
-    log_after_first = (repo / SPEC / "execution-log.md").read_text()
+    entered_at = state_of(repo).record(CLEANUP_NODE).entered_at
 
     assert rt.cleanup("issue-186", ref=REF.ref) is None
-    assert (repo / SPEC / "execution-log.md").read_text() == log_after_first
+    assert state_of(repo).record(CLEANUP_NODE).entered_at == entered_at
 
 
 def test_a_work_item_that_never_entered_the_graph_is_a_no_op(repo):
@@ -218,7 +219,6 @@ def checkout(root):
     )
     spec = root / SPEC
     spec.mkdir(parents=True)
-    (spec / "execution-log.md").write_text("# Execution Log\n", encoding="utf-8")
     return root
 
 
@@ -241,13 +241,13 @@ def test_link_the_cleanup_transition_is_recorded_even_though_the_item_is_disarme
         store,
         ["octocat"],
     )
-    state = GraphState.load(root / SPEC, "issue-186")
+    state = WorkItemState.load(root / SPEC, "issue-186")
     state.enter("implementation")
     state.save(root / SPEC)
 
     link.on_cleanup(REF, str(root), reason="cleanup requested")
 
-    assert GraphState.load(root / SPEC, "issue-186").current_node == CLEANUP_NODE
+    assert WorkItemState.load(root / SPEC, "issue-186").current_node == CLEANUP_NODE
 
 
 def test_link_a_foreign_checkout_is_still_refused(tmp_path):
@@ -269,14 +269,14 @@ def test_link_a_foreign_checkout_is_still_refused(tmp_path):
     )
     spec = root / SPEC
     spec.mkdir(parents=True)
-    state = GraphState(work_item="issue-186")
+    state = WorkItemState(work_item="issue-186")
     state.enter("implementation")
     state.save(spec)
     link = GraphLink(GraphLinkConfig(), ControlConfig(enabled=False), None, [])
 
     link.on_cleanup(REF, str(root))
 
-    assert GraphState.load(spec, "issue-186").current_node == "implementation"
+    assert WorkItemState.load(spec, "issue-186").current_node == "implementation"
 
 
 def test_link_a_work_item_with_no_spec_directory_is_a_no_op(tmp_path):

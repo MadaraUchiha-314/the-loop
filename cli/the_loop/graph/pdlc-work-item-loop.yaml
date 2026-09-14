@@ -14,7 +14,8 @@
 # spec chain lives. Each contributing repository gets ONE pull request walking
 # pdlc-pr-loop, with its state under this spec directory qualified by repository
 # (pr-loops/<owner>__<repo>/pr-<n>/). A work item may declare those repositories
-# in execution-log.md's front matter (`repos:`), and `await-inner-loops` then
+# at phase-selection (frozen into work-item-state.json), and `await-inner-loops`
+# then
 # holds `implementation` until each of them has a loop — a contribution that was
 # planned and never opened is otherwise indistinguishable from one that was
 # never needed. Where THIS loop's artifacts are iterated with humans is the
@@ -32,7 +33,7 @@
 #
 # Note the six nodes between `implementation` and `complete`. They were all one
 # `needs-review` label before this graph existed — which is exactly where the
-# measured drift piled up (23 of 26 execution logs stopped there).
+# measured drift piled up (23 of 26 work items stopped there).
 #
 # `test-planning` and `verification` (issue-163) are the same argument applied to
 # testing: how a work item will be proved is planned before the task DAG that
@@ -67,7 +68,7 @@ start: phase-selection
 #
 # The loop therefore cannot start without a named, authorized human saying which
 # phases it walks — and every phase that does not run is attributable to that
-# person, before the fact, with provenance in graph-state.json, in the frozen
+# person, before the fact, with provenance in work-item-state.json, in the frozen
 # graph of the portable record, in a confirmation comment on the ticket, and in
 # every `the-loop check` thereafter. The guarantee moved from "these phases
 # always ran" to "every phase that did not run has a name on it". Read
@@ -113,7 +114,7 @@ nodes:
     phase: phase-selection
     actor: human
     required: true          # the selection is a human act; never skippable
-    entry: [set-phase-label, log-entry, post-phase-selection, deliver-assignment]
+    entry: [set-phase-label, post-phase-selection, deliver-assignment]
     exit: [classify-phase-selection]
 
   - id: brainstorming
@@ -124,7 +125,7 @@ nodes:
     produces: [brainstorm.md]
     command: brainstorm
     stage: brainstorm
-    entry: [set-phase-label, log-entry, deliver-assignment]
+    entry: [set-phase-label, deliver-assignment]
     # No `locked:` on any producing node (issue-281): a producing node's gate
     # checks SHAPE — the artifact exists and carries its sections — and the
     # approval node that follows is what locks it (`lock-artifacts` on its
@@ -149,7 +150,7 @@ nodes:
     produces: ["requirements.md|bugfix.md"]
     command: new-requirement
     stage: requirements
-    entry: [set-phase-label, log-entry, deliver-assignment]
+    entry: [set-phase-label, deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {sections: ["Requirements", "Security considerations"]}}
       - lint-artifacts
@@ -178,7 +179,7 @@ nodes:
     produces: [design.md]
     command: create-design
     stage: design
-    entry: [set-phase-label, log-entry, deliver-assignment]
+    entry: [set-phase-label, deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {sections: ["Architecture", "Security design", "Testing strategy"]}}
       # Same two names as phase 1. Naming only requirements.md here meant this
@@ -209,9 +210,9 @@ nodes:
       requirements, before the testing plan and the task DAG are derived from
       it (the design is locked later, at design-approval — issue-281)
     stage: critic-review
-    entry: [log-entry, deliver-assignment]
+    entry: [deliver-assignment]
     exit:
-      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Design critic review"]}}
+      - {hook: validate-artifacts, with: {validates: evidence/design-critic-review.md, sections: ["Design critic review"]}}
 
   # Planning HOW the work item will be proved. It sits between `design` and
   # `design-approval` on purpose (owner's call on PR #166): the plan is derived
@@ -230,12 +231,12 @@ nodes:
     skippable: true         # issue-179, the ticket's own ask: a documentation
                             # fix has no matrix worth locking. Skipping it does
                             # not remove the proof — `verification` below moves
-                            # its subject to the execution log rather than
-                            # losing it.
+                            # its subject to evidence/verification.md rather
+                            # than losing it.
     produces: [testing-plan.md]
     command: create-testing-plan
     stage: test-planning
-    entry: [set-phase-label, log-entry, deliver-assignment]
+    entry: [set-phase-label, deliver-assignment]
     exit:
       - hook: validate-artifacts
         with:
@@ -278,7 +279,7 @@ nodes:
     produces: [tasks.md]
     command: create-tasks-plan
     stage: tasks
-    entry: [set-phase-label, log-entry, deliver-assignment]
+    entry: [set-phase-label, deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {sections: ["Task list"]}}
       - lint-artifacts
@@ -292,7 +293,7 @@ nodes:
     produces: [tasks.md]
     command: execute-tasks
     stage: implementation
-    entry: [set-phase-label, log-entry, deliver-assignment]
+    entry: [set-phase-label, deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {checkmarks: complete}}
       # The seam between the loops (issue-172): the work item waits here until
@@ -316,7 +317,7 @@ nodes:
     produces: [testing-plan.md]
     command: verify-work
     stage: verification
-    entry: [set-phase-label, log-entry, deliver-assignment]
+    entry: [set-phase-label, deliver-assignment]
     exit:
       - hook: validate-artifacts
         with:
@@ -327,13 +328,14 @@ nodes:
       # read — and issue-177's planned-absence rule would then let the gate
       # report success having asserted nothing, which is the issue-124/167
       # shape this repository has already fixed twice. So when (and only when)
-      # the plan is a planned absence, the proof moves to the shared execution
-      # log, beside the sections the review chain already owns. `verification`
-      # itself blocks until it is written.
+      # the plan is a planned absence, the proof moves to
+      # `evidence/verification.md`, beside the files the review chain already
+      # owns. That file is produced by NO node, so it can never become a
+      # planned absence itself and `verification` blocks until it is written.
       - hook: validate-artifacts
         with:
           onlyWhenSkipped: testing-plan.md
-          validates: execution-log.md
+          validates: evidence/verification.md
           sections: [Verification results]
       # No-op unless a graph revision binds a command, exactly as on
       # `implementation`: the obvious seam for a project's own verification entry
@@ -342,33 +344,35 @@ nodes:
 
   # --- everything below was ONE `needs-review` label before this graph -------
   #
-  # These six do not *author* an artifact — each owns one section of the SHARED
-  # `execution-log.md`. So they declare `validates:` rather than `produces:`,
-  # which keeps "produces" meaning "this node wrote it" while still giving each
-  # gate a file to read (issue-167, decision-063).
+  # These six each gate ONE file under `evidence/` — the record the node leaves
+  # behind. They declare `validates:` rather than `produces:`, which keeps
+  # "produces" meaning "the artifact this phase is judged by" while still giving
+  # each gate a file to read (issue-167, decision-063).
   #
   # Without it they declared no artifact at all, so `validate-artifacts` returned
   # *skipped* on every run and — a skip not being a decision (decision-060) — the
   # chain passed straight through all six, `security-review` included, however
-  # empty the log was. `locked:` is deliberately absent: the execution log is
-  # append-only and carries `status: in-progress | complete`, never `approved`.
+  # empty the record was. One file each, never one shared file (issue-365,
+  # decision-126): a shared `Review cycles` section would let the critic's gate
+  # pass on the self-review's writing. `locked:` is deliberately absent: these
+  # are records of what happened, never artifacts a human approves.
 
   - id: self-review
     phase: needs-review
     actor: agent
     skippable: true         # issue-179
     stage: self-review
-    entry: [set-phase-label, log-entry, deliver-assignment]
+    entry: [set-phase-label, deliver-assignment]
     exit:
-      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Review cycles"]}}
+      - {hook: validate-artifacts, with: {validates: evidence/self-review.md, sections: ["Review cycles"]}}
 
   - id: critic-review
     actor: agent
     skippable: true         # issue-179
     stage: critic-review
-    entry: [log-entry, deliver-assignment]
+    entry: [deliver-assignment]
     exit:
-      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Review cycles"]}}
+      - {hook: validate-artifacts, with: {validates: evidence/critic-review.md, sections: ["Review cycles"]}}
 
   - id: security-review
     actor: agent
@@ -378,21 +382,21 @@ nodes:
     # review is now the human's to declare away at `phase-selection`, before any
     # work starts, with their name on the omission. What decision-063 actually
     # fixed still holds — this node can no longer skip ITSELF by resolving no
-    # artifact; it either runs and gates the log, or a person declared it away
+    # artifact; it either runs and gates its record, or a person declared it away
     # on the record.
     skippable: true         # issue-179
     stage: security-review
-    entry: [log-entry, deliver-assignment]
+    entry: [deliver-assignment]
     exit:
-      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Security review (gate)"]}}
+      - {hook: validate-artifacts, with: {validates: evidence/security-review.md, sections: ["Security review (gate)"]}}
 
   - id: evidence
     actor: agent
     skippable: true         # issue-179
     stage: evidence
-    entry: [log-entry, deliver-assignment]
+    entry: [deliver-assignment]
     exit:
-      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Final validation evidence"]}}
+      - {hook: validate-artifacts, with: {validates: evidence/final-validation.md, sections: ["Final validation evidence"]}}
 
   # Two sections, one node (issue-174, decision-066). `Capability docs` is the
   # ORGANIZED VIEW OF SPECS — current behaviour per capability, for a reader who
@@ -406,17 +410,17 @@ nodes:
     actor: agent
     skippable: true         # issue-179
     stage: capability-docs
-    entry: [log-entry, deliver-assignment]
+    entry: [deliver-assignment]
     exit:
-      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Capability docs", "Documentation"]}}
+      - {hook: validate-artifacts, with: {validates: evidence/documentation.md, sections: ["Capability docs", "Documentation"]}}
 
   - id: reviewer-briefing
     actor: agent
     skippable: true         # issue-179
     stage: reviewer-briefing
-    entry: [log-entry, deliver-assignment]
+    entry: [deliver-assignment]
     exit:
-      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Pull requests"]}}
+      - {hook: validate-artifacts, with: {validates: evidence/pull-requests.md, sections: ["Pull requests"]}}
 
   - id: human-approval
     actor: human
@@ -438,7 +442,7 @@ nodes:
     terminal: true
     # `work-item-complete` was in the catalog and fired by nothing (issue-309,
     # gap 4): the "done" now reaches every channel subscribed to it.
-    entry: [set-phase-label, log-entry, {hook: notify, with: {event: work-item-complete}}]
+    entry: [set-phase-label, {hook: notify, with: {event: work-item-complete}}]
     exit: []
 
   # The other end of the life cycle (issue-186). the-loop accumulates LOCAL
@@ -459,7 +463,7 @@ nodes:
     phase: cleanup
     actor: code
     terminal: true
-    entry: [set-phase-label, log-entry]
+    entry: [set-phase-label]
     exit: []
 
   - id: escalated

@@ -9,8 +9,8 @@ moves on to verification across all the PRs.
 
 ``await-inner-loops`` is that wait, expressed the way every other gate in the
 graph is expressed: a hook over checked-in files. Each inner loop keeps its
-state at ``docs/specs/<id>/pr-loops/<pr-number>/graph-state.json`` — beside the
-outer ``graph-state.json``, on the work item's branch, surviving machine and
+state at ``docs/specs/<id>/pr-loops/<pr-number>/work-item-state.json`` — beside
+the outer ``work-item-state.json``, on the work item's branch, surviving machine and
 session changes for the same reasons (decision-041). The hook reads those
 files and nothing else: no registry, no GitHub, no network, so ``the-loop
 check`` in CI evaluates it identically to the daemon.
@@ -31,7 +31,7 @@ path, so no work item in flight has to be migrated to gain the feature.
 The vacuous pass has one gap that only shows up across repositories — a
 contribution that was *planned* and never opened is indistinguishable from one
 that was never planned. So a work item may **declare** the repositories it
-contributes to, in ``execution-log.md``'s front matter (``repos:``), and this
+contributes to, at `phase-selection`, and this
 gate then holds until each of them has an inner loop. Declaring nothing keeps
 the pre-issue-183 behaviour exactly.
 """
@@ -44,8 +44,8 @@ from pathlib import Path
 from typing import List, Sequence, Tuple
 
 from ..contract import HookContext, HookResult, Message
-from ..frontmatter import read_front_matter
 from ..registry import hook
+from ..state import LEGACY_STATE_FILENAME, STATE_FILENAME, WorkItemState
 
 __all__ = [
     "PR_LOOPS_DIRNAME",
@@ -104,18 +104,22 @@ def inner_loop_state_dir(spec_dir: Path, pr_number: int, repo: str = "") -> Path
     return root / f"pr-{int(pr_number)}"
 
 
-def declared_repos(spec_dir: Path) -> List[str]:
+def declared_repos(spec_dir: Path, work_item: str = "") -> List[str]:
     """The repositories this work item says it contributes to (issue-183).
 
-    ``execution-log.md``'s front-matter ``repos:`` — checked in, human-authored,
-    and read exactly like every other gate input: no network, no registry. An
-    absent or non-list value is *no declaration*, not an empty one, and the gate
-    behaves as it did before this key existed.
+    ``work-item-state.json``'s ``repos`` — ticked by an authorized human at
+    `phase-selection` and frozen by the same signed reply as the surface, the
+    PR-session mode, the model and the effort (issue-365, decision-127). It was
+    front matter on a checked-in artifact until then, which made it editable by
+    anyone who could edit the file; this input decides which repositories an
+    unattended agent opens pull requests in, so it belongs where every other
+    per-work-item choice already is.
+
+    Read exactly like every other gate input: no network, no registry. An empty
+    list is *no declaration*, not an empty one, and the gate then behaves as it
+    did before the key existed.
     """
-    raw = read_front_matter(spec_dir / "execution-log.md").get("repos")
-    if not isinstance(raw, list):
-        return []
-    return [str(entry).strip() for entry in raw if str(entry).strip()]
+    return list(WorkItemState.load(spec_dir, work_item).repos)
 
 
 def _inner_states(spec_dir: Path) -> List[Tuple[str, str]]:
@@ -133,8 +137,13 @@ def _inner_states(spec_dir: Path) -> List[Tuple[str, str]]:
     root = spec_dir / PR_LOOPS_DIRNAME
     if not root.is_dir():
         return []
-    paths = sorted(root.glob("pr-*/graph-state.json")) + sorted(
-        root.glob("*/pr-*/graph-state.json")
+    # Both names: an inner loop started before issue-365 renamed the file still
+    # has its pointer under the old one, and an outer gate that stopped seeing
+    # it would release on a loop that never finished.
+    paths = sorted(
+        path
+        for name in (STATE_FILENAME, LEGACY_STATE_FILENAME)
+        for path in (*root.glob(f"pr-*/{name}"), *root.glob(f"*/pr-*/{name}"))
     )
     found: List[Tuple[str, str]] = []
     for state_path in paths:
@@ -197,14 +206,14 @@ def await_inner_loops(ctx: HookContext) -> HookResult:
       Neither is a fault; both are work in progress, and the outer loop's
       posture toward work in progress is patience (the same reason a human gate
       is a ``wait``).
-    * **BLOCK** for a ``repos:`` entry that is not a usable repository name.
-      That *is* a fault — in a checked-in file, authored by a person — and
-      waiting for it would wait forever (issue-183).
+    * **BLOCK** for a ``repos`` entry that is not a usable repository name.
+      That *is* a fault — a recorded human choice, checked in — and waiting for
+      it would wait forever (issue-183).
     """
     name = "await-inner-loops"
     spec_dir = ctx.work_item.spec_dir
     states = _inner_states(spec_dir)
-    declared = declared_repos(spec_dir)
+    declared = declared_repos(spec_dir, ctx.work_item.id)
     try:
         missing, origin_unknown = _repos_without_a_loop(
             declared, states, str(ctx.config.get("originRepo") or "")
@@ -216,10 +225,11 @@ def await_inner_loops(ctx: HookContext) -> HookResult:
             messages=[
                 Message(
                     text=(
-                        f"execution-log.md declares a repository the-loop cannot "
-                        f"use: {exc}. `repos:` entries are <owner>/<repo>."
+                        f"this work item declares a repository the-loop cannot "
+                        f"use: {exc}. `repos` entries are <owner>/<repo>; they "
+                        f"are ticked at `phase-selection`."
                     ),
-                    path=str(spec_dir / "execution-log.md"),
+                    path=str(spec_dir / STATE_FILENAME),
                 )
             ],
             data={"declared": list(declared)},

@@ -78,11 +78,12 @@ every API is authored contract-first with docs generated from the contract).
   sequence (skips marked distinctly, so a skip can never satisfy an expectation written
   for a pass), the exact `loop:<phase>` label trail, spec-chain artifacts locked before
   `implementation` is entered, expected events as an ordered subsequence of the log, and
-  execution-log sections present. Divergences report the first mismatch.
+  each gate's `evidence/` record carrying the sections its node demands. Divergences
+  report the first mismatch.
 - The shipped scenarios pin: the full happy path (including `await-inner-loops` parking
   `implementation` until a simulated inner PR loop completes), the trivial-tier
-  declared-skip short-circuit (with `verification` re-targeting the execution log per
-  issue-179), ask/reply mid-flight (with the dead-pane reply refused fail-closed), gate
+  declared-skip short-circuit (with `verification` re-targeting `evidence/verification.md`
+  per issue-179 and issue-365), ask/reply mid-flight (with the dead-pane reply refused fail-closed), gate
   rejection on an unlocked artifact, `changes-requested` looping back a phase, GitHub-outage
   degradation (`graph.hook_degraded`, verdicts unchanged), and loop prevention (marked and
   unauthorized comments never release a human gate).
@@ -130,6 +131,7 @@ every API is authored contract-first with docs generated from the contract).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-365 | The e2e conformance keys followed the artifact (2026-09-14): `executionLogSections` and `executionLogEntries` became one `evidenceSections` map of file → sections, and the walk is asserted by the node trace alone rather than by checkpoints a hook wrote into a log | [spec](../specs/issue-365/), [decision-126](../decisions/decision-126.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/365) |
 | issue-251 | Waiting became a rule rather than a habit (2026-08-16): an asynchronous test waits on the state its next line depends on, not on the attempt that precedes it, and a fixed sleep before a positive assertion is a defect — with `pytest --dispatch-lag=<seconds>` shipped so the shape is found by running the suite rather than by reading it | [spec](../specs/issue-251/), [decision-091](../decisions/decision-091.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/251) |
 | issue-217 | The process itself became integration-tested (2026-08-12): a scenario-driven e2e suite drives one work item per scenario through the shipped outer loop against a fixture-playback agent, asserting process conformance (node trace with skips distinct from passes, label trail, locks before implementation, ordered event subsequence, execution-log sections) — seven scenarios covering the happy path with the inner-loop seam, trivial-tier declared skips, ask/reply with the fail-closed dead-pane refusal, gate rejection, review rejection looping back, GitHub-outage degradation, and loop prevention; new scenarios are fixture sets kept in lockstep with named tests by a consistency test | [spec](../specs/issue-217/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/217) |
 | issue-163 | Testing became part of the process rather than an assumption: the `testing-plan.md` artifact and the `test-planning` / `verification` nodes, the test-type matrix with `n/a`-with-a-reason, the declared-not-managed verification environment, and committed, redacted evidence (screenshots and GIFs for UI flows) | [spec](../specs/issue-163/), [decision-060](../decisions/decision-060.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/163) |

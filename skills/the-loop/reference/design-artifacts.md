@@ -33,7 +33,7 @@ docs/specs/<id>/
     checkout.html
     screenshots/            # rendered stills used as evidence
   tasks.md
-  execution-log.md
+  evidence/                 # the record each gate leaves (reviews, security, docs, PRs)
 ```
 
 - **HTML prototypes are checked in** (they are text, diffable, self-contained).

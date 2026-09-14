@@ -54,8 +54,8 @@ management); only the node set differs.
 4. **Done means the criteria are met.** At `implementation`, work strictly toward the
    frozen criteria; tick each `- [ ]` in `contribution.md` only when it is actually
    met. `verification` blocks until all boxes are ticked and the
-   `Verification results` section records how each was proved (in the execution log
-   instead, when the planning phases were declared away).
+   `Verification results` section records how each was proved (in
+   `evidence/verification.md` instead, when the planning phases were declared away).
 
 5. **The phase choice is the human's.** `phase-selection` runs exactly as in the outer
    loop: post the checklist of this loop's skippable phases, wait for an authorized
@@ -67,5 +67,5 @@ management); only the node set differs.
 `goal-definition → phase-selection → context-intake → scoped-plan → plan-approval →
 implementation → verification → self-review → critic-review → security-review →
 reviewer-briefing → human-approval → complete` — claim each finished node with
-`the-loop graph complete <id>`. Reviews record into the shared
-`execution-log.md` sections, exactly as every loop does.
+`the-loop graph complete <id>`. Reviews record into the work item's
+`evidence/` files, exactly as every loop does.

@@ -828,7 +828,7 @@ const KIND_TIER: Record<string, number> = {
 /**
  * The inbox: what `/attention` reports, plus the graph gates it cannot see.
  *
- * Gate waits are repo-scoped — they live in each checkout's `graph-state.json`,
+ * Gate waits are repo-scoped — they live in each checkout's `work-item-state.json`,
  * which is why `core.attention` deliberately leaves them out and documents that
  * they surface through `graphs.check` per work item. Having already fetched
  * those reports for the rails, the UI folds them back in here.

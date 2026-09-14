@@ -4,7 +4,7 @@ Derived, never stored: paused sessions, recent delivery/dispatch failures from
 the event log, armed work items with no live session, and sessions waiting on a
 human answer (`session.awaiting_input` not yet closed by a `session.reply_sent`
 — issue-208). Graph-gate waits are
-repo-scoped (they live in each checkout's graph state), so they surface through
+repo-scoped (they live in each checkout's work-item state), so they surface through
 ``graphs.check`` per work item; this module aggregates only what the machine's
 own state can answer.
 """

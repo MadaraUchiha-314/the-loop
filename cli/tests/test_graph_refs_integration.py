@@ -30,7 +30,7 @@ from the_loop.graph.bootstrap import build_runtime
 from the_loop.graph.integrations.base import IntegrationError
 from the_loop.graph.model import compile_graph
 from the_loop.graph.runtime import Runtime, declare_skips, force
-from the_loop.graph.state import GraphState
+from the_loop.graph.state import WorkItemState
 
 WORK_ITEM = "issue-194"
 DERIVED = "github:octo/repo#194"
@@ -264,7 +264,9 @@ def test_a_failing_hook_is_reported_without_changing_the_edge(tmp_path, monkeypa
 
     report = runtime.advance(WORK_ITEM)
     assert report.status == "wait"  # R2.4: the gate still waits, as it must
-    assert GraphState.load(_spec_dir(repo), WORK_ITEM).current_node == "phase-selection"
+    assert (
+        WorkItemState.load(_spec_dir(repo), WORK_ITEM).current_node == "phase-selection"
+    )
 
     records = (tmp_path / "events.jsonl").read_text().splitlines()
     degraded = [r for r in records if '"graph.hook_degraded"' in r]
@@ -328,7 +330,7 @@ def test_a_force_whose_audit_comment_fails_says_so(tmp_path, monkeypatch):
     result = force(
         _runtime(repo), WORK_ITEM, "requirements", reason="unblocking", actor="@owner"
     )
-    assert GraphState.load(_spec_dir(repo), WORK_ITEM).current_node == "requirements"
+    assert WorkItemState.load(_spec_dir(repo), WORK_ITEM).current_node == "requirements"
     assert any("could not post the audit comment" in w for w in result.warnings)
 
 
@@ -364,7 +366,7 @@ def test_cli_advance_prints_the_warning(tmp_path, monkeypatch, capsys):
     repo = _repo(tmp_path)
     # The SHIPPED graph, driven through the real command — no miniature here:
     # what the ticket reported is what `the-loop graph advance` prints.
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     state.enter("phase-selection")
     state.decisions["phase-selection"] = {"at": "2026-08-10T00:00:00+00:00"}
     state.save(_spec_dir(repo))

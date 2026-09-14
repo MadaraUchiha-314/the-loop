@@ -40,13 +40,13 @@ There are exactly **two** runtime concepts and **one** contract between them.
   - The loop SHALL NOT start until an authorized user's comment states a goal and at
     least one success criterion (`Goal:` + a `Success criteria:` bullet list); the
     `goal-definition` node is `required: true`, the parsed goal is frozen into
-    `graph-state.json`'s decisions with provenance and confirmed in a comment, and
+    `work-item-state.json`'s decisions with provenance and confirmed in a comment, and
     unauthorized or self-authored text SHALL NOT be read at all.
   - Its planning nodes (`context-intake`, `scoped-plan`, `plan-approval`) SHALL author
     **one** artifact — `contribution.md` — in place of the four-file spec chain; its
     `verification` node SHALL block until every success-criterion checkbox is complete
-    and `Verification results` is recorded (in the execution log when the plan was
-    declared away). Every node but `goal-definition` and `phase-selection` is
+    and `Verification results` is recorded (in `evidence/verification.md` when the plan
+    was declared away). Every node but `goal-definition` and `phase-selection` is
     skippable (skip sets `plan` and `review-chain`).
   - A contribution has **no outer loop**, so it SHALL NOT be asked where to put one
     (issue-199). The `phase-selection` checklist SHALL omit the `outer-loop-on-pull-request`
@@ -121,7 +121,7 @@ There are exactly **two** runtime concepts and **one** contract between them.
   commits nothing, pushes nothing and opens no pull request; a finding worth fixing is
   a new work item.
   - Typed on a pull request, the review SHALL bind to the **pull request's own ref** —
-    control record, spawn and graph state alike — even when the PR links work items
+    control record, spawn and work-item state alike — even when the PR links work items
     (the router's linked-first ordering is right for delivery and wrong for a review);
     on a plain issue the ordinary target stands.
   - The loop SHALL declare exactly four walkable nodes — `review-brief` (human,
@@ -132,7 +132,7 @@ There are exactly **two** runtime concepts and **one** contract between them.
   - **No brief, no review.** The `review-brief` gate SHALL post a fill-in template
     (questions / angles / validations) idempotently — and not at all when the brief
     rode in on the arming comment — then freeze the newest authorized,
-    non-self-authored brief into `graph-state.json`'s decisions with provenance and
+    non-self-authored brief into `work-item-state.json`'s decisions with provenance and
     confirm it in a comment. Unauthorized or self-authored text SHALL NOT be read at
     all, and the gate SHALL re-read the whole thread because the arming comment is
     consumed by the control path.
@@ -155,7 +155,7 @@ There are exactly **two** runtime concepts and **one** contract between them.
     held as the ad-hoc loop holds it) — and SHALL reuse the existing phase vocabulary
     (`needs-review`, `complete`, `cleanup`).
   - A review is a **guest** (`GUEST_LOOPS`, generalizing the contribution carve-out):
-    its spec tree (the graph-state cache) SHALL stay out of git via the `guestLoop`
+    its spec tree (the work-item-state cache) SHALL stay out of git via the `guestLoop`
     seam, and it installs nothing in the repository it reviews.
 - **Every work-item-level loop ends at a `cleanup` node** (issue-186). `pdlc-work-item-loop`,
   `pdlc-contribution-loop`, `pdlc-adhoc-loop` and `pdlc-review-loop` SHALL each declare a
@@ -186,8 +186,8 @@ There are exactly **two** runtime concepts and **one** contract between them.
     runs across all the PRs. WHEN none was ever started THEN the gate SHALL pass
     vacuously: a single-session work item behaves exactly as before issue-172.
   - Each inner loop's state SHALL live at
-    `docs/specs/<id>/pr-loops/pr-<number>/graph-state.json` — beside the outer
-    `graph-state.json`, checked in, a cache and never an authority. Artifacts SHALL
+    `docs/specs/<id>/pr-loops/pr-<number>/work-item-state.json` — beside the outer
+    `work-item-state.json`, checked in, a cache and never an authority. Artifacts SHALL
     resolve against the work item's **one** spec chain: a PR does not get a spec chain
     of its own. An unreadable inner state SHALL hold the outer gate (naming the PR),
     never release it.
@@ -213,7 +213,9 @@ There are exactly **two** runtime concepts and **one** contract between them.
     its repository) THEN routing SHALL map the event to the work item in **that**
     repository. This widens which work item an arrived event names — never which events
     arrive, nor which work items are armed.
-  - WHEN `execution-log.md`'s front matter declares `repos: [<owner>/<repo>, …]` THEN
+  - WHEN `work-item-state.json` declares `repos: [<owner>/<repo>, …]` — written by
+    `the-loop graph repos`, the AGENT's verb, once `design.md` and `tasks.md` say what
+    the change spans — THEN
     `await-inner-loops` SHALL hold `implementation` until each declared repository has at
     least one inner loop **and** every started loop has reached `complete`; a declared
     repository with no loop SHALL be named in the wait. IF a declared entry is not a usable
@@ -244,7 +246,7 @@ There are exactly **two** runtime concepts and **one** contract between them.
   - Where the **outer** loop's artifacts are iterated with humans SHALL be declared **per
     work item** at `phase-selection`, by the same authorized reply that freezes the phase
     selection: one extra checklist row (`outer-loop-on-pull-request`) whose resolved value
-    is written to `graph-state.json` and to the portable record. IF it is unticked or
+    is written to `work-item-state.json` and to the portable record. IF it is unticked or
     absent THEN the surface SHALL be the **work item itself** — the default, because a
     work item only opens a pull request in the origin repository when its author asks for
     one. It SHALL NOT be a key in the harness config or the CLI config: one repository has
@@ -345,7 +347,7 @@ The author of a work item — never the harness — decides which phases it walk
     deployment's `routing.tmux.sessionPerPr` rendered **pre-ticked**. Exactly one ticked
     row SHALL be the choice; none ticked, several ticked, an unreadable checklist and a
     token outside those three SHALL all resolve to that configured default. The resolved
-    mode SHALL be written to `graph-state.json` and to the portable record
+    mode SHALL be written to `work-item-state.json` and to the portable record
     (`graph.sessionPerPr`), named in the confirmation, and read by the daemon **per work
     item** in preference to the config key — which is therefore a default and not a
     verdict, for the same reason the surface is not a config key at all. The rows SHALL be
@@ -354,7 +356,7 @@ The author of a work item — never the harness — decides which phases it walk
     phase, whichever way it is ticked.
 - **The selection freezes the graph.** WHEN the gate is answered THEN the resolved graph —
   every node with whether it is walked, and whether it was selectable — SHALL be recorded
-  in `graph-state.json` and pushed to the work item's **portable session record**
+  in `work-item-state.json` and pushed to the work item's **portable session record**
   (`frozenGraph`, `graph.frozen`), so what the loop will walk is a recorded fact rather
   than a comment anyone can keep editing, readable without a checkout. A failed publish
   SHALL be recorded (`graph.frozen_publish_failed`) and SHALL NOT gate the selection —
@@ -383,9 +385,10 @@ The author of a work item — never the harness — decides which phases it walk
   `skipped` with a reason otherwise. It reads only the runtime's filtered
   `skipped_artifacts`, so it SHALL only ever narrow a gate's applicability and can never
   widen what may be skipped. The shipped use is `verification`: with `test-planning`
-  declared away and no `testing-plan.md`, it gates the shared `execution-log.md` for a
+  declared away and no `testing-plan.md`, it gates `evidence/verification.md` for a
   non-empty **Verification results** section instead, and blocks until it is written —
-  skipping the plan removes the document, never the verifying.
+  skipping the plan removes the document, never the verifying. That file is produced by no
+  node, so it can never become a planned absence itself (issue-365).
 
 ### Opt-in phases (issue-188)
 
@@ -402,7 +405,7 @@ The other default, at the same gate and by the same person
   Ticking one SHALL select it; leaving it unticked, or never naming it in the reply, SHALL
   leave it unselected. Every unreadable-input path SHALL resolve to *not selected* — the
   fail-closed direction for a phase that adds a review rather than gating one.
-- A selection SHALL be recorded in `graph-state.json` as `optIns[<node>] = {via, token,
+- A selection SHALL be recorded in `work-item-state.json` as `optIns[<node>] = {via, token,
   by, at}` (`graph.opt_ins_selected`), filtered through the compiled graph on every read
   exactly as `skips` is, and never applied to a node the pointer already entered. The
   frozen graph SHALL carry `optIn` per node so the portable record distinguishes a phase
@@ -416,8 +419,8 @@ The other default, at the same gate and by the same person
 - The shipped opt-in phase is **`design-critic-review`** (outer loop only), between
   `design` and `test-planning`: a different model reading the completed `design.md`
   against the requirements before the testing plan and task DAG derive from it (it is
-  locked later, at `design-approval` — issue-281), gating the execution log's
-  `Design critic review` section. See [review-loop](review-loop.md).
+  locked later, at `design-approval` — issue-281), gating
+  `evidence/design-critic-review.md`. See [review-loop](review-loop.md).
 - An **edge** SHALL route on a hook **outcome** only (`on: pass`, `on: changes-requested`,
   …). There is no expression language: the LLM produces facts, declared edges route on
   them. That split is what makes judgement and determinism coexist.
@@ -449,14 +452,14 @@ The other default, at the same gate and by the same person
 
 ### What a node `validates` (issue-167)
 
-`produces` means *this node authored it*. A node that gates an artifact it did **not**
-author — the six review-chain nodes each own one section of the shared
-`execution-log.md` — declares it on the hook entry instead
-([decision-063](../decisions/decision-063.md)):
+`produces` means *the artifact this phase is judged by*, which the manifest binds to a
+phase. A node that gates something else — the six review-chain nodes each gate one record
+under `evidence/`, and most of them carry no `phase` at all — declares it on the hook entry
+instead ([decision-063](../decisions/decision-063.md)):
 
 ```yaml
 exit:
-  - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Security review (gate)"]}}
+  - {hook: validate-artifacts, with: {validates: evidence/security-review.md, sections: ["Security review (gate)"]}}
 ```
 
 - `validates` SHALL be a **hook parameter**, not a node field: it describes one assertion,
@@ -616,9 +619,9 @@ included, however empty the log was.
   declares no artifacts gets a *skipped* `validate-artifacts`, which is a gate reporting
   success without running. WHEN `test-planning` was declared skipped and no plan exists
   THEN the same reasoning applies one level up (issue-179): the artifact gate takes its
-  planned-absence branch, so `verification` SHALL gate the execution log's **Verification
-  results** section instead (`onlyWhenSkipped:`), and SHALL still block until the results
-  are written.
+  planned-absence branch, so `verification` SHALL gate `evidence/verification.md`'s
+  **Verification results** section instead (`onlyWhenSkipped:`), and SHALL still block
+  until the results are written.
 - Both nodes SHALL carry their own `phase`, so a work item's ticket label says
   `loop:test-planning` / `loop:verification` rather than hiding the state inside a
   neighbouring phase.
@@ -728,7 +731,7 @@ reader.
   `graph advance`, `graph force`, `graph skip`, `check`, `graph status` and `graph show`
   all leave `.the-loop/` exactly as they found it. The check operation stays pure by
   contract.
-- **Graph state is resolved before anything is delivered** (issue-148): the dispatcher
+- **Work-item state is resolved before anything is delivered** (issue-148): the dispatcher
   SHALL resolve a read-only context — current node, phase, status, parked/blocked
   reason, gate messages, the node's `command` — before rendering any prompt, and SHALL
   render it into the `$graph_context` placeholder. A spawn prompt for a mid-graph item
@@ -762,8 +765,8 @@ reader.
   text, completion claim, payload — moves the pointer except through an exit chain over
   checked-in artifacts or `classify-feedback` on an authorized author's text. Any
   consultation fault delivers with the context unknown and records `graph.link_failed`.
-- Graph state has **two writers** (the daemon's link and the session's claim), so the
-  load→mutate→save window SHALL run under an advisory lock (`graph-state.lock`,
+- Work-item state has **two writers** (the daemon's link and the session's claim), so the
+  load→mutate→save window SHALL run under an advisory lock (`work-item-state.lock`,
   stdlib `fcntl`, no-op where unavailable); a busy lock reports `busy` rather than
   blocking, and a lost update on the no-op fallback costs a re-evaluation, never a
   wrong pointer.
@@ -774,9 +777,8 @@ reader.
   `graph.gate_session` (`inherited` or `fresh-with-artifacts`). The registry remains
   the dispatch authority.
 - Entering the start node SHALL run its **entry chain**, which is what writes the
-  `loop:<phase>` label and the execution-log checkpoint. Before this, no node was ever
-  entered on the automated path, so those side effects never fired and the phase labels
-  stayed unpopulated.
+  `loop:<phase>` label. Before this, no node was ever entered on the automated path, so
+  that side effect never fired and the phase labels stayed unpopulated.
 - An inbound event's comments SHALL be passed to the exit chain as `HookContext.event`,
   so a human-approval node's `classify-feedback` classifies the reply that just arrived.
   The link SHALL always pass a comment's **author** alongside its body and SHALL NOT
@@ -796,7 +798,7 @@ reader.
   start is a chicken-and-egg for every work item that begins life as a plain ticket —
   and the node it holds back is `phase-selection`, the outer loop's one `required: true`
   node, whose entire job is to run before any spec exists. The `start` and `context`
-  actions SHALL therefore proceed without it: `start` writes `graph-state.json` (creating
+  actions SHALL therefore proceed without it: `start` writes `work-item-state.json` (creating
   the directory as it goes) and `context` is a pure read. `advance` and `clean` SHALL keep
   the requirement — neither can be the first thing that happens to a work item, so for
   them a missing directory still means the graph was never placed here, and keeping it
@@ -808,7 +810,7 @@ reader.
   instance drives — and in-session `check`/`graph` SHALL take `--spec-dir`, else the same
   key, else the default. It SHALL resolve that directory **once** and use the same value
   for the skip decision and for the runtime it builds, so the directory gated on and the
-  directory `graph-state.json` is written into cannot drift apart.
+  directory `work-item-state.json` is written into cannot drift apart.
 - That read SHALL happen only **after** `_checkout_belongs_to` has proved via the `origin`
   remote that the directory is the work item's own repository, and a declared value that
   is absolute or resolves outside the checkout SHALL be refused — a value read from a
@@ -825,12 +827,12 @@ reader.
 
 ### State, recovery and the escape hatch
 
-- Graph state SHALL be a **cache, not an authority**. `the-loop check --recompute`
+- Work-item state SHALL be a **cache, not an authority**. `the-loop check --recompute`
   SHALL ignore stored state and derive each node's verdict from the checked-in artifacts
   alone, which is what makes the CI gate meaningful and drift discoverable.
 - `the-loop graph force --to <node> --reason <why>` SHALL move a work item past its gates,
   exercisable by the authorized user running the-loop's CLI. It SHALL require a reason,
-  SHALL record the override in four places (graph state, execution log, event log, and a
+  SHALL record the override in three places (work-item state, event log, and a
   marked ticket comment), and SHALL warn about every gate it bypassed.
 - **A force moves the pointer. It never forges a verdict.** A bypassed gate keeps its real
   result, so `the-loop check --recompute` still reports it unmet after the force. An
@@ -859,6 +861,8 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-365 (review) | `graph-state.json` became **`work-item-state.json`** (2026-09-14): the name was the narrowest true description of a file that had carried the surface, the session, the PR-session mode, the model and the effort for releases. Read under the old name, written under the new one, and the inner-loop scan globs both — a work item mid-flight keeps its pointer with no migration step. `the-loop graph repos` arrived with it: the **agent** declares which repositories the work item raises pull requests in, once the design and the task DAG say what the change spans, refused for a value that is not a repository path or is outside the instance's own `repositories` — and `await-inner-loops` reads it there | [spec](../specs/issue-365/), [decision-127](../decisions/decision-127.md), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/365) |
+| issue-365 | The six review-chain gates changed subject (2026-09-14): `validates: execution-log.md` became one `evidence/<record>.md` per node, `verification`'s kept gate points at `evidence/verification.md` (produced by no node, so never a planned absence), `design-critic-review` at `evidence/design-critic-review.md`, and the `log-entry` hook is gone from the registry and from all five shipped graphs. One file per gate, never one shared record: a gate must not be satisfiable by the round another node ran | [spec](../specs/issue-365/), [decision-126](../decisions/decision-126.md), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/365) |
 | issue-358 | `phase-selection` grew two more per-work-item questions — which **model**, and at what **effort** — resolved per section against what this work item's harness can actually run, and frozen beside `surface`/`sessionPerPr`. The spawn also moved to **after** the gate: `graphlink.on_arm` enters the graph when a work item is armed and reports whether the pointer parked on a human start node, and the dispatcher spawns nothing while it has | [spec](../specs/issue-358/), [decision-124](../decisions/decision-124.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/358) |
 | issue-352 | The graph stopped reading the harness config (2026-09-12): `build_runtime` takes the spec directory from the CLI config or `--spec-dir`, the phase label prefix is the constant `loop:`, the origin repository is the work item's ref or the checkout's `origin` remote, `repoInitialized` became `guestLoop` (a contribution or review keeps its spec tree out of git and posts its plan to the thread; the work item's own loops never do), `notify` reads roles from the node's `with:` only, and the operator's hooks come from `routing.graph.hooks` (`load_graph(declaration=…)`, `repoHooks` gone). Adoption (issue-193/201) is retired: no verb writes into `.the-loop/`. `workflow.phases` and its parity test are gone — the graph is the only phase list. The `stage` keys nodes declare are matched against the token-economy guidance's stage table, not against a `tokenEconomy` routing map — that block left the harness config too | [spec](../specs/issue-352/), [decision-123](../decisions/decision-123.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/352) |
 | issue-281 | The gate became the locker (2026-08-25): `validate-artifacts` stopped demanding `locked: true` on any producing node — brainstorming, requirements-definition, design, test-planning, tasks-breakdown, and the contribution loop's scoped-plan gate shape only — and a new `lock-artifacts` hook on the approval nodes' exit chains (after `classify-feedback` and `record-feedback`) writes `status: approved` and merges the approving authors into `approvedBy` as a comment-preserving front-matter splice, verified after the write and failing closed. It consumes the classifier's verdict from the same chain run (never re-reading comments), skips on `changes-requested` or an absent artifact, and declares no outcome, so the classifier alone routes. This ends the double-ask the stacked layers produced: one human approval per gate, and no approval at all for nodes the graph gives no gate | [spec](../specs/issue-281/), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/281) |
@@ -866,17 +870,17 @@ reader.
 | issue-273 | `phase-selection` stopped being routed around by default (2026-08-20): the ingress→graph coupling gated **every** graph action on `<specDir>/<id>/` already existing, so a work item minted as a plain ticket — no `/create-ticket`, no committed spec folder — had its graph declined at spawn (`graph.skipped`, `no-spec-dir`, twice) and its session walked into `requirements-definition` with the outer loop's one `required: true` node never having run: no checklist, no `the-loop execute`, no frozen graph, and nothing for `the-loop check` to attribute. `start` and `context` are now exempt (the directory is created by the work the gate holds back; `advance` and `clean` keep the check), and the read-before-spawn context of an unplaced work item renders its start node as `pending` — a block that names the gate and forbids beginning a phase before the node's assignment arrives, instead of the empty block that let the session start on its own | [spec](../specs/issue-273/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/273) |
 | issue-247 | The one hook that writes markdown into a checked-in artifact stopped writing markdown the project's own linter rejects (2026-08-16): `record-feedback`'s attribution gained trailing text (`**@handle** wrote:`), because emphasis alone on a line is precisely MD036's target — so every approval-with-comments had been leaving `design.md` and `testing-plan.md` failing `make lint`, and a session hand-editing the paper trail to unblock itself. A comment with an empty body now becomes one attribution line instead of a blank-line run (MD012). The reviewer's body stays verbatim, which is the other half of the rule: the harness fixes its own markdown and never a human's words, so a body that fails lint on its own merits is out of scope by decision rather than by omission | [spec](../specs/issue-247/), [decision-089](../decisions/decision-089.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/247) |
 | issue-238 | A gate that read nothing stopped counting as a gate that passed: when `graph/check` began answering a non-resolving `repo` with a position-unknown report instead of raising, that report had no nodes and so no blocking node, and `the-loop check --fail-on block` — the automated-gate mode — would have exited 0 on a mistyped `--repo`. Both modes now refuse it ahead of either rule, and the row renders `UNREAD — <path> is not a directory` instead of `UNMET (at )` with nothing under it. Found by self-review of the control-plane fix, not by the fix's own tests | [spec](../specs/issue-238/), [control-plane](control-plane.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/238) |
-| issue-260 | How many sessions a work item's pull requests get moved from the operator to the work item (2026-08-17): issue-258 gave the choice to `routing.tmux.sessionPerPr`, machine-wide — the same mistake issue-183 refused to make for `outer-loop-on-pull-request`, because one repository has both a one-repo bugfix and a three-repo migration and one daemon serves both. `phase-selection` now carries three rows (`pr-sessions-never` / `pr-sessions-cross-repository` / `pr-sessions-always`) with the deployment's configured value pre-ticked; exactly one ticked row is the choice, and none, several, an unreadable checklist or a token outside the vocabulary all resolve to that default. The resolved mode is frozen by the same signed `the-loop execute` into `graph-state.json` and the portable record (`graph.sessionPerPr`), and routing reads it there per work item ahead of the config key. Nothing else moved: the three modes mean what decision-092 said, decision-088 D2's tree requirement is untouched, the schema is unchanged, and a work item with no frozen mode routes exactly as before | [spec](../specs/issue-260/), [decision-093](../decisions/decision-093.md), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/260) |
+| issue-260 | How many sessions a work item's pull requests get moved from the operator to the work item (2026-08-17): issue-258 gave the choice to `routing.tmux.sessionPerPr`, machine-wide — the same mistake issue-183 refused to make for `outer-loop-on-pull-request`, because one repository has both a one-repo bugfix and a three-repo migration and one daemon serves both. `phase-selection` now carries three rows (`pr-sessions-never` / `pr-sessions-cross-repository` / `pr-sessions-always`) with the deployment's configured value pre-ticked; exactly one ticked row is the choice, and none, several, an unreadable checklist or a token outside the vocabulary all resolve to that default. The resolved mode is frozen by the same signed `the-loop execute` into `work-item-state.json` and the portable record (`graph.sessionPerPr`), and routing reads it there per work item ahead of the config key. Nothing else moved: the three modes mean what decision-092 said, decision-088 D2's tree requirement is untouched, the schema is unchanged, and a work item with no frozen mode routes exactly as before | [spec](../specs/issue-260/), [decision-093](../decisions/decision-093.md), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/260) |
 | issue-225 | The ad-hoc loop (2026-08-14): a fourth shipped graph, `pdlc-adhoc-loop`, walked when a requester wants a tactical task done and no PDLC process run — armed by the new `do` control keyword (`routing.control.keywords.do`), driven by `/the-loop:do-task`. Three walkable nodes (`work` -> `review` -> `complete`, with `review` routing back to `work` on `more-work`) and deliberately no `goal-definition`, no `phase-selection`, no `produces`/`validate-artifacts`, no `skipSets` and no review chain — the issue-177/179 attribution invariant holding by construction, because nothing is skipped when the loop declares nothing to skip. A new `classify-adhoc-reply` hook inverts the review gate's default (any authorized reply that is not a declaration of completion is more work; the newest comment decides; self-authored and unauthorized text is never read), and `graph.model.resolve_outer_loop` becomes the single fail-closed decision point the three copied "contribution or default" comparisons used to be | [spec](../specs/issue-225/), [decision-083](../decisions/decision-083.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/225) |
 | issue-199 | A contribution is not asked where its outer loop goes, and does not wait for a second command (2026-08-10): `pdlc-contribution-loop` joins somebody else's in-progress work item and owns no outer loop, so `phase-selection` omits the `outer-loop-on-pull-request` row for it, ignores the token if a reply carries it, confirms no surface, and freezes an **empty** one — *never asked*, not *default kept* — with the session prompt placing the work on the thread instead of naming an outer loop; and a spawn now evaluates a **human** start node once with the spawning event attached, so the goal that rode in with `the-loop contribute` moves the item to `phase-selection` on its own (agent start nodes and respawns evaluate nothing) | [spec](../specs/issue-199/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/199) |
 | issue-194 | Outbound hooks stopped being dead and silent (2026-08-10): a graph verb with no `--ref` had been handing the bare work-item id to the integrations, where every operation raised `malformed work item ref` — so nothing was posted, no label was set, and the command printed a clean answer. The ref is now **derived** from `ticketing.github` plus the `issue-<n>` id (a new `graph/refs.py`, the inverse of the ingress's `spec_id_for`, refusing anything that does not validate rather than guessing), and a best-effort hook that records an `error` while passing is reported as a warning line on the `NodeReport` plus a `graph.hook_degraded` event — without changing any node's verdict or edge. `graph force`/`graph skip` report a failed audit comment in their `warnings`; `_split_ref`'s error names both remedies; `sideeffects.py` resolves its integration at call time, so the seam every test patches finally applies to it | [spec](../specs/issue-194/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/194) |
 | issue-193 | An unconfigured repository is adopted, and a guest still is not (2026-08-10): the four state-changing graph verbs (`complete`, `advance`, `force`, `skip`) write the-loop's built-in default harness config into a repository carrying none, before the runtime is built — so `repoInitialized` is true on the very run that adopted it — while `check`/`status`/`show` write nothing, and `pdlc-contribution-loop` adopts nothing at all, keeping issue-185's spec-tree exclusion and thread publishing pointed at the repositories they were written for | [spec](../specs/issue-193/), [decision-073](../decisions/decision-073.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/193) |
-| issue-188 | Opt-in phases, and the design critic round (2026-08-10): a second node marker, `optIn: true` — the mirror of `skippable`, implying it (same vocabulary, same `on: skipped` edge, same provenance) but **off unless an authorized human ticks it** at `phase-selection`; `required`×`optIn` and an opt-in `skipSets` member refused at compile time; a node `description` rendered beside its checklist row; selections recorded as `optIns` in `graph-state.json` (`graph.opt_ins_selected`), filtered through the compiled graph on every read, carried into the frozen graph per node, and named in the confirmation comment; an unselected opt-in node routed around and reported by `check` as *not selected* — never as a declaration, never as a pass — which also leaves every pre-issue-188 work item unblocked; the outer loop ships one such phase, `design-critic-review`, between `design` and `test-planning` | [spec](../specs/issue-188/), [decision-071](../decisions/decision-071.md), [review-loop](review-loop.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/188) |
+| issue-188 | Opt-in phases, and the design critic round (2026-08-10): a second node marker, `optIn: true` — the mirror of `skippable`, implying it (same vocabulary, same `on: skipped` edge, same provenance) but **off unless an authorized human ticks it** at `phase-selection`; `required`×`optIn` and an opt-in `skipSets` member refused at compile time; a node `description` rendered beside its checklist row; selections recorded as `optIns` in `work-item-state.json` (`graph.opt_ins_selected`), filtered through the compiled graph on every read, carried into the frozen graph per node, and named in the confirmation comment; an unselected opt-in node routed around and reported by `check` as *not selected* — never as a declaration, never as a pass — which also leaves every pre-issue-188 work item unblocked; the outer loop ships one such phase, `design-critic-review`, between `design` and `test-planning` | [spec](../specs/issue-188/), [decision-071](../decisions/decision-071.md), [review-loop](review-loop.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/188) |
 | issue-186 | A terminal `cleanup` node in both work-item-level loops (2026-08-10): the-loop enters it — via `Runtime.cleanup`, a sibling of `start` rather than a `force` — immediately before releasing a work item's local resources, so the teardown carries a `loop:cleanup` label and an execution-log checkpoint. No inbound edge (`complete` stays terminal), none in `pdlc-pr-loop`, and the one graph action exempt from the start requirement | [spec](../specs/issue-186/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/186) |
-| issue-185 | The contribution loop (2026-08-09): a third shipped graph, `pdlc-contribution-loop`, walked when the-loop is invited into an existing, in-progress work item as a contributor — armed by the new `contribute` control keyword (a spawn-arming sibling of `start`, `routing.control.keywords.contribute`); a required `goal-definition` gate (`post-goal-request`/`classify-goal` hooks) that refuses to start until an authorized human states a goal and success criteria, frozen into graph state with provenance; one lightweight `contribution.md` artifact (bundled template) in place of the four-file spec chain; verification gating on every criterion checkbox being met; `GraphState.loop` recording which loop a state walks, resolved state-first everywhere with non-shipped names failing closed to the default | [spec](../specs/issue-185/), [decision-070](../decisions/decision-070.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/185) |
+| issue-185 | The contribution loop (2026-08-09): a third shipped graph, `pdlc-contribution-loop`, walked when the-loop is invited into an existing, in-progress work item as a contributor — armed by the new `contribute` control keyword (a spawn-arming sibling of `start`, `routing.control.keywords.contribute`); a required `goal-definition` gate (`post-goal-request`/`classify-goal` hooks) that refuses to start until an authorized human states a goal and success criteria, frozen into work-item state with provenance; one lightweight `contribution.md` artifact (bundled template) in place of the four-file spec chain; verification gating on every criterion checkbox being met; `GraphState.loop` recording which loop a state walks, resolved state-first everywhere with non-shipped names failing closed to the default | [spec](../specs/issue-185/), [decision-070](../decisions/decision-070.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/185) |
 | issue-183 | Multi-repo topology named (2026-08-09): the outer loop runs in the repository the ticket was created in and each contributing repository gets one PR and one inner loop, whose state is qualified by repository (`pr-loops/<owner>__<repo>/pr-<n>/`) with the origin repo's shipped path unchanged; repository names are validated at the path boundary, never sanitized; a qualified cross-repo closing reference now routes to its work item; `execution-log.md` front matter takes `repos:` and `await-inner-loops` holds `implementation` until each declared repository has a finished loop (blocking on a malformed entry); the surface the OUTER loop is collaborated on became a **per-work-item** choice at `phase-selection` (one extra checklist row, frozen by the same signed reply; default: the work item itself), deliberately not a config key anywhere, with the inner loop not configurable at all; graph verbs and the API gained `--pr-repo`/`prRepo` | [spec](../specs/issue-183/), [decision-069](../decisions/decision-069.md), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/183) |
 | issue-179 | Every phase is selectable (2026-08-08): the outer loop's skip vocabulary widened from the spec chain to **every node it walks** except `phase-selection` (which keeps `required: true` and is now the whole floor — the loop cannot walk past the act of choosing) and the terminals; `security-review` and `human-approval` traded their `required` markers to become declarable; ten new `on: skipped` edges and a second shipped set, `review-chain`, beside a `spec-chain` that now includes `test-planning`; `validate-artifacts` gained `onlyWhenSkipped:` so a *kept* gate keeps a subject — `verification` gates the execution log's `Verification results` when the plan was declared away, and blocks until it is written; the `phase-selection` checklist says what an empty protected list means | [spec](../specs/issue-179/), [decision-068](../decisions/decision-068.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/179) |
-| issue-177 | Declared skips (2026-08-08): `skippable: true` fixes the vocabulary in the shipped graph (spec-chain nodes only; compile-refused on `required` nodes, on missing `skipped` edges, and on `skipSets` members outside it); the outer loop gained a first human node `phase-selection` where the-loop posts a phase checklist, the user ticks it in place, and an authorized `the-loop execute` (a `routing.control` command) freezes the selection — the resolved graph landing in both `graph-state.json` and the portable session record (the audited `graph skip` verb is the same declaration from a shell); the runtime routes around declared nodes without running their hooks and `check` reports them as *skipped by declaration* with provenance — never a pass; a forged declaration on a protected node is inert and surfaced; later gates treat a skipped author's absent artifact as planned; `deliver-assignment` announces a human gate instead of telling the session to claim it | [spec](../specs/issue-177/), [decision-067](../decisions/decision-067.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/177) |
+| issue-177 | Declared skips (2026-08-08): `skippable: true` fixes the vocabulary in the shipped graph (spec-chain nodes only; compile-refused on `required` nodes, on missing `skipped` edges, and on `skipSets` members outside it); the outer loop gained a first human node `phase-selection` where the-loop posts a phase checklist, the user ticks it in place, and an authorized `the-loop execute` (a `routing.control` command) freezes the selection — the resolved graph landing in both `work-item-state.json` and the portable session record (the audited `graph skip` verb is the same declaration from a shell); the runtime routes around declared nodes without running their hooks and `check` reports them as *skipped by declaration* with provenance — never a pass; a forged declaration on a protected node is inert and surfaced; later gates treat a skipped author's absent artifact as planned; `deliver-assignment` announces a human gate instead of telling the session to claim it | [spec](../specs/issue-177/), [decision-067](../decisions/decision-067.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/177) |
 | issue-174 | `capability-docs` gates two sections of the execution log instead of one — `## Documentation` joins `## Capability docs`, so a work item cannot complete having left the README or the docs site describing the process it replaced. No new node, no hook or runtime change; the inner loop gates neither | [spec](../specs/issue-174/), [decision-066](../decisions/decision-066.md), [documentation](documentation.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/174) |
 | issue-172 | The process became two named loops (2026-08-07): `pdlc.yaml` renamed to `pdlc-work-item-loop.yaml` (unchanged content, plus the `await-inner-loops` gate on `implementation`), and `pdlc-pr-loop.yaml` added — one inner loop per PR, run in that PR's own session with state under `docs/specs/<id>/pr-loops/pr-<n>/`, merge driving it to `complete` as an audited force. Graph verbs gained `--pr`; P5 parity asserts over both loops; `deliver-assignment` makes the graph the initiator — entering an agent node pushes its assignment into the bound session | [spec](../specs/issue-172/), [decision-065](../decisions/decision-065.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/172) |
 | issue-167 | Six gates stopped reporting success without running: `validate-artifacts` gained `validates:` for an artifact a node asserts against but did not author, so the six review-chain nodes gate their sections of the shared `execution-log.md`; a content gate that resolves no artifact now blocks (not retriable) instead of skipping; the bundled execution-log template gained the `Capability docs` section `capability-docs` had always demanded; P5 asserts all three against the shipped graph | [spec](../specs/issue-167/), [decision-063](../decisions/decision-063.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/167) |

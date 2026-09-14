@@ -81,7 +81,7 @@ _COMMENT_EVENTS = {
 #: what routed it around every ticket not minted by ``/create-ticket``.
 #:
 #: * ``start`` places the work item on that node. It produces no artifact, and
-#:   :func:`the_loop.graph.state.state_lock` / :meth:`GraphState.save` create the
+#:   :func:`the_loop.graph.state.state_lock` / :meth:`WorkItemState.save` create the
 #:   directory they write into, so nothing here has to pre-create it.
 #: * ``context`` is a pure read that renders the spawn prompt's process-state block.
 #:   Without the exemption the block is empty for exactly the items that need it, and
@@ -234,7 +234,7 @@ def _attributed(author: str, body: str, authorized: Sequence[str]) -> str:
 
 @dataclass(frozen=True)
 class GraphContext:
-    """A work item's graph state, as the dispatcher reads it (issue-148, D2).
+    """A work item's work-item state, as the dispatcher reads it (issue-148, D2).
 
     Pure data, resolved read-only **before** anything is delivered — this is
     what lets a prompt say which node the item stands on, and what lets the
@@ -260,7 +260,7 @@ class GraphContext:
     #: Where the OUTER loop's artifacts are iterated for THIS work item
     #: (issue-183): ``pull-request``, or empty for the default — the work item
     #: itself. Chosen by its author at `phase-selection` and frozen into
-    #: `graph-state.json`, never a repository or machine setting. The INNER
+    #: `work-item-state.json`, never a repository or machine setting. The INNER
     #: loop ignores it: a pull request's loop runs on that pull request.
     surface: str = ""
     #: Which loop this state walks, as recorded at its first entry (issue-185).
@@ -483,7 +483,7 @@ class GraphLink:
         # The frozen-graph channel (issue-177): a callable
         # ``(work_item, frozen) -> None`` the dispatcher provides so the
         # phase-selection gate's frozen graph reaches the portable session
-        # record. None on the CLI path — `graph-state.json` is the
+        # record. None on the CLI path — `work-item-state.json` is the
         # authoritative copy and is checked in anyway.
         self.frozen_graph_sink = frozen_graph_sink
 
@@ -618,11 +618,11 @@ class GraphLink:
         """
 
         def call(rt, item):
-            from .graph.state import GraphState
+            from .graph.state import WorkItemState
 
             wi = rt.work_item(item)
             state_dir = rt.state_dir(wi) if hasattr(rt, "state_dir") else wi.spec_dir
-            state = GraphState.load(state_dir, item)
+            state = WorkItemState.load(state_dir, item)
             if state.session:
                 state.session = {**state.session, "alive": False}
                 state.save(state_dir)
@@ -634,8 +634,8 @@ class GraphLink:
 
         Called **before** anything is torn down, because the node's entry chain
         writes into the very checkout the cleanup then removes: the phase label
-        reaches the ticket and the execution-log checkpoint reaches the working
-        tree while that tree still exists.
+        reaches the ticket and the work-item state reaches the working tree while
+        that tree still exists.
 
         One deliberate difference from every other entry point here: the
         ``_awaiting_start`` gate is not applied. That gate exists to stop work
@@ -657,7 +657,7 @@ class GraphLink:
         )
 
     def context(self, work_item: WorkItemRef, cwd: str) -> Optional[GraphContext]:
-        """Resolve the item's graph state, read-only (issue-148, D2).
+        """Resolve the item's work-item state, read-only (issue-148, D2).
 
         Runs behind the same gate order as the driving entry points — the
         ownership proof still precedes any checkout read — but runs **no**
@@ -751,9 +751,9 @@ class GraphLink:
 
         def call(rt, item):
             from .graph.runtime import force
-            from .graph.state import GraphState
+            from .graph.state import WorkItemState
 
-            state = GraphState.load(rt.state_dir(rt.work_item(item)), item)
+            state = WorkItemState.load(rt.state_dir(rt.work_item(item)), item)
             if not state.current_node:
                 return  # never started: nothing to finish, nothing to await
             if state.current_node == "complete":
@@ -902,7 +902,7 @@ class GraphLink:
                     **runtime.config,
                     "frozenGraphSink": lambda frozen: frozen_sink(item_ref, frozen),
                 }
-            # Write actions hold the graph-state lock (issue-148): the session's
+            # Write actions hold the work-item-state lock (issue-148): the session's
             # `graph complete` is a second writer beside this daemon, and the
             # load→mutate→save windows must not interleave. `context` stays
             # outside the lock — it is a pure read, and a stale read costs a
@@ -945,14 +945,14 @@ class GraphLink:
         inner ``pdlc-pr-loop`` among them. Anything unreadable answers *no*, so a
         fault spawns a session rather than withholding one.
         """
-        from .graph.state import GraphState
+        from .graph.state import WorkItemState
 
         try:
             item = rt.work_item(item_id)
             state_dir = (
                 rt.state_dir(item) if hasattr(rt, "state_dir") else item.spec_dir
             )
-            current = GraphState.load(state_dir, item_id).current_node
+            current = WorkItemState.load(state_dir, item_id).current_node
             if not current or current != rt.graph.start:
                 return False
             return rt.graph.node(current).actor == "human"
@@ -988,11 +988,11 @@ class GraphLink:
         outer one — a PR's conversation must not become the inheritance target
         for the work item's human gates.
         """
-        from .graph.state import GraphState
+        from .graph.state import WorkItemState
 
         item = rt.work_item(item_id)
         state_dir = rt.state_dir(item) if hasattr(rt, "state_dir") else item.spec_dir
-        state = GraphState.load(state_dir, item_id)
+        state = WorkItemState.load(state_dir, item_id)
         state.session = {"id": session_id, "runner": runner, "alive": True}
         state.save(state_dir)
 
@@ -1045,11 +1045,11 @@ class GraphLink:
         session's prompt describes the loop that session is walking — never the
         outer pointer.
         """
-        from .graph.state import GraphState
+        from .graph.state import WorkItemState
 
         item = rt.work_item(item_id)
         state_dir = rt.state_dir(item) if hasattr(rt, "state_dir") else item.spec_dir
-        state = GraphState.load(state_dir, item_id)
+        state = WorkItemState.load(state_dir, item_id)
         if not state.current_node:
             return GraphLink._pending_context(rt, state)
         node = rt.graph.node(state.current_node)
@@ -1113,7 +1113,7 @@ class GraphLink:
         """Which outer-path loop this work item walks — ``""`` for the default.
 
         State-first, control-record-second (issue-185): once a loop has
-        started, `graph-state.json`'s recorded ``loop`` is the fact and a later
+        started, `work-item-state.json`'s recorded ``loop`` is the fact and a later
         control command cannot re-shape a walk in progress; before the first
         start, the arming command recorded in the portable control record is
         the declared intent (``contribute`` → the contribution loop, ``do`` →
@@ -1122,10 +1122,10 @@ class GraphLink:
         as the default rather than choosing a graph (fail closed).
         """
         from .graph.model import LOOP_FOR_CONTROL_COMMAND, resolve_outer_loop
-        from .graph.state import GraphState
+        from .graph.state import WorkItemState
 
         try:
-            state = GraphState.load(root / spec_dir / item_id, item_id)
+            state = WorkItemState.load(root / spec_dir / item_id, item_id)
             recorded = str(getattr(state, "loop", "") or "")
         except Exception as exc:  # noqa: BLE001 — an unreadable state is the default
             logger.debug("could not read %s's recorded loop: %s", item_id, exc)
@@ -1147,7 +1147,7 @@ class GraphLink:
         ``routing.graph.specDir``, else the shipped default — one value for every
         checkout this daemon drives (issue-352). Resolved **once** per call and
         threaded into both the ``is_dir()`` gate and the runtime, so the directory
-        the skip decision is made on and the directory ``graph-state.json`` is
+        the skip decision is made on and the directory ``work-item-state.json`` is
         written into cannot drift apart (issue-123 R2.1).
 
         Returned **whether or not it is usable**; containment is the caller's gate
@@ -1179,8 +1179,8 @@ class GraphLink:
         repository's issue #15 would drive `docs/specs/issue-15` in whatever
         checkout the daemon is pointed at. Under the default
         ``spawnWorkdir: "."`` that checkout is the operator's own repo, which
-        means unrelated inbound events would write graph state and execution-log
-        entries into their work items (issue-113, A6).
+        means unrelated inbound events would write work-item state into their work
+        items (issue-113, A6).
 
         Read from the checkout's ``origin`` remote via git itself rather than by
         parsing ``.git/config``, because the config a worktree uses is not the
@@ -1221,7 +1221,7 @@ class GraphLink:
         """The graph runtime rooted at the session's checkout.
 
         Not the daemon's cwd: with ``routing.workspace`` enabled each work item
-        has its own git worktree, and ``graph-state.json`` belongs in the tree
+        has its own git worktree, and ``work-item-state.json`` belongs in the tree
         the agent is working in — that is what gets committed and reviewed in
         the PR diff.
 

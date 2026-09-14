@@ -206,24 +206,28 @@ def test_the_bundled_template_clears_the_planning_gate_once_locked(repo):
 
 SKIPPED_PLAN = {"test-planning": {"via": "selection", "by": "@owner"}}
 
-LOG = """# Execution Log: a work item
+LOG = """---
+type: evidence
+---
 
-## Progress entries
-
-### t — did a thing
+# Verification: a work item
 
 ## Verification results
 
 {results}
-
-## Review cycles
 """
 
 
 def _log(repo, results: str) -> None:
-    (_spec(repo) / "execution-log.md").write_text(
-        LOG.format(results=results), encoding="utf-8"
-    )
+    """The record `verification` falls back to when the plan was declared away.
+
+    `evidence/verification.md` since issue-365 — it was a section of the shared
+    execution log. Produced by no node, so it can never itself become a planned
+    absence, which is what lets the kept gate stay unconditional.
+    """
+    path = _spec(repo) / "evidence" / "verification.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(LOG.format(results=results), encoding="utf-8")
 
 
 def _evaluate_skipped(repo, node_id: str):
@@ -231,15 +235,15 @@ def _evaluate_skipped(repo, node_id: str):
     return runtime.evaluate(node_id, runtime.work_item("issue-1"), skips=SKIPPED_PLAN)
 
 
-def test_verification_gates_the_log_when_the_plan_was_declared_away(repo):
+def test_verification_gates_the_record_when_the_plan_was_declared_away(repo):
     """
     Feature: a kept gate keeps a subject (issue-179)
     Scenario: verification is walked by a work item that skipped test-planning
       Given a work item whose test-planning node was declared skipped
       And no testing-plan.md, because the phase that authors it never ran
       When the verification node's exit chain is evaluated
-      Then it blocks, naming the execution log rather than passing vacuously
-      When the log records what was verified
+      Then it blocks, naming evidence/verification.md rather than passing vacuously
+      When that record says what was verified
       Then it passes
     Requirement: docs/specs/issue-179/requirements.md R2.2
     """
@@ -249,7 +253,7 @@ def test_verification_gates_the_log_when_the_plan_was_declared_away(repo):
         "the plan's absence is planned, so the artifact gate skips — if nothing "
         "else asserts, a mandatory node reports success having run nothing"
     )
-    assert any("execution-log.md" in m.render() for m in empty.messages)
+    assert any("evidence/verification.md" in m.render() for m in empty.messages)
 
     _log(repo, "| markdownlint | `npx markdownlint-cli2` | pass | ci log |")
     assert _evaluate_skipped(repo, "verification").status == "pass"
@@ -262,7 +266,7 @@ def test_verification_gates_the_plan_alone_when_one_exists(repo):
       Given test-planning was declared skipped but a testing-plan.md exists
       When the verification node's exit chain is evaluated
       Then the plan is gated exactly as it would be without the declaration
-      And the execution log's Verification results are not demanded twice
+      And evidence/verification.md is not demanded as well
     Requirement: docs/specs/issue-179/requirements.md R2.3
     """
     _log(repo, "")
@@ -270,18 +274,18 @@ def test_verification_gates_the_plan_alone_when_one_exists(repo):
     blocked = _evaluate_skipped(repo, "verification")
     assert blocked.status == "block"
     assert any("still unticked" in m.render() for m in blocked.messages)
-    assert not any("execution-log.md" in m.render() for m in blocked.messages)
+    assert not any("evidence/verification.md" in m.render() for m in blocked.messages)
 
     (_spec(repo) / "testing-plan.md").write_text(EXECUTED, encoding="utf-8")
     assert _evaluate_skipped(repo, "verification").status == "pass"
 
 
-def test_verification_ignores_the_log_when_the_plan_was_kept(repo):
+def test_verification_ignores_the_record_when_the_plan_was_kept(repo):
     """
     Feature: a kept gate keeps a subject (issue-179)
     Scenario: the ordinary path is untouched by the conditional entry
       Given a work item that kept test-planning and executed its plan
-      And an execution log whose Verification results section is empty
+      And an evidence/verification.md whose results section is empty
       When the verification node's exit chain is evaluated
       Then it passes — the fallback applies only to a planned absence
     Requirement: docs/specs/issue-179/requirements.md R2.1

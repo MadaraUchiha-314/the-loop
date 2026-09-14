@@ -63,9 +63,9 @@ pytestmark = pytest.mark.skipif(
 #: own text is a cost to every reader of every artifact made from it.
 _POINTER = re.compile(r"<!--[^>]*?`(the-loop:[\w.-]+)`\s+skill", re.DOTALL)
 
-#: Templates producing an artifact a human reads and approves. ``execution-log.md`` and
-#: ``brainstorm.md`` are excluded on purpose: the log is an append-only record and the
-#: brainstorm is a scratchpad, so neither is written *at* a reviewer. ``bugfix.md`` is
+#: Templates producing an artifact a human reads and approves. ``brainstorm.md`` and the
+#: ``evidence/`` records are excluded on purpose: the brainstorm is a scratchpad and a gate
+#: record states what happened, so neither is written *at* a reviewer. ``bugfix.md`` is
 #: listed beside ``requirements.md`` because they are two accepted names for ONE artifact
 #: (decision-045), and a rule that reached only one of them is the issue-124 shape.
 HUMAN_READ_TEMPLATES = [

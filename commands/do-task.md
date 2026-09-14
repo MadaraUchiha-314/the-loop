@@ -23,7 +23,7 @@ ladder. Only the process is absent.
 
 The requester armed this item with `the-loop do` instead of `the-loop start`. That is an
 authorized human's explicit, recorded declaration that **this work item runs without the
-PDLC** — it is frozen in `graph-state.json`'s `loop` field and the arming comment stands
+PDLC** — it is frozen in `work-item-state.json`'s `loop` field and the arming comment stands
 on the thread. Honor it: the fastest correct path from the instruction to a working
 change is the whole job.
 
@@ -48,7 +48,7 @@ work  ⇄  review  →  complete
    no `tasks.md`, no `contribution.md`, no `evidence/` tree, no capability-doc row — none
    of these is gated here and creating one anyway is exactly the bloat this loop exists to
    avoid. The only thing the-loop writes into the repository for an ad-hoc item is
-   `docs/specs/<id>/graph-state.json`, a cache. If the task turns out to deserve
+   `docs/specs/<id>/work-item-state.json`, a cache. If the task turns out to deserve
    the full PDLC, say so on the thread and propose a *new* work item — do not quietly
    start a spec chain inside this one.
 

@@ -69,8 +69,8 @@ round — complementing (not replacing) the self/critic rounds of `reviewing.md`
 > **The `security-review` node is selectable** (issue-179, decision-068): an authorized
 > human may declare it away at `phase-selection`, before any work starts, and the omission
 > is recorded against their name. The graph no longer refuses it. Nothing else changed —
-> **a session never declares it away itself**, and when the node is walked it gates the
-> execution log exactly as below. A work item at risk tier 4 or above still requires a
+> **a session never declares it away itself**, and when the node is walked it gates
+> `evidence/security-review.md` exactly as below. A work item at risk tier 4 or above still requires a
 > named human sign-off; that policy is now upheld by the person selecting the phases,
 > not by the graph.
 
@@ -81,9 +81,9 @@ round — complementing (not replacing) the self/critic rounds of `reviewing.md`
   commit (`reviewing.md`). A security finding is never silently dismissed — won't-fix
   requires a recorded justification, and an unresolved security finding **blocks
   completion regardless of risk tier**.
-- **Record the round** in the execution log's review table with type `security`, plus
-  the mechanism used and the outcome, and tick the gate item in the Security review
-  section of the log.
+- **Record the round** in `evidence/security-review.md` — the mechanism used, the
+  outcome, each finding with its disposition, and the human sign-off where the risk tier
+  requires one. The node blocks until that section is written.
 
 ### The checklist (fallback mechanism)
 

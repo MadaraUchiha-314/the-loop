@@ -810,6 +810,14 @@ EVENT_TYPES: Dict[str, str] = {
         "so `check --recompute` still reports it (work_item, from, to, actor, "
         "reason)."
     ),
+    "graph.repos_declared": (
+        "The agent declared which repositories this work item raises pull "
+        "requests in (work_item, repos) — `the-loop graph repos`, called once "
+        "design.md and tasks.md say what the change spans. `await-inner-loops` "
+        "then holds `implementation` until each has an inner loop AND every "
+        "started loop has finished. The flags are the full set, so this event "
+        "is the whole declaration, not an addition to it. issue-365."
+    ),
     # -- declared skips (issue-177) --------------------------------------------
     "graph.skips_declared": (
         "A human declared phases skipped for a work item — the `phase-selection` "
@@ -836,7 +844,7 @@ EVENT_TYPES: Dict[str, str] = {
     "graph.frozen_publish_failed": (
         "The frozen graph could not be written to the portable session record "
         "(work_item, error). Best-effort: the selection itself still stands, "
-        "and graph-state.json keeps the authoritative copy. issue-177."
+        "and work-item-state.json keeps the authoritative copy. issue-177."
     ),
     "graph.node_skipped": (
         "The pointer routed around a declared-skipped node along its "

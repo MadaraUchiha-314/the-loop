@@ -73,7 +73,9 @@ live in `docs/specs/<id>/`:
    gate and needs no human sign-off** (issue-281) — it advances on shape alone.
 
 The work item's **phase** is tracked on the ticket via a label (`loop:<phase>` — a fixed
-vocabulary, issue-352) and mirrored in the execution log (`brainstorming` is optional):
+vocabulary, issue-352) and in `work-item-state.json`, which is where the fine detail lives
+(current node, attempts, declared skips). Nothing else records it (`brainstorming` is
+optional):
 
 ```
 not-started → brainstorming → requirements-definition → design → test-planning
@@ -178,9 +180,9 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   already uses the project; `README.md`, the documentation site and this skill with its
   `reference/` docs are what a reader meets *first*, and they rot the same way. Update
   whichever of them the change makes wrong **in the same PR** — also a ready-to-ship gate
-  item — and record what changed in the execution log's **`## Documentation`** section,
-  which the `capability-docs` node gates alongside `## Capability docs` (issue-174,
-  decision-066). A work item that changed no user-facing doc says so **with the reason**;
+  item — and record what changed in **`evidence/documentation.md`**'s `## Documentation`
+  section, which the `capability-docs` node gates alongside `## Capability docs` in the
+  same file (issue-174, decision-066). A work item that changed no user-facing doc says so **with the reason**;
   a blank is not an answer. The rule exists because the process itself changed shape —
   two loops, a fourth spec artifact — while the front page went on describing the old one.
 - **Keep `tasks.md` checkmarks current** as tasks complete (`- [ ]` → `- [x]`).
@@ -197,8 +199,11 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   `pdlc-pr-loop`; the origin repository gets one only if it too receives code. Each inner
   loop's state sits under the origin repo's spec directory, qualified by repository
   (`pr-loops/<owner>__<repo>/pr-<n>/`), and a work item may **declare** those repositories
-  in `execution-log.md`'s front matter (`repos:`) so `await-inner-loops` holds
-  `implementation` until every one of them has finished. See `reference/workflow.md`
+  **once `design.md` and `tasks.md` say what the change spans** —
+  `the-loop graph repos <id> --repository <owner>/<repo> …`, which records them in
+  `work-item-state.json` so `await-inner-loops` holds `implementation` until every
+  one of them has finished. The flags are the full set, so re-running corrects the
+  declaration; declaring none is what a single-repository work item wants. See `reference/workflow.md`
   § Several repositories, one work item.
 - **Ask on the declared channel; iterate artifacts on a durable surface.** A session the CLI daemon
   drives is *told* where its answers come from (`routing.interaction.mode`, rendered into
@@ -226,11 +231,13 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   (exact string, invisible) plus a short visible attribution line. This applies at
   every point above that posts a comment (paper trail, reviews, escalations, the PR
   briefing). See `reference/collaboration.md` § loop prevention.
-- **Self-check continuously.** Maintain `docs/specs/<id>/execution-log.md`; keep the
-  phase label in sync; run tests at logical checkpoints; log progress for visibility.
+- **Self-check continuously.** Keep `tasks.md` checkmarks and the phase label in sync,
+  and run tests at logical checkpoints. **Write no progress log**: the harness already
+  keeps a transcript of what happened and `work-item-state.json` holds where the work stands,
+  so re-deriving either is a cost with no reader (issue-365, decision-126).
 - **Manage the context window deliberately (checkpoint, then reset).** Never reset
-  context without first checkpointing (checkmarks, execution-log entry with a concrete
-  next step, phase label, WIP committed/noted). Then: **clear** at phase boundaries
+  context without first checkpointing (checkmarks ticked, phase label, WIP
+  committed/noted). Then: **clear** at phase boundaries
   (locked spec → fresh window for implementation, plan-mode style), **compact** after
   each completed task and mid-task (never clear mid-task), and isolate high-volume
   exploration in subagents. The checked-in artifacts are the memory that makes resets
@@ -427,7 +434,7 @@ it; that comment is for the editor alone and is never what the loop validates ag
 
 **A repository that has never run `/the-loop:init`** carries no `.the-loop/`. Work it
 under the schema's defaults (the same baseline `/the-loop:init --defaults` writes) and say
-so in the execution log; nothing writes a config into the repository for you — until
+so on the ticket; nothing writes a config into the repository for you — until
 issue-352 the CLI did, and now neither the CLI nor a guest loop (a contribution, a review)
 touches the repository's configuration. Suggest `/the-loop:init` on the ticket when the
 project is the work item's own.
@@ -483,7 +490,8 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
   the organized view of specs; current behaviour per capability with history links.
 - `docs/decisions/decisions.md` + `decision-<nnn>.md` — decision log (every durable
   decision is recorded).
-- `docs/specs/<id>/` — the per-work-item 3-phase spec + execution log.
+- `docs/specs/<id>/` — the per-work-item 3-phase spec, and under `evidence/` the record
+  each gate leaves (review rounds, the security verdict, the docs touched, the PRs).
 - `docs/learnings/learnings.md` + `learning-<nnn>.md` — learnings from user & system
   feedback, checked in for review; the tree sits with the other documents the loop
   maintains. See `reference/automation.md`.

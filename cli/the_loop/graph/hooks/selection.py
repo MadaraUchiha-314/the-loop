@@ -114,6 +114,7 @@ def _execute_keyword(ctx: HookContext) -> str:
 
 #: `- [x] design` / `- [ ] design` — one phase line of the checklist. The token
 #: is a node id, so what the user reads is what the graph routes on.
+#:
 _CHECK_LINE = re.compile(
     r"^\s*[-*]\s*\[(?P<mark>[ xX])\]\s*`?(?P<token>[A-Za-z0-9][A-Za-z0-9._-]*)`?",
     re.MULTILINE,
@@ -124,7 +125,7 @@ _CHECK_LINE = re.compile(
 #: post a duplicate checklist.
 SELECTION_MARKER = "<!-- the-loop:phase-selection -->"
 
-#: Where the answered-ness of this gate is recorded in ``GraphState.decisions``.
+#: Where the answered-ness of this gate is recorded in ``WorkItemState.decisions``.
 DECISION_KEY = "phase-selection"
 
 #: The two surfaces the outer loop can be collaborated on (issue-183), and the
@@ -144,7 +145,7 @@ SURFACE_TOKEN = "outer-loop-on-pull-request"
 #: (issue-199). Empty rather than the default, because the two are different
 #: facts: `work-item` is a choice that was offered and left alone, and `""` is a
 #: question that was never asked. The runtime writes only a non-empty value into
-#: `graph-state.json`, so nothing downstream has to learn a third literal.
+#: `work-item-state.json`, so nothing downstream has to learn a third literal.
 NO_SURFACE = ""
 
 #: The checklist rows that answer "how many tmux+claude sessions do this work
@@ -468,7 +469,7 @@ def _checklist_body(ctx: HookContext) -> str:
             "**Every phase of this loop is selectable — including the reviews, the "
             "security review and the approval gate.** Nothing but this question is "
             "mandatory, so each box you untick is an omission recorded against your "
-            "name: in the work item's graph state, in a confirmation comment here, "
+            "name: in the work item's work-item state, in a confirmation comment here, "
             "and in every `the-loop check` from now on.",
             "",
         ]
@@ -849,7 +850,7 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
     name = "classify-phase-selection"
     if (ctx.decisions or {}).get(DECISION_KEY):
         # Already answered, days or commits ago. The skips it produced are in
-        # graph state; re-asking would make `the-loop check` report every work
+        # work-item state; re-asking would make `the-loop check` report every work
         # item as stuck at its first node forever.
         return HookResult(
             status="pass",

@@ -26,17 +26,23 @@ spec files read from disk, not the drafting conversation (plan-mode style).
 ## Steps
 
 1. **Locate & load the spec.** Resolve `$ARGUMENTS` to `docs/specs/<id>/` and read
-   `requirements.md`, `design.md`, `testing-plan.md`, `tasks.md`, and
-   `execution-log.md`. Use the log's
-   `phase` and tasks' checkmarks to **resume** rather than restart.
+   `requirements.md`, `design.md`, `testing-plan.md` and `tasks.md`. Use
+   `work-item-state.json`'s current node and the tasks' checkmarks to **resume** rather than
+   restart.
+
+   **If the DAG touches a repository other than this one** and `create-tasks-plan` did not
+   already say so, declare them before opening any pull request:
+   `the-loop graph repos <id> --repository <owner>/<repo> …` (the flags are the full set;
+   no flags prints what is declared). `await-inner-loops` holds this node until each
+   declared repository has an inner loop **and** every started loop has finished.
 
 2. **Implementation** (`implementation`). Execute the task DAG autonomously in dependency
-   order. **Tick each task in `tasks.md` (`- [ ]` → `- [x]`) as it completes.** Maintain
-   `execution-log.md`: append progress and run tests (unit/integration per config) at the
-   task checkpoints — self-check as you go. Use the configured tooling; same commands as
-   CI. Keep the ticket phase label in sync. **After each completed task, manage the
-   context window: checkpoint first (checkmark, log entry with a concrete Next, WIP
-   committed/noted), then compact (the fixed task-boundary rule). Mid-task, compact
+   order. **Tick each task in `tasks.md` (`- [ ]` → `- [x]`) as it completes.** Run tests
+   (unit/integration per config) at the task checkpoints — self-check as you go — and
+   write no progress log: the harness keeps the transcript and git keeps the commits. Use
+   the configured tooling; same commands as CI. Keep the ticket phase label in sync.
+   **After each completed task, manage the context window: checkpoint first (checkmark
+   ticked, WIP committed), then compact (the fixed task-boundary rule). Mid-task, compact
    only — never clear. Never reset without the checkpoint.** See
    `reference/context.md`.
 

@@ -100,7 +100,7 @@ class HookContext:
     #: finding; a present artifact is gated normally regardless.
     skipped_artifacts: FrozenSet[str] = frozenset()
     #: Durable decisions already recorded for this work item (issue-177):
-    #: ``GraphState.decisions``. A human gate whose answer is a *recorded fact*
+    #: ``WorkItemState.decisions``. A human gate whose answer is a *recorded fact*
     #: rather than a live reply reads it here, so ``the-loop check`` — which
     #: deliberately passes no event — reports the gate as answered instead of
     #: waiting forever on a decision that was made days ago.

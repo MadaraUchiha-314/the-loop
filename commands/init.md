@@ -112,7 +112,7 @@ to the plugin's install directory.)
      `templates/cli-config.yaml`, and nothing else. Never scaffolded on the
      home-directory answer or under `--defaults`.
    - `docs/architecture/architecture.md`, `docs/decisions/decisions.md`,
-     `docs/specs/` (per-work-item Kiro specs + execution logs), `docs/capabilities/`.
+     `docs/specs/` (per-work-item Kiro specs + gate records), `docs/capabilities/`.
    - `docs/learnings/learnings.md` — the learnings index. The doc trees are the loop's
      convention, not a setting (issue-352).
 

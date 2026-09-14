@@ -27,7 +27,7 @@ from .extensions import Declaration, read_declaration  # noqa: F401
 from .model import Graph, GraphConfigError, Node, load_graph  # noqa: F401
 from .registry import EXTENSION_PREFIX, get_hook, hook, hook_names  # noqa: F401
 from .runtime import NodeReport, Runtime, StatusReport, force  # noqa: F401
-from .state import GraphState  # noqa: F401
+from .state import WorkItemState  # noqa: F401
 
 __all__ = [
     "BLOCK",
@@ -39,7 +39,7 @@ __all__ = [
     "Declaration",
     "Graph",
     "GraphConfigError",
-    "GraphState",
+    "WorkItemState",
     "HookContext",
     "HookResult",
     "Message",

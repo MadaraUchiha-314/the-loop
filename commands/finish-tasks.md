@@ -14,15 +14,14 @@ of the loop; the cleanup set is intentionally **extensible** (more may be added 
 ## Steps
 
 1. **Verify done.** Resolve `$ARGUMENTS` to `docs/specs/<id>/`. Confirm **every** task in
-   `tasks.md` is checked (`- [x]`), **every PR** in the execution log's **Pull requests**
-   table is merged or closed (a work item may be delivered by several), the required
+   `tasks.md` is checked (`- [x]`), **every PR** in `evidence/pull-requests.md`'s table
+   is merged or closed (a work item may be delivered by several), the required
    self/critic reviews and human review are recorded, and validated evidence has been
    presented. If anything is outstanding, stop and report what remains (point back to
    `/the-loop:execute-tasks <id>`).
 
-2. **Mark complete.** Set the ticket phase label to `loop:complete` and
-   mirror `phase: complete` in the spec/execution log; add a final execution-log entry
-   summarizing outcome + evidence.
+2. **Mark complete.** Set the ticket phase label to `loop:complete`; the outcome and its
+   evidence are already recorded where each gate left them, under `evidence/`.
 
 3. **Cleanup (extensible):**
    - **Close the ticket(s)** for this work item (GitHub issue / Jira), referencing the

@@ -84,7 +84,7 @@
           "type": "string",
           "enum": ["warn", "error", "ignore"],
           "default": "warn",
-          "description": "What to do when a configured doc does not exist at its path: warn = note it in the execution log and continue; error = stop and ask the user; ignore = skip silently."
+          "description": "What to do when a configured doc does not exist at its path: warn = note it on the ticket and continue; error = stop and ask the user; ignore = skip silently."
         }
       }
     },

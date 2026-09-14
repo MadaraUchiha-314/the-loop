@@ -117,7 +117,7 @@ def build_runtime(
     owns, or the ad-hoc loop (issue-225), for a tactical task that runs no PDLC
     process. Meaningless with ``pr_number`` (a pull request's loop is always
     ``pdlc-pr-loop``). Only ``OUTER_PATH_LOOPS`` names are honoured — the value
-    can originate in the agent-writable ``graph-state.json``, so anything else
+    can originate in the agent-writable ``work-item-state.json``, so anything else
     falls back to the default outer loop with a warning rather than reaching
     ``load_graph``.
     """
@@ -173,6 +173,12 @@ def build_runtime(
         # both must reach hooks or a graph notification would silently go to a
         # default state root instead of the operator's.
         "channels": cli_cfg.get("channels") or {},
+        # Every repository this INSTANCE works with (issue-348) — the one
+        # declaration every ingress reads. `the-loop graph repos` bounds a work
+        # item's declaration by it: nothing routes events for a repository
+        # outside this list, so an inner loop there would never start and
+        # `await-inner-loops` would wait forever (issue-365).
+        "repositories": cli_cfg.get("repositories") or [],
         "state": cli_cfg.get("state") or {},
     }
     routing = cli_cfg.get("routing") or {}

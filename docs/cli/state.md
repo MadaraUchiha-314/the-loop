@@ -92,7 +92,7 @@ The same table is declared in code, in
 (`GENERATED_PATHS`), and a test fails the build when a new generated path is added without
 classifying it, or when this page and the declaration disagree.
 
-One more file belongs to this picture but lives elsewhere: `docs/specs/<id>/graph-state.json`
+One more file belongs to this picture but lives elsewhere: `docs/specs/<id>/work-item-state.json`
 is checked in by design — the [process graph](/capabilities/process-graph) records where a
 work item is, and it must survive a machine change, a session change and a multi-day human
 review. It is a cache, never an authority, so a stale copy degrades to a recompute. The
@@ -222,7 +222,7 @@ handle. It is also the answer to "what did we agree this item would do?" without
 checkout and without re-reading a comment thread anyone can still edit.
 
 **If you delete it:** the loop keeps walking exactly the same phases —
-`docs/specs/<id>/graph-state.json` in the repository is the authoritative copy of those.
+`docs/specs/<id>/work-item-state.json` in the repository is the authoritative copy of those.
 You lose the portable, checkout-free view of the item's agreed shape, and `sessionPerPr`
 with it: this file is the **only** copy the daemon reads, so the item's pull requests fall
 back to routing by the operator's configured default.
@@ -732,7 +732,7 @@ flight is still holding a conversation the old code started.
 | `<root>/gh-webhook.pid` | untouched. Reset does not stop the daemon — it warns when one is running, because a daemon holds poll state in memory and can write it back |
 | the workspace checkout | removed unless [`workspace.keepCheckoutOnClose`](/config/cli/routing-options#workspace-keepcheckoutonclose) |
 
-Nothing in your **repository** is touched: `docs/specs/<id>/graph-state.json` is checked in
+Nothing in your **repository** is touched: `docs/specs/<id>/work-item-state.json` is checked in
 on the work item's branch and re-derived from the artifacts, so wiping local state never
 rewrites the record of the work itself.
 

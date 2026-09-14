@@ -9,7 +9,7 @@ import pytest
 from the_loop.graph import hooks  # noqa: F401
 from the_loop.graph.model import GraphConfigError, compile_graph
 from the_loop.graph.runtime import Runtime, force
-from the_loop.graph.state import GraphState
+from the_loop.graph.state import STATE_FILENAME, WorkItemState
 
 GRAPH = {
     "start": "design",
@@ -51,7 +51,7 @@ def test_a_satisfied_node_advances(runtime, repo):
     _write_design(repo)
     report = runtime.advance("issue-1")
     assert report.status == "pass"
-    state = GraphState.load(repo / "docs" / "specs" / "issue-1", "issue-1")
+    state = WorkItemState.load(repo / "docs" / "specs" / "issue-1", "issue-1")
     assert state.current_node == "gate"
 
 
@@ -59,7 +59,7 @@ def test_an_unsatisfied_node_does_not_advance(runtime, repo):
     _write_design(repo, status="draft")
     report = runtime.advance("issue-1")
     assert report.status == "block"
-    state = GraphState.load(repo / "docs" / "specs" / "issue-1", "issue-1")
+    state = WorkItemState.load(repo / "docs" / "specs" / "issue-1", "issue-1")
     assert state.current_node != "gate"
 
 
@@ -90,7 +90,7 @@ def test_force_moves_the_pointer(runtime, repo):
     _write_design(repo, status="draft")
     result = force(runtime, "issue-1", "gate", reason="gate is wrong")
     assert result.to_node == "gate"
-    state = GraphState.load(repo / "docs" / "specs" / "issue-1", "issue-1")
+    state = WorkItemState.load(repo / "docs" / "specs" / "issue-1", "issue-1")
     assert state.current_node == "gate"
     assert state.nodes["gate"].forced is True
 
@@ -134,7 +134,7 @@ def test_force_is_recorded_in_graph_state(runtime, repo):
     _write_design(repo)
     force(runtime, "issue-1", "gate", reason="documented reason", actor="@someone")
     data = json.loads(
-        (repo / "docs" / "specs" / "issue-1" / "graph-state.json").read_text()
+        (repo / "docs" / "specs" / "issue-1" / STATE_FILENAME).read_text()
     )
     entry = data["forced"][0]
     assert entry["reason"] == "documented reason"
@@ -169,7 +169,7 @@ def test_start_enters_the_start_node_and_runs_its_entry_chain(repo):
 
     assert report is not None and report.node == "design"
     assert entered == ["design"], "the start node's entry chain must run"
-    state = GraphState.load(repo / "docs" / "specs" / "issue-1", "issue-1")
+    state = WorkItemState.load(repo / "docs" / "specs" / "issue-1", "issue-1")
     assert state.current_node == "design"
 
 
@@ -180,7 +180,7 @@ def test_start_is_idempotent_when_a_pointer_already_exists(runtime, repo):
 
     assert runtime.start("issue-1") is None
 
-    state = GraphState.load(repo / "docs" / "specs" / "issue-1", "issue-1")
+    state = WorkItemState.load(repo / "docs" / "specs" / "issue-1", "issue-1")
     assert state.current_node == "gate", "start() must not rewind the pointer"
 
 
@@ -193,7 +193,7 @@ def test_start_persists_the_pointer_before_the_entry_chain_runs(repo):
 
     @hook("read-state-113")
     def _read(ctx):
-        path = ctx.work_item.spec_dir / "graph-state.json"
+        path = ctx.work_item.spec_dir / STATE_FILENAME
         seen["on_disk"] = (
             json.loads(path.read_text())["currentNode"] if path.is_file() else ""
         )

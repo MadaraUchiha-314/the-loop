@@ -102,11 +102,18 @@ sub-agents.
 
 ### 9. Compaction & filesystem-as-memory
 
-the-loop already persists durable state to disk (specs, `execution-log.md`, capability
-docs) — that is *why* resumability works, and it is a **token** strategy: offload state to
-disk, keep the window lean. For long runs: checkpoint state to the execution log, then
-compact/reset the window with a "preserve the spec + open threads" instruction rather than
-letting the window grow unbounded ("context rot"). The boundaries at which the loop
+the-loop already persists durable state to disk (the spec chain, `work-item-state.json`, the
+capability docs) — that is *why* resumability works, and it is a **token** strategy:
+offload state to disk, keep the window lean. For long runs: tick the checkmarks, commit,
+then compact/reset the window with a "preserve the spec + open threads" instruction rather
+than letting the window grow unbounded ("context rot").
+
+**Persisting is not free, and the loop learned that the hard way.** the-loop kept an
+append-only execution log as the third leg of this until issue-365: a 130-line template in
+every work item, a hook appending a checkpoint at every node boundary, and a prose entry
+demanded before every reset — all of it re-deriving what the harness transcript, the
+commits and the state file already held. State worth offloading is state **something
+reads**; anything else is generation billed twice. The boundaries at which the loop
 resets are fixed in `reference/context.md`.
 
 ### 10. Manage the resident session's window
@@ -122,7 +129,8 @@ mega-session re-send the whole growing conversation every turn.
 
 You cannot reduce what you do not measure. Usage (input/output/cache tokens + cost) is
 parsed best-effort from each harness's JSON output (`DispatchResult.usage`) and surfaced per
-work item in `execution-log.md`. Every other lever is judged against this **real baseline**,
+work item in the session registry and the event log. Every other lever is judged against
+this **real baseline**,
 not vendor claims — so the loop sets **no headline reduction target** until it has measured
 one.
 

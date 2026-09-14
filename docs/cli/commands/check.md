@@ -50,7 +50,7 @@ nothing about.
 | `--repo` | `.` | Repository root. |
 | `--all` | off | Evaluate **every** work item under the spec root and report drift. |
 | `--format` | `table` | `table` or `json`. |
-| `--recompute` | off | Ignore stored graph state; derive the verdict from the artifacts alone. |
+| `--recompute` | off | Ignore stored work-item state; derive the verdict from the artifacts alone. |
 | `--fail-on` | `unmet` | What makes the process exit non-zero — see below. |
 
 ## `--fail-on`: asking versus gating
@@ -93,7 +93,7 @@ no nodes has no *blocking* node either. Without this rule a mistyped `--repo` wo
 
 ## `--recompute`
 
-Normally `check` trusts the stored graph state where it has one. `--recompute` throws that
+Normally `check` trusts the stored work-item state where it has one. `--recompute` throws that
 away and derives the verdict purely from what is on disk.
 
 Use it to answer "is the recorded state still true?" — after a

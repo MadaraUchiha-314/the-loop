@@ -20,7 +20,7 @@ merge specs in ticket order. Raw specs are *deltas*; capability docs are *state*
   affected capability doc(s) **in the same PR**, minting new docs for first-touched
   capabilities and updating the [`capabilities.md`](capabilities.md) index.
 - WHEN the ready-to-ship gate is evaluated THEN it SHALL require the fold-in (or
-  "none affected" recorded in the execution log).
+  "none affected" recorded in `evidence/documentation.md`).
 - Every behaviour statement SHALL be traceable via the history table to the work-item
   spec, decision record(s) and PR that produced it.
 - The taxonomy SHALL admit both product-feature and architecture shaped capabilities
@@ -35,4 +35,5 @@ merge specs in ticket order. Raw specs are *deltas*; capability docs are *state*
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-365 | The fold-in record moved out of the retired execution log (2026-09-14) into `evidence/documentation.md`, which the `capability-docs` node gates for both `## Capability docs` and `## Documentation` exactly as before | [spec](../specs/issue-365/), [decision-126](../decisions/decision-126.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/365) |
 | issue-25 | Introduced the layer: template, a `workflow.capabilitiesDir` key (removed in issue-352 — `docs/capabilities/` is the convention), fold-in gate, backfill of all existing capabilities | [spec](../specs/issue-25/), [decision-020](../decisions/decision-020.md), PR #26 |

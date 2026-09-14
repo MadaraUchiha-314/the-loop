@@ -185,6 +185,21 @@ command reconciles them.
    deliberately **not** in `manifest.deprecated` — everything there is safe-to-delete
    plugin internals, and these files are neither.
 
+   **`docs/specs/<id>/execution-log.md` is no longer read (issue-365, decision-126).**
+   the-loop retired the execution log: nothing scaffolds one, no hook appends to one, and
+   no gate reads one. Existing logs are **the operator's record of work already done** —
+   report them once, under **removed? no**, as *"no longer read; left in place"*, and
+   **never delete one**, not even when the operator asks for a tidy upgrade: this is the
+   learnings-tree case again, so it is deliberately not in `manifest.deprecated` either.
+   Say what replaced it, because that is what they actually need: each review-chain gate
+   now reads one record of its own under `docs/specs/<id>/evidence/`, and the multi-repo
+   `repos:` declaration is ticked at `phase-selection` and frozen into
+   `work-item-state.json` (issue-365, decision-127), which is `graph-state.json`
+   renamed — read under the old name, written under the new one, so nothing needs
+   migrating and no file is deleted. A work item **in flight** at
+   upgrade time keeps walking — its next gate blocks on a missing `evidence/<file>.md`
+   and the message names the file to write.
+
    **Execution control + one state root (issue-106, decision-040).** Two purely
    additive CLI-config blocks — `state` and `routing.control` —
    but one of them **changes runtime behaviour by default**, so this one is not the

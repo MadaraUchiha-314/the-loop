@@ -53,7 +53,7 @@ from the_loop.graph.model import (
     load_graph,
     resolve_outer_loop,
 )
-from the_loop.graph.state import GraphState
+from the_loop.graph.state import WorkItemState
 
 WORK_ITEM = "issue-9"
 REF = "github:o/r#9"
@@ -378,13 +378,13 @@ def test_build_runtime_refuses_an_invented_loop_name(repo, caplog):
 
 def test_start_records_which_loop_the_state_walks(runtime, repo, fake_github):
     runtime.start(WORK_ITEM, ref=REF)
-    assert GraphState.load(_spec_dir(repo), WORK_ITEM).loop == PDLC_ADHOC_LOOP
+    assert WorkItemState.load(_spec_dir(repo), WORK_ITEM).loop == PDLC_ADHOC_LOOP
 
 
 def test_core_verbs_address_an_adhoc_item_with_no_new_flags(repo):
     from the_loop.core import graphs as core_graphs
 
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     state.loop = PDLC_ADHOC_LOOP
     state.save(_spec_dir(repo))
     report = core_graphs.check(str(repo), WORK_ITEM)
@@ -418,7 +418,7 @@ def test_graphlink_prefers_state_then_control_record(tmp_path):
     store.record(ref, "start", actor="owner")
     assert link._outer_loop_name(tmp_path, "docs/specs", WORK_ITEM, ref) == ""
     # Once started, the state is the fact: a later control command is inert.
-    state = GraphState.load(spec, WORK_ITEM)
+    state = WorkItemState.load(spec, WORK_ITEM)
     state.loop = PDLC_ADHOC_LOOP
     state.save(spec)
     store.record(ref, "start", actor="owner")
@@ -468,26 +468,26 @@ class TestAdhocWalk:
         Requirement: docs/specs/issue-225/requirements.md R1, R3
         """
         runtime.start(WORK_ITEM, ref=REF)
-        state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+        state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
         assert state.current_node == "work" and state.loop == PDLC_ADHOC_LOOP
 
         # No artifact exists anywhere, and the work node still clears.
         assert not list(_spec_dir(repo).glob("*.md"))
         runtime.advance(WORK_ITEM, ref=REF)
-        assert GraphState.load(_spec_dir(repo), WORK_ITEM).current_node == "review"
+        assert WorkItemState.load(_spec_dir(repo), WORK_ITEM).current_node == "review"
 
         report = runtime.advance(
             WORK_ITEM, ref=REF, event=_reply("also rename the flag", author="@nobody")
         )
         assert report.status == "wait"
-        assert GraphState.load(_spec_dir(repo), WORK_ITEM).current_node == "review"
+        assert WorkItemState.load(_spec_dir(repo), WORK_ITEM).current_node == "review"
 
         runtime.advance(WORK_ITEM, ref=REF, event=_reply("also rename the flag"))
-        assert GraphState.load(_spec_dir(repo), WORK_ITEM).current_node == "work"
+        assert WorkItemState.load(_spec_dir(repo), WORK_ITEM).current_node == "work"
 
         runtime.advance(WORK_ITEM, ref=REF)
         runtime.advance(WORK_ITEM, ref=REF, event=_reply("perfect, all done"))
-        assert GraphState.load(_spec_dir(repo), WORK_ITEM).current_node == "complete"
+        assert WorkItemState.load(_spec_dir(repo), WORK_ITEM).current_node == "complete"
 
     def test_the_gate_asks_for_the_requesters_call(self, runtime, repo, fake_github):
         """

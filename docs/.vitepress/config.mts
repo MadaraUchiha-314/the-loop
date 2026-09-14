@@ -16,6 +16,8 @@ const SPEC_FILE_ORDER = [
   ["bugfix", "Bugfix"],
   ["design", "Design"],
   ["tasks", "Tasks"],
+  // Retired by issue-365 — kept so the logs of work items that predate that
+  // change stay browsable; nothing writes a new one.
   ["execution-log", "Execution log"],
 ];
 

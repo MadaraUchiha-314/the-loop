@@ -104,7 +104,7 @@ on. Leave it and the requirements, design, testing plan and task list are iterat
 work item itself — the default, so a work item whose code lands in *other* repositories
 never opens a pull request here just to hold a discussion. Tick it and they are iterated
 on a pull request in this repository instead. The answer is frozen with the phase
-selection, into `graph-state.json` and the portable record; there is deliberately no
+selection, into `work-item-state.json` and the portable record; there is deliberately no
 config key for it, in either config file. A pull request's own inner loop is never
 configurable.
 
@@ -259,7 +259,7 @@ neither a repository nor a session can widen it.
 
 Tokens outside the vocabulary, and nodes the pointer has already entered or passed, are
 **rejected** and printed as such — a skip is a plan, not an amnesty. Valid declarations
-are recorded in graph state with provenance, announced on the ticket with the self-marker,
+are recorded in work-item state with provenance, announced on the ticket with the self-marker,
 and honoured when the pointer reaches each node: it routes along the node's declared
 `on: skipped` edge, runs none of its hooks, and `check` reports the node as
 *skipped by declaration* — never as a pass. In the outer loop the vocabulary is **every
@@ -270,6 +270,54 @@ attributable to the human who declared it.
 
 Exit `0` when at least one declaration landed, `1` when every token was rejected, `2`
 when the verb could not run (e.g. an empty `--reason`).
+
+## `repos`
+
+Declare the repositories a work item raises pull requests in
+([issue-183](https://github.com/MadaraUchiha-314/the-loop/issues/183),
+[decision-127](/decisions/decision-127)). **This is the agent's verb**, not the operator's:
+which repositories a change spans follows from `design.md` and `tasks.md`, so it is stated
+once those exist — at `tasks-breakdown` or early in `implementation` — and not guessed at
+the work item's first gate, where nothing yet says what the change touches.
+
+```bash
+the-loop graph repos issue-183 --repository octo/app --repository octo/infra
+the-loop graph repos issue-183            # read the current declaration back
+the-loop graph repos issue-183 --clear    # declare none
+```
+
+| Flag | Required | Meaning |
+|------|----------|---------|
+| `--repository` | no (repeatable) | A `<owner>/<repo>` this work item contributes code to. **The flags are the full set, not an append**, so re-running corrects a declaration rather than growing it. Omit them all to print what is declared. |
+| `--clear` | no | Declare none — the default, and what a single-repository work item wants. |
+| `--ref` | no | Work-item ref for integrations. [Derived](#resolving-the-work-item-ref) when omitted. |
+
+The declaration is the **plan**: `await-inner-loops` holds `implementation` until each
+declared repository has an inner loop *and* every started loop has finished, which is what
+makes a contribution that was planned and never opened distinguishable from one that was
+never needed. A session record keyed by repository is the *evidence*, and only exists once
+a pull request has been opened — so the two are complements, and neither is derived from
+the other.
+
+Bounded twice, both in the shrinking direction:
+
+- **Shape.** Every value goes through the same boundary a repository path crosses anywhere
+  in the-loop — at least `<owner>/<repo>`, each segment `[A-Za-z0-9._-]+`, never `.` or
+  `..`. The value becomes a directory name under `pr-loops/`, so it is **refused** rather
+  than sanitized.
+- **The instance's own declaration.** When the CLI config declares `repositories`
+  ([issue-348](https://github.com/MadaraUchiha-314/the-loop/issues/348)), a repository
+  outside that list is refused, naming the set. Nothing routes events for an undeclared
+  repository, so its inner loop would never start and the gate would wait forever — better
+  a message now than a hang at `implementation`.
+
+**One bad entry declares nothing**: a partial declaration is a gate waiting on a set nobody
+chose. Nothing is written, the refusals are printed, and any previous declaration stands.
+
+Unlike [`skip`](#skip) and [`force`](#force) this posts no ticket comment: it takes nothing
+away, and the declaration is a checked-in diff a reviewer reads in the pull request.
+
+Exit `0` when the declaration landed (or was read back), `2` when any entry was refused.
 
 ## `force`
 
@@ -332,16 +380,8 @@ flight moves. `--pr-repo` without `--pr` is refused (a repository does not ident
 loop), as is any value that is not `<owner>/<repo>` — the value becomes a directory name,
 so it is validated rather than sanitized.
 
-A work item can also **declare** the repositories it contributes to, in
-`docs/specs/<id>/execution-log.md`'s front matter:
-
-```yaml
-repos:
-  - octo/app
-  - octo/infra
-```
-
-`await-inner-loops` then holds the outer `implementation` node until each declared
+A work item can also **declare** the repositories it contributes to — see
+[`repos`](#repos) below. `await-inner-loops` then holds the outer `implementation` node until each declared
 repository has an inner loop *and* every started loop has finished — so a pull request that
 was planned and never opened shows up as a held gate naming the repository, rather than as
 a pass. Declaring nothing keeps the pre-issue-183 behaviour: every started loop must

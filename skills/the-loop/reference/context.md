@@ -35,10 +35,12 @@ cheap:
 - `requirements.md` / `design.md` / `tasks.md` — the locked contract for the work.
   Nothing in the conversation supersedes them (edits go to the files, single source of
   truth), so re-reading them after a clear loses nothing.
-- `tasks.md` checkmarks — exactly which tasks are done vs. outstanding.
-- `docs/specs/<id>/execution-log.md` — what was done, what was checked, **what is
-  next**, and any blockers. This is the resume anchor: a fresh window reads it first.
-- The phase label on the ticket — where in the state machine the work item is.
+- `tasks.md` checkmarks — exactly which tasks are done vs. outstanding, and therefore
+  **what is next**: the first unticked task. This is the resume anchor a window reads
+  first, together with the pointer below.
+- `work-item-state.json` — the current node, its attempts, the declared skips and any
+  block: where in the state machine the work item actually is.
+- The phase label on the ticket — the same fact, coarse, where a human sees it.
 - Code, tests and commits — the work itself, on disk and in git.
 
 This is the same property that powers resumability (`reference/workflow.md`): a fresh
@@ -51,15 +53,21 @@ resumability applied *within* a session, on purpose, at moments the loop chooses
 of:
 
 1. `tasks.md` checkmarks reflect reality (`- [ ]` → `- [x]` for the finished task);
-2. an `execution-log.md` entry is appended — what was done, the test command and its
-   result, and a concrete **Next:** the next window can act on without archaeology;
-3. the phase label / front-matter are in sync if the phase moved;
-4. work-in-progress is committed (or explicitly noted in the log entry if not).
+2. work-in-progress is committed — the commit message is the note, and it is one the
+   harness's own transcript and `git log` both already keep;
+3. the phase label is in sync if the phase moved;
+4. anything a human is waiting on is a comment on the ticket, where they will see it.
+
+**Write no prose checkpoint.** the-loop kept an append-only execution log for this until
+issue-365 (decision-126): every fact in it — what was done, what is next, where the
+pointer stands — is already in the harness's transcript, the commits, the checkmarks and
+`work-item-state.json`, and generating it again cost tokens on every node of every work item.
 
 After the checkpoint, apply the reset the boundary calls for (below). After a clear,
-re-enter through the artifacts: read `execution-log.md` (the **Next:** of the last
-entry), then only the spec files the next unit of work actually needs — `tasks.md`
-names its requirements, so late tasks rarely need the full `requirements.md` re-read.
+re-enter through the artifacts: read `work-item-state.json` for the current node and
+`tasks.md` for the first unticked task, then only the spec files that task actually
+needs — `tasks.md` names its requirements, so late tasks rarely need the full
+`requirements.md` re-read.
 
 ## Where each technique applies
 
@@ -103,7 +111,7 @@ The protocol is harness-portable; only the reset verb differs:
 An agent that cannot invoke a reset on itself (daemon-spawned runs) still follows the
 protocol: checkpoint at every boundary and prefer ending the session at a phase
 boundary over grinding on with a bloated window — the-loop's resumability guarantees
-the next session continues exactly where the log says.
+the next session continues exactly where the state file and the checkmarks say.
 
 ## Sources this guidance follows
 
@@ -111,8 +119,9 @@ the next session continues exactly where the log says.
   — `/clear` frequently between tasks; `/compact` at natural breakpoints.
 - Anthropic, [Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
   — context as a finite attention budget; compaction, structured note-taking (external
-  memory) and sub-agent architectures as the three levers. the-loop's execution log is
-  the "structured note-taking" leg, done as a checked-in artifact.
+  memory) and sub-agent architectures as the three levers. the-loop's checked-in spec
+  chain is the "structured note-taking" leg — notes that are the contract for the work
+  rather than a second copy of the transcript.
 - Cursor, [Summarization](https://cursor.com/docs/agent/chat/summarization) and
   [agent best practices](https://cursor.com/blog/agent-best-practices) — automatic
   summarization of long chats; start a new conversation when focus degrades and pull

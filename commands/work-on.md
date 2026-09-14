@@ -33,9 +33,10 @@ detail — do not lose it.
 ## Phase state machine
 
 Keep the work item's phase **label** in the ticketing system in sync at every
-transition (label = `loop:<phase>`, e.g. `loop:design` — fixed, issue-352), and
-mirror it in the execution log's `phase` front-matter (`brainstorming` is optional — enter
-it only when the work needs a scratchpad; otherwise start at `requirements-definition`):
+transition (label = `loop:<phase>`, e.g. `loop:design` — fixed, issue-352). The fine
+detail — current node, attempts, declared skips — is `work-item-state.json`'s, and is written
+by the runtime rather than mirrored by you (`brainstorming` is optional — enter it only
+when the work needs a scratchpad; otherwise start at `requirements-definition`):
 
 `not-started → brainstorming → requirements-definition → design → test-planning → tasks-breakdown → implementation → verification → needs-review → complete`
 
@@ -49,9 +50,9 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
 ## The loop
 
 1. **Resume or start.** Look in `docs/specs/<id>/` for existing `brainstorm.md`,
-   `requirements.md`/`bugfix.md`, `design.md`, `tasks.md`, `execution-log.md`. Use the
-   execution log's `phase` and the specs' `status` to resume from where you left off
-   rather than restarting.
+   `requirements.md`/`bugfix.md`, `design.md`, `tasks.md`. Use `work-item-state.json`'s
+   current node, the specs' `status` and the first unticked task to resume from where you
+   left off rather than restarting.
 
 2. **Identify collaborators up-front** from the work item + `collaborators.yaml`. Not
    every task needs every persona (a bug fix needs the engineer; a content fix may not).
@@ -77,8 +78,8 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
      item as you open it** (`the-loop sessions link-pr --work-item github:OWNER/REPO#N
      --pull-request <pr-number>` — a PR the-loop authored carries none of the linkages
      the router can infer, so its comments and reviews reach nothing without this; see
-     the skill's `reference/automation.md`), record **all** of them in the execution
-     log's **Pull requests** table, and keep working the item in the same session: with
+     the skill's `reference/automation.md`), record **all** of them in
+     `evidence/pull-requests.md`, and keep working the item in the same session: with
      GitHub ticketing each PR routes back to the issue's session, and one PR merging
      does **not** end the work item — closing the **ticket** does.
 
@@ -148,11 +149,12 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
    against the locked spec files read from disk, not the drafting
    conversation (plan-mode style; `reference/context.md`). Execute the task DAG
    autonomously. **Tick each task in `tasks.md` (`- [ ]` → `- [x]`) as it completes.**
-   Maintain `docs/specs/<id>/execution-log.md`: append progress and run tests
-   (unit/integration per config) at logical checkpoints — self-checking as you go.
-   **After each completed task: checkpoint (checkmark, log entry with a concrete Next,
-   WIP committed/noted), then compact (the fixed task-boundary rule); mid-task
-   compact only, never clear; never reset without the checkpoint.** Same tooling as
+   Run tests (unit/integration per config) at logical checkpoints — self-checking as
+   you go — and write no progress log: the harness keeps the transcript and git keeps the
+   commits (issue-365).
+   **After each completed task: checkpoint (checkmark ticked, WIP committed), then
+   compact (the fixed task-boundary rule); mid-task compact only, never clear; never
+   reset without the checkpoint.** Same tooling as
    CI; logging/observability identical to runtime.
 
 9. **Verification** (`verification`). Execute `testing-plan.md`: bring up the declared
@@ -173,14 +175,14 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
    review gate**: the built-in security-review skill when available, else the-loop's
    checklist (`reference/security.md`); a work item at risk tier 4 or above waits for
    a named human security sign-off. Record every review as a PR/ticket comment and in
-   the execution log's
-   review table (the security round in its Security review section). A pending human
+   the review table of the record its node gates — `evidence/self-review.md`,
+   `evidence/critic-review.md`, `evidence/security-review.md`. A pending human
    action is notified by the graph's `notify` hook on the event bus; delivery is the
    operator's channel (`channels.slack` in the CLI config), not a per-person lookup.
 
 11. **Complete** (`complete`). Present validated evidence that the acceptance criteria
    are met — **summarised from the verification results** rather than re-derived — on the
-   PR; record it in the execution log.
+   PR; record it in `evidence/final-validation.md`.
    **Before requesting human review, post/update the R10 reviewer briefing in the PR**
    (required gate item, fixed), produced from
    `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md`: a **condensed,
@@ -195,7 +197,7 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
    durable decisions under `docs/decisions/`.
 
 All questions and decisions go through ticket/PR comments (paper trail). The checked-in
-specs + execution log are the single record of the work. Every such comment/reply MUST
+specs and the records under `evidence/` are the single record of the work. Every such comment/reply MUST
 carry the loop-prevention marker (`reference/collaboration.md` § loop prevention) —
 you post under the operator's own credentials, so an unmarked reply can resume your
 own session forever.

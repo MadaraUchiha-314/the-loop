@@ -13,9 +13,6 @@ steps:
         the-loop execute
 
         - [ ] brainstorming
-  # Emitted first so every later node's `log-entry` checkpoint lands in it —
-  # the "execution log mirrors the walk" conformance (R1.3).
-  - emit: {artifact: execution-log.md, fixture: execution-log.md}
   - emit: {artifact: requirements.md, fixture: requirements.md}
   - complete: {node: requirements-definition}
   - comment: {author: owner, body: "approved"}
@@ -38,11 +35,17 @@ steps:
   - complete: {node: implementation}
   - emit: {artifact: testing-plan.md, fixture: testing-plan-verified.md}
   - complete: {node: verification}
+  - emit: {artifact: evidence/self-review.md, fixture: evidence-self-review.md}
   - complete: {node: self-review}
+  - emit: {artifact: evidence/critic-review.md, fixture: evidence-critic-review.md}
   - complete: {node: critic-review}
+  - emit: {artifact: evidence/security-review.md, fixture: evidence-security-review.md}
   - complete: {node: security-review}
+  - emit: {artifact: evidence/final-validation.md, fixture: evidence-final-validation.md}
   - complete: {node: evidence}
+  - emit: {artifact: evidence/documentation.md, fixture: evidence-documentation.md}
   - complete: {node: capability-docs}
+  - emit: {artifact: evidence/pull-requests.md, fixture: evidence-pull-requests.md}
   - complete: {node: reviewer-briefing}
   - comment: {author: owner, body: "approved"}
   - complete: {node: complete}
@@ -55,21 +58,13 @@ expect:
   # so nothing locks the DAG and no human is asked to.
   lockedBeforeImplementation:
     [requirements.md, design.md, testing-plan.md]
-  executionLogSections:
-    ["Review cycles", "Security review (gate)", "Pull requests"]
-  executionLogEntries:
-    - design
-    - test-planning
-    - tasks-breakdown
-    - implementation
-    - verification
-    - self-review
-    - critic-review
-    - security-review
-    - evidence
-    - capability-docs
-    - reviewer-briefing
-    - complete
+  # Each gate's own record, written by the node that ran (issue-365). These
+  # were sections of one shared execution log; the walk itself is asserted by
+  # the node trace above, not by checkpoints written into a file.
+  evidenceSections:
+    evidence/self-review.md: ["Review cycles"]
+    evidence/security-review.md: ["Security review (gate)"]
+    evidence/pull-requests.md: ["Pull requests"]
   nodes:
     - phase-selection
     - brainstorming~

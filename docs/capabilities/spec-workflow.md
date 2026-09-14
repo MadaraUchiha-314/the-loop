@@ -20,7 +20,8 @@ the `/the-loop:work-on` superset command and granular per-step commands
   repositories laid out differently sets that key or passes `--spec-dir` (issue-352) — as
   the artifact chain
   `brainstorm.md (optional) → requirements.md|bugfix.md → design.md → testing-plan.md →
-  tasks.md`, plus `execution-log.md` and, once verification has run, `evidence/`.
+  tasks.md`, plus `evidence/` — the record each gate leaves, and the committed proof
+  once verification has run.
 - **Every tree of checked-in knowledge the loop maintains SHALL sit at its conventional
   place**, not a configured one: specs at `docs/specs/<id>/`, capability docs at
   `docs/capabilities/` and learnings at `docs/learnings/` (the index `learnings.md`, one
@@ -53,8 +54,10 @@ the `/the-loop:work-on` superset command and granular per-step commands
   in — however many repositories the work item touches, and each contributing repository
   SHALL get one pull request walking its own inner loop (issue-183,
   [decision-069](../decisions/decision-069.md)). A work item MAY declare those
-  repositories in `execution-log.md`'s front matter (`repos:`), which turns them into a
-  gate at `implementation` rather than a note.
+  repositories with `the-loop graph repos <id> --repository <owner>/<repo> …` **once the
+  design and the task DAG say what the change spans**, which records them in
+  `work-item-state.json` and turns them into a gate at `implementation` rather than a
+  note.
 - Where each artifact is **iterated with humans** SHALL be a durable, reviewable surface —
   never a terminal. For the outer loop the **work item** declares which, at
   `phase-selection`: the work item itself (the default — comments on the ticket, so an
@@ -73,7 +76,8 @@ the `/the-loop:work-on` superset command and granular per-step commands
   fixed vocabulary since issue-352) through the state machine
   `not-started → brainstorming (optional) → requirements-definition → design →
   test-planning → tasks-breakdown → implementation → verification → needs-review →
-  complete`, mirrored in the execution log.
+  complete`, with the fine detail (current node, attempts, declared skips) in
+  `work-item-state.json`.
 - `tasks.md` SHALL be a DAG of small verifiable tasks referencing requirements, each
   task's `_Test:_` naming a row of `testing-plan.md`'s matrix; checkmarks are kept
   current during implementation.
@@ -120,14 +124,15 @@ the `/the-loop:work-on` superset command and granular per-step commands
   contents ([cli](cli.md), issue-132).
 - The loop SHALL manage its context window by **checkpoint-then-reset** (a fixed rule
   since issue-352, `config.contextManagement` before it): a reset (clear or compact) is
-  always preceded by a checkpoint — `tasks.md` checkmarks current, an execution-log entry
-  with a concrete next step, the phase label in sync, WIP committed or noted.
+  always preceded by a checkpoint — `tasks.md` checkmarks current, WIP committed, the
+  phase label in sync. No prose checkpoint is written: the next step is the first unticked
+  task and the pointer is `work-item-state.json`'s (issue-365).
 - WHEN the phase advances across a locked artifact (most importantly
   tasks-breakdown → implementation) THEN the loop SHALL **clear** and derive the next
   phase's work from the checked-in artifacts, not the conversation.
 - WHEN a task in the DAG completes THEN the loop SHALL checkpoint and **compact**;
   mid-task only compaction is permitted, never clearing. Headless sessions reset by
-  ending at the boundary and resuming fresh via the execution log.
+  ending at the boundary and resuming fresh from the state file and the checkmarks.
 - **The phase state machine SHALL be executable, not only described.** Each phase above
   is a **node** in the shipped process graph, with entry/exit hook chains that decide
   when it is complete and declared edges that route on those decisions
@@ -139,7 +144,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
 - **A work item may be delivered by several PRs.** WHEN more than one PR delivers a
   work item (a spec PR then an implementation PR, a stacked series, a follow-up after
   review, one PR per repository) THEN the loop SHALL label **each** of them for routing
-  and list **all** of them in the execution log's **Pull requests** table, and
+  and list **all** of them in `evidence/pull-requests.md`, and
   `finish-tasks` SHALL require every listed PR to be merged or closed before the work
   item is marked complete — one PR merging is not the work item ending (issue-101).
 
@@ -156,6 +161,8 @@ the `/the-loop:work-on` superset command and granular per-step commands
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-365 (review) | The multi-repo declaration moved off artifacts (2026-09-14) and onto a verb the **agent** calls, `the-loop graph repos`, writing `work-item-state.json`. It cannot be a `phase-selection` question: that gate runs before requirements, design and tasks exist, and which repositories a change spans is not knowable until they do — so it is declared at `tasks-breakdown`, bounded by shape and by the instance's own `repositories`, with the flags as the full set so a declaration can be corrected. The state file was renamed in the same round | [spec](../specs/issue-365/), [decision-127](../decisions/decision-127.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/365) |
+| issue-365 | The execution log was retired (2026-09-14): no template, no scaffolding, no `log-entry` hook at 47 node boundaries, no phase mirror and no prose checkpoint before a context reset — every fact in it was already in `work-item-state.json`, the `loop:<phase>` label, the commits and the harness's own transcript. What the log *gated* stayed: each review-chain node now reads one record of its own under `evidence/`, and the multi-repo `repos` declaration moved to `work-item-state.json`, declared by the agent once the task DAG exists. Existing logs are left where they are — history, read by nothing | [spec](../specs/issue-365/), [decision-126](../decisions/decision-126.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/365) |
 | issue-352 | The harness config became the agent's alone (2026-09-12): `ticketing`, `workflow.phases`, `workflow.phaseLabelPrefix`, `workflow.specApproach`, `workflow.requireHumanReviewPerPhase`, `localOrchestration`, `notifications`, `reviews.critics` and `graph` left it (version `0.3.0`); labels are `loop:<phase>`; `the-loop instructions` and `the-loop scenarios` take the registered docs and globs as flags the agent passes; the skill's Configuration section tells the harness what the file is for and what to hand the CLI. Nine more blocks left because they configured what is now the-loop's fixed rule: `autonomy` (tiers 1–2 autonomous-complete, 3–4 human-approves-pr, 5 human-approves-spec-and-pr, inferred from the change, fixed sensitive paths), `security` (considerations in every requirements, design enforces the boundaries, a security review at the ready-to-ship gate, tier 4+ human sign-off), `tdd` (standard, always), `minimalism`, `tokenEconomy`, `selfImprovement` (learnings always on, index under 200 lines, written at the third occurrence), `contextManagement` (clear at a phase boundary, compact after each task, never mid-task), `userInteraction` and `externalTools`. A fourth pass removed `workflow` (`specDir`, `capabilitiesDir`, `learningsDir`): `docs/specs/<id>/`, `docs/capabilities/` and `docs/learnings/` are the loop's convention, and an instance laid out differently sets the CLI's `routing.graph.specDir` | [spec](../specs/issue-352/), [decision-123](../decisions/decision-123.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/352) |
 | issue-281 | Approvals became gate-owned (2026-08-25): every artifact phase had been costing the human **two** approvals — one out-of-band to let the session set `status: approved` (demanded by `locked: true` on the producing node's exit), one at the graph's approval node, which discards pre-gate feedback — and `tasks-breakdown` demanded one with no gate at all. Producing nodes now gate shape only; a new `lock-artifacts` hook on `requirements-approval`, `design-approval` and the contribution loop's `plan-approval` writes `status: approved` plus the approvers as part of classifying the human's one reply; gate-less artifacts (`brainstorm.md`, `tasks.md`) advance with no human stop; and the skills/commands stopped re-implementing approvals in prose | [spec](../specs/issue-281/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/281) |
 | issue-224 | The learnings tree moved under the documentation tree: `docs/learnings` instead of a hardcoded top-level `learnings/`, with the-loop's own tree moved there and the upgrade command presenting (never taking) the relocation (the `workflow.learningsDir` key this introduced left the harness config in issue-352; the location is now the convention) | [spec](../specs/issue-224/), [decision-082](../decisions/decision-082.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/224) |

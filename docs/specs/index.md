@@ -10,7 +10,10 @@ time (see the [spec workflow](/capabilities/spec-workflow)):
 - **`design.md`** — architecture, components, data models, security design, testing
   strategy (and UI/UX artifacts for user-facing work).
 - **`tasks.md`** — the DAG of small, verifiable tasks.
-- **`execution-log.md`** — the append-only progress log and review/evidence record.
+- **`evidence/`** — the record each gate leaves: the review rounds, the security
+  verdict, the docs touched, the pull requests. Work items before
+  [issue-365](https://github.com/MadaraUchiha-314/the-loop/issues/365) carry an
+  `execution-log.md` instead; it is history, and nothing reads it.
 
 These are the *raw history*. The organized, current-behaviour view lives under
 [capabilities](/capabilities/capabilities), which links back here for provenance.

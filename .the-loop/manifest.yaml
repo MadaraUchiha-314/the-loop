@@ -102,7 +102,8 @@ deprecated:
     removeIn: "1.0.0"
 
 # Per-work-item artifacts: an optional brainstorm scratchpad, the Kiro-style 3-phase spec,
-# the testing plan, plus the execution log. <id> is the ticket id (e.g. issue-1, PROJ-42) — before a ticket
+# the testing plan, plus the records the gates leave under evidence/. <id> is the ticket id
+# (e.g. issue-1, PROJ-42) — before a ticket
 # exists these live under docs/specs/draft-<slug>/. These MUST be checked in.
 # A bug uses bugfix.md in place of requirements.md. They are two accepted names for ONE
 # artifact, not two artifacts: the process graph's requirements-definition node declares
@@ -140,8 +141,40 @@ workItemArtifacts:
     role: spec-evidence
     phase: verification
     optional: true            # committed verification evidence — test output, screenshots, recordings; only when the work item captured any. Textual evidence is markdown (.md), never .txt (PR #168); binary captures keep their own formats.
-  - pathPattern: docs/specs/<id>/execution-log.md
-    role: execution-log
+
+# The record each GATE leaves behind, one file per gating node (issue-365,
+# decision-126, which retired docs/specs/<id>/execution-log.md). They carry no
+# `phase:`: most of the nodes that gate them carry none either — the review chain
+# was one `needs-review` label before the process graph — and the manifest tracks
+# a phase only where a phase node authors the artifact. Each is written ONCE, by
+# the node that ran, and never one shared file: a shared `Review cycles` section
+# would let the critic's gate pass on the self-review's writing. Absent when the
+# work item declared that phase away at `phase-selection` — the node is routed
+# past, so its gate never runs.
+  - pathPattern: docs/specs/<id>/evidence/self-review.md
+    role: gate-record-self-review
+    optional: true
+  - pathPattern: docs/specs/<id>/evidence/critic-review.md
+    role: gate-record-critic-review
+    optional: true
+  - pathPattern: docs/specs/<id>/evidence/design-critic-review.md
+    role: gate-record-design-critic-review
+    optional: true            # only when the opt-in design-critic-review phase was selected (issue-188)
+  - pathPattern: docs/specs/<id>/evidence/security-review.md
+    role: gate-record-security-review
+    optional: true
+  - pathPattern: docs/specs/<id>/evidence/verification.md
+    role: gate-record-verification
+    optional: true            # ONLY when test-planning was declared away — with a plan, verification records into testing-plan.md's own Verification results (issue-179). Produced by no node, so it can never become a planned absence.
+  - pathPattern: docs/specs/<id>/evidence/final-validation.md
+    role: gate-record-final-validation
+    optional: true
+  - pathPattern: docs/specs/<id>/evidence/documentation.md
+    role: gate-record-documentation
+    optional: true            # both sections: Capability docs (the organized view of specs) and Documentation (the user-facing surface) — issue-174
+  - pathPattern: docs/specs/<id>/evidence/pull-requests.md
+    role: gate-record-pull-requests
+    optional: true            # every PR delivering the work item, including one per contributing repository (issue-183)
 
 # API contracts authored contract-first (config.apiSpecs). Documentation is generated
 # from these, never hand-written. Only present in projects that expose an API.

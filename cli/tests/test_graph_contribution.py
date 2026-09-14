@@ -13,7 +13,7 @@ Grouped by the seams the design names:
 * **the keyword** — ``contribute`` parses, arms, and spawn-arms exactly as
   ``start`` does; a comment carrying two different commands is still refused.
 * **loop selection** — ``build_runtime(loop=…)`` honours shipped names only;
-  ``GraphState.loop`` round-trips and is written at start; resolution is
+  ``WorkItemState.loop`` round-trips and is written at start; resolution is
   state-first, control-record-second; a pre-issue-185 state file reads as the
   default (migration).
 * **the walk** — goal-definition → phase-selection with a stubbed GitHub
@@ -41,7 +41,7 @@ from the_loop.graph.model import (
     SHIPPED_LOOPS,
     load_graph,
 )
-from the_loop.graph.state import GraphState
+from the_loop.graph.state import WorkItemState
 from the_loop.sessions import WorkItemRef
 
 WORK_ITEM = "issue-9"
@@ -209,7 +209,9 @@ def test_the_gate_waits_and_asks_when_no_goal_exists(runtime, repo, fake_github)
     assert "the-loop:agent-comment" in fake_github.posted[0]
     report = runtime.advance(WORK_ITEM, ref=REF, event=_reply("carry on"))
     assert report.status == "wait"
-    assert GraphState.load(_spec_dir(repo), WORK_ITEM).current_node == "goal-definition"
+    assert (
+        WorkItemState.load(_spec_dir(repo), WORK_ITEM).current_node == "goal-definition"
+    )
 
 
 def test_the_request_is_posted_once(runtime, repo, fake_github):
@@ -230,7 +232,7 @@ def test_a_goal_in_the_arming_comment_skips_the_request_entirely(
         "what should this contribution achieve" not in p for p in fake_github.posted
     )
     runtime.advance(WORK_ITEM, ref=REF)
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.current_node == "phase-selection"
     decision = state.decisions["goal-definition"]
     assert decision["goal"]["by"] == "@owner"
@@ -249,7 +251,8 @@ def test_an_unauthorized_goal_is_not_read(runtime, repo, fake_github):
     )
     assert report.status == "wait"
     assert (
-        "goal-definition" not in GraphState.load(_spec_dir(repo), WORK_ITEM).decisions
+        "goal-definition"
+        not in WorkItemState.load(_spec_dir(repo), WORK_ITEM).decisions
     )
 
 
@@ -268,7 +271,7 @@ def test_an_authorized_reply_releases_the_gate(runtime, repo, fake_github):
     runtime.start(WORK_ITEM, ref=REF)
     report = runtime.advance(WORK_ITEM, ref=REF, event=_reply(GOAL_COMMENT))
     assert report.outcome == "defined"
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.current_node == "phase-selection"
     # phase-selection's own entry ran: the checklist for THIS graph's rows.
     checklist = fake_github.posted[-1]
@@ -340,22 +343,22 @@ def test_build_runtime_refuses_the_inner_loop_on_the_outer_path(repo):
 
 def test_start_records_which_loop_the_state_walks(runtime, repo, fake_github):
     runtime.start(WORK_ITEM, ref=REF)
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.loop == PDLC_CONTRIBUTION_LOOP
 
 
 def test_state_loop_round_trips_and_predates_gracefully(repo):
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.loop == ""  # pre-issue-185 file / fresh item: the default
     state.loop = PDLC_CONTRIBUTION_LOOP
     state.save(_spec_dir(repo))
-    assert GraphState.load(_spec_dir(repo), WORK_ITEM).loop == PDLC_CONTRIBUTION_LOOP
+    assert WorkItemState.load(_spec_dir(repo), WORK_ITEM).loop == PDLC_CONTRIBUTION_LOOP
 
 
 def test_core_verbs_resolve_the_recorded_loop(repo):
     from the_loop.core import graphs as core_graphs
 
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     state.loop = PDLC_CONTRIBUTION_LOOP
     state.save(_spec_dir(repo))
     shown = core_graphs.check(str(repo), WORK_ITEM)
@@ -367,7 +370,7 @@ def test_core_verbs_resolve_the_recorded_loop(repo):
 def test_core_verbs_fall_back_on_an_invented_loop_name(repo):
     from the_loop.core import graphs as core_graphs
 
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     state.loop = "pdlc-made-up-loop"
     state.save(_spec_dir(repo))
     shown = core_graphs.check(str(repo), WORK_ITEM)
@@ -393,7 +396,7 @@ def test_graphlink_prefers_state_then_control_record(tmp_path):
         == PDLC_CONTRIBUTION_LOOP
     )
     # Once started, the state is the fact — a later control change is inert.
-    state = GraphState.load(spec, WORK_ITEM)
+    state = WorkItemState.load(spec, WORK_ITEM)
     state.loop = PDLC_WORK_ITEM_LOOP
     state.save(spec)
     store.record(ref, CONTRIBUTE, actor="owner")
@@ -459,7 +462,7 @@ def test_the_walk_runs_and_stays_out_of_git_as_a_guest(tmp_path, fake_github):
     )
     runtime.start(WORK_ITEM, ref=REF)
     runtime.advance(WORK_ITEM, ref=REF)
-    state = GraphState.load(tmp_path / "docs" / "specs" / WORK_ITEM, WORK_ITEM)
+    state = WorkItemState.load(tmp_path / "docs" / "specs" / WORK_ITEM, WORK_ITEM)
     assert state.current_node == "phase-selection"
     assert state.loop == PDLC_CONTRIBUTION_LOOP
     # The tree is structurally uncommittable, not merely uncommitted.
@@ -550,7 +553,7 @@ class TestContributionWalk:
         fake_github.comments = [{"user": {"login": "owner"}, "body": GOAL_COMMENT}]
         runtime.start(WORK_ITEM, ref=REF)
         runtime.advance(WORK_ITEM, ref=REF)  # goal freezes; selection asks
-        state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+        state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
         assert state.current_node == "phase-selection"
         assert state.loop == PDLC_CONTRIBUTION_LOOP
 
@@ -560,7 +563,7 @@ class TestContributionWalk:
         assert report.status == "wait"
 
         runtime.advance(WORK_ITEM, ref=REF, event=_reply("the-loop execute"))
-        state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+        state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
         assert state.current_node == "context-intake"
         assert state.skips == {}  # boxes untouched: the full intervention runs
 
@@ -590,7 +593,7 @@ class TestContributionWalk:
                 "the-loop execute"
             ),
         )
-        state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+        state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
         assert state.current_node == "implementation"
         assert set(state.skips) == {
             "context-intake",
@@ -695,7 +698,7 @@ def test_a_ticked_surface_row_in_a_contributions_reply_changes_nothing(
         ref=REF,
         event=_reply("- [x] outer-loop-on-pull-request\nthe-loop execute"),
     )
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.current_node == "context-intake"
     assert state.surface == ""  # nothing chosen, because nothing was offered
     frozen = state.decisions["phase-selection"]["graph"]
@@ -723,7 +726,7 @@ def test_the_arming_comment_reaches_the_goal_gate_at_spawn(runtime, repo, fake_g
         runner="tmux",
         routed=_Routed(GOAL_COMMENT),
     )
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.current_node == "phase-selection"
     assert state.decisions["goal-definition"]["goal"]["by"] == "@owner"
     assert any("which phases does this work item need" in p for p in fake_github.posted)
@@ -740,7 +743,7 @@ def test_a_spawn_with_no_goal_parks_the_gate_with_its_reason(
     link.on_spawn(
         WorkItemRef.parse(REF), str(repo), routed=_Routed("thanks, looks useful")
     )
-    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.current_node == "goal-definition"
     assert "goal and success criteria" in str((state.parked or {}).get("reason") or "")
 
@@ -750,7 +753,7 @@ def test_a_respawn_re_evaluates_nothing(runtime, repo, fake_github):
     and leaves the pointer exactly where it was."""
     link = _contribution_link(runtime)
     link.on_spawn(WorkItemRef.parse(REF), str(repo), routed=_Routed("no goal here"))
-    before = GraphState.load(_spec_dir(repo), WORK_ITEM).as_dict()
+    before = WorkItemState.load(_spec_dir(repo), WORK_ITEM).as_dict()
     # Answerable now — and still not answered here: a respawn is not an event.
     fake_github.comments = [{"user": {"login": "owner"}, "body": GOAL_COMMENT}]
     link.on_spawn(
@@ -759,6 +762,6 @@ def test_a_respawn_re_evaluates_nothing(runtime, repo, fake_github):
         session_id="s-2",
         routed=_Routed(GOAL_COMMENT),
     )
-    after = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    after = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert after.current_node == "goal-definition"
     assert after.as_dict()["nodes"] == before["nodes"]

@@ -246,6 +246,43 @@ def _skip(
     )
 
 
+def _repos(
+    root: Path,
+    work_item: str,
+    repositories: "List[str] | None",
+    ref: str = "",
+    clear: bool = False,
+    pr: "int | None" = None,
+    pr_repo: str = "",
+    spec_dir: str = "",
+) -> Dict[str, Any]:
+    return routed(
+        lambda connection: connection.post(
+            "/graph/repos",
+            {
+                "repo": str(root),
+                "workItem": work_item,
+                "repositories": repositories,
+                "clear": bool(clear),
+                "ref": ref,
+                "pr": pr,
+                "prRepo": pr_repo,
+                "specDir": spec_dir,
+            },
+        ),
+        lambda: core_graphs.repos(
+            str(root),
+            work_item,
+            repositories,
+            ref=ref,
+            clear=clear,
+            pr=pr,
+            pr_repo=pr_repo,
+            spec_dir=spec_dir,
+        ),
+    )
+
+
 def _discover_work_items(root: Path, spec_root: str) -> List[str]:
     base = root / spec_root
     if not base.is_dir():
@@ -337,7 +374,7 @@ class CheckCommand(Command):
         parser.add_argument(
             "--recompute",
             action="store_true",
-            help="ignore graph state; derive completion from the artifacts alone",
+            help="ignore work-item state; derive completion from the artifacts alone",
         )
         parser.add_argument(
             "--fail-on",
@@ -599,6 +636,39 @@ class GraphCommand(Command):
         skip.add_argument("--ref", default="", help="work item ref for integrations")
         _add_pr_flags(skip)
 
+        repos = sub.add_parser(
+            "repos",
+            help=(
+                "declare the repositories this work item raises pull requests "
+                "in (issue-183). THE AGENT'S verb, called once design.md and "
+                "tasks.md say what the change spans — `await-inner-loops` then "
+                "holds `implementation` until each declared repository has an "
+                "inner loop and every started loop has finished. The flags are "
+                "the full set, not an append; with no --repo it prints what is "
+                "declared."
+            ),
+        )
+        repos.add_argument("work_item")
+        # `--repository`, not `--repo`: the parent parser's `--repo` is the
+        # repository ROOT, and one spelling for two meanings is a footgun in the
+        # one verb where both appear on the same line.
+        repos.add_argument(
+            "--repository",
+            action="append",
+            dest="repositories",
+            help=(
+                "<owner>/<repo> this work item contributes code to (repeatable; "
+                "the flags are the full set, not an append)"
+            ),
+        )
+        repos.add_argument(
+            "--clear",
+            action="store_true",
+            help="declare none — the default, and what a single-repository item wants",
+        )
+        repos.add_argument("--ref", default="", help="work item ref for integrations")
+        _add_pr_flags(repos)
+
         sub.add_parser(
             "hooks",
             help=(
@@ -749,6 +819,43 @@ class GraphCommand(Command):
                     "the never-skippable gates still run."
                 )
             return 0 if result["declared"] else 1
+
+        if args.action == "repos":
+            try:
+                result = _repos(
+                    root,
+                    args.work_item,
+                    args.repositories,
+                    ref=args.ref,
+                    clear=args.clear,
+                    pr=args.pr,
+                    pr_repo=args.pr_repo,
+                    spec_dir=spec_dir,
+                )
+            except Exception as exc:  # noqa: BLE001
+                if not _is_bad_request(exc) and service_error(exc) is not None:
+                    raise
+                print(f"refused: {_detail(exc)}")
+                return 2
+            for entry in result["rejected"]:
+                print(f"rejected: {entry['repo']} — {entry['why']}")
+            if result["rejected"]:
+                # All or nothing: a partial declaration is a gate waiting on a
+                # set nobody chose, so nothing was written.
+                print("  nothing was declared; fix the entries and re-run")
+                return 2
+            reading = args.repositories is None and not args.clear
+            if not result["declared"]:
+                print("no repositories declared for this work item")
+                return 0
+            for name in result["declared"]:
+                print(f"{'declared' if not reading else 'repository'}: {name}")
+            if not reading:
+                print(
+                    "  note: `implementation` now waits until each of these has "
+                    "an inner loop AND every started loop has finished."
+                )
+            return 0
 
         if args.action == "run":
             return self._run_loop(root, args)

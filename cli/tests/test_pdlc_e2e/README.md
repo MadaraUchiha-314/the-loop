@@ -67,8 +67,7 @@ skip.
 | `labels` | the **exact** ordered label trail (`set-labels` calls), as GitHub would have seen it |
 | `events` | an **ordered subsequence** of `{event, field: value, …}` matchers — unrelated events are permitted between matches, so new event types don't break scenarios |
 | `lockedBeforeImplementation` | the named artifacts carried `status: approved` at the moment `implementation` was entered |
-| `executionLogSections` | the named `##` sections exist and are non-empty in the work item's execution log |
-| `executionLogEntries` | the named nodes' `log-entry` checkpoints appear in the execution log, in order — the log mirrors the walk |
+| `evidenceSections` | per file under the work item's spec folder, the named `##` sections exist and are non-empty — each gate's own record (issue-365) |
 
 Divergences report the first mismatch (index, expected, found) plus the
 observed trace.

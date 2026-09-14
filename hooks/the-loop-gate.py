@@ -4,7 +4,7 @@
 The harness hook is a **clock**, not a state machine. It says *when* to look; the
 graph says *what we are looking at*. So this wrapper never needs to know which
 phase a work item is in — it asks ``the-loop check``, which resolves the current
-node from graph state.
+node from work-item state.
 
 Harness protocols, which is why this file lives with the plugin (the harness
 integration) rather than with the CLI:
@@ -56,7 +56,7 @@ def read_attempts(path: Path) -> int:
 def run_check(work_item: str) -> dict | None:
     """Ask the CLI where the work item stands. ``None`` means "cannot tell".
 
-    ``--recompute`` is not optional here. Graph state is a **cache, not an
+    ``--recompute`` is not optional here. Work-item state is a **cache, not an
     authority**, and this is a gate: trusting the cache would mean trusting a
     file the agent being gated can write. It also fixes the inert case — a work
     item whose pointer was never advanced sits at the start node, reports ``ok``,

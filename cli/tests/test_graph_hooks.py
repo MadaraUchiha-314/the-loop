@@ -125,29 +125,34 @@ def test_a_node_with_no_artifacts_and_nothing_to_check_is_skipped(tmp_path):
 
 # -- gating an artifact the node did not author (issue-167) ---------------------
 #
-# The six nodes between `implementation` and `complete` each own one section of
-# the SHARED execution log. They declared `sections:` and no `produces:`, so the
-# hook resolved nothing, returned `skipped`, and — a skip not being a decision —
-# the chain passed straight through all six. Including `security-review`, whose
-# own graph comment reads "never skippable, at any risk tier".
+# The six nodes between `implementation` and `complete` each gate one record under
+# `evidence/`. They declared `sections:` and no `produces:`, so the hook resolved
+# nothing, returned `skipped`, and — a skip not being a decision — the chain
+# passed straight through all six. Including `security-review`, whose own graph
+# comment reads "never skippable, at any risk tier". The targets were sections of
+# one shared `execution-log.md` until issue-365 retired it; the mechanism under
+# test is the same, one file per gate.
 
+_RECORD = "evidence/security-review.md"
 _LOG_SECTION = "Security review (gate)"
-_GATE = {"validates": "execution-log.md", "sections": [_LOG_SECTION]}
+_GATE = {"validates": _RECORD, "sections": [_LOG_SECTION]}
 
 
-def _log(spec: Path, body: str) -> None:
-    (spec / "execution-log.md").write_text(
-        f"---\ntype: execution-log\nstatus: in-progress\n---\n\n# Log\n\n{body}",
+def _log(spec: Path, body: str, name: str = _RECORD) -> None:
+    path = spec / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"---\ntype: evidence\n---\n\n# Record\n\n{body}",
         encoding="utf-8",
     )
 
 
 def test_the_shipped_security_gate_shape_no_longer_skips(tmp_path):
-    """The headline defect, as the graph declares it: no log, no pass."""
+    """The headline defect, as the graph declares it: no record, no pass."""
     ctx, _ = _ctx(tmp_path, [], dict(_GATE))
     result = validate_artifacts(ctx)
     assert result.status == BLOCK
-    assert result.messages[0].path.endswith("docs/specs/issue-1/execution-log.md")
+    assert result.messages[0].path.endswith(f"docs/specs/issue-1/{_RECORD}")
 
 
 def test_a_validated_target_missing_its_section_blocks(tmp_path):
@@ -172,7 +177,7 @@ def test_a_validated_target_carrying_its_section_passes(tmp_path):
     _log(spec, f"## {_LOG_SECTION}\n\n- Outcome: pass\n")
     result = validate_artifacts(ctx)
     assert result.status == PASS
-    assert result.data["artifacts"][0].endswith("execution-log.md")
+    assert result.data["artifacts"][0].endswith(_RECORD)
 
 
 def test_produced_and_validated_findings_arrive_in_one_result(tmp_path):
@@ -180,7 +185,7 @@ def test_produced_and_validated_findings_arrive_in_one_result(tmp_path):
     ctx, spec = _ctx(
         tmp_path,
         ["design.md"],
-        {"validates": "execution-log.md", "sections": ["Architecture"]},
+        {"validates": _RECORD, "sections": ["Architecture"]},
     )
     (spec / "design.md").write_text("# D\n")
     _log(spec, "## Elsewhere\n\nbody\n")
@@ -188,13 +193,13 @@ def test_produced_and_validated_findings_arrive_in_one_result(tmp_path):
     assert result.status == BLOCK
     paths = [m.path for m in result.messages]
     assert len(paths) == 2
-    assert paths[0].endswith("design.md") and paths[1].endswith("execution-log.md")
+    assert paths[0].endswith("design.md") and paths[1].endswith(_RECORD)
 
 
 def test_a_validated_target_accepts_the_same_alternation_as_produces(tmp_path):
     """One resolver for both, so the vocabulary cannot drift (R1.4)."""
     ctx, spec = _ctx(
-        tmp_path, [], {"validates": "run-log.md|execution-log.md", "sections": ["Log"]}
+        tmp_path, [], {"validates": f"run-log.md|{_RECORD}", "sections": ["Log"]}
     )
     _log(spec, "## Log\n\nan entry\n")
     assert validate_artifacts(ctx).status == PASS
@@ -202,7 +207,7 @@ def test_a_validated_target_accepts_the_same_alternation_as_produces(tmp_path):
 
 def test_two_names_for_one_validated_slot_block_as_ambiguous(tmp_path):
     ctx, spec = _ctx(
-        tmp_path, [], {"validates": "run-log.md|execution-log.md", "sections": ["Log"]}
+        tmp_path, [], {"validates": f"run-log.md|{_RECORD}", "sections": ["Log"]}
     )
     _log(spec, "## Log\n\nan entry\n")
     (spec / "run-log.md").write_text("# R\n\n## Log\n\nan entry\n")
@@ -239,16 +244,16 @@ def test_every_kind_of_check_fails_closed_without_a_target(tmp_path, params):
 
 
 def test_an_optional_node_is_judged_on_what_it_authored_not_what_it_validates(tmp_path):
-    """A shared artifact says nothing about whether *this* node ran — and the
-    execution log exists for every work item, so reading it as evidence of entry
-    would gate a brainstorm nobody asked for."""
+    """An artifact the node merely validates says nothing about whether *this*
+    node ran, so reading one as evidence of entry would gate a brainstorm nobody
+    asked for."""
     ctx, spec = _ctx(
         tmp_path,
         ["brainstorm.md"],
-        {"validates": "execution-log.md", "sections": ["Problem / opportunity"]},
+        {"validates": _RECORD, "sections": ["Problem / opportunity"]},
         node={"optional": True},
     )
-    _log(spec, "## Progress entries\n\nan entry\n")
+    _log(spec, "## Review cycles\n\na round\n")
     assert validate_artifacts(ctx).status == SKIP
 
 
@@ -456,7 +461,7 @@ def test_a_declared_but_missing_downstream_still_blocks(tmp_path):
 
 _FALLBACK = {
     "onlyWhenSkipped": "testing-plan.md",
-    "validates": "execution-log.md",
+    "validates": "evidence/verification.md",
     "sections": ["Verification results"],
 }
 
@@ -470,11 +475,11 @@ def _fallback_ctx(tmp_path, skipped=("testing-plan.md",)):
 def test_only_when_skipped_gates_the_fallback_for_a_planned_absence(tmp_path):
     """M7, R3.1 — the gate follows its proof when the plan was declared away."""
     ctx, spec = _fallback_ctx(tmp_path)
-    (spec / "execution-log.md").write_text("## Verification results\n\n")
+    _log(spec, "## Verification results\n\n", "evidence/verification.md")
     assert validate_artifacts(ctx).outcome == BLOCK
 
-    (spec / "execution-log.md").write_text(
-        "## Verification results\n\nran the linter\n"
+    _log(
+        spec, "## Verification results\n\nran the linter\n", "evidence/verification.md"
     )
     assert validate_artifacts(ctx).outcome == PASS
 
@@ -483,7 +488,7 @@ def test_only_when_skipped_is_dormant_when_the_artifact_exists(tmp_path):
     """M8, R2.3 — presence wins: the proof is never demanded twice."""
     ctx, spec = _fallback_ctx(tmp_path)
     (spec / "testing-plan.md").write_text("# plan\n")
-    (spec / "execution-log.md").write_text("## Verification results\n\n")
+    _log(spec, "## Verification results\n\n", "evidence/verification.md")
     result = validate_artifacts(ctx)
     assert result.outcome == SKIP
     assert "gated where it is declared" in (result.messages[0].text or "")
@@ -492,7 +497,7 @@ def test_only_when_skipped_is_dormant_when_the_artifact_exists(tmp_path):
 def test_only_when_skipped_is_dormant_when_nothing_was_declared(tmp_path):
     """M8, R3.1 — no declaration, no fallback: today's behaviour, unchanged."""
     ctx, spec = _fallback_ctx(tmp_path, skipped=())
-    (spec / "execution-log.md").write_text("## Verification results\n\n")
+    _log(spec, "## Verification results\n\n", "evidence/verification.md")
     result = validate_artifacts(ctx)
     assert result.outcome == SKIP
     assert "was not declared skipped" in (result.messages[0].text or "")
@@ -512,5 +517,5 @@ def test_only_when_skipped_can_never_widen_what_may_be_skipped(tmp_path):
         {**_FALLBACK, "onlyWhenSkipped": "requirements.md"},
     )
     ctx.skipped_artifacts = frozenset({"testing-plan.md"})
-    (spec / "execution-log.md").write_text("## Verification results\n\n")
+    _log(spec, "## Verification results\n\n", "evidence/verification.md")
     assert validate_artifacts(ctx).outcome == SKIP
