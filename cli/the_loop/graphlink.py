@@ -42,6 +42,7 @@ Spec: docs/specs/issue-113/design.md.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,7 +51,9 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from . import eventlog
 from .ghhost import repo_slug as _repo_slug
 from .control import ControlConfig, ControlStore
+from .recovery import PHASE_LABEL_PREFIX, advanced_phase
 from .sessions import WorkItemRef
+from .webhook.router import event_labels
 
 logger = logging.getLogger("the-loop.graph")
 
@@ -457,6 +460,25 @@ def render_graph_context(
     return "\n".join(lines)
 
 
+#: The graph actions that would move a work item's pointer, and therefore the
+#: ones a machine with no record of an advanced work item must not take
+#: (issue-363). ``context`` is a pure read; ``cleanup`` and ``close`` are
+#: already no-ops on a work item that never entered the graph here.
+_REWINDABLE_ACTIONS = frozenset({"start", "advance"})
+
+
+def _labels_of(routed: Optional[Any]) -> List[str]:
+    """The labels on the event that triggered this call — ``[]`` when there is
+    none to read (a respawn, a CLI-driven call, an injected test double).
+
+    An empty list is the pre-issue-363 behaviour exactly: no evidence, no
+    refusal. That is the right default for the one caller that genuinely has no
+    event — a respawn of a session whose work item already has a pointer here,
+    where the question does not arise.
+    """
+    return event_labels(getattr(routed, "payload", None) or {})
+
+
 class GraphLink:
     """Drives the process graph from ingress events. Never raises."""
 
@@ -468,6 +490,7 @@ class GraphLink:
         authorized_users: Optional[Sequence[str]] = None,
         assignment_sink: Optional[Any] = None,
         frozen_graph_sink: Optional[Any] = None,
+        position_sink: Optional[Any] = None,
     ):
         self.config = config
         self.control = control or ControlConfig()
@@ -486,6 +509,14 @@ class GraphLink:
         # record. None on the CLI path — `graph-state.json` is the
         # authoritative copy and is checked in anyway.
         self.frozen_graph_sink = frozen_graph_sink
+        # The graph-position channel (issue-363): a callable
+        # ``(work_item, position) -> None`` the dispatcher provides so where the
+        # OUTER loop stands reaches the portable record on every write. Without
+        # it the only copy of the pointer is `graph-state.json`, which is checked
+        # in on the work item's *branch* — and an issue work item's clone has no
+        # branch, so a rebuilt machine found nothing and started the item over.
+        # None on the CLI path, where the file is right there in the checkout.
+        self.position_sink = position_sink
 
     # -- entry points -----------------------------------------------------------
 
@@ -538,7 +569,9 @@ class GraphLink:
             )
             return self._parked_on_a_human_start_gate(rt, item)
 
-        return bool(self._guarded("start", work_item, cwd, call))
+        return bool(
+            self._guarded("start", work_item, cwd, call, labels=_labels_of(routed))
+        )
 
     def on_spawn(
         self,
@@ -586,7 +619,7 @@ class GraphLink:
                 event={"comments": comments_from(routed, self.authorized_users)},
             )
 
-        self._guarded("start", work_item, cwd, call)
+        self._guarded("start", work_item, cwd, call, labels=_labels_of(routed))
 
     def on_event(self, work_item: WorkItemRef, cwd: str, routed) -> Optional[Any]:
         """An event reached a session — advance at most one node boundary.
@@ -606,6 +639,7 @@ class GraphLink:
             work_item,
             cwd,
             lambda rt, item: rt.advance(item, ref=work_item.ref, event=event),
+            labels=_labels_of(routed),
         )
 
     def on_close(self, work_item: WorkItemRef, cwd: str) -> None:
@@ -787,6 +821,7 @@ class GraphLink:
         pr_number: Optional[int] = None,
         pr_repo: str = "",
         require_started: bool = True,
+        labels: Sequence[str] = (),
     ) -> Optional[Any]:
         """Run ``call`` behind every skip path, swallowing any failure.
 
@@ -841,6 +876,12 @@ class GraphLink:
             )
             self._skipped(action, work_item, "spec-dir-outside-checkout", spec_dir)
             return None
+        # Before ANY read of the local state — the loop name below is the first
+        # of them — give a machine that has forgotten this work item its pointer
+        # back (issue-363). A no-op unless this is a start, the outer loop, and
+        # the file is genuinely absent.
+        if action in _REWINDABLE_ACTIONS and pr_number is None:
+            self._restore_position(root / spec_dir / item_id, work_item)
         loop = (
             self._outer_loop_name(root, spec_dir, item_id, work_item)
             if pr_number is None
@@ -902,6 +943,14 @@ class GraphLink:
                     **runtime.config,
                     "frozenGraphSink": lambda frozen: frozen_sink(item_ref, frozen),
                 }
+            # A machine that has forgotten an ADVANCED work item must move
+            # nothing (issue-363). Checked here rather than in the entry points
+            # because every write action rewinds it: `start` re-enters the start
+            # node, and `advance` on an empty state evaluates the start node too
+            # (``Runtime.advance``: ``state.current_node or self.graph.start``).
+            if pr_number is None and action in _REWINDABLE_ACTIONS:
+                if not self._may_start(runtime, item_id, work_item, labels):
+                    return None
             # Write actions hold the graph-state lock (issue-148): the session's
             # `graph complete` is a second writer beside this daemon, and the
             # load→mutate→save windows must not interleave. `context` stays
@@ -920,7 +969,13 @@ class GraphLink:
 
                 lock_dir = inner_loop_state_dir(lock_dir, pr_number, pr_repo)
             with state_lock(lock_dir):
-                return call(runtime, item_id)
+                result = call(runtime, item_id)
+                if pr_number is None:
+                    # Inside the lock on purpose (issue-363): what is published
+                    # is exactly what this call wrote, not whatever a second
+                    # writer left behind while the lock was down.
+                    self._publish_position(lock_dir, work_item)
+                return result
         except Exception as exc:  # noqa: BLE001 — a graph fault must not cost a delivery
             logger.error(
                 "graph %s for %s failed: %s", action, work_item.ref, exc, exc_info=True
@@ -933,6 +988,181 @@ class GraphLink:
                 error=str(exc),
             )
             return None
+
+    # -- surviving a machine loss (issue-363) -----------------------------------
+
+    def _restore_position(self, state_dir: Path, work_item: WorkItemRef) -> bool:
+        """Write this work item's published pointer back to disk. Did it?
+
+        The half of the machine-loss fix that *recovers* rather than refuses:
+        `graph-state.json` is checked in on the work item's branch, an issue
+        work item's clone has no branch, and the portable record is the copy
+        that travels. Restoring it makes the ``Runtime.start`` that follows the
+        no-op it already is for a work item with a pointer, so nothing further
+        in the daemon has to know a restore happened.
+
+        Guarded three ways, each of which is the whole point of the guard:
+
+        * **only into a vacuum** — a local `graph-state.json` always wins, so a
+          tracked (and therefore proposable) portable record can never overwrite
+          a pointer this machine established;
+        * **verbatim** — the published payload is the state file's own contents,
+          so a restore is a move and not a re-derivation; and
+        * **best-effort** — an unreadable or malformed position restores nothing
+          and leaves :meth:`_may_start` to refuse, which costs a human a
+          re-post rather than costing the work item its history.
+        """
+        if self.control_store is None:
+            return False
+        from .graph.state import GraphState
+
+        if GraphState.path_for(state_dir).is_file():
+            return False
+        try:
+            published = self.control_store.graph_position(work_item)
+        except Exception as exc:  # noqa: BLE001 — an unreadable record is "none"
+            logger.warning(
+                "could not read the published graph position for %s: %s",
+                work_item.ref,
+                exc,
+            )
+            return False
+        state = (published or {}).get("state")
+        if not isinstance(state, dict) or not state.get("currentNode"):
+            return False
+        try:
+            from .graph.state import state_lock
+
+            with state_lock(state_dir):
+                if GraphState.path_for(state_dir).is_file():
+                    return False  # a concurrent writer got there first
+                state_dir.mkdir(parents=True, exist_ok=True)
+                GraphState.path_for(state_dir).write_text(
+                    json.dumps(state, indent=2) + "\n", encoding="utf-8"
+                )
+        except Exception as exc:  # noqa: BLE001 — never cost a delivery
+            logger.error(
+                "could not restore the graph position of %s: %s", work_item.ref, exc
+            )
+            eventlog.emit(
+                "graph.position_restore_failed",
+                level="error",
+                work_item=work_item.ref,
+                error=str(exc),
+            )
+            return False
+        logger.info(
+            "%s: this machine had no graph state for the work item; restored the "
+            "pointer published at %s (node %s) rather than starting it over",
+            work_item.ref,
+            (published or {}).get("at") or "an unrecorded time",
+            state.get("currentNode"),
+        )
+        eventlog.emit(
+            "graph.position_restored",
+            work_item=work_item.ref,
+            node=str(state.get("currentNode") or ""),
+            published_at=(published or {}).get("at") or None,
+        )
+        return True
+
+    def _publish_position(self, state_dir: Path, work_item: WorkItemRef) -> None:
+        """Push the outer loop's graph state to the portable record (issue-363).
+
+        Called after every outer-loop write, inside the lock that write held, so
+        the published copy is the one on disk. Best-effort in the same way
+        ``Runtime._publish_frozen_graph`` is: a transition is a fact about the
+        work item, and a bookkeeping write that fails must never undo one.
+        """
+        if self.position_sink is None:
+            return
+        from .graph.state import GraphState, utc_now
+
+        path = GraphState.path_for(state_dir)
+        try:
+            state = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return  # nothing written yet, or a corrupt file `load` already warns about
+        if not isinstance(state, dict) or not state.get("currentNode"):
+            return
+        try:
+            self.position_sink(work_item, {"at": utc_now(), "state": state})
+        except Exception as exc:  # noqa: BLE001 — never gate on the sink
+            logger.warning(
+                "could not publish the graph position of %s: %s", work_item.ref, exc
+            )
+            return
+        eventlog.emit(
+            "graph.position_published",
+            work_item=work_item.ref,
+            node=str(state.get("currentNode") or ""),
+        )
+
+    def _may_start(
+        self, rt: Any, item_id: str, work_item: WorkItemRef, labels: Sequence[str]
+    ) -> bool:
+        """Whether a pointer-moving action here would START the item or REWIND it.
+
+        False is the machine-loss refusal (issue-363). This machine holds no
+        pointer for the work item, and the ticket says the work item has one —
+        a ``loop:<phase>`` label naming a phase other than the start node's own,
+        written by the-loop's ``set-phase-label`` hook on an earlier run. Neither
+        write action starts anything from there: ``start`` re-enters the first
+        node of a work item that is at implementation, and ``advance`` reads an
+        empty state as the start node too, so it re-posts the selection
+        checklist and re-freezes a selection from whatever old command the
+        thread still carries. Both re-apply an early label over a late one and
+        re-ask gates a human approved days ago.
+
+        Deliberately a **boolean**. There is no path from a label to a node id,
+        so a forged ``loop:complete`` on a fresh ticket buys a refusal and a
+        notice, never a placed pointer — and the audited escape hatch that does
+        place one, ``the-loop graph force``, still demands an actor and a reason.
+
+        True — act normally — for everything else, including every work item
+        with no ``loop:`` label at all, which is every work item the-loop has
+        never touched, and every work item whose pointer this machine does hold
+        (the file check comes first, so an item being worked here is never even
+        judged). Anything unreadable answers True for the same reason
+        :meth:`_parked_on_a_human_start_gate` answers no: a fault must not
+        withhold work.
+        """
+        from .graph.state import GraphState
+
+        try:
+            item = rt.work_item(item_id)
+            state_dir = (
+                rt.state_dir(item) if hasattr(rt, "state_dir") else item.spec_dir
+            )
+            if GraphState.path_for(state_dir).is_file():
+                return True
+            start_phase = str(getattr(rt.graph.node(rt.graph.start), "phase", "") or "")
+            advanced = advanced_phase(labels, start_phase)
+        except Exception as exc:  # noqa: BLE001 — a fake runtime, a vanished node
+            logger.debug("could not judge a rewind for %s: %s", work_item.ref, exc)
+            return True
+        if not advanced:
+            return True
+        logger.warning(
+            "%s is labelled `%s%s` but this machine holds no graph state for it, "
+            "so entering the graph would rewind it to the start node; refusing. "
+            "Its artifacts are on its branch — `the-loop check %s` re-derives the "
+            "position, and `the-loop graph force %s --to <node> --reason <why>` "
+            "is how an operator re-establishes it here",
+            work_item.ref,
+            PHASE_LABEL_PREFIX,
+            advanced,
+            item_id,
+            item_id,
+        )
+        eventlog.emit(
+            "graph.rewind_refused",
+            level="warning",
+            work_item=work_item.ref,
+            phase=advanced,
+            start_node=str(getattr(rt.graph, "start", "") or ""),
+        )
+        return False
 
     @staticmethod
     def _parked_on_a_human_start_gate(rt: Any, item_id: str) -> bool:

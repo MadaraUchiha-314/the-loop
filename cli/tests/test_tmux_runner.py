@@ -10,6 +10,7 @@ Spec: docs/specs/issue-32/design.md.
 import logging
 import os
 import signal
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -35,6 +36,17 @@ REF = "github:octo/repo#15"
 # issue-154.
 DOTTED_REF = "github:octo/foo.js#15"
 DOTTED_TARGET = "loop-github-octo-foo_js-15"
+
+
+def _now() -> str:
+    """A `createdAt` in the shape the registry writes — this instant."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _ago(**delta) -> str:
+    return (datetime.now(timezone.utc) - timedelta(**delta)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
 
 
 def make_session(**overrides) -> Session:
@@ -567,6 +579,62 @@ class TestTmuxRunner:
             session_id="uuid-1",
         )
         assert result.ok, result.error
+
+    def test_a_session_still_inside_its_grace_window_is_not_reported_missing(
+        self, monkeypatch
+    ):
+        """issue-363: `new-session -d` returns when the pane forks, and the TUI
+        needs seconds more. A delivery in that gap used to respawn over a
+        session that was coming up — and then spawn a second one, because the
+        id it tried to `--resume` was minted moments earlier and had no
+        transcript yet. Transient, so the dispatcher retries into this pane."""
+        fake = FakeRun(returncode=1)  # has-session exits non-zero: not answering
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        session = make_session(tmux_target="loop-booting", created_at=_now())
+        result = TmuxRunner().deliver(session, "event prompt")
+        assert not result.ok
+        assert result.session_missing is False
+        assert "still booting" in result.error
+        assert "paste-buffer" not in fake.verbs
+
+    def test_a_session_past_its_grace_window_is_reported_missing(self, monkeypatch):
+        fake = FakeRun(returncode=1)
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        session = make_session(tmux_target="loop-gone", created_at=_ago(minutes=5))
+        result = TmuxRunner().deliver(session, "event prompt")
+        assert result.session_missing is True
+
+    def test_a_zero_grace_window_restores_the_immediate_verdict(self, monkeypatch):
+        fake = FakeRun(returncode=1)
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        session = make_session(tmux_target="loop-gone", created_at=_now())
+        runner = TmuxRunner(spawn_grace_seconds=0)
+        assert runner.deliver(session, "event prompt").session_missing is True
+
+    def test_a_record_with_no_creation_time_is_never_inside_the_window(
+        self, monkeypatch
+    ):
+        """An old record — and old records are exactly what the issue-80
+        respawn exists to recover, so the doubtful answer keeps recovering."""
+        fake = FakeRun(returncode=1)
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        for stamp in ("", "not-a-timestamp"):
+            session = make_session(tmux_target="loop-old", created_at=stamp)
+            assert TmuxRunner().deliver(session, "p").session_missing is True
+
+    def test_a_live_session_inside_the_window_is_delivered_into_normally(
+        self, monkeypatch
+    ):
+        """The window is about a pane that does not ANSWER, not about age."""
+        fake = FakeRun()
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        session = make_session(tmux_target="loop-alive", created_at=_now())
+        assert TmuxRunner().deliver(session, "event prompt").ok
 
     def test_deliver_paste_failure_is_not_session_missing(self, monkeypatch):
         # has-session succeeds (session is alive) but a paste sub-command errors:

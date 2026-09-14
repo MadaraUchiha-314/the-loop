@@ -18,6 +18,7 @@ import pytest
 
 from the_loop.graph.state import GraphState
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
+from the_loop.state import StateLayout
 from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
 from the_loop.webhook.router import RoutedEvent
 
@@ -91,6 +92,12 @@ def checkout(tmp_path):
 
 
 def _dispatcher(tmp_path, **routing):
+    # A state layout of its own (issue-363). `None` here meant the process-wide
+    # default, `.the-loop/portable` — this repository's own tracked records — so
+    # every dispatcher in this file shared one portable directory with every
+    # other test and with the checkout. Harmless while nothing read the records
+    # back; not harmless once the graph position is published to them and
+    # restored from them.
     return Dispatcher(
         registry=SessionRegistry(tmp_path / "sessions"),
         adapters={},
@@ -100,7 +107,7 @@ def _dispatcher(tmp_path, **routing):
                 "control": {"enabled": False},
                 **routing,
             },
-            None,
+            StateLayout(root=str(tmp_path / "state")),
         ),
     )
 

@@ -137,6 +137,12 @@ def _wait(predicate, timeout=5.0):
 def _dispatcher(tmp_path, link, **overrides):
     registry = SessionRegistry(tmp_path / "sessions")
     overrides.setdefault("control", ControlConfig(require_start_command=False))
+    # A portable directory of its own (issue-363). The default is
+    # `.the-loop/portable` — this repository's own tracked records — so every
+    # run of this file rewrote one of them in the checkout, and since the graph
+    # position is published to these records and restored from them, a shared
+    # directory is no longer only untidy.
+    overrides.setdefault("portable_dir", str(tmp_path / "portable"))
     tmux = _SeqTmux(link.seq)
     dispatcher = Dispatcher(
         registry=registry,

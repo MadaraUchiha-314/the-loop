@@ -371,6 +371,12 @@ routing:
   # what it knew about the work item, instead of booting a blank one. The
   # respawn is probed for resumeProbeSeconds (0 = check immediately) and falls
   # back to a fresh conversation when the harness could not resume.
+  # spawnGraceSeconds (issue-363): how long after a spawn a tmux session that
+  # does not answer is read as BOOTING rather than dead. `new-session -d`
+  # returns when the pane forks, the TUI inside it needs seconds more, and an
+  # event arriving in that gap used to respawn over a session that was coming
+  # up — and then spawn a second one when the freshly minted id had no
+  # transcript to resume. 0 = the old behaviour.
   # killHarnessOnClose (issue-94): when the work item closes and its tmux
   # session is KEPT, end the harness process inside it — the pane stays
   # readable, but is no longer a live TUI a stray keystroke/paste could
@@ -394,6 +400,7 @@ routing:
     remainOnExit: true
     resumeOnRespawn: true
     resumeProbeSeconds: 2
+    spawnGraceSeconds: 20
     killHarnessOnClose: true
     harnessKillGraceSeconds: 5
     sessionPerPr: cross-repository

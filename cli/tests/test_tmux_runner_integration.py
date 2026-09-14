@@ -13,6 +13,7 @@ import json
 import signal
 import stat
 import time
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -353,6 +354,20 @@ def linked_pr_close_payload():
     return pr_close_payload(number=99)
 
 
+def _long_ago() -> str:
+    """A `createdAt` well outside `routing.tmux.spawnGraceSeconds` (issue-363).
+
+    Every respawn scenario below is about a session whose harness has **died**,
+    and a session that died is one that had time to live first. Without this the
+    records are minted microseconds before the delivery, which is precisely the
+    booting-session case the grace window now holds for — so the respawn path
+    would never be reached and these tests would assert nothing.
+    """
+    return (datetime.now(timezone.utc) - timedelta(hours=1)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+
+
 def register_tmux_session(registry, harness_session_id="uuid-1"):
     registry.register(
         Session(
@@ -361,6 +376,7 @@ def register_tmux_session(registry, harness_session_id="uuid-1"):
             harness_session_id=harness_session_id,
             cwd=".",
             tmux_target="loop-github-octo-repo-15",
+            created_at=_long_ago(),
         ),
         force=True,
     )
@@ -677,6 +693,7 @@ def test_dead_session_is_respawned_with_the_event_as_boot_prompt(pipeline, monke
             harness_session_id="uuid-1",
             cwd=".",
             tmux_target="loop-github-octo-repo-15",
+            created_at=_long_ago(),
         )
     )
     # The session crashed, and its conversation is gone with it: the resume

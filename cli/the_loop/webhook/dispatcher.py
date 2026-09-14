@@ -82,7 +82,8 @@ from ..reactions import (
     GitHubReactor,
     ReactionConfig,
 )
-from ..runner import SESSION_LIVE, TmuxRunner
+from ..recovery import advanced_phase, recovery_prompt_notice
+from ..runner import DEFAULT_SPAWN_GRACE_SECONDS, SESSION_LIVE, TmuxRunner
 from ..sessions import Session, SessionRegistry, WorkItemRef
 from ..state import LegacyLayout, StateLayout, layout_from_config, legacy_layout
 from ..workitem import SECTIONS
@@ -100,6 +101,7 @@ from .router import (
     event_actor,
     event_body,
     event_carries_label,
+    event_labels,
     pr_work_item,
 )
 
@@ -194,6 +196,8 @@ Follow the-loop's normal flow and risk-tier gates — the process is defined by
 the-loop's own graph, and the block below states where this item stands in it —
 escalating to a human only when a decision is required.
 
+$recovery_notice
+
 $interaction_directive
 
 $graph_context
@@ -276,6 +280,7 @@ class TmuxConfig:
     remain_on_exit: bool = True
     resume_on_respawn: bool = True
     resume_probe_seconds: float = 2.0
+    spawn_grace_seconds: float = DEFAULT_SPAWN_GRACE_SECONDS
     kill_harness_on_close: bool = True
     harness_kill_grace_seconds: float = 5.0
     session_per_pr: str = SESSION_PER_PR_CROSS_REPOSITORY
@@ -303,6 +308,9 @@ class TmuxConfig:
             remain_on_exit=bool(data.get("remainOnExit", True)),
             resume_on_respawn=bool(data.get("resumeOnRespawn", True)),
             resume_probe_seconds=float(data.get("resumeProbeSeconds", 2.0)),
+            spawn_grace_seconds=float(
+                data.get("spawnGraceSeconds", DEFAULT_SPAWN_GRACE_SECONDS)
+            ),
             kill_harness_on_close=bool(data.get("killHarnessOnClose", True)),
             harness_kill_grace_seconds=float(data.get("harnessKillGraceSeconds", 5.0)),
             session_per_pr=session_per_pr_mode(data.get("sessionPerPr")),
@@ -625,6 +633,7 @@ class Dispatcher:
             else TmuxRunner(
                 remain_on_exit=self.config.tmux.remain_on_exit,
                 instance=self.config.instance.name,
+                spawn_grace_seconds=self.config.tmux.spawn_grace_seconds,
             )
         )
         # An injected runner (tests / embedding) still learns the instance's name:
@@ -667,6 +676,7 @@ class Dispatcher:
             self.config.authorized_users,
             assignment_sink=self._deliver_assignment,
             frozen_graph_sink=self._record_frozen_graph,
+            position_sink=self._record_graph_position,
         )
         self._event_template = self._load_template(
             self.config.prompt_template, DEFAULT_PROMPT_TEMPLATE
@@ -745,6 +755,7 @@ class Dispatcher:
             )
         if not self._tmux_override:
             self.tmux.remain_on_exit = config.tmux.remain_on_exit
+            self.tmux.spawn_grace_seconds = config.tmux.spawn_grace_seconds
         self.tmux.instance = config.instance.name
         self.graphlink = GraphLink(
             config.graph,
@@ -753,6 +764,7 @@ class Dispatcher:
             config.authorized_users,
             assignment_sink=self._deliver_assignment,
             frozen_graph_sink=self._record_frozen_graph,
+            position_sink=self._record_graph_position,
         )
         self._event_template = self._load_template(
             config.prompt_template, DEFAULT_PROMPT_TEMPLATE
@@ -1622,6 +1634,18 @@ class Dispatcher:
         session handle.
         """
         self.control_store.record_frozen_graph(work_item, frozen)
+
+    def _record_graph_position(self, work_item, position: dict) -> None:
+        """Store where a work item's outer loop stands on its PORTABLE record.
+
+        The same argument as :meth:`_record_frozen_graph`, applied to the fact
+        that machine loss actually destroyed (issue-363): *which node this work
+        item is on* was only ever in `docs/specs/<id>/graph-state.json`, and a
+        fresh clone of an issue work item has no branch and therefore no file.
+        Published on every graph write, so the next machine restores the pointer
+        instead of starting the work item over.
+        """
+        self.control_store.record_graph_position(work_item, position)
 
     def _tracks(self, work_item: WorkItemRef) -> bool:
         """Whether this machine knows the work item at all (issue-329).
@@ -2577,6 +2601,15 @@ class Dispatcher:
             self._spawn_template,
             graph_context=render_graph_context(
                 ctx, spec_id_for(work_item) or work_item.ref
+            ),
+            # Whether this spawn is a RE-ADOPTION (issue-363): the ticket's own
+            # phase label says the work item has been worked, and the context
+            # resolved a line above says this machine holds no pointer for it.
+            # Both facts are already here; the alternative was plumbing the
+            # poller's verdict through the dispatch path to say the same thing.
+            recovery_notice=recovery_prompt_notice(
+                bool(advanced_phase(event_labels(routed.payload))),
+                bool(ctx is not None and ctx.current_node),
             ),
         )
         # Before the runner starts the harness: make sure the harness will not
@@ -3543,6 +3576,7 @@ class Dispatcher:
         work_item: WorkItemRef,
         template: Template,
         graph_context: str = "",
+        recovery_notice: str = "",
     ) -> str:
         repository = (routed.payload.get("repository") or {}).get("full_name", "")
         directive = self.config.interaction.directive
@@ -3555,6 +3589,7 @@ class Dispatcher:
             payload_excerpt=event_excerpt(routed.event, routed.payload),
             interaction_directive=directive,
             graph_context=graph_context,
+            recovery_notice=recovery_notice,
         )
         # A template that never declared the placeholder would drop the rule in
         # silence — safe_substitute does not complain (issue-134).

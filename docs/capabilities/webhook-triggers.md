@@ -780,6 +780,33 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   `_checkout_belongs_to` still proves via the `origin` remote that a checkout is the work
   item's before a graph is driven in it (issue-113 A6).
 
+### A first sight of a work item the-loop has already worked
+
+- **A control command SHALL be executed once, ever** (issue-363). A first sight baselines
+  the thread, *except* for control commands nobody has processed (issue-119) — and with no
+  control record, every historical command qualifies. On a rebuilt host that is every
+  `the-loop execute` and every approval the thread has ever carried. WHEN the poller sees a
+  work item for the first time AND there is no session record and no control record for it
+  AND its thread shows the-loop has worked it — a `loop:<phase>` label past the start, or a
+  self-authored the-loop comment — THEN the whole thread SHALL be baselined **including**
+  its control comments (`poll.context_lost`), and none of them executed.
+- **The withholding SHALL be said out loud.** Exactly one comment is posted on such a work
+  item (`poll.context_lost_announced`), naming the instant before which nothing will be
+  acted on again and stating that the process pointer has *not* been moved. Once per work
+  item by construction: the same cycle baselines the thread, so no later cycle is a first
+  sight for it. Best-effort in one direction only — the baseline it announces is already
+  written and is never undone by a failure to post.
+- **The age rule only ever withholds.** Nothing becomes executable that was not executable
+  before: `is_authorized`, the self-authored marker and the unambiguous-keyword parse are
+  unchanged and still judge everything that *is* forwarded. A work item whose thread shows
+  no prior the-loop work behaves exactly as issue-119 specified.
+- **A spawned session that is a re-adoption SHALL be told so.** WHEN a session is spawned
+  for a work item whose ticket carries a phase label past the start AND this machine holds
+  no graph pointer for it THEN the auto-execute prompt SHALL carry a notice that this is a
+  new conversation replacing a lost one, and SHALL require the session to find the existing
+  pull request, branch and `docs/specs/<id>/` artifacts and reconcile before producing or
+  re-posting anything. Every other spawn prompt is unchanged.
+
 ## Design
 
 [`docs/specs/issue-15/design.md`](../specs/issue-15/design.md) ·
@@ -789,6 +816,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-363 | A rebuilt daemon stopped replaying a work item's whole history (2026-09-14): sixty-four old comments were re-forwarded on one poll cycle, ten of them `the-loop execute` commands and five of them approvals, because an absent control record made every historical command look unprocessed. A first sight of a work item whose thread shows the-loop has already worked it now baselines the thread **including** its commands and posts one notice naming the cutoff; the spawn prompt of such a re-adoption says the conversation is gone and requires the session to reconcile against the existing PR and artifacts first | [spec](../specs/issue-363/), [decision-126](../decisions/decision-126.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/363) |
 | issue-352 | The coupling stopped reading the work item's checkout (2026-09-12): the spec directory is `routing.graph.specDir` for every repository the instance drives, the label prefix is the constant `loop:`, notifications carry no configured roles, and the pre-spawn adoption that wrote a default harness config into a fresh clone is gone with the reader it served | [spec](../specs/issue-352/), [decision-123](../decisions/decision-123.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/352) |
 | issue-348 | The receiver gained the repository bound it never had: the list of repositories an instance works with moved out of `polling.sources[].repos` to a top-level `repositories`, and **every** ingress reads it — the receiver drops an undeclared delivery (and undeclared linked refs) as `undeclared-repository`, above the actor guard; the poller takes its scopes from it; `may_target` and the kickoff resolve against it. Breaking: config version 0.8.0, `the-loop migrate-config` moves the lists up (and `kickoff.repo` with them), an un-migrated config refuses to start. An empty list bounds nothing and says so at start | [spec](../specs/issue-348/), [decision-121](../decisions/decision-121.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/348) |
 | issue-332 | A closed item the poller had merely listed leaves the board by itself (2026-09-09): a portable record carrying only `poll` — excluded from reconciliation by issue-329 because asking every cycle would cost one provider call per unlabelled open item, forever — is now asked once it has been absent from complete listings for sixty cycles' worth of `intervalSeconds` (measured on the ledger's own `lastPolledAt` / new `closureCheckedAt`, so `poll --once` from cron gets it too), at most twenty per source per cycle, longest-absent first. A closure takes the unchanged close path and the record ends as `ended` only; a *still open* or unanswerable answer writes only `closureCheckedAt`, deferring the question a window. `poll.cycle` counts the questions as `ledger_checks`. The tracked set is untouched | [spec](../specs/issue-332/), [decision-115](../decisions/decision-115.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/332) |

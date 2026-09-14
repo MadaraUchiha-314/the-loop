@@ -161,7 +161,10 @@ class FakeTmux(TmuxRunner):
     def has_session(self, target):
         return False
 
-    def has_live_session(self, target):
+    def has_live_session(self, target) -> bool:
+        # Annotated because a subclass overrides it (issue-363's booting pane):
+        # unannotated, this infers `Literal[True]` and pyright refuses any
+        # override that can answer False.
         return True
 
     def survived(self, target, delay, sleeper=time.sleep):

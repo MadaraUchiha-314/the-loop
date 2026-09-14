@@ -46,6 +46,7 @@ from .. import __version__, eventlog
 from ..authz import is_authorized, is_self_authored, mark_self_authored
 from ..comments import post_issue_comment
 from ..control import ControlConfig, ControlStore, parse_command
+from ..recovery import context_lost, context_lost_notice
 from ..reload import Reloader
 from ..sessions import SessionRegistry, WorkItemRef
 from ..workitem import COLLABORATORS, CONTROL, GRAPH, POLL, WorkItemStore
@@ -1115,13 +1116,43 @@ class Poller:
         # guards are per COMMENT, so who opened the item never silences an
         # authorized user's instruction (issue-197).
         if first_sight:
-            pending = self._pending_control_ids(ref, comments)
+            # …unless this machine has simply FORGOTTEN the item (issue-363).
+            # A thread the-loop has already worked, seen for the first time by a
+            # daemon that holds nothing about it, is a rebuilt host — and there
+            # every historical command looks unprocessed, because the record
+            # that said otherwise went with the old box. Ten `the-loop execute`s
+            # and five approvals were re-run that way. Baseline the whole thread
+            # instead and say so once.
+            lost = (
+                not has_session
+                and self.control_store.get(ref) is None
+                and context_lost(
+                    item.labels,
+                    any(is_self_authored(c.body) for c in comments),
+                )
+            )
+            pending = set() if lost else self._pending_control_ids(ref, comments)
             self.state.baseline_comments(
                 ref,
                 [cid for cid in live_ids if cid not in pending],
                 _utcnow(),
                 title=item.title,
             )
+            if lost:
+                logger.warning(
+                    "%s: first sight of a work item this machine has no record "
+                    "of, and its thread shows the-loop has worked it before. "
+                    "Baselining the whole thread INCLUDING its commands — none "
+                    "of them will be re-run — and saying so on the ticket",
+                    ref,
+                )
+                eventlog.emit(
+                    "poll.context_lost",
+                    level="warning",
+                    work_item=ref,
+                    comments_baselined=len(live_ids),
+                )
+                self._report_context_lost(item)
             if not pending:
                 if spawn_authorized and not has_session:
                     self._try_spawn(provider, item, refs, summary)
@@ -1493,6 +1524,61 @@ class Poller:
             actor=comment.author,
             outcome=outcome,
             will_retry=False,
+        )
+
+    def _report_context_lost(self, work_item: WorkItem) -> None:
+        """Tell the ticket that the-loop has had to re-adopt it (issue-363).
+
+        Posted **once** per work item, and the control flow is what guarantees
+        it rather than a flag: the same cycle baselines the whole thread, so no
+        later cycle is a first sight for this item.
+
+        Best-effort in one direction only, exactly as :meth:`_report_giveup` is:
+        the baseline is already written when this runs and nothing here can undo
+        it, and every failure is swallowed — a notice must not end a poll cycle.
+        A human who never sees the notice gets a daemon that is quiet about an
+        item, which is the failure this is announcing anyway; a human who never
+        gets the *baseline* would get the replay this exists to stop.
+
+        Addressed to the polled item itself, for :meth:`_report_giveup`'s
+        reason: this answers the people reading that thread.
+        """
+        item = WorkItemRef(
+            provider=work_item.provider,
+            owner=work_item.owner,
+            repo=work_item.repo,
+            number=work_item.number,
+            host=work_item.host,
+        )
+        cutoff = _utcnow()
+        try:
+            ok, error = post_issue_comment(
+                item,
+                context_lost_notice(ref=item.ref, cutoff=cutoff),
+                gh_binary=self.dispatcher.config.announce.gh_binary,
+                runner=self._comment_runner,
+            )
+        except Exception as exc:  # noqa: BLE001 — a notice never ends a cycle
+            logger.warning(
+                "could not announce the lost context of %s: %s", item.ref, exc
+            )
+            eventlog.emit(
+                "poll.context_lost_notice_failed",
+                level="warning",
+                work_item=item.ref,
+                error=str(exc),
+            )
+            return
+        if ok:
+            eventlog.emit(
+                "poll.context_lost_announced", work_item=item.ref, cutoff=cutoff
+            )
+            return
+        eventlog.emit(
+            "poll.context_lost_notice_failed",
+            level="warning",
+            work_item=item.ref,
+            error=error,
         )
 
     def _report_giveup(

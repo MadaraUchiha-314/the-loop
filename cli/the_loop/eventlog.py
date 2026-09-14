@@ -838,6 +838,46 @@ EVENT_TYPES: Dict[str, str] = {
         "(work_item, error). Best-effort: the selection itself still stands, "
         "and graph-state.json keeps the authoritative copy. issue-177."
     ),
+    "poll.context_lost": (
+        "A poll cycle saw a work item for the first time whose thread shows "
+        "the-loop has already worked it — a rebuilt machine, a fresh state root, "
+        "or a deliberate reset (work_item, comments_baselined). The whole thread "
+        "is baselined INCLUDING its control commands, so none of them is re-run. "
+        "issue-363."
+    ),
+    "poll.context_lost_announced": (
+        "The one comment saying the-loop lost its record of a work item was "
+        "posted on it (work_item, cutoff) — nothing older than `cutoff` will be "
+        "acted on again. issue-363."
+    ),
+    "poll.context_lost_notice_failed": (
+        "That notice could not be posted (work_item, error). Best-effort: the "
+        "baseline it announces is already written and stands. issue-363."
+    ),
+    "graph.position_published": (
+        "Where a work item's OUTER loop stands was published to its portable "
+        "record (work_item, node) — written after every graph write, so the "
+        "pointer survives the machine. issue-363."
+    ),
+    "graph.position_restored": (
+        "A machine with no local graph state for a work item wrote the pointer "
+        "back from the portable record instead of starting the item over "
+        "(work_item, node, published_at). The `Runtime.start` that follows is "
+        "then the no-op it already is for an item with a pointer. issue-363."
+    ),
+    "graph.position_restore_failed": (
+        "A published graph position could not be written to disk (work_item, "
+        "error). The item is then judged by graph.rewind_refused, so a failed "
+        "restore costs a human a re-post and never the item's history. "
+        "issue-363."
+    ),
+    "graph.rewind_refused": (
+        "This machine holds no graph state for a work item whose ticket says it "
+        "has advanced (work_item, phase, start_node), so the pointer-moving "
+        "action was refused rather than re-entering the start node. Nothing was "
+        "entered, no label was written and no gate was re-asked; an operator "
+        "re-establishes the pointer with `the-loop graph force`. issue-363."
+    ),
     "graph.node_skipped": (
         "The pointer routed around a declared-skipped node along its "
         "`on: skipped` edge — none of the node's hooks ran (work_item, node, "

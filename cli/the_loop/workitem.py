@@ -70,6 +70,7 @@ __all__ = [
     "GRAPH",
     "INDEX_FILE",
     "POLL",
+    "POSITION",
     "SEALED",
     "WorkItemStore",
 ]
@@ -83,6 +84,14 @@ POLL = "poll"
 #: process is part of tracking the work item, not of the machine running it, so
 #: it travels with `control` and survives a hand-off to another host.
 GRAPH = "graph"
+
+#: The key inside :data:`GRAPH` holding where the work item's outer loop stands
+#: (issue-363) — the graph state verbatim, plus the instant it was published.
+#: Inside `graph` rather than beside it because it is the same fact from the
+#: other side: `graph` says which nodes this item walks, `graph[POSITION]` says
+#: which one it is on. Two writers, so both of them read-modify-write the
+#: section (:mod:`the_loop.control`).
+POSITION = "position"
 
 #: The logins an authorized user granted collaborator status on this work item
 #: (issue-307). **Portable** for the same reason as `control`: "an authorized user

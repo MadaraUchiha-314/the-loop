@@ -678,6 +678,12 @@
               "default": 2,
               "description": "How long a resume-on-respawn waits before checking that the harness is still running. `tmux new-session -d` succeeds as soon as the pane forks, while a harness that cannot resume (e.g. `claude --resume <unknown-id>`) exits within a fraction of a second — without this probe such a respawn would report success forever while events went nowhere. 0 checks immediately without waiting."
             },
+            "spawnGraceSeconds": {
+              "type": "number",
+              "minimum": 0,
+              "default": 20,
+              "description": "How long after a session is spawned a delivery still treats a tmux session that does not answer as **booting** rather than dead (issue-363). `tmux new-session -d` returns as soon as the pane forks, while a harness TUI takes seconds more to become something tmux reports as a live pane \u2014 so an event arriving in that gap used to be read as a crash: the dispatcher respawned, tried `--resume <id minted seconds ago>`, found no transcript, and spawned a SECOND session over the first. Inside this window the delivery is released for retry instead, and lands in the pane that is coming up. Measured from the session record's `createdAt`; a record without one is never inside the window, so the issue-80 respawn still recovers old records. 0 restores the pre-issue-363 behaviour (a pane that does not answer is dead at once)."
+            },
             "sessionPerPr": {
               "type": [
                 "string",

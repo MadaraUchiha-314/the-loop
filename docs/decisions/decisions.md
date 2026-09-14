@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [126](decision-126.md) | Absence of local state is not evidence of absence of work — a forgotten work item is refused, never restarted | proposed | 2026-09-14 |
 | [125](decision-125.md) | An adapter's flags are the spelling the harness's own `--help` lists, declared once and never derived at runtime | proposed | 2026-09-14 |
 | [124](decision-124.md) | A work item picks its model at the gate; the harness is asked what it can run | proposed | 2026-09-13 |
 | [123](decision-123.md) | The harness config is the agent's alone: the CLI reads no key of it, takes the spec directory, critics and graph hooks from its own config, and the agent passes the rest as flags; `ticketing`, the phase list and prefix, `notifications`, `localOrchestration` and two dead keys are removed | proposed | 2026-09-12 |

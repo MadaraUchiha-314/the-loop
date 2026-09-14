@@ -16,6 +16,8 @@ Follow the-loop's normal flow and risk-tier gates — the process is defined by
 the-loop's own graph, and the block below states where this item stands in it —
 escalating to a human only when a decision is required.
 
+$recovery_notice
+
 $interaction_directive
 
 $graph_context

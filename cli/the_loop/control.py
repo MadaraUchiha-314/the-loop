@@ -79,7 +79,7 @@ from .authz import mark_self_authored
 from .collaborators import parse_logins
 from .sessions import WorkItemRef
 from .state import LegacyLayout
-from .workitem import CONTROL, ENDED, GRAPH, WorkItemStore
+from .workitem import CONTROL, ENDED, GRAPH, POSITION, WorkItemStore
 
 logger = logging.getLogger("the-loop.control")
 
@@ -441,8 +441,55 @@ class ControlStore:
         Beside `control` in the same **portable** record, and for the same
         reason: "an authorized user chose these phases" is true on any machine,
         so it travels with the work item rather than with the session handle.
+
+        The `graph` section has had a second writer since issue-363, so this
+        writes *into* it rather than over it: re-freezing a selection must not
+        drop the position recorded beside it, any more than recording a position
+        may drop the selection. Two writers on one section, the same
+        read-modify-write rule :mod:`the_loop.workitem` already applies to the
+        record as a whole.
         """
-        self.store.write_section(work_item, GRAPH, dict(frozen))
+        section = dict(self.store.section(work_item, GRAPH) or {})
+        keep = (
+            {POSITION: section[POSITION]}
+            if isinstance(section.get(POSITION), dict)
+            else {}
+        )
+        self.store.write_section(work_item, GRAPH, {**dict(frozen), **keep})
+
+    def record_graph_position(
+        self, work_item: Union[str, WorkItemRef], position: Dict[str, Any]
+    ) -> None:
+        """Publish where a work item's OUTER loop currently stands (issue-363).
+
+        The counterpart to :meth:`record_frozen_graph` that the machine-loss
+        report showed was missing. The frozen graph says which phases this item
+        walks; this says which one it is *on* — and until it existed, the only
+        copy of that was `docs/specs/<id>/graph-state.json`, which is checked in
+        on the work item's **branch** and therefore absent from a fresh clone of
+        an *issue* work item. A daemon that could not find it read it as "this
+        item has not begun" and started the item over.
+
+        ``position`` is the graph state verbatim, wrapped with the instant it was
+        taken, because a restore must be a *move* and not a re-derivation: a
+        summary would need a second serialiser of the same data, and that is
+        where the next drift bug would live.
+        """
+        section = dict(self.store.section(work_item, GRAPH) or {})
+        section[POSITION] = dict(position)
+        self.store.write_section(work_item, GRAPH, section)
+
+    def graph_position(
+        self, work_item: Union[str, WorkItemRef]
+    ) -> Optional[Dict[str, Any]]:
+        """What :meth:`record_graph_position` wrote, or ``None`` if nothing has.
+
+        ``None`` for every record written before issue-363 and for every work
+        item whose graph has never advanced on a machine that published — which
+        reads, correctly, as "there is nothing here to restore".
+        """
+        position = (self.store.section(work_item, GRAPH) or {}).get(POSITION)
+        return position if isinstance(position, dict) else None
 
     def frozen_graph(
         self, work_item: Union[str, WorkItemRef]

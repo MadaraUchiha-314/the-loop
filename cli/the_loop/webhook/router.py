@@ -382,6 +382,29 @@ def event_carries_label(payload: dict, label: str) -> bool:
     return False
 
 
+def event_labels(payload: dict) -> List[str]:
+    """Every label name on this event's issue/PR, in payload order.
+
+    The reader :func:`event_carries_label` always implied but never exposed: the
+    same two payload keys, read straight out of the delivery, so a caller that
+    needs the *set* of labels rather than one membership test still makes no
+    GitHub API call. issue-363 reads it for the one `loop:<phase>` label the-loop
+    itself writes — the only portable record of where a work item stands once a
+    machine has forgotten it.
+
+    A malformed entry (not an object, or naming nothing) is dropped rather than
+    rendered as an empty label: this list is matched against a prefix, and an
+    empty string matches nothing useful in either direction.
+    """
+    names: List[str] = []
+    for key in ("issue", "pull_request"):
+        for lab in (payload.get(key) or {}).get("labels") or []:
+            name = str((lab or {}).get("name") or "") if isinstance(lab, dict) else ""
+            if name:
+                names.append(name)
+    return names
+
+
 def event_actor(event: str, payload: dict) -> Optional[str]:
     """The human GitHub login responsible for this event, or ``None``.
 

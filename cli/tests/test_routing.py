@@ -35,6 +35,7 @@ from the_loop.webhook.router import (
     event_actor,
     event_body,
     event_carries_label,
+    event_labels,
     extract_work_items,
     pr_work_item,
 )
@@ -694,6 +695,28 @@ def test_event_carries_label_false_when_absent_or_unlabelled():
     assert event_carries_label({"issue": {"number": 15, "labels": []}}, LABEL) is False
     assert event_carries_label({"workflow_run": {}}, LABEL) is False  # no labels
     assert event_carries_label({"issue": {"labels": [{"name": LABEL}]}}, "") is False
+
+
+def test_event_labels_reads_an_issue_and_a_pull_request():
+    """issue-363: the `loop:<phase>` label is the one portable record of where a
+    work item stands once a machine has forgotten it, and it is right here in
+    the delivery — no GitHub call to read it."""
+    issue = {
+        "issue": {"number": 15, "labels": [{"name": LABEL}, {"name": "loop:design"}]}
+    }
+    assert event_labels(issue) == [LABEL, "loop:design"]
+    pr = {"pull_request": {"labels": [{"name": "loop:implementation"}]}}
+    assert event_labels(pr) == ["loop:implementation"]
+
+
+def test_event_labels_drops_what_names_nothing():
+    """An empty name matches a prefix test in neither direction usefully, and a
+    malformed entry is not a label."""
+    assert (
+        event_labels({"issue": {"labels": [{"name": ""}, "loop:design", None]}}) == []
+    )
+    assert event_labels({"workflow_run": {}}) == []
+    assert event_labels({}) == []
 
 
 def test_router_sets_labeled_flag():

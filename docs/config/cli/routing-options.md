@@ -682,6 +682,24 @@ of a second — without the probe such a respawn would report success forever wh
 went nowhere. `0` checks immediately. A probe tmux is too busy to answer counts as **live**,
 so a loaded server no longer discards a resume that in fact took (issue-146).
 
+### `tmux.spawnGraceSeconds`
+
+- **Type:** `number`
+- **Default:** `20`
+
+How long after a spawn a tmux session that does not answer is treated as **booting**
+rather than dead. `tmux new-session -d` returns as soon as the pane forks; the harness TUI
+inside it takes seconds more to become something tmux reports as a live pane. An event
+that arrived in that gap used to be read as a crash — the dispatcher respawned, tried
+`--resume` on a session id minted seconds earlier, found no transcript, and spawned a
+second session over the first (issue-363). Inside this window the delivery is released for
+retry instead and lands in the pane that is coming up, which is also why a comment queued
+in the same poll cycle as a presence spawn no longer races it.
+
+Measured from the session record's `createdAt`. A record without one — written before the
+field existed — is never inside the window, so the `issue-80` respawn still recovers it.
+`0` restores the previous behaviour: a pane that does not answer is dead at once.
+
 ### `tmux.killHarnessOnClose`
 
 - **Type:** `boolean`

@@ -847,6 +847,38 @@ reader.
   a work item with no phases. Otherwise a mistyped `--repo` would take `--fail-on block`,
   the automated-gate mode, straight to exit 0.
 
+### Surviving a machine that has forgotten the work item
+
+- **A pointer SHALL only move forward** (issue-363). `graph-state.json` is checked in, but
+  on the work item's **branch** — and a `clone`-strategy workspace for an *issue* work item
+  is prepared with no branch, so a rebuilt host finds no file. Absence used to read as
+  "this work item has not begun", and both write actions started it over: `start` re-enters
+  the start node, and `advance` on an empty state evaluates the start node too
+  (`state.current_node or self.graph.start`), so a days-old `the-loop execute` still on the
+  thread re-froze a selection. WHEN the daemon is about to take a pointer-moving action on
+  a work item whose local graph state is absent AND whose ticket carries a `loop:<phase>`
+  label naming a phase other than the resolved graph's start node's THEN the action SHALL
+  be refused (`graph.rewind_refused`): no node entered, no phase label written, no gate
+  re-asked, and the spawn itself unaffected.
+- **A label may refuse; it may never place.** The refusal is a boolean over the ticket's
+  own labels, and there is no code path from a label to a node id — so a forged
+  `loop:complete` on a fresh ticket buys a refusal and a notice, never a pointer. Placing
+  one stays the audited operator escape hatch, `the-loop graph force <id> --to <node>
+  --reason <why>`.
+- **Where a work item stands SHALL travel with the work item.** After every write to an
+  **outer** loop's state the daemon publishes that state verbatim to the `graph` section of
+  the portable record, under `position`, beside the frozen selection
+  (`graph.position_published`) — read-modify-write, so neither writer of that section drops
+  the other's key. WHEN a work item's local state is absent AND its portable record carries
+  a `position` THEN it SHALL be written back to disk before the loop is resolved
+  (`graph.position_restored`), making the `Runtime.start` that follows the no-op it already
+  is for a work item with a pointer.
+- **A restore writes only into a vacuum.** A local `graph-state.json` always wins, so a
+  tracked — and therefore proposable — portable record can never overwrite a pointer this
+  machine established, and `Runtime.reconstruct` still re-derives the node from the
+  artifacts at every repository-boundary check. An unreadable or malformed position
+  restores nothing and leaves the refusal above to answer.
+
 ## Design
 
 [`docs/specs/issue-109/design.md`](../specs/issue-109/design.md) ·
@@ -859,6 +891,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-363 | A machine that has forgotten a work item stopped starting it over (2026-09-14): a rebuilt host read every absent local record as "nothing has happened", so thirteen in-flight items were reset to their first node and their approved gates re-asked. The graph position is now published to the portable record on every outer-loop write and restored from it when the local file is missing; where it cannot be, a `loop:<phase>` label past the resolved graph's start node makes the daemon **refuse** to move the pointer rather than rewind it, and `the-loop graph force` stays the only way to place one | [spec](../specs/issue-363/), [decision-126](../decisions/decision-126.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/363) |
 | issue-358 | `phase-selection` grew two more per-work-item questions — which **model**, and at what **effort** — resolved per section against what this work item's harness can actually run, and frozen beside `surface`/`sessionPerPr`. The spawn also moved to **after** the gate: `graphlink.on_arm` enters the graph when a work item is armed and reports whether the pointer parked on a human start node, and the dispatcher spawns nothing while it has | [spec](../specs/issue-358/), [decision-124](../decisions/decision-124.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/358) |
 | issue-352 | The graph stopped reading the harness config (2026-09-12): `build_runtime` takes the spec directory from the CLI config or `--spec-dir`, the phase label prefix is the constant `loop:`, the origin repository is the work item's ref or the checkout's `origin` remote, `repoInitialized` became `guestLoop` (a contribution or review keeps its spec tree out of git and posts its plan to the thread; the work item's own loops never do), `notify` reads roles from the node's `with:` only, and the operator's hooks come from `routing.graph.hooks` (`load_graph(declaration=…)`, `repoHooks` gone). Adoption (issue-193/201) is retired: no verb writes into `.the-loop/`. `workflow.phases` and its parity test are gone — the graph is the only phase list. The `stage` keys nodes declare are matched against the token-economy guidance's stage table, not against a `tokenEconomy` routing map — that block left the harness config too | [spec](../specs/issue-352/), [decision-123](../decisions/decision-123.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/352) |
 | issue-281 | The gate became the locker (2026-08-25): `validate-artifacts` stopped demanding `locked: true` on any producing node — brainstorming, requirements-definition, design, test-planning, tasks-breakdown, and the contribution loop's scoped-plan gate shape only — and a new `lock-artifacts` hook on the approval nodes' exit chains (after `classify-feedback` and `record-feedback`) writes `status: approved` and merges the approving authors into `approvedBy` as a comment-preserving front-matter splice, verified after the write and failing closed. It consumes the classifier's verdict from the same chain run (never re-reading comments), skips on `changes-requested` or an absent artifact, and declares no outcome, so the classifier alone routes. This ends the double-ask the stacked layers produced: one human approval per gate, and no approval at all for nodes the graph gives no gate | [spec](../specs/issue-281/), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/281) |

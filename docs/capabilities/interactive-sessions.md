@@ -302,11 +302,23 @@ belongs to does not.
   `harnessArgs` it was launched with, each omitted when empty, and `the-loop sessions list`
   SHALL show the model (with the effort beside it) — so "what is this running on?" is
   answered without attaching to a pane.
+- WHEN a delivery targets a session whose pane does not answer as live AND whose record was
+  created less than `routing.tmux.spawnGraceSeconds` ago THEN the failure SHALL be
+  **transient** — released for retry — rather than a missing session (issue-363).
+  `tmux new-session -d` returns as soon as the pane forks and the TUI inside it needs
+  seconds more, so an event arriving in that gap used to take the respawn path: it tried
+  `--resume` on a session id minted seconds earlier, found no transcript, and spawned a
+  **second** session over the first. Outside the window a pane that does not answer is
+  missing exactly as before; a record with no `createdAt` is never inside it, so the
+  issue-80 respawn still heals old records. The default is 20 seconds and `0` restores the
+  previous verdict. This is also why a comment queued in the same poll cycle as a presence
+  spawn no longer races it: it waits for the pane instead.
 
 ## History
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-363 | A session that was still booting stopped being read as one that had died: a delivery inside `routing.tmux.spawnGraceSeconds` of the record's `createdAt` is now a transient failure, so the respawn-then-resume-then-spawn-again sequence that gave four work items two sessions apiece cannot start | [spec](../specs/issue-363/), [decision-126](../decisions/decision-126.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/363) |
 | issue-358 | A work item picks its **model** and **effort** at `phase-selection`, and the spawn now happens **after** that gate rather than before it: `graphlink.on_spawn` split into `on_arm` (enter the graph) and `on_spawn` (bind the session), so an armed item parked at a human start gate costs no tmux session and the first spawn already carries the frozen choice. `Dispatcher._adapter_for` resolves the choice like `_tmux_for` resolves `sessionPerPr`; the session record gained `model`/`effort`/`harnessArgs` | [spec](../specs/issue-358/), [decision-124](../decisions/decision-124.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/358) |
 | issue-317 | The spawn path opens the work item's channel conversations first: `Dispatcher` takes an injected opener (`channels.publishers.conversation_opener`), called with the ref at the top of `_spawn_for` — behind every refusal, before the checkout — and contained if it raises; both daemons and the core facade's dispatcher wire it | [spec](../specs/issue-317/), [decision-107](../decisions/decision-107.md), [channels](channels.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/317) |
 | issue-277 | The runner learned to be addressed by **target** rather than by work item (`spawn_in`, `deliver_to`, `kill_target`, `terminate_harness_in`), so a session with no work item can be hosted the same way; the four work-item entry points delegate and keep their exact refusals. The first caller is [standing-sessions](standing-sessions.md) | [spec](../specs/issue-277/), [decision-099](../decisions/decision-099.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/277) |

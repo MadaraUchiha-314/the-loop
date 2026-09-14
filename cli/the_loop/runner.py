@@ -22,6 +22,7 @@ import subprocess
 import tempfile
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Callable, List, Optional, Sequence
 
 from .harness.base import UnsupportedRunnerError
@@ -32,6 +33,7 @@ if TYPE_CHECKING:  # pragma: no cover — type-only
     from .webhook.dispatcher import WebTerminalConfig
 
 __all__ = [
+    "DEFAULT_SPAWN_GRACE_SECONDS",
     "HUB_SESSION",
     "SESSION_ABSENT",
     "SESSION_DEAD",
@@ -102,6 +104,15 @@ SESSION_UNKNOWN = "unknown"  # tmux did not answer (timeout, OSError, no binary)
 # out while the spawn behind it gets a real answer. That asymmetry is fine now
 # that an unanswered probe is `SESSION_UNKNOWN` rather than "absent".
 _PROBE_TIMEOUT_SECONDS = 10
+#: How long after its record was created a session is still allowed to be
+#: un-answerable without a delivery calling it dead (issue-363). Twenty seconds
+#: is a harness TUI's boot with room for a loaded host; the machine-loss report
+#: lost a session to a three-second race. The operator's
+#: `routing.tmux.spawnGraceSeconds` overrides it, and 0 restores the
+#: pre-issue-363 verdict.
+DEFAULT_SPAWN_GRACE_SECONDS = 20.0
+#: The shape :func:`the_loop.sessions.registry._utcnow` writes `createdAt` in.
+_CREATED_AT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 # tmux's refusal when `new-session -s <name>` names a session that already
 # exists. Matched only to decide whether to *re-probe* — never to authorise the
 # kill that may follow, which `session_state` decides.
@@ -229,10 +240,23 @@ class TmuxRunner:
     """
 
     def __init__(
-        self, binary: str = "tmux", remain_on_exit: bool = True, instance: str = ""
+        self,
+        binary: str = "tmux",
+        remain_on_exit: bool = True,
+        instance: str = "",
+        spawn_grace_seconds: float = DEFAULT_SPAWN_GRACE_SECONDS,
     ):
         self.binary = binary
         self.remain_on_exit = remain_on_exit
+        # How long a just-spawned session is allowed to be un-answerable before
+        # a delivery calls it dead (issue-363). `tmux new-session -d` returns as
+        # soon as the pane forks, and a harness TUI takes seconds more to be
+        # something tmux reports as a live pane running a harness — so a comment
+        # that arrived moments after the spawn read the booting session as a
+        # crash, respawned it, tried to `--resume` an id minted three seconds
+        # earlier, found no transcript, and spawned a SECOND session over the
+        # first. 0 restores that behaviour.
+        self.spawn_grace_seconds = spawn_grace_seconds
         # The instance's name (issue-322), exported into every spawned session as
         # INSTANCE_ENV_VAR when set. A config value validated by
         # ``instance.NAME_RE`` — the only thing ever interpolated into the argv.
@@ -742,6 +766,22 @@ class TmuxRunner:
                 ),
             )
         if not self.has_live_session(target):
+            if self._within_spawn_grace(session):
+                # Booting, not dead (issue-363). A TRANSIENT failure, so the
+                # dispatcher's ordinary retry path applies instead of its
+                # respawn path — the delivery comes back and lands in this very
+                # pane, which is also why the poller needs no same-cycle
+                # coalescing for it.
+                return TmuxResult(
+                    ok=False,
+                    error=(
+                        f"tmux session {target} is not answering yet, and it was "
+                        f"spawned less than {self.spawn_grace_seconds:g}s ago "
+                        "(routing.tmux.spawnGraceSeconds); it is still booting, "
+                        "so this delivery is released for retry rather than "
+                        "respawning over a session that is coming up"
+                    ),
+                )
             return TmuxResult(
                 ok=False,
                 session_missing=True,
@@ -752,6 +792,30 @@ class TmuxRunner:
                 ),
             )
         return self.deliver_to(target, prompt, timeout)
+
+    def _within_spawn_grace(self, session: Session) -> bool:
+        """Whether ``session`` was created too recently to be called dead.
+
+        A record with no ``createdAt``, or one this cannot parse, is **not** in
+        the window. Such a record is an old one — the field has been written on
+        every registration for a long time — and old records are exactly the
+        ones the issue-80 respawn path exists to recover, so the doubtful answer
+        here is the one that keeps recovering them.
+        """
+        if self.spawn_grace_seconds <= 0:
+            return False
+        created = str(getattr(session, "created_at", "") or "")
+        try:
+            at = datetime.strptime(created, _CREATED_AT_FORMAT).replace(
+                tzinfo=timezone.utc
+            )
+        except ValueError:
+            return False
+        age = (datetime.now(timezone.utc) - at).total_seconds()
+        # A negative age is a clock that moved (or a record written by a host an
+        # hour ahead): inside the window, because "spawned in the future" is much
+        # more likely to be a fresh session than a corpse.
+        return age < self.spawn_grace_seconds
 
     def deliver_to(
         self, target: str, prompt: str, timeout: Optional[float] = None

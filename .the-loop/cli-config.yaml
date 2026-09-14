@@ -213,6 +213,10 @@ routing:
   # SAME harness conversation (claude --resume <id>) instead of booting blank;
   # the spawn is probed for resumeProbeSeconds and falls back to a fresh
   # conversation if the harness could not resume (0 = probe immediately).
+  # spawnGraceSeconds (issue-363) is how long after a spawn a tmux session that
+  # does not answer is still read as BOOTING rather than dead — the window in
+  # which a delivery waits for the pane instead of respawning over it and then
+  # spawning a second session when the minted id has no transcript.
   # killHarnessOnClose (issue-94) ends the harness process inside a RETAINED
   # session when the work item closes, so the pane stays readable but is no
   # longer a live TUI stray input could resume (SIGTERM, then SIGKILL after
@@ -241,6 +245,7 @@ routing:
     remainOnExit: true
     resumeOnRespawn: true
     resumeProbeSeconds: 2
+    spawnGraceSeconds: 20
     killHarnessOnClose: true
     harnessKillGraceSeconds: 5
     sessionPerPr: cross-repository
