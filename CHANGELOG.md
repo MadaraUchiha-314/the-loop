@@ -1,3 +1,9 @@
+## v16.0.1 (2026-09-14)
+
+### Fix
+
+- **issue-360**: the cursor adapter's model flag is `--model`, the spelling cursor-agent parses (#361)
+
 ## v16.0.0 (2026-09-14)
 
 ### BREAKING CHANGE
