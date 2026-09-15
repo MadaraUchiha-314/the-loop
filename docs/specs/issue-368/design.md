@@ -30,9 +30,10 @@ flowchart TB
         O1["what an authorized human said<br/>control · collaborators"]
         O2["what this deployment has seen<br/>poll · ended"]
         O3["the workspace's entities<br/>channels.slack (moved in)"]
+        O4["the pull requests' ledgers<br/>pullRequests{ref → poll} (folded in from N records)"]
     end
     subgraph M["the MACHINE's file · &lt;state.root&gt;/local/&lt;slug&gt;.json · never tracked"]
-        M1["handles<br/>harnessSessionId · tmuxTarget · cwd · status · recentDeliveries · harnessArgs<br/>one endpoint per PR"]
+        M1["sessions{ref → handles}<br/>harnessSessionId · tmuxTarget · cwd · status · recentDeliveries · harnessArgs"]
         M2["cursors<br/>channels.slack.cursors (moved in)"]
     end
     X1["session {id, runner, alive} — leaves R"] -.-> M1
@@ -40,6 +41,7 @@ flowchart TB
     X3["pullRequests[].identity — copied from M"] -.-> R3
     X4["conversations · threads — leave channels/slack.json"] -.-> O3
     X5["cursors — leave channels/slack.json"] -.-> M2
+    X6["portable/&lt;pr-slug&gt;.json × N — folded into O"] -.-> O4
 ```
 
 Why three and not the ticket's one-plus-one: **who may write a file decides what may be
@@ -50,7 +52,8 @@ know (the process, and the pull requests, which are the repository's own objects
 operator's file holds what only an authorized human or the daemon may say, and what
 must outlive the checkout; the machine's file holds what means nothing anywhere else.
 Every attribute is written **once**, and any other file that needs it carries an
-identity, never a copy.
+identity, never a copy. And **one file per work item on each side**: a pull request has
+no file of its own anywhere — it is a key in its work item's files.
 
 ## The rule (D1)
 
@@ -78,14 +81,16 @@ the wrong file (R1.5).
 | `graph.loop`, `graph.workItem`, `graph.surface` | `portable/<slug>.json` (a second copy) | deleted — `work-item-state.json` already carries `loop`, `workItem`, `surface` | H |
 | `graph.nodes[]` | `portable/<slug>.json` | deleted — derived by `the-loop check` from the compiled graph + `skips` + `optIns` | D |
 | the fact "PR *p* delivers this work item" | `local/<slug>.json.pullRequests[].workItem` (only) | `work-item-state.json.pullRequests[{ref, repository, number, url, stateDir, state, linkedAt, linkedBy}]` | R |
-| the PR's session handle | `local/<slug>.json.pullRequests[]` | unchanged — the endpoint keeps `ref` (identity) + handles | M |
+| the PR's session handle | `local/<slug>.json.pullRequests[{workItem{ref, provider, owner, repo, number}, url, …handles}]` | `local/<slug>.json.sessions{<ref> → handles}` — the ref is the key; nothing else about the PR is kept | M |
+| the PR's poll ledger | `portable/<pr-slug>.json.poll` — a record per PR | `portable/<slug>.json.pullRequests{<ref> → {seenComments, commentAttempts, lastPolledAt}}` — under the owner | L |
+| `ended` stamped on the PR's own record | `portable/<pr-slug>.json.ended` | deleted — the PR's state is `work-item-state.json.pullRequests[].state`; the nested ledger is dropped on close | R |
 | the PR's upstream state (merged/closed) | the local endpoint's `status: closed` (a handle's status) | `work-item-state.json.pullRequests[].state`, written by the close path; the endpoint's `status` stays a handle's status | R |
 | `conversations{workItem → …}` | `channels/slack.json` | `portable/<slug>.json.channels.slack {channel, thread, opened, origin, permalink}` | R (operator's) |
 | `threads{thread → workItem}` | `channels/slack.json` | deleted — an in-memory index built from the portable records at listener start and on every bind | D |
 | `cursors{thread → ts}` for a work item's thread | `channels/slack.json` | `local/<slug>.json.channels.slack.cursors {thread → ts}` | M |
 | `cursors["channel:<id>"]`, `pending` | `channels/slack.json` | unchanged — no work item's | M |
 | `control`, `poll`, `collaborators`, `ended` | `portable/<slug>.json` | unchanged | L |
-| `index.json.sections` | `[control, poll, graph, collaborators, ended]` | `[control, poll, collaborators, ended, channels]` | D |
+| `index.json.sections` | `[control, poll, graph, collaborators, ended]`, one entry per record — PRs included | `[control, poll, collaborators, ended, channels, pullRequests]`, one entry per **work item**, each naming the PR refs it links | D |
 | pidfiles, heartbeat, logs, verdicts, self-diagnosis, standing | machine-wide | unchanged, named machine-wide by the table | M |
 
 ## Worked example
@@ -151,8 +156,22 @@ blocks (`S1`, `S2`, `S3`); which PR each is for is said only by the directory na
 }
 ```
 
+`<state.root>/portable/github-octo-app-16.json`, `…-lib-7.json`, `…-infra-3.json` —
+tracked, one **more** per pull request, because the poller lists each labelled PR as an
+item of its own; `index.json` has four entries for one work item.
+
+```json
+{
+  "ref": "github:octo/lib#7",
+  "url": "https://github.com/octo/lib/pull/7",
+  "poll": {"seenComments": ["2460…"], "commentAttempts": {},
+           "spawn": {"attempts": 0, "gaveUp": false, "deliveryId": ""},
+           "lastPolledAt": "2026-09-15T10:42:00Z", "title": "lib: token bucket"}
+}
+```
+
 `<state.root>/local/github-octo-app-15.json` — never tracked. The **only** record that
-three pull requests deliver `#15`.
+three pull requests deliver `#15`, spelled with the PR's owner, repo, number and URL.
 
 ```json
 {
@@ -196,7 +215,8 @@ three pull requests deliver `#15`.
 
 What a hand-off loses today: the three pull requests (they are only in `local/`), the
 Slack thread (only in `channels/`), and — the other way round — what the repository
-gains that it should not: four session ids.
+gains that it should not: four session ids. And what the operator's directory carries
+that it should not: four records for one work item.
 
 ### After
 
@@ -236,7 +256,9 @@ The three inner-loop state files keep their pointer and lose their `session` blo
 each is now also named from the outer file's `pullRequests[].stateDir`, so the directory
 name is no longer the only spelling of "which PR".
 
-`<state.root>/portable/github-octo-app-15.json` — tracked. No `graph`; the thread.
+`<state.root>/portable/github-octo-app-15.json` — tracked, and the **only** portable
+record for this work item. No `graph`; the thread; the three pull requests' ledgers
+under the PRs' refs (the merged one has already been dropped).
 
 ```json
 {
@@ -249,30 +271,41 @@ name is no longer the only spelling of "which PR".
     "slack": {"channel": "C0AB…", "thread": "1726…001", "opened": "2026-09-14T09:12:00Z",
               "origin": "start",
               "permalink": "https://octo.slack.com/archives/C0AB…/p1726…001"}
+  },
+  "pullRequests": {
+    "github:octo/app#16": {"seenComments": ["2470…"], "commentAttempts": {},
+                           "lastPolledAt": "2026-09-15T10:42:00Z"},
+    "github:octo/lib#7":  {"seenComments": ["2460…"], "commentAttempts": {},
+                           "lastPolledAt": "2026-09-15T10:42:00Z"}
   }
 }
 ```
 
-`<state.root>/local/github-octo-app-15.json` — never tracked. Handles only; each PR
-endpoint carries its **ref** (identity) and nothing the outer file already says.
+`<state.root>/local/github-octo-app-15.json` — never tracked. A map of **sessions keyed
+by the ref they serve**, handles only: the file does not know that three of its keys
+are pull requests, and it says nothing about them — no URL, repository, number or
+state. The ref is the join key into `work-item-state.json.pullRequests[]`.
 
 ```json
 {
-  "workItem": {"ref": "github:octo/app#15", "…": "…"},
-  "harness": "claude", "harnessSessionId": "0f1c-…-S0",
-  "cwd": "/home/op/.the-loop/workspace/github.com/octo/app/issue-15",
-  "status": "active", "tmuxTarget": "loop-github-octo-app-15",
-  "model": "opus-5", "effort": "high", "harnessArgs": ["…"], "recentDeliveries": ["8f2c…"],
+  "workItem": "github:octo/app#15",
   "channels": {"slack": {"cursors": {"1726…001": "1726…340"}}},
-  "pullRequests": [
-    {"workItem": {"ref": "github:octo/app#16"}, "harness": "claude",
-     "harnessSessionId": "…-S1", "cwd": "…/octo/app/pr-16", "status": "active",
-     "tmuxTarget": "loop-github-octo-app-16", "recentDeliveries": []},
-    {"workItem": {"ref": "github:octo/lib#7"}, "harnessSessionId": "…-S2",
-     "cwd": "…/octo/lib/pr-7", "status": "active", "tmuxTarget": "loop-github-octo-lib-7"},
-    {"workItem": {"ref": "github:octo/infra#3"}, "harnessSessionId": "…-S3",
-     "cwd": "…/octo/infra/pr-3", "status": "closed", "tmuxTarget": "loop-github-octo-infra-3"}
-  ]
+  "sessions": {
+    "github:octo/app#15": {
+      "harness": "claude", "harnessSessionId": "0f1c-…-S0",
+      "cwd": "/home/op/.the-loop/workspace/github.com/octo/app/issue-15",
+      "status": "active", "tmuxTarget": "loop-github-octo-app-15",
+      "model": "opus-5", "effort": "high", "harnessArgs": ["…"], "recentDeliveries": ["8f2c…"]},
+    "github:octo/app#16": {
+      "harness": "claude", "harnessSessionId": "…-S1", "cwd": "…/octo/app/pr-16",
+      "status": "active", "tmuxTarget": "loop-github-octo-app-16", "recentDeliveries": []},
+    "github:octo/lib#7": {
+      "harness": "claude", "harnessSessionId": "…-S2", "cwd": "…/octo/lib/pr-7",
+      "status": "active", "tmuxTarget": "loop-github-octo-lib-7", "recentDeliveries": []},
+    "github:octo/infra#3": {
+      "harness": "claude", "harnessSessionId": "…-S3", "cwd": "…/octo/infra/pr-3",
+      "status": "closed", "tmuxTarget": "loop-github-octo-infra-3", "recentDeliveries": []}
+  }
 }
 ```
 
@@ -286,8 +319,9 @@ endpoint carries its **ref** (identity) and nothing the outer file already says.
 ```
 
 What a hand-off carries now: the repository's branch says which three pull requests
-deliver the item and what it runs on; the operator's record says it is armed, who may
-speak to it, what was seen, and which thread carries it. The new machine's `local/` is
+deliver the item and what it runs on; the operator's **one** record says it is armed,
+who may speak to it, what was seen on the item and on each of its pull requests, and
+which thread carries it. The new machine's `local/` is
 empty, which is correct: the daemon rebuilds handles by spawning, reads the thread
 binding from the portable record, and reads the three pull requests from the checkout
 instead of from `gh`.
@@ -371,6 +405,41 @@ right candidate for everything the *repository* may know; three things the repos
 may not know, and the operator's workspace identifiers, are why it cannot be the only
 file.
 
+**D9 — one portable record per work item; a pull request's ledger is a key in its
+owner's record.** The owner's review named it: three pull requests should not be three
+more files. The poller lists a labelled PR as an item of its own and baselines it under
+its own ref because, at listing time, nothing tells it who the PR delivers. So the
+resolution moves *before* the write: `owner_of(ref)` asks the session registry
+(`record_owning`, the same scan every event uses), then the portable records'
+`pullRequests` maps, then the router's linkage rules on the listed item itself (closing
+references, the branch convention, a bare mention — the order the router already
+applies). A resolved owner gets the ledger under `pullRequests[<ref>]`; a PR that
+resolves to nothing is a work item of its own — a review (issue-279) or a labelled PR
+that closes no issue — and keeps its own record, because it *is* the work item. The
+close path stops stamping `ended` on a PR: the PR's state is the repository's fact
+(`pullRequests[].state`), and its nested ledger is dropped as `poll` is dropped today
+for an ended work item. The control plane's client-side reconciliation of "the PR's
+own record" with "the PR nested under its owner" (issue-302) is deleted, because there
+is nothing left to reconcile: `GET /api/v1/work-items` serves one record per work
+item, each naming its pull requests. A PR record written before this change is read
+for the PR's ledger until the owner's record carries it, then never again, and is
+reported — not removed — by `upgrade-the-loop`.
+
+**D10 — the local file replicates nothing about a pull request.** The owner asked why
+PR information is in the local file. Today's endpoint carries the PR's `workItem`
+object (provider, owner, repo, number), its URL and its status — a second record of
+the pull request in a file that must never travel. After this change the local file
+is `sessions{<ref> → handles}`: one entry for the work item's own session and one per
+pull request that has, or may get, a session on this machine, each holding a harness
+conversation id, a tmux target, a cwd, a status, recent delivery ids and what it was
+launched as. The **ref is the key and the only thing the file knows about the pull
+request**; everything else about the PR is in the repository's file, joined by that
+key. `record_owning(ref)` becomes a key lookup across the local records instead of a
+walk over nested objects; `link_pull_request` writes an empty-handled entry under the
+PR's ref (so the next event that needs a session knows which record owns it), and the
+repository entry through GraphLink (D5). A record written before this change with a
+`pullRequests[]` list is read into the same map and rewritten as one on its next save.
+
 ## Components & interfaces
 
 ```mermaid
@@ -381,12 +450,15 @@ flowchart TB
     DP["webhook/dispatcher.py<br/>_tmux_for / launch resolution read the checkout (fallback: portable graph)<br/>_record_pr_binding → GraphLink · close path → GraphLink"]
     WI["workitem.py · SECTIONS<br/>− GRAPH · + CHANNELS"]
     CS["channels/state.py · ChannelState<br/>− threads, conversations · cursors keep only channel:&lt;id&gt; · + PortableBindings, LocalCursors"]
-    SR["sessions/registry.py · Session<br/>+ channels.slack.cursors"]
+    SR["sessions/registry.py · Session<br/>pullRequests[] → sessions{ref → handles} · + channels.slack.cursors"]
+    PL["poller/poller.py · PollState<br/>owner_of(ref) before any write · ledger under the owner"]
     SP["state.py<br/>+ ATTRIBUTES table · GENERATED_PATHS holds updated"]
     CO["core/sessions.py · link_pull_request<br/>writes both files"]
     ST --> RT & GL
     GL --> DP
     WI --> CS
+    WI --> PL
+    SR --> PL
     SR --> CS
     SP -.pins.-> ST & WI & SR
     CO --> GL & SR
@@ -398,10 +470,13 @@ flowchart TB
 | `Runtime.resolve_session` | the `session: inherit` binding | `(registry.session_for(ref) → {id: harnessSessionId, runner: "tmux", alive: True}) or fresh-with-artifacts` |
 | `GraphLink` | the daemon's writer to the repository's file | `link_pull_request`, `close_pull_request`, and the existing gate freezing now writes `sessionPerPr/model/effort` into the state; no `_bind_session` |
 | `Dispatcher` | reads choices from the checkout | `_choices_for(work_item) → {sessionPerPr, model, effort}`: state file in `record.cwd`, else portable `graph`, else defaults |
-| `WorkItemStore` | the operator's file | `SECTIONS = (CONTROL, POLL, COLLABORATORS, ENDED, CHANNELS)`; `graph` read only by the dispatcher's fallback |
+| `WorkItemStore` | the operator's file | `SECTIONS = (CONTROL, POLL, COLLABORATORS, ENDED, CHANNELS, PULL_REQUESTS)`; `graph` read only by the dispatcher's fallback; `owner_of(ref)` scans the `pullRequests` maps |
+| `PollState` (poller) | the ledgers | `baseline_comments`/`mark_*` take `(owner, ref)`: `owner == ref` writes `poll`, otherwise `pullRequests[ref]`; `owner_of` resolves registry → portable maps → router linkage, else the PR itself |
+| `Dispatcher._record_closure` | closure | a PR that has an owner: `GraphLink.close_pull_request` + drop the nested ledger, **no** `ended`; a standalone PR or an issue: `ended`, as today |
 | `ChannelState` | machine-wide Slack state only | `cursors` restricted to `channel:*` keys; `pending` unchanged; a legacy file's `threads`/`conversations`/`cursors` exposed read-only as `legacy_bindings()` for R5.4 |
 | `SlackChannel` | binding + cursor through the two per-item stores | `thread_for(work_item)`: portable `channels.slack`, else legacy; `bind` writes portable; `cursor`/`advance` read and write the local record |
-| `SessionRegistry` | the machine's file | `Session.channels: {slack: {cursors}}`, absent rather than empty on records that have none |
+| `SessionRegistry` | the machine's file | a record is `{workItem, channels?, sessions{ref → Endpoint}}`; `record_owning(ref)` is a key lookup; `session_for`, `link_pull_request`, `save_endpoint`, `close_endpoint`, `touch` keep their signatures and address `sessions[ref]`; a legacy `pullRequests[]` loads into the map |
+| control plane (`api/routes.py`, `ui/`) | the board | the issue-302 client-side join is removed; `GET /api/v1/work-items` serves one record per work item with its `pullRequests` keys |
 | `ATTRIBUTES` (`state.py`) | the rule as data | `(file, key, kind)`; test asserts every top-level key of the three writers is listed and every kind is in its allowed file |
 
 ## UI/UX design
@@ -449,19 +524,43 @@ does (issue-365 R7.4).
 }
 ```
 
-One binding per channel type per work item (issue-312's "one work item, one thread").
-`index.json.sections` lists `channels` when present.
+One binding per channel type per work item (issue-312's "one work item, one thread"); a
+pull request's events post into its owner's thread, resolved through the owner's
+`pullRequests` map. `index.json.sections` lists `channels` when present.
 
-**`local/<slug>.json`**: new optional key on the record:
+A second new section, the pull requests' ledgers, keyed by ref:
 
 ```json
-"channels": {"slack": {"cursors": {"<thread ts>": "<last ts>"}}}
+"pullRequests": {
+  "github:<owner>/<repo>#<n>": {"seenComments": [], "commentAttempts": {}, "lastPolledAt": "<iso>"}
+}
 ```
 
-Absent rather than empty, so every record written before the change round-trips
-byte-identically (the `pullRequests` rule). PR endpoints are unchanged in shape; their
-`workItem` keeps `ref` and the derived fields, because `Session.from_dict` parses the
-ref and nothing else.
+No `spawn` and no `title` per PR: a pull request is never spawned as a work item from
+here, and its title is the repository's. `index.json` lists the keys per work item as
+`pullRequests: [refs]`.
+
+**`local/<slug>.json`** v2:
+
+```json
+{
+  "workItem": "github:<owner>/<repo>#<n>",
+  "channels": {"slack": {"cursors": {"<thread ts>": "<last ts>"}}},
+  "sessions": {
+    "github:<owner>/<repo>#<n>": {"harness": "claude | cursor", "harnessSessionId": "…",
+      "cwd": "…", "status": "active | paused | closed", "createdAt": "<iso>",
+      "lastEventAt": "<iso>", "tmuxTarget": "…", "recentDeliveries": [],
+      "model": "", "effort": "", "harnessArgs": []}
+  }
+}
+```
+
+The work item's own entry is `sessions[workItem]`; every other key is a pull request
+that has, or may get, a session here. `channels` is absent rather than empty. A v1 file
+(`workItem{…}` + top-level handles + `pullRequests[]`) loads into this shape and is
+written back as v2 on its next save; nothing in it is lost, and the derived fields
+(`provider`, `owner`, `repo`, `number`, `url`) are not carried forward — the ref parses
+to all of them.
 
 **`channels/slack.json`**: `threads` and `conversations` no longer written; `cursors`
 keeps only `channel:<id>` keys; `pending` unchanged. A file with the old maps loads, is
@@ -475,6 +574,8 @@ read for R5.4, and is written back without them on the next save.
 | checkout gone but record live (an operator deleted it) | as above; the next spawn re-prepares the checkout and the file is on the branch |
 | `link_pull_request` cannot take the state lock | the local endpoint is still written (routing works); the repository entry is retried on the next event for that PR, and `graph.hook_degraded` is recorded — never a dropped delivery |
 | a `pullRequests[]` entry fails validation on read (bad `repository`, bad `ref`) | that entry is skipped with a warning, the rest of the file is honoured (the `from_dict` rule for PR endpoints) |
+| the poller lists a PR and `owner_of` resolves nothing | the PR is treated as a work item of its own and gets its own record (R10.3); the first event that binds it to an owner moves the ledger under the owner and stops reading the PR's record |
+| `owner_of` resolves two owners (a PR closing two issues) | the router's first — the same order dispatch uses — and a `poll.owner_ambiguous` event naming both |
 | portable record has no `channels.slack` and legacy `slack.json` has no binding | open a thread, as today for a first event |
 | both a portable binding and a legacy binding exist for one work item | the portable one wins; the legacy one is neither read again nor rewritten |
 | local record has no cursor for a bound thread | the thread root, as `cursor()` returns today for a new thread |
@@ -539,6 +640,9 @@ The executable detail is `testing-plan.md`.
 - **A closed item's thread stops being read at `cleanup`.** Today it is read until 200
   newer threads push it out; after, until the item's local record goes. The board still
   attributes the thread from the portable binding.
+- **The poller resolves an owner per listed pull request.** A registry scan and a
+  portable-record scan per PR per cycle, both over small local files; no extra provider
+  call, because the linkage the router reads is already on the listed item.
 
 ## Open questions
 

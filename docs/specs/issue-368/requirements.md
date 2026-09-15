@@ -56,6 +56,7 @@ flowchart LR
     subgraph root["operator's state.root"]
         subgraph portable["portable/ · tracked in the operator's repo"]
             PR["github-octo-app-15.json<br/>control · poll · graph · collaborators · ended"]
+            PP["github-octo-app-16.json · github-octo-lib-7.json · github-octo-infra-3.json<br/>one more per pull request: poll · ended"]
             IX["index.json (derived)"]
         end
         subgraph local["local/ · never tracked"]
@@ -68,7 +69,7 @@ flowchart LR
     end
     S["session / runtime<br/>(the-loop graph …)"] --> WS & IL
     D["daemon: GraphLink"] --> WS & IL
-    D2["daemon: dispatcher · poller"] --> PR & LR & SL & MW
+    D2["daemon: dispatcher · poller"] --> PR & PP & LR & SL & MW
     A["agent CLI:<br/>sessions link-pr · ask · channels"] --> LR & SL
 ```
 
@@ -118,6 +119,7 @@ store and the dispatcher's close path (`workitem.py`, `control.py`, `poller.py`,
 | `collaborators {users[{login, addedBy, addedAt, source, note}]}` | L | yes |
 | `ended {state, kind, reason, at, source, actor}` | L (an upstream fact this deployment observed) | yes |
 | **`graph {loop, workItem, surface, sessionPerPr, model, effort, nodes[]}`** | **H** | **partly — the same decision as the state file's, written a second time; `sessionPerPr`, `model` and `effort` exist *only* here, so the work item's own file does not say what it runs on; `nodes[]` is D** |
+| **a second record, `portable/<pr-slug>.json`, per pull request** — its own `poll` (a labelled PR is listed by the poller as an item of its own) and, on merge, its own `ended` | **L** | **no — one work item, N+1 records and N+1 index entries; the control plane joins them client-side (issue-302)** |
 
 **`<state.root>/local/<slug>.json`** — never tracked; the session registry
 (`sessions/registry.py`), written by the dispatcher on spawn, `sessions register`,
@@ -181,6 +183,14 @@ would release it, [decision-076](../../decisions/decision-076.md)).
   every generated *file* to portable/local and fails the build when a path is added
   unclassified. Nothing does that for an *attribute*, and `work-item-state.json` is
   outside the declaration entirely (it does not live under `state.root`).
+- **F8 — one work item, N+1 portable records.** The poller lists labelled pull
+  requests as items of their own (`list_labeled_prs`), so each PR delivering a work
+  item gets its own `portable/<pr-slug>.json` with a `poll` ledger, and the close path
+  stamps `ended` on it when it merges (`_record_closure` runs for the PR's own ref,
+  because `_tracks` sees the ledger). Three pull requests, four records, four index
+  entries — and a board that reconciles "the PR's own record" with "the PR nested under
+  its work item" by hand (issue-302). The owner's review of this spec named it: one file
+  per work item, with every pull request linked to it.
 
 ## Requirements
 
@@ -268,10 +278,14 @@ a human froze about this work item, so that the daemon and I read the same recor
 **User story:** As an operator debugging "why did nothing happen?", I want every handle
 this machine holds for a work item in one file, so that I open one file, not three.
 
-1. The machine-local session record SHALL carry, for the work item and for each of its
-   pull requests: harness, conversation id, cwd, tmux target, status, recent
-   deliveries, launched model, effort and argv — as today — **and** the read cursor of
-   every channel thread bound to the work item (what this deployment last mirrored).
+1. The machine-local session record SHALL be a map of **sessions keyed by the ref they
+   serve** — the work item's own, and one per pull request that has (or may get) a
+   session on this machine — each carrying only handles: harness, conversation id,
+   cwd, tmux target, status, recent deliveries, launched model, effort and argv, plus
+   the read cursor of every channel thread bound to the work item (what this
+   deployment last mirrored). It SHALL carry nothing else about a pull request — no
+   URL, repository, number or upstream state: the ref is the join key to the work
+   item's checked-in file, which is where the pull request is recorded (R2.1).
 2. The system SHALL keep one local file **per work item**, not one for the machine: the
    registry's file-per-item property is what lets concurrent sessions write without a
    shared lock and what lets `cleanup` release one item without touching another.
@@ -319,6 +333,37 @@ this machine holds for a work item in one file, so that I open one file, not thr
    `channels/slack.json`) as no longer written and SHALL NOT delete them.
 3. `portable/index.json`'s `sections` list SHALL stop naming `graph` and SHALL name the
    channel-binding section.
+
+### R10 — one portable record per work item
+
+**User story:** As an operator reading `portable/`, I want one file per work item that
+names every pull request delivering it, so that the directory answers "what is tracked"
+without a join.
+
+1. The system SHALL keep exactly one portable record per work item. A pull request that
+   delivers a tracked work item SHALL NOT have a portable record of its own: its poll
+   ledger (`seenComments`, `commentAttempts`, `lastPolledAt`) SHALL be kept under the
+   owning record, keyed by the PR's ref.
+2. WHEN the poller lists a pull request THEN it SHALL resolve the work item the PR
+   delivers before writing any ledger — through this machine's session records, then
+   through the portable records' pull-request maps, then through the router's own
+   linkage rules — and SHALL write under the owner it finds.
+3. WHEN a pull request delivers no tracked work item — it is a work item of its own: a
+   review (issue-279), or a labelled PR that closes no issue — THEN it SHALL keep its
+   own record, because it *is* the work item.
+4. WHEN a pull request merges or closes THEN the system SHALL NOT stamp `ended` on a
+   record for the PR: it SHALL record the PR's upstream state in the work item's
+   checked-in file (R2.2) and SHALL drop the PR's nested ledger from the owner's record,
+   as `poll` is dropped for an ended work item today.
+5. WHEN a control keyword or a collaborator grant is typed on a pull request's thread
+   THEN it SHALL be recorded on the owning work item's record — the router's target
+   already resolves the owner first; this makes the rule explicit.
+6. WHEN a record written before this change exists for a pull request that a work
+   item's record now lists THEN the daemon SHALL read the PR's ledger from the old
+   record until the owner's record carries it, SHALL then stop reading the old record,
+   and SHALL NOT delete it; `upgrade-the-loop` SHALL report it.
+7. `index.json` SHALL list one entry per work item and SHALL name, per entry, the pull
+   requests its record links.
 
 ### R9 — the change is legible
 
