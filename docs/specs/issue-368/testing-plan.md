@@ -40,11 +40,12 @@ overrides: {}
 | T16 | Contract (OpenAPI) | n/a — `POST /api/v1/sessions/link-pr` keeps its request and response shape; the served schema is unchanged | | |
 | T17 | UI / visual | n/a — the board changes only in where `nodes[]` comes from; no rendered surface changes | | |
 | T18 | Snapshot | n/a — the JSON shapes are asserted field by field in T2, T11 and T12 | | |
-| T19 | Performance / load | yes, one bound | the Slack index is built once per listener start from N portable records and updated per bind; asserted O(N) file reads at start and zero per message | `uv run --project cli python -m pytest -q cli/tests/test_channels_slack_integration.py -k index` |
+| T19 | Performance / load | n/a — amended in implementation (design D6): the thread → work item index is **derived on each load** rather than cached at listener start, because the daemon and the listener are separate processes and a cached index would miss the other's bind. The cost is a scan of a handful of small local files per operation; there is no cache to measure | | |
 | T20 | Accessibility | n/a — no rendered UI | | |
 | T21 | Manual exploratory | n/a — this work item's own loop is the exploratory pass: this spec directory's state file, once the runtime writes it, carries no `session` block | | |
 | T22 | Repository gates | yes | what CI runs: ruff, ruff format, pyright, config validation, the full suite, markdownlint over every `**/*.md` | `make check` |
 | T23 | Integration | yes | one portable record per work item: a labelled PR the poller lists is ledgered under its owner (resolved through the registry, the portable maps, then the router's linkage); a PR with no owner keeps its own record; on merge the nested ledger is dropped and no `ended` is stamped on the PR; a pre-change PR record is read until the owner carries the ledger, then ignored, never deleted (R10.1–R10.4, R10.6) | `uv run --project cli python -m pytest -q cli/tests/test_poller_integration.py cli/tests/test_workitem.py -k owner` |
+| T25 | Unit | yes | a cursor with no session record to live in stays in the channel file, and a standing session's binding stays there (design D11, D12) | `uv run --project cli python -m pytest -q cli/tests/test_channels.py -k cursor` |
 | T24 | Unit | yes | the local record is `sessions{ref → handles}`: a v1 file with top-level handles and `pullRequests[]` loads into the map and is rewritten as v2; no PR field but the ref survives; `record_owning`, `session_for`, `link_pull_request`, `close_endpoint` and `touch` behave as before against the map (R5.1, R8.1) | `uv run --project cli python -m pytest -q cli/tests/test_state.py -k sessions` |
 
 ## Scenarios & requirement trace
@@ -62,10 +63,10 @@ overrides: {}
 | T9 | R4.3 | `model: "gpt-9"` (undeclared) → launched without `--model`, `session.model_refused` emitted; `sessionPerPr: "sometimes"` → operator's default |
 | T10 | R4.2, R4.4 | portable `graph.sessionPerPr: always` + state file without the key → PR gets its own session; portable file unchanged after; a fresh freeze → no `graph` written |
 | T13 | R2.1–R2.3 | the design's worked example, before → after, on two state roots |
+| T25 | R5.1 (D11) | a work item with a bound thread and no session record here keeps its cursor in the channel file; a standing session's binding stays there too (D12) |
 | T14 | R7.2 | after `cleanup`: `local/<slug>.json` gone, `portable/<slug>.json.channels` present; after `reset`: `channels` gone with the other sections |
 | T23 | R10.1–R10.6 | poll lists `octo/lib#7` closing `#15` → `portable/…app-15.json.pullRequests["github:octo/lib#7"]` written, no `…lib-7.json`; a review PR with no owner → its own record; `pull_request.closed` merged → nested ledger dropped, `pullRequests[].state: merged` in the checkout, no `ended` on a PR record; an old `…lib-7.json` beside an owner that lacks the key → read once, then the owner carries it and the old file is untouched; `index.json` lists one entry naming three refs |
 | T24 | R5.1 | v1 record with `pullRequests: [{workItem: {ref, owner, repo, number}, url, …}]` → `sessions["github:octo/lib#7"]` holds only handles; the resaved file has no `url`, `owner`, `repo` or `number` under any session |
-| T19 | NFR | 50 portable records, 1 bound thread each → index built with 50 reads; 100 inbound messages → 0 reads |
 
 ## Verification environment
 
@@ -87,4 +88,26 @@ reproducible.
 
 | Row | What was verified | Command | Outcome | Evidence |
 |-----|-------------------|---------|---------|----------|
-| | *filled in at `verification`* | | | |
+| T1 | the rule is data, every key is classified, no machine handle sits in a tracked file, and the page matches the code | `… -q cli/tests/test_state_portability.py` | pass (12) | four new assertions (S6–S10); S10 was red until `docs/cli/state.md` carried the attribute tables |
+| T2 | `work-item-state.json` v2: the choices and the pull requests round-trip, `link_pr` is idempotent, `set_pr_state` updates one entry, a bad entry is skipped | `… -q cli/tests/test_graph_state.py` | pass (22) | eight new cases, including the two abuse cases on `repository` and `stateDir` |
+| T3 | a legacy `session` block is never read and never rewritten | `… -q cli/tests/test_graph_state.py cli/tests/test_graph_drive.py -k session` | pass | red first: the old tests asserted the block was written |
+| T4 | `session: inherit` inherits the registry's live session, and falls back with no registry | `… -q cli/tests/test_graph_drive.py -k gate_entry` | pass (23 in file) | the fallback case is new — it is what CI gets |
+| T5 | a routed event and `sessions link-pr` each write the local endpoint and the repository entry | `… -q cli/tests/test_routing.py cli/tests/test_core_lifecycle.py` | pass (196, 19) | |
+| T6 | a closing pull request records its upstream state and drops its ledger | `… -q cli/tests/test_routing.py -k closed` | pass | |
+| T7 | the binding lands in the portable record, the cursor in the session record, and a second machine continues the conversation | `… -q cli/tests/test_channels.py` | pass (106) | four new cases; the second-machine one is the property the move buys |
+| T8 | a pre-change binding is honoured and **moved** on the next write | `… -q cli/tests/test_channels_integration.py -k pre_issue_312` | pass | rewritten: the file stops carrying bindings, so a binding left only there would be lost |
+| T9 | an undeclared model and a fourth `sessionPerPr` mode buy nothing | `… -q cli/tests/test_dispatcher_choice.py` | pass (22) | seven new cases |
+| T10 | a work item frozen before the change routes by its portable copy, which is not rewritten | `… -q cli/tests/test_dispatcher_choice.py -k frozen` | pass | |
+| T11 | the sections, `owner_of`, and the index naming each record's pull requests | `… -q cli/tests/test_workitem.py cli/tests/test_portable_index.py` | pass (20, 18) | four new cases |
+| T12 | the registry round-trips the cursors and a v2 record | `… -q cli/tests/test_state.py` | pass (9) | |
+| T13 | **the hand-off**: the branch and `portable/` carry the three pull requests, the choices, the arming, the roster and the thread; no handle travels | `… -q cli/tests/test_state_root_integration.py` | pass (13) | the design's worked example, executed |
+| T14 | cleanup and reset keep their documented effect, now including `channels` and `pullRequests` | `… -q cli/tests/test_reset.py cli/tests/test_cleanup.py cli/tests/test_core_lifecycle.py` | pass | |
+| T15 | the page, the capability docs and the upgrade report agree with the code | `… -q cli/tests/test_docs_parity.py cli/tests/test_writing_parity.py` | pass (16) | plus T1's S10 |
+| T22 | what CI runs | `make check` equivalents: `ruff check`, `ruff format --check`, `pyright`, `validate_config.py`, the suite, `markdownlint-cli2 "**/*.md"` | pass | ruff clean; 304 files formatted; pyright **0 errors**; both configs valid; **3711 passed, 1 skipped**; markdownlint 0 errors |
+| T23 | one portable record per work item; a PR with no owner keeps its own; an already-ledgered owner wins | `… -q cli/tests/test_poller.py -k "ledger or owner or delivers"` | pass (225 in file) | three new cases |
+| T24 | the local record is a map of sessions keyed by ref, and a v1 record is rewritten as one | `… -q cli/tests/test_state.py -k sessions` | pass | the leak assertion names each field that must not be there |
+| T25 | a cursor with no session record here, and a standing session's binding, stay in the channel file | `… -q cli/tests/test_channels.py -k "cursor or standing"` | pass (6) | both found in implementation (design D11, D12) |
+
+Rows T16–T21 were declared `n/a` with their reasons in the matrix above and were not
+executed. T19 became `n/a` during implementation, for the reason recorded there and in
+design D6.

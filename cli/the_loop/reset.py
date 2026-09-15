@@ -44,7 +44,15 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 
 from . import eventlog
 from .sessions import Session, SessionRegistry, WorkItemRef
-from .workitem import COLLABORATORS, CONTROL, ENDED, POLL, WorkItemStore
+from .workitem import (
+    CHANNELS,
+    COLLABORATORS,
+    CONTROL,
+    ENDED,
+    POLL,
+    PULL_REQUESTS,
+    WorkItemStore,
+)
 
 logger = logging.getLogger("the-loop.reset")
 
@@ -160,7 +168,11 @@ def reset_work_item(
     # outlived the start-over would be authority nobody re-issued. The closure
     # stamp goes too (issue-329): a reset is start-over, and an item that starts
     # over is open again as far as this machine knows.
-    for section in (CONTROL, POLL, COLLABORATORS, ENDED):
+    # The channel binding and the pull requests' ledgers go with them
+    # (issue-368): a reset is "forget what this machine holds about this work
+    # item so it starts over", and a thread this deployment opened, like a
+    # ledger of what it has already seen, is exactly that.
+    for section in (CONTROL, POLL, COLLABORATORS, ENDED, CHANNELS, PULL_REQUESTS):
         try:
             if store.section(ref, section) is None:
                 continue
@@ -233,7 +245,7 @@ def work_items_with_state(
             continue
         if any(
             store.section(item, section) is not None
-            for section in (CONTROL, POLL, COLLABORATORS)
+            for section in (CONTROL, POLL, COLLABORATORS, CHANNELS, PULL_REQUESTS)
         ):
             found[ref] = item
     return [found[ref] for ref in sorted(found)]

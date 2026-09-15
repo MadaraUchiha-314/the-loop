@@ -49,12 +49,18 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 logger = logging.getLogger("the-loop.state")
 
 __all__ = [
+    "ATTRIBUTES",
+    "ATTRIBUTE_KINDS",
+    "Attribute",
     "DEFAULT_STATE_ROOT",
+    "MACHINE_FILE",
+    "OPERATOR_FILE",
+    "REPOSITORY_FILE",
     "GENERATED_PATHS",
     "GeneratedPath",
     "LegacyLayout",
@@ -382,6 +388,221 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
             "conversations its bot may not even be a member of. It also names "
             "Slack member and channel ids, which do not belong in a repository."
         ),
+    ),
+)
+
+
+#: The three files that hold something about ONE work item, and who owns what
+#: is in them (issue-368). ``GENERATED_PATHS`` above answers "does this *file*
+#: travel?"; this answers the question that had no answer at all — "where does
+#: this *attribute* go?" — which is why attributes drifted: a pull request was
+#: recorded only in a file that never travels, a Slack thread only in a
+#: machine-wide one, and a harness session id was checked into a repository.
+#:
+#: The rule is the **party** each fact belongs to, because who may write a file
+#: decides what may be in it:
+REPOSITORY_FILE = "docs/specs/<id>/work-item-state.json"
+OPERATOR_FILE = "<root>/portable/<slug>.json"
+MACHINE_FILE = "<root>/local/<slug>.json"
+
+#: What kind of thing an attribute is, and the one file each kind may live in.
+#: A kind is not a category for its own sake: it is the argument for the file.
+ATTRIBUTE_KINDS: Dict[str, Tuple[str, str]] = {
+    "pointer": (
+        REPOSITORY_FILE,
+        "where the graph stands. Must survive a machine change, a session "
+        "change and a multi-day human review, and be reviewable in a diff; "
+        "re-derived from the artifacts, so a stale copy costs a recompute "
+        "(decision-041).",
+    ),
+    "human-decision": (
+        REPOSITORY_FILE,
+        "a choice an authorized human froze about this work item. A "
+        "declaration with provenance, honoured only within what the compiled "
+        "graph and the operator's config allow (issue-177's rule).",
+    ),
+    "repository-entity": (
+        REPOSITORY_FILE,
+        "something that exists upstream in a REPOSITORY because of this work "
+        "item — a pull request, its inner loop. The repository's branch may "
+        "name it, and `the-loop check` in CI must see it without a registry.",
+    ),
+    "workspace-entity": (
+        OPERATOR_FILE,
+        "something that exists in the OPERATOR's workspace because of this "
+        "work item — a channel thread. Its identifiers are the operator's "
+        "(channel id, member id, permalink) and must not enter a repository; "
+        "it must also outlive the checkout, which `cleanup` removes.",
+    ),
+    "operator-ledger": (
+        OPERATOR_FILE,
+        "what an authorized human told this deployment, or what it has "
+        "already seen: armed, the roster, seen comments, the closure. "
+        "Proposable by nobody but an authorized human, and needed after the "
+        "checkout is gone.",
+    ),
+    "machine-handle": (
+        MACHINE_FILE,
+        "a conversation id, a tmux name, a path, a read cursor: useless or "
+        "harmful anywhere else (decision-046).",
+    ),
+    "derived": (
+        "",
+        "rebuilt from its sources on every write and read to gate nothing, so "
+        "a stale copy is cosmetic (decision-047). Lives wherever its reader "
+        "is.",
+    ),
+}
+
+
+@dataclass(frozen=True)
+class Attribute:
+    """One top-level key of one per-work-item file, and why it is there."""
+
+    file: str  # one of the three constants above
+    key: str  # the key as it is written
+    kind: str  # a key of ATTRIBUTE_KINDS
+    holds: str
+
+
+#: Every top-level key the three files carry. Inert data, like
+#: ``GENERATED_PATHS``: nothing reads it at runtime. It is pinned by
+#: ``cli/tests/test_state_portability.py``, which fails when a file grows a key
+#: no entry claims, when an entry names a kind the rule does not allow in that
+#: file, and when ``docs/cli/state.md`` and this declaration disagree — so the
+#: next attribute cannot be added without answering "whose is this?".
+ATTRIBUTES: Tuple[Attribute, ...] = (
+    # -- the repository's file ------------------------------------------------
+    Attribute(REPOSITORY_FILE, "version", "derived", "the file's shape"),
+    Attribute(REPOSITORY_FILE, "workItem", "pointer", "which work item this is"),
+    Attribute(REPOSITORY_FILE, "loop", "pointer", "which shipped loop it walks"),
+    Attribute(REPOSITORY_FILE, "currentNode", "pointer", "where the pointer is"),
+    Attribute(
+        REPOSITORY_FILE,
+        "nodes",
+        "pointer",
+        "per node: attempts, outcome, entered/exited, the last block, forced",
+    ),
+    Attribute(
+        REPOSITORY_FILE, "completions", "pointer", "the claims sessions have made"
+    ),
+    Attribute(REPOSITORY_FILE, "parked", "pointer", "the gate it is waiting at"),
+    Attribute(
+        REPOSITORY_FILE, "forced", "human-decision", "every forced move, audited"
+    ),
+    Attribute(
+        REPOSITORY_FILE,
+        "decisions",
+        "human-decision",
+        "each gate's outcome with its provenance",
+    ),
+    Attribute(
+        REPOSITORY_FILE, "skips", "human-decision", "declared skips with provenance"
+    ),
+    Attribute(REPOSITORY_FILE, "optIns", "human-decision", "selected opt-in phases"),
+    Attribute(
+        REPOSITORY_FILE,
+        "surface",
+        "human-decision",
+        "where the outer loop is iterated (issue-183)",
+    ),
+    Attribute(
+        REPOSITORY_FILE,
+        "sessionPerPr",
+        "human-decision",
+        "how many sessions its pull requests get (issue-260)",
+    ),
+    Attribute(
+        REPOSITORY_FILE, "model", "human-decision", "what it runs on (issue-358)"
+    ),
+    Attribute(
+        REPOSITORY_FILE, "effort", "human-decision", "at what effort (issue-358)"
+    ),
+    Attribute(
+        REPOSITORY_FILE,
+        "repos",
+        "human-decision",
+        "the repositories it contributes to (issue-183, issue-365)",
+    ),
+    Attribute(
+        REPOSITORY_FILE,
+        "pullRequests",
+        "repository-entity",
+        "each pull request delivering it: ref, repository, number, url, "
+        "inner-loop directory, upstream state, when and by whom it was linked",
+    ),
+    # -- the operator's file --------------------------------------------------
+    Attribute(OPERATOR_FILE, "ref", "operator-ledger", "which work item this is"),
+    Attribute(OPERATOR_FILE, "url", "derived", "the same fact as a link"),
+    Attribute(
+        OPERATOR_FILE,
+        "control",
+        "operator-ledger",
+        "the last start|stop|pause|resume|cleanup, who asked, when, which instance",
+    ),
+    Attribute(
+        OPERATOR_FILE,
+        "poll",
+        "operator-ledger",
+        "seen comments, the retry ledgers, the spawn ledger, when it was last "
+        "listed, the cached title",
+    ),
+    Attribute(
+        OPERATOR_FILE,
+        "pullRequests",
+        "operator-ledger",
+        "the same poll ledger for each pull request delivering it, keyed by "
+        "ref — so one work item is one record (issue-368)",
+    ),
+    Attribute(
+        OPERATOR_FILE,
+        "collaborators",
+        "operator-ledger",
+        "who an authorized user invited onto this work item",
+    ),
+    Attribute(
+        OPERATOR_FILE,
+        "ended",
+        "operator-ledger",
+        "the item ended upstream: state, kind, reason, when, which ingress, who",
+    ),
+    Attribute(
+        OPERATOR_FILE,
+        "channels",
+        "workspace-entity",
+        "per channel type: the thread carrying this work item's conversation, "
+        "when and how it opened, and its permalink",
+    ),
+    Attribute(
+        OPERATOR_FILE,
+        "graph",
+        "derived",
+        "RETIRED (issue-368): the frozen selection, read for a work item frozen "
+        "before the change and never written again",
+    ),
+    Attribute(
+        OPERATOR_FILE,
+        "sealed",
+        "derived",
+        "a tombstone kept while a pre-issue-128 tree still holds something",
+    ),
+    # -- the machine's file ---------------------------------------------------
+    Attribute(MACHINE_FILE, "version", "derived", "the record's shape"),
+    Attribute(MACHINE_FILE, "workItem", "machine-handle", "whose sessions these are"),
+    Attribute(
+        MACHINE_FILE,
+        "sessions",
+        "machine-handle",
+        "one entry per ref this machine holds a session for — the work item's "
+        "own and one per pull request: harness, conversation id, cwd, tmux "
+        "target, status, recent deliveries, and what it was launched as",
+    ),
+    Attribute(
+        MACHINE_FILE,
+        "channels",
+        "machine-handle",
+        "per channel type: the last reply THIS deployment mirrored in each "
+        "thread bound to the work item",
     ),
 )
 

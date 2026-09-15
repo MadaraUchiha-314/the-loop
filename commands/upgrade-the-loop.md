@@ -200,6 +200,34 @@ command reconciles them.
    upgrade time keeps walking — its next gate blocks on a missing `evidence/<file>.md`
    and the message names the file to write.
 
+   **Four state locations are no longer written (issue-368, decision-128).** An
+   attribute of a work item now lives in the file of the party it belongs to — the
+   repository's `work-item-state.json`, the operator's `portable/<slug>.json`, or the
+   machine's `local/<slug>.json` — so four places stopped being written. Report each
+   once, under **removed? no**, as *"no longer written; read where it still matters"*,
+   and **delete none of them**:
+   - a `session` block in `docs/specs/<id>/work-item-state.json` — a harness
+     conversation id, which never belonged in a repository. It is **not** read back:
+     `session: inherit` asks this machine's session registry, and the block is dropped
+     from the file on its next save;
+   - the `graph` section of `<state.root>/portable/<slug>.json` — the frozen phase
+     selection. Still **read**, so a work item frozen before the upgrade keeps its
+     `sessionPerPr`, `model` and `effort`; a work item frozen after it records them in
+     its own state file, and nothing writes the section again;
+   - `threads`, `conversations` and a work item's thread cursors in
+     `<state.root>/channels/<channel>.json` — a binding is honoured from there and
+     **moved** into that work item's portable record on the next write for it. What
+     stays in the file is what belongs to no work item: the per-channel kickoff cursor,
+     the pending questions, a standing session's binding, and the cursor of a work item
+     with no session record on this machine;
+   - a `portable/<pr-slug>.json` written for a **pull request** that delivers a tracked
+     work item. Its poll ledger is keyed under the owner's record now; the old file is
+     read until the owner carries it, then ignored. A pull request that delivers nothing
+     tracked keeps its record, because it is the work item.
+
+   Nothing needs migrating, and a work item in flight is unaffected: every old shape is
+   read where it still means something and rewritten in the new one on its next save.
+
    **Execution control + one state root (issue-106, decision-040).** Two purely
    additive CLI-config blocks — `state` and `routing.control` —
    but one of them **changes runtime behaviour by default**, so this one is not the

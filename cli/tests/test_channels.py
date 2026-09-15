@@ -9,6 +9,7 @@ boundary is the injected client factory (design D7).
 from __future__ import annotations
 
 import json
+import shutil
 
 import pytest
 
@@ -1878,3 +1879,132 @@ def test_reaction_events_carry_no_text_or_token(tmp_path, monkeypatch):
     assert "channel.reaction_added" in raw and "channel.reaction_failed" in raw
     assert "xoxb-supersecret" not in raw
     assert "the secret answer" not in raw
+
+
+# -- where a binding and a cursor live (issue-368) -----------------------------
+
+
+def test_the_binding_is_recorded_in_the_work_items_portable_record(
+    tmp_path, monkeypatch
+):
+    """R2.3 — a thread the-loop opened is a remote entity, so it travels.
+
+    Recorded in the OPERATOR's record rather than the work item's repository: a
+    channel id, a thread ts and a workspace permalink are the operator's
+    workspace's, and the binding must outlive the checkout `cleanup` removes.
+    """
+    import json
+
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    client = FakeSlackClient()
+    result = make_channel(tmp_path, client).post(event())
+    assert result.ok
+
+    record = json.loads(
+        (tmp_path / "state" / "portable" / "github-o-r-7.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    binding = record["channels"]["slack"]
+    assert binding["thread"] == result.thread and binding["channel"] == "C123"
+    # …and nothing about the conversation is left in the channel file.
+    raw = json.loads(_state_path(tmp_path).read_text(encoding="utf-8"))
+    assert "conversations" not in raw and "threads" not in raw
+
+
+def test_a_second_machine_continues_the_conversation(tmp_path, monkeypatch):
+    """R2.3, the property the move buys: carrying `portable/` carries the thread.
+
+    Before issue-368 the binding was machine-wide state, so the next machine
+    opened a second root and dropped replies in the first as `unmapped`.
+    """
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    first = FakeSlackClient()
+    opened = make_channel(tmp_path, first).post(event())
+
+    second_root = tmp_path / "elsewhere"
+    (second_root / "state").mkdir(parents=True)
+    shutil.copytree(tmp_path / "state" / "portable", second_root / "state" / "portable")
+    second = FakeSlackClient()
+    again = make_channel(second_root, second).post(event())
+
+    assert again.thread == opened.thread
+    assert second.posted[0]["thread_ts"] == opened.thread  # a reply, not a root
+
+
+def test_the_read_cursor_lives_with_this_machines_handles(tmp_path, monkeypatch):
+    """R5.1 — what this deployment mirrored is a statement about this machine."""
+    import json
+
+    from the_loop.sessions import Session, SessionRegistry, WorkItemRef
+
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    registry = SessionRegistry(tmp_path / "state" / "local")
+    registry.register(
+        Session(
+            work_item=WorkItemRef.parse("github:o/r#7"),
+            harness="claude",
+            harness_session_id="s-1",
+            cwd=str(tmp_path),
+        )
+    )
+    channel = make_channel(tmp_path, FakeSlackClient())
+    bound = channel.post(event())
+    channel.advance(bound.thread, "1800.9")
+
+    record = json.loads(
+        (tmp_path / "state" / "local" / "github-o-r-7.json").read_text(encoding="utf-8")
+    )
+    assert record["channels"]["slack"]["cursors"][bound.thread] == "1800.9"
+    assert _state_with_stores(_state_path(tmp_path)).cursor(bound.thread) == "1800.9"
+    # It is machine-local, so it is NOT in the record that travels.
+    portable = json.loads(
+        (tmp_path / "state" / "portable" / "github-o-r-7.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "cursors" not in json.dumps(portable)
+
+
+def test_a_cursor_with_no_session_record_here_stays_in_the_channel_file(
+    tmp_path, monkeypatch
+):
+    """At-most-once is the one contract a cursor exists for.
+
+    A work item can have a bound thread and no session record on this machine —
+    armed but not yet spawned, or cleaned up. Losing its cursor would re-process
+    every reply in that thread on the next cycle, so the channel file keeps it.
+    """
+    import json
+
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    channel = make_channel(tmp_path, FakeSlackClient())
+    bound = channel.post(event())
+    channel.advance(bound.thread, "1800.9")
+
+    raw = json.loads(_state_path(tmp_path).read_text(encoding="utf-8"))
+    assert raw["cursors"][bound.thread] == "1800.9"
+    assert _state_with_stores(_state_path(tmp_path)).cursor(bound.thread) == "1800.9"
+
+
+def test_a_standing_sessions_binding_stays_in_the_channel_file(tmp_path, monkeypatch):
+    """Design D12 — a standing session belongs to no work item.
+
+    It is addressed by name (`standing:<name>`), has no portable record to be
+    filed under and no ticket anywhere, so its binding and its cursor stay
+    beside the per-channel kickoff cursors.
+    """
+    import json
+
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    channel = make_channel(tmp_path, FakeSlackClient())
+    channel.bind("1900.1", "standing:supervisor", "C123")
+    channel.advance("1900.1", "1900.5")
+
+    raw = json.loads(_state_path(tmp_path).read_text(encoding="utf-8"))
+    assert raw["conversations"]["standing:supervisor"]["thread"] == "1900.1"
+    assert raw["threads"]["1900.1"]["workItem"] == "standing:supervisor"
+    assert raw["cursors"]["1900.1"] == "1900.5"
+    assert not list((tmp_path / "state" / "portable").glob("standing*.json"))
+    state = _state_with_stores(_state_path(tmp_path))
+    assert state.work_item_for("1900.1") == "standing:supervisor"

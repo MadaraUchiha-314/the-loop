@@ -119,7 +119,30 @@ self-learning/ML capabilities.
   while `portable/` always follows the root, so "where is the half I track?" has one
   answer. Two components write a work-item record, so every write SHALL replace only its
   own section (read-modify-write): a poll cycle must never erase a control command the
-  other ingress recorded a moment earlier. A session listing SHALL consider only the
+  other ingress recorded a moment earlier.
+- **Within those files, every attribute SHALL have one home, chosen by the party it
+  belongs to** (issue-368, [decision-128](../decisions/decision-128.md)). Three files
+  hold something about one work item, and who may write a file decides what may be in
+  it: the **repository's** `docs/specs/<id>/work-item-state.json` carries the pointer,
+  every choice a human froze (including `sessionPerPr`, `model` and `effort`) and the
+  pull requests delivering the item; the **operator's** `<root>/portable/<slug>.json`
+  carries what an authorized human said, what this deployment has seen, and the channel
+  thread the-loop opened; the **machine's** `<root>/local/<slug>.json` carries one
+  session per ref it serves and what it has already mirrored. Each attribute SHALL be
+  written once, and any other file needing it SHALL carry an identity — a ref, a thread
+  ts — never a second copy. A machine handle (a harness conversation id, a tmux target,
+  an absolute path, a read cursor) SHALL NEVER be written to a tracked file. The
+  classification SHALL be declared as data (`state.ATTRIBUTES`) and a test SHALL fail
+  when a file grows an unclassified key, when a kind sits in a file its rule forbids, or
+  when `docs/cli/state.md` disagrees with the declaration.
+- There SHALL be exactly **one portable record per work item** (issue-368): a pull
+  request delivering a tracked work item SHALL NOT have a record of its own — its poll
+  ledger is keyed under the owner's record, resolved before any write through this
+  machine's session records, then the portable ledgers, then the router's linkage on the
+  listed item. A pull request that delivers nothing tracked keeps its own record,
+  because it *is* the work item. A closing pull request with an owner SHALL record its
+  upstream state in the work item's checked-in file and drop its nested ledger, and
+  SHALL NOT be stamped `ended`. A session listing SHALL consider only the
   files the registry itself wrote (`<slug>.json`, i.e. a name ending in `-<number>`) and
   SHALL ignore its neighbours silently, so the "skipping unreadable registry file"
   warning stays reserved for genuine corruption (issue-111).
@@ -404,6 +427,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-368 | An attribute belongs to a party (2026-09-15): the rule that decides which of a work item's three files each attribute lives in, declared as data (`state.ATTRIBUTES`) and enforced by the portability suite. `sessionPerPr`, `model`, `effort` and the pull requests moved into the repository's own `work-item-state.json`; the portable `graph` section was retired (read for a work item frozen before the change, never written); the `session` block left the repository and `session: inherit` resolves through the session registry; a pull request's poll ledger moved under its owner, so one work item is one portable record; the channel binding moved to the operator's record and the read cursor to the machine's; the local record became a map of sessions keyed by ref, holding handles alone | [spec](../specs/issue-368/), [decision-128](../decisions/decision-128.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/368) |
 | issue-358 | `the-loop models list\|check` — the verb that makes a model declaration true by asking each harness what it accepts and caching the verdict; `sessions list` gained a `Model` column | [spec](../specs/issue-358/), [decision-124](../decisions/decision-124.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/358) |
 | issue-352 | The CLI stopped reading the harness config altogether (2026-09-12): `the_loop.harness_config`, its `READS` table, the packaged default and the adopt-on-spawn path are gone. `routing.graph.specDir` (default `docs/specs`) and `--spec-dir` on `check`/`graph` name the spec directory; `loop:` is a constant; the origin repository comes from the work item's ref or the checkout's `origin` remote; `critics[]` and `routing.graph.hooks` moved into the CLI config (`repoHooks` removed, CLI config `0.9.0`); `scenarios --glob` and `instructions --doc`/`--on-missing` take what the agent read. The harness config shrank to the agent's policy (`0.3.0`) | [spec](../specs/issue-352/), [decision-123](../decisions/decision-123.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/352) |
 | issue-339 | One configuration resolves to one state root, in every process (2026-09-11): `state.root` is made absolute where the config is **loaded**, anchored on the directory the config's `.the-loop/` sits in, so the ~30 `layout_from_config` call sites all name one directory whatever each process's cwd is; `~` is now expanded. Every spawn — the auto-started service, `lifecycle.spawn_service`, `core.daemons.control_daemon` — carries `THE_LOOP_CLI_CONFIG` = the path it resolved, the property `schedule_restart` already had. `the-loop status` prints its config, its root, and any rival root holding a second heartbeat. Before this, a daemon started in one directory and a CLI run from another silently addressed different files: a live poller was reported dead off a two-day-old heartbeat, and a dead one would have read as fine | [spec](../specs/issue-339/), [decision-119](../decisions/decision-119.md), [supervision](../cli/supervision.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/339) |

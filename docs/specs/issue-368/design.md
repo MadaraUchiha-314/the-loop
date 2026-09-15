@@ -86,8 +86,8 @@ the wrong file (R1.5).
 | `ended` stamped on the PR's own record | `portable/<pr-slug>.json.ended` | deleted — the PR's state is `work-item-state.json.pullRequests[].state`; the nested ledger is dropped on close | R |
 | the PR's upstream state (merged/closed) | the local endpoint's `status: closed` (a handle's status) | `work-item-state.json.pullRequests[].state`, written by the close path; the endpoint's `status` stays a handle's status | R |
 | `conversations{workItem → …}` | `channels/slack.json` | `portable/<slug>.json.channels.slack {channel, thread, opened, origin, permalink}` | R (operator's) |
-| `threads{thread → workItem}` | `channels/slack.json` | deleted — an in-memory index built from the portable records at listener start and on every bind | D |
-| `cursors{thread → ts}` for a work item's thread | `channels/slack.json` | `local/<slug>.json.channels.slack.cursors {thread → ts}` | M |
+| `threads{thread → workItem}` | `channels/slack.json` | deleted — derived from the portable records on each load (see D6) | D |
+| `cursors{thread → ts}` for a work item's thread | `channels/slack.json` | `local/<slug>.json.channels.slack.cursors {thread → ts}` — **or this file, when the work item has no session record here** (see D11) | M |
 | `cursors["channel:<id>"]`, `pending` | `channels/slack.json` | unchanged — no work item's | M |
 | `control`, `poll`, `collaborators`, `ended` | `portable/<slug>.json` | unchanged | L |
 | `index.json.sections` | `[control, poll, graph, collaborators, ended]`, one entry per record — PRs included | `[control, poll, collaborators, ended, channels, pullRequests]`, one entry per **work item**, each naming the PR refs it links | D |
@@ -373,14 +373,21 @@ by ref, as today. The close path (`Dispatcher` on `pull_request.closed`) sets `s
 to `merged` or `closed` in the same place it closes the endpoint. Both files carry the
 PR's **ref**; only the repository's file carries its record.
 
-**D6 — the Slack reverse index is memory, not a file.** `threads{ts → work item}`
+**D6 — the Slack reverse index is derived, not stored.** `threads{ts → work item}`
 existed so the socket transport could look a `thread_ts` up and the poll transport
-could iterate bound threads. Both are served by an index built from the portable
-records at listener start and updated on every bind — the same records the writer's map
-now lives in, so nothing on disk can be stale against itself. The 200-thread cap goes
-with the map: a work item's thread is read while the work item has a live local record
-on this machine, and stops being read when `cleanup` removes it — a tighter and more
-honest bound than "the oldest 200".
+could iterate bound threads. Both are served by reading the portable records — the same
+records the writer's map now lives in, so nothing on disk can be stale against itself.
+The 200-thread cap goes with the map: a work item's thread is read while its record
+carries a binding, which `cleanup` keeps and `reset` clears — a tighter and more honest
+bound than "the oldest 200".
+
+*Amended in implementation.* The design said the index would be **built once at listener
+start and updated on every bind**. That is wrong here: the daemon and the listener are
+separate processes, both bind, and a cached index in one would miss the other's bind —
+a reply in a thread the daemon opened would be dropped as `unmapped` until a restart.
+The index is therefore rebuilt from the records on each load: a scan of a handful of
+small local files per operation, against a correctness hole. The testing plan's T19 was
+amended to assert the derivation rather than the cache.
 
 **D7 — the local file stays `<state.root>/local/<slug>.json`, one per work item.** The
 ticket's `work-item-local-state.json` is read as *one local file per work item holding
@@ -418,10 +425,15 @@ resolves to nothing is a work item of its own — a review (issue-279) or a labe
 that closes no issue — and keeps its own record, because it *is* the work item. The
 close path stops stamping `ended` on a PR: the PR's state is the repository's fact
 (`pullRequests[].state`), and its nested ledger is dropped as `poll` is dropped today
-for an ended work item. The control plane's client-side reconciliation of "the PR's
-own record" with "the PR nested under its owner" (issue-302) is deleted, because there
-is nothing left to reconcile: `GET /api/v1/work-items` serves one record per work
-item, each naming its pull requests. A PR record written before this change is read
+for an ended work item. `GET /api/v1/work-items` serves one record per work item, each naming its pull requests.
+
+*Amended in implementation.* The design said the control plane's client-side
+reconciliation of "the PR's own record" with "the PR nested under its owner"
+(issue-302) would be **deleted**, because there is nothing left to reconcile. There is,
+for exactly as long as R8.1 requires: a pull request given its own record before this
+change still has one, and this change deletes no record. Removing the join would draw
+those pull requests twice. It is inert when there is nothing to reconcile, so it stays,
+and the capability doc says why. A PR record written before this change is read
 for the PR's ledger until the owner's record carries it, then never again, and is
 reported — not removed — by `upgrade-the-loop`.
 
@@ -439,6 +451,22 @@ walk over nested objects; `link_pull_request` writes an empty-handled entry unde
 PR's ref (so the next event that needs a session knows which record owns it), and the
 repository entry through GraphLink (D5). A record written before this change with a
 `pullRequests[]` list is read into the same map and rewritten as one on its next save.
+
+**D11 — a cursor with no session record to live in stays in the channel file** (found in
+implementation). R5.1 puts a work item's read cursor in its session record. A work item
+can have a bound thread and **no** session record on this machine: armed but not yet
+spawned (issue-358 defers the spawn past the first gate), or cleaned up. The first
+implementation dropped the cursor in that case, and the at-most-once contract with it —
+every reply in the thread re-processes on the next cycle. So the write falls back to the
+channel file, which is machine-local too: the rule ("a cursor is a machine handle") is
+unchanged, only which machine-local file holds it. A cursor written there moves into the
+session record the first time the work item has one.
+
+**D12 — a standing session's binding stays in the channel file** (found in
+implementation). A standing session (issue-277) is addressed by name, not by a ref: it
+has no portable record to be filed under and no ticket anywhere. Its binding and cursor
+therefore stay where they are, beside the per-channel kickoff cursors — the same
+"belongs to no work item" bucket.
 
 ## Components & interfaces
 

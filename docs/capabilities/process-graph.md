@@ -356,11 +356,15 @@ The author of a work item — never the harness — decides which phases it walk
     phase, whichever way it is ticked.
 - **The selection freezes the graph.** WHEN the gate is answered THEN the resolved graph —
   every node with whether it is walked, and whether it was selectable — SHALL be recorded
-  in `work-item-state.json` and pushed to the work item's **portable session record**
-  (`frozenGraph`, `graph.frozen`), so what the loop will walk is a recorded fact rather
-  than a comment anyone can keep editing, readable without a checkout. A failed publish
-  SHALL be recorded (`graph.frozen_publish_failed`) and SHALL NOT gate the selection —
-  the checked-in state file is the authoritative copy.
+  in `work-item-state.json`, so what the loop will walk is a recorded fact rather than a
+  comment anyone can keep editing. Since issue-368 that file is the **only** copy: the
+  answers that used to be published to the portable record as well — `sessionPerPr`,
+  `model` and `effort` — are fields of the state file beside `surface`, `skips` and
+  `optIns`, and the daemon reads them from the checkout the work item's session record
+  names. A work item frozen **before** that change has none of the keys and a `graph`
+  section in its portable record; the daemon SHALL read that copy and SHALL NOT rewrite
+  it, so an item in flight keeps its routing across the upgrade
+  ([decision-128](../decisions/decision-128.md)).
 - An operator MAY declare the same from a shell via `the-loop graph skip <id> --node
   <token> --reason <why>` — `force`'s sibling: reason required, audit comment posted,
   recorded as `graph.skips_declared` — and a token naming a node the pointer has already
@@ -861,6 +865,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-368 | The work item's own file gained what the repository may know, and lost what it may not (2026-09-15): `sessionPerPr`, `model` and `effort` moved in from the portable record's now-retired `graph` section, `pullRequests[]` records each pull request delivering the item (ref, repository, number, url, inner-loop directory, upstream state, provenance), and the `session` block left — a harness conversation id is a handle to one machine, so `session: inherit` resolves through that machine's session registry and falls back to a fresh session seeded with the artifacts where there is none (CI). A legacy `session` block is ignored on read and dropped on the next save; it is never resumed | [spec](../specs/issue-368/), [decision-128](../decisions/decision-128.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/368) |
 | issue-365 (review) | `graph-state.json` became **`work-item-state.json`** (2026-09-14): the name was the narrowest true description of a file that had carried the surface, the session, the PR-session mode, the model and the effort for releases. Read under the old name, written under the new one, and the inner-loop scan globs both — a work item mid-flight keeps its pointer with no migration step. `the-loop graph repos` arrived with it: the **agent** declares which repositories the work item raises pull requests in, once the design and the task DAG say what the change spans, refused for a value that is not a repository path or is outside the instance's own `repositories` — and `await-inner-loops` reads it there | [spec](../specs/issue-365/), [decision-127](../decisions/decision-127.md), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/365) |
 | issue-365 | The six review-chain gates changed subject (2026-09-14): `validates: execution-log.md` became one `evidence/<record>.md` per node, `verification`'s kept gate points at `evidence/verification.md` (produced by no node, so never a planned absence), `design-critic-review` at `evidence/design-critic-review.md`, and the `log-entry` hook is gone from the registry and from all five shipped graphs. One file per gate, never one shared record: a gate must not be satisfiable by the round another node ran | [spec](../specs/issue-365/), [decision-126](../decisions/decision-126.md), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/365) |
 | issue-358 | `phase-selection` grew two more per-work-item questions — which **model**, and at what **effort** — resolved per section against what this work item's harness can actually run, and frozen beside `surface`/`sessionPerPr`. The spawn also moved to **after** the gate: `graphlink.on_arm` enters the graph when a work item is armed and reports whether the pointer parked on a human start node, and the dispatcher spawns nothing while it has | [spec](../specs/issue-358/), [decision-124](../decisions/decision-124.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/358) |
