@@ -41,6 +41,7 @@ from the_loop.graph.model import (
 from the_loop.graph.registry import hook
 from the_loop.graph.runtime import Runtime, declare_skips
 from the_loop.graph.state import WorkItemState
+from conftest import _freeze_legacy_graph
 
 WORK_ITEM = "issue-1"
 
@@ -636,14 +637,11 @@ def test_a_checklist_in_the_reply_wins_over_the_boxes(selecting, repo, fake_gith
     assert state.decisions["phase-selection"]["via"] == "reply"
 
 
-def test_the_selection_freezes_the_graph_and_publishes_it(selecting, repo, fake_github):
-    """The owner's third requirement: the executed graph is recorded, and
-    pushed to the portable work-item record through the daemon's sink."""
-    published = []
-    selecting.config = {
-        **selecting.config,
-        "frozenGraphSink": lambda frozen: published.append(frozen),
-    }
+def test_the_selection_freezes_the_graph_in_the_work_items_own_file(
+    selecting, repo, fake_github
+):
+    """The owner's third requirement: the executed graph is recorded — in the
+    work item's own checked-in state, and nowhere else (issue-368, R4.2)."""
     selecting.start(WORK_ITEM, ref="github:o/r#1")
     selecting.advance(
         WORK_ITEM,
@@ -665,7 +663,6 @@ def test_the_selection_freezes_the_graph_and_publishes_it(selecting, repo, fake_
         "security-review",
         "done",
     ]
-    assert published == [frozen]
 
 
 def test_the_surface_defaults_to_the_work_item(selecting, repo, fake_github):
@@ -775,25 +772,22 @@ def test_the_checklist_pre_ticks_the_deployments_configured_default(
 
 def test_ticking_a_pr_session_row_freezes_that_mode(repo, fake_github):
     """R1.2–R1.4 — one signed reply, one record: the mode lands in the decision,
-    in the frozen graph, in what the sink publishes, and in the confirmation."""
-    published = []
-    runtime = _selecting_with(
-        repo,
-        sessionPerPr="cross-repository",
-        frozenGraphSink=lambda frozen: published.append(frozen),
-    )
+    in the frozen graph, in the state field the daemon reads (issue-368) and in
+    the confirmation."""
+    runtime = _selecting_with(repo, sessionPerPr="cross-repository")
     runtime.start(WORK_ITEM, ref="github:o/r#1")
     runtime.advance(
         WORK_ITEM,
         ref="github:o/r#1",
         event=_reply("- [x] pr-sessions-always\nthe-loop execute"),
     )
-    decision = WorkItemState.load(_spec_dir(repo), WORK_ITEM).decisions[
-        "phase-selection"
-    ]
+    state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
+    decision = state.decisions["phase-selection"]
     assert decision["sessionPerPr"] == "always"
     assert decision["graph"]["sessionPerPr"] == "always"
-    assert published[-1]["sessionPerPr"] == "always"
+    # The daemon's reader since issue-368: the work item's own file, not a
+    # second copy in the operator's portable record.
+    assert state.session_per_pr == "always"
     assert "`always`" in fake_github.posted[-1]
 
 
@@ -867,21 +861,6 @@ def test_an_unauthorized_ticker_cannot_freeze_a_mode(selecting, repo, fake_githu
         "phase-selection"
         not in WorkItemState.load(_spec_dir(repo), WORK_ITEM).decisions
     )
-
-
-def test_a_failing_frozen_graph_sink_never_gates_the_selection(
-    selecting, repo, fake_github
-):
-    def broken(frozen):
-        raise RuntimeError("registry is unavailable")
-
-    selecting.config = {**selecting.config, "frozenGraphSink": broken}
-    selecting.start(WORK_ITEM, ref="github:o/r#1")
-    report = selecting.advance(
-        WORK_ITEM, ref="github:o/r#1", event=_reply("the-loop execute")
-    )
-    assert report.status == "pass"
-    assert WorkItemState.load(_spec_dir(repo), WORK_ITEM).current_node == "requirements"
 
 
 def test_the_execute_keyword_is_operator_configurable(repo, fake_github):
@@ -1036,7 +1015,7 @@ def test_the_frozen_graph_lands_in_the_portable_work_item_record(tmp_path):
             {"id": "design", "phase": "design", "skipped": True, "selectable": True}
         ],
     }
-    store.record_frozen_graph("github:octo/repo#1", frozen)
+    _freeze_legacy_graph(store, "github:octo/repo#1", frozen)
 
     read = WorkItemStore(tmp_path).section("github:octo/repo#1", GRAPH)
     assert read == frozen

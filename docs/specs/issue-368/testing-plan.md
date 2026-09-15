@@ -2,8 +2,8 @@
 type: testing-plan
 phase: test-planning
 workItem: "github:MadaraUchiha-314/the-loop#368"
-status: draft                # draft | in-review | approved
-approvedBy: []
+status: approved             # draft | in-review | approved
+approvedBy: ["@MadaraUchiha-314"]
 overrides: {}
 ---
 

@@ -181,6 +181,20 @@ def build_runtime(
         "repositories": cli_cfg.get("repositories") or [],
         "state": cli_cfg.get("state") or {},
     }
+    # Where THIS machine's session records live (issue-368). `session: inherit`
+    # resolves the conversation to inherit from the registry now, rather than
+    # from a `session` block in the checked-in state file: a harness session id
+    # is a handle to one machine and never belonged in a repository. Absent —
+    # in CI, or wherever no CLI config resolves — a gate that inherits falls
+    # back to a fresh session seeded with the artifacts, which is the right
+    # answer there.
+    if cli_cfg:
+        from ..state import layout_from_config
+
+        config["registryDir"] = str(
+            ((cli_cfg.get("routing") or {}).get("registryDir") or "")
+            or layout_from_config(cli_cfg).local_dir
+        )
     routing = cli_cfg.get("routing") or {}
     if not isinstance(routing, dict):
         routing = {}

@@ -1235,7 +1235,7 @@ def test_the_pipeline_reads_the_graph_through_the_dispatchers_own_coupling(tmp_p
     assert registry.root == dispatcher.registry.root
     assert routing.registry_dir == routing_cfg.registry_dir
     # A reader, not a driver: no sink the dispatcher's coupling carries.
-    assert link.assignment_sink is None and link.frozen_graph_sink is None
+    assert link.assignment_sink is None
 
 
 def test_no_session_record_is_an_unknown_gate_not_a_closed_one(tmp_path):

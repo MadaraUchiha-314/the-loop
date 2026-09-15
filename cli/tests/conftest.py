@@ -38,6 +38,21 @@ _DISPATCH_OUTCOME_WRITES = (
 )
 
 
+def _freeze_legacy_graph(store, work_item, frozen: dict) -> None:
+    """Write a portable record's `graph` section — the **pre-issue-368** shape.
+
+    Nothing in the-loop writes this section any more: which phases a work item
+    walks, the surface it is iterated on, how many sessions its pull requests
+    get and what it runs on are all recorded in the work item's own checked-in
+    `work-item-state.json`. It is still *read*, so a work item frozen before the
+    change keeps its routing across the upgrade — and this helper is how a test
+    sets up exactly that work item.
+    """
+    from the_loop.workitem import GRAPH
+
+    store.store.write_section(work_item, GRAPH, dict(frozen))
+
+
 def pytest_addoption(parser):
     """``--dispatch-lag=<seconds>``: turn a wait-ordering flake into a certainty.
 

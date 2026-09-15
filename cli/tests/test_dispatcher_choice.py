@@ -13,7 +13,7 @@ from __future__ import annotations
 import time
 
 
-from conftest import FakeTmux, StubInteractiveAdapter
+from conftest import FakeTmux, StubInteractiveAdapter, _freeze_legacy_graph
 from the_loop.control import ControlConfig, ControlStore
 from the_loop.modelprobe import REFUSED, Verdict, VerdictCache
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
@@ -86,7 +86,7 @@ def _dispatcher(tmp_path, cli_config=None, **over):
 
 def _freeze(tmp_path, model="", effort=""):
     store = ControlStore(str(tmp_path / "state" / "portable"))
-    store.record_frozen_graph(REF, {"model": model, "effort": effort, "nodes": []})
+    _freeze_legacy_graph(store, REF, {"model": model, "effort": effort, "nodes": []})
     return store
 
 

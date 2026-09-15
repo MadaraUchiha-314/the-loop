@@ -83,6 +83,7 @@ from ..reactions import (
     ReactionConfig,
 )
 from ..runner import SESSION_LIVE, TmuxRunner
+from ..graph.state import WorkItemState
 from ..sessions import Session, SessionRegistry, WorkItemRef
 from ..state import LegacyLayout, StateLayout, layout_from_config, legacy_layout
 from ..workitem import SECTIONS
@@ -666,7 +667,6 @@ class Dispatcher:
             self.control_store,
             self.config.authorized_users,
             assignment_sink=self._deliver_assignment,
-            frozen_graph_sink=self._record_frozen_graph,
         )
         self._event_template = self._load_template(
             self.config.prompt_template, DEFAULT_PROMPT_TEMPLATE
@@ -752,7 +752,6 @@ class Dispatcher:
             self.control_store,
             config.authorized_users,
             assignment_sink=self._deliver_assignment,
-            frozen_graph_sink=self._record_frozen_graph,
         )
         self._event_template = self._load_template(
             config.prompt_template, DEFAULT_PROMPT_TEMPLATE
@@ -1024,6 +1023,18 @@ class Dispatcher:
                             session.cwd,
                             merged=merged,
                         )
+                        # The pull request's UPSTREAM state, recorded where the
+                        # pull request itself is (issue-368, R2.2) — and its
+                        # nested poll ledger dropped, because a merged pull
+                        # request is not polled again. No `ended` stamp: that is
+                        # for a work item, and this pull request has an owner.
+                        self.graphlink.on_pr_state(
+                            session.work_item,
+                            endpoint.work_item,
+                            session.cwd,
+                            "merged" if merged else "closed",
+                        )
+                        self._drop_pr_ledger(session.work_item, endpoint.work_item)
                         if endpoint.tmux_target:
                             self._close_tmux(endpoint)
                     logger.info(
@@ -1332,65 +1343,114 @@ class Dispatcher:
         endpoint = record.endpoint_for(pr)
         return endpoint if endpoint is not None and endpoint.is_live else record
 
-    def _tmux_for(self, work_item: WorkItemRef) -> TmuxConfig:
+    def _frozen_choices(self, work_item: WorkItemRef, cwd: str = "") -> Dict[str, str]:
+        """What this work item froze at `phase-selection`: ``sessionPerPr``,
+        ``model`` and ``effort`` (issue-368, R4.3).
+
+        Read from the work item's **own** checked-in ``work-item-state.json``,
+        in the checkout its session record names — the same file that already
+        holds the phases it walks, the surface it is iterated on and the
+        repositories it contributes to. Until issue-368 these three lived only
+        in the operator's portable record, which made that record a second,
+        partial copy of one human decision.
+
+        A work item frozen **before** that change has none of the keys in its
+        state file and a `graph` section in its portable record, so the legacy
+        copy answers instead (R4.4) — read, never rewritten, so an item in
+        flight keeps its routing across the upgrade. Everything unreadable
+        answers ``{}`` and the caller takes the operator's default: a delivery
+        is never failed over a state read, and every value is re-validated by
+        the caller anyway, because both files are agent-writable.
+        """
+        empty = {"sessionPerPr": "", "model": "", "effort": ""}
+        chosen = dict(empty)
+        spec_dir = self._spec_dir_for(work_item, cwd)
+        if spec_dir is not None:
+            try:
+                state = WorkItemState.load(spec_dir, spec_dir.name)
+                chosen = {
+                    "sessionPerPr": state.session_per_pr,
+                    "model": state.model,
+                    "effort": state.effort,
+                }
+            except (OSError, ValueError) as exc:
+                logger.debug(
+                    "could not read %s's frozen choices: %s", work_item.ref, exc
+                )
+        if any(chosen.values()):
+            return chosen
+        try:
+            frozen = self.control_store.frozen_graph(work_item) or {}
+        except Exception as exc:  # noqa: BLE001 — never fail a delivery over a read
+            logger.warning(
+                "could not read the frozen selection for %s (%s); falling back to "
+                "the configured defaults",
+                work_item.ref,
+                exc,
+            )
+            return empty
+        return {key: str(frozen.get(key) or "") for key in empty}
+
+    def _spec_dir_for(self, work_item: WorkItemRef, cwd: str = "") -> Optional[Path]:
+        """``<checkout>/<specRoot>/<id>`` for this work item, or ``None``.
+
+        ``cwd`` when the caller has one (the spawn path has just prepared the
+        checkout); otherwise the session record's, which is where a delivery
+        for an existing session is worked. ``None`` when neither is known or the
+        directory is not there — a work item with no checkout on this machine
+        has no state file to read, and the caller falls back.
+        """
+        root = cwd
+        if not root:
+            record = self.registry.find_by_work_item(work_item, include_closed=True)
+            root = record.cwd if record is not None else ""
+        spec_id = spec_id_for(work_item)
+        if not root or not spec_id:
+            return None
+        spec_dir = Path(root) / (self.config.graph.spec_dir or "docs/specs") / spec_id
+        return spec_dir if spec_dir.is_dir() else None
+
+    def _tmux_for(self, work_item: WorkItemRef, cwd: str = "") -> TmuxConfig:
         """The operator's tmux policy with THIS work item's own choice applied.
 
         One field differs, and only ever this one: ``session_per_pr``, which
         issue-260 moved from the operator's verdict to the operator's *default*.
         A work item states its own answer at `phase-selection`, an authorized
-        `the-loop execute` freezes it, and it travels in the portable record's
-        frozen graph — so the daemon reads it per work item rather than once at
-        startup. One repository has both a one-repo bugfix and a three-repo
+        `the-loop execute` freezes it, and it is recorded in the work item's own
+        checked-in state — so the daemon reads it per work item rather than once
+        at startup. One repository has both a one-repo bugfix and a three-repo
         migration, and a machine-wide switch answers for neither.
 
-        Everything unreadable resolves to the configured default: a record with
-        no frozen graph (every work item started before the choice existed), a
-        record the store could not read, and a mode outside the vocabulary — the
-        portable record is agent-writable like every state file here, so the
-        value is re-validated on the way in and a fourth mode never reaches
+        Everything unreadable resolves to the configured default: a work item
+        that froze nothing, a file that could not be read, and a mode outside
+        the vocabulary — the state file is agent-writable, so the value is
+        re-validated on the way in and a fourth mode never reaches
         :class:`TmuxConfig`.
         """
         default = self.config.tmux
-        try:
-            frozen = self.control_store.frozen_graph(work_item) or {}
-        except Exception as exc:  # noqa: BLE001 — never fail a delivery over a read
-            logger.warning(
-                "could not read the frozen selection for %s (%s); routing its pull "
-                "requests by the configured sessionPerPr (%s)",
-                work_item.ref,
-                exc,
-                default.session_per_pr,
-            )
-            return default
-        chosen = frozen.get("sessionPerPr")
+        chosen = self._frozen_choices(work_item, cwd).get("sessionPerPr")
         if chosen not in SESSION_PER_PR_MODES or chosen == default.session_per_pr:
             return default
         return replace(default, session_per_pr=str(chosen))
 
-    def _resolved_choice(self, work_item: WorkItemRef, harness: str) -> Tuple[str, str]:
+    def _resolved_choice(
+        self, work_item: WorkItemRef, harness: str, cwd: str = ""
+    ) -> Tuple[str, str]:
         """This work item's frozen ``(model, effort)`` — ``("", "")`` when it has
         none, or when what it froze is no longer something it may run (issue-358).
 
-        Read from the same portable record :meth:`_tmux_for` reads for
-        ``sessionPerPr``, so resolving a choice costs a dispatch nothing it was not
-        already paying. Re-validated **on the way in**, twice: against what the
-        operator declares *now*, and against the availability cache. The portable
-        tree is agent-writable like every state file here, so a hand-edited record
-        naming an undeclared model buys exactly nothing; and a model the harness has
-        since started refusing is dropped rather than spawned onto (R7.4).
+        Read from the same place :meth:`_tmux_for` reads ``sessionPerPr`` — the
+        work item's own checked-in state (issue-368) — so resolving a choice
+        costs a dispatch nothing it was not already paying. Re-validated **on
+        the way in**, twice: against what the operator declares *now*, and
+        against the availability cache. Both files are agent-writable, so a
+        hand-edited record naming an undeclared model buys exactly nothing; and
+        a model the harness has since started refusing is dropped rather than
+        spawned onto (R7.4).
         """
-        try:
-            frozen = self.control_store.frozen_graph(work_item) or {}
-        except Exception as exc:  # noqa: BLE001 — never fail a delivery over a read
-            logger.warning(
-                "could not read the frozen choice for %s (%s); launching on the "
-                "harness's own arguments",
-                work_item.ref,
-                exc,
-            )
-            return "", ""
-        model = str(frozen.get("model") or "")
-        effort = str(frozen.get("effort") or "")
+        chosen = self._frozen_choices(work_item, cwd)
+        model = chosen["model"]
+        effort = chosen["effort"]
         if not model and not effort:
             return "", ""
         config = self.cli_config or {}
@@ -1572,6 +1632,13 @@ class Dispatcher:
         issue — so the binding is established by the same act that established
         the session, rather than re-derived from ``gh`` afterwards.
 
+        Two records, one fact, each in the file its rule puts it in (issue-368):
+        the machine's registry gets an endpoint keyed by the PR's ref, which is
+        what routes its events here; the work item's **own** checked-in state
+        gets the pull request itself — repository, number, URL, inner-loop
+        directory and upstream state — which is what travels to the next machine
+        and what a reviewer reads.
+
         Writes nothing when the event carries no pull request, or when the PR
         *is* the target (a work item does not deliver itself). A write failure is
         logged and swallowed: a delivery is never lost because a piece of
@@ -1580,6 +1647,9 @@ class Dispatcher:
         pr = pr_work_item(routed.event, routed.payload)
         if pr is None or pr.ref == target.ref:
             return
+        record = self.registry.find_by_work_item(target, include_closed=True)
+        if record is not None:
+            self.graphlink.on_pr_linked(target, pr, record.cwd, linked_by="event")
         try:
             self.registry.link_pull_request(target, pr)
         except OSError as exc:
@@ -1613,16 +1683,6 @@ class Dispatcher:
                 return record
         return None
 
-    def _record_frozen_graph(self, work_item, frozen: dict) -> None:
-        """Store a frozen phase selection on the work item's PORTABLE record.
-
-        Portable, not local (issue-177, owner's wording): which phases a work
-        item walks is a fact about the work item, so it belongs beside
-        `control` — carried to another machine with it, not left behind with the
-        session handle.
-        """
-        self.control_store.record_frozen_graph(work_item, frozen)
-
     def _tracks(self, work_item: WorkItemRef) -> bool:
         """Whether this machine knows the work item at all (issue-329).
 
@@ -1635,6 +1695,45 @@ class Dispatcher:
         store = self.control_store.store
         return any(store.section(work_item, name) is not None for name in SECTIONS)
 
+    def _owner_of(self, ref: WorkItemRef) -> Optional[WorkItemRef]:
+        """The work item ``ref`` delivers, when it is a pull request (issue-368).
+
+        The dispatcher's half of the poller's own resolution, in the same order
+        and over the same two sources: this machine's session records, then the
+        portable records' pull-request ledgers. ``None`` means ``ref`` is a work
+        item in its own right — a plain issue, a review, or a pull request that
+        closes nothing the-loop tracks — and it keeps a record of its own.
+        """
+        try:
+            record = self.registry.record_owning(ref)
+        except (OSError, ValueError):
+            record = None
+        if record is not None and record.work_item.ref != ref.ref:
+            return record.work_item
+        try:
+            owner = self.control_store.store.owner_of(ref)
+        except (OSError, ValueError):
+            owner = None
+        if not owner:
+            return None
+        try:
+            return WorkItemRef.parse(owner)
+        except ValueError:
+            return None
+
+    def _drop_pr_ledger(self, owner: WorkItemRef, pr: WorkItemRef) -> None:
+        """Forget a finished pull request's poll ledger under its owner.
+
+        The ledger is what the poller has already seen on that pull request's
+        thread; a merged or closed pull request is not listed again, so keeping
+        it would leave the owner's record growing one dead map entry per
+        delivery. Advisory: a failed write never fails a close.
+        """
+        try:
+            self.control_store.store.write_pull_request_ledger(owner, pr.ref, None)
+        except OSError as exc:  # noqa: BLE001 — bookkeeping never fails a close
+            logger.debug("could not drop %s's poll ledger: %s", pr.ref, exc)
+
     def _record_closure(
         self, work_item: WorkItemRef, routed: RoutedEvent, reason: str
     ) -> None:
@@ -1644,8 +1743,33 @@ class Dispatcher:
         last told to do, so a reopened item starts from a clean slate rather
         than inheriting a stale start/stop request; forget who was invited onto
         it, for the same reason (issue-307 — a grant is scoped to the item's
-        active life); and write the closure fact beside `graph`, which stays.
+        active life); and write the closure fact.
+
+        A **pull request that delivers a tracked work item** takes none of this
+        (issue-368, R10.4): it is not a work item, so it has no arming to forget
+        and no roster to clear, and stamping `ended` on it is what used to mint
+        it a portable record of its own. Its upstream state goes where the pull
+        request itself is recorded — the owner's `work-item-state.json` — and
+        its nested poll ledger is dropped.
         """
+        owner = self._owner_of(work_item)
+        if owner is not None:
+            record = self.registry.find_by_work_item(owner, include_closed=True)
+            if record is not None:
+                self.graphlink.on_pr_state(
+                    owner,
+                    work_item,
+                    record.cwd,
+                    "merged" if reason == "pr-merged" else "closed",
+                )
+            self._drop_pr_ledger(owner, work_item)
+            eventlog.emit(
+                "work_item.pull_request_ended",
+                work_item=owner.ref,
+                pull_request=work_item.ref,
+                state="merged" if reason == "pr-merged" else "closed",
+            )
+            return
         self.control_store.clear(work_item)
         self.collaborator_store.clear(work_item)
         actor = event_actor(routed.event, routed.payload) or ""
