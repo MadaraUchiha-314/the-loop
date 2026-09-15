@@ -591,6 +591,10 @@ channels:
     #                                        # press (Approve, Execute, Start) or a /the-loop command;
     #                                        # `the-loop channels status` prints the steps that remain
     #   intervalSeconds: 30
+    #   catchUpSeconds: 900                  # socket mode only: how often the listener
+    #                                        # re-reads the bound threads on top of the push
+    #                                        # reads — the ceiling on how late a missed
+    #                                        # envelope can be; 0 = only at connect
     # reactions:                             # acknowledge an ACCEPTED message on itself (issue-325);
     #   enabled: true                        # needs reactions:write on the bot token; best-effort
     #   received: eyes                       # 👀 the moment it passes authorization + grant

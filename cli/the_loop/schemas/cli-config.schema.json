@@ -1197,6 +1197,12 @@
                   "minimum": 5,
                   "default": 30,
                   "description": "Poll-mode cadence. A cycle with no bound threads makes no API call at all."
+                },
+                "catchUpSeconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 900,
+                  "description": "Socket-mode reconcile cadence: how often the listener re-reads the bound threads and the kickoff cursor on top of its push reads and the one it runs at connect. It bounds every cause of a missed envelope — a message event the Slack app is not subscribed to, a Socket Mode reconnect gap, an acknowledgement that raced a restart. `0` means only at connect (16.0.1's behaviour); a non-zero value below 60 is raised to 60, because a reconcile is a safety net, not a second poll transport. Read only in socket mode — `poll` already re-reads every `intervalSeconds`."
                 }
               }
             },

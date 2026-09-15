@@ -24,13 +24,17 @@ oauth_config:
       - chat:write          # post into the channel and its threads
       - channels:history    # read thread replies and kickoffs in a public channel
       - groups:history      # the same in a private channel
+      - im:history          # the same in a direct message with the bot (issue-362)
+      - mpim:history        # the same in a group direct message (issue-362)
       - reactions:write     # acknowledge an accepted message on itself (issue-325)
       - commands            # the /the-loop slash command (issue-334)
 settings:
   event_subscriptions:
     bot_events:
-      - message.channels
-      - message.groups
+      - message.channels    # a public channel
+      - message.groups      # a private channel
+      - message.im          # a direct message with the bot (issue-362)
+      - message.mpim        # a group direct message (issue-362)
   interactivity:
     is_enabled: true        # Approve / Request changes, Execute / Start buttons (read.mode: socket)
   org_deploy_enabled: false

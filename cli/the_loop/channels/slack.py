@@ -30,6 +30,7 @@ import logging
 import os
 import re
 import threading
+import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -69,6 +70,16 @@ __all__ = [
     "PHASE_SELECTION_MARKER",
     "REACTION_STATES",
     "READ_MODES",
+    "CONVERSATION_KINDS",
+    "ConversationKind",
+    "DEFAULT_CATCH_UP_SECONDS",
+    "MIN_CATCH_UP_SECONDS",
+    "kind_from_info",
+    "kind_summary",
+    "kinds_from_id",
+    "probe_subscription",
+    "subscription_findings",
+    "unchecked_advice",
     "SlackBotChannel",
     "SlackChannelConfig",
     "SlackReactionConfig",
@@ -82,6 +93,7 @@ __all__ = [
     "render_kickoff_question",
     "render_reply_blocks",
     "render_root",
+    "report_subscription",
     "run_socket_listener",
     "slack_state_path",
 ]
@@ -94,6 +106,199 @@ _SECTION_LIMIT = 2900
 _HEADER_LIMIT = 150
 
 READ_MODES: Tuple[str, ...] = ("poll", "socket", "off")
+
+#: How often socket mode re-reads the bound threads on top of the one read it
+#: runs at connect (issue-362, R3). The reconcile bounds EVERY cause of a missed
+#: envelope — a subscription the app does not carry, a Socket Mode reconnect gap,
+#: an acknowledgement that raced a restart — not only this ticket's.
+DEFAULT_CATCH_UP_SECONDS = 900
+#: A reconcile is a safety net, not a second poll transport: each cycle is one
+#: ``conversations.history`` plus one ``conversations.replies`` per bound thread.
+MIN_CATCH_UP_SECONDS = 60
+
+
+@dataclass(frozen=True)
+class ConversationKind:
+    """One kind of Slack conversation, and what an app needs to hear from it.
+
+    Slack emits a **different message event per kind** and delivers only what the
+    app subscribed to, so a channel's kind and the app's subscriptions are one
+    fact, not two. Before issue-362 the-loop's manifest carried two of the four
+    and nothing related them to the configured channel — which is how a DM could
+    be configured, posted into and reported healthy while nothing typed in it was
+    ever delivered.
+    """
+
+    label: str
+    scope: str
+    event: str
+
+
+#: The four kinds, keyed as ``conversations.info`` distinguishes them.
+CONVERSATION_KINDS: Dict[str, ConversationKind] = {
+    "public": ConversationKind(
+        "public channel", "channels:history", "message.channels"
+    ),
+    "private": ConversationKind("private channel", "groups:history", "message.groups"),
+    "im": ConversationKind("direct message", "im:history", "message.im"),
+    "mpim": ConversationKind("group direct message", "mpim:history", "message.mpim"),
+}
+
+#: What a conversation id's FIRST CHARACTER can mean (issue-362, decision D2).
+#: ``D`` is unambiguous; ``G`` is a legacy private channel or a group DM; ``C`` is
+#: public or — since Slack's conversations model — private. Enough to diagnose the
+#: reported case with **no network call**, which is what lets ``channels status``
+#: keep its contract of calling nothing.
+KIND_PREFIXES: Dict[str, Tuple[str, ...]] = {
+    "D": ("im",),
+    "G": ("private", "mpim"),
+    "C": ("public", "private"),
+}
+
+
+def kinds_from_id(channel_id: str) -> Tuple[str, ...]:
+    """The kinds a conversation id **could** be, from its prefix — ``()`` when the
+    id is unset or is not a conversation id at all (a name, a typo)."""
+    first = (channel_id or "").strip()[:1].upper()
+    return KIND_PREFIXES.get(first, ())
+
+
+def kind_from_info(info: Mapping[str, Any]) -> str:
+    """The authoritative kind, from a ``conversations.info`` channel object.
+
+    The order is the content: an mpim is also flagged ``is_group`` and
+    ``is_private``, and a private channel is also flagged ``is_channel``, so the
+    narrowest test has to come first.
+    """
+    if info.get("is_im"):
+        return "im"
+    if info.get("is_mpim"):
+        return "mpim"
+    if info.get("is_private"):
+        return "private"
+    return "public"
+
+
+def kind_summary(channel_id: str) -> str:
+    """One line for ``channels status``: what this id is, and what it needs."""
+    kinds = kinds_from_id(channel_id)
+    if not kinds:
+        return "unrecognised — not a Slack conversation id (C…, G… or D…)"
+    labels = " or ".join(CONVERSATION_KINDS[kind].label for kind in kinds)
+    scopes = " / ".join(CONVERSATION_KINDS[kind].scope for kind in kinds)
+    events = " / ".join(CONVERSATION_KINDS[kind].event for kind in kinds)
+    return f"{labels} — needs bot scope {scopes} and bot event {events}"
+
+
+def unchecked_advice(channel_id: str) -> Tuple[str, ...]:
+    """What to say about a channel whose app has **not** been probed (R2.1).
+
+    Only a ``D…`` is called out. It is the one prefix Slack leaves unambiguous
+    *and* the one the-loop's manifest could not serve at all before issue-362, so
+    a default installation configured with a DM is certainly broken. ``C…`` and
+    ``G…`` are ambiguous, and a warning that fires on the configuration most
+    operators run is a warning people learn to route around.
+    """
+    if kinds_from_id(channel_id) != ("im",):
+        return ()
+    entry = CONVERSATION_KINDS["im"]
+    return (
+        f"channel {channel_id} is a {entry.label}: it needs the bot scope "
+        f"{entry.scope} and the bot event {entry.event}, which the-loop's app "
+        "manifest did not always carry — a message there is then only read when "
+        "the listener starts or reconciles. Run `the-loop channels status "
+        "--probe` to check the installed app.",
+    )
+
+
+def subscription_findings(
+    channel_id: str,
+    kinds: Sequence[str],
+    scopes: Optional[Sequence[str]],
+) -> Tuple[str, ...]:
+    """What is **measured** to be wrong with this channel's subscription (R2.5).
+
+    Pure, so the words are asserted once and both callers — ``channels status
+    --probe`` and the listener's start-up probe — say the same thing.
+
+    ``scopes`` is the bot token's granted scopes; ``None`` means they could not be
+    read (an SDK that did not surface ``x-oauth-scopes``), and yields **no**
+    finding rather than a wrong one. A finding needs **every** candidate kind's
+    scope to be missing, because ``C…`` and ``G…`` cover two kinds each and only
+    ``conversations.info`` can say which. For what to say when nothing was
+    probed at all, see :func:`unchecked_advice`.
+    """
+    if not kinds or scopes is None:
+        return ()
+    entries = [CONVERSATION_KINDS[kind] for kind in kinds]
+    granted = {str(scope).strip() for scope in scopes}
+    if any(entry.scope in granted for entry in entries):
+        return ()
+    labels = " or ".join(entry.label for entry in entries)
+    missing_scopes = " / ".join(entry.scope for entry in entries)
+    missing_events = " / ".join(entry.event for entry in entries)
+    return (
+        f"channel {channel_id} is a {labels} and the app lacks the bot scope "
+        f"{missing_scopes} — Slack never delivers {missing_events}, so replies and "
+        "kickoffs are only read when the listener starts or reconciles. Add the "
+        "scope and the event to the Slack app (`the-loop channels manifest` prints "
+        "the manifest that carries them, then Reinstall).",
+    )
+
+
+def _granted_scopes(response: Any) -> Optional[Tuple[str, ...]]:
+    """The bot token's scopes off a Web API response's ``x-oauth-scopes`` header.
+
+    Slack returns it on every call and it carries no secret (bugfix §AC3).
+    ``slack_sdk`` lowercases header names and may hand back a string or a list;
+    anything else is **unknown**, which yields no findings rather than a wrong one.
+    """
+    headers = getattr(response, "headers", None)
+    if headers is None and isinstance(response, Mapping):
+        headers = response.get("headers")
+    if not isinstance(headers, Mapping):
+        return None
+    raw = headers.get("x-oauth-scopes") or headers.get("X-OAuth-Scopes")
+    if isinstance(raw, (list, tuple)):
+        raw = ",".join(str(item) for item in raw)
+    if not isinstance(raw, str):
+        return None
+    return tuple(scope.strip() for scope in raw.split(",") if scope.strip())
+
+
+def probe_subscription(
+    config: "SlackChannelConfig",
+    *,
+    client_factory: Optional[Callable[[str], Any]] = None,
+) -> Dict[str, Any]:
+    """Ask the installed app what the configured channel is and what it may read.
+
+    Two fixed calls (bugfix §AC4): ``conversations.info`` on the operator's own
+    configured id, and ``auth.test`` for the granted scopes. Returns either
+    ``{"skipped": why}`` or ``{"kind", "scopes", "findings"}``; it never raises,
+    because a diagnostic that fails is not an error (R2.3).
+    """
+    if not config.channel:
+        return {"skipped": "no channel is configured"}
+    token = os.environ.get(config.bot_token_env) or ""
+    if not token:
+        return {"skipped": f"no bot token — {config.bot_token_env} is unset"}
+    factory = client_factory or build_client
+    try:
+        client = factory(token)
+        info = (client.conversations_info(channel=config.channel) or {}).get(
+            "channel"
+        ) or {}
+        kind = kind_from_info(info)
+        scopes = _granted_scopes(client.auth_test())
+    except Exception as exc:  # noqa: BLE001 — a diagnostic never fails its caller
+        return {"skipped": f"{type(exc).__name__}: {exc}"}
+    return {
+        "kind": kind,
+        "scopes": scopes,
+        "findings": subscription_findings(config.channel, (kind,), scopes),
+    }
+
 
 #: Block Kit action ids the-loop renders — and the only ones it acts on.
 ACTION_PREFIX = "the-loop:"
@@ -246,6 +451,9 @@ class SlackChannelConfig:
     authorized_users: Tuple[str, ...] = ()
     read_mode: str = "poll"
     read_interval_seconds: float = 30.0
+    #: How often socket mode re-reads the bound threads on top of the connect-time
+    #: read (issue-362). ``0`` means connect-only — 16.0.1's behaviour.
+    catch_up_seconds: int = DEFAULT_CATCH_UP_SECONDS
     #: The acknowledgment on an accepted inbound message (issue-325).
     reactions: SlackReactionConfig = SlackReactionConfig()
     #: Every control command and its configured keyword (issue-337) — the values
@@ -420,6 +628,7 @@ class SlackChannelConfig:
                 authorized_users=tuple(ids_for(principals, "slack")),
                 read_mode=mode,
                 read_interval_seconds=float(read.get("intervalSeconds") or 30),
+                catch_up_seconds=_catch_up_seconds(read.get("catchUpSeconds")),
                 reactions=SlackReactionConfig.from_mapping(section.get("reactions")),
                 control_keywords=control_keywords,
             )
@@ -430,6 +639,40 @@ class SlackChannelConfig:
                 exc,
             )
             return cls()
+
+
+def _catch_up_seconds(raw: Any) -> int:
+    """``channels.slack.read.catchUpSeconds``, fail-closed (issue-362, D5).
+
+    Read explicitly rather than through the ``or`` idiom its neighbour
+    ``intervalSeconds`` uses: ``0`` has to survive, because it is how an operator
+    keeps the connect-only behaviour. A value below the floor is clamped rather
+    than honoured — a reconcile that runs every second is a second poll transport
+    spending the instance's rate limit on a push channel (bugfix §AC6).
+    """
+    if raw is None:
+        return DEFAULT_CATCH_UP_SECONDS
+    try:
+        seconds = int(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "channels.slack.read.catchUpSeconds %r is not a number — using %d",
+            raw,
+            DEFAULT_CATCH_UP_SECONDS,
+        )
+        return DEFAULT_CATCH_UP_SECONDS
+    if seconds <= 0:
+        return 0
+    if seconds < MIN_CATCH_UP_SECONDS:
+        logger.warning(
+            "channels.slack.read.catchUpSeconds %d is below %d — using %d; the "
+            "reconcile is a safety net, not a second poll transport",
+            seconds,
+            MIN_CATCH_UP_SECONDS,
+            MIN_CATCH_UP_SECONDS,
+        )
+        return MIN_CATCH_UP_SECONDS
+    return seconds
 
 
 def _control_keywords(raw: Any) -> Tuple[Tuple[str, str], ...]:
@@ -1506,9 +1749,35 @@ def catch_up(cli_config: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
     return summary
 
 
+def report_subscription(config: "SlackChannelConfig") -> None:
+    """Probe the installed app once and log what it cannot receive (R2.4).
+
+    Best-effort in both directions: a probe that cannot run is an ``info`` line,
+    a probe that raises is swallowed, and neither keeps the listener from
+    listening. The words are :func:`subscription_findings`' own, so an operator
+    reads the same sentence here and in ``the-loop channels status --probe``.
+    """
+    try:
+        result = probe_subscription(config)
+    except Exception:  # noqa: BLE001 — a diagnostic never costs a channel its listener
+        logger.exception("slack: the subscription probe raised; listening anyway")
+        return
+    if result.get("skipped"):
+        logger.info(
+            "slack: subscription not checked (%s) — `the-loop channels status "
+            "--probe` checks it",
+            result["skipped"],
+        )
+        return
+    for finding in result.get("findings") or ():
+        logger.warning("slack: %s", finding)
+
+
 def run_socket_listener(
     cli_config: Optional[Mapping[str, Any]],
     stop_event: Optional[threading.Event] = None,
+    *,
+    catch_up_override: Optional[float] = None,
 ) -> int:
     """Receive replies, button presses, kickoffs and slash commands push-fashion
     until stopped — ``the-loop channels listen``.
@@ -1582,11 +1851,34 @@ def run_socket_listener(
         "slack: Socket Mode connected — listening for thread replies, button "
         "presses and /the-loop commands"
     )
+    report_subscription(config)
     catch_up(frozen_config)
+    # The periodic reconcile (issue-362, R3): one deadline carried through the
+    # existing one-second tick rather than a second thread, so the stop event is
+    # still honoured within a tick whatever the interval is. `monotonic`, not the
+    # wall clock — an NTP step or a DST change must not move a cadence.
+    interval = (
+        float(catch_up_override)
+        if catch_up_override is not None
+        else float(config.catch_up_seconds)
+    )
+    tick = min(1.0, interval) if interval > 0 else 1.0
+    due = time.monotonic() + interval if interval > 0 else None
+    if due is not None:
+        logger.info("slack: reconciling the bound threads every %gs", interval)
     waiter = stop_event or threading.Event()
     try:
-        while not waiter.wait(1.0):
-            pass
+        while not waiter.wait(tick):
+            if due is not None and time.monotonic() >= due:
+                try:
+                    catch_up(frozen_config)
+                except Exception:  # noqa: BLE001 — R3.3: a cycle never ends the listener
+                    # `catch_up` already swallows what `poll_once` raises; this
+                    # guards everything around it (the event emit, a future
+                    # refactor), because a listener that dies on a reconcile is
+                    # strictly worse than one that never reconciled.
+                    logger.exception("slack: reconcile cycle raised; still listening")
+                due = time.monotonic() + interval
     except KeyboardInterrupt:
         pass
     finally:
