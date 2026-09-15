@@ -1,3 +1,9 @@
+## v17.1.0 (2026-09-15)
+
+### Feat
+
+- **issue-362**: a DM is a channel like any other — subscribe, diagnose, reconcile (#367)
+
 ## v17.0.0 (2026-09-14)
 
 ### BREAKING CHANGE
