@@ -55,6 +55,7 @@ __all__ = [
     "PENDING_TTL_SECONDS",
     "THREAD_CAP",
     "ChannelState",
+    "ChannelStores",
     "canonical",
 ]
 
@@ -96,6 +97,24 @@ def canonical(work_item: str) -> str:
         return work_item
 
 
+def _is_work_item(key: str) -> bool:
+    """Whether ``key`` names a work item — as opposed to a standing session.
+
+    A standing session (``standing:<name>``) belongs to no work item: it has no
+    portable record to hold its binding and no ticket anywhere, so its thread
+    binding and its cursor stay in this machine's channel file, beside the
+    per-channel kickoff cursors. Everything the-loop tracks per work item goes
+    to that work item's records (issue-368).
+    """
+    from ..sessions import WorkItemRef
+
+    try:
+        WorkItemRef.parse(key)
+    except ValueError:
+        return False
+    return True
+
+
 def _now() -> str:
     return (
         datetime.now(timezone.utc)
@@ -103,6 +122,130 @@ def _now() -> str:
         .isoformat()
         .replace("+00:00", "Z")
     )
+
+
+@dataclass
+class ChannelStores:
+    """Where a work item's channel facts live **outside** this file (issue-368).
+
+    Two of the four maps below are not this file's to keep:
+
+    * a **binding** — which thread carries which work item's conversation — is a
+      remote entity the-loop created. It is true whoever runs the daemon, so it
+      belongs in that work item's portable record; the machine that opened the
+      thread must not be the only one that knows, or a second machine opens a
+      second root and drops replies in the first as ``unmapped``. It stays in
+      the OPERATOR's record rather than the work item's repository because a
+      channel id, a thread ts and a workspace permalink are the operator's
+      workspace's, not the repository's;
+    * a **cursor** — the last reply THIS deployment mirrored — is a statement
+      about this machine, so it sits with the handles in the session record.
+
+    What stays in the file is what belongs to no work item: the per-channel
+    kickoff cursors and the pending questions.
+
+    ``None`` anywhere a :class:`ChannelStores` is expected means "no stores" —
+    the file answers for everything, which is what a test with a bare path and
+    every pre-issue-368 deployment get.
+    """
+
+    channel: str
+    portable_dir: str
+    registry_dir: str
+
+    @classmethod
+    def beside(
+        cls, state_path: Union[str, Path], channel: str = "slack"
+    ) -> "ChannelStores":
+        """The stores under the same ``state.root`` as ``<root>/channels/<c>.json``.
+
+        The layout is one root with three directories (decision-046), so the
+        channel file's grandparent *is* that root. Derived rather than passed so
+        every construction site of a channel keeps its one argument.
+        """
+        root = Path(state_path).parent.parent
+        return cls(
+            channel=channel,
+            portable_dir=str(root / "portable"),
+            registry_dir=str(root / "local"),
+        )
+
+    # -- bindings, in the operator's portable records --------------------------
+
+    def _store(self):
+        from ..workitem import WorkItemStore
+
+        return WorkItemStore(self.portable_dir)
+
+    def bindings(self) -> Dict[str, Dict[str, str]]:
+        """``{work item: {channel, thread, opened, origin, permalink}}``.
+
+        Read from every portable record that carries one. A record without a
+        binding for this channel contributes nothing, and an unreadable
+        directory answers ``{}`` — a channel that cannot find its bindings
+        drops replies as ``unmapped``, which is what it already did for an
+        unknown thread.
+        """
+        found: Dict[str, Dict[str, str]] = {}
+        try:
+            store = self._store()
+            for _, record in store._records():  # noqa: SLF001 — same package's store
+                entry = (record.get("channels") or {}).get(self.channel)
+                if isinstance(entry, dict) and entry.get("thread"):
+                    found[str(record["ref"])] = {
+                        str(k): str(v) for k, v in entry.items()
+                    }
+        except (OSError, ValueError, KeyError) as exc:
+            logger.warning("could not read the channel bindings: %s", exc)
+        return found
+
+    def write_binding(self, work_item: str, record: Dict[str, str]) -> None:
+        """Record (or replace) ``work_item``'s conversation on this channel."""
+        try:
+            store = self._store()
+            channels = dict(store.section(work_item, "channels") or {})
+            channels[self.channel] = dict(record)
+            store.write_section(work_item, "channels", channels)
+        except (OSError, ValueError) as exc:
+            logger.warning("could not record %s's channel binding: %s", work_item, exc)
+
+    def drop_binding(self, work_item: str) -> None:
+        """Forget ``work_item``'s conversation on this channel."""
+        try:
+            store = self._store()
+            channels = dict(store.section(work_item, "channels") or {})
+            if channels.pop(self.channel, None) is None:
+                return
+            store.write_section(work_item, "channels", channels or None)
+        except (OSError, ValueError) as exc:
+            logger.warning("could not drop %s's channel binding: %s", work_item, exc)
+
+    # -- cursors, in this machine's session records ----------------------------
+
+    def _registry(self):
+        from ..sessions import SessionRegistry
+
+        return SessionRegistry(self.registry_dir)
+
+    def cursor(self, work_item: str, thread: str) -> str:
+        """What this machine has already mirrored in ``thread``, or ``""``."""
+        if not work_item:
+            return ""
+        try:
+            return self._registry().cursor(work_item, self.channel, thread)
+        except (OSError, ValueError) as exc:
+            logger.debug("could not read %s's read cursor: %s", work_item, exc)
+            return ""
+
+    def advance(self, work_item: str, thread: str, ts: str) -> bool:
+        """Record that ``thread`` is mirrored up to ``ts`` on this machine."""
+        if not work_item:
+            return False
+        try:
+            return self._registry().advance_cursor(work_item, self.channel, thread, ts)
+        except (OSError, ValueError) as exc:
+            logger.debug("could not advance %s's read cursor: %s", work_item, exc)
+            return False
 
 
 @dataclass
@@ -120,9 +263,25 @@ class ChannelState:
     #: True when :meth:`load` derived a conversation from a pre-issue-312 file —
     #: the next writer saves so the file converges on the keyed shape (R3.4).
     backfilled: bool = field(default=False, repr=False, compare=False)
+    #: Where the bindings and the cursors actually live (issue-368). ``None``
+    #: keeps everything in the file, which is the pre-issue-368 behaviour and
+    #: what a bare path still gets.
+    stores: Optional[ChannelStores] = field(default=None, repr=False, compare=False)
+    #: Work items whose binding this instance changed, and threads whose cursor
+    #: it advanced — so a save writes the two records it touched rather than
+    #: every record it read.
+    _dirty_bindings: set = field(default_factory=set, repr=False, compare=False)
+    _dirty_cursors: set = field(default_factory=set, repr=False, compare=False)
+    #: Threads whose cursor this file keeps because no session record on this
+    #: machine can hold it. Seeded from what the file already carries, so a
+    #: cursor written before issue-368 is honoured until its work item has a
+    #: session record to move it into.
+    _file_cursors: set = field(default_factory=set, repr=False, compare=False)
 
     @classmethod
-    def load(cls, path: Union[str, Path]) -> "ChannelState":
+    def load(
+        cls, path: Union[str, Path], stores: Optional[ChannelStores] = None
+    ) -> "ChannelState":
         """The state at ``path`` — empty on a missing or unreadable file.
 
         Corrupt state resolves to empty rather than raising: the cost is
@@ -134,9 +293,11 @@ class ChannelState:
         try:
             raw = json.loads(Path(path).read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            return cls()
+            # An absent or corrupt file is empty, not store-less: the bindings
+            # are not in this file any more, and a first run has no file at all.
+            return cls(stores=stores)._with_bindings()
         if not isinstance(raw, dict):
-            return cls()
+            return cls(stores=stores)._with_bindings()
         threads = raw.get("threads")
         cursors = raw.get("cursors")
         conversations = raw.get("conversations")
@@ -161,6 +322,7 @@ class ChannelState:
                 for ts, info in (pending or {}).items()
                 if isinstance(info, dict) and info.get("asked")
             },
+            stores=stores,
         )
         for ts, info in state.threads.items():  # oldest → newest: newest wins
             work_item = info.get("workItem") or ""
@@ -173,21 +335,26 @@ class ChannelState:
                 state.conversations[work_item] = _record(
                     ts, info.get("channel", ""), origin="legacy"
                 )
-        return state
+        state._file_cursors = {
+            key for key in state.cursors if not key.startswith("channel:")
+        }
+        return state._with_bindings()
 
     def save(self, path: Union[str, Path]) -> None:
-        """Atomic write (tmp + rename), directories created on demand."""
+        """Atomic write (tmp + rename), directories created on demand.
+
+        With :class:`ChannelStores` the two maps that are not this file's are
+        written where they belong first — a changed binding into its work
+        item's portable record, an advanced cursor into its session record —
+        and this file keeps only what belongs to no work item: the per-channel
+        kickoff cursors and the pending questions (issue-368). Only what THIS
+        instance changed is written out, so a save costs the records it touched
+        rather than every record it read.
+        """
+        self._flush_stores()
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        payload = json.dumps(
-            {
-                "threads": self.threads,
-                "cursors": self.cursors,
-                "conversations": self.conversations,
-                "pending": self.pending,
-            },
-            indent=2,
-        )
+        payload = json.dumps(self._file_payload(), indent=2)
         fd, tmp = tempfile.mkstemp(dir=str(target.parent), suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -200,9 +367,108 @@ class ChannelState:
             except OSError:
                 pass
 
+    def _with_bindings(self) -> "ChannelState":
+        """Overlay the bindings the portable records hold (issue-368).
+
+        They WIN over anything this file still carries: a binding in the file
+        was written before the change and is honoured only until the work
+        item's next write puts it in its record (R5.4) — it is never written
+        back here. Without stores this is a no-op, which is the pre-issue-368
+        behaviour a bare path still gets.
+        """
+        if self.stores is None:
+            return self
+        # Whatever this FILE still holds was written before issue-368, and this
+        # file stops carrying bindings on the next save — so every one of them
+        # is marked for migration into its work item's portable record (R5.4).
+        # Without this the first save would drop a binding nobody had copied.
+        self._dirty_bindings.update(
+            key for key in self.conversations if _is_work_item(key)
+        )
+        for work_item, record in self.stores.bindings().items():
+            self.conversations[work_item] = dict(record)
+            thread = record.get("thread") or ""
+            if thread:
+                self.threads[thread] = {
+                    "workItem": work_item,
+                    "channel": record.get("channel", ""),
+                }
+        return self
+
+    def _file_payload(self) -> Dict[str, Any]:
+        """What this file keeps.
+
+        With stores, only what belongs to no work item (issue-368): the
+        per-channel kickoff cursors — keyed ``channel:<id>``, which can never
+        collide with a thread ts — and the pending questions. Without them, all
+        four maps, exactly as before.
+        """
+        if self.stores is None:
+            return {
+                "threads": self.threads,
+                "cursors": self.cursors,
+                "conversations": self.conversations,
+                "pending": self.pending,
+            }
+        kept = {
+            item: record
+            for item, record in self.conversations.items()
+            if not _is_work_item(item)
+        }
+        payload: Dict[str, Any] = {
+            "cursors": {
+                key: value
+                for key, value in self.cursors.items()
+                if key.startswith("channel:") or key in self._file_cursors
+            },
+            "pending": self.pending,
+        }
+        if kept:
+            # A standing session's conversation is nobody's work item, so it
+            # keeps both halves of its binding here (issue-368).
+            payload["conversations"] = kept
+            payload["threads"] = {
+                thread: info
+                for thread, info in self.threads.items()
+                if not _is_work_item(info.get("workItem") or "")
+            }
+        return payload
+
+    def _flush_stores(self) -> None:
+        """Write the bindings and cursors this instance changed to their homes."""
+        stores = self.stores
+        if stores is None:
+            return
+        for work_item in sorted(self._dirty_bindings):
+            if not _is_work_item(work_item):
+                continue  # a standing session's binding stays in this file
+            record = self.conversations.get(work_item)
+            if record is None:
+                stores.drop_binding(work_item)
+            else:
+                stores.write_binding(work_item, record)
+        for thread in sorted(self._dirty_cursors):
+            work_item = (self.threads.get(thread) or {}).get("workItem") or ""
+            if _is_work_item(work_item) and stores.advance(
+                work_item, thread, self.cursors.get(thread, "")
+            ):
+                self._file_cursors.discard(thread)
+            else:
+                # No session record here to hold it — an armed work item whose
+                # session has not spawned, or one whose local resources were
+                # released. The cursor is still this machine's, so it stays in
+                # this machine's channel file: losing it would re-process every
+                # reply in that thread on the next cycle, and at-most-once is
+                # the one contract a cursor exists for.
+                self._file_cursors.add(thread)
+        self._dirty_bindings.clear()
+        self._dirty_cursors.clear()
+
     @classmethod
     @contextmanager
-    def locked(cls, path: Union[str, Path]) -> Iterator["ChannelState"]:
+    def locked(
+        cls, path: Union[str, Path], stores: Optional[ChannelStores] = None
+    ) -> Iterator["ChannelState"]:
         """Load ``path`` under an exclusive lock held until the block ends.
 
         The caller mutates and :meth:`save`\\ s inside the block; every writer
@@ -222,7 +488,7 @@ class ChannelState:
                     target,
                 )
                 _LOCK_WARNED = True
-            yield cls.load(target)
+            yield cls.load(target, stores)
             return
         target.parent.mkdir(parents=True, exist_ok=True)
         lock_fd = os.open(
@@ -230,7 +496,7 @@ class ChannelState:
         )
         try:
             runlock.fcntl.flock(lock_fd, runlock.fcntl.LOCK_EX)
-            yield cls.load(target)
+            yield cls.load(target, stores)
         finally:
             try:
                 runlock.fcntl.flock(lock_fd, runlock.fcntl.LOCK_UN)
@@ -259,6 +525,7 @@ class ChannelState:
             self.conversations[work_item] = _record(
                 thread, channel_id, origin=origin, permalink=permalink
             )
+            self._dirty_bindings.add(work_item)
         while len(self.threads) > THREAD_CAP:
             oldest = next(iter(self.threads))
             dropped = self.threads.pop(oldest, None) or {}
@@ -266,6 +533,7 @@ class ChannelState:
             item = dropped.get("workItem") or ""
             if item and self.conversations.get(item, {}).get("thread") == oldest:
                 self.conversations.pop(item, None)
+                self._dirty_bindings.add(item)
 
     def thread_for(self, work_item: str) -> Optional[Tuple[str, str]]:
         """``(channel_id, thread_ts)`` of ``work_item``'s conversation, or None."""
@@ -284,11 +552,27 @@ class ChannelState:
         return info.get("workItem") if info else None
 
     def cursor(self, thread: str) -> str:
-        """The last-processed ts in ``thread`` — the thread root when new."""
-        return self.cursors.get(thread, thread)
+        """The last-processed ts in ``thread`` — the thread root when new.
+
+        With stores, a thread's cursor is read from the work item's session
+        record on this machine (issue-368); a work item with no session here
+        has none, and the thread is read from its root, exactly as an unknown
+        thread always was.
+        """
+        if thread in self.cursors:
+            return self.cursors[thread]
+        if self.stores is not None:
+            work_item = (self.threads.get(thread) or {}).get("workItem") or ""
+            recorded = self.stores.cursor(work_item, thread)
+            if recorded:
+                self.cursors[thread] = recorded
+                return recorded
+        return thread
 
     def advance(self, thread: str, ts: str) -> None:
         self.cursors[thread] = ts
+        if not thread.startswith("channel:"):
+            self._dirty_cursors.add(thread)
 
     # -- pending kickoff questions (issue-349) ---------------------------------
 

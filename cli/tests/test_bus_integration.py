@@ -11,11 +11,11 @@ from the_loop.authz import is_self_authored
 from the_loop.channels import envelope as env
 from the_loop.channels import inbound
 from the_loop.channels.slack import DEFAULT_BOT_TOKEN_ENV
-from the_loop.channels.state import ChannelState
 from the_loop.control import ControlConfig, parse_command
 from the_loop.core import sessions as core_sessions
 from the_loop.graphlink import comments_from
 from the_loop.webhook.router import Router, RoutedEvent
+from conftest import _state_with_stores
 
 OPERATOR = "octocat"  # the login the-loop's own credential posts as
 
@@ -87,7 +87,7 @@ def _bound_thread(tmp_path, config, slack, ref="github:o/r#7"):
     """A thread the-loop started for ``ref`` — the ask, through the bus."""
     result = core_sessions.ask_session(ref, "A or B?", config=config)
     assert result["asked"] is True
-    bound = ChannelState.load(
+    bound = _state_with_stores(
         tmp_path / "state" / "channels" / "slack.json"
     ).thread_for(ref)
     assert bound is not None
@@ -394,7 +394,7 @@ def test_a_top_level_dm_becomes_a_labelled_issue_bound_to_its_thread(
     summary = inbound.poll_once(config)
     assert summary["created"] == 1 and summary["dropped"] == 2
     assert created == [("o/r", "Ship it", ["the-loop: auto-execute"])]
-    state = ChannelState.load(tmp_path / "state" / "channels" / "slack.json")
+    state = _state_with_stores(tmp_path / "state" / "channels" / "slack.json")
     assert state.work_item_for("1600.2") == "github:o/r#42"
     assert slack.posted[-1]["thread_ts"] == "1600.2"
     assert "github:o/r#42" in slack.posted[-1]["text"]

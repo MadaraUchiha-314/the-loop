@@ -100,7 +100,13 @@ def env(tmp_path, monkeypatch):
             return tmp_path / "state" / "channels" / "slack.json"
 
         def state(self):
-            return ChannelState.load(self.state_path)
+            # As the bot reads it: the binding is in the work item's portable
+            # record, not in this file (issue-368).
+            from the_loop.channels.state import ChannelStores
+
+            return ChannelState.load(
+                self.state_path, ChannelStores.beside(self.state_path)
+            )
 
         def create_issue(self, repo, title, body, labels, gh_binary="gh"):
             self.created.append({"repo": repo, "title": title, "body": body})

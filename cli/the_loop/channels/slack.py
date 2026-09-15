@@ -49,7 +49,7 @@ from .base import (
 )
 from .digest import DEFAULT_DIGEST_MODE, DIGEST_MODES, fit, truncate
 from .events import APPROVAL_EVENTS, PUBLISHABLE_EVENTS, SUBSCRIBABLE_EVENTS
-from .state import ChannelState
+from .state import ChannelState, ChannelStores
 
 logger = logging.getLogger("the-loop.channels")
 
@@ -1100,6 +1100,11 @@ class SlackBotChannel:
     ):
         self.config = config
         self.state_path = Path(state_path)
+        # Where this channel's bindings and cursors actually live (issue-368):
+        # the binding in each work item's portable record, the cursor in its
+        # session record on this machine. Derived from the state path, so every
+        # construction site of a channel keeps its one argument.
+        self.stores = ChannelStores.beside(self.state_path, self.name)
         self._client_factory = client_factory
         self._own_user: Optional[str] = None
 
@@ -1146,7 +1151,7 @@ class SlackBotChannel:
         client = self._client()
         bound: Optional[Tuple[str, str]] = None
         if event.work_item:
-            with ChannelState.locked(self.state_path) as state:
+            with ChannelState.locked(self.state_path, self.stores) as state:
                 bound = state.thread_for(event.work_item)
                 if not bound:
                     bound = self._open_thread(client, state, event.work_item)
@@ -1202,7 +1207,7 @@ class SlackBotChannel:
                 "to the channel the bot posts into (C…)"
             )
         client = self._client()
-        with ChannelState.locked(self.state_path) as state:
+        with ChannelState.locked(self.state_path, self.stores) as state:
             bound = state.thread_for(work_item)
             if not bound:
                 bound = self._open_thread(client, state, work_item, origin="start")
@@ -1286,7 +1291,7 @@ class SlackBotChannel:
     ) -> None:
         """Bind ``thread`` to ``work_item`` — a kickoff's thread to its new issue.
         The thread a member started **is** the conversation (issue-312 R1.5)."""
-        with ChannelState.locked(self.state_path) as state:
+        with ChannelState.locked(self.state_path, self.stores) as state:
             state.bind(
                 thread, work_item, channel_id or self.config.channel, origin=origin
             )
@@ -1451,7 +1456,7 @@ class SlackBotChannel:
         client-side (strictly newer than the last processed ts), so the exact
         inclusivity semantics of the API's ``oldest`` never matter.
         """
-        state = ChannelState.load(self.state_path)
+        state = ChannelState.load(self.state_path, self.stores)
         if not state.threads:
             return []
         client = self._client()
@@ -1504,7 +1509,7 @@ class SlackBotChannel:
         """
         if not self.config.kickoff_enabled:
             return []
-        state = ChannelState.load(self.state_path)
+        state = ChannelState.load(self.state_path, self.stores)
         key = kickoff_cursor_key(self.config.channel)
         cursor = state.cursors.get(key, "")
         client = self._client()
@@ -1557,7 +1562,7 @@ class SlackBotChannel:
     def advance(self, thread: str, ts: str) -> None:
         """Persist that everything in ``thread`` up to ``ts`` was processed —
         under the lock, so a cursor never overwrites a binding written beside it."""
-        with ChannelState.locked(self.state_path) as state:
+        with ChannelState.locked(self.state_path, self.stores) as state:
             state.advance(thread, ts)
             state.save(self.state_path)
 
