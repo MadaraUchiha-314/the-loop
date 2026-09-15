@@ -38,6 +38,34 @@ _DISPATCH_OUTCOME_WRITES = (
 )
 
 
+def _state_with_stores(path):
+    """The channel state as the bot itself reads it (issue-368).
+
+    A binding lives in its work item's portable record and a read cursor in its
+    session record, so a test that wants to see what the bot wrote has to load
+    the file **with** the stores beside it — loading the bare path shows only
+    what belongs to no work item, which is the point of the split.
+    """
+    from the_loop.channels.state import ChannelState, ChannelStores
+
+    return ChannelState.load(path, ChannelStores.beside(path))
+
+
+def _freeze_legacy_graph(store, work_item, frozen: dict) -> None:
+    """Write a portable record's `graph` section — the **pre-issue-368** shape.
+
+    Nothing in the-loop writes this section any more: which phases a work item
+    walks, the surface it is iterated on, how many sessions its pull requests
+    get and what it runs on are all recorded in the work item's own checked-in
+    `work-item-state.json`. It is still *read*, so a work item frozen before the
+    change keeps its routing across the upgrade — and this helper is how a test
+    sets up exactly that work item.
+    """
+    from the_loop.workitem import GRAPH
+
+    store.store.write_section(work_item, GRAPH, dict(frozen))
+
+
 def pytest_addoption(parser):
     """``--dispatch-lag=<seconds>``: turn a wait-ordering flake into a certainty.
 

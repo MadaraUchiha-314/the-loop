@@ -9,6 +9,7 @@ boundary is the injected client factory (design D7).
 from __future__ import annotations
 
 import json
+import shutil
 
 import pytest
 
@@ -34,6 +35,7 @@ from the_loop.channels.slack import (
 )
 from the_loop.channels.state import THREAD_CAP, ChannelState
 from the_loop.control import ControlConfig, parse_command
+from conftest import _state_with_stores
 
 
 class FakeSlackClient:
@@ -216,7 +218,7 @@ def test_first_post_binds_a_thread_and_second_reuses_it(tmp_path, monkeypatch):
     assert client.posted[0]["thread_ts"] is None
     assert client.posted[1]["thread_ts"] == first.thread
     assert second.thread == first.thread
-    state = ChannelState.load(tmp_path / "state" / "channels" / "slack.json")
+    state = _state_with_stores(tmp_path / "state" / "channels" / "slack.json")
     assert state.work_item_for(first.thread) == "github:o/r#7"
 
 
@@ -789,7 +791,7 @@ def test_the_first_post_opens_a_root_and_replies_into_it(tmp_path, monkeypatch):
     assert reply["thread_ts"] == "1700.000001" == result.thread
     assert reply["blocks"][0]["text"]["text"].startswith("Question from the agent")
     assert "approach A or B" in reply["text"]
-    record = _conversation(ChannelState.load(_state_path(tmp_path)), "github:o/r#7")
+    record = _conversation(_state_with_stores(_state_path(tmp_path)), "github:o/r#7")
     assert record == {
         "channel": "C123",
         "thread": "1700.000001",
@@ -860,7 +862,7 @@ def test_a_failed_reply_opens_no_second_thread(tmp_path, monkeypatch):
     with pytest.raises(ChannelError):
         channel.post(event(text="again"))
     assert [p["thread_ts"] for p in client.posted].count(None) == 1
-    state = ChannelState.load(_state_path(tmp_path))
+    state = _state_with_stores(_state_path(tmp_path))
     assert state.thread_for("github:o/r#7") == ("C123", first.thread)
 
 
@@ -882,7 +884,9 @@ def test_a_failed_root_binds_nothing_and_the_next_event_retries(tmp_path, monkey
     channel = make_channel(tmp_path, client)
     with pytest.raises(ChannelError):
         channel.post(event())
-    assert ChannelState.load(_state_path(tmp_path)).conversation("github:o/r#7") is None
+    assert (
+        _state_with_stores(_state_path(tmp_path)).conversation("github:o/r#7") is None
+    )
     client.fail_root = False
     result = channel.post(event())
     assert result.ok and result.thread == "1700.000001"
@@ -922,7 +926,7 @@ def test_the_permalink_is_recorded_when_slack_returns_one(tmp_path, monkeypatch)
 
     channel = make_channel(tmp_path, WithPermalink())
     channel.post(event())
-    record = _conversation(ChannelState.load(_state_path(tmp_path)), "github:o/r#7")
+    record = _conversation(_state_with_stores(_state_path(tmp_path)), "github:o/r#7")
     assert record["permalink"] == "https://x.slack.com/C123/p1700.000001"
 
 
@@ -937,7 +941,7 @@ def test_a_failed_permalink_still_binds_the_thread(tmp_path, monkeypatch):
     client = PermalinkBroken()
     result = make_channel(tmp_path, client).post(event())
     assert result.ok and len(client.posted) == 2
-    record = _conversation(ChannelState.load(_state_path(tmp_path)), "github:o/r#7")
+    record = _conversation(_state_with_stores(_state_path(tmp_path)), "github:o/r#7")
     assert record["thread"] == "1700.000001" and record["permalink"] == ""
 
 
@@ -965,7 +969,10 @@ def test_a_corrupt_state_file_opens_a_fresh_thread(tmp_path, monkeypatch):
     client = FakeSlackClient()
     result = make_channel(tmp_path, client).post(event())
     assert result.ok and client.posted[0]["thread_ts"] is None
-    assert ChannelState.load(path).thread_for("github:o/r#7") == ("C123", result.thread)
+    assert _state_with_stores(path).thread_for("github:o/r#7") == (
+        "C123",
+        result.thread,
+    )
 
 
 def test_a_members_root_shaped_message_binds_nothing(tmp_path, monkeypatch):
@@ -985,7 +992,7 @@ def test_a_members_root_shaped_message_binds_nothing(tmp_path, monkeypatch):
     ]
     inbound.poll_once(config)
     inbound.poll_once(config)
-    state = ChannelState.load(_state_path(tmp_path))
+    state = _state_with_stores(_state_path(tmp_path))
     assert state.threads == {} and state.conversation("github:o/r#7") is None
     result = make_channel(tmp_path, client).post(event())
     assert result.thread != "1600.1"
@@ -1087,7 +1094,7 @@ def test_open_posts_the_root_alone_and_binds_with_origin_start(tmp_path, monkeyp
     assert root["blocks"][0]["type"] == "header"
     assert "github:o/r#7" in root["blocks"][0]["text"]["text"]
     assert root["blocks"][-1]["elements"][0]["url"] == "https://github.com/o/r/issues/7"
-    record = _conversation(ChannelState.load(_state_path(tmp_path)), "github:o/r#7")
+    record = _conversation(_state_with_stores(_state_path(tmp_path)), "github:o/r#7")
     assert record["origin"] == "start" and record["thread"] == "1700.000001"
     opened = [f for name, f in events if name == "channel.thread_opened"]
     assert opened == [
@@ -1119,7 +1126,7 @@ def test_open_is_idempotent_for_a_bound_work_item(tmp_path, monkeypatch):
     assert len(other.posted) == 2  # root + reply
     assert bound.open("github:o/r#8").thread == posted.thread
     assert len(other.posted) == 2
-    record = _conversation(ChannelState.load(_state_path(tmp_path)), "github:o/r#8")
+    record = _conversation(_state_with_stores(_state_path(tmp_path)), "github:o/r#8")
     assert record["origin"] == "event"
 
 
@@ -1133,7 +1140,9 @@ def test_open_fails_closed_like_post(tmp_path, monkeypatch):
     with pytest.raises(ChannelError, match="no channel id"):
         make_channel(tmp_path, client, channel="").open("github:o/r#7")
     assert client.posted == []
-    assert ChannelState.load(_state_path(tmp_path)).conversation("github:o/r#7") is None
+    assert (
+        _state_with_stores(_state_path(tmp_path)).conversation("github:o/r#7") is None
+    )
 
 
 def test_a_failed_open_binds_nothing(tmp_path, monkeypatch):
@@ -1147,7 +1156,9 @@ def test_a_failed_open_binds_nothing(tmp_path, monkeypatch):
 
     with pytest.raises(ChannelError, match="could not open a thread"):
         make_channel(tmp_path, Down()).open("github:o/r#7")
-    assert ChannelState.load(_state_path(tmp_path)).conversation("github:o/r#7") is None
+    assert (
+        _state_with_stores(_state_path(tmp_path)).conversation("github:o/r#7") is None
+    )
     client = FakeSlackClient()
     result = make_channel(tmp_path, client).post(event())
     assert result.ok and len(client.posted) == 2  # root, then the reply
@@ -1162,7 +1173,10 @@ def test_a_corrupt_state_file_still_opens_on_start(tmp_path, monkeypatch):
     client = FakeSlackClient()
     result = make_channel(tmp_path, client).open("github:o/r#7")
     assert result.ok and len(client.posted) == 1
-    assert ChannelState.load(path).thread_for("github:o/r#7") == ("C123", result.thread)
+    assert _state_with_stores(path).thread_for("github:o/r#7") == (
+        "C123",
+        result.thread,
+    )
 
 
 def test_an_unknown_origin_is_coerced_to_event(tmp_path):
@@ -1174,7 +1188,7 @@ def test_an_unknown_origin_is_coerced_to_event(tmp_path):
     assert _conversation(state, "github:o/r#7")["origin"] == "start"
     assert _conversation(state, "github:o/r#8")["origin"] == "event"
     state.save(_state_path(tmp_path))
-    reloaded = ChannelState.load(_state_path(tmp_path))
+    reloaded = _state_with_stores(_state_path(tmp_path))
     assert _conversation(reloaded, "github:o/r#7")["origin"] == "start"
 
 
@@ -1235,7 +1249,7 @@ def test_the_pipeline_reads_the_graph_through_the_dispatchers_own_coupling(tmp_p
     assert registry.root == dispatcher.registry.root
     assert routing.registry_dir == routing_cfg.registry_dir
     # A reader, not a driver: no sink the dispatcher's coupling carries.
-    assert link.assignment_sink is None and link.frozen_graph_sink is None
+    assert link.assignment_sink is None
 
 
 def test_no_session_record_is_an_unknown_gate_not_a_closed_one(tmp_path):
@@ -1865,3 +1879,132 @@ def test_reaction_events_carry_no_text_or_token(tmp_path, monkeypatch):
     assert "channel.reaction_added" in raw and "channel.reaction_failed" in raw
     assert "xoxb-supersecret" not in raw
     assert "the secret answer" not in raw
+
+
+# -- where a binding and a cursor live (issue-368) -----------------------------
+
+
+def test_the_binding_is_recorded_in_the_work_items_portable_record(
+    tmp_path, monkeypatch
+):
+    """R2.3 — a thread the-loop opened is a remote entity, so it travels.
+
+    Recorded in the OPERATOR's record rather than the work item's repository: a
+    channel id, a thread ts and a workspace permalink are the operator's
+    workspace's, and the binding must outlive the checkout `cleanup` removes.
+    """
+    import json
+
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    client = FakeSlackClient()
+    result = make_channel(tmp_path, client).post(event())
+    assert result.ok
+
+    record = json.loads(
+        (tmp_path / "state" / "portable" / "github-o-r-7.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    binding = record["channels"]["slack"]
+    assert binding["thread"] == result.thread and binding["channel"] == "C123"
+    # …and nothing about the conversation is left in the channel file.
+    raw = json.loads(_state_path(tmp_path).read_text(encoding="utf-8"))
+    assert "conversations" not in raw and "threads" not in raw
+
+
+def test_a_second_machine_continues_the_conversation(tmp_path, monkeypatch):
+    """R2.3, the property the move buys: carrying `portable/` carries the thread.
+
+    Before issue-368 the binding was machine-wide state, so the next machine
+    opened a second root and dropped replies in the first as `unmapped`.
+    """
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    first = FakeSlackClient()
+    opened = make_channel(tmp_path, first).post(event())
+
+    second_root = tmp_path / "elsewhere"
+    (second_root / "state").mkdir(parents=True)
+    shutil.copytree(tmp_path / "state" / "portable", second_root / "state" / "portable")
+    second = FakeSlackClient()
+    again = make_channel(second_root, second).post(event())
+
+    assert again.thread == opened.thread
+    assert second.posted[0]["thread_ts"] == opened.thread  # a reply, not a root
+
+
+def test_the_read_cursor_lives_with_this_machines_handles(tmp_path, monkeypatch):
+    """R5.1 — what this deployment mirrored is a statement about this machine."""
+    import json
+
+    from the_loop.sessions import Session, SessionRegistry, WorkItemRef
+
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    registry = SessionRegistry(tmp_path / "state" / "local")
+    registry.register(
+        Session(
+            work_item=WorkItemRef.parse("github:o/r#7"),
+            harness="claude",
+            harness_session_id="s-1",
+            cwd=str(tmp_path),
+        )
+    )
+    channel = make_channel(tmp_path, FakeSlackClient())
+    bound = channel.post(event())
+    channel.advance(bound.thread, "1800.9")
+
+    record = json.loads(
+        (tmp_path / "state" / "local" / "github-o-r-7.json").read_text(encoding="utf-8")
+    )
+    assert record["channels"]["slack"]["cursors"][bound.thread] == "1800.9"
+    assert _state_with_stores(_state_path(tmp_path)).cursor(bound.thread) == "1800.9"
+    # It is machine-local, so it is NOT in the record that travels.
+    portable = json.loads(
+        (tmp_path / "state" / "portable" / "github-o-r-7.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "cursors" not in json.dumps(portable)
+
+
+def test_a_cursor_with_no_session_record_here_stays_in_the_channel_file(
+    tmp_path, monkeypatch
+):
+    """At-most-once is the one contract a cursor exists for.
+
+    A work item can have a bound thread and no session record on this machine —
+    armed but not yet spawned, or cleaned up. Losing its cursor would re-process
+    every reply in that thread on the next cycle, so the channel file keeps it.
+    """
+    import json
+
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    channel = make_channel(tmp_path, FakeSlackClient())
+    bound = channel.post(event())
+    channel.advance(bound.thread, "1800.9")
+
+    raw = json.loads(_state_path(tmp_path).read_text(encoding="utf-8"))
+    assert raw["cursors"][bound.thread] == "1800.9"
+    assert _state_with_stores(_state_path(tmp_path)).cursor(bound.thread) == "1800.9"
+
+
+def test_a_standing_sessions_binding_stays_in_the_channel_file(tmp_path, monkeypatch):
+    """Design D12 — a standing session belongs to no work item.
+
+    It is addressed by name (`standing:<name>`), has no portable record to be
+    filed under and no ticket anywhere, so its binding and its cursor stay
+    beside the per-channel kickoff cursors.
+    """
+    import json
+
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    channel = make_channel(tmp_path, FakeSlackClient())
+    channel.bind("1900.1", "standing:supervisor", "C123")
+    channel.advance("1900.1", "1900.5")
+
+    raw = json.loads(_state_path(tmp_path).read_text(encoding="utf-8"))
+    assert raw["conversations"]["standing:supervisor"]["thread"] == "1900.1"
+    assert raw["threads"]["1900.1"]["workItem"] == "standing:supervisor"
+    assert raw["cursors"]["1900.1"] == "1900.5"
+    assert not list((tmp_path / "state" / "portable").glob("standing*.json"))
+    state = _state_with_stores(_state_path(tmp_path))
+    assert state.work_item_for("1900.1") == "standing:supervisor"

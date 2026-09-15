@@ -53,6 +53,111 @@ Two paths can be pointed elsewhere explicitly —
 [`pidfile`](/config/cli/webhook-options#pidfile) — but `portable/` follows `state.root`,
 because "where does the half I track live?" should have exactly one answer.
 
+## Three files, one per party — where an attribute goes
+
+The layout above answers *does this file travel?* It never answered the question
+underneath it: **where does one attribute go?** Nothing did, and attributes drifted
+([issue-368](https://github.com/MadaraUchiha-314/the-loop/issues/368)) — a work item's
+pull requests were recorded only in a file that never travels, the Slack thread only in
+a machine-wide one, and a harness session id was checked into the repository.
+
+The rule is the **party each fact belongs to**, because who may write a file decides
+what may be in it. Three files hold something about one work item:
+
+```mermaid
+flowchart TB
+    R["THE REPOSITORY's file<br/>docs/specs/&lt;id&gt;/work-item-state.json<br/>on the work item's branch"]
+    O["THE OPERATOR's file<br/>&lt;root&gt;/portable/&lt;slug&gt;.json<br/>tracked in the operator's own repo"]
+    M["THIS MACHINE's file<br/>&lt;root&gt;/local/&lt;slug&gt;.json<br/>never tracked"]
+    R --- R1["the pointer · what a human froze ·<br/>the pull requests delivering it"]
+    O --- O1["what an authorized human said ·<br/>what this deployment has seen ·<br/>the channel thread it opened"]
+    M --- M1["one session per ref it serves ·<br/>what it has already mirrored"]
+```
+
+| Kind of attribute | Home | Why that file and no other |
+|---|---|---|
+| **pointer** | repository | must survive a machine change, a session change and a multi-day review, and be reviewable in a diff; re-derived from the artifacts, so a stale copy costs a recompute |
+| **human decision** about the work item | repository | a declaration with provenance, honoured only within what the compiled graph and the operator's config allow |
+| **repository entity** — a pull request, its inner loop | repository | a pull request is an object of the repository the branch lives in, and [`the-loop check`](/cli/commands/check) in CI must see it without a registry |
+| **workspace entity** — a channel thread | operator | its identifiers are the operator's workspace's (channel id, member id, permalink) and must not enter a repository; it must also outlive the checkout, which `cleanup` removes |
+| **operator ledger** — armed, the roster, seen comments, the closure | operator | proposable by nobody but an authorized human, and needed after the checkout is gone |
+| **machine handle** — a conversation id, a tmux name, a path, a read cursor | machine | useless or harmful anywhere else |
+| **derived** | wherever its reader is | rebuilt from its sources on every write and read to gate nothing, so a stale copy is cosmetic |
+
+Every attribute is written **once**. Any other file that needs it carries an identity —
+a ref, a thread ts — never a second copy of the record.
+
+The table is declared in code, in
+[`the_loop/state.py`](https://github.com/MadaraUchiha-314/the-loop/blob/main/cli/the_loop/state.py)
+(`ATTRIBUTES`), and a test fails the build when one of the three files grows a key no
+entry claims, when a kind sits in a file its rule forbids, or when this page and the
+declaration disagree. A machine handle in a tracked file fails on its own assertion:
+that is the one the table exists for.
+
+## Work-item state — `docs/specs/<id>/work-item-state.json`
+
+The one file of the three that lives in **your repository**, on the work item's branch,
+and the only one a reviewer sees in a pull request. It is a cache, never an authority: a
+stale copy degrades to a recompute, and `the-loop check --recompute` derives completion
+from the artifacts alone.
+
+| Attribute | Kind | Meaning |
+|---|---|---|
+| `version` | derived | the file's shape |
+| `workItem` | pointer | which work item this is |
+| `loop` | pointer | which shipped loop it walks |
+| `currentNode` | pointer | where the pointer is |
+| `nodes` | pointer | per node: `attempts`, `outcome`, `enteredAt`, `exitedAt`, `lastBlock`, `forced` |
+| `completions` | pointer | the claims sessions have made |
+| `parked` | pointer | the gate it is waiting at, and why |
+| `forced` | human decision | every forced move, audited |
+| `decisions` | human decision | each gate's outcome with its provenance |
+| `skips` | human decision | declared skips, with who declared each and how |
+| `optIns` | human decision | opt-in phases somebody asked for |
+| `surface` | human decision | where the outer loop is iterated ([issue-183](https://github.com/MadaraUchiha-314/the-loop/issues/183)) |
+| `sessionPerPr` | human decision | how many sessions its pull requests get ([issue-260](https://github.com/MadaraUchiha-314/the-loop/issues/260)) |
+| `model` / `effort` | human decision | what it runs on, and at what effort ([issue-358](https://github.com/MadaraUchiha-314/the-loop/issues/358)) |
+| `repos` | human decision | the repositories it contributes to |
+| `pullRequests` | repository entity | each pull request delivering it |
+
+```json
+"pullRequests": [
+  {
+    "ref": "github:octo/lib#7",
+    "repository": "octo/lib",
+    "number": 7,
+    "url": "https://github.com/octo/lib/pull/7",
+    "stateDir": "pr-loops/octo__lib/pr-7",
+    "state": "open",
+    "linkedAt": "2026-09-15T08:03:40Z",
+    "linkedBy": "session"
+  }
+]
+```
+
+`state` is the pull request's **upstream** state (`open`, `merged`, `closed`), written by
+the daemon's one close path; the session endpoint's own `status` stays a handle's status,
+which is why a tmux session retained after a merge is still attachable. `stateDir` is
+where that pull request's inner loop keeps its own pointer, derived at write so a reader
+needs no code to find it. `linkedBy` says which of the two writers recorded it: the
+session that opened the pull request (`the-loop sessions link-pr`) or the first event that
+routed for it.
+
+Every value is re-validated on read, because this file is agent-writable **and**
+proposable by anyone who can open a pull request: a `repository` that is not a usable
+repository path is refused, a `stateDir` that is not one this repository and number derive
+is recomputed, and an entry that does not parse is skipped while the rest of the file is
+honoured. A `model` resolves only to one the operator declared and this machine accepts;
+a `sessionPerPr` outside `never | cross-repository | always` is the operator's default.
+
+::: warning No session handle lives here
+`work-item-state.json` carried a `session` block — a harness conversation id and its
+runner — until issue-368. It was the wrong file for it twice over: a conversation id is a
+handle to one machine, and this file is public and proposable. `session: inherit` resolves
+the conversation through this machine's session registry now. A block left on disk by an
+older release is ignored on read and gone on the next save; it is never resumed.
+:::
+
 ## Two kinds of state
 
 The layout is the answer to one question, so it is worth stating the question. Everything
@@ -73,9 +178,9 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 
 | Path | Written by | Holds | Travels? |
 |---|---|---|---|
-| `<root>/portable/<slug>.json` | execution control + the poller | what was armed, which phases were frozen, who was invited onto the item, which comments are already seen, and whether — and how — the item ended | **portable** |
+| `<root>/portable/<slug>.json` | execution control + the poller | what was armed, who was invited onto the item, which comments are already seen (the work item's and each of its pull requests'), which channel thread carries its conversation, and whether — and how — the item ended | **portable** |
 | `<root>/portable/index.json` | the same store, derived | one entry per record: ref, url, file, sections | **portable** |
-| `<root>/local/<slug>.json` | the session registry | conversation id, `cwd`, tmux target, status, and the item's pull requests with their own sessions | **local** |
+| `<root>/local/<slug>.json` | the session registry | one entry per ref this machine holds a session for — the work item's own and one per pull request — each with its conversation id, `cwd`, tmux target and status; plus what this deployment has already mirrored of the item's channel threads | **local** |
 | `<root>/local/model-verdicts.json` | `the-loop models check` (issue-358) | one verdict per harness × model-or-effort name: `ok`, `refused` or `unknown`, the argv it was taken against, and when — re-measured every 24h | **local** |
 | `<root>/local/standing/<name>.json` | the standing-session registry (issue-277, opt-in) | per standing session: harness, conversation id, `cwd`, tmux target, status, the Slack channel/thread its chat runs in — and, for a session created through the API, its whole definition | **local** |
 | `<root>/logs/events.jsonl` | every ingress, and `sessions` | one JSON object per decision | **local** |
@@ -85,26 +190,38 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 | `<root>/slack-listener.pid` | the Slack Socket Mode listener — hosted by the service or `the-loop channels listen` | its pid and the lock that keeps one listener per instance (issue-334) | **local** |
 | `<root>/poll-status.json` | the poller, after every cycle | the heartbeat `the-loop status` reads: `startedAt`, `lastCycleAt`, last cycle's counters — and no pid, which is `poll.pid`'s to name | **local** |
 | `<root>/self-diagnosis.json` | self-diagnosis (issue-242, opt-in) | which failure fingerprints this machine already reported (with the issue URL), abandoned or is retrying, and when it last posted | **local** |
-| `<root>/channels/<channel>.json` | the channels reader/writer (issue-245, issue-312, opt-in) | per channel type: which Slack thread carries which work item's conversation (both ways: thread → work item, and work item → its one thread with when/how it opened and its permalink), and the last reply this deployment mirrored and delivered | **local** |
+| `<root>/channels/<channel>.json` | the channels reader/writer (issue-245, issue-312, opt-in) | per channel type, only what belongs to **no** work item: the per-channel kickoff cursor, the questions the-loop is waiting on, and a standing session's thread binding. A work item's own binding and read cursor moved to its records in issue-368 | **local** |
 
 The same table is declared in code, in
 [`the_loop/state.py`](https://github.com/MadaraUchiha-314/the-loop/blob/main/cli/the_loop/state.py)
 (`GENERATED_PATHS`), and a test fails the build when a new generated path is added without
 classifying it, or when this page and the declaration disagree.
 
-One more file belongs to this picture but lives elsewhere: `docs/specs/<id>/work-item-state.json`
-is checked in by design — the [process graph](/capabilities/process-graph) records where a
-work item is, and it must survive a machine change, a session change and a multi-day human
-review. It is a cache, never an authority, so a stale copy degrades to a recompute. The
-portable half above is classified on exactly that reasoning.
+The third per-work-item file, `docs/specs/<id>/work-item-state.json`, is
+described above under **Work-item state**: checked in by design, in
+**your** repository rather than under `state.root`, because the
+[process graph](/capabilities/process-graph)'s record of where a work item stands must
+survive a machine change, a session change and a multi-day human review. It is a cache,
+never an authority, so a stale copy degrades to a recompute. The portable half above is
+classified on exactly that reasoning.
 
 ## Work-item record — `<root>/portable/<slug>.json`
 
-One file per work item, named for its ref (`github:octo/repo#15` →
-`github-octo-repo-15.json`), with independent sections — `control`, `poll`, `graph`,
-`collaborators` and, once the item has ended, `ended` — and, since
+**One file per work item, whatever delivers it.** Named for its ref
+(`github:octo/repo#15` → `github-octo-repo-15.json`), with independent sections —
+`control`, `poll`, `pullRequests`, `collaborators`, `channels` and, once the item has
+ended, `ended` — and, since
 [issue-130](https://github.com/MadaraUchiha-314/the-loop/issues/130), a link to the work
 item itself.
+
+A pull request that delivers a tracked work item has **no record of its own**
+([issue-368](https://github.com/MadaraUchiha-314/the-loop/issues/368)): the poller lists
+a labelled pull request as an item in its own right, and each one used to be baselined
+into its own file — three pull requests, four records and four index entries for one
+work item. Its poll ledger is keyed under the owner's record now, and the pull request
+itself is recorded once, in the repository's `work-item-state.json`. A pull request that
+delivers nothing the-loop tracks — a review, or one that closes no issue — still gets its
+own record, because it *is* the work item.
 
 ```json
 {
@@ -125,15 +242,21 @@ item itself.
     "lastPolledAt": "2026-07-31T10:42:00Z",
     "title": "Rate-limit the poller's gh calls"
   },
-  "graph": {
-    "loop": "pdlc-work-item-loop",
-    "workItem": "issue-15",
-    "sessionPerPr": "cross-repository",
-    "nodes": [
-      {"id": "design", "phase": "design", "skipped": true, "selectable": true},
-      {"id": "design-critic-review", "phase": "", "skipped": true, "selectable": true, "optIn": true},
-      {"id": "verification", "phase": "verification", "skipped": false, "selectable": false}
-    ]
+  "pullRequests": {
+    "github:octo/lib#7": {
+      "seenComments": ["2460…"],
+      "commentAttempts": {},
+      "lastPolledAt": "2026-07-31T10:42:00Z"
+    }
+  },
+  "channels": {
+    "slack": {
+      "channel": "C0AB…",
+      "thread": "1726…001",
+      "opened": "2026-07-31T09:12:00Z",
+      "origin": "start",
+      "permalink": "https://octo.slack.com/archives/C0AB…/p1726…001"
+    }
   },
   "collaborators": {
     "users": [
@@ -204,28 +327,56 @@ with no error anywhere — the daemon is behaving exactly as configured, on a re
 no longer there. This is the state you most want to carry, and the one nothing upstream
 can rebuild.
 
-### `graph` — the phases this work item was frozen to walk
+### `pullRequests` — what the poller has seen on each pull request
+
+One entry per pull request delivering this work item, keyed by its ref, holding exactly
+what `poll` holds for the work item itself: `seenComments`, `commentAttempts` and
+`lastPolledAt`. No `spawn` and no `title` — a pull request is never spawned as a work
+item from here, and its title is the repository's.
+
+Written by the poller, which resolves the owner **before** it writes anything: this
+machine's session records first, then the pull-request ledgers already in `portable/`,
+then the router's own linkage on the listed item (the closing references, the branch
+convention, the closing keywords). Dropped when the pull request merges or closes — it
+will not be listed again.
+
+**If you delete it:** that pull request's thread is first-sight again, and the poller
+re-baselines it. Nothing else.
+
+### `channels` — the conversation the-loop opened for this work item
 
 | Field | Meaning |
 |---|---|
-| `loop` | which shipped loop was frozen (`pdlc-work-item-loop`) |
-| `workItem` | the spec-folder id the graph was resolved for |
-| `sessionPerPr` | how many tmux+claude sessions this work item's pull requests get — `never`, `cross-repository` or `always`, chosen on the same checklist and frozen by the same reply ([issue-260](https://github.com/MadaraUchiha-314/the-loop/issues/260)). Absent on a record written before the question existed, which reads as "route by the operator's `routing.tmux.sessionPerPr`" |
-| `nodes` | every node in declaration order: `skipped` (routed around), `selectable` (was it ever the user's to choose) and `optIn` (off unless selected — so `skipped: true` here means *nobody asked for it*, not *somebody removed it*) |
+| `channel` | the channel id the thread is in |
+| `thread` | the thread's `ts` — the conversation this work item's messages go to |
+| `opened` | when the-loop opened it |
+| `origin` | how: `start` (when the work item started), `event` (the first event delivered), `kickoff` (a member's message became the work item), `legacy` (a binding from before [issue-312](https://github.com/MadaraUchiha-314/the-loop/issues/312)) |
+| `permalink` | the link Slack returned |
 
-Written once, when an authorized user answers the
-[`phase-selection`](/capabilities/process-graph) gate with the execute keyword
-([issue-177](https://github.com/MadaraUchiha-314/the-loop/issues/177)). It is here rather
-than in the session record for the same reason `control` is: *which phases this work item
-needs* is true on any machine, so it travels with the work item and not with the session
-handle. It is also the answer to "what did we agree this item would do?" without a
-checkout and without re-reading a comment thread anyone can still edit.
+A thread is a **remote entity the-loop created**, so it travels with the work item
+(issue-368): the machine that opened it is no longer the only one that knows, and a
+second machine continues the conversation instead of opening a second root and dropping
+replies in the first as `unmapped`. It is in the operator's record rather than the work
+item's repository because a channel id, a thread ts and a workspace permalink are the
+operator's workspace's, not the repository's — and because it must outlive the checkout,
+which `cleanup` removes.
 
-**If you delete it:** the loop keeps walking exactly the same phases —
-`docs/specs/<id>/work-item-state.json` in the repository is the authoritative copy of those.
-You lose the portable, checkout-free view of the item's agreed shape, and `sessionPerPr`
-with it: this file is the **only** copy the daemon reads, so the item's pull requests fall
-back to routing by the operator's configured default.
+What this deployment has already *mirrored* of that thread is the other half, and stays
+local: the read cursor is in the **session record** below.
+
+**If you delete it:** the next message for that work item opens a fresh thread, and
+replies in the old one are dropped as `unmapped`. Nothing is double-processed.
+
+::: tip The retired `graph` section
+Until issue-368 this record also carried `graph` — the frozen phase selection, plus
+`sessionPerPr`, `model` and `effort`. Five of its eight keys were already in
+`work-item-state.json`, which made it a second, partial copy of one human decision; the
+three that were not are there now. Nothing writes the section any more. A record that
+carries one is still **read**, so a work item frozen before the change keeps its routing
+across the upgrade, and it is never rewritten. The rendered `nodes` view is derived by
+[`the-loop check`](/cli/commands/check) from the compiled graph plus the declared skips
+and opt-ins.
+:::
 
 ### `collaborators` — who else may speak to this work item
 
@@ -282,8 +433,7 @@ never tracked writes nothing. It is here rather than in the session record for t
 the others are: *this item is over* is true on any machine, and it is what lets a control
 plane anywhere demote the item to *Shipped* or *Idle* and stop showing its stale question
 and gate as work for a human. A record carrying only this section is **kept**; the
-`graph` section stays beside it (`Dispatcher._tmux_for` still reads it for a reopened
-item).
+other sections stay beside it.
 
 Cleared when the item is **reopened** — a `reopened` event from an authorized user, or the
 next poll cycle that lists the item again — and by `the-loop sessions reset`. `the-loop
@@ -389,14 +539,20 @@ the next write rebuilds it from the directory.
 
 ## Session record — `<root>/local/<slug>.json`
 
-One file per work item that has a session — and, since
-[issue-172](https://github.com/MadaraUchiha-314/the-loop/issues/172), everything about
-that work item's sessions: the item's own, plus one entry per **pull request** delivering
-it.
+One file per work item that has a session, and **a map of every session this machine
+holds for it**, keyed by the ref each one serves: the work item's own, and one per pull
+request delivering it ([issue-172](https://github.com/MadaraUchiha-314/the-loop/issues/172),
+reshaped by issue-368).
 
-A pull request entry is a durable **binding** — which pull requests deliver this work item —
-and only sometimes a second conversation. Which of them get one is the work item's own choice, frozen at `phase-selection` into
-the `graph` section's `sessionPerPr` (above) and falling back
+The ref is the key and the only thing this file knows about a pull request. Its
+repository, number, URL and upstream state are the repository's facts and live once, in
+`work-item-state.json`'s `pullRequests`, joined by that same ref — this file never
+travels, so a second copy of a pull request here was a copy nobody else could read.
+
+An entry is a durable **binding** — which pull requests deliver this work item —
+and only sometimes a second conversation. Which of them get one is the work item's own
+choice, frozen at `phase-selection` into `work-item-state.json`'s `sessionPerPr` and
+falling back
 to [`routing.tmux.sessionPerPr`](/config/cli/routing-options#tmux-sessionperpr)
 ([issue-260](https://github.com/MadaraUchiha-314/the-loop/issues/260)): under
 `cross-repository`, a pull request in the work item's **own repository** has no
@@ -413,39 +569,52 @@ collapsed one does — the record says what was *bound*, and the event log says 
 
 ```json
 {
-  "workItem": {
-    "ref": "github:octo/repo#15",
-    "provider": "github", "owner": "octo", "repo": "repo", "number": 15
-  },
-  "harness": "claude",
-  "harnessSessionId": "0f1c…",
-  "cwd": "/Users/you/.the-loop/workspace/github.com/octo/repo/issue-15",
-  "status": "active",
-  "createdAt": "2026-07-31T09:12:04Z",
-  "lastEventAt": "2026-07-31T10:41:55Z",
-  "tmuxTarget": "loop-github-octo-repo-15",
-  "recentDeliveries": ["8f2c…"],
-  "pullRequests": [
-    {
-      "workItem": {"ref": "github:octo/repo#16", "…": "…"},
+  "version": 2,
+  "workItem": "github:octo/repo#15",
+  "channels": {"slack": {"cursors": {"1726…001": "1726…340"}}},
+  "sessions": {
+    "github:octo/repo#15": {
+      "harness": "claude",
+      "harnessSessionId": "0f1c…",
+      "cwd": "/Users/you/.the-loop/workspace/github.com/octo/repo/issue-15",
+      "status": "active",
+      "createdAt": "2026-07-31T09:12:04Z",
+      "lastEventAt": "2026-07-31T10:41:55Z",
+      "tmuxTarget": "loop-github-octo-repo-15",
+      "recentDeliveries": ["8f2c…"]
+    },
+    "github:octo/repo#16": {
       "harness": "claude",
       "harnessSessionId": "77ab…",
+      "cwd": "/Users/you/.the-loop/workspace/github.com/octo/repo/pr-16",
       "status": "active",
       "tmuxTarget": "loop-github-octo-repo-16",
       "recentDeliveries": ["91d0…"]
     }
-  ]
+  }
 }
 ```
 
 | Field | Meaning |
 |---|---|
+| `workItem` | whose sessions these are |
+| `sessions` | one entry per ref this machine holds a session for — the work item's own, and one per pull request delivering it |
+| `channels` | per channel type, what THIS deployment last mirrored in each of the work item's threads; absent when there is nothing |
+
+Each entry under `sessions`:
+
+| Field | Meaning |
+|---|---|
 | `harness` / `harnessSessionId` | which harness, and the conversation to resume |
-| `cwd` | where a resume must run (the work item's checkout) |
+| `cwd` | where a resume must run (that ref's checkout) |
 | `status` | `active`, `paused` (suppressed, not gone) or `closed` |
 | `tmuxTarget` | the tmux session to attach to; `""` until one is spawned (issue-156) |
 | `recentDeliveries` | the last 50 delivery ids, so a restart does not re-deliver |
-| `pullRequests` | the PRs delivering this work item, each a session of its own — same fields, one level deep, absent until a PR event routes here or a session records one it opened (`sessions link-pr`) |
+| `model` / `effort` / `harnessArgs` | what this session was actually launched as (issue-358) — absent when it was launched with nothing extra |
+
+A record written before issue-368 — identity and handles at the top level, a
+`pullRequests` list beside them — is read exactly as it was and rewritten as a map on its
+next save. Nothing is migrated in bulk, and nothing is lost.
 
 **Why the PRs are in here.** Which work item a PR delivers used to be recomputed from
 `gh`'s `closingIssuesReferences` on every single event — so unlinking the PR in GitHub's
@@ -674,22 +843,25 @@ the file by hand leaves the tmux session running).
 ## Channel conversation state — `<root>/channels/<channel>.json`
 
 What the [channels](/config/cli/channels-options) surface — opt-in, off by default —
-remembers about its conversations, one file per channel type (today: `slack.json`).
-Four maps. `threads` binds a Slack thread to a work item — the reader's map: the poll
-transport iterates it, the socket transport looks a `thread_ts` up in it. `conversations`
-(since [issue-312](https://github.com/MadaraUchiha-314/the-loop/issues/312)) is keyed the
-other way, **work item → the one thread that carries it**: the channel id, the thread ts,
-when it was opened, how (`start`: the-loop opened the root when the work item started,
-before any event — [issue-317](https://github.com/MadaraUchiha-314/the-loop/issues/317);
-`event`: the-loop opened a root for the first event it delivered; `kickoff`: a member's
-top-level message became the work item; `legacy`: a binding from before issue-312,
-derived from `threads` on load and written here on the next save) and the permalink Slack
-returned — this is what `the-loop channels threads`
-prints and what decides where a work item's next message goes. `cursors` records the last
-reply in each thread this deployment already recorded and delivered, plus one
-`channel:<id>` key per channel read for kickoffs (the newest top-level message already
-considered; the first read after the `work-item.create` grant is turned on baselines it,
-so nothing already in the channel becomes an issue). `pending` (since
+remembers that belongs to **no work item**, one file per channel type (today:
+`slack.json`).
+
+A work item's own two facts left this file in issue-368: which thread carries its
+conversation is in its portable record's `channels` section,
+because the thread is a remote entity the-loop created and every machine needs it; what
+this deployment has already mirrored of that thread is in
+its session record, because that is a statement
+about this machine. A binding still in this file was written before the change: it is
+honoured, and moved into the work item's record on the next write.
+
+What is left is what no work item owns. `cursors` keeps one `channel:<id>` key per
+channel read for kickoffs (the newest top-level message already considered; the first
+read after the `work-item.create` grant is turned on baselines it, so nothing already in
+the channel becomes an issue) — and a thread cursor for a work item with **no session
+record on this machine**, which has nowhere else to keep one and must not re-process
+every reply on the next cycle. A **standing session**'s binding and cursor also stay
+here: a standing session belongs to no work item and has no record to be filed under.
+`pending` (since
 [issue-349](https://github.com/MadaraUchiha-314/the-loop/issues/349)) holds the questions
 the-loop is still waiting on: a top-level message that named no repository it knows, kept
 under its own `ts` with the asking member, the text the issue will be composed from, the

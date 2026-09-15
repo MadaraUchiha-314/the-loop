@@ -4050,3 +4050,80 @@ def test_the_daemon_binds_sources_to_the_resolved_host(
     providers = daemon._build_providers(data, default_label=LABEL)
     assert all(isinstance(p, GitHubPollProvider) for p in providers)
     assert [s.host for p in providers for s in getattr(p, "repos")] == [expected]
+
+
+# -- one portable record per work item (issue-368) -----------------------------
+
+
+def test_a_labelled_pull_request_is_ledgered_under_the_work_item_it_delivers(tmp_path):
+    """R10.1, R10.2 — three pull requests must not mean four records.
+
+    The poller lists a labelled pull request as an item of its own; before
+    issue-368 it baselined each into a portable record of its own, so one work
+    item produced N+1 records and N+1 index entries.
+    """
+    from the_loop.workitem import POLL, PULL_REQUESTS
+
+    portable = tmp_path / "portable"
+    registry = SessionRegistry(tmp_path / "sessions")
+    pr = WorkItem("github", OWNER, REPO, 42, "pull-request", labels=[LABEL])
+    provider = FakeProvider(
+        items=[pr],
+        comments={42: []},
+        linked={"github:octo/repo#42": ["github:octo/repo#15"]},
+    )
+    store = WorkItemStore(portable)
+    make_poller(provider, registry, RecordingDispatcher(), PollState(store)).poll_once()
+
+    assert sorted(p.name for p in portable.glob("*.json")) == [
+        "github-octo-repo-15.json",
+        "index.json",
+    ]
+    assert store.section("github:octo/repo#15", POLL) is None
+    ledgers = store.section("github:octo/repo#15", PULL_REQUESTS) or {}
+    assert list(ledgers) == ["github:octo/repo#42"]
+    assert store.owner_of("github:octo/repo#42") == "github:octo/repo#15"
+
+
+def test_a_pull_request_that_delivers_nothing_keeps_its_own_record(tmp_path):
+    """R10.3 — a review, or a pull request that closes no issue, IS the work item."""
+    from the_loop.workitem import POLL
+
+    portable = tmp_path / "portable"
+    pr = WorkItem("github", OWNER, REPO, 42, "pull-request", labels=[LABEL])
+    provider = FakeProvider(items=[pr], comments={42: []}, linked={})
+    store = WorkItemStore(portable)
+    make_poller(
+        provider,
+        SessionRegistry(tmp_path / "sessions"),
+        RecordingDispatcher(),
+        PollState(store),
+    ).poll_once()
+
+    assert store.section("github:octo/repo#42", POLL) is not None
+    assert store.owner_of("github:octo/repo#42") is None
+
+
+def test_an_owner_already_ledgered_keeps_the_pull_requests_ledger(tmp_path):
+    """R10.2 — the portable ledgers answer before any linkage is re-read."""
+    from the_loop.workitem import PULL_REQUESTS
+
+    portable = tmp_path / "portable"
+    store = WorkItemStore(portable)
+    store.write_pull_request_ledger(
+        "github:octo/repo#15", "github:octo/repo#42", {"seenComments": ["old"]}
+    )
+    pr = WorkItem("github", OWNER, REPO, 42, "pull-request", labels=[LABEL])
+    # No linkage reported this cycle — the ledger is where the owner is found.
+    provider = FakeProvider(items=[pr], comments={42: []}, linked={})
+    make_poller(
+        provider,
+        SessionRegistry(tmp_path / "sessions"),
+        RecordingDispatcher(),
+        PollState(store),
+    ).poll_once()
+
+    assert (store.section("github:octo/repo#15", PULL_REQUESTS) or {}).get(
+        "github:octo/repo#42"
+    ) is not None
+    assert not (portable / "github-octo-repo-42.json").exists()

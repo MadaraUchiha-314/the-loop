@@ -24,7 +24,7 @@ import urllib.request
 
 import pytest
 
-from conftest import FakeTmux, StubInteractiveAdapter
+from conftest import FakeTmux, StubInteractiveAdapter, _freeze_legacy_graph
 from the_loop.collaborators import CollaboratorStore
 from the_loop.control import ControlConfig, ControlStore
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
@@ -854,8 +854,8 @@ def test_the_work_items_own_selection_decides_which_session_a_pr_talks_to(
     endpoint.harness_session_id = "pr-sess"
     registry.save_endpoint(REF, endpoint)
     if frozen is not None:
-        server_factory.dispatcher.control_store.record_frozen_graph(
-            REF, {"sessionPerPr": frozen}
+        _freeze_legacy_graph(
+            server_factory.dispatcher.control_store, REF, {"sessionPerPr": frozen}
         )
 
     assert (

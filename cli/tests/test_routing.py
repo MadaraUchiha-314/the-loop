@@ -13,7 +13,7 @@ import pytest
 
 from the_loop import cli_config
 from the_loop.control import ControlConfig
-from conftest import FakeTmux, StubInteractiveAdapter
+from conftest import FakeTmux, StubInteractiveAdapter, _freeze_legacy_graph
 from the_loop.sessions import (
     RegistryError,
     Session,
@@ -92,10 +92,14 @@ def test_registry_register_and_find_roundtrip(tmp_path):
     assert found.harness_session_id == "sess-1"
     assert found.status == "active"
     assert found.created_at  # timestamped
-    # the on-disk artifact is a single human-inspectable JSON file
+    # the on-disk artifact is a single human-inspectable JSON file: the work
+    # item's ref, and a map of endpoints keyed by the ref each serves (issue-368)
     files = list(tmp_path.glob("*.json"))
     assert len(files) == 1
-    assert json.loads(files[0].read_text())["workItem"]["ref"] == REF
+    record = json.loads(files[0].read_text())
+    assert record["workItem"] == REF
+    assert list(record["sessions"]) == [REF]
+    assert record["sessions"][REF]["harnessSessionId"] == "sess-1"
 
 
 def test_registry_refuses_second_active_session_unless_forced(tmp_path):
@@ -327,13 +331,18 @@ def test_an_unreadable_pull_request_entry_does_not_take_the_record_down(tmp_path
 
 
 def test_a_nested_pull_request_tree_is_flattened_on_read(tmp_path):
-    """One level only: a hand-edited record cannot build a tree to walk (R2.3)."""
+    """One level only: a hand-edited record cannot build a tree to walk (R2.3).
+
+    The map is flat by construction now (issue-368) — every endpoint is a key,
+    so there is nowhere to nest one. A `pullRequests` list smuggled into an
+    endpoint's handles is simply not read.
+    """
     registry = SessionRegistry(tmp_path)
     registry.register(make_session())
     registry.link_pull_request(REF, PR_REF)
     path = tmp_path / "github-octo-repo-15.json"
     data = json.loads(path.read_text())
-    data["pullRequests"][0]["pullRequests"] = [
+    data["sessions"][PR_REF]["pullRequests"] = [
         {
             "workItem": {"ref": "github:octo/repo#99"},
             "harness": "claude",
@@ -1403,7 +1412,7 @@ def _endpoint_ref_for(tmp_path, mode, routed, frozen=None, ref=REF):
         portable_dir=str(tmp_path / "portable"),
     )
     if frozen is not None:
-        dispatcher.control_store.record_frozen_graph(ref, {"sessionPerPr": frozen})
+        _freeze_legacy_graph(dispatcher.control_store, ref, {"sessionPerPr": frozen})
     registry.register(make_session(ref=ref))
     pr = pr_work_item(routed.event, routed.payload)
     assert pr is not None
@@ -1514,7 +1523,7 @@ def test_delivery_status_resolves_through_the_work_items_own_choice(tmp_path):
         tmux_config=TmuxConfig(session_per_pr="cross-repository"),
         portable_dir=str(tmp_path / "portable"),
     )
-    dispatcher.control_store.record_frozen_graph(REF, {"sessionPerPr": "never"})
+    _freeze_legacy_graph(dispatcher.control_store, REF, {"sessionPerPr": "never"})
     registry.register(make_session())
     cross = routed_cross_repo_pr(delivery="ds-1")
     dispatcher.handle(cross)

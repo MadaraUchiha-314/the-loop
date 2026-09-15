@@ -273,3 +273,76 @@ def test_a_record_with_only_ended_is_kept_and_indexed(tmp_path):
     assert "control" not in record or record["control"] is None
     index = json.loads((tmp_path / "portable" / INDEX_FILE).read_text())
     assert index["workItems"][0]["sections"] == ["ended"]
+
+
+# -- one portable record per work item (issue-368) -----------------------------
+
+
+def test_a_pull_requests_ledger_is_kept_under_its_owners_record(tmp_path):
+    """R10.1 — one work item, one record, however many pull requests deliver it."""
+    from the_loop.workitem import PULL_REQUESTS, WorkItemStore
+
+    store = WorkItemStore(tmp_path)
+    store.write_pull_request_ledger(
+        "github:octo/app#15", "github:octo/lib#7", {"seenComments": ["c1"]}
+    )
+    store.write_pull_request_ledger(
+        "github:octo/app#15", "github:octo/infra#3", {"seenComments": ["c2"]}
+    )
+    # One file, not three.
+    assert sorted(p.name for p in tmp_path.glob("*.json")) == [
+        "github-octo-app-15.json",
+        "index.json",
+    ]
+    assert store.pull_request_ledger("github:octo/app#15", "github:octo/lib#7") == {
+        "seenComments": ["c1"]
+    }
+    assert set(store.section("github:octo/app#15", PULL_REQUESTS) or {}) == {
+        "github:octo/lib#7",
+        "github:octo/infra#3",
+    }
+
+
+def test_the_owner_of_a_ledgered_pull_request_is_findable(tmp_path):
+    """R10.2 — a pull request already ledgered keeps that owner."""
+    from the_loop.workitem import WorkItemStore
+
+    store = WorkItemStore(tmp_path)
+    store.write_pull_request_ledger(
+        "github:octo/app#15", "github:octo/lib#7", {"seenComments": []}
+    )
+    assert store.owner_of("github:octo/lib#7") == "github:octo/app#15"
+    assert store.owner_of("github:octo/app#15") is None  # a work item owns itself
+    assert store.owner_of("github:octo/nope#1") is None
+
+
+def test_a_finished_pull_requests_ledger_is_dropped(tmp_path):
+    """R10.4 — a merged pull request is not listed again."""
+    from the_loop.workitem import PULL_REQUESTS, WorkItemStore
+
+    store = WorkItemStore(tmp_path)
+    store.write_pull_request_ledger(
+        "github:octo/app#15", "github:octo/lib#7", {"seenComments": ["c1"]}
+    )
+    store.write_pull_request_ledger("github:octo/app#15", "github:octo/lib#7", None)
+    assert store.section("github:octo/app#15", PULL_REQUESTS) is None
+    assert store.owner_of("github:octo/lib#7") is None
+
+
+def test_the_index_names_the_pull_requests_a_record_links(tmp_path):
+    """R10.7 — the directory still answers "what is tracked?" at a glance."""
+    import json
+
+    from the_loop.workitem import WorkItemStore
+
+    store = WorkItemStore(tmp_path)
+    store.write_pull_request_ledger(
+        "github:octo/app#15", "github:octo/lib#7", {"seenComments": []}
+    )
+    store.write_pull_request_ledger(
+        "github:octo/app#15", "github:octo/app#16", {"seenComments": []}
+    )
+    entry = json.loads((tmp_path / "index.json").read_text())["workItems"][0]
+    assert entry["ref"] == "github:octo/app#15"
+    assert entry["pullRequests"] == ["github:octo/app#16", "github:octo/lib#7"]
+    assert "pullRequests" in entry["sections"]

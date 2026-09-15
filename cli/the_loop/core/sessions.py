@@ -481,6 +481,36 @@ def _pull_request_ref(work_item: WorkItemRef, given: str) -> WorkItemRef:
     return replace(work_item, number=number)
 
 
+def _record_pull_request_in_state(
+    work_item: WorkItemRef,
+    pr: WorkItemRef,
+    config: Optional[dict],
+    registry: SessionRegistry,
+) -> None:
+    """Record ``pr`` in ``work_item``'s checked-in state (issue-368, R2.1).
+
+    Through the same :class:`~the_loop.graphlink.GraphLink` the daemon uses, so
+    the write goes through one set of guards — the checkout belongs to this work
+    item, the spec directory is inside it, the state lock is held — whichever
+    side records the pull request. The checkout is the session record's: a work
+    item with no session on this machine has no checkout to write into, and the
+    first event that routes for the pull request records it instead.
+
+    Best-effort by contract, like every other GraphLink call: the registry write
+    above already made routing work.
+    """
+    record = registry.find_by_work_item(work_item, include_closed=True)
+    if record is None or not record.cwd:
+        return
+    from ..graphlink import GraphLink, GraphLinkConfig
+
+    link = GraphLink(
+        GraphLinkConfig.from_mapping((_routing(config).get("graph")) or {}),
+        control_store=_control_store(config),
+    )
+    link.on_pr_linked(work_item, pr, record.cwd, linked_by="session")
+
+
 def link_pull_request(
     ref: str,
     pull_request: str,
@@ -531,6 +561,13 @@ def link_pull_request(
             ],
         }
     linked = registry.link_pull_request(work_item, pr) is not None
+    # The same fact in the work item's OWN file (issue-368): the registry entry
+    # is what routes this pull request's events on this machine, and the state
+    # entry is the pull request itself — repository, number, URL, inner-loop
+    # directory, upstream state — recorded where it travels and where a reviewer
+    # reads it. Best-effort and idempotent: the session that opened the pull
+    # request re-runs this step, and a second call writes nothing.
+    _record_pull_request_in_state(work_item, pr, config, registry)
     text = (
         f"recorded {pr.ref} as delivering {work_item.ref}"
         if linked

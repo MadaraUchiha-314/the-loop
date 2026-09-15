@@ -19,6 +19,8 @@ from the_loop.channels import inbound, watcher
 from the_loop.channels.slack import DEFAULT_BOT_TOKEN_ENV
 from the_loop.core import sessions as core_sessions
 
+from conftest import _state_with_stores
+
 
 class FakeSlackClient:
     def __init__(self):
@@ -97,9 +99,8 @@ def test_ask_lands_on_the_work_item_and_fans_out(tmp_path, monkeypatch):
     assert "github:o/r#7" in client.posted[0]["text"]  # the root is the work item's
     assert client.posted[1]["thread_ts"] == "1700.000001"
     assert "A or B?" in client.posted[1]["text"]
-    from the_loop.channels.state import ChannelState
 
-    state = ChannelState.load(tmp_path / "state" / "channels" / "slack.json")
+    state = _state_with_stores(tmp_path / "state" / "channels" / "slack.json")
     assert state.work_item_for("1700.000001") == "github:o/r#7"
 
 
@@ -427,7 +428,6 @@ def test_every_message_about_a_work_item_is_a_reply_in_its_one_thread(
     from the_loop.channels.base import Event
     from the_loop.channels.bus import publish
     from the_loop.channels.publishers import publish_comment
-    from the_loop.channels.state import ChannelState
 
     client = _enabled_client(monkeypatch)
     config = cli_config(
@@ -461,7 +461,7 @@ def test_every_message_about_a_work_item_is_a_reply_in_its_one_thread(
     assert "A or B?" in replies[0]["text"]
     assert "design.md is ready" in replies[1]["text"]
     assert "B, please" in replies[2]["text"]
-    state = ChannelState.load(tmp_path / "state" / "channels" / "slack.json")
+    state = _state_with_stores(tmp_path / "state" / "channels" / "slack.json")
     record = state.conversation("github:o/r#7")
     assert record is not None and record["thread"] == "1700.000001"
 
@@ -527,7 +527,6 @@ def test_a_kickoff_thread_is_the_work_items_conversation(tmp_path, monkeypatch):
     """
     from the_loop.channels.base import Event
     from the_loop.channels.bus import publish
-    from the_loop.channels.state import ChannelState
 
     client = _enabled_client(monkeypatch)
     config = cli_config(
@@ -549,7 +548,7 @@ def test_a_kickoff_thread_is_the_work_items_conversation(tmp_path, monkeypatch):
     client.history.append({"ts": "1600.2", "user": "UHUMAN", "text": "Ship it"})
     assert inbound.poll_once(config)["created"] == 1
 
-    state = ChannelState.load(tmp_path / "state" / "channels" / "slack.json")
+    state = _state_with_stores(tmp_path / "state" / "channels" / "slack.json")
     record = state.conversation("github:o/r#42")
     assert record is not None
     assert record["thread"] == "1600.2" and record["origin"] == "kickoff"
@@ -600,8 +599,19 @@ def test_a_pre_issue_312_state_file_keeps_its_threads(tmp_path, monkeypatch):
         record=False,
     )
     assert len(client.posted) == 1 and client.posted[0]["thread_ts"] == "1500.1"
+    # The binding is honoured from the file and MOVED to the work item's
+    # portable record on that first write (issue-368, R5.4) — the file stops
+    # carrying bindings, so a binding left only here would be lost.
+    record = json.loads(
+        (tmp_path / "state" / "portable" / "github-o-r-7.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert record["channels"]["slack"]["thread"] == "1500.1"
     raw = json.loads(path.read_text(encoding="utf-8"))
-    assert raw["conversations"]["github:o/r#7"]["thread"] == "1500.1"
+    assert "conversations" not in raw and "threads" not in raw
+    # The cursor stays in this file while no session record on this machine can
+    # hold it: losing it would re-process every reply in the thread.
     assert raw["cursors"]["1500.1"] == "1500.3"
 
 
@@ -741,7 +751,6 @@ def test_a_start_opens_the_work_items_thread_before_any_event(tmp_path, monkeypa
 
     Requirement: docs/specs/issue-317/requirements.md R1.1, R1.2, R1.7, R2.1
     """
-    from the_loop.channels.state import ChannelState
 
     dispatcher, registry, tmux, client, config = _start_setup(tmp_path, monkeypatch)
     labeled, start = _start_events()
@@ -756,7 +765,7 @@ def test_a_start_opens_the_work_items_thread_before_any_event(tmp_path, monkeypa
     root = client.posted[0]
     assert root["thread_ts"] is None and START_REF in root["text"]
     state_path = tmp_path / "state" / "channels" / "slack.json"
-    record = ChannelState.load(state_path).conversation(START_REF)
+    record = _state_with_stores(state_path).conversation(START_REF)
     assert record is not None and record["origin"] == "start"
     assert record["thread"] == "1700.000001"
 
@@ -782,7 +791,6 @@ def test_a_refused_start_opens_no_thread_scenario(tmp_path, monkeypatch):
 
     Requirement: docs/specs/issue-317/requirements.md R1.4
     """
-    from the_loop.channels.state import ChannelState
 
     dispatcher, registry, tmux, client, _ = _start_setup(tmp_path, monkeypatch)
     _, start = _start_events(labelled=False)
@@ -793,7 +801,7 @@ def test_a_refused_start_opens_no_thread_scenario(tmp_path, monkeypatch):
         dispatcher.stop(timeout=5)
     assert tmux.spawns == [] and client.posted == []
     state_path = tmp_path / "state" / "channels" / "slack.json"
-    assert ChannelState.load(state_path).conversation(START_REF) is None
+    assert _state_with_stores(state_path).conversation(START_REF) is None
 
 
 def test_a_restarted_work_item_keeps_its_thread(tmp_path, monkeypatch):
@@ -806,7 +814,6 @@ def test_a_restarted_work_item_keeps_its_thread(tmp_path, monkeypatch):
 
     Requirement: docs/specs/issue-317/requirements.md R1.3
     """
-    from the_loop.channels.state import ChannelState
 
     dispatcher, registry, tmux, client, _ = _start_setup(tmp_path, monkeypatch)
     labeled, start = _start_events()
@@ -827,7 +834,7 @@ def test_a_restarted_work_item_keeps_its_thread(tmp_path, monkeypatch):
         dispatcher.stop(timeout=5)
     assert len(client.posted) == 1
     state_path = tmp_path / "state" / "channels" / "slack.json"
-    record = ChannelState.load(state_path).conversation(START_REF)
+    record = _state_with_stores(state_path).conversation(START_REF)
     assert record is not None and record["thread"] == "1700.000001"
     assert record["origin"] == "start"
 
@@ -844,7 +851,6 @@ def test_a_channel_outage_never_fails_the_spawn(tmp_path, monkeypatch):
     Requirement: docs/specs/issue-317/requirements.md R1.5 (A3)
     """
     from the_loop import eventlog
-    from the_loop.channels.state import ChannelState
 
     class Flaky(FakeSlackClient):
         down = True
@@ -875,7 +881,7 @@ def test_a_channel_outage_never_fails_the_spawn(tmp_path, monkeypatch):
     assert failed[0]["channel"] == "slack" and failed[0]["work_item"] == START_REF
     assert "slack is down" in failed[0]["error"]
     state_path = tmp_path / "state" / "channels" / "slack.json"
-    assert ChannelState.load(state_path).conversation(START_REF) is None
+    assert _state_with_stores(state_path).conversation(START_REF) is None
 
     client.down = False
     monkeypatch.setattr(
@@ -885,7 +891,7 @@ def test_a_channel_outage_never_fails_the_spawn(tmp_path, monkeypatch):
     )
     core_sessions.ask_session(START_REF, "A or B?", config=config)
     assert len(client.posted) == 2  # the root, then the ask as its first reply
-    record = ChannelState.load(state_path).conversation(START_REF)
+    record = _state_with_stores(state_path).conversation(START_REF)
     assert record is not None and record["origin"] == "event"
 
 
@@ -1809,7 +1815,6 @@ def test_an_ambiguous_kickoff_prefix_is_refused_in_the_thread(tmp_path, monkeypa
 
     Requirement: docs/specs/issue-341/requirements.md R2.3, R2.5
     """
-    from the_loop.channels.state import ChannelState
 
     client = _enabled_client(monkeypatch)
     config, calls = _kickoff_config(
@@ -1830,7 +1835,7 @@ def test_an_ambiguous_kickoff_prefix_is_refused_in_the_thread(tmp_path, monkeypa
     assert ("C123", "1600.2", "warning") in client.reactions
     said = [p for p in client.posted if p["thread_ts"] == "1600.2"][-1]["text"]
     assert "`expertise-help/slim-gym`" in said and "`other-org/slim-gym`" in said
-    state = ChannelState.load(tmp_path / "state" / "channels" / "slack.json")
+    state = _state_with_stores(tmp_path / "state" / "channels" / "slack.json")
     assert state.conversations == {}
 
 

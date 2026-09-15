@@ -585,6 +585,14 @@ EVENT_TYPES: Dict[str, str] = {
         "with or without a session on this machine; the attention surfaces "
         "read it to demote the item (issue-329)."
     ),
+    "work_item.pull_request_ended": (
+        "A pull request delivering a tracked work item merged or closed "
+        "(work_item: the owner, pull_request, state: merged | closed) — "
+        "issue-368. The pull request's upstream state is recorded in the work "
+        "item's own state file and its poll ledger is dropped from the owner's "
+        "portable record. No `ended` stamp and no record of its own: a pull "
+        "request that delivers a work item is not a work item."
+    ),
     "work_item.reopened": (
         "A work item's `ended` stamp was cleared because the item is open "
         "again (work_item, source: webhook — a `reopened` event — or poll — "
@@ -836,15 +844,15 @@ EVENT_TYPES: Dict[str, str] = {
         "(cli) naming a node the pointer already reached (work_item, token, "
         "via, why). The declaration never takes effect; the full process runs."
     ),
-    "graph.frozen": (
-        "A work item's phase selection was frozen: the resolved graph — every "
-        "node with whether it is walked or skipped — was recorded and pushed to "
-        "the portable session record (work_item). issue-177."
-    ),
-    "graph.frozen_publish_failed": (
-        "The frozen graph could not be written to the portable session record "
-        "(work_item, error). Best-effort: the selection itself still stands, "
-        "and work-item-state.json keeps the authoritative copy. issue-177."
+    "graph.pull_request_linked": (
+        "A pull request was recorded in the WORK ITEM's own checked-in state as "
+        "delivering it (work_item, pull_request, via: session | event) — "
+        "issue-368. The repository's half of the fact `session.pr_linked` "
+        "records on this machine: a pull request is an object of the "
+        "repository, so it travels on the work item's branch with its "
+        "repository, number, URL, inner-loop directory and upstream state, "
+        "instead of existing only in a session record that never leaves the "
+        "machine that wrote it."
     ),
     "graph.node_skipped": (
         "The pointer routed around a declared-skipped node along its "

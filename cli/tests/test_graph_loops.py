@@ -420,7 +420,11 @@ def test_on_pr_spawn_enters_the_inner_loop_only(checkout):
     spec = checkout / "docs" / "specs" / "issue-15"
     inner = WorkItemState.load(inner_loop_state_dir(spec, 16), "issue-15")
     assert inner.current_node == "implementation"
-    assert inner.session == {"id": "s-1", "runner": "tmux", "alive": True}
+    # No session handle in the checked-in state (issue-368, R3.1): the inner
+    # loop's conversation is a handle to this machine, held by the registry.
+    assert "s-1" not in (
+        inner_loop_state_dir(spec, 16) / "work-item-state.json"
+    ).read_text(encoding="utf-8")
     assert WorkItemState.load(spec, "issue-15").current_node == ""  # outer untouched
 
 

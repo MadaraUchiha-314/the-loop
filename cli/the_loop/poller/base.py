@@ -20,6 +20,13 @@ from ..sessions import WorkItemRef, host_from_url
 from ..webhook.router import RoutedEvent
 
 
+#: The ``kind`` of a listed item that is a pull request. Named here rather than
+#: in one provider because the poller core branches on it (issue-368): a pull
+#: request's poll ledger is kept under the work item it delivers, so the core has
+#: to know which listed items may have an owner at all.
+KIND_PULL_REQUEST = "pull-request"
+
+
 class ProviderError(Exception):
     """A provider failed to talk to its backing system (network, auth, parse)."""
 
@@ -89,7 +96,8 @@ class WorkItem:
     owner: str
     repo: str
     number: int
-    kind: str  # provider vocabulary, e.g. "issue" | "pull-request"
+    #: Provider vocabulary — :data:`KIND_PULL_REQUEST` or ``"issue"``.
+    kind: str
     title: str = ""
     url: str = ""
     author: str = ""  # login that created the item (authorization guard)

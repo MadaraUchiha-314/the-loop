@@ -56,7 +56,7 @@ from .base import Event
 from .github import GitHubLedger
 from ..repos import parse_repo_path, repository_keys
 from .slack import SlackChannelConfig, slack_state_path
-from .state import ChannelState, canonical
+from .state import ChannelState, ChannelStores, canonical
 
 logger = logging.getLogger("the-loop.channels")
 
@@ -306,7 +306,8 @@ def may_target(ref: WorkItemRef, cli_config: Optional[Mapping]) -> bool:
     except Exception as exc:  # noqa: BLE001 — an unreadable registry widens nothing
         logger.debug("managed set unreadable: %s", exc)
     try:
-        state = ChannelState.load(slack_state_path(cli_config))
+        path = slack_state_path(cli_config)
+        state = ChannelState.load(path, ChannelStores.beside(path))
         if wanted in state.conversations:
             return True
     except Exception as exc:  # noqa: BLE001

@@ -35,7 +35,16 @@ from typing import List, Tuple
 
 import pytest
 
-from the_loop.state import DEFAULT_STATE_ROOT, GENERATED_PATHS, StateLayout
+from the_loop.state import (
+    ATTRIBUTE_KINDS,
+    ATTRIBUTES,
+    DEFAULT_STATE_ROOT,
+    GENERATED_PATHS,
+    MACHINE_FILE,
+    OPERATOR_FILE,
+    REPOSITORY_FILE,
+    StateLayout,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 STATE_DOC = REPO_ROOT / "docs" / "cli" / "state.md"
@@ -228,3 +237,113 @@ def test_block_ignores_the_atomic_writers_temporaries() -> None:
     assert _is_ignored(block, ".the-loop/portable/tmp9k2f.tmp")
     # ...while the record it was about to become stays tracked.
     assert not _is_ignored(block, ".the-loop/portable/github-octo-repo-15.json")
+
+
+# -- the attribute classification (issue-368) ----------------------------------
+#
+# `GENERATED_PATHS` above answers "does this FILE travel?". These answer the
+# question that had no answer at all until issue-368 — "where does this
+# ATTRIBUTE go?" — which is why a pull request came to be recorded only in a
+# file that never travels, a Slack thread only in a machine-wide one, and a
+# harness session id in a repository. The rule is data (`ATTRIBUTES`), so the
+# next attribute cannot be added without answering "whose is this?".
+
+
+def _state_keys() -> set:
+    """Every top-level key the work item's own checked-in file is written with."""
+    from the_loop.graph.state import WorkItemState
+
+    return set(WorkItemState(work_item="issue-1").as_dict())
+
+
+def _portable_keys() -> set:
+    """Every section the operator's record may carry, plus its identity keys."""
+    from the_loop.workitem import SEALED, SECTIONS
+
+    return set(SECTIONS) | {"ref", "url", SEALED}
+
+
+def _registry_keys() -> set:
+    """Every top-level key a machine-local session record is written with."""
+    from the_loop.sessions import Session, WorkItemRef
+
+    session = Session(
+        work_item=WorkItemRef.parse("github:octo/repo#15"),
+        harness="claude",
+        harness_session_id="s-1",
+        cwd=".",
+    )
+    session.channels = {"slack": {"cursors": {}}}
+    return set(session.record_dict())
+
+
+def test_every_attribute_is_classified() -> None:
+    """S6 — a file cannot grow a key the rule does not name."""
+    declared = {(a.file, a.key) for a in ATTRIBUTES}
+    for file_id, keys in (
+        (REPOSITORY_FILE, _state_keys()),
+        (OPERATOR_FILE, _portable_keys()),
+        (MACHINE_FILE, _registry_keys()),
+    ):
+        for key in keys:
+            assert (file_id, key) in declared, (
+                f"{file_id} writes {key!r}, which no ATTRIBUTES entry claims — "
+                "say which kind of thing it is, and the rule will say which "
+                "file it belongs in"
+            )
+
+
+def test_no_attribute_is_declared_for_a_key_that_is_not_written() -> None:
+    """S7 — a declaration that outlived its key is a rule about nothing."""
+    written = {
+        REPOSITORY_FILE: _state_keys(),
+        OPERATOR_FILE: _portable_keys(),
+        MACHINE_FILE: _registry_keys(),
+    }
+    for attribute in ATTRIBUTES:
+        assert attribute.key in written[attribute.file], (
+            f"ATTRIBUTES claims {attribute.key!r} in {attribute.file}, which "
+            "does not write it"
+        )
+
+
+def test_every_kind_sits_in_the_file_its_rule_allows() -> None:
+    """S8 — the rule, enforced: a machine handle can never be in a tracked file.
+
+    This is the assertion the whole table exists for. `session` was in the
+    repository's file for two releases because nothing could state that a
+    harness conversation id is a machine handle and that a machine handle is
+    never checked in.
+    """
+    for attribute in ATTRIBUTES:
+        allowed, why = ATTRIBUTE_KINDS[attribute.kind]
+        if not allowed:
+            continue  # `derived` lives wherever its reader is
+        assert attribute.file == allowed, (
+            f"{attribute.key!r} is a {attribute.kind}, which belongs in "
+            f"{allowed} — {why} — but it is declared in {attribute.file}"
+        )
+
+
+def test_no_machine_handle_is_in_a_tracked_file() -> None:
+    """S9 — the same rule from the other side, stated as the property it buys."""
+    tracked = {REPOSITORY_FILE, OPERATOR_FILE}
+    handles = [a for a in ATTRIBUTES if a.kind == "machine-handle"]
+    assert handles, "the machine's file must hold something"
+    for attribute in handles:
+        assert attribute.file not in tracked, (
+            f"{attribute.key!r} is a machine handle in {attribute.file}, which "
+            "is tracked in git — a conversation id, a tmux name or an absolute "
+            "path must never reach a repository"
+        )
+
+
+@needs_docs
+def test_the_attribute_table_is_documented() -> None:
+    """S10 — `docs/cli/state.md` names every attribute the code declares."""
+    page = (REPO_ROOT / "docs" / "cli" / "state.md").read_text(encoding="utf-8")
+    for attribute in ATTRIBUTES:
+        assert f"`{attribute.key}`" in page, (
+            f"{attribute.key!r} ({attribute.file}) is declared in ATTRIBUTES but "
+            "docs/cli/state.md does not mention it"
+        )

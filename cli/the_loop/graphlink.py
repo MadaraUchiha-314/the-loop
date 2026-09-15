@@ -467,7 +467,6 @@ class GraphLink:
         control_store: Optional[ControlStore] = None,
         authorized_users: Optional[Sequence[str]] = None,
         assignment_sink: Optional[Any] = None,
-        frozen_graph_sink: Optional[Any] = None,
     ):
         self.config = config
         self.control = control or ControlConfig()
@@ -485,7 +484,6 @@ class GraphLink:
         # phase-selection gate's frozen graph reaches the portable session
         # record. None on the CLI path — `work-item-state.json` is the
         # authoritative copy and is checked in anyway.
-        self.frozen_graph_sink = frozen_graph_sink
 
     # -- entry points -----------------------------------------------------------
 
@@ -577,7 +575,6 @@ class GraphLink:
 
         def call(rt, item):
             report = rt.start(item, work_item.ref)
-            self._bind_session(rt, item, session_id, runner)
             if report is None or not self._entered_a_human_gate(rt, report):
                 return
             rt.advance(
@@ -609,25 +606,17 @@ class GraphLink:
         )
 
     def on_close(self, work_item: WorkItemRef, cwd: str) -> None:
-        """The item's session ended — mark the graph's binding dead (issue-148, D6).
+        """The item's session ended (issue-148, D6) — nothing to record here now.
 
-        Best-effort like everything here: a failure leaves a stale binding,
-        which :meth:`Runtime.resolve_session` treats as inheritable until the
-        next spawn re-records it — the registry, not the binding, decides what
-        is actually dispatched to.
+        The graph kept a `session` block in the checked-in state file and marked
+        it dead from here. Issue-368 moved the binding to the machine's own
+        session registry, which the close path already transitions to ``closed``:
+        `session: inherit` asks the registry, so a closed record answers "no live
+        session" without a second copy of the fact in a repository. Kept as a
+        no-op entry point because both ingresses call it on every close and the
+        seam is worth keeping named.
         """
-
-        def call(rt, item):
-            from .graph.state import WorkItemState
-
-            wi = rt.work_item(item)
-            state_dir = rt.state_dir(wi) if hasattr(rt, "state_dir") else wi.spec_dir
-            state = WorkItemState.load(state_dir, item)
-            if state.session:
-                state.session = {**state.session, "alive": False}
-                state.save(state_dir)
-
-        self._guarded("close", work_item, cwd, call)
+        return None
 
     def on_cleanup(self, work_item: WorkItemRef, cwd: str, reason: str = "") -> None:
         """The item's LOCAL resources are about to go — record it (issue-186).
@@ -687,7 +676,6 @@ class GraphLink:
 
         def call(rt, item):
             rt.start(item, pr.ref)
-            self._bind_session(rt, item, session_id, runner)
 
         self._guarded(
             "start",
@@ -730,6 +718,79 @@ class GraphLink:
             pr_number=pr.number,
             pr_repo=_pr_repo(work_item, pr),
         )
+
+    def on_pr_linked(
+        self,
+        work_item: WorkItemRef,
+        pr: WorkItemRef,
+        cwd: str,
+        linked_by: str = "event",
+    ) -> None:
+        """Record in the work item's own file that ``pr`` delivers it (issue-368).
+
+        A pull request is a remote entity of the **repository**, so it belongs on
+        the work item's branch — where CI, a reviewer and another machine can all
+        see it — and not only in `<state.root>/local/<slug>.json`, which never
+        travels and which a hand-off therefore lost. The two writers are the two
+        moments the fact becomes known: the session that opened the pull request
+        (`the-loop sessions link-pr`, ``linked_by="session"``) and the first
+        event that routes for it (``"event"``).
+
+        Idempotent by ref, like the registry's own linking, so a comment on a
+        pull request does not grow the list once per delivery. Best-effort like
+        everything here: the registry write already made routing work, and a
+        state write that could not be taken is retried by the next event for
+        that pull request.
+        """
+
+        def call(rt, item):
+            from .graph.state import WorkItemState
+
+            wi = rt.work_item(item)
+            state_dir = rt.state_dir(wi)
+            state = WorkItemState.load(state_dir, item)
+            entry = state.link_pr(
+                pr.ref,
+                repository=f"{pr.owner}/{pr.repo}",
+                number=pr.number,
+                url=pr.url,
+                linked_by=linked_by,
+            )
+            if entry is None:
+                return
+            state.save(state_dir)
+            eventlog.emit(
+                "graph.pull_request_linked",
+                work_item=work_item.ref,
+                pull_request=pr.ref,
+                via=linked_by,
+            )
+
+        self._guarded("advance", work_item, cwd, call)
+
+    def on_pr_state(
+        self, work_item: WorkItemRef, pr: WorkItemRef, cwd: str, state: str
+    ) -> None:
+        """Record a pull request's upstream state in the work item's own file.
+
+        ``merged`` or ``closed``, written by the daemon's one close path
+        (issue-368, R2.2). The session endpoint's own ``status`` is a handle's
+        status and is closed separately — a tmux session retained after a merge
+        is still attachable, which is a different fact from "this pull request
+        is merged".
+        """
+
+        def call(rt, item):
+            from .graph.state import WorkItemState
+
+            wi = rt.work_item(item)
+            state_dir = rt.state_dir(wi)
+            recorded = WorkItemState.load(state_dir, item)
+            if recorded.set_pr_state(pr.ref, state) is None:
+                return
+            recorded.save(state_dir)
+
+        self._guarded("advance", work_item, cwd, call)
 
     def on_pr_close(
         self, work_item: WorkItemRef, pr: WorkItemRef, cwd: str, merged: bool
@@ -895,13 +956,6 @@ class GraphLink:
                     "assignmentPr": pr_number,
                     "assignmentPrRepo": pr_repo,
                 }
-            if self.frozen_graph_sink is not None:
-                # The frozen graph is the WORK ITEM's, whichever loop froze it.
-                frozen_sink, item_ref = self.frozen_graph_sink, work_item
-                runtime.config = {
-                    **runtime.config,
-                    "frozenGraphSink": lambda frozen: frozen_sink(item_ref, frozen),
-                }
             # Write actions hold the work-item-state lock (issue-148): the session's
             # `graph complete` is a second writer beside this daemon, and the
             # load→mutate→save windows must not interleave. `context` stays
@@ -977,24 +1031,6 @@ class GraphLink:
         except Exception as exc:  # noqa: BLE001 — a fake runtime, or a node that went
             logger.debug("could not resolve the entered node's actor: %s", exc)
             return False
-
-    @staticmethod
-    def _bind_session(rt: Any, item_id: str, session_id: str, runner: str) -> None:
-        """Record which session works this item (issue-148, D6).
-
-        Runs inside :meth:`_guarded`'s state lock — it must not re-acquire it.
-        The binding follows the runtime's OWN state location (issue-172): an
-        inner loop's session binds inside its pr-loops/pr-<n>/ state, never the
-        outer one — a PR's conversation must not become the inheritance target
-        for the work item's human gates.
-        """
-        from .graph.state import WorkItemState
-
-        item = rt.work_item(item_id)
-        state_dir = rt.state_dir(item) if hasattr(rt, "state_dir") else item.spec_dir
-        state = WorkItemState.load(state_dir, item_id)
-        state.session = {"id": session_id, "runner": runner, "alive": True}
-        state.save(state_dir)
 
     @staticmethod
     def _pending_context(rt: Any, state: Any) -> Optional[GraphContext]:

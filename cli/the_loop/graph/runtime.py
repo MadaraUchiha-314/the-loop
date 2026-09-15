@@ -293,7 +293,7 @@ class Runtime:
         )
 
     def resolve_session(
-        self, node, state: "WorkItemState"
+        self, node, state: "WorkItemState", item: Optional[WorkItem] = None
     ) -> Tuple[Optional[Dict[str, Any]], str]:
         """The session a node runs in, and how it was arrived at (R7.3, R7.4).
 
@@ -304,12 +304,22 @@ class Runtime:
         requirements.md, design.md and tasks.md are enough to restart (the third
         was the execution log until issue-365 retired it; the task list carries
         what the narrative claimed to — what is done, and what is next).
+
+        The binding is read from **this machine's session registry** (issue-368,
+        R3.2), not from a `session` block in the checked-in state file: a harness
+        conversation id is a handle to one machine, so it lives in
+        `<state.root>/local/<slug>.json` with every other handle and never in a
+        repository. The ref asked for is this runtime's own — the work item's for
+        the outer loop, the pull request's for an inner one — so a PR's
+        conversation never becomes the inheritance target for the work item's
+        human gates. No registry (CI, an embedded caller) means no live session
+        to inherit, and the fallback is the right answer there.
         """
         if node.session != "inherit":
             return None, "new"
-        bound = state.session
-        if bound and bound.get("alive", True):
-            return dict(bound), "inherited"
+        bound = self._bound_session(item)
+        if bound:
+            return bound, "inherited"
         return (
             {
                 "seed_artifacts": [
@@ -320,6 +330,33 @@ class Runtime:
             },
             "fresh-with-artifacts",
         )
+
+    def _bound_session(self, item: Optional[WorkItem]) -> Optional[Dict[str, Any]]:
+        """This machine's live session for the ref this runtime walks (issue-368).
+
+        ``{"id": <harness conversation>, "runner": "tmux", "alive": True}`` — the
+        shape the gate consumed when the binding was a block in the state file —
+        or ``None`` when there is no registry to ask, the ref will not parse, or
+        nothing live serves it. The ref is **this runtime's own**: an inner loop's
+        ``item.ref`` is its pull request's, so a PR's conversation is never the
+        inheritance target for the work item's human gates. Every failure answers
+        ``None``: a gate that cannot find a session gets a fresh one seeded with
+        the artifacts, which is a slower answer and never a wrong one.
+        """
+        registry_dir = str(self.config.get("registryDir") or "")
+        ref = str(getattr(item, "ref", "") or "")
+        if not registry_dir or not ref:
+            return None
+        try:
+            from ..sessions import SessionRegistry
+
+            session = SessionRegistry(registry_dir).session_for(ref)
+        except (ValueError, OSError) as exc:
+            logger.debug("could not resolve a bound session for %s: %s", ref, exc)
+            return None
+        if session is None or not session.harness_session_id:
+            return None
+        return {"id": session.harness_session_id, "runner": "tmux", "alive": True}
 
     def _context(
         self,
@@ -472,10 +509,21 @@ class Runtime:
                 if per_pr:
                     # How many sessions this work item's pull requests get
                     # (issue-260) — the third thing the one signed reply freezes.
-                    # No `WorkItemState` field of its own, unlike `surface`: nothing
-                    # here reads it back, and the reader that does is the daemon,
-                    # through the frozen graph the sink below publishes.
+                    # A field of its own since issue-368: the daemon used to read
+                    # it from the portable record's `graph` section, which was a
+                    # second copy of a decision this file already held half of.
                     record["sessionPerPr"] = per_pr
+                    state.session_per_pr = per_pr
+                # What this work item runs AS (issue-358), frozen by the same
+                # reply and recorded in the same place for the same reason.
+                # "" is *no choice*, which is a different fact from "the
+                # operator's default" — so an empty value is recorded as an
+                # empty value rather than skipped.
+                for key in ("model", "effort"):
+                    value = str(result.data.get(key) or "")
+                    if value:
+                        record[key] = value
+                        setattr(state, key, value)
                 goal = result.data.get("goal")
                 if goal:
                     # The contribution loop's goal gate (issue-185): the goal
@@ -491,8 +539,6 @@ class Runtime:
                     record["brief"] = dict(brief)
                 state.decisions.setdefault(str(marker), record)
                 decided = True
-                if frozen:
-                    self._publish_frozen_graph(item, frozen)
         declared: Dict[str, Any] = {}
         chosen_in: Dict[str, Any] = {}
         for result in outcome.results:
@@ -541,31 +587,6 @@ class Runtime:
                 sorted(chosen_in),
             )
         return True
-
-    def _publish_frozen_graph(self, item: WorkItem, frozen: Mapping[str, Any]) -> None:
-        """Push the frozen graph to the portable work-item record, if a sink exists.
-
-        Same shape as the assignment channel (issue-172): the **daemon** injects
-        a callable, because the registry is the daemon's and the runtime is
-        repo-scoped. On the CLI path there is no sink and the frozen graph lives
-        in `work-item-state.json` alone, which is checked in and reviewable anyway.
-        Best-effort: a failed publish never gates the selection.
-        """
-        sink = self.config.get("frozenGraphSink")
-        if not callable(sink):
-            return
-        try:
-            sink(dict(frozen))
-        except Exception as exc:  # noqa: BLE001 — never gate on the sink
-            logger.warning("could not publish the frozen graph: %s", exc)
-            eventlog.emit(
-                "graph.frozen_publish_failed",
-                level="warning",
-                work_item=item.ref,
-                error=str(exc),
-            )
-            return
-        eventlog.emit("graph.frozen", work_item=item.ref)
 
     def _route_skips(
         self,
@@ -1059,7 +1080,7 @@ class Runtime:
             # session this gate runs in, and record how it was arrived at. The
             # registry stays the dispatch authority — this is the graph's own
             # binding, consulted and logged, not a routing override.
-            binding, how = self.resolve_session(entry_node, state)
+            binding, how = self.resolve_session(entry_node, state, item)
             eventlog.emit(
                 "graph.gate_session",
                 work_item=item.ref,

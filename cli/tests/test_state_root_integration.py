@@ -343,3 +343,107 @@ def test_rival_roots_survives_an_environment_with_no_home(tmp_path, monkeypatch)
     monkeypatch.chdir(tmp_path)
 
     assert rival_roots(layout_from_config({"state": {"root": str(tmp_path)}})) == ()
+
+
+def test_a_hand_off_carries_the_pull_requests_and_the_thread(tmp_path):
+    """Scenario: A hand-off carries the pull requests and the thread
+
+    Given a work item delivered by three pull requests, each with its own
+      session, and one Slack thread carrying its conversation
+    When the repository's branch and the operator's portable records are
+      copied to a second machine whose local state is empty
+    Then that machine knows which three pull requests deliver the work item,
+      what the work item runs on, that it is armed and who may speak to it,
+      and which thread carries the conversation
+    And it knows none of the first machine's session handles, which is correct
+
+    Requirement: docs/specs/issue-368/requirements.md R2.1, R2.2, R2.3
+    """
+    import json
+    import shutil
+
+    from the_loop.graph.state import WorkItemState
+    from the_loop.sessions import Session, SessionRegistry, WorkItemRef
+    from the_loop.workitem import CONTROL, WorkItemStore
+
+    item = "github:octo/app#15"
+
+    # -- machine one: the repository's branch ---------------------------------
+    spec = tmp_path / "one" / "co" / "docs" / "specs" / "issue-15"
+    spec.mkdir(parents=True)
+    state = WorkItemState(work_item=item, current_node="implementation")
+    state.session_per_pr, state.model, state.effort = "always", "opus-5", "high"
+    state.repos = ["octo/app", "octo/lib", "octo/infra"]
+    for repo, number in (("octo/app", 16), ("octo/lib", 7), ("octo/infra", 3)):
+        state.link_pr(f"github:{repo}#{number}", repository=repo, number=number)
+    state.set_pr_state("github:octo/infra#3", "merged")
+    state.save(spec)
+
+    # -- machine one: the operator's records ----------------------------------
+    portable = WorkItemStore(tmp_path / "one" / "state" / "portable")
+    portable.write_section(item, CONTROL, {"command": "start", "actor": "octocat"})
+    portable.write_section(
+        item, "channels", {"slack": {"channel": "C0AB", "thread": "1726.001"}}
+    )
+    portable.write_pull_request_ledger(
+        item, "github:octo/lib#7", {"seenComments": ["c1"]}
+    )
+
+    # -- machine one: the handles, which must NOT travel ----------------------
+    local = SessionRegistry(tmp_path / "one" / "state" / "local")
+    local.register(
+        Session(
+            work_item=WorkItemRef.parse(item),
+            harness="claude",
+            harness_session_id="S0",
+            cwd=str(tmp_path / "one" / "co"),
+        )
+    )
+    for repo, number in (("octo/app", 16), ("octo/lib", 7), ("octo/infra", 3)):
+        local.link_pull_request(item, f"github:{repo}#{number}")
+
+    # -- the hand-off: the branch, and the tracked half of state.root ---------
+    two = tmp_path / "two"
+    (two / "state").mkdir(parents=True)
+    shutil.copytree(tmp_path / "one" / "co", two / "co")
+    shutil.copytree(tmp_path / "one" / "state" / "portable", two / "state" / "portable")
+
+    # -- machine two ----------------------------------------------------------
+    carried = WorkItemState.load(two / "co" / "docs" / "specs" / "issue-15", item)
+    assert [pr.ref for pr in carried.pull_requests] == [
+        "github:octo/app#16",
+        "github:octo/lib#7",
+        "github:octo/infra#3",
+    ]
+    merged = carried.pull_request("github:octo/infra#3")
+    contributing = carried.pull_request("github:octo/lib#7")
+    assert merged is not None and merged.state == "merged"
+    assert contributing is not None
+    assert contributing.state_dir == "pr-loops/octo__lib/pr-7"
+    assert (carried.session_per_pr, carried.model, carried.effort) == (
+        "always",
+        "opus-5",
+        "high",
+    )
+
+    there = WorkItemStore(two / "state" / "portable")
+    assert (there.section(item, CONTROL) or {})["command"] == "start"
+    assert (there.section(item, "channels") or {})["slack"]["thread"] == "1726.001"
+    assert there.pull_request_ledger(item, "github:octo/lib#7") == {
+        "seenComments": ["c1"]
+    }
+    # One record for the whole work item, pull requests included.
+    assert sorted(p.name for p in (two / "state" / "portable").glob("*.json")) == [
+        "github-octo-app-15.json",
+        "index.json",
+    ]
+
+    # No handles travelled, and the daemon rebuilds them by spawning.
+    assert SessionRegistry(two / "state" / "local").list_sessions() == []
+    assert "S0" not in json.dumps(
+        json.loads(
+            (
+                two / "co" / "docs" / "specs" / "issue-15" / "work-item-state.json"
+            ).read_text(encoding="utf-8")
+        )
+    )

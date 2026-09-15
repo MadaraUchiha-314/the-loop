@@ -433,28 +433,18 @@ class ControlStore:
     def root(self) -> Path:
         return self.store.root
 
-    def record_frozen_graph(
-        self, work_item: Union[str, WorkItemRef], frozen: Dict[str, Any]
-    ) -> None:
-        """Persist the graph a work item was frozen to walk (issue-177).
-
-        Beside `control` in the same **portable** record, and for the same
-        reason: "an authorized user chose these phases" is true on any machine,
-        so it travels with the work item rather than with the session handle.
-        """
-        self.store.write_section(work_item, GRAPH, dict(frozen))
-
     def frozen_graph(
         self, work_item: Union[str, WorkItemRef]
     ) -> Optional[Dict[str, Any]]:
-        """What :meth:`record_frozen_graph` wrote, or ``None`` if nothing has.
+        """The `graph` section of a work item frozen **before issue-368**.
 
-        The reader that makes the frozen selection *usable* by the daemon
-        (issue-260) rather than only readable by a human: the routing choice a
-        work item made at `phase-selection` is in here, and
-        ``Dispatcher._tmux_for`` asks for it on every pull-request event. ``None``
-        is the honest answer for every work item that has not answered the gate —
-        which is every work item started before the choice existed.
+        A legacy reader, and only that. Which phases a work item walks, the
+        surface it is iterated on, how many sessions its pull requests get and
+        what it runs on are all recorded in the work item's own checked-in
+        `work-item-state.json`; nothing writes this section any more. The
+        dispatcher consults it when the state file says nothing, so a work item
+        in flight across the upgrade keeps the routing it froze — and it is
+        never rewritten. ``None`` for every work item frozen since.
         """
         return self.store.section(work_item, GRAPH)
 

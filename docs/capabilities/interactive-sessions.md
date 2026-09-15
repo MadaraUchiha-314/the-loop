@@ -133,9 +133,9 @@ still carrying the key is warned about and otherwise ignored).
   `routing.tmux.keepSessionOnClose` and `routing.workspace.keepCheckoutOnClose`: those
   answer what should survive the end of the *work*, and cleanup is the operator saying
   they are done with all of it — so **uncommitted work in the checkout does not
-  survive**. The **portable** record (`control`, `poll`, the frozen graph) SHALL be
-  kept, which is the whole difference from a reset, and no remote object SHALL be
-  touched. A cleanup SHALL run with or without a live session and with or without a
+  survive**. The **portable** record (`control`, `poll`, the roster, the channel binding)
+  SHALL be kept, which is the whole difference from a reset, and no remote object SHALL
+  be touched. A cleanup SHALL run with or without a live session and with or without a
   record — a checkout left behind by a crash is located from the work-item ref alone —
   and SHALL record `cleanup` as the item's last control command, so a torn-down item
   cannot re-spawn on the next event.
@@ -307,6 +307,7 @@ belongs to does not.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-368 | The machine-local record became a **map of sessions keyed by the ref each serves** (2026-09-15) — the work item's own and one per pull request — holding handles alone: the pull request's repository, number, URL and upstream state are the repository's facts and live once, in its `work-item-state.json`, joined by that same ref. The record also carries what this deployment has already mirrored of the work item's channel threads. A record written before the change is read as it was and rewritten as a map on its next save | [spec](../specs/issue-368/), [decision-128](../decisions/decision-128.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/368) |
 | issue-358 | A work item picks its **model** and **effort** at `phase-selection`, and the spawn now happens **after** that gate rather than before it: `graphlink.on_spawn` split into `on_arm` (enter the graph) and `on_spawn` (bind the session), so an armed item parked at a human start gate costs no tmux session and the first spawn already carries the frozen choice. `Dispatcher._adapter_for` resolves the choice like `_tmux_for` resolves `sessionPerPr`; the session record gained `model`/`effort`/`harnessArgs` | [spec](../specs/issue-358/), [decision-124](../decisions/decision-124.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/358) |
 | issue-317 | The spawn path opens the work item's channel conversations first: `Dispatcher` takes an injected opener (`channels.publishers.conversation_opener`), called with the ref at the top of `_spawn_for` — behind every refusal, before the checkout — and contained if it raises; both daemons and the core facade's dispatcher wire it | [spec](../specs/issue-317/), [decision-107](../decisions/decision-107.md), [channels](channels.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/317) |
 | issue-277 | The runner learned to be addressed by **target** rather than by work item (`spawn_in`, `deliver_to`, `kill_target`, `terminate_harness_in`), so a session with no work item can be hosted the same way; the four work-item entry points delegate and keep their exact refusals. The first caller is [standing-sessions](standing-sessions.md) | [spec](../specs/issue-277/), [decision-099](../decisions/decision-099.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/277) |

@@ -64,12 +64,14 @@ from .state import LegacyLayout
 logger = logging.getLogger("the-loop.workitem")
 
 __all__ = [
+    "CHANNELS",
     "COLLABORATORS",
     "CONTROL",
     "ENDED",
     "GRAPH",
     "INDEX_FILE",
     "POLL",
+    "PULL_REQUESTS",
     "SEALED",
     "WorkItemStore",
 ]
@@ -77,12 +79,34 @@ __all__ = [
 #: The two sections of a work-item record.
 CONTROL = "control"
 POLL = "poll"
-#: The graph a work item was frozen to walk (issue-177): every node with whether
-#: it is walked or skipped, written when an authorized user answers the
-#: `phase-selection` gate. **Portable** on purpose — the shape of a work item's
-#: process is part of tracking the work item, not of the machine running it, so
-#: it travels with `control` and survives a hand-off to another host.
+#: The graph a work item was frozen to walk (issue-177) — **retired by
+#: issue-368**. Every fact it held is now in the work item's own checked-in
+#: `work-item-state.json`: `loop`, `workItem` and `surface` were already there,
+#: `sessionPerPr`, `model` and `effort` moved in, and the rendered `nodes[]` is
+#: derived by `the-loop check` from the compiled graph plus the declared skips
+#: and opt-ins. Nothing writes this section any more; it is **read** for a work
+#: item frozen before the change, so one in flight keeps its routing across the
+#: upgrade, and it is never rewritten.
 GRAPH = "graph"
+
+#: The channel conversations the-loop opened for this work item (issue-368):
+#: ``{"slack": {channel, thread, opened, origin, permalink}}``. **Portable** —
+#: a thread is a remote entity the-loop created, true whoever runs the daemon,
+#: and the machine that opened it must not be the only one that knows: a second
+#: machine would otherwise open a second root and drop replies in the first as
+#: `unmapped`. It sits in the OPERATOR's record rather than the work item's
+#: repository because a channel id, a thread ts and a workspace permalink are
+#: the operator's workspace's, not the repository's (R7.3).
+CHANNELS = "channels"
+
+#: The poll ledgers of the pull requests delivering this work item (issue-368),
+#: keyed by the PR's ref: ``{seenComments, commentAttempts, lastPolledAt}``.
+#: The poller lists a labelled pull request as an item of its own, and used to
+#: baseline it under a portable record of its own — N+1 records and N+1 index
+#: entries for one work item, which is what the owner's review of issue-368
+#: stopped. The ledger now lives under the owner, and the pull request itself is
+#: recorded once, in the repository's `work-item-state.json`.
+PULL_REQUESTS = "pullRequests"
 
 #: The logins an authorized user granted collaborator status on this work item
 #: (issue-307). **Portable** for the same reason as `control`: "an authorized user
@@ -103,8 +127,11 @@ COLLABORATORS = "collaborators"
 ENDED = "ended"
 
 #: Every section a record may carry. A record with none of them is deleted
-#: rather than kept as an empty husk.
-SECTIONS = (CONTROL, POLL, GRAPH, COLLABORATORS, ENDED)
+#: rather than kept as an empty husk. ``GRAPH`` is still listed — it is no
+#: longer written, but a record that carries one from before issue-368 is a
+#: record the-loop knows something about, and dropping it from this tuple would
+#: delete that work item's file the next time any other section was cleared.
+SECTIONS = (CONTROL, POLL, GRAPH, COLLABORATORS, ENDED, CHANNELS, PULL_REQUESTS)
 
 #: The directory's index (issue-130) — one file listing every record beside it,
 #: so ``portable/`` answers "what is being tracked?" without opening each record.
@@ -205,6 +232,51 @@ class WorkItemStore:
     def read(self, work_item: Union[str, WorkItemRef]) -> dict:
         """The whole record, or ``{}`` when there is none."""
         return _read_json(self.path_for(work_item)) or {}
+
+    def owner_of(self, ref: Union[str, WorkItemRef]) -> Optional[str]:
+        """The work item whose record already ledgers ``ref``, or ``None``.
+
+        One portable record per work item (issue-368, R10.1): a pull request's
+        poll ledger is a key under the record of the work item it delivers, so
+        this is how the poller finds that owner for a pull request it has seen
+        before. A scan of the directory's records — small local files, and only
+        for a ref that is not a work item of its own.
+        """
+        wanted = _as_ref(ref).ref
+        for _, record in self._records():
+            if str(record.get("ref") or "") == wanted:
+                continue
+            ledgers = record.get(PULL_REQUESTS)
+            if isinstance(ledgers, dict) and wanted in ledgers:
+                return str(record["ref"])
+        return None
+
+    def pull_request_ledger(
+        self, work_item: Union[str, WorkItemRef], ref: str
+    ) -> Optional[Dict[str, Any]]:
+        """One pull request's poll ledger under its owner's record."""
+        ledgers = self.section(work_item, PULL_REQUESTS) or {}
+        entry = ledgers.get(ref)
+        return dict(entry) if isinstance(entry, dict) else None
+
+    def write_pull_request_ledger(
+        self,
+        work_item: Union[str, WorkItemRef],
+        ref: str,
+        data: Optional[Dict[str, Any]],
+    ) -> None:
+        """Replace one pull request's ledger under its owner; ``None`` drops it.
+
+        Read-modify-write on the section, like every other writer here: the
+        poller ledgers several pull requests of one work item in a cycle, and
+        each must leave the others exactly as they are on disk.
+        """
+        ledgers = dict(self.section(work_item, PULL_REQUESTS) or {})
+        if data is None:
+            ledgers.pop(ref, None)
+        else:
+            ledgers[ref] = dict(data)
+        self.write_section(work_item, PULL_REQUESTS, ledgers or None)
 
     def section(
         self, work_item: Union[str, WorkItemRef], name: str
@@ -326,6 +398,13 @@ class WorkItemStore:
             entry["sections"] = [
                 section for section in SECTIONS if isinstance(record.get(section), dict)
             ]
+            ledgers = record.get(PULL_REQUESTS)
+            if isinstance(ledgers, dict) and ledgers:
+                # One entry per WORK ITEM, naming the pull requests its record
+                # links (issue-368, R10.7) — so the directory still answers
+                # "what is tracked?" now that a pull request has no file of its
+                # own to be listed as.
+                entry["pullRequests"] = sorted(str(ref) for ref in ledgers)
             if record.get(SEALED):
                 entry["sealed"] = True  # explains a record with no sections
             entries.append(entry)

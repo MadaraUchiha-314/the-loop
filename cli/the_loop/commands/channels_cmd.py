@@ -35,7 +35,7 @@ from ..channels.slack import (
     unchecked_advice,
 )
 from ..repos import declared_repositories
-from ..channels.state import ChannelState, canonical
+from ..channels.state import ChannelState, ChannelStores, canonical
 
 
 def _presence(env_name: str) -> str:
@@ -47,7 +47,8 @@ def _status(config: dict, probe: bool = False) -> int:
     from ..channels.events import PUBLISHABLE_EVENTS
 
     slack = SlackChannelConfig.from_mapping(config)
-    state = ChannelState.load(slack_state_path(config))
+    path = slack_state_path(config)
+    state = ChannelState.load(path, ChannelStores.beside(path))
     print(f"ledger:         {ledger_name(config)}")
     print("slack:")
     print(f"  enabled:      {str(slack.enabled).lower()}")
@@ -268,7 +269,8 @@ def _threads(config: dict, work_item: str, as_json: bool) -> int:
     Reads the channel state only — no Slack call, no token needed — and prints
     ids, timestamps and the permalink Slack returned; never a message's text.
     """
-    state = ChannelState.load(slack_state_path(config))
+    path = slack_state_path(config)
+    state = ChannelState.load(path, ChannelStores.beside(path))
     wanted = canonical(work_item) if work_item else ""
     records = [
         {"workItem": item, **record}

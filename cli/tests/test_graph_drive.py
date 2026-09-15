@@ -8,6 +8,8 @@ delivery, the `$graph_context` render, and the `session: inherit` binding.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from the_loop.graph import hooks  # noqa: F401 — registers the shipped hooks
@@ -21,7 +23,7 @@ from the_loop.graphlink import (
     render_graph_context,
 )
 from the_loop.control import ControlConfig
-from the_loop.sessions import WorkItemRef
+from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 
 GRAPH = {
     "start": "design",
@@ -285,11 +287,21 @@ def test_the_render_carries_a_gate_verdict():
 # -- the session binding (D6) ------------------------------------------------------
 
 
-def test_on_spawn_records_the_session_binding(runtime, repo):
+def test_a_spawn_writes_no_session_handle_into_the_repository(runtime, repo):
+    """issue-368, R3.1 — a harness conversation id is a handle to one machine.
+
+    It used to be written into the checked-in state file, which is public,
+    proposable by anyone who can open a pull request, and travels to machines
+    where that conversation does not exist. The binding lives in the machine's
+    own session registry now; nothing about it reaches the repository.
+    """
     _write_design(repo)
     _link(repo, runtime).on_spawn(REF, str(repo), session_id="s-9", runner="tmux")
-    bound = WorkItemState.load(_spec(repo), "issue-1").session
-    assert bound == {"id": "s-9", "runner": "tmux", "alive": True}
+    written = json.loads(
+        (_spec(repo) / "work-item-state.json").read_text(encoding="utf-8")
+    )
+    assert "session" not in written
+    assert "s-9" not in json.dumps(written)
 
 
 def test_a_spawn_never_evaluates_an_agent_start_node(runtime, repo):
@@ -305,13 +317,29 @@ def test_a_spawn_never_evaluates_an_agent_start_node(runtime, repo):
     assert state.nodes["design"].attempts == 1 and not state.nodes["design"].last_block
 
 
-def test_on_close_marks_the_binding_dead(runtime, repo):
+def test_a_legacy_session_block_is_ignored_and_dropped(runtime, repo):
+    """issue-368, R3.3 — a checked-in conversation id may be anyone's.
+
+    A state file written before the change keeps its `session` block on disk
+    until the next save. It is never read back as a binding, and the next save
+    writes it away.
+    """
     _write_design(repo)
-    link = _link(repo, runtime)
-    link.on_spawn(REF, str(repo), session_id="s-9", runner="tmux")
-    link.on_close(REF, str(repo))
-    bound = WorkItemState.load(_spec(repo), "issue-1").session
-    assert bound is not None and bound["alive"] is False
+    path = _spec(repo) / "work-item-state.json"
+    path.write_text(
+        json.dumps(
+            {
+                "workItem": "issue-1",
+                "currentNode": "design",
+                "session": {"id": "somebody-elses", "runner": "tmux", "alive": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+    state = WorkItemState.load(_spec(repo), "issue-1")
+    assert not hasattr(state, "session")
+    state.save(_spec(repo))
+    assert "session" not in json.loads(path.read_text(encoding="utf-8"))
 
 
 def test_a_gate_entry_resolves_its_session(runtime, repo, tmp_path):
@@ -321,8 +349,40 @@ def test_a_gate_entry_resolves_its_session(runtime, repo, tmp_path):
 
     eventlog.configure(source="test", path=str(tmp_path / "events.jsonl"))
     _write_design(repo)
+    # The binding is the machine's, not the repository's (issue-368): the gate
+    # inherits the live session the registry holds for this work item's ref.
+    registry_dir = tmp_path / "local"
+    SessionRegistry(registry_dir).register(
+        Session(
+            work_item=REF,
+            harness="claude",
+            harness_session_id="s-9",
+            cwd=str(repo),
+        )
+    )
+    runtime.config = {**runtime.config, "registryDir": str(registry_dir)}
     link = _link(repo, runtime)
     link.on_spawn(REF, str(repo), session_id="s-9", runner="tmux")
-    runtime.complete("issue-1")  # design → gate (a human, session: inherit node)
+    # design → gate (a human, `session: inherit` node). The ref is what the
+    # registry is keyed by, so the gate is told which work item it is entering.
+    runtime.complete("issue-1", ref=REF.ref)
     records = (tmp_path / "events.jsonl").read_text().splitlines()
     assert any('"graph.gate_session"' in r and '"inherited"' in r for r in records)
+    assert any('"s-9"' in r for r in records)
+
+
+def test_a_gate_entry_without_a_registry_falls_back_to_a_fresh_session(
+    runtime, repo, tmp_path
+):
+    """issue-368, R3.2 — in CI there is no registry, and a fresh session seeded
+    with the artifacts is the right answer there."""
+    from the_loop import eventlog
+
+    eventlog.configure(source="test", path=str(tmp_path / "events.jsonl"))
+    _write_design(repo)
+    _link(repo, runtime).on_spawn(REF, str(repo), session_id="s-9", runner="tmux")
+    runtime.complete("issue-1")
+    records = (tmp_path / "events.jsonl").read_text().splitlines()
+    assert any(
+        '"graph.gate_session"' in r and '"fresh-with-artifacts"' in r for r in records
+    )

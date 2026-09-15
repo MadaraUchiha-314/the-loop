@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [128](decision-128.md) | An attribute belongs to a party — the repository, the operator, or the machine | proposed | 2026-09-15 |
 | [127](decision-127.md) | The state file is the work item's, and the repositories it spans are the agent's to declare — once the design says what they are | proposed | 2026-09-14 |
 | [126](decision-126.md) | The execution log is retired; each gate keeps one record of its own under `evidence/` | proposed | 2026-09-14 |
 | [125](decision-125.md) | An adapter's flags are the spelling the harness's own `--help` lists, declared once and never derived at runtime | proposed | 2026-09-14 |

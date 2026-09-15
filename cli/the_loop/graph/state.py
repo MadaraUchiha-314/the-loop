@@ -34,7 +34,10 @@ logger = logging.getLogger("the-loop.graph")
 
 __all__ = [
     "LEGACY_STATE_FILENAME",
+    "PR_LINKED_BY",
+    "PR_STATES",
     "STATE_FILENAME",
+    "PullRequest",
     "StateLockBusy",
     "WorkItemState",
     "state_lock",
@@ -43,6 +46,14 @@ __all__ = [
 
 STATE_FILENAME = "work-item-state.json"
 LOCK_FILENAME = "work-item-state.lock"
+
+#: What a pull request's upstream state may be (issue-368, R2.2). Written by the
+#: daemon's one close path; ``open`` until it says otherwise.
+PR_STATES = ("open", "merged", "closed")
+
+#: Who recorded that a pull request delivers this work item — the session that
+#: opened it (``the-loop sessions link-pr``) or the first event that routed.
+PR_LINKED_BY = ("session", "event")
 
 #: What the file was called until issue-365. **Read** when the current name is
 #: absent, and never written: a work item already in flight keeps its pointer
@@ -103,8 +114,166 @@ def _string_list(raw: Any) -> List[str]:
     return [str(entry).strip() for entry in raw if str(entry).strip()]
 
 
+def _pull_requests(raw: Any, origin: str = "") -> List["PullRequest"]:
+    """Usable pull-request entries from a list, deduplicated by ref.
+
+    An entry that does not parse is skipped rather than raising: a hand-edited
+    record must degrade to "that pull request is unrecorded", never take the
+    work item's whole pointer down with it.
+    """
+    if not isinstance(raw, (list, tuple)):
+        return []
+    found: Dict[str, PullRequest] = {}
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        parsed = PullRequest.from_dict(entry, origin=origin)
+        if parsed is not None:
+            found.setdefault(parsed.ref, parsed)
+    return list(found.values())
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+@dataclass
+class PullRequest:
+    """One pull request delivering this work item (issue-368, R2.1).
+
+    A **remote entity of the repository**, so it is recorded here rather than in
+    the machine-local session record, which is where the only copy used to be:
+    `local/<slug>.json`'s `pullRequests[]` never travels, so a hand-off lost
+    which pull requests delivered an item and re-derived them from `gh`'s
+    closing references — the inference issue-172 stopped trusting.
+
+    `state` is the *upstream* state (open/merged/closed), written by the
+    daemon's one close path; the session endpoint's `status` stays a handle's
+    status. `state_dir` is the inner loop's directory relative to the spec
+    directory, derived at write so a reader needs no code to find it.
+    """
+
+    ref: str
+    repository: str = ""
+    number: int = 0
+    url: str = ""
+    state_dir: str = ""
+    state: str = "open"
+    linked_at: str = ""
+    linked_by: str = "event"
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "ref": self.ref,
+            "repository": self.repository,
+            "number": self.number,
+            "url": self.url,
+            "stateDir": self.state_dir,
+            "state": self.state,
+            "linkedAt": self.linked_at,
+            "linkedBy": self.linked_by,
+        }
+
+    @classmethod
+    def from_dict(
+        cls, data: Dict[str, Any], origin: str = ""
+    ) -> Optional["PullRequest"]:
+        """One entry, or ``None`` when it is not usable.
+
+        Every field is re-validated on the way in, because this file is
+        agent-writable and proposable by anyone who can open a pull request
+        against the origin repository. A `repository` that is not a usable
+        repository path, or a `state_dir` that is not the one this repository
+        and number derive, is refused — the entry is skipped and the rest of the
+        file is honoured, the rule `Session.from_dict` already follows for a
+        hand-edited endpoint.
+        """
+        ref = str(data.get("ref") or "").strip()
+        if not ref:
+            return None
+        repository = str(data.get("repository") or "").strip()
+        if repository:
+            from .hooks.loops import repo_state_key
+
+            try:
+                repo_state_key(repository)
+            except ValueError:
+                logger.warning(
+                    "skipping the pull-request entry %s: %r is not a usable "
+                    "repository path",
+                    ref,
+                    repository,
+                )
+                return None
+        try:
+            number = int(data.get("number") or 0)
+        except (TypeError, ValueError):
+            return None
+        state = str(data.get("state") or "open")
+        linked_by = str(data.get("linkedBy") or "event")
+        # A `stateDir` is honoured only when it is one of the two spellings this
+        # repository and number actually derive — the shipped `pr-loops/pr-<n>`
+        # for a pull request in the work item's own repository, or the
+        # qualified `pr-loops/<owner>__<repo>/pr-<n>` for one elsewhere
+        # (issue-183). Anything else is a path the loop's own rules did not
+        # build, so it is refused and recomputed rather than read as given.
+        stored = str(data.get("stateDir") or "")
+        spellings = {
+            _pr_state_dir(repository, number, repository),
+            _pr_state_dir(repository, number, ""),
+        } - {""}
+        state_dir = (
+            stored if stored in spellings else _pr_state_dir(repository, number, origin)
+        )
+        return cls(
+            ref=ref,
+            repository=repository,
+            number=number,
+            url=str(data.get("url") or ""),
+            # Derived, never read as given: a `stateDir` from the file would be a
+            # path this repository's own rules did not build (issue-183's
+            # filesystem boundary), so it is recomputed from the two values that
+            # did go through that boundary.
+            state_dir=state_dir,
+            state=state if state in PR_STATES else "open",
+            linked_at=str(data.get("linkedAt") or ""),
+            linked_by=linked_by if linked_by in PR_LINKED_BY else "event",
+        )
+
+
+def repository_of(ref: str) -> str:
+    """``github:octo/app#15`` → ``octo/app``; ``""`` when the ref will not parse.
+
+    The work item's **origin** repository, which is what decides whether a pull
+    request's inner loop keeps the shipped ``pr-loops/pr-<n>`` layout or the
+    qualified one (issue-183).
+    """
+    from ..sessions import WorkItemRef
+
+    try:
+        return WorkItemRef.parse(ref).path
+    except ValueError:
+        return ""
+
+
+def _pr_state_dir(repository: str, number: int, origin: str = "") -> str:
+    """``pr-loops/[<owner>__<repo>/]pr-<n>`` for this pull request, or ``""``.
+
+    The one spelling of an inner loop's directory, so the recorded value and the
+    directory the runtime actually writes into cannot drift apart. A pull request
+    in the work item's **own** repository keeps the shipped unqualified layout,
+    exactly as ``Runtime`` and ``GraphLink`` build it; an unusable repository
+    yields ``""`` rather than a guess.
+    """
+    if not number:
+        return ""
+    from .hooks.loops import inner_loop_state_dir
+
+    qualifier = "" if (origin and repository == origin) else repository
+    try:
+        return inner_loop_state_dir(Path(), number, qualifier).as_posix()
+    except ValueError:
+        return ""
 
 
 @dataclass
@@ -146,7 +315,6 @@ class WorkItemState:
     decisions: Dict[str, Any] = field(default_factory=dict)
     forced: List[Dict[str, Any]] = field(default_factory=list)
     parked: Optional[Dict[str, Any]] = None
-    session: Optional[Dict[str, Any]] = None
     completions: Dict[str, Any] = field(default_factory=dict)
     #: Declared skips (issue-177): node id -> {via, token, by, reason, at}.
     #: A DECLARATION with provenance, never a verdict — the runtime honours an
@@ -189,6 +357,23 @@ class WorkItemState:
     #: whole file, so readers accept only shipped loop names (fail closed to
     #: the default) — see ``model.SHIPPED_LOOPS``.
     loop: str = ""
+    #: How many tmux+harness sessions this work item's pull requests get
+    #: (issue-260), which model they run on and at what effort (issue-358) —
+    #: frozen by the authorized reply at `phase-selection`, beside every other
+    #: per-work-item choice (issue-368, R4.1). ``""`` is *no choice*, a
+    #: different recorded fact from "the operator's default", and the daemon
+    #: re-validates each on the way in: a model against what the operator
+    #: declares now and against this machine's verdicts, a mode against the
+    #: three-value vocabulary. They lived only in the portable record until
+    #: issue-368, which left this file unable to say what its own work item runs
+    #: on.
+    session_per_pr: str = ""
+    model: str = ""
+    effort: str = ""
+    #: The pull requests delivering this work item (issue-368, R2.1) — the
+    #: repository's own objects, so they are recorded on the work item's branch
+    #: rather than only in a machine-local session record that never travels.
+    pull_requests: List[PullRequest] = field(default_factory=list)
     version: int = STATE_VERSION
 
     # -- persistence ----------------------------------------------------------
@@ -242,7 +427,11 @@ class WorkItemState:
             decisions=dict(data.get("decisions") or {}),
             forced=list(data.get("forced") or []),
             parked=data.get("parked"),
-            session=data.get("session"),
+            # `session` is deliberately NOT read (issue-368, R3.3). A harness
+            # conversation id is a handle to one machine; it was written here
+            # until this change, and a checked-in id may be anyone's — so a
+            # legacy block is ignored on load and absent on the next save, and
+            # `session: inherit` asks the session registry instead.
             completions=dict(data.get("completions") or {}),
             skips={
                 k: dict(v)
@@ -260,6 +449,13 @@ class WorkItemState:
             # itself refuses that, and a non-list here is *no declaration*.
             repos=_string_list(data.get("repos")),
             loop=str(data.get("loop") or ""),
+            session_per_pr=str(data.get("sessionPerPr") or ""),
+            model=str(data.get("model") or ""),
+            effort=str(data.get("effort") or ""),
+            pull_requests=_pull_requests(
+                data.get("pullRequests"),
+                repository_of(str(data.get("workItem", work_item))),
+            ),
             version=int(data.get("version", STATE_VERSION)),
         )
 
@@ -287,14 +483,74 @@ class WorkItemState:
             "decisions": self.decisions,
             "forced": self.forced,
             "parked": self.parked,
-            "session": self.session,
             "completions": self.completions,
             "skips": self.skips,
             "optIns": self.opt_ins,
             "surface": self.surface,
+            "sessionPerPr": self.session_per_pr,
+            "model": self.model,
+            "effort": self.effort,
             "repos": self.repos,
+            "pullRequests": [pr.as_dict() for pr in self.pull_requests],
             "loop": self.loop,
         }
+
+    # -- pull requests (issue-368) --------------------------------------------
+
+    def pull_request(self, ref: str) -> Optional[PullRequest]:
+        """This work item's entry for ``ref``, or ``None``."""
+        for entry in self.pull_requests:
+            if entry.ref == ref:
+                return entry
+        return None
+
+    def link_pr(
+        self,
+        ref: str,
+        repository: str = "",
+        number: int = 0,
+        url: str = "",
+        linked_by: str = "event",
+    ) -> Optional[PullRequest]:
+        """Record that ``ref`` delivers this work item; ``None`` when it already did.
+
+        Idempotent by ref, like the registry's own ``link_pull_request``: the
+        two writers of this fact — the session that opened the pull request and
+        the first event that routes for it — must not grow the list once per
+        comment. Refuses an entry that does not validate (an unusable repository
+        path), because this value becomes a directory name.
+        """
+        if not ref or ref == self.work_item or self.pull_request(ref) is not None:
+            return None
+        entry = PullRequest.from_dict(
+            {
+                "ref": ref,
+                "repository": repository,
+                "number": number,
+                "url": url,
+                "state": "open",
+                "linkedAt": utc_now(),
+                "linkedBy": linked_by,
+            },
+            origin=repository_of(self.work_item),
+        )
+        if entry is None:
+            return None
+        self.pull_requests.append(entry)
+        return entry
+
+    def set_pr_state(self, ref: str, state: str) -> Optional[PullRequest]:
+        """Record a pull request's upstream state; ``None`` when it is unknown here.
+
+        The *upstream* fact — merged or closed — which is the repository's, not
+        the machine's: the session endpoint's own ``status`` stays a handle's
+        status, so a tmux session retained after a merge is still attachable.
+        """
+        entry = self.pull_request(ref)
+        if entry is None or state not in PR_STATES:
+            return None
+        entry.state = state
+        return entry
 
     # -- mutation -------------------------------------------------------------
 

@@ -209,7 +209,12 @@ def env_created(client):
 
 
 def state_of(tmp_path):
-    return ChannelState.load(tmp_path / "state" / "channels" / "slack.json")
+    # As the bot reads it: a work item's binding is in its portable record
+    # (issue-368), not in this file.
+    from the_loop.channels.state import ChannelStores
+
+    path = tmp_path / "state" / "channels" / "slack.json"
+    return ChannelState.load(path, ChannelStores.beside(path))
 
 
 @pytest.fixture(autouse=True)

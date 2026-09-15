@@ -51,6 +51,7 @@ from ..sessions import SessionRegistry, WorkItemRef
 from ..workitem import COLLABORATORS, CONTROL, GRAPH, POLL, WorkItemStore
 from ..webhook.dispatcher import Dispatcher
 from .base import (
+    KIND_PULL_REQUEST,
     REPROBE_EVERY_CYCLES,
     Comment,
     Listing,
@@ -209,15 +210,66 @@ class PollState:
         self.store = store
         self._items: Dict[str, dict] = {}
         self._dirty: set = set()
+        #: ``ref -> the work item whose record holds this ref's ledger``
+        #: (issue-368, R10.1). A work item owns itself; a pull request that
+        #: delivers one is owned by it, so one work item is one portable record
+        #: however many pull requests deliver it. Resolved once per ref per
+        #: process by :meth:`own`, which the poller calls before it touches the
+        #: ledger of anything it has listed.
+        self._owners: Dict[str, str] = {}
 
     @property
     def root(self) -> Path:
         return self.store.root
 
+    # -- who holds this ref's ledger (issue-368) -------------------------------
+
+    def own(self, ref: str, owner: str = "") -> str:
+        """Record (and return) which work item's record holds ``ref``'s ledger.
+
+        ``owner`` empty, or equal to ``ref``, means the ref is a work item in
+        its own right — a plain issue, or a labelled pull request that delivers
+        nothing this machine tracks (a review, or one that closes no issue).
+        Those keep a record of their own, because they *are* the work item.
+        """
+        resolved = owner if owner and owner != ref else ref
+        self._owners[ref] = resolved
+        return resolved
+
+    def owner(self, ref: str) -> str:
+        """Where ``ref``'s ledger lives: a known owner, else the ref itself.
+
+        Falls back to the portable records when this process has not resolved
+        the ref yet, so a cycle that reads a ledger before it has listed the
+        item — a closure sweep, a reconcile — still finds it under the owner
+        that wrote it rather than starting a second one.
+        """
+        if ref not in self._owners:
+            try:
+                self._owners[ref] = self.store.owner_of(ref) or ref
+            except (OSError, ValueError):
+                return ref
+        return self._owners[ref]
+
+    def _load(self, ref: str) -> Optional[dict]:
+        """``ref``'s ledger as it is on disk — under its owner, or its own."""
+        owner = self.owner(ref)
+        if owner == ref:
+            return self.store.section(ref, POLL)
+        return self.store.pull_request_ledger(owner, ref)
+
+    def _store_ledger(self, ref: str, data: Optional[dict]) -> None:
+        """Write ``ref``'s ledger where its owner keeps it."""
+        owner = self.owner(ref)
+        if owner == ref:
+            self.store.write_section(ref, POLL, data)
+        else:
+            self.store.write_pull_request_ledger(owner, ref, data)
+
     def _read(self, ref: str) -> dict:
         """This item's ledger, loaded on first touch. Never marks it dirty."""
         if ref not in self._items:
-            section = self.store.section(ref, POLL)
+            section = self._load(ref)
             if section is None:
                 return {}
             self._items[ref] = dict(section)
@@ -230,7 +282,7 @@ class PollState:
         return item
 
     def is_known(self, ref: str) -> bool:
-        return ref in self._items or self.store.has_section(ref, POLL)
+        return ref in self._items or self._load(ref) is not None
 
     def seen_comments(self, ref: str) -> set:
         return set(self._read(ref).get("seenComments") or [])
@@ -402,7 +454,7 @@ class PollState:
         """
         self._items.pop(ref, None)
         self._dirty.discard(ref)
-        self.store.write_section(ref, POLL, None)
+        self._store_ledger(ref, None)
 
     # -- the closure schedule (issue-332) --------------------------------------
 
@@ -484,7 +536,7 @@ class PollState:
         """
         if ref not in self._dirty:
             return
-        self.store.write_section(ref, POLL, self._items[ref])
+        self._store_ledger(ref, self._items[ref])
         self._dirty.discard(ref)
 
     def save(self) -> None:
@@ -494,7 +546,7 @@ class PollState:
         finishes: whatever a cycle touched outside the per-item path still lands.
         """
         for ref in sorted(self._dirty):
-            self.store.write_section(ref, POLL, self._items[ref])
+            self._store_ledger(ref, self._items[ref])
         self._dirty.clear()
 
 
@@ -1041,6 +1093,47 @@ class Poller:
         due.sort(key=lambda entry: (entry[0], entry[1].ref))
         return [ref for _, ref in due]
 
+    def _resolve_owner(self, item: WorkItem, refs: List[WorkItemRef]) -> str:
+        """Which work item's portable record holds ``item``'s poll ledger.
+
+        One record per work item (issue-368, R10.1). An issue is its own work
+        item and always owns its ledger. A **pull request** is asked three
+        questions in order, each answered from what is already at hand:
+
+        1. this machine's session records — ``record_owning`` is the same
+           resolution every event takes, so the poller and the dispatcher agree;
+        2. the portable records — a pull request already ledgered somewhere
+           keeps that owner, whatever a linkage says today;
+        3. the router's own linkage on the listed item — the closing
+           references, the branch convention, the closing keywords, in the order
+           the router applies them (``provider.refs`` has already run them).
+
+        A pull request that answers none of them is a work item **in its own
+        right** — a review (issue-279), or a labelled pull request that closes
+        no issue — and keeps a record of its own, because it *is* the work item
+        (R10.3).
+        """
+        ref = item.ref
+        if item.kind != KIND_PULL_REQUEST:
+            return self.state.own(ref)
+        registry = getattr(self.dispatcher, "registry", None)
+        try:
+            record = registry.record_owning(ref) if registry is not None else None
+        except (OSError, ValueError):  # a registry fault never picks an owner
+            record = None
+        if record is not None and record.work_item.ref != ref:
+            return self.state.own(ref, record.work_item.ref)
+        try:
+            ledgered = self.state.store.owner_of(ref)
+        except (OSError, ValueError):
+            ledgered = None
+        if ledgered:
+            return self.state.own(ref, ledgered)
+        for candidate in refs:
+            if candidate.ref != ref:
+                return self.state.own(ref, candidate.ref)
+        return self.state.own(ref)
+
     def _process_item(
         self, provider: PollProvider, item: WorkItem, summary: PollSummary
     ) -> None:
@@ -1048,6 +1141,12 @@ class Poller:
         if not refs:
             return
         ref = item.ref
+        # WHOSE record holds this item's ledger, decided BEFORE anything writes
+        # one (issue-368, R10.2). A labelled pull request is listed as an item
+        # of its own, and used to be baselined under a portable record of its
+        # own — so one work item delivered by three pull requests produced four
+        # records and four index entries.
+        self._resolve_owner(item, refs)
         # A listed item is open (issue-329): a closure stamp on it — the item
         # was reopened while the daemon was down, or the stamp was forged on a
         # tracked repository — is cleared before anything else reads it.

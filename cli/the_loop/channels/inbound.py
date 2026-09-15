@@ -50,7 +50,7 @@ from .slack import (
     render_reply_blocks,
     slack_state_path,
 )
-from .state import ChannelState
+from .state import ChannelState, ChannelStores
 
 logger = logging.getLogger("the-loop.channels")
 
@@ -512,7 +512,7 @@ def _ask_which_repository(
     nothing else of the message it answers.
     """
     options = target.candidates
-    with ChannelState.locked(bot.state_path) as state:
+    with ChannelState.locked(bot.state_path, bot.stores) as state:
         if state.pending_for(reply.ts):
             return _drop(reply, "kickoff-already-asked", actor=reply.author)
         state.ask(reply.ts, reply.channel_id, reply.author, target.text, options)
@@ -524,7 +524,7 @@ def _ask_which_repository(
         reply.channel_id,
         blocks=render_kickoff_question(said, options),
     ):
-        with ChannelState.locked(bot.state_path) as state:
+        with ChannelState.locked(bot.state_path, bot.stores) as state:
             state.forget(reply.ts)
             state.save(bot.state_path)
         bot.react(reply, "error")
@@ -653,7 +653,7 @@ def process_kickoff_answer(
         )
     if not config.authorized_users or reply.author not in set(config.authorized_users):
         return _drop(reply, "unauthorized-actor", level="warning", actor=reply.author)
-    state = ChannelState.load(bot.state_path)
+    state = ChannelState.load(bot.state_path, bot.stores)
     record = state.pending_for(reply.thread)
     if record and record.get("author") != reply.author:
         # Not theirs to direct: the record stands, untouched, for its author.
@@ -675,7 +675,7 @@ def process_kickoff_answer(
     # Claim before publishing (R3.4): the pop is inside the lock and the create is
     # outside it, so a second press of the same question finds nothing to answer
     # and exactly one issue is opened.
-    with ChannelState.locked(bot.state_path) as fresh:
+    with ChannelState.locked(bot.state_path, bot.stores) as fresh:
         claimed = fresh.claim(reply.thread)
         if not claimed:
             return _drop(reply, "no-pending-kickoff", actor=reply.author)
@@ -693,7 +693,7 @@ def process_kickoff_answer(
     if outcome.get("outcome") != "created":
         # The question stays answerable (R3.5) — which is the same posture the
         # press report takes, keeping the buttons on a press that did not land.
-        with ChannelState.locked(bot.state_path) as fresh:
+        with ChannelState.locked(bot.state_path, bot.stores) as fresh:
             fresh.restore(reply.thread, claimed)
             fresh.save(bot.state_path)
     return outcome
@@ -798,8 +798,8 @@ def handle_socket_event(
     """
     config = SlackChannelConfig.from_mapping(cli_config)
     state_path = slack_state_path(cli_config)
-    state = ChannelState.load(state_path)
     bot = SlackBotChannel(config, state_path, client_factory=client_factory)
+    state = ChannelState.load(state_path, bot.stores)
     ts = str(event.get("ts") or "")
     thread = str(event.get("thread_ts") or "")
     channel_id = str(event.get("channel") or "")
@@ -854,7 +854,7 @@ def handle_socket_event(
         # double-process what the socket already handled. Under the state
         # lock (issue-312): a cursor advance never overwrites a binding a
         # writer in another process saved beside it.
-        with ChannelState.locked(state_path) as fresh:
+        with ChannelState.locked(state_path, ChannelStores.beside(state_path)) as fresh:
             fresh.advance(thread, reply.ts)
             fresh.save(state_path)
     return outcome
@@ -908,7 +908,7 @@ def handle_socket_action(
     )
     config = SlackChannelConfig.from_mapping(cli_config)
     state_path = slack_state_path(cli_config)
-    state = ChannelState.load(state_path)
+    state = ChannelState.load(state_path, ChannelStores.beside(state_path))
     action_id = str(actions[0].get("action_id") or "")
     reply = InboundReply(
         channel="slack",

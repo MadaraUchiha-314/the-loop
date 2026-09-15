@@ -730,8 +730,11 @@ def test_the_arming_comment_reaches_the_goal_gate_at_spawn(runtime, repo, fake_g
     assert state.current_node == "phase-selection"
     assert state.decisions["goal-definition"]["goal"]["by"] == "@owner"
     assert any("which phases does this work item need" in p for p in fake_github.posted)
-    # The binding is still recorded, and by the session that was spawned.
-    assert (state.session or {})["id"] == "s-1"
+    # The session that was spawned is bound in the machine's own registry
+    # (issue-368, R3.1) — never in the checked-in state file, which is public.
+    assert "s-1" not in (_spec_dir(repo) / "work-item-state.json").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_a_spawn_with_no_goal_parks_the_gate_with_its_reason(

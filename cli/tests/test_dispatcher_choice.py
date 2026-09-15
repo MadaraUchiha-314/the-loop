@@ -13,7 +13,7 @@ from __future__ import annotations
 import time
 
 
-from conftest import FakeTmux, StubInteractiveAdapter
+from conftest import FakeTmux, StubInteractiveAdapter, _freeze_legacy_graph
 from the_loop.control import ControlConfig, ControlStore
 from the_loop.modelprobe import REFUSED, Verdict, VerdictCache
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
@@ -86,7 +86,7 @@ def _dispatcher(tmp_path, cli_config=None, **over):
 
 def _freeze(tmp_path, model="", effort=""):
     store = ControlStore(str(tmp_path / "state" / "portable"))
-    store.record_frozen_graph(REF, {"model": model, "effort": effort, "nodes": []})
+    _freeze_legacy_graph(store, REF, {"model": model, "effort": effort, "nodes": []})
     return store
 
 
@@ -349,3 +349,105 @@ def test_abuse_a_model_narrowed_to_another_harness_cannot_be_forced_onto_this_on
     adapter = dispatcher._adapter_for(WorkItemRef.parse(REF), "claude")
     assert adapter is not None and adapter is dispatcher.adapters["claude"]
     assert "gpt-5.6-sol" not in " ".join(adapter.extra_args)
+
+
+# -- the choices are read from the work item's own file (issue-368) ------------
+
+
+def _checkout(tmp_path, **fields):
+    """A checkout whose work item froze ``fields`` in its own state file."""
+    from the_loop.graph.state import WorkItemState
+
+    spec = tmp_path / "co" / "docs" / "specs" / "issue-358"
+    spec.mkdir(parents=True, exist_ok=True)
+    state = WorkItemState(work_item=REF)
+    for key, value in fields.items():
+        setattr(state, key, value)
+    state.save(spec)
+    return str(tmp_path / "co")
+
+
+def _with_session(tmp_path, registry, cwd):
+    registry.register(
+        Session(
+            work_item=WorkItemRef.parse(REF),
+            harness="claude",
+            harness_session_id="s-1",
+            cwd=cwd,
+        ),
+        force=True,
+    )
+
+
+def test_the_choice_is_read_from_the_work_items_own_state(tmp_path):
+    """R4.3 — the checkout the session record names, not a second copy."""
+    registry, dispatcher, _ = _dispatcher(tmp_path)
+    _with_session(tmp_path, registry, _checkout(tmp_path, model="fable-5.1"))
+    assert dispatcher._resolved_choice(WorkItemRef.parse(REF), "claude") == (
+        "fable-5.1",
+        "",
+    )
+
+
+def test_the_session_per_pr_mode_is_read_from_the_same_file(tmp_path):
+    """R4.3 — one file answers both questions the daemon asks per work item."""
+    registry, dispatcher, _ = _dispatcher(tmp_path)
+    _with_session(tmp_path, registry, _checkout(tmp_path, session_per_pr="always"))
+    assert dispatcher._tmux_for(WorkItemRef.parse(REF)).session_per_pr == "always"
+
+
+def test_an_undeclared_model_in_the_state_file_buys_nothing(tmp_path):
+    """Abuse case 1 — the state file is agent-writable, so it is re-validated."""
+    registry, dispatcher, _ = _dispatcher(tmp_path)
+    _with_session(tmp_path, registry, _checkout(tmp_path, model="gpt-9"))
+    assert dispatcher._resolved_choice(WorkItemRef.parse(REF), "claude") == ("", "")
+
+
+def test_a_fourth_session_per_pr_mode_routes_by_the_operators_default(tmp_path):
+    """Abuse case 2 — a fourth mode never reaches TmuxConfig."""
+    registry, dispatcher, _ = _dispatcher(tmp_path)
+    _with_session(tmp_path, registry, _checkout(tmp_path, session_per_pr="sometimes"))
+    tmux = dispatcher._tmux_for(WorkItemRef.parse(REF))
+    assert tmux.session_per_pr == dispatcher.config.tmux.session_per_pr
+
+
+def test_a_work_item_frozen_before_the_change_is_routed_by_its_portable_record(
+    tmp_path,
+):
+    """R4.4 — read old, write new: an item in flight keeps its routing."""
+    import json
+
+    _freeze(tmp_path, model="fable-5.1")
+    registry, dispatcher, _ = _dispatcher(tmp_path)
+    # Its state file has none of the keys, because it was frozen before they existed.
+    _with_session(tmp_path, registry, _checkout(tmp_path))
+    assert dispatcher._resolved_choice(WorkItemRef.parse(REF), "claude") == (
+        "fable-5.1",
+        "",
+    )
+    # …and the legacy copy is never rewritten.
+    record = json.loads(
+        (tmp_path / "state" / "portable" / "github-octo-repo-358.json").read_text()
+    )
+    assert record["graph"]["model"] == "fable-5.1"
+
+
+def test_the_state_file_wins_over_a_legacy_portable_copy(tmp_path):
+    """R4.3 before R4.4: the fallback is for a file that says nothing at all."""
+    _freeze(tmp_path, model="fable-5.1")
+    registry, dispatcher, _ = _dispatcher(tmp_path)
+    _with_session(tmp_path, registry, _checkout(tmp_path, model="opus-5"))
+    assert dispatcher._resolved_choice(WorkItemRef.parse(REF), "claude") == (
+        "opus-5",
+        "",
+    )
+
+
+def test_no_checkout_and_no_record_resolves_to_the_operators_defaults(tmp_path):
+    """Fail closed: a read never fails a delivery."""
+    _, dispatcher, _ = _dispatcher(tmp_path)
+    assert dispatcher._resolved_choice(WorkItemRef.parse(REF), "claude") == ("", "")
+    assert (
+        dispatcher._tmux_for(WorkItemRef.parse(REF)).session_per_pr
+        == dispatcher.config.tmux.session_per_pr
+    )

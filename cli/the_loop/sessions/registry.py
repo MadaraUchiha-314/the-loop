@@ -35,7 +35,7 @@ import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from .. import eventlog
 
@@ -43,6 +43,11 @@ logger = logging.getLogger("the-loop.sessions")
 
 # How many processed delivery ids each session keeps (restart-surviving dedup).
 _RECENT_DELIVERIES_CAP = 50
+
+#: The record shape on disk (issue-368): one work item, its channel cursors, and
+#: a map of endpoints keyed by the ref each serves. A record without this key is
+#: the pre-issue-368 shape — read as it was, rewritten as this on its next save.
+RECORD_VERSION = 2
 
 _REF_RE = re.compile(r"^(?P<provider>[a-z][a-z0-9-]*):(?P<path>[^#]+)#(?P<number>\d+)$")
 
@@ -315,7 +320,21 @@ class Session:
     harness_args: List[str] = field(default_factory=list)
     #: Endpoints for the pull requests delivering this work item (issue-172).
     #: Empty on an endpoint; empty on a record until a PR event routes here.
+    #:
+    #: In memory this is still a list of endpoints, because every caller — the
+    #: dispatcher, `sessions list`, the control plane — asks the record for the
+    #: endpoint serving a ref. **On disk** (issue-368) the record is a map keyed
+    #: by that ref, holding handles alone: the pull request's repository, number,
+    #: URL and upstream state are the repository's facts and live once, in
+    #: `work-item-state.json`'s `pullRequests[]`, joined by the same ref.
     pull_requests: List["Session"] = field(default_factory=list)
+    #: What this machine has already mirrored of the work item's channel
+    #: conversations (issue-368, R5.1): ``{"slack": {"cursors": {thread: ts}}}``.
+    #: A cursor is a statement about THIS deployment — carried elsewhere it
+    #: would suppress replies the other machine never processed — so it sits
+    #: with the handles rather than in the portable record beside the binding.
+    #: Only ever set on a record; an endpoint carries none.
+    channels: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         # `tmuxTarget` is the name **tmux uses**, never the one the-loop asked
@@ -365,6 +384,101 @@ class Session:
             # file written before issue-172 round-trips byte-identically.
             data["pullRequests"] = [pr.to_dict() for pr in self.pull_requests]
         return data
+
+    # -- the record on disk (issue-368) ----------------------------------------
+    #
+    # `to_dict` above is the **view**: what `sessions list`, the API and the
+    # control plane read, with the work item spelled out and the pull requests
+    # nested. The two methods below are the **file**: a map of endpoints keyed by
+    # the ref each serves, holding handles and nothing else. The owner's review
+    # on PR #369 is the rule — a pull request's repository, number, URL and
+    # upstream state are recorded once, in `work-item-state.json`, and this file
+    # (which must never travel) knows only the ref that joins them.
+
+    def endpoint_dict(self) -> dict:
+        """One endpoint's handles — no identity, no derived fields."""
+        data: Dict[str, Any] = {
+            "harness": self.harness,
+            "harnessSessionId": self.harness_session_id,
+            "cwd": self.cwd,
+            "status": self.status,
+            "createdAt": self.created_at,
+            "lastEventAt": self.last_event_at,
+            "tmuxTarget": self.tmux_target,
+            "recentDeliveries": self.recent_deliveries,
+        }
+        # Absent rather than empty (issue-358): a reader can tell "launched with
+        # nothing extra" from "written before the-loop recorded this".
+        if self.model:
+            data["model"] = self.model
+        if self.effort:
+            data["effort"] = self.effort
+        if self.harness_args:
+            data["harnessArgs"] = list(self.harness_args)
+        return data
+
+    def record_dict(self) -> dict:
+        """The whole record as it is written: the work item's ref, this
+        machine's channel cursors, and one entry per session it holds."""
+        sessions: Dict[str, Any] = {self.work_item.ref: self.endpoint_dict()}
+        for pr in self.pull_requests:
+            sessions[pr.work_item.ref] = pr.endpoint_dict()
+        record: Dict[str, Any] = {
+            "version": RECORD_VERSION,
+            "workItem": self.work_item.ref,
+        }
+        if self.channels:
+            record["channels"] = self.channels
+        record["sessions"] = sessions
+        return record
+
+    @classmethod
+    def endpoint_from_dict(cls, ref: str, data: dict) -> "Session":
+        """One endpoint, from its key and its handles."""
+        return cls(
+            work_item=WorkItemRef.parse(ref),
+            harness=str(data.get("harness") or ""),
+            harness_session_id=str(data.get("harnessSessionId") or ""),
+            cwd=str(data.get("cwd") or ""),
+            status=str(data.get("status") or "active"),
+            created_at=str(data.get("createdAt") or ""),
+            last_event_at=data.get("lastEventAt"),
+            tmux_target=str(data.get("tmuxTarget") or ""),
+            recent_deliveries=[str(d) for d in (data.get("recentDeliveries") or [])],
+            model=str(data.get("model") or ""),
+            effort=str(data.get("effort") or ""),
+            harness_args=[str(a) for a in (data.get("harnessArgs") or [])],
+        )
+
+    @classmethod
+    def record_from_dict(cls, data: dict) -> "Session":
+        """A record from either shape — the map, or the pre-issue-368 file.
+
+        Read old, write new: a record written before this change (identity and
+        handles at the top level, `pullRequests` a list of endpoints carrying a
+        second copy of each pull request) loads into the same object and is
+        rewritten as a map on its next save. Nothing is lost and nothing is
+        migrated in bulk.
+        """
+        sessions = data.get("sessions")
+        if not isinstance(sessions, dict):
+            return cls.from_dict(data)
+        own_ref = str(data.get("workItem") or "")
+        if not own_ref:
+            raise KeyError("workItem")
+        record = cls.endpoint_from_dict(own_ref, sessions.get(own_ref) or {})
+        channels = data.get("channels")
+        record.channels = dict(channels) if isinstance(channels, dict) else {}
+        for ref, endpoint in sessions.items():
+            if str(ref) == own_ref or not isinstance(endpoint, dict):
+                continue
+            try:
+                record.pull_requests.append(cls.endpoint_from_dict(str(ref), endpoint))
+            except (ValueError, KeyError, TypeError) as exc:
+                # The `from_dict` rule: a hand-edited entry degrades to "that
+                # pull request is unrecorded", never takes the record down.
+                logger.debug("skipping unreadable session entry %r: %s", ref, exc)
+        return record
 
     @classmethod
     def from_dict(cls, data: dict) -> "Session":
@@ -460,11 +574,11 @@ class SessionRegistry:
             raise
 
     def _write(self, session: Session) -> None:
-        self._write_json(self._path_for(session.work_item), session.to_dict())
+        self._write_json(self._path_for(session.work_item), session.record_dict())
 
     def _read(self, path: Path) -> Optional[Session]:
         try:
-            return Session.from_dict(json.loads(path.read_text()))
+            return Session.record_from_dict(json.loads(path.read_text()))
         except (OSError, ValueError, KeyError) as exc:
             logger.warning("skipping unreadable registry file %s: %s", path, exc)
             return None
@@ -732,6 +846,9 @@ class SessionRegistry:
             return
         if endpoint.work_item.ref == owner_ref.ref:
             endpoint.pull_requests = record.pull_requests
+            # The record's own, not the endpoint's: a caller hands back the
+            # session it was working on, and the cursors belong to the file.
+            endpoint.channels = record.channels
             self._write(endpoint)
             return
         replaced = [
@@ -796,3 +913,51 @@ class SessionRegistry:
             endpoint.recent_deliveries.append(delivery_id)
             del endpoint.recent_deliveries[:-_RECENT_DELIVERIES_CAP]
         self._write(record)
+
+    # -- channel read cursors (issue-368) --------------------------------------
+
+    def cursor(
+        self,
+        work_item: Union[str, WorkItemRef],
+        channel: str,
+        thread: str,
+    ) -> str:
+        """The last reply THIS machine mirrored in ``thread``, or ``""``.
+
+        A cursor is a statement about this deployment — what it already
+        processed — so it sits with the handles rather than beside the binding
+        in the portable record, which is a fact about the world. ``""`` means
+        "nothing yet", and the caller reads the thread from its root, exactly as
+        an unknown thread behaved before.
+        """
+        record = self.find_by_work_item(work_item, include_closed=True)
+        if record is None:
+            return ""
+        cursors = ((record.channels.get(channel) or {}).get("cursors")) or {}
+        return str(cursors.get(thread) or "")
+
+    def advance_cursor(
+        self,
+        work_item: Union[str, WorkItemRef],
+        channel: str,
+        thread: str,
+        ts: str,
+    ) -> bool:
+        """Record that ``thread`` is mirrored up to ``ts``. False when there is
+        no record here to write it on.
+
+        A work item with no session on this machine has nowhere to keep a
+        cursor, and needs none: nothing here is mirroring its thread.
+        """
+        record = self.find_by_work_item(work_item, include_closed=True)
+        if record is None or not thread or not ts:
+            return False
+        channels = dict(record.channels)
+        entry = dict(channels.get(channel) or {})
+        cursors = dict(entry.get("cursors") or {})
+        cursors[thread] = ts
+        entry["cursors"] = cursors
+        channels[channel] = entry
+        record.channels = channels
+        self._write(record)
+        return True
