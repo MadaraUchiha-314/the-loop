@@ -1,3 +1,9 @@
+## v18.0.0 (2026-09-15)
+
+### Feat
+
+- **issue-368**: one rule for where a work item's attributes live (#369)
+
 ## v17.1.0 (2026-09-15)
 
 ### Feat
