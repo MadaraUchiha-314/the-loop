@@ -9,6 +9,6 @@ workItem: "github:MadaraUchiha-314/the-loop#371"
 
 | Pull request | Branch | State |
 |--------------|--------|-------|
-| _to be filled on open_ | `claude/github-issue-371-v76ts6` | open |
+| [#373](https://github.com/MadaraUchiha-314/the-loop/pull/373) | `claude/github-issue-371-v76ts6` | open |
 
 The R10 reviewer briefing is posted in the pull request body.
