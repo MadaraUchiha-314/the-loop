@@ -1,3 +1,9 @@
+## v19.1.0 (2026-09-16)
+
+### Feat
+
+- **issue-371**: every comment the-loop finishes with is acknowledged on the comment (#373)
+
 ## v19.0.0 (2026-09-16)
 
 ### Feat
