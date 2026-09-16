@@ -140,6 +140,30 @@ SETTLED_OUTCOMES = (
     + SETTLED_OUT_OF_SCOPE
 )
 
+# What each settled outcome is ACKNOWLEDGED with (issue-371). Issue-84 wired
+# reactions to the *delivered* branch — `_worker` reacts when it dequeues an
+# event and again from what the dispatch returned — so an event the dispatcher
+# consumes instead of delivering was never acknowledged at all. A control
+# command is the clearest case: `the-loop add-collaborator @someone` writes the
+# roster and returns, leaving the person who typed it unable to tell a granted
+# collaborator from a daemon that is not running.
+#
+# Built from the same constants as `SETTLED_OUTCOMES`, so a settled outcome
+# nobody classifies is silent rather than wrong. Two deliberate readings:
+#
+# * the **suppressed** family is `started` (👀), not `error`. Its own contract is
+#   that the harness re-reads the thread instead, so the comment is pending, not
+#   failed — and 👀 is the one state of the three that means "seen";
+# * an **out-of-scope** refusal has no entry, so nothing is posted. Another
+#   instance may own the work item and a mark from a non-owner is noise at best
+#   (issue-322 R2.6). The exclusion is data, not a branch.
+ACK_STATES = {
+    SETTLED_CONTROL_EXECUTED: STATE_COMPLETED,
+    SETTLED_CONTROL_REJECTED: STATE_ERROR,
+    SETTLED_CONTROL_AMBIGUOUS: STATE_ERROR,
+    **{outcome: STATE_STARTED for outcome in SETTLED_SUPPRESSED},
+}
+
 # Fallback when routing.promptTemplate does not exist. Templates are internal to
 # the-loop and ship with the plugin, not the project repo (issue #36), so this
 # built-in default is the source of truth in a project repo.
@@ -838,8 +862,10 @@ class Dispatcher:
             return "awaiting-start"
         return ""
 
-    def _settle(self, routed: RoutedEvent, outcome: str) -> None:
-        """Record that this event is finished with (issue-270).
+    def _settle(
+        self, routed: RoutedEvent, outcome: str, *, acknowledge: bool = True
+    ) -> None:
+        """Record that this event is finished with, and say so (issue-270, -371).
 
         The delivery id was already being kept marked at every site that calls
         this — the *deliberate* half of "at most once". What was missing is the
@@ -847,9 +873,34 @@ class Dispatcher:
         it must resolve from a dispatch it should still be waiting for. A no-op
         for an event with no delivery id (a hand-built one, or a CLI-sourced
         command).
+
+        Since issue-371 it is also where an event the dispatcher *consumed* —
+        a control command it executed or refused, an event it suppressed on
+        purpose — gets its reaction. This is the seam every such path already
+        goes through and no delivered one does, so one statement covers them
+        all; :data:`ACK_STATES` says which reaction each outcome deserves and
+        which outcomes stay silent.
+
+        **Record first, decorate second.** The durable half — the settled id
+        here, and the ``control.*`` / ``dispatch.dropped`` entry the caller has
+        already emitted — is written before the reaction is attempted, and the
+        reaction leans on ``GitHubReactor.react``'s contract (never raises,
+        always returns) rather than re-implementing it. A reactor that hangs
+        until its timeout cannot cost the-loop a settled delivery.
+
+        ``acknowledge=False`` is for the two callers whose reaction is somebody
+        else's to post or not to post: an out-of-scope refusal (issue-322 R2.6
+        — a non-owner instance leaves no mark) and the paused branch inside
+        :meth:`_dispatch_one`, whose worker has already reacted on this entity.
+        It defaults to ``True`` on purpose: a settle site added later should be
+        acknowledged unless its author says otherwise.
         """
         if routed.delivery_id:
             self.deduper.mark_settled(routed.delivery_id, outcome)
+        if acknowledge:
+            state = ACK_STATES.get(outcome)
+            if state:
+                self.reactor.react(routed, state)
 
     # -- intake -----------------------------------------------------------------
 
@@ -1180,7 +1231,9 @@ class Dispatcher:
             and actor
             and is_authorized(actor, self.config.authorized_users)
         ):
-            self._reject_control(control.command, routed, actor, scope.outcome)
+            self._reject_control(
+                control.command, routed, actor, scope.outcome, acknowledge=False
+            )
             return
         logger.info(
             "instance %s (%s) is not handling %s on %s: %s",
@@ -2010,9 +2063,22 @@ class Dispatcher:
         self._settle(routed, SETTLED_CONTROL_EXECUTED)
 
     def _reject_control(
-        self, command: str, routed: RoutedEvent, actor: str, reason: str
+        self,
+        command: str,
+        routed: RoutedEvent,
+        actor: str,
+        reason: str,
+        *,
+        acknowledge: bool = True,
     ) -> None:
-        """Record a recognised command that could not be honoured (nothing runs)."""
+        """Record a recognised command that could not be honoured (nothing runs).
+
+        The refusal is acknowledged on the comment that carried the command
+        (issue-371) — the person who typed it is inside the trust boundary
+        already, so a 😕 discloses nothing that executing the command would not.
+        ``acknowledge=False`` is :meth:`_refuse_scope`'s: a command this
+        instance refuses as *out of its scope* leaves no mark at all.
+        """
         refs = [item.ref for item in routed.work_items]
         logger.warning(
             "refusing the %s command on %s: %s",
@@ -2038,7 +2104,7 @@ class Dispatcher:
         )
         # A decision about the command, not a failed delivery: retrying it would
         # reach the same answer, so the delivery is settled (issue-270).
-        self._settle(routed, SETTLED_CONTROL_REJECTED)
+        self._settle(routed, SETTLED_CONTROL_REJECTED, acknowledge=acknowledge)
 
     def close_session(
         self,
@@ -2449,8 +2515,11 @@ class Dispatcher:
             )
             # The asynchronous half of the same suppression: by now the poll path
             # has recorded an attempt for this delivery, and this is what the
-            # next cycle reads instead of "still in flight" (issue-270).
-            self._settle(routed, "session-paused")
+            # next cycle reads instead of "still in flight" (issue-270). Not
+            # acknowledged here (issue-371): this is the one settle that happens
+            # INSIDE the delivered branch, whose worker has already reacted on
+            # this entity and will react again from the value returned below.
+            self._settle(routed, "session-paused", acknowledge=False)
             return True
 
         # Which conversation receives it (issue-172). The record is the work

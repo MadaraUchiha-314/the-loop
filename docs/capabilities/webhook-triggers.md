@@ -695,6 +695,19 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   (`+1 -1 laugh confused heart hooray rocket eyes`; ✅/⁉️ don't exist), and each
   state's emoji is configurable (`""` skips a state). Outcomes are logged as
   `reaction.added` / `reaction.failed`.
+- WHEN the dispatcher **consumes** an event instead of delivering it — it executed a
+  control keyword, refused one, read two conflicting ones, or suppressed the event on
+  purpose — THEN it SHALL acknowledge it on the same entity, from the same
+  `routing.reactions` palette and through the same best-effort reactor (issue-371):
+  `completed` for an executed command, `error` for a refused or unreadable one, and
+  `started` for a suppressed event (`awaiting-start`, `session-paused`,
+  `collaborator-no-spawn`) — seen, and pending, because the harness re-reads the thread
+  once the work item runs. The acknowledgement SHALL be posted **after** the outcome is
+  recorded and SHALL NOT affect it. An event refused as **out of this instance's scope**
+  SHALL post nothing (issue-322's "no reaction, no comment, no record" holds on every
+  route into it, including an authorized command), and so SHALL a duplicate delivery, an
+  event with no resolvable work item, a spawn-policy drop released for retry, and any
+  comment refused at ingress.
 - WHEN the dispatcher spawns (or respawns) a session THEN it SHALL first pre-seed the
   harness's own user config for that session's working directory
   (`routing.harnessTrust`, default **on**), so an unattended session cannot stall on
@@ -809,6 +822,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-371 | Every event the dispatcher **finishes with** is acknowledged, not only the ones it delivers (2026-09-16). Issue-84 wired reactions to `_worker`, the thread that delivers an event to a session — so a comment that *was* an instruction (`the-loop add-collaborator @someone` wrote the roster and returned), one that was refused, one carrying two keywords, and one suppressed on purpose all ended in silence, leaving the person who typed it unable to tell a granted collaborator from a daemon that is not running. The acknowledgement now hangs off `_settle`, the seam that already meant "finished with this delivery": a fixed table maps each settled outcome to one of the three states the operator already configures — `completed` for an executed command, `error` for a refused or unreadable one, `started` for the suppressed family (seen, and pending). No new config key, no new event type, record written before the decoration is attempted. Out-of-scope refusals stay silent on every route into them, and the delivered branch is untouched | [spec](../specs/issue-371/), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/371) |
 | issue-370 | the-loop stopped guessing which pull requests belong to a work item (2026-09-16). The poller's third owner question — GitHub's closing references, the `issue-<n>` branch, a closing keyword — filed a stranger's pull request under a work item's portable record, and the dispatcher wrote the same guess into the work item's **checked-in** state as `linkedBy: "event"`; both are gone, so tracking is what `the-loop sessions link-pr` recorded and nothing else. To make that record reliable rather than a rule the model had to remember, a `PostToolUse` hook runs the command when a session creates a pull request, and the tmux runner finally exports `THE_LOOP_WORK_ITEM` — the variable the plugin's hooks have read since issue-109 and nothing ever set. Delivery routing is unchanged | [spec](../specs/issue-370/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/370) |
 | issue-368 | The daemon reads a work item's frozen choices from its **own checked-in state** (2026-09-15) rather than from the operator's portable record, and records each pull request it routes for in that same file through the coupling (`graph.pull_request_linked`); a closing pull request with an owner has its upstream state recorded there and its nested poll ledger dropped instead of being stamped `ended`, which is what used to mint it a portable record of its own. A work item frozen before the change keeps its `graph` section and is routed by it, read and never rewritten | [spec](../specs/issue-368/), [decision-128](../decisions/decision-128.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/368) |
 | issue-352 | The coupling stopped reading the work item's checkout (2026-09-12): the spec directory is `routing.graph.specDir` for every repository the instance drives, the label prefix is the constant `loop:`, notifications carry no configured roles, and the pre-spawn adoption that wrote a default harness config into a fresh clone is gone with the reader it served | [spec](../specs/issue-352/), [decision-123](../decisions/decision-123.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/352) |
