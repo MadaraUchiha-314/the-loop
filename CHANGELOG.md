@@ -1,3 +1,9 @@
+## v19.0.0 (2026-09-16)
+
+### Feat
+
+- **issue-370**: a pull request is tracked because the-loop recorded it, never because GitHub guessed (#372)
+
 ## v18.0.0 (2026-09-15)
 
 ### Feat
