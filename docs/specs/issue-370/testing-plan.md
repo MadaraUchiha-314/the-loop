@@ -39,6 +39,8 @@ overrides: {}
 | T13 | Parity | yes | `hooks/hooks.json` declares the `PostToolUse` entry pointing at the shipped file, and the file exists and is executable | `cli/tests/test_harness_link_pr.py` |
 | T14 | Docs parity | yes | the capability docs and `reference/automation.md` no longer describe the removed inference (reviewed at `documentation`, recorded in `evidence/documentation.md`) | review |
 | T15 | Security | yes | the hook never interpolates payload text into a shell, validates the extracted number and repository before they reach an argv, and bounds the subprocess with a timeout | `cli/tests/test_harness_link_pr.py` + `evidence/security-review.md` |
+| T18 | Unit | yes | a PR armed as its own work item records itself with `self: true` and no `stateDir`; it round-trips; the self ref is refused without the marker; a delivering row keeps its inner loop and carries no marker key; a hand-written `stateDir` on a marked row is dropped (R7.1–R7.3, R7.5, AC8) | `cli/tests/test_graph_state.py` |
+| T19 | Unit | yes | "is this work item a pull request?" is read from the arming event — true for a PR event about itself, false for an issue, false for an event about a *different* PR, false with no event; `on_arm` records the row for the first case only, and the write is idempotent (R7.1, R7.4, AC8) | `cli/tests/test_graphlink.py` |
 | T16 | Performance | no | no hot path changes; the poller does strictly less work per item | — |
 | T17 | Accessibility | no | no UI surface | — |
 

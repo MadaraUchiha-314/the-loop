@@ -165,9 +165,20 @@ class PullRequest:
     state: str = "open"
     linked_at: str = ""
     linked_by: str = "session"
+    #: This pull request **is** the work item, rather than delivering it
+    #: (issue-370, R7.1). `the-loop review` and `the-loop contribute` are armed
+    #: on a pull request, and the abstract entity the-loop manages is a work
+    #: item whatever represents it — a GitHub issue, a Jira story, a pull
+    #: request. So the pull request is recorded here the same way any other is,
+    #: and this marker is what tells a reader which of the two relations it has
+    #: without comparing refs. A marked row carries **no** ``stateDir``: the
+    #: work item's own directory is the loop, so there is no inner loop to
+    #: point at, and deriving one would nest a copy of the work item inside
+    #: itself.
+    is_self: bool = False
 
     def as_dict(self) -> Dict[str, Any]:
-        return {
+        data: Dict[str, Any] = {
             "ref": self.ref,
             "repository": self.repository,
             "number": self.number,
@@ -177,6 +188,13 @@ class PullRequest:
             "linkedAt": self.linked_at,
             "linkedBy": self.linked_by,
         }
+        if self.is_self:
+            # Absent rather than `false`, the rule the rest of this file
+            # follows: every row written before issue-370 round-trips
+            # byte-identically, and a reader can tell "delivers it" from
+            # "written before the marker existed".
+            data["self"] = True
+        return data
 
     @classmethod
     def from_dict(
@@ -229,6 +247,13 @@ class PullRequest:
         state_dir = (
             stored if stored in spellings else _pr_state_dir(repository, number, origin)
         )
+        # The work item's own pull request has no inner loop (issue-370, R7.1),
+        # so any `stateDir` on that row is refused outright rather than
+        # recomputed: the one this repository and number would derive points
+        # inside the work item's own directory.
+        is_self = bool(data.get("self"))
+        if is_self:
+            state_dir = ""
         return cls(
             ref=ref,
             repository=repository,
@@ -242,6 +267,7 @@ class PullRequest:
             state=state if state in PR_STATES else "open",
             linked_at=str(data.get("linkedAt") or ""),
             linked_by=linked_by if linked_by in PR_LINKED_BY else "event",
+            is_self=is_self,
         )
 
 
@@ -515,6 +541,7 @@ class WorkItemState:
         number: int = 0,
         url: str = "",
         linked_by: str = "session",
+        is_self: bool = False,
     ) -> Optional[PullRequest]:
         """Record that ``ref`` delivers this work item; ``None`` when it already did.
 
@@ -525,12 +552,23 @@ class WorkItemState:
         closing keyword anyone can author. The first routing event used to write
         here too; it no longer does.
 
+        ``is_self`` records the **other** relation a pull request can have to a
+        work item (issue-370, R7.1): it *is* the work item, because
+        ``the-loop review`` or ``the-loop contribute`` was armed on it. The two
+        are recorded the same way, in the same list, so every reader of "which
+        pull requests does this work item involve?" gets one answer whether the
+        work item is an issue or a pull request; :attr:`PullRequest.is_self` is
+        what distinguishes them. Without the flag a work item still does not
+        **deliver** itself, and the self ref is refused as it always was.
+
         Idempotent by ref, like the registry's own ``link_pull_request``, so
         re-running the link after a retry costs nothing. Refuses an entry that
         does not validate (an unusable repository path), because this value
         becomes a directory name.
         """
-        if not ref or ref == self.work_item or self.pull_request(ref) is not None:
+        if not ref or self.pull_request(ref) is not None:
+            return None
+        if ref == self.work_item and not is_self:
             return None
         entry = PullRequest.from_dict(
             {
@@ -541,6 +579,7 @@ class WorkItemState:
                 "state": "open",
                 "linkedAt": utc_now(),
                 "linkedBy": linked_by,
+                **({"self": True} if is_self else {}),
             },
             origin=repository_of(self.work_item),
         )

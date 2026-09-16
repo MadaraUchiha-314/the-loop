@@ -60,6 +60,17 @@ Concretely, three removals and one addition:
 items from all three sources, so a review comment on a contributor's pull request still
 reaches the work item's session.
 
+**And the rule is uniform across what a work item *is*.** the-loop is armed four ways —
+`start` and `do` on a work item, `review` and `contribute` on a pull request — and the
+entity it manages is one work item whatever represents it: a GitHub issue, a Jira story, a
+pull request, whatever comes next. So a pull request armed as its own work item is recorded
+in `pullRequests[]` the same way one the-loop opened for an issue is, marked `self: true`
+and carrying no `stateDir` (the work item's own directory is the loop; an inner-loop path
+would nest a copy of it inside itself). One list, one answer to "which pull requests does
+this work item involve?", and a marker rather than a ref comparison to say which of the two
+relations a row has. Owner ruling on
+[PR #372](https://github.com/MadaraUchiha-314/the-loop/pull/372).
+
 ## Consequences
 
 - A pull request the-loop did not open is not part of a work item's tracking unless
@@ -77,6 +88,12 @@ reaches the work item's session.
   well as the routing.
 
 ## Alternatives rejected
+
+- **Infer "this work item is a pull request" from the selected loop.** `review` and
+  `contribute` are the two guest loops, so loop membership looks like the signal.
+  Rejected: `the-loop contribute` can join an issue as readily as a pull request, so the
+  loop answers a different question. The arming event is the one place that knows, and it
+  is already parsed.
 
 - **Remove the router's delivery linkage too**, the literal reading of "remove the magic".
   It would silently stop delivering review comments on every pull request the-loop did not

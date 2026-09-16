@@ -76,6 +76,18 @@ overrides: {}
   - _Requirements:_ R5.1, R5.2
   - _Test:_ T12 (red→green)
 
+- [x] 10. A pull request that IS the work item is recorded like any other
+  - `cli/the_loop/graph/state.py`: `PullRequest.is_self`, serialized as `self: true` and
+    absent otherwise; a marked row carries no `stateDir` and a hand-written one is refused;
+    `link_pr(..., is_self=True)` is the only way the self ref is accepted
+  - `cli/the_loop/graphlink.py`: `_armed_on_its_own_pull_request` (read off the arming
+    event) and `_record_self_pull_request`, called from `on_arm` and `on_spawn`
+  - _Depends on:_ 3
+  - _Requirements:_ R7.1–R7.5
+  - _Test:_ T18, T19 (red→green)
+  - _Owner ruling:_ PR #372 — "the-loop should add the PR in the same way it links the PR
+    to any other work item"
+
 - [x] 8. Documentation
   - `docs/capabilities/webhook-triggers.md`, `docs/capabilities/process-graph.md`,
     `docs/capabilities/cli.md`, `docs/capabilities/distribution.md`: the new rule, with a

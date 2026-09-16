@@ -47,6 +47,7 @@ three inference sources fed both. After it, they feed delivery alone.
 | review `Pull requests:` pre-fill | `pr-loops/` dirs + **GitHub `linked-pulls` GraphQL** | recorded `pullRequests[]` + `pr-loops/` dirs |
 | how the recording happens | the model remembers a prose rule after `gh pr create` | a `PostToolUse` hook runs it; the prose rule is the fallback |
 | what a spawned session knows about itself | `THE_LOOP_INSTANCE` | `THE_LOOP_INSTANCE`, `THE_LOOP_WORK_ITEM` |
+| a PR armed as its own work item (`review`/`contribute`) | absent from `pullRequests[]` | recorded there, marked `self: true` |
 
 ### A worked example
 
@@ -127,6 +128,41 @@ typed), it reaches only a human-edited suggestion rather than a committed list, 
 closing it fully means removing the delivery inference — the out-of-scope item above. If
 the owner wants the pre-fill to read `pullRequests[]` alone, that is a one-line change to
 `_detected_pulls`.
+
+### C6 — a pull request that IS the work item (R7)
+
+The owner's ruling on PR #372 closes the other half of the same rule. the-loop is armed
+four ways — `start` and `do` on a work item, `review` and `contribute` on a pull request —
+and the entity it manages is one **work item** whatever represents it: a GitHub issue, a
+Jira story, a pull request. So a pull request armed by `review`/`contribute` is recorded in
+`pullRequests[]` exactly as one the-loop opened for an issue is.
+
+A pull request can therefore stand in two relations to a work item, and the list holds
+both:
+
+| relation | recorded by | `self` | `stateDir` |
+|---|---|---|---|
+| **delivers** the work item | `the-loop sessions link-pr` | absent | `pr-loops/[<owner>__<repo>/]pr-<n>` |
+| **is** the work item | arming (`review` / `contribute`) | `true` | `""` |
+
+`self: true` is the marker, so a reader tells them apart without comparing refs against
+`workItem`. The marked row carries no `stateDir` deliberately: the work item's own
+directory *is* the loop, so the derived `pr-loops/pr-<n>` would nest a copy of the work
+item inside itself. A `stateDir` hand-written onto a marked row is refused outright rather
+than recomputed — the same fail-closed treatment every other field in this agent-writable
+file gets.
+
+Two narrow decisions:
+
+- **"Is this work item a pull request?" is read off the arming event**, through the
+  `pr_work_item` parse the dispatcher already uses — not from the loop that was selected
+  (`the-loop contribute` may join an issue) and not from GitHub (the round trip C3 just
+  removed). An unreadable event answers *no*, which is the safe direction: a missing row
+  costs a reader the uniformity; a wrong one puts a pull request into a committed file on a
+  guess, which is the thing this whole work item exists to stop.
+- **Without the marker a work item still does not deliver itself.** `link_pr` keeps its
+  refusal of the self ref; `is_self=True` is the only way past it, so the call site has to
+  say which relation it means.
 
 ### C4 — the recording is automatic (R4.1–R4.5)
 

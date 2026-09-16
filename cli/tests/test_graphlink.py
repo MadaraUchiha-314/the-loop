@@ -798,3 +798,126 @@ def test_on_arm_does_not_defer_when_the_runtime_raises(repo, monkeypatch):
     runtime = _FakeRuntime(raises=True)
     link = _link(repo, runtime)
     assert link.on_arm(REF, str(repo)) is False
+
+
+# -- a pull request that IS the work item (issue-370, R7) ------------------------
+
+
+def _armed_on_pr(number=113, event="pull_request"):
+    """The arming event for `the-loop review`/`contribute` on a pull request."""
+    return RoutedEvent(
+        event=event,
+        action="labeled",
+        delivery_id="d",
+        work_items=[REF],
+        payload={
+            "repository": {"full_name": "octo/repo"},
+            "pull_request": {
+                "number": number,
+                "html_url": f"https://github.com/octo/repo/pull/{number}",
+                "head": {"ref": "feature/whatever"},
+                "body": "",
+            },
+        },
+    )
+
+
+def _armed_on_issue():
+    return RoutedEvent(
+        event="issues",
+        action="labeled",
+        delivery_id="d",
+        work_items=[REF],
+        payload={
+            "repository": {"full_name": "octo/repo"},
+            "issue": {"number": 113, "html_url": "u"},
+        },
+    )
+
+
+class TestArmedOnItsOwnPullRequest:
+    """R7.1 — asked of the arming event, which is the one place that knows."""
+
+    def test_a_pull_request_armed_on_itself_is_recognised(self):
+        assert GraphLink._armed_on_its_own_pull_request(REF, _armed_on_pr()) is True
+
+    def test_an_issue_is_not_a_pull_request(self):
+        assert GraphLink._armed_on_its_own_pull_request(REF, _armed_on_issue()) is False
+
+    def test_an_event_about_a_different_pull_request_is_not_the_work_item(self):
+        """The delivering case — that row is `sessions link-pr`'s, not this one's."""
+        assert (
+            GraphLink._armed_on_its_own_pull_request(REF, _armed_on_pr(number=999))
+            is False
+        )
+
+    def test_no_event_answers_no(self):
+        """Safe direction: a missing row costs uniformity, a wrong one is a guess."""
+        assert GraphLink._armed_on_its_own_pull_request(REF, None) is False
+
+
+class _StateRuntime(_GateRuntime):
+    """A runtime whose `state_dir` is a real directory, so the write is real."""
+
+    def __init__(self, state_dir):
+        super().__init__()
+        self._dir = state_dir
+
+    def state_dir(self, item):
+        return self._dir
+
+
+def test_the_work_items_own_pull_request_is_recorded_with_the_marker(repo, tmp_path):
+    """R7.1 — one list, one answer, and `self: true` says which relation it is."""
+    from the_loop.graph.state import WorkItemState
+
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    link = _link(repo, _StateRuntime(state_dir))
+    runtime = _StateRuntime(state_dir)
+
+    link._record_self_pull_request(runtime, "issue-113", REF)  # noqa: SLF001
+
+    recorded = WorkItemState.load(state_dir, REF.ref)
+    (entry,) = recorded.pull_requests
+    assert entry.ref == REF.ref
+    assert entry.is_self is True
+    assert entry.linked_by == "session"
+    # No inner loop: the work item's own directory IS the loop, so deriving
+    # `pr-loops/pr-113` would nest a copy of the work item inside itself.
+    assert entry.state_dir == ""
+    assert recorded.pull_request(REF.ref) is not None
+
+
+def test_recording_the_work_items_own_pull_request_is_idempotent(repo, tmp_path):
+    """R7.1 — every later arming event re-records nothing."""
+    from the_loop.graph.state import WorkItemState
+
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    link = _link(repo, _StateRuntime(state_dir))
+    runtime = _StateRuntime(state_dir)
+
+    link._record_self_pull_request(runtime, "issue-113", REF)  # noqa: SLF001
+    link._record_self_pull_request(runtime, "issue-113", REF)  # noqa: SLF001
+
+    assert len(WorkItemState.load(state_dir, REF.ref).pull_requests) == 1
+
+
+def test_on_arm_records_the_self_row_only_for_a_pull_request(repo, monkeypatch):
+    """R7.1 — an issue-armed work item gains no self row."""
+    seen = []
+    runtime = _GateRuntime()
+    _pointer(monkeypatch, runtime)
+    link = _link(repo, runtime)
+    monkeypatch.setattr(
+        link,
+        "_record_self_pull_request",
+        lambda rt, item, wi: seen.append(wi.ref),
+    )
+
+    link.on_arm(REF, str(repo), routed=_armed_on_issue())
+    assert seen == []
+
+    link.on_arm(REF, str(repo), routed=_armed_on_pr())
+    assert seen == [REF.ref]

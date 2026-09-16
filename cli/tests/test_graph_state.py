@@ -225,6 +225,69 @@ def test_linking_a_pull_request_is_idempotent_by_ref(tmp_path):
     assert len(state.pull_requests) == 1
 
 
+def test_a_pull_request_that_is_the_work_item_is_recorded_with_a_marker(tmp_path):
+    """T18 (issue-370, R7.1) — `the-loop review`/`contribute` arm a PR.
+
+    The abstract entity the-loop manages is a work item, whatever represents it,
+    so the pull request goes in the same list as any other — and `self: true` is
+    what tells a reader it IS the work item rather than delivering it.
+    """
+    state = WorkItemState(work_item="github:octo/app#16")
+    entry = state.link_pr(
+        "github:octo/app#16", repository="octo/app", number=16, is_self=True
+    )
+    assert entry is not None and entry.is_self is True
+    assert entry.state_dir == ""  # the work item's own directory IS the loop
+    assert entry.as_dict()["self"] is True
+
+    state.save(tmp_path)
+    reloaded = WorkItemState.load(tmp_path, "github:octo/app#16")
+    carried = reloaded.pull_request("github:octo/app#16")
+    assert carried is not None and carried.is_self and carried.state_dir == ""
+
+
+def test_a_work_item_still_does_not_deliver_itself(tmp_path):
+    """R7.1 — the marker is the ONLY way the self ref is accepted."""
+    state = WorkItemState(work_item="github:octo/app#16")
+    assert state.link_pr("github:octo/app#16", repository="octo/app", number=16) is None
+    assert state.pull_requests == []
+
+
+def test_a_delivering_row_carries_no_marker_and_keeps_its_inner_loop(tmp_path):
+    """R7.1 — the two relations stay distinguishable, and only one has a loop."""
+    state = WorkItemState(work_item="github:octo/app#15")
+    entry = state.link_pr("github:octo/app#16", repository="octo/app", number=16)
+    assert entry is not None and entry.is_self is False
+    assert entry.state_dir == "pr-loops/pr-16"
+    assert "self" not in entry.as_dict()  # absent, so old rows round-trip as they were
+
+
+def test_a_hand_written_state_dir_on_a_self_row_is_refused(tmp_path):
+    """R7.1 — this file is agent-writable, and that path nests the item in itself."""
+    path = tmp_path / STATE_FILENAME
+    path.write_text(
+        json.dumps(
+            {
+                "workItem": "github:octo/app#16",
+                "pullRequests": [
+                    {
+                        "ref": "github:octo/app#16",
+                        "repository": "octo/app",
+                        "number": 16,
+                        "stateDir": "pr-loops/pr-16",
+                        "self": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    carried = WorkItemState.load(tmp_path, "github:octo/app#16").pull_request(
+        "github:octo/app#16"
+    )
+    assert carried is not None and carried.is_self and carried.state_dir == ""
+
+
 def test_a_pull_requests_upstream_state_is_recorded_on_its_own_entry(tmp_path):
     """R2.2 — merged/closed is the repository's fact about that pull request."""
     state = WorkItemState(work_item="github:octo/app#15")

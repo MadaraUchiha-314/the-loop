@@ -16,6 +16,7 @@ workItem: "github:MadaraUchiha-314/the-loop#370"
 |-------|----------|---------|------------------------|------|
 | 1 | `claude/claude-opus-5` (self) | new findings | 3 found, 3 fixed — see below | this file |
 | 2 | `claude/claude-opus-5` (self) | zero (converged) | re-read of the same diff after the round-1 fixes surfaced nothing new | this file |
+| 3 | `claude/claude-opus-5` (self) | zero (converged) | the R7 addition (the owner's ruling on PR #372) read against the same checklist — see below | this file |
 
 ## Round 1 findings
 
@@ -36,6 +37,25 @@ workItem: "github:MadaraUchiha-314/the-loop#370"
    none of the changed behaviour — an invitation to edit a document for the sake of the
    checklist. *Fixed:* R6.1 names the four capability docs and two user-facing pages that
    actually changed, and says an unaffected doc is recorded with its reason instead.
+
+## Round 3 — after the owner's ruling on PR #372
+
+Outcome: **zero (converged)**. The added change (R7, the `self: true` row) was read against
+the same checklist; what it turned on:
+
+- **The signal is the arming event, not the loop.** My first instinct was
+  `loop in GUEST_LOOPS`, since `review` and `contribute` are the two guest loops. That is
+  wrong: `the-loop contribute` can join an **issue** (the `contribute-to` skill says
+  "issue or PR"), so loop membership answers a different question and would have marked
+  issues as pull requests. Caught before the code was written; recorded in
+  `decision-129` § Alternatives rejected so the next reader does not re-derive it.
+- **The self row must not derive a `stateDir`.** `pr-loops/pr-<n>` under the work item's
+  own spec directory is the work item nested inside itself. Empty on write, and a
+  hand-written one refused on read rather than recomputed — the fail-closed treatment the
+  rest of the file gets, with its own test.
+- **The refusal stays the default.** `link_pr` still rejects the self ref; `is_self=True`
+  is the only way past it, so a call site has to say which relation it means and no
+  existing writer can produce a self row by accident.
 
 ## What was checked and found sound
 

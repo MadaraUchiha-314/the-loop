@@ -156,6 +156,34 @@ item adds — needs that variable to actually be there.
   a tmux too old for `new-session -e` SHALL degrade exactly as it already does for
   `THE_LOOP_INSTANCE` — one warning, no failed spawn.
 
+### R7 — a pull request that IS the work item is recorded like any other
+
+> Added after the owner's ruling on PR #372: *"In all these cases, the 'abstract' entity
+> that we are managing is a 'work item'. A work item can be represented by a gh issue, a
+> jira story, gh PR or any other work item that may come in the future … when a user says
+> `the-loop review` on a PR, that is treated as a work item, similarly for
+> `the-loop contribute`. In this case, the-loop should add the PR in the same way it links
+> the PR to any other work item."*
+
+- **R7.1** WHEN a work item is armed AND the arming event says the work item **is** a pull
+  request THEN the-loop SHALL record that pull request in the work item's own
+  `work-item-state.json` `pullRequests[]`, through the same `link_pr` path that records a
+  pull request delivering an issue, marked `self: true`.
+- **R7.2** A marked row SHALL carry **no** `stateDir`. The work item's own directory is the
+  loop, so there is no inner loop to point at, and the derived path would nest a copy of
+  the work item inside itself. A `stateDir` hand-written onto a marked row SHALL be refused
+  rather than recomputed.
+- **R7.3** Without the marker a work item SHALL still not **deliver** itself: the self ref
+  stays refused, so the two relations a pull request can have to a work item remain
+  distinguishable without comparing refs.
+- **R7.4** Whether the work item is a pull request SHALL be read from the **arming event**,
+  never from the selected loop (`the-loop contribute` may join an issue) and never by
+  asking GitHub (the round trip R3 removed). An unreadable event SHALL answer "no": a
+  missing row costs a reader the uniformity, a wrong one puts a pull request in a committed
+  file on a guess.
+- **R7.5** The marker SHALL be **absent** rather than `false` on a delivering row, so every
+  row written before this change round-trips byte-identically.
+
 ### R6 — the documentation says the new rule
 
 - **R6.1** The affected capability docs SHALL be updated in this PR —
@@ -186,6 +214,10 @@ item adds — needs that variable to actually be there.
   payload for a successful `gh pr create` runs `sessions link-pr` with the new PR's
   number; every degraded input exits 0 and runs nothing (R4.1–R4.4).
 - **AC7** A tmux spawn for a work item carries `-e THE_LOOP_WORK_ITEM=<ref>` (R5.1).
+- **AC8** A pull request armed as its own work item appears in its own `pullRequests[]`
+  with `self: true` and no `stateDir`; an issue-armed work item gains no such row; the self
+  ref is still refused without the marker; a hand-written `stateDir` on a marked row is
+  dropped (R7.1–R7.5).
 
 ## Out of scope
 

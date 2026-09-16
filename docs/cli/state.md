@@ -148,6 +148,13 @@ because it is the record of what happened. Nothing mints a new one. **Which pull
 deliver a work item is a fact the-loop recorded, never one it inferred from a branch name
 or a closing keyword** — routing still reads those, but this list does not.
 
+A row may also carry **`self: true`**. That says the pull request *is* this work item
+rather than delivering it — `the-loop review` and `the-loop contribute` are armed on a
+pull request, and the entity the-loop manages is a work item whatever represents it, so
+both relations live in one list. A marked row has no `stateDir`: the work item's own
+directory is the loop, so an inner-loop path would nest a copy of it inside itself, and
+one written by hand is dropped rather than recomputed.
+
 Every value is re-validated on read, because this file is agent-writable **and**
 proposable by anyone who can open a pull request: a `repository` that is not a usable
 repository path is refused, a `stateDir` that is not one this repository and number derive
