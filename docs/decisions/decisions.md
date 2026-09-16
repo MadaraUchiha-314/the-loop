@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [129](decision-129.md) | Routing may guess which work item an event is about; tracking may not — a pull request is tracked because the-loop recorded opening it | proposed | 2026-09-16 |
 | [128](decision-128.md) | An attribute belongs to a party — the repository, the operator, or the machine | proposed | 2026-09-15 |
 | [127](decision-127.md) | The state file is the work item's, and the repositories it spans are the agent's to declare — once the design says what they are | proposed | 2026-09-14 |
 | [126](decision-126.md) | The execution log is retired; each gate keeps one record of its own under `evidence/` | proposed | 2026-09-14 |

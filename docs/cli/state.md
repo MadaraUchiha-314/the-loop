@@ -139,9 +139,21 @@ from the artifacts alone.
 the daemon's one close path; the session endpoint's own `status` stays a handle's status,
 which is why a tmux session retained after a merge is still attachable. `stateDir` is
 where that pull request's inner loop keeps its own pointer, derived at write so a reader
-needs no code to find it. `linkedBy` says which of the two writers recorded it: the
-session that opened the pull request (`the-loop sessions link-pr`) or the first event that
-routed for it.
+needs no code to find it. `linkedBy` says who recorded it, and since
+[issue-370](https://github.com/MadaraUchiha-314/the-loop/issues/370) there is one answer
+that the-loop writes: `session` — the session that opened the pull request said so,
+through `the-loop sessions link-pr`. The first event that routed for a pull request used
+to write here too, as `event`; a row carrying that is read and kept exactly as it is,
+because it is the record of what happened. Nothing mints a new one. **Which pull requests
+deliver a work item is a fact the-loop recorded, never one it inferred from a branch name
+or a closing keyword** — routing still reads those, but this list does not.
+
+A row may also carry **`self: true`**. That says the pull request *is* this work item
+rather than delivering it — `the-loop review` and `the-loop contribute` are armed on a
+pull request, and the entity the-loop manages is a work item whatever represents it, so
+both relations live in one list. A marked row has no `stateDir`: the work item's own
+directory is the loop, so an inner-loop path would nest a copy of it inside itself, and
+one written by hand is dropped rather than recomputed.
 
 Every value is re-validated on read, because this file is agent-writable **and**
 proposable by anyone who can open a pull request: a `repository` that is not a usable
@@ -621,11 +633,12 @@ next save. Nothing is migrated in bulk, and nothing is lost.
 Development panel, editing out the closing keyword, or one transient GraphQL failure
 silently re-pointed routing at the PR itself, past a session that was still running. The
 record is now the answer: everything about a work item — every PR delivering it and every
-conversation involved — is one file. A PR entry is added when its first event routes — or,
-for a PR the-loop opened itself, by the session that opened it
-([`sessions link-pr`](commands/sessions#link-pr), issue-274), because such a PR carries
-none of the linkages routing could otherwise infer — gets its own tmux session lazily from
-the first event that needs one, and is closed (that
+conversation involved — is one file. An **endpoint** here is added the first time an event
+routes for the PR: this is the machine's routing table, so it is built from the routing
+decision. (The work item's own `work-item-state.json` is the opposite — since issue-370 a
+row there is written only by [`sessions link-pr`](commands/sessions#link-pr), because that
+file is checked in and a guess in it is permanent.) An endpoint gets its own tmux session
+lazily from the first event that needs one, and is closed (that
 entry alone) when the PR merges or closes; the work item's session runs on, because a
 work item may be delivered by several PRs
 ([issue-101](https://github.com/MadaraUchiha-314/the-loop/issues/101)). An entry that has

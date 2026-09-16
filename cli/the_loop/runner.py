@@ -115,6 +115,12 @@ _TMUX_ENV_MIN_VERSION = (3, 2)
 _TMUX_VERSION_RE = re.compile(r"(\d+)\.(\d+)")
 #: The variable a spawned session finds when its instance is named (issue-322).
 INSTANCE_ENV_VAR = "THE_LOOP_INSTANCE"
+#: The work item a spawned session is *for* (issue-370, R5.1). The plugin's hooks
+#: have read it since issue-109 — `hooks/the-loop-gate.py` gates on it, and
+#: `hooks/the-loop-link-pr.py` records a pull request against it — and until now
+#: nothing set it, so both were a no-op in every session the daemon spawned. Not
+#: a name the-loop invents: it is the ref the tmux target is derived from.
+WORK_ITEM_ENV_VAR = "THE_LOOP_WORK_ITEM"
 
 _INSTALL_HINTS = {
     "tmux": (
@@ -251,10 +257,12 @@ class TmuxRunner:
             if not supported:
                 logger.warning(
                     "tmux %s does not support `new-session -e`; spawned sessions "
-                    "will not carry %s=%s (tmux 3.2 or newer does)",
+                    "will not carry %s or %s, so the-loop's harness hooks (the "
+                    "stop gate, the link-pr recorder) stay inert in them "
+                    "(tmux 3.2 or newer does)",
                     (result.output.strip() or result.error or "version unknown"),
                     INSTANCE_ENV_VAR,
-                    self.instance,
+                    WORK_ITEM_ENV_VAR,
                 )
             self._env_support = supported
         return self._env_support
@@ -334,6 +342,7 @@ class TmuxRunner:
             session_id=session_id,
             timeout=timeout,
             resume=resume,
+            work_item=work_item.ref,
         )
 
     def spawn_in(
@@ -345,6 +354,7 @@ class TmuxRunner:
         session_id: str,
         timeout: Optional[float] = None,
         resume: bool = False,
+        work_item: str = "",
     ) -> TmuxResult:
         """:meth:`spawn`, addressed by tmux target rather than by work item.
 
@@ -352,6 +362,11 @@ class TmuxRunner:
         ``remain-on-exit`` set — depends on nothing but the target, so a session
         that has no work item (issue-277's standing sessions) reuses it rather
         than growing a second, drifting copy.
+
+        ``work_item`` is the ref the session is *for*, exported as
+        :data:`WORK_ITEM_ENV_VAR` (issue-370, R5.1). Empty — a standing session —
+        exports nothing, which is what keeps a hook that gates on a work item
+        from firing in a session that has none.
         """
         try:
             harness_argv = (
@@ -362,8 +377,17 @@ class TmuxRunner:
         except UnsupportedRunnerError as exc:
             return TmuxResult(ok=False, error=str(exc))
         argv = ["new-session", "-d", "-s", target, "-c", cwd]
-        if self.instance and self._supports_env(timeout):
-            argv += ["-e", f"{INSTANCE_ENV_VAR}={self.instance}"]
+        env = [
+            (INSTANCE_ENV_VAR, self.instance),
+            (WORK_ITEM_ENV_VAR, work_item),
+        ]
+        if any(value for _, value in env) and self._supports_env(timeout):
+            argv += [
+                flag
+                for name, value in env
+                if value
+                for flag in ("-e", f"{name}={value}")
+            ]
         argv += ["--", adapter.binary] + harness_argv
         blocked = self._clear_target(target, timeout)
         if blocked is not None:

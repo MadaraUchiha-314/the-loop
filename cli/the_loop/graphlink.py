@@ -487,6 +487,76 @@ class GraphLink:
 
     # -- entry points -----------------------------------------------------------
 
+    @staticmethod
+    def _armed_on_its_own_pull_request(
+        work_item: WorkItemRef, routed: Optional[Any]
+    ) -> bool:
+        """Whether the work item just armed **is** a pull request (issue-370, R7.1).
+
+        Asked of the arming event, which is the one place that knows: GitHub
+        said whether it was about a pull request or an issue, and
+        :func:`~the_loop.webhook.router.pr_work_item` is the same parse the
+        dispatcher already uses to name a PR. Not inferred from the loop that
+        was selected — ``the-loop contribute`` can join an issue as readily as a
+        pull request — and not asked of GitHub, which is the round trip this
+        work item removed.
+
+        ``False`` for anything it cannot read, which is the safe direction: a
+        missing self row costs a reader the uniformity, while a wrong one would
+        put a pull request in a work item's checked-in state on a guess.
+        """
+        if routed is None:
+            return False
+        from .webhook.router import pr_work_item
+
+        try:
+            pr = pr_work_item(
+                getattr(routed, "event", ""), getattr(routed, "payload", {}) or {}
+            )
+        except Exception as exc:  # noqa: BLE001 — a payload never breaks arming
+            logger.debug(
+                "could not tell whether %s is a pull request: %s", work_item.ref, exc
+            )
+            return False
+        return pr is not None and pr.ref == work_item.ref
+
+    def _record_self_pull_request(self, rt, item, work_item: WorkItemRef) -> None:
+        """Record "this pull request IS the work item" in its own state file.
+
+        The other half of issue-370's rule, and the owner's ruling on PR #372:
+        the abstract entity the-loop manages is a **work item**, whatever
+        represents it — a GitHub issue, a Jira story, a pull request — so a pull
+        request armed by ``the-loop review`` or ``the-loop contribute`` is
+        recorded in ``pullRequests[]`` exactly as one the-loop opened for an
+        issue is. One list, one answer to "which pull requests does this work
+        item involve?", and ``self: true`` to say which of the two relations
+        this row has.
+
+        Idempotent through :meth:`WorkItemState.link_pr`, so every later arming
+        event re-records nothing.
+        """
+        from .graph.state import WorkItemState
+
+        state_dir = rt.state_dir(rt.work_item(item))
+        state = WorkItemState.load(state_dir, item)
+        entry = state.link_pr(
+            work_item.ref,
+            repository=f"{work_item.owner}/{work_item.repo}",
+            number=work_item.number,
+            url=work_item.url,
+            linked_by="session",
+            is_self=True,
+        )
+        if entry is None:
+            return
+        state.save(state_dir)
+        eventlog.emit(
+            "graph.pull_request_linked",
+            work_item=work_item.ref,
+            pull_request=work_item.ref,
+            via="self",
+        )
+
     def on_arm(
         self,
         work_item: WorkItemRef,
@@ -527,6 +597,8 @@ class GraphLink:
 
         def call(rt, item):
             rt.start(item, work_item.ref)
+            if self._armed_on_its_own_pull_request(work_item, routed):
+                self._record_self_pull_request(rt, item, work_item)
             if not self._parked_on_a_human_start_gate(rt, item):
                 return False
             rt.advance(
@@ -575,6 +647,10 @@ class GraphLink:
 
         def call(rt, item):
             report = rt.start(item, work_item.ref)
+            if self._armed_on_its_own_pull_request(work_item, routed):
+                # Also on the spawn path: `on_arm` records it for a work item
+                # that parked at a gate, and this covers one that never did.
+                self._record_self_pull_request(rt, item, work_item)
             if report is None or not self._entered_a_human_gate(rt, report):
                 return
             rt.advance(
@@ -724,23 +800,25 @@ class GraphLink:
         work_item: WorkItemRef,
         pr: WorkItemRef,
         cwd: str,
-        linked_by: str = "event",
     ) -> None:
         """Record in the work item's own file that ``pr`` delivers it (issue-368).
 
         A pull request is a remote entity of the **repository**, so it belongs on
         the work item's branch — where CI, a reviewer and another machine can all
         see it — and not only in `<state.root>/local/<slug>.json`, which never
-        travels and which a hand-off therefore lost. The two writers are the two
-        moments the fact becomes known: the session that opened the pull request
-        (`the-loop sessions link-pr`, ``linked_by="session"``) and the first
-        event that routes for it (``"event"``).
+        travels and which a hand-off therefore lost.
 
-        Idempotent by ref, like the registry's own linking, so a comment on a
-        pull request does not grow the list once per delivery. Best-effort like
-        everything here: the registry write already made routing work, and a
-        state write that could not be taken is retried by the next event for
-        that pull request.
+        **One writer** (issue-370, R2.1): the session that opened the pull
+        request, through `the-loop sessions link-pr`. Until then the first event
+        that routed for a pull request wrote here too, with ``linkedBy:
+        "event"`` — so a fork branch named `issue-<n>`, or a body saying
+        `fixes #<n>`, was enough to add a row to a committed file for a pull
+        request nobody on the work item had heard of. Delivery still reads those
+        linkage sources; this list no longer does.
+
+        Idempotent by ref, like the registry's own linking, so re-running the
+        link costs nothing. Best-effort like everything here: a state write that
+        could not be taken is reported and the session carries on.
         """
 
         def call(rt, item):
@@ -754,7 +832,7 @@ class GraphLink:
                 repository=f"{pr.owner}/{pr.repo}",
                 number=pr.number,
                 url=pr.url,
-                linked_by=linked_by,
+                linked_by="session",
             )
             if entry is None:
                 return
@@ -763,7 +841,7 @@ class GraphLink:
                 "graph.pull_request_linked",
                 work_item=work_item.ref,
                 pull_request=pr.ref,
-                via=linked_by,
+                via="session",
             )
 
         self._guarded("advance", work_item, cwd, call)

@@ -388,7 +388,27 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     gate asked reviewers to comment on resolved to the PR as a work item nobody armed, was
     refused as unstarted, and — since issue-270 — was settled and never re-evaluated, so
     repairing the linkage afterwards recovered nothing. Recording the binding is
-    best-effort for the session: a failure is reported and the work carries on.
+    best-effort for the session: a failure is reported and the work carries on. Since
+    issue-370 the harness SHALL run that step itself: a `PostToolUse` hook
+    (`hooks/the-loop-link-pr.py`) records the pull request when the session creates one,
+    reading the number from what the tool **returned**, resolving the work item from
+    `THE_LOOP_WORK_ITEM` or the session registry, and exiting 0 on every path. The prose
+    rule remains the fallback for a harness that runs no such hook (Cursor has no
+    `PostToolUse` event).
+  - **Which pull requests deliver a work item is a fact the-loop recorded, never one it
+    inferred** (issue-370). Routing and tracking asked the same three inference sources
+    and only one of them should have: routing is re-decided on every event and wrong only
+    until the next one, while tracking is a durable filing nothing un-does. WHEN the
+    poller resolves whose portable record holds a labelled pull request's poll ledger
+    THEN it SHALL consider only the session-registry binding and the existing portable
+    ledgers; a pull request that answers neither SHALL keep a record of its own, because
+    it *is* a work item. A routing decision SHALL write the registry endpoint and SHALL
+    NOT add a row to the work item's checked-in `work-item-state.json` — `linkedBy` is
+    `session` for every row the-loop writes, and a `linkedBy: "event"` row from before the
+    change is read and kept, never rewritten. Nothing here narrows **delivery**: the
+    router still resolves a pull request's work items from `closingIssuesReferences`, the
+    `issue-<n>` head branch and closing keywords, so a review comment on a contributor's
+    pull request still reaches the work item's session.
   - **A session is given only with a working tree of its own** (issue-253,
     [decision-088](../decisions/decision-088.md) D2) — the invariant every mode below is
     subject to. WHEN a pull request endpoint would be spawned AND no checkout can be
@@ -789,6 +809,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-370 | the-loop stopped guessing which pull requests belong to a work item (2026-09-16). The poller's third owner question — GitHub's closing references, the `issue-<n>` branch, a closing keyword — filed a stranger's pull request under a work item's portable record, and the dispatcher wrote the same guess into the work item's **checked-in** state as `linkedBy: "event"`; both are gone, so tracking is what `the-loop sessions link-pr` recorded and nothing else. To make that record reliable rather than a rule the model had to remember, a `PostToolUse` hook runs the command when a session creates a pull request, and the tmux runner finally exports `THE_LOOP_WORK_ITEM` — the variable the plugin's hooks have read since issue-109 and nothing ever set. Delivery routing is unchanged | [spec](../specs/issue-370/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/370) |
 | issue-368 | The daemon reads a work item's frozen choices from its **own checked-in state** (2026-09-15) rather than from the operator's portable record, and records each pull request it routes for in that same file through the coupling (`graph.pull_request_linked`); a closing pull request with an owner has its upstream state recorded there and its nested poll ledger dropped instead of being stamped `ended`, which is what used to mint it a portable record of its own. A work item frozen before the change keeps its `graph` section and is routed by it, read and never rewritten | [spec](../specs/issue-368/), [decision-128](../decisions/decision-128.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/368) |
 | issue-352 | The coupling stopped reading the work item's checkout (2026-09-12): the spec directory is `routing.graph.specDir` for every repository the instance drives, the label prefix is the constant `loop:`, notifications carry no configured roles, and the pre-spawn adoption that wrote a default harness config into a fresh clone is gone with the reader it served | [spec](../specs/issue-352/), [decision-123](../decisions/decision-123.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/352) |
 | issue-348 | The receiver gained the repository bound it never had: the list of repositories an instance works with moved out of `polling.sources[].repos` to a top-level `repositories`, and **every** ingress reads it — the receiver drops an undeclared delivery (and undeclared linked refs) as `undeclared-repository`, above the actor guard; the poller takes its scopes from it; `may_target` and the kickoff resolve against it. Breaking: config version 0.8.0, `the-loop migrate-config` moves the lists up (and `kickoff.repo` with them), an un-migrated config refuses to start. An empty list bounds nothing and says so at start | [spec](../specs/issue-348/), [decision-121](../decisions/decision-121.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/348) |

@@ -144,10 +144,22 @@ There are exactly **two** runtime concepts and **one** contract between them.
   - **A work item is reviewable too** (R8, PR #280): armed on a work item, the loop
     runs one review conversation across every pull request delivering it. The template
     SHALL additionally ask which pull requests the review spans, pre-filled with the
-    ones the-loop detects — its own `pr-loops/` state first, then the provider's
-    linked pull requests (`get-thread` / `linked-pulls` integration ops, best-effort)
-    — and stated entries SHALL be normalized to composed refs, unparseable bullets
-    dropped, the scope frozen with the brief. A brief with no pull requests reviews
+    ones the-loop **recorded** — `work-item-state.json`'s `pullRequests[]` first, then
+    its own `pr-loops/` state, best-effort — and stated entries SHALL be normalized to
+    composed refs, unparseable bullets dropped, the scope frozen with the brief. It
+    Where the work item **is** a pull request — `the-loop review` and
+    `the-loop contribute` are armed on one — that pull request SHALL itself be
+    recorded in `pullRequests[]` at arming, marked `self: true` and carrying no
+    `stateDir` (issue-370, R7): the entity the-loop manages is a work item
+    whatever represents it, so one list answers "which pull requests does this
+    work item involve?" for an issue and a pull request alike. Whether the work
+    item is a pull request SHALL be read from the arming event, never from the
+    selected loop and never by asking the provider.
+    The pre-fill
+    SHALL ask GitHub nothing: the `linked-pulls` integration op was retired by
+    issue-370, because a pull request is in scope when the-loop opened it and said so,
+    and the provider's answer could neither see a spec pull request (which closes
+    nothing) nor exclude a stranger's. A brief with no pull requests reviews
     the work item itself; a pull-request list alone is not a brief.
   - It SHALL declare **no** `produces`, **no** `validate-artifacts`, **no**
     `phase-selection` and **no** skip vocabulary — arming with `the-loop review` IS
@@ -865,6 +877,8 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-370 (owner ruling) | A pull request armed as its **own** work item is recorded in its `pullRequests[]` too (2026-09-16), marked `self: true` and carrying no `stateDir` — the work item's own directory is the loop, so the derived inner-loop path would nest it inside itself. `the-loop review` and `the-loop contribute` are armed on a pull request, and the entity the-loop manages is a work item whatever represents it, so both relations a pull request can have to a work item live in one list and the marker says which | [spec](../specs/issue-370/), [PR #372](https://github.com/MadaraUchiha-314/the-loop/pull/372), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/370) |
+| issue-370 | `pullRequests[]` got one writer (2026-09-16): `the-loop sessions link-pr`, run by the session that opened the pull request. The first event that routed for a pull request used to write there too, as `linkedBy: "event"` — so an `issue-<n>` branch in a fork, or a `fixes #<n>` in a body, added a row to a committed file for a pull request nobody on the work item had heard of. A row from before the change keeps its `"event"` provenance, read and never rewritten. The `linked-pulls` integration op went with it: a work-item review's scope is pre-filled from what the-loop recorded, then its `pr-loops/` state, and GitHub is not asked | [spec](../specs/issue-370/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/370) |
 | issue-368 | The work item's own file gained what the repository may know, and lost what it may not (2026-09-15): `sessionPerPr`, `model` and `effort` moved in from the portable record's now-retired `graph` section, `pullRequests[]` records each pull request delivering the item (ref, repository, number, url, inner-loop directory, upstream state, provenance), and the `session` block left — a harness conversation id is a handle to one machine, so `session: inherit` resolves through that machine's session registry and falls back to a fresh session seeded with the artifacts where there is none (CI). A legacy `session` block is ignored on read and dropped on the next save; it is never resumed | [spec](../specs/issue-368/), [decision-128](../decisions/decision-128.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/368) |
 | issue-365 (review) | `graph-state.json` became **`work-item-state.json`** (2026-09-14): the name was the narrowest true description of a file that had carried the surface, the session, the PR-session mode, the model and the effort for releases. Read under the old name, written under the new one, and the inner-loop scan globs both — a work item mid-flight keeps its pointer with no migration step. `the-loop graph repos` arrived with it: the **agent** declares which repositories the work item raises pull requests in, once the design and the task DAG say what the change spans, refused for a value that is not a repository path or is outside the instance's own `repositories` — and `await-inner-loops` reads it there | [spec](../specs/issue-365/), [decision-127](../decisions/decision-127.md), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/365) |
 | issue-365 | The six review-chain gates changed subject (2026-09-14): `validates: execution-log.md` became one `evidence/<record>.md` per node, `verification`'s kept gate points at `evidence/verification.md` (produced by no node, so never a planned absence), `design-critic-review` at `evidence/design-critic-review.md`, and the `log-entry` hook is gone from the registry and from all five shipped graphs. One file per gate, never one shared record: a gate must not be satisfiable by the round another node ran | [spec](../specs/issue-365/), [decision-126](../decisions/decision-126.md), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/365) |

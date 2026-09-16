@@ -1093,25 +1093,35 @@ class Poller:
         due.sort(key=lambda entry: (entry[0], entry[1].ref))
         return [ref for _, ref in due]
 
-    def _resolve_owner(self, item: WorkItem, refs: List[WorkItemRef]) -> str:
+    def _resolve_owner(self, item: WorkItem) -> str:
         """Which work item's portable record holds ``item``'s poll ledger.
 
         One record per work item (issue-368, R10.1). An issue is its own work
-        item and always owns its ledger. A **pull request** is asked three
-        questions in order, each answered from what is already at hand:
+        item and always owns its ledger. A **pull request** is asked two
+        questions, and both are answered from a record **the-loop itself
+        wrote** (issue-370, R1.1):
 
-        1. this machine's session records — ``record_owning`` is the same
-           resolution every event takes, so the poller and the dispatcher agree;
+        1. this machine's session records — the binding
+           ``the-loop sessions link-pr`` writes when the-loop opens a pull
+           request, and the same resolution every event takes, so the poller and
+           the dispatcher agree;
         2. the portable records — a pull request already ledgered somewhere
-           keeps that owner, whatever a linkage says today;
-        3. the router's own linkage on the listed item — the closing
-           references, the branch convention, the closing keywords, in the order
-           the router applies them (``provider.refs`` has already run them).
+           keeps that owner.
 
-        A pull request that answers none of them is a work item **in its own
-        right** — a review (issue-279), or a labelled pull request that closes
-        no issue — and keeps a record of its own, because it *is* the work item
-        (R10.3).
+        There used to be a third: the router's linkage on the listed item — the
+        closing references, the ``issue-<n>`` branch convention, the closing
+        keywords. It is gone. Those sources answer "whose conversation hears
+        this event?", which is re-decided on every delivery and wrong only until
+        the next one; ownership is a durable filing in ``portable/`` that
+        nothing un-does, and filing it from metadata anyone can author is how a
+        pull request the work item's owner never heard of ended up tracked
+        against it. Delivery still reads them (R1.3) — this is the one place
+        that no longer does.
+
+        A pull request that answers neither is a work item **in its own right**
+        — a review (issue-279), a pull request that closes no issue, or one
+        the-loop did not open — and keeps a record of its own, because it *is*
+        the work item (R10.3).
         """
         ref = item.ref
         if item.kind != KIND_PULL_REQUEST:
@@ -1129,9 +1139,6 @@ class Poller:
             ledgered = None
         if ledgered:
             return self.state.own(ref, ledgered)
-        for candidate in refs:
-            if candidate.ref != ref:
-                return self.state.own(ref, candidate.ref)
         return self.state.own(ref)
 
     def _process_item(
@@ -1146,7 +1153,7 @@ class Poller:
         # of its own, and used to be baselined under a portable record of its
         # own — so one work item delivered by three pull requests produced four
         # records and four index entries.
-        self._resolve_owner(item, refs)
+        self._resolve_owner(item)
         # A listed item is open (issue-329): a closure stamp on it — the item
         # was reopened while the daemon was down, or the stamp was forged on a
         # tracked repository — is cleared before anything else reads it.

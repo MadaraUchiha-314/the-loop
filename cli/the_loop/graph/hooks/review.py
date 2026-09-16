@@ -23,11 +23,12 @@ bullet, drop the sections you don't need::
 `Pull requests:` is the **work-item** review's scope section (the owner's
 ruling on PR #280): armed on a work item rather than a pull request, one
 review conversation spans every pull request delivering the item, the
-template asks which those are, and the-loop pre-fills the ones it can detect
-— its own ``pr-loops/`` state first, then the provider's linked pull
-requests. Stated entries are normalized to ``github:owner/repo#n`` refs and
-anything unparseable is dropped: the frozen list is composed by the-loop,
-never free text.
+template asks which those are, and the-loop pre-fills the ones it recorded
+— ``work-item-state.json``'s ``pullRequests[]`` first, then its ``pr-loops/``
+state. It asks GitHub nothing (issue-370): a pull request is in scope because
+the-loop opened it and said so. Stated entries are normalized to
+``github:owner/repo#n`` refs and anything unparseable is dropped: the frozen
+list is composed by the-loop, never free text.
 
 Two rules, inherited from `feedback.py` and load-bearing here exactly as they
 are at every other human gate:
@@ -60,6 +61,7 @@ from typing import Any, Dict, List, Optional
 from ...authz import is_self_authored, mark_self_authored
 from ..contract import HookContext, HookResult
 from ..registry import hook
+from ..state import WorkItemState
 from .feedback import _authorized_comments
 from .goal import _resolve, _thread_comments
 
@@ -274,14 +276,36 @@ def _thread_kind(ctx: HookContext) -> str:
     return kind if kind in ("pull-request", "issue") else ""
 
 
+def _recorded_pulls(ctx: HookContext) -> List[str]:
+    """The pull requests the-loop **recorded opening** for this work item.
+
+    ``work-item-state.json``'s ``pullRequests[]`` (issue-368), written by
+    ``the-loop sessions link-pr`` and, since issue-370, by nothing else. This is
+    the authoritative answer to "which pull requests deliver this work item?",
+    and it is the only one that can see a **spec** pull request — which closes
+    nothing, so GitHub's own linkage never held it, and which is exactly the
+    pull request a work-item review needs in scope.
+    """
+    try:
+        state = WorkItemState.load(Path(ctx.work_item.spec_dir), ctx.work_item.ref)
+    except OSError as exc:  # best-effort: a suggestion never wedges the post
+        logger.debug("could not read the recorded pull requests: %s", exc)
+        return []
+    return [entry.ref for entry in state.pull_requests if entry.ref]
+
+
 def _state_pulls(ctx: HookContext) -> List[str]:
-    """The pull requests the-loop's own state links to this work item.
+    """The pull requests whose inner loop this work item's tree has walked.
 
     The ``pr-loops/`` tree beside the outer work-item state (issue-172/183) — the
     JSON the loop generates for every PR that walked an inner loop, and the
     owner's "piggyback on that" (PR #280). Two layouts: ``pr-<n>/`` for the
     work item's own repository, ``<owner>__<repo>/pr-<n>/`` for a
     contributing one.
+
+    Not redundant with :func:`_recorded_pulls`: a directory exists for a pull
+    request whose loop ran on **any** machine, including one linked before
+    issue-370 made the recorded list the single source.
     """
     own_host, own_owner, own_repo = _own_coords(ctx.work_item.ref)
     root = Path(ctx.work_item.spec_dir) / "pr-loops"
@@ -314,20 +338,19 @@ def _state_pulls(ctx: HookContext) -> List[str]:
 def _detected_pulls(ctx: HookContext) -> List[str]:
     """Best-effort suggestions for a work-item review's PR scope.
 
-    the-loop's own state first (authoritative for an item the loop
-    delivered), then the work item's linked pull requests from the provider
-    (`linked-pulls` — the "Development" panel's links), deduped in that
-    order. Empty on any failure: a suggestion is never worth wedging the
-    template post.
+    **Two local sources, no question asked of GitHub** (issue-370, R3.2): the
+    recorded ``pullRequests[]`` first, then the ``pr-loops/`` directories,
+    deduplicated in that order. Until issue-370 the second source was a
+    ``linked-pulls`` GraphQL call asking GitHub which pull requests the issue
+    links — which returned a *worse* answer than the local one (it cannot see a
+    spec pull request, and it can see a stranger's) and was the ticket's
+    "actively searches for PRs related to work items".
+
+    Empty on any failure, and a suggestion either way: the reviewer edits this
+    list, and nothing here is ever worth wedging the template post.
     """
-    refs = _state_pulls(ctx)
-    try:
-        data = _resolve(ctx).call("linked-pulls", ref=ctx.work_item.ref)
-        linked = [str(p) for p in (data or {}).get("pulls") or []]
-    except Exception as exc:  # noqa: BLE001 — best-effort, suggestions only
-        logger.debug("could not list linked pull requests: %s", exc)
-        linked = []
-    return _normalize_pulls(refs + linked, ctx.work_item.ref)
+    refs = _recorded_pulls(ctx) + _state_pulls(ctx)
+    return _normalize_pulls(refs, ctx.work_item.ref)
 
 
 def _request_body(ctx: HookContext) -> str:
@@ -336,9 +359,9 @@ def _request_body(ctx: HookContext) -> str:
     A **work item** review (the owner's ruling on PR #280) differs from a
     pull-request review in exactly one asked-for way: the template also asks
     which pull requests the review spans — pre-filled with the ones the-loop
-    could detect (its own ``pr-loops/`` state, then the provider's links), so
-    the reviewer edits a list rather than reconstructing one. One review, one
-    session, however many pull requests deliver the item.
+    recorded opening, then the ones whose inner loop it has run, so the reviewer
+    edits a list rather than reconstructing one. One review, one session,
+    however many pull requests deliver the item.
     """
     work_item_review = _thread_kind(ctx) == "issue"
     detected = _detected_pulls(ctx) if work_item_review else []
@@ -378,9 +401,8 @@ def _request_body(ctx: HookContext) -> str:
     ]
     if work_item_review:
         detected_line = (
-            "the-loop pre-filled `Pull requests:` with the ones it detected — "
-            "from its own state and the work item's linked pull requests — "
-            "edit that list if it is wrong. "
+            "the-loop pre-filled `Pull requests:` with the ones it recorded "
+            "opening for this work item — edit that list if it is wrong. "
         )
         lines += [
             "",
@@ -389,7 +411,7 @@ def _request_body(ctx: HookContext) -> str:
             + (
                 detected_line
                 if detected
-                else "the-loop could not detect any linked pull requests, so "
+                else "the-loop has no pull requests recorded for this item, so "
                 "please list them under `Pull requests:` (a `#number`, an "
                 "`owner/repo#number`, or a URL per bullet). "
             )

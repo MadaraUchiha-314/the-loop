@@ -304,6 +304,10 @@ class TestTmuxRunner:
                 "start work",
                 cwd="/work",
                 session_id="uuid-1",
+                # The work item is the one thing `spawn` knows and the
+                # target-addressed call has to be told (issue-370): it is
+                # exported into the session, and a standing session has none.
+                work_item=item.ref,
             )
         )
         assert by_item == by_target
@@ -363,6 +367,7 @@ class TestTmuxRunner:
         )
         assert result.ok, result.error
         assert fake.verbs == [
+            "-V",  # the `new-session -e` probe (issue-322, issue-370)
             "has-session",
             "list-panes",
             "kill-session",

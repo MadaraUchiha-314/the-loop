@@ -91,9 +91,10 @@ def _spec_dir(repo):
 class _FakeGitHub:
     """Serves the thread's comments and records what the-loop posts.
 
-    `kind` and `pulls` model the two review-loop lookups: what the thread is
-    (`get-thread`) and which pull requests the provider links to it
-    (`linked-pulls`). The defaults model the unknown/none case.
+    `kind` models the one review-loop lookup left: what the thread is
+    (`get-thread`). `linked-pulls` — "which pull requests does GitHub say this
+    issue links?" — was the other, until issue-370 stopped the-loop asking. It
+    is still served here, and asserted to be unasked.
     """
 
     def __init__(self, comments=(), kind="", pulls=()):
@@ -101,8 +102,10 @@ class _FakeGitHub:
         self.posted = []
         self.kind = kind
         self.pulls = list(pulls)
+        self.ops = []
 
     def call(self, op, **params):
+        self.ops.append(op)
         if op == "list-comments":
             return {"comments": list(self.comments)}
         if op == "add-comment":
@@ -137,6 +140,29 @@ def runtime(repo):
 
 def _reply(*bodies, author="@owner"):
     return {"comments": [{"author": author, "body": b} for b in bodies]}
+
+
+def _record_pulls(repo, refs):
+    """What `the-loop sessions link-pr` leaves behind, written directly.
+
+    The hook reads `work-item-state.json`; how a row gets there is
+    `test_graph_state.py`'s subject, so this writes the file the same way the
+    state module would.
+    """
+    from the_loop.graph.state import WorkItemState
+
+    spec_dir = _spec_dir(repo)
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    state = WorkItemState.load(spec_dir, REF)
+    for ref in refs:
+        repository, _, number = ref.partition("#")
+        state.link_pr(
+            ref,
+            repository=repository.split(":", 1)[1],
+            number=int(number),
+            linked_by="session",
+        )
+    state.save(spec_dir)
 
 
 def _ctx(repo, event, authorized=("@owner",), node="review-brief", decisions=None):
@@ -334,29 +360,55 @@ def test_a_spoofed_marker_cannot_suppress_the_template(repo, fake_github):
 
 
 def test_a_work_item_review_asks_for_its_pull_requests(repo, fake_github):
-    """The owner's ruling on PR #280: armed on a WORK ITEM, the template also
-    asks which pull requests the review spans — pre-filled with what the-loop
-    detected from its own pr-loops state and the provider's links, deduped."""
+    """T8 (issue-370, R3.2): armed on a WORK ITEM, the template also asks which
+    pull requests the review spans — pre-filled from what the-loop RECORDED
+    opening (`work-item-state.json`), then its `pr-loops/` state, deduped.
+
+    The provider is never asked. Its `linked-pulls` answer (`other/repo#3` here)
+    is GitHub's guess about what relates to the issue, and it is exactly what
+    issue-370 stopped reading: a `pr-loops` directory and a recorded row are
+    both things the-loop did.
+    """
     fake_github.kind = "issue"
-    fake_github.pulls = ["github:o/r#12", "github:other/repo#3"]
+    fake_github.pulls = ["github:other/repo#3"]
+    _record_pulls(repo, ["github:o/r#12", "github:acme/widgets#7"])
     pr_loops = _spec_dir(repo) / "pr-loops"
-    (pr_loops / "pr-12").mkdir(parents=True)  # duplicate of a linked one
+    (pr_loops / "pr-12").mkdir(parents=True)  # duplicate of a recorded one
     (pr_loops / "acme__widgets" / "pr-7").mkdir(parents=True)
     post_review_brief(_ctx(repo, {"comments": []}))
     body = fake_github.posted[0]
     assert "work item" in body and "Pull requests:" in body
     assert "- github:o/r#12" in body
     assert "- github:acme/widgets#7" in body
-    assert "- github:other/repo#3" in body
-    assert body.count("github:o/r#12") == 1  # state and links deduped
+    assert "- github:other/repo#3" not in body
+    assert "linked-pulls" not in fake_github.ops
+    assert body.count("github:o/r#12") == 1  # recorded and pr-loops deduped
 
 
-def test_a_work_item_review_with_nothing_detected_still_asks(repo, fake_github):
+def test_a_work_item_review_pre_fills_a_pull_request_that_walked_no_loop(
+    repo, fake_github
+):
+    """T8, R3.2 — the recorded list sees a PR with no `pr-loops/` directory.
+
+    A spec pull request closes nothing, so GitHub's linkage never held it and
+    its inner loop may not have started — and it is the one a work-item review
+    most needs in scope.
+    """
     fake_github.kind = "issue"
+    _record_pulls(repo, ["github:o/r#42"])
+    post_review_brief(_ctx(repo, {"comments": []}))
+    assert "- github:o/r#42" in fake_github.posted[0]
+
+
+def test_a_work_item_review_with_nothing_recorded_still_asks(repo, fake_github):
+    """T8, R3.3 — a pre-fill is a suggestion; its absence never wedges the post."""
+    fake_github.kind = "issue"
+    fake_github.pulls = ["github:other/repo#3"]
     post_review_brief(_ctx(repo, {"comments": []}))
     body = fake_github.posted[0]
     assert "Pull requests:" in body
-    assert "could not detect any linked pull requests" in body
+    assert "no pull requests recorded for this item" in body
+    assert "linked-pulls" not in fake_github.ops
 
 
 def test_a_pull_request_review_is_not_asked_for_a_pr_list(repo, fake_github):

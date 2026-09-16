@@ -401,6 +401,52 @@ def test_pr_comment_reuses_the_linked_issues_session(tmp_path):
     assert "the build is red" in prompt
 
 
+def test_an_inferred_pull_request_is_delivered_but_never_tracked(tmp_path):
+    """Scenario: routing still reads GitHub's linkage; tracking no longer does.
+
+    Given a labelled PR 16 that GitHub reports as closing issue 15
+    And an active session registered for issue 15, which never recorded PR 16
+    When a poll cycle delivers a comment on the PR into that session
+    Then the comment reaches issue 15's session, as it always did
+    And the work item's portable record gains no pullRequests ledger for the PR
+    And the PR keeps a portable record of its own, because it IS a work item
+    And the directory index lists no pull request against issue 15
+
+    Requirement: docs/specs/issue-370/requirements.md#R1 (R1.1, R1.2, R1.3)
+    """
+    from the_loop.workitem import POLL, PULL_REQUESTS
+
+    gh = GhState()
+    gh.prs = _labelled_pr()
+    gh.pr_comments = [_comment("IC_9", "the build is red")]
+    registry, tmux, dispatcher, poller = _make(
+        tmp_path, gh, monitor_issues=False, monitor_prs=True
+    )
+    _register_live_session(registry, tmp_path)
+
+    poller.poll_once()  # baseline: first sight forwards nothing
+    gh.pr_comments = [_comment("IC_9", "the build is red"), _comment("IC_10", "ping")]
+    poller.poll_once()
+    assert wait_until(lambda: len(tmux.delivers) == 1)
+    time.sleep(0.1)
+    dispatcher.stop()
+
+    # Delivery: unchanged (R1.3).
+    assert [ref for ref, _ in tmux.delivers] == [REF]
+
+    # Tracking: the work item's record knows nothing about a PR it never opened.
+    store = WorkItemStore(tmp_path / "portable")
+    assert store.section(REF, PULL_REQUESTS) is None
+    assert store.owner_of("github:octo/repo#16") is None
+    assert store.section("github:octo/repo#16", POLL) is not None
+    index = json.loads((tmp_path / "portable" / "index.json").read_text())
+    by_ref = {entry["ref"]: entry for entry in index["workItems"]}
+    # Nothing was even filed against the issue: the inferred linkage is what
+    # used to mint a record for it here, purely to hold the PR's ledger.
+    assert REF not in by_ref
+    assert "pullRequests" not in by_ref["github:octo/repo#16"]
+
+
 def _review(
     node_id,
     body,

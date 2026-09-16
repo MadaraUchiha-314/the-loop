@@ -1019,8 +1019,14 @@ class RecordingDispatcher:
         collaborator_store=None,
         outcomes=None,
         settle_on_handle="",
+        registry=None,
     ):
         self.events = []
+        # The registry the poller reads to answer "whose portable record holds
+        # this pull request's ledger?" (issue-368, R10.1) — the binding
+        # `the-loop sessions link-pr` writes, and since issue-370 the only
+        # answer there is. `None` models a machine that recorded none.
+        self.registry = registry
         self.status_map = dict(status_map or {})
         # issue-270: a delivery the dispatcher is FINISHED with — suppressed
         # (awaiting-start / session-paused) or consumed as a control command.
@@ -4061,11 +4067,18 @@ def test_a_labelled_pull_request_is_ledgered_under_the_work_item_it_delivers(tmp
     The poller lists a labelled pull request as an item of its own; before
     issue-368 it baselined each into a portable record of its own, so one work
     item produced N+1 records and N+1 index entries.
+
+    T2 (issue-370, R1.1): the owner comes from the RECORDED binding — what
+    `the-loop sessions link-pr` wrote when the-loop opened the pull request —
+    and no longer from the linkage the provider reports.
     """
     from the_loop.workitem import POLL, PULL_REQUESTS
 
     portable = tmp_path / "portable"
     registry = SessionRegistry(tmp_path / "sessions")
+    item = WorkItemRef.parse("github:octo/repo#15")
+    registry.register(Session(item, "claude", "sess-15", "."))
+    registry.link_pull_request(item, WorkItemRef.parse("github:octo/repo#42"))
     pr = WorkItem("github", OWNER, REPO, 42, "pull-request", labels=[LABEL])
     provider = FakeProvider(
         items=[pr],
@@ -4073,7 +4086,8 @@ def test_a_labelled_pull_request_is_ledgered_under_the_work_item_it_delivers(tmp
         linked={"github:octo/repo#42": ["github:octo/repo#15"]},
     )
     store = WorkItemStore(portable)
-    make_poller(provider, registry, RecordingDispatcher(), PollState(store)).poll_once()
+    dispatcher = RecordingDispatcher(registry=registry)
+    make_poller(provider, registry, dispatcher, PollState(store)).poll_once()
 
     assert sorted(p.name for p in portable.glob("*.json")) == [
         "github-octo-repo-15.json",
@@ -4083,6 +4097,39 @@ def test_a_labelled_pull_request_is_ledgered_under_the_work_item_it_delivers(tmp
     ledgers = store.section("github:octo/repo#15", PULL_REQUESTS) or {}
     assert list(ledgers) == ["github:octo/repo#42"]
     assert store.owner_of("github:octo/repo#42") == "github:octo/repo#15"
+
+
+def test_an_inferred_linkage_no_longer_files_a_pull_request_under_a_work_item(tmp_path):
+    """T1 (issue-370, R1.1, R1.2) — the ticket's "magic", deleted.
+
+    GitHub's closing references, an `issue-<n>` head branch and a closing
+    keyword are all things anyone who can open a pull request can author. They
+    used to decide whose portable record a labelled pull request was filed
+    under — a durable filing nothing un-does — so a stranger's pull request
+    became part of a work item's tracking. It keeps a record of its own now.
+    """
+    from the_loop.workitem import POLL, PULL_REQUESTS
+
+    portable = tmp_path / "portable"
+    pr = WorkItem("github", OWNER, REPO, 42, "pull-request", labels=[LABEL])
+    provider = FakeProvider(
+        items=[pr],
+        comments={42: []},
+        # Exactly what `provider.refs` returns for a PR the router linked.
+        linked={"github:octo/repo#42": ["github:octo/repo#15"]},
+    )
+    store = WorkItemStore(portable)
+    make_poller(
+        provider,
+        SessionRegistry(tmp_path / "sessions"),
+        RecordingDispatcher(),
+        PollState(store),
+    ).poll_once()
+
+    assert store.section("github:octo/repo#15", PULL_REQUESTS) is None
+    assert store.section("github:octo/repo#42", POLL) is not None
+    assert store.owner_of("github:octo/repo#42") is None
+    assert not (portable / "github-octo-repo-15.json").exists()
 
 
 def test_a_pull_request_that_delivers_nothing_keeps_its_own_record(tmp_path):
