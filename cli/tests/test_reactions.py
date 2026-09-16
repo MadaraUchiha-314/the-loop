@@ -6,6 +6,8 @@ Dispatcher-level scenarios live in ``test_reactions_integration.py``.
 """
 
 import subprocess
+import types
+from typing import Any
 
 import pytest
 
@@ -324,3 +326,64 @@ def test_a_github_com_reaction_argv_is_unchanged():
     target = target_from_event(routed(payload=comment_payload({"id": 7})))
     assert target is not None
     assert "--hostname" not in GitHubReactor._argv(target, "eyes")
+
+
+# -- the settled-outcome acknowledgement table (issue-371) ----------------------
+
+
+def test_every_settled_outcome_is_classified_or_deliberately_silent():
+    """`ACK_STATES` covers the consumed branch and excludes the scope refusals.
+
+    The table is the whole policy (design §"The table"), so it is asserted as
+    data: what each outcome reads as, and — the security-relevant half — that an
+    out-of-scope refusal has no entry at all, because a non-owner instance must
+    leave no mark on another instance's work item (issue-322 R2.6).
+    """
+    from the_loop.webhook import dispatcher as disp
+
+    assert disp.ACK_STATES == {
+        disp.SETTLED_CONTROL_EXECUTED: STATE_COMPLETED,
+        disp.SETTLED_CONTROL_REJECTED: STATE_ERROR,
+        disp.SETTLED_CONTROL_AMBIGUOUS: STATE_ERROR,
+        "awaiting-start": STATE_STARTED,
+        "session-paused": STATE_STARTED,
+        "collaborator-no-spawn": STATE_STARTED,
+    }
+    # Built from the same constants SETTLED_OUTCOMES is, so no key can drift.
+    assert set(disp.ACK_STATES) <= set(disp.SETTLED_OUTCOMES)
+    assert set(disp.SETTLED_SUPPRESSED) <= set(disp.ACK_STATES)
+    assert not set(disp.SETTLED_OUT_OF_SCOPE) & set(disp.ACK_STATES)
+    assert set(disp.ACK_STATES.values()) <= {
+        STATE_STARTED,
+        STATE_COMPLETED,
+        STATE_ERROR,
+    }
+
+
+def test_a_reactor_that_raises_cannot_break_a_settle():
+    """The decoration never costs the record (R2.1, R2.2).
+
+    `GitHubReactor.react` never raises, but `_settle` must not *depend* on the
+    caller having passed a real one: a stubbed or wrapped reactor that throws
+    would otherwise take the settled delivery id down with it.
+    """
+
+    class ExplodingReactor:
+        def react(self, routed, state):
+            raise RuntimeError("boom")
+
+    from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig, Deduper
+
+    settle = Dispatcher._settle
+    # A stand-in for `self`: `_settle` touches only these three attributes, and
+    # building a real Dispatcher here would drag in a registry and a tmux runner
+    # to prove something about two lines.
+    fake: Any = types.SimpleNamespace(
+        deduper=Deduper(), reactor=ExplodingReactor(), config=RoutingConfig()
+    )
+    event = routed(payload=comment_payload({"id": 7}))
+    with pytest.raises(RuntimeError):
+        settle(fake, event, "control-executed")
+    # The record landed BEFORE the decoration was attempted — the ordering the
+    # design requires, proven by the one thing that survives the explosion.
+    assert fake.deduper.outcome(event.delivery_id) == "control-executed"

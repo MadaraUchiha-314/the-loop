@@ -1068,11 +1068,24 @@ the marketplace some other way.
 - **Type:** `boolean`
 - **Default:** `true`
 
-Dispatch-lifecycle emoji reactions on the triggering GitHub entity. When the dispatcher
-picks an event up it reacts with `started` on the comment that triggered it — or on the
-issue/PR itself for presence, label and review events — then adds `completed` or `error`
-from the outcome. So a human watching the thread can see the-loop working before any reply
-comment exists.
+Emoji reactions on the triggering GitHub entity — the comment that triggered the event, or
+the issue/PR itself for presence, label and review events. So a human watching the thread
+can see what the-loop did before any reply comment exists.
+
+Every event the-loop **finishes with** is acknowledged, whichever of its two branches it
+took (issue-371):
+
+| What happened to the event | Reactions |
+|---|---|
+| **delivered** to a session, or spawned one | `started` when it is dequeued, then `completed` or `error` from the outcome |
+| **consumed** — it *was* a [control command](#controlenabled), and the-loop executed it | `completed` |
+| **refused** — the command was not honoured, or the comment carried two conflicting keywords | `error` |
+| **suppressed** on purpose — nothing is running for this work item yet, the session is paused, or the commenter is a work-item collaborator (who may be input, never a start) | `started` — seen, and pending: the harness reads the thread when the session runs |
+| **refused as out of this instance's scope** | none — another instance may own the work item, and a mark from a non-owner would have two daemons appear to steer it |
+| dropped before any decision — a duplicate delivery, no resolvable work item, or the spawn policy released it for retry | none |
+
+A comment refused at **ingress** — the-loop's own comment, or an unauthorized author — is
+never reacted to either: the refusal is silent by design.
 
 Best-effort by design: reactions post through your own `gh` CLI (the daemon holds no
 token), a reaction failure never affects the dispatch, and a missing `gh`, a non-GitHub
@@ -1092,21 +1105,25 @@ with it — on the operator's own Slack message, with Slack's own palette.
 - **Type:** palette name, or `""`
 - **Default:** `eyes` (👀)
 
-Reaction added when the event is dequeued for delivery or spawn. `""` skips this state.
+Reaction added when the event is dequeued for delivery or spawn, and when an event is
+suppressed on purpose (nothing is running yet, the session is paused). `""` skips this
+state.
 
 ### `reactions.completed`
 
 - **Type:** palette name, or `""`
 - **Default:** `hooray` (🎉)
 
-Reaction added when the dispatch succeeds. `""` skips this state.
+Reaction added when the dispatch succeeds, and when a control command the-loop consumed
+was executed. `""` skips this state.
 
 ### `reactions.error`
 
 - **Type:** palette name, or `""`
 - **Default:** `confused` (😕)
 
-Reaction added when the dispatch fails or the worker crashes. `""` skips this state.
+Reaction added when the dispatch fails, the worker crashes, or a control command is
+refused or unreadable. `""` skips this state.
 
 GitHub's reaction palette is fixed — `+1`, `-1`, `laugh`, `confused`, `heart`, `hooray`,
 `rocket`, `eyes`. There is no ✅ and no ⁉️, so the defaults are the closest supported match.
