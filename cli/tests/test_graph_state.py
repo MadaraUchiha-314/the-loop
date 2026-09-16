@@ -176,8 +176,48 @@ def test_a_pull_request_in_the_work_items_own_repository_keeps_the_shipped_layou
     assert carried is not None and carried.state_dir == "pr-loops/pr-16"
 
 
+def test_a_recorded_pull_request_says_the_session_recorded_it(tmp_path):
+    """T5 (issue-370, R2.1, R2.2) — one writer now, and the old one still reads.
+
+    `linkedBy` had two values because two things wrote here: the session that
+    opened the pull request, and the first event that routed for one. The second
+    is gone — an inferred linkage must not add a row to a committed file — so
+    `"session"` is what a new row says. A file written before the change carries
+    `"event"` rows, and they have to keep saying that: they are the record of
+    what happened, not a field to normalise away.
+    """
+    state = WorkItemState(work_item="github:octo/app#15")
+    fresh = state.link_pr("github:octo/lib#7", repository="octo/lib", number=7)
+    assert fresh is not None and fresh.linked_by == "session"
+
+    path = tmp_path / STATE_FILENAME
+    path.write_text(
+        json.dumps(
+            {
+                "workItem": "github:octo/app#15",
+                "pullRequests": [
+                    {
+                        "ref": "github:octo/app#16",
+                        "repository": "octo/app",
+                        "number": 16,
+                        "linkedBy": "event",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    loaded = WorkItemState.load(tmp_path, "github:octo/app#15")
+    carried = loaded.pull_request("github:octo/app#16")
+    assert carried is not None and carried.linked_by == "event"
+    loaded.save(tmp_path)
+    again = WorkItemState.load(tmp_path, "github:octo/app#15")
+    kept = again.pull_request("github:octo/app#16")
+    assert kept is not None and kept.linked_by == "event"
+
+
 def test_linking_a_pull_request_is_idempotent_by_ref(tmp_path):
-    """R2.1 — two writers, one fact: a comment must not grow the list."""
+    """R2.1 — one writer, one fact: a retried link must not grow the list."""
     state = WorkItemState(work_item="github:octo/app#15")
     assert state.link_pr("github:octo/lib#7", repository="octo/lib", number=7)
     assert state.link_pr("github:octo/lib#7", repository="octo/lib", number=7) is None

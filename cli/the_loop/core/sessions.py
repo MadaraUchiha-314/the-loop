@@ -493,8 +493,9 @@ def _record_pull_request_in_state(
     the write goes through one set of guards — the checkout belongs to this work
     item, the spec directory is inside it, the state lock is held — whichever
     side records the pull request. The checkout is the session record's: a work
-    item with no session on this machine has no checkout to write into, and the
-    first event that routes for the pull request records it instead.
+    item with no session on this machine has no checkout to write into, so
+    nothing is recorded — since issue-370 this is the **only** writer of that
+    list, and it would rather record nothing than record a guess.
 
     Best-effort by contract, like every other GraphLink call: the registry write
     above already made routing work.
@@ -508,7 +509,7 @@ def _record_pull_request_in_state(
         GraphLinkConfig.from_mapping((_routing(config).get("graph")) or {}),
         control_store=_control_store(config),
     )
-    link.on_pr_linked(work_item, pr, record.cwd, linked_by="session")
+    link.on_pr_linked(work_item, pr, record.cwd)
 
 
 def link_pull_request(

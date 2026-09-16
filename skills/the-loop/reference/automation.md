@@ -224,7 +224,16 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   GitHub's `closingIssuesReferences`, the `issue-<n>` head-branch convention, or a
   closing keyword in the body — and a pull request **the-loop authors** carries none of
   them: a spec PR must not close its ticket, and `loop/<id>-…` is not the `issue-<n>`
-  convention. So state the binding rather than leaving it to be inferred:
+  convention. The recorded binding is also the **only** thing that puts the pull request
+  in the work item's own tracking: since issue-370 nothing infers that list.
+
+  **In Claude Code this is automatic.** The plugin's `PostToolUse` hook
+  (`hooks/the-loop-link-pr.py`) runs the command for you when a tool call creates a pull
+  request, reading the number from what the tool returned and the work item from
+  `THE_LOOP_WORK_ITEM` or the session registry. You will see a
+  `the-loop: recorded … against …` line in the transcript. Nothing to do.
+
+  **Everywhere else — Cursor, a bare session, hooks disabled — run it yourself:**
 
   ```bash
   # right after `gh pr create`, for EVERY PR you open for the work item
@@ -235,9 +244,12 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   ```
 
   Best-effort like registration: a failure is reported and the work carries on, and
-  re-running it is safe (a PR already recorded is a no-op). Skipping it is what makes a
-  review comment on a spec PR a dead letter — the comment resolves to the PR as a work
-  item nobody armed, is refused as unstarted, and is never re-evaluated.
+  re-running it is safe (a PR already recorded is a no-op) — so running it after the hook
+  already did costs nothing. Skipping it where no hook runs is what makes a review comment
+  on a spec PR a dead letter — the comment resolves to the PR as a work item nobody armed,
+  is refused as unstarted, and is never re-evaluated — and leaves the pull request out of
+  the work item's `pullRequests[]`, which is what a work-item review's scope is built
+  from.
 
 - **A repository with no `.the-loop/` is worked on the skill's defaults, and nothing
   writes one for you** (issue-352, decision-123; this replaces issue-193's adoption).
@@ -255,9 +267,14 @@ The PDLC is largely fixed; the harness should not re-derive it each run. Steps a
 predictable via:
 
 - **Harness hooks** — force steps to run at lifecycle points. In Claude Code:
-  `hooks/hooks.json` (SessionStart reminder). In Cursor: the always-applied rule
-  `rules/the-loop.mdc` carries the same reminder (Cursor hook events have no
-  SessionStart equivalent).
+  `hooks/hooks.json` — a SessionStart reminder, a Stop gate (`the-loop-gate.py`, which
+  asks `the-loop check` whether the current node is complete), and a PostToolUse recorder
+  (`the-loop-link-pr.py`, which runs `sessions link-pr` for a pull request the session
+  just created). A hook is how a step stops depending on the model remembering a rule;
+  prefer one whenever the step is mechanical and its inputs are in the payload. In Cursor:
+  the always-applied rule `rules/the-loop.mdc` carries the SessionStart reminder and
+  `.cursor/hooks.json` the gate (Cursor has no SessionStart or PostToolUse equivalent), so
+  there the prose rules above are what runs.
 - **Custom code/scripts** (the CLI is a natural home) where hooks are insufficient.
 
 ## Self-improvement (learnings lifecycle)

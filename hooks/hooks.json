@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-hooks.json",
-  "description": "Hooks add predictability/guarantees to the-loop's PDLC process. SessionStart surfaces the project's config; Stop runs the-loop's gate wrapper (Python, stdlib-only, so it runs on Windows too), which asks `the-loop check` whether the current graph node is complete and blocks the stop when it is not (issue-109). The harness hook is a CLOCK \u2014 it says when to look; the graph says what we are looking at, so the wrapper never needs to know which phase the work item is in. In Cursor the same wrapper ships via .cursor/hooks.json, returning a followup_message instead of blocking. Quality gates (lint/typecheck/test) are documented for projects to wire to their own tooling, since commands are project-specific.",
+  "description": "Hooks add predictability/guarantees to the-loop's PDLC process. SessionStart surfaces the project's config; PostToolUse records a pull request the session just opened against its work item (`the-loop sessions link-pr`), so the work item's tracking is a fact the-loop wrote rather than one it inferred (issue-370); Stop runs the-loop's gate wrapper, which asks `the-loop check` whether the current graph node is complete and blocks the stop when it is not (issue-109). Both wrappers are Python, stdlib-only, so they run on Windows too. The harness hook is a CLOCK \u2014 it says when to look; the graph says what we are looking at, so the wrapper never needs to know which phase the work item is in. In Cursor the gate wrapper ships via .cursor/hooks.json, returning a followup_message instead of blocking; Cursor has no PostToolUse equivalent, so there the skill's prose rule remains the way a pull request is recorded. Quality gates (lint/typecheck/test) are documented for projects to wire to their own tooling, since commands are project-specific.",
   "hooks": {
     "SessionStart": [
       {
@@ -9,6 +9,17 @@
           {
             "type": "command",
             "command": "test -f .the-loop/harness-config.yaml && echo 'the-loop is initialized in this repo. Operating rules: plan\u2192execute\u2192self/critic-review\u2192escalate. Read .the-loop/harness-config.yaml (the agent config; the CLI never reads it) and follow the the-loop skill.' || true"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|.*create_pull_request",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/the-loop-link-pr.py\""
           }
         ]
       }

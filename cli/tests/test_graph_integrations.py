@@ -87,10 +87,8 @@ def test_slack_is_a_named_refusal_pointing_at_channels():
 
 # -- the host (issue-311, R4) ----------------------------------------------------
 
-import json  # noqa: E402
-
 from the_loop.graph.integrations.github import (  # noqa: E402
-    _linked_pull_refs,
+    OPERATIONS,
     _ref_parts,
 )
 
@@ -128,7 +126,6 @@ def test_the_cli_transport_names_the_host_on_every_operation(monkeypatch):
     provider.call("set-labels", ref=GHE_REF, labels=["a"])
     provider.call("get-labels", ref=GHE_REF)
     provider.call("get-thread", ref=GHE_REF)
-    provider.call("linked-pulls", ref=GHE_REF)
     provider.call("list-comments", ref=GHE_REF)
     for argv in runs.calls:
         if argv[0] == "api":
@@ -179,21 +176,14 @@ def test_the_api_transport_derives_the_enterprise_base(monkeypatch):
     ]
 
 
-def test_linked_pulls_carry_the_host_they_were_asked_on():
-    data = {
-        "data": {
-            "repository": {
-                "issue": {
-                    "closedByPullRequestsReferences": {
-                        "nodes": [
-                            {"number": 3, "repository": {"nameWithOwner": "octo/repo"}}
-                        ]
-                    }
-                }
-            }
-        }
-    }
-    assert _linked_pull_refs(json.loads(json.dumps(data)), GHE) == [
-        f"github:{GHE}/octo/repo#3"
-    ]
-    assert _linked_pull_refs(data, "") == ["github:octo/repo#3"]
+def test_the_provider_no_longer_answers_which_pulls_a_work_item_links():
+    """T7 (issue-370, R3.1) — the-loop stopped asking GitHub that question.
+
+    `linked-pulls` pre-filled a work-item review's scope from the "Development"
+    panel. The scope now comes from what the-loop recorded opening, so the op is
+    gone from the vocabulary and both transports refuse it.
+    """
+    assert "linked-pulls" not in OPERATIONS
+    for provider in (GitHubCli(), GitHubApi(["GH_TOKEN"])):
+        with pytest.raises(OperationUnsupported):
+            provider.call("linked-pulls", ref=GHE_REF)

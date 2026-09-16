@@ -1625,19 +1625,22 @@ class Dispatcher:
         return bool(result.ok)
 
     def _record_pr_binding(self, routed: RoutedEvent, target: WorkItemRef) -> None:
-        """Persist "this PR delivers ``target``'s work item".
+        """Persist the **machine handle** "this PR's events reach ``target``".
 
         Called at the two moments a routing decision is actually made — an event
         delivered into an existing session, and a session spawned for a linked
         issue — so the binding is established by the same act that established
         the session, rather than re-derived from ``gh`` afterwards.
 
-        Two records, one fact, each in the file its rule puts it in (issue-368):
-        the machine's registry gets an endpoint keyed by the PR's ref, which is
-        what routes its events here; the work item's **own** checked-in state
-        gets the pull request itself — repository, number, URL, inner-loop
-        directory and upstream state — which is what travels to the next machine
-        and what a reviewer reads.
+        One record now, not two (issue-370, R2.1). The machine's registry gets an
+        endpoint keyed by the PR's ref, which is what routes its events here.
+        The work item's **checked-in** ``work-item-state.json`` no longer gets a
+        row: this function's ``pr`` comes from the router's linkage — a closing
+        reference, an ``issue-<n>`` branch, a closing keyword — which is the
+        right answer to "whose conversation hears this?" and the wrong one to
+        "which pull requests deliver this work item?". The second question is
+        answered only by ``the-loop sessions link-pr``, run by the session that
+        opened the pull request.
 
         Writes nothing when the event carries no pull request, or when the PR
         *is* the target (a work item does not deliver itself). A write failure is
@@ -1647,9 +1650,6 @@ class Dispatcher:
         pr = pr_work_item(routed.event, routed.payload)
         if pr is None or pr.ref == target.ref:
             return
-        record = self.registry.find_by_work_item(target, include_closed=True)
-        if record is not None:
-            self.graphlink.on_pr_linked(target, pr, record.cwd, linked_by="event")
         try:
             self.registry.link_pull_request(target, pr)
         except OSError as exc:

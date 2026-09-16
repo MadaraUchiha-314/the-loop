@@ -51,8 +51,12 @@ LOCK_FILENAME = "work-item-state.lock"
 #: daemon's one close path; ``open`` until it says otherwise.
 PR_STATES = ("open", "merged", "closed")
 
-#: Who recorded that a pull request delivers this work item — the session that
-#: opened it (``the-loop sessions link-pr``) or the first event that routed.
+#: Who recorded that a pull request delivers this work item. The **read**
+#: vocabulary: ``"session"`` is the only value the-loop writes (issue-370, R2.1)
+#: — the session that opened the pull request said so, through
+#: ``the-loop sessions link-pr``. ``"event"`` is kept because a file written
+#: before that change carries rows the first routing event added, and they must
+#: keep loading, and keep saying what they say. Nothing mints it any more.
 PR_LINKED_BY = ("session", "event")
 
 #: What the file was called until issue-365. **Read** when the current name is
@@ -160,7 +164,7 @@ class PullRequest:
     state_dir: str = ""
     state: str = "open"
     linked_at: str = ""
-    linked_by: str = "event"
+    linked_by: str = "session"
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -510,15 +514,21 @@ class WorkItemState:
         repository: str = "",
         number: int = 0,
         url: str = "",
-        linked_by: str = "event",
+        linked_by: str = "session",
     ) -> Optional[PullRequest]:
         """Record that ``ref`` delivers this work item; ``None`` when it already did.
 
-        Idempotent by ref, like the registry's own ``link_pull_request``: the
-        two writers of this fact — the session that opened the pull request and
-        the first event that routes for it — must not grow the list once per
-        comment. Refuses an entry that does not validate (an unusable repository
-        path), because this value becomes a directory name.
+        **One writer** (issue-370, R2.1): the session that opened the pull
+        request, through ``the-loop sessions link-pr``. This list is checked in,
+        reviewed and carried to the next machine, so a row in it has to be a
+        thing the-loop did — not a thing it inferred from a branch name or a
+        closing keyword anyone can author. The first routing event used to write
+        here too; it no longer does.
+
+        Idempotent by ref, like the registry's own ``link_pull_request``, so
+        re-running the link after a retry costs nothing. Refuses an entry that
+        does not validate (an unusable repository path), because this value
+        becomes a directory name.
         """
         if not ref or ref == self.work_item or self.pull_request(ref) is not None:
             return None

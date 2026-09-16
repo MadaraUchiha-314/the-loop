@@ -25,7 +25,7 @@ from typing import Any, Dict, FrozenSet, Sequence
 
 from ...comments import gh_host_args
 from ...ghhost import PUBLIC_API_BASE, api_base_for
-from ...sessions import DEFAULT_GITHUB_HOST, WorkItemRef, is_github_host
+from ...sessions import DEFAULT_GITHUB_HOST, is_github_host
 from .base import IntegrationError, OperationUnsupported
 
 logger = logging.getLogger("the-loop.graph.integrations")
@@ -33,9 +33,16 @@ logger = logging.getLogger("the-loop.graph.integrations")
 __all__ = ["GitHubApi", "GitHubCli", "OPERATIONS"]
 
 #: Everything the-loop's own hooks need from GitHub. Small on purpose.
-#: `get-thread` and `linked-pulls` joined for the review loop (issue-279, the
-#: work-item-level review): the brief gate must tell a pull request from a
-#: work item, and may suggest the pull requests a work item is linked to.
+#: `get-thread` joined for the review loop (issue-279, the work-item-level
+#: review): the brief gate must tell a pull request from a work item.
+#:
+#: `linked-pulls` was here too, until issue-370. It asked GitHub which pull
+#: requests an issue links (the "Development" panel), to pre-fill a work-item
+#: review's scope. the-loop does not ask that question any more: the pull
+#: requests delivering a work item are the ones it recorded opening, in
+#: `work-item-state.json`, which is both authoritative and able to see a spec
+#: pull request — the one a work-item review most needs in scope, and the one
+#: GitHub's answer never contained, because it closes nothing.
 OPERATIONS: FrozenSet[str] = frozenset(
     {
         "add-comment",
@@ -43,52 +50,8 @@ OPERATIONS: FrozenSet[str] = frozenset(
         "get-labels",
         "list-comments",
         "get-thread",
-        "linked-pulls",
     }
 )
-
-#: GraphQL for the one association REST does not expose: the pull requests
-#: that close a work item (the "Development" panel's links). First 50 — a
-#: work item with more linked PRs than that has bigger problems than a
-#: truncated suggestion list, and the reviewer can always state the rest.
-_LINKED_PULLS_QUERY = """
-query($owner: String!, $repo: String!, $number: Int!) {
-  repository(owner: $owner, name: $repo) {
-    issue(number: $number) {
-      closedByPullRequestsReferences(first: 50, includeClosedPrs: true) {
-        nodes { number repository { nameWithOwner } }
-      }
-    }
-  }
-}
-"""
-
-
-def _linked_pull_refs(data: Dict[str, Any], host: str = "") -> list[str]:
-    """``github:[host/]owner/repo#n`` refs out of the GraphQL response — or empty.
-
-    ``host`` is the GitHub the question was asked on (issue-311, R4.4): the
-    answer names repositories by ``nameWithOwner`` alone, so the refs composed
-    from it carry the host the-loop already knew, spelled by ``WorkItemRef`` so
-    github.com stays unwritten.
-    """
-    nodes = (((data.get("data") or {}).get("repository") or {}).get("issue") or {}).get(
-        "closedByPullRequestsReferences"
-    ) or {}
-    refs: list[str] = []
-    for node in nodes.get("nodes") or []:
-        if not isinstance(node, dict):
-            continue
-        number = node.get("number")
-        slug = (node.get("repository") or {}).get("nameWithOwner") or ""
-        owner, _, repo = str(slug).partition("/")
-        if isinstance(number, int) and owner and repo:
-            refs.append(
-                WorkItemRef(
-                    provider="github", owner=owner, repo=repo, number=number, host=host
-                ).ref
-            )
-    return refs
 
 
 def _ref_parts(ref: str) -> tuple[str, str, str, str]:
@@ -236,21 +199,6 @@ class GitHubApi:
             )
             kind = "pull-request" if "pull_request" in data else "issue"
             return {"kind": kind}
-        if op == "linked-pulls":
-            data = self._request(
-                "POST",
-                "/graphql",
-                {
-                    "query": _LINKED_PULLS_QUERY,
-                    "variables": {
-                        "owner": owner,
-                        "repo": repo,
-                        "number": int(number),
-                    },
-                },
-                host=host,
-            )
-            return {"pulls": _linked_pull_refs(data, host)}
         data = self._request(
             "GET", f"/repos/{owner}/{repo}/issues/{number}/comments", host=host
         )
@@ -326,21 +274,5 @@ class GitHubCli:
             data = json.loads(out or "{}")
             kind = "pull-request" if "pull_request" in data else "issue"
             return {"kind": kind}
-        if op == "linked-pulls":
-            out = self._run(
-                [
-                    *api,
-                    "graphql",
-                    "-f",
-                    f"query={_LINKED_PULLS_QUERY}",
-                    "-F",
-                    f"owner={owner}",
-                    "-F",
-                    f"repo={repo}",
-                    "-F",
-                    f"number={number}",
-                ]
-            )
-            return {"pulls": _linked_pull_refs(json.loads(out or "{}"), host)}
         out = self._run(["issue", "view", number, "--repo", slug, "--json", "comments"])
         return {"comments": json.loads(out or "{}").get("comments", [])}

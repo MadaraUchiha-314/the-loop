@@ -372,6 +372,57 @@ def test_an_old_tmux_gets_no_environment_flag_and_one_warning(caplog):
     assert runner.argv.count(["-V"]) == 1
 
 
+# -- the work item a spawned session is for (issue-370, R5.1) -------------------
+
+
+def test_a_spawn_for_a_work_item_exports_its_ref():
+    """T12, R5.1 — the variable the plugin's hooks have always read.
+
+    `hooks/the-loop-gate.py` has gated on `THE_LOOP_WORK_ITEM` since issue-109
+    and `hooks/the-loop-link-pr.py` records against it; nothing set it, so both
+    were inert in every session the daemon spawned.
+    """
+    runner = _Probe(instance="laptop-b")
+    assert runner.spawn(
+        work_item=WorkItemRef.parse("github:octo/repo#370"),
+        adapter=_Adapter(),  # type: ignore[arg-type]
+        prompt="hi",
+        cwd="/tmp",
+        session_id="s",
+    ).ok
+    new_session = [a for a in runner.argv if a and a[0] == "new-session"][0]
+    exported = {new_session[i + 1] for i, a in enumerate(new_session) if a == "-e"}
+    assert exported == {
+        "THE_LOOP_INSTANCE=laptop-b",
+        "THE_LOOP_WORK_ITEM=github:octo/repo#370",
+    }
+    assert max(i for i, a in enumerate(new_session) if a == "-e") < new_session.index(
+        "--"
+    )
+
+
+def test_a_standing_session_carries_no_work_item():
+    """T12, R5.2 — a session with no work item must not claim one."""
+    runner = _Probe()
+    assert _spawn(runner).ok
+    assert all("-e" not in a for a in runner.argv)
+
+
+def test_an_old_tmux_omits_the_work_item_too(caplog):
+    """T12, R5.2 — one warning naming both, and no failed spawn."""
+    runner = _Probe(version="tmux 3.1c")
+    with caplog.at_level(logging.WARNING, logger="the-loop.runner"):
+        assert runner.spawn(
+            work_item=WorkItemRef.parse("github:octo/repo#370"),
+            adapter=_Adapter(),  # type: ignore[arg-type]
+            prompt="hi",
+            cwd="/tmp",
+            session_id="s",
+        ).ok
+    assert all("-e" not in a for a in runner.argv)
+    assert [r for r in caplog.records if "THE_LOOP_WORK_ITEM" in r.getMessage()]
+
+
 def test_only_the_configured_name_reaches_tmux_and_the_comment():
     """A6: the value interpolated is the validated config name, never event text."""
     config = InstanceConfig.from_mapping({"name": "instance:evil"})

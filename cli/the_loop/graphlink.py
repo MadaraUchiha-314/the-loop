@@ -724,23 +724,25 @@ class GraphLink:
         work_item: WorkItemRef,
         pr: WorkItemRef,
         cwd: str,
-        linked_by: str = "event",
     ) -> None:
         """Record in the work item's own file that ``pr`` delivers it (issue-368).
 
         A pull request is a remote entity of the **repository**, so it belongs on
         the work item's branch — where CI, a reviewer and another machine can all
         see it — and not only in `<state.root>/local/<slug>.json`, which never
-        travels and which a hand-off therefore lost. The two writers are the two
-        moments the fact becomes known: the session that opened the pull request
-        (`the-loop sessions link-pr`, ``linked_by="session"``) and the first
-        event that routes for it (``"event"``).
+        travels and which a hand-off therefore lost.
 
-        Idempotent by ref, like the registry's own linking, so a comment on a
-        pull request does not grow the list once per delivery. Best-effort like
-        everything here: the registry write already made routing work, and a
-        state write that could not be taken is retried by the next event for
-        that pull request.
+        **One writer** (issue-370, R2.1): the session that opened the pull
+        request, through `the-loop sessions link-pr`. Until then the first event
+        that routed for a pull request wrote here too, with ``linkedBy:
+        "event"`` — so a fork branch named `issue-<n>`, or a body saying
+        `fixes #<n>`, was enough to add a row to a committed file for a pull
+        request nobody on the work item had heard of. Delivery still reads those
+        linkage sources; this list no longer does.
+
+        Idempotent by ref, like the registry's own linking, so re-running the
+        link costs nothing. Best-effort like everything here: a state write that
+        could not be taken is reported and the session carries on.
         """
 
         def call(rt, item):
@@ -754,7 +756,7 @@ class GraphLink:
                 repository=f"{pr.owner}/{pr.repo}",
                 number=pr.number,
                 url=pr.url,
-                linked_by=linked_by,
+                linked_by="session",
             )
             if entry is None:
                 return
@@ -763,7 +765,7 @@ class GraphLink:
                 "graph.pull_request_linked",
                 work_item=work_item.ref,
                 pull_request=pr.ref,
-                via=linked_by,
+                via="session",
             )
 
         self._guarded("advance", work_item, cwd, call)
