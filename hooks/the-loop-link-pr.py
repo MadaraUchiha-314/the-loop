@@ -47,6 +47,9 @@ CLI_TIMEOUT_SECONDS = 20
 #: MCP server's, whatever prefix the deployment gave it.
 _MCP_CREATE_RE = re.compile(r"create_pull_request$")
 _GH_PR_CREATE_RE = re.compile(r"\bgh\b[^\n|;&]*\bpr\b[^\n|;&]*\bcreate\b")
+#: `--dry-run` as a flag, not as the text of a `--title`. Belt to the braces of the
+#: URL check below, which a dry run does not produce either.
+_DRY_RUN_RE = re.compile(r"(?:^|\s)--dry-run(?:[\s=]|$)")
 
 #: A pull request URL in a tool's output: `https://<host>/<owner>/<repo>/pull/<n>`.
 #: Deliberately the only way a number is ever extracted — see the module
@@ -106,7 +109,7 @@ def created_pull_request(
     tool = str(payload.get("tool_name") or "")
     if tool == "Bash":
         command = str((payload.get("tool_input") or {}).get("command") or "")
-        if not _GH_PR_CREATE_RE.search(command) or "--dry-run" in command:
+        if not _GH_PR_CREATE_RE.search(command) or _DRY_RUN_RE.search(command):
             return None
     elif not _MCP_CREATE_RE.search(tool):
         return None

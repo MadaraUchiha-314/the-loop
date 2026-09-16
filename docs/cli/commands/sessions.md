@@ -81,10 +81,22 @@ opens** carries none of those: a spec PR must not close its ticket, and the-loop
 branches are `loop/<id>-…`. Without the binding, a review comment on that PR resolves to
 the PR as a work item of its own, which nobody armed, and is refused as unstarted.
 
+Since [issue-370](https://github.com/MadaraUchiha-314/the-loop/issues/370) this is also
+the **only** writer of the work item's own `pullRequests[]`: inference decides where an
+event is delivered, and nothing else, so a pull request nobody recorded is not part of the
+work item's tracking and is not in a work-item review's scope.
+
 ```bash
 gh pr create --title 'Spec PR — Phase 1 (requirements) for #15' --body '…'
 the-loop sessions link-pr --work-item github:octo/repo#15 --pull-request 16
 ```
+
+::: tip In Claude Code, the plugin runs this for you
+the-loop's `PostToolUse` hook (`hooks/the-loop-link-pr.py`) records the pull request when
+a session creates one, reading its number from what the tool returned and the work item
+from `THE_LOOP_WORK_ITEM` or this registry. Running the command yourself afterwards is
+harmless — it is idempotent — and is still the way in a harness with no such hook.
+:::
 
 Idempotent: a pull request already recorded is reported and exits 0. Exit 1 when the work
 item has no session record on this machine (register the session first — recording an

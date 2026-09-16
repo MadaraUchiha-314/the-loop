@@ -33,7 +33,11 @@ validating a config, never copied into the projects the-loop is run on.
   `cz bump` rewrites them in lockstep on every release (see
   [release-publishing](release-publishing.md), decision-028).
 - WHERE Claude Code uses the SessionStart hook (`hooks/hooks.json`) the Cursor package
-  SHALL use the always-applied rule `rules/the-loop.mdc` instead.
+  SHALL use the always-applied rule `rules/the-loop.mdc` instead. `hooks/hooks.json`
+  SHALL also declare the Stop gate (`the-loop-gate.py`) and, since issue-370, the
+  `PostToolUse` recorder (`the-loop-link-pr.py`, which runs `sessions link-pr` for a pull
+  request the session just created); Cursor has a hook surface for the first and none for
+  the second, so there the skill's prose rule is what records a pull request.
 - Work-item and process templates SHALL be internal to the plugin, shipped under
   `skills/the-loop/templates/` (`manifest.templatesDir`) and read from
   `${CLAUDE_PLUGIN_ROOT}` when an artifact is authored. `/the-loop:init` SHALL NOT copy

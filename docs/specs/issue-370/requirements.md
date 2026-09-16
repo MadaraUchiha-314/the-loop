@@ -158,9 +158,12 @@ item adds — needs that variable to actually be there.
 
 ### R6 — the documentation says the new rule
 
-- **R6.1** The affected capability docs SHALL be updated in this PR:
+- **R6.1** The affected capability docs SHALL be updated in this PR —
   `docs/capabilities/webhook-triggers.md`, `docs/capabilities/process-graph.md`,
-  `docs/capabilities/cli.md` and `docs/capabilities/review-loop.md`.
+  `docs/capabilities/cli.md` and `docs/capabilities/distribution.md` — each with a
+  history row, together with the user-facing pages that describe the changed behaviour
+  (`docs/cli/state.md`, `docs/cli/commands/sessions.md`). A capability doc that describes
+  none of it SHALL be recorded as unaffected, with the reason, rather than edited.
 - **R6.2** `skills/the-loop/reference/automation.md` SHALL describe the hook as the
   primary path and the command as the fallback.
 

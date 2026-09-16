@@ -117,6 +117,17 @@ a pull request whose inner loop has not started and therefore has no directory;
 machine before this change. Reading both keeps the pre-fill complete without asking
 anyone outside the repository.
 
+**Known consequence, stated rather than hidden:** delivery is unchanged (R1.3), so an
+event for a pull request linked only by inference still routes to the work item and can
+still cause `pr-loops/pr-<n>/` to be created under its spec directory — and
+`_state_pulls` will then suggest it. That is a weaker leak than the one this change
+removes (a directory means *the-loop ran an inner loop for this pull request against this
+work item*, which is something the-loop did; a closing keyword is something a stranger
+typed), it reaches only a human-edited suggestion rather than a committed list, and
+closing it fully means removing the delivery inference — the out-of-scope item above. If
+the owner wants the pre-fill to read `pullRequests[]` alone, that is a one-line change to
+`_detected_pulls`.
+
 ### C4 — the recording is automatic (R4.1–R4.5)
 
 A new plugin hook, `hooks/the-loop-link-pr.py`, in the mould of `the-loop-gate.py`:

@@ -200,6 +200,10 @@ def test_an_enterprise_host_is_carried_into_the_ref(hook):
     [
         pytest.param(bash_payload(command="ls -la"), id="not-a-pr-command"),
         pytest.param(bash_payload(command="gh pr create --dry-run"), id="dry-run"),
+        pytest.param(
+            bash_payload(command="gh pr create --fill --draft=false", stdout="nope"),
+            id="no-url-on-a-real-flag",
+        ),
         pytest.param(bash_payload(stdout="failed: no commits"), id="no-url-returned"),
         pytest.param({"tool_name": "Read"}, id="unrelated-tool"),
         pytest.param({}, id="empty-payload"),
@@ -212,6 +216,18 @@ def test_a_tool_call_that_created_nothing_runs_nothing(
     monkeypatch.setenv("THE_LOOP_WORK_ITEM", WORK_ITEM)
     assert run_main(hook, monkeypatch, payload, capsys) == (0, "")
     assert runs == []
+
+
+def test_dry_run_is_a_flag_not_a_word_in_the_title(hook, runs, monkeypatch, capsys):
+    """T10 — the guard must not silently skip a real creation over its title text."""
+    monkeypatch.setenv("THE_LOOP_WORK_ITEM", WORK_ITEM)
+    run_main(
+        hook,
+        monkeypatch,
+        bash_payload(command='gh pr create --title "support --dry-run"'),
+        capsys,
+    )
+    assert runs and runs[-1][-1] == "412"
 
 
 def test_an_interrupted_creation_links_nothing(hook, runs, monkeypatch, capsys):
