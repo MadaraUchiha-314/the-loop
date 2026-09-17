@@ -108,6 +108,27 @@ overrides: {}
   - _Requirements:_ R5.1
   - _Test:_ T17
 
+- [x] 12. Names, not ids — the author's review of PR #376
+  - `cli/the_loop/channels/directory.py`: `SlackDirectory` (two cached maps, TTL,
+    fail-closed, the `follow` flag for handles), `is_conversation_id` / `is_member_id` /
+    `normalize_name`
+  - `cli/the_loop/workchannels.py`: the Slack target accepts a name, `ChannelRef.is_id` /
+    `.name`, `resolve_channel_ref`, the record's `name` field, and the store refusing to
+    hold anything but an id
+  - `cli/the_loop/webhook/dispatcher.py`, `core/workchannels.py`: resolve at the
+    declaration boundary, refuse what will not resolve
+  - `cli/the_loop/channels/slack.py`: `central_channel()` / `directory()`, every outbound
+    read routed through the resolved id, `probe_subscription` resolving a name
+  - `cli/the_loop/channels/inbound.py`, `channels/commands.py`: `_authorized`, shared by
+    every inbound surface, resolving a handle and failing closed
+  - `cli/the_loop/channels/slack-app-manifest.yaml`: `channels:read`, `groups:read`,
+    `users:read`
+  - the schema, both config files, `channels-options.md`, `routing-options.md`,
+    `add-channel.md`
+  - _Depends on:_ 1–11
+  - _Requirements:_ R1.5, R1.11, R5.1–R5.6, R6.1–R6.5
+  - _Test:_ T21, T22, T23, T24, T25, T26 (red→green)
+
 - [x] 11. Verification
   - the full suite, `make check`, and the evidence files
   - _Depends on:_ 1–10

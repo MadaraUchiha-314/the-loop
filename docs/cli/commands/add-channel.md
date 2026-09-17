@@ -3,9 +3,9 @@
 Give one work item a room of its own.
 
 ```bash
+the-loop add-channel slack@#tmp-issue-375 --work-item github:OWNER/REPO#375
 the-loop add-channel slack@C0TMP375 --work-item github:OWNER/REPO#375
-the-loop add-channel slack://C0TMP375 --work-item github:OWNER/REPO#375
-the-loop add-channel slack@C0TMP375 --work-item github:OWNER/REPO#375 --no-comment
+the-loop add-channel slack://C0TMP375 --work-item github:OWNER/REPO#375 --no-comment
 ```
 
 ## What it does
@@ -36,9 +36,11 @@ person — so the order of "declare the room" and "invite the people" never matt
 
 Three effects, in this order:
 
-1. **Writes the declaration** into the work item's portable record
-   (`<state.root>/portable/<slug>.json`, `collaborationChannels` section), with who
-   declared it, when, and through which surface.
+1. **Resolves a name to an id, then writes the declaration** into the work item's
+   portable record (`<state.root>/portable/<slug>.json`, `collaborationChannels`
+   section), with who declared it, when, and through which surface. The record
+   stores the **id** — what the ingress routes on — and keeps the name beside it
+   for display.
 2. **Posts the same keyword** — `the-loop add-channel slack@C0TMP375` — back on the
    work item, carrying the loop-prevention marker, so the thread reads identically
    whether the declaration came from the terminal or from a comment. Best-effort: a
@@ -53,7 +55,7 @@ printed is always the first form.
 
 | Type | Target | Notes |
 |------|--------|-------|
-| `slack` | a conversation id — `C…` (public), `G…` (private), `D…` (a DM) | Slack shows it under **View channel details**. A `#name` is **refused**: the bot has no `channels:read` scope to resolve one, and `channels.slack.channel` takes an id for the same reason. |
+| `slack` | the channel's **name** (`#tmp-issue-375`, or bare) or its conversation id (`C…` public, `G…` private, `D…` a DM) | A name is resolved to an id **when you declare it**, and the id is what is stored — so a later rename changes nothing. Resolving needs the app's `channels:read` / `groups:read` scopes and the bot to be able to see the channel; a name that resolves to neither is refused rather than stored. An id needs no scope and no lookup. |
 
 A type the-loop has no adapter for is refused at declaration time rather than stored
 and silently ignored. Adding one later — Jira, WhatsApp — is a row in the type table
@@ -74,11 +76,12 @@ plus an adapter, not a new grammar.
 |------|------|
 | `0` | at least one channel was newly declared |
 | `1` | nothing changed — every channel named was already declared |
-| `2` | a malformed ref, an unknown type, a bad target, a work-item ref that will not parse, or a channel another work item holds: **nothing** was written and nothing posted |
+| `2` | a malformed ref, an unknown type, a name that resolves to no channel this bot can see, a work-item ref that will not parse, or a channel another work item holds: **nothing** was written and nothing posted |
 
 ## Notes
 
-- **All or nothing.** Every ref is validated before any of them is written.
+- **All or nothing.** Every ref is validated **and resolved** before any of them is
+  written, so a second channel the bot cannot see leaves the first unapplied.
 - **One channel per type per work item.** Declaring a second Slack channel *moves*
   the conversation rather than adding one; the output names what it replaced.
 - **One work item per channel.** A channel another work item declares is refused —

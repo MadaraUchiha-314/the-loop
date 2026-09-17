@@ -76,8 +76,11 @@ flowchart LR
 - **R1.4** WHEN the type is not one this deployment has an adapter for THEN the-loop
   SHALL refuse the declaration and name the types it has.
 - **R1.5** WHEN the target is not valid for its type THEN the-loop SHALL refuse it. For
-  Slack a valid target is a conversation id (`C…`, `G…`, `D…`); a channel **name** is
-  not, because the bot holds no `channels:read` scope to resolve one.
+  Slack a valid target is the channel's **name** (`#tmp-issue-375`, or bare) or its
+  conversation id (`C…`, `G…`, `D…`).
+- **R1.11** WHEN a declaration names a channel by name THEN the-loop SHALL resolve it to
+  an id **before storing anything**, SHALL store the id, and SHALL keep the name beside
+  it for display only. A name that resolves to nothing SHALL refuse the declaration.
 - **R1.6** `the-loop remove-channel <type>@<target>` SHALL undeclare, under the same
   authorization, taking effect on the next event.
 - **R1.7** A work item SHALL have at most **one** channel per type: a second declaration
@@ -140,11 +143,54 @@ flowchart LR
   disagree — and the section SHALL therefore carry no checkbox, which the gate's own
   parser would read as a phase.
 
-### R5 — the change ships with its documentation
+### R5 — a person names the room and the person, not their ids
 
-- **R5.1** The capability docs for channels and for webhook triggers SHALL describe the
+> Added by the author's review of PR #376: *"Not an issue, we can change the manifest.
+> We should be able to do with channel name … Basically support both … in
+> `routing.authorizedUsers.slack` we have to provide a user id like (W7GG2KY31), can we
+> change that to a name like `@<slack-user-name>`"*.
+
+- **R5.1** `channels.slack.channel` SHALL accept the channel's **name** or its
+  conversation id. A name SHALL be resolved to an id and every outbound path SHALL read
+  that one id, the read cursor's key included.
+- **R5.2** `routing.authorizedUsers[].slack` SHALL accept a member id (`U…`/`W…`) or a
+  **handle** (`@dana`, or bare). A handle SHALL be resolved to a member id and compared
+  as an exact match on that id.
+- **R5.3** WHEN a name or handle cannot be resolved THEN the-loop SHALL fail closed: a
+  declaration is refused, a post raises, and an allow-list entry authorizes **nobody**.
+  An unresolvable entry SHALL NEVER widen an allow-list.
+- **R5.4** WHEN a handle the-loop had resolved starts pointing at a different member
+  THEN the-loop SHALL log a warning naming both ids. **This does not make the form
+  safe**: a handle authorizes whoever holds it, and only a member id names one person
+  for good. The documentation SHALL say so where the key is documented.
+- **R5.5** A Slack **display name** SHALL NOT resolve to anybody. It is neither unique
+  nor constrained, and `routing.authorizedUsers` has warned against it since issue-309;
+  accepting handles does not widen that.
+- **R5.6** The shipped app manifest SHALL declare the read-only scopes resolution needs
+  — `channels:read`, `groups:read`, `users:read` — and the documentation SHALL say that
+  an existing install must be re-installed to pick them up.
+
+### R6 — resolution is cheap, cached and never in the hot path
+
+- **R6.1** the-loop SHALL keep a name→id directory for the workspace, cached on this
+  machine under `<state.root>/local/`, shared by every process on it.
+- **R6.2** WHEN a value is already an id THEN the-loop SHALL use it directly, with **no
+  API call, no scope and no cache**. Every configuration that worked before this change
+  SHALL keep working unchanged.
+- **R6.3** WHEN a directory read fails — no token, a missing scope, a transport error —
+  THEN it SHALL resolve to nothing, SHALL NOT be cached, and SHALL say in the log what
+  scope is likely missing.
+- **R6.4** A lookup that hits the cache SHALL cost no API call, and a lookup that misses
+  SHALL cost at most one listing per TTL — so a typo in a config file cannot turn every
+  message into an API call.
+- **R6.5** WHAT IS STORED AND ROUTED ON SHALL ALWAYS BE AN ID. A record carrying a name
+  SHALL be ignored, so no message delivery ever depends on a lookup.
+
+### R7 — the change ships with its documentation
+
+- **R7.1** The capability docs for channels and for webhook triggers SHALL describe the
   declaration, and carry a history row.
-- **R5.2** The two new commands SHALL each have a CLI page, and the two new keywords an
+- **R7.2** The two new commands SHALL each have a CLI page, and the two new keywords an
   option entry; `docs/cli/state.md` SHALL describe the new portable section.
 
 ## Security considerations
@@ -160,3 +206,6 @@ be attributed to a work item. Neither widens who may speak.
 | A4 | An authorized user declares a channel outsiders are in, to read a work item's conversation | Out of scope by design and stated plainly: an authorized user can already read and relay a work item. What the declaration cannot do is let those outsiders *speak* — inbound authorization is unchanged (R3.5) |
 | A5 | Declaring the operator's own central channel turns every work item's thread there into #375's | A binding wins over a room (R3.3), so only messages the bindings do not already claim are attributed. What *is* suppressed there is the kickoff (R3.1) — deliberate, and the reason R3.4 exists |
 | A6 | A room with months of history is declared and replays into the session | First-sight baselining (R3.6): with no cursor, the newest ts is recorded and nothing is delivered |
+| A7 | Somebody takes a freed Slack handle and inherits an allow-list entry naming it | **Accepted, on the author's decision, and documented rather than hidden** (R5.4). A handle authorizes whoever holds it; the-loop re-reads a stale directory and warns when the id behind a handle changes, and the documentation says in as many words that a member id is the form that names one person for good. Display names, which are neither unique nor constrained, are refused outright (R5.5) |
+| A8 | A name is resolved to the wrong channel, so a work item's conversation lands somewhere else | Resolution happens **once, at declaration**, and the id is what is stored (R1.11, R6.5). A wrong name is refused at that moment rather than discovered at the first post, and no later message depends on a lookup |
+| A9 | The directory cache is edited to point a name at an attacker's channel | The cache maps names to ids for *display and declaration* only. What the ingress routes on is the id already in the work item's record, which a cache edit cannot reach; the worst a poisoned cache does is refuse a declaration or send one declaration to the wrong room, which is visible in the thread the-loop posts into |

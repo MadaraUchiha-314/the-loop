@@ -20,7 +20,7 @@ Spec: docs/specs/issue-375/design.md §4.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .. import eventlog
 from ..comments import post_issue_comment
@@ -33,6 +33,7 @@ from ..workchannels import (
     CollaborationChannelStore,
     describe_refusal,
     parse_channel_ref,
+    resolve_channel_ref,
 )
 from .sessions import _control_config, _layout, _local_actor
 
@@ -82,15 +83,19 @@ def manage_channels(
     if verb not in CHANNEL_VERBS:
         raise ValueError(f"unknown channel verb {verb!r} (one of {CHANNEL_VERBS})")
     work_item = WorkItemRef.parse(ref)  # ValueError on a malformed ref
-    canonical: List[ChannelRef] = []
+    canonical: List[Tuple[ChannelRef, str]] = []
     for raw in channels:
         channel = parse_channel_ref(raw)
         if channel is None:
             raise ValueError(describe_refusal(raw))
-        if channel not in canonical:
-            canonical.append(channel)
+        # A name becomes an id here, before anything is written (PR #376 review).
+        # Inside the same validate-everything-first loop as the grammar check, so
+        # a second channel that cannot be resolved leaves the first unapplied.
+        resolved, name = resolve_channel_ref(channel, config)
+        if all(resolved != entry for entry, _ in canonical):
+            canonical.append((resolved, name))
     if not canonical:
-        raise ValueError("name at least one channel, e.g. slack@C0123ABCD")
+        raise ValueError("name at least one channel, e.g. slack@#tmp-issue-375")
 
     store = _store(config, portable_dir)
     actor = _local_actor()
@@ -98,12 +103,12 @@ def manage_channels(
     applied: List[str] = []
     unchanged: List[str] = []
 
-    for channel in canonical:
+    for channel, name in canonical:
         replaced = None
         if verb == ADD_CHANNEL:
             try:
                 changed, replaced = store.add(
-                    work_item, channel, actor=actor, source="cli"
+                    work_item, channel, actor=actor, source="cli", name=name
                 )
             except ChannelTakenError as exc:
                 # Not the caller's typo but not a state change either: reported as

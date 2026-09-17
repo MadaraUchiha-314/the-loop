@@ -37,6 +37,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .. import eventlog
 from ..identity import Principal, ids_for, parse_authorized_users
+from .directory import is_conversation_id
 from .base import (
     DEFAULT_EVENTS,
     DEFAULT_PUBLISH,
@@ -270,11 +271,14 @@ def probe_subscription(
     config: "SlackChannelConfig",
     *,
     client_factory: Optional[Callable[[str], Any]] = None,
+    channel_id: str = "",
 ) -> Dict[str, Any]:
     """Ask the installed app what the configured channel is and what it may read.
 
     Two fixed calls (bugfix §AC4): ``conversations.info`` on the operator's own
-    configured id, and ``auth.test`` for the granted scopes. Returns either
+    configured channel, and ``auth.test`` for the granted scopes. ``channel_id``
+    lets a caller that already resolved the configured value pass the id in; left
+    out, a configured **name** is resolved here (PR #376 review). Returns either
     ``{"skipped": why}`` or ``{"kind", "scopes", "findings"}``; it never raises,
     because a diagnostic that fails is not an error (R2.3).
     """
@@ -284,9 +288,26 @@ def probe_subscription(
     if not token:
         return {"skipped": f"no bot token — {config.bot_token_env} is unset"}
     factory = client_factory or build_client
+    # `conversations.info` takes an id; the operator may have declared a NAME
+    # (PR #376 review). Resolved here so the diagnostic reports on the channel
+    # they meant rather than skipping with an opaque API error.
+    channel_id = channel_id or config.channel
+    if not is_conversation_id(channel_id):
+        from .directory import SlackDirectory
+
+        channel_id = SlackDirectory(
+            token_env=config.bot_token_env, client_factory=client_factory
+        ).conversation_id(channel_id)
+        if not channel_id:
+            return {
+                "skipped": (
+                    f"channels.slack.channel is {config.channel!r}, which resolves "
+                    "to no channel this bot can see (channels:read / groups:read?)"
+                )
+            }
     try:
         client = factory(token)
-        info = (client.conversations_info(channel=config.channel) or {}).get(
+        info = (client.conversations_info(channel=channel_id) or {}).get(
             "channel"
         ) or {}
         kind = kind_from_info(info)
@@ -296,7 +317,7 @@ def probe_subscription(
     return {
         "kind": kind,
         "scopes": scopes,
-        "findings": subscription_findings(config.channel, (kind,), scopes),
+        "findings": subscription_findings(channel_id, (kind,), scopes),
     }
 
 
@@ -1107,6 +1128,8 @@ class SlackBotChannel:
         self.stores = ChannelStores.beside(self.state_path, self.name)
         self._client_factory = client_factory
         self._own_user: Optional[str] = None
+        #: The resolved central channel (PR #376 review), memoised per instance.
+        self._central: Optional[str] = None
 
     def subscribes(self, event_type: str) -> bool:
         return event_type in self.config.subscribe
@@ -1133,6 +1156,50 @@ class SlackBotChannel:
 
     # -- outbound (R3) ---------------------------------------------------------
 
+    def central_channel(self) -> str:
+        """``channels.slack.channel`` as a conversation id (PR #376 review).
+
+        The operator may declare the room by **name** — ``#the-loop`` — which is
+        what they call it; Slack's API wants ``C0123ABCD``. Resolved once per
+        instance over the shared directory cache, so the eighteen places that
+        used to read ``config.channel`` read one id and cannot disagree about
+        which room they mean. ``""`` when nothing is configured, or when a
+        configured name resolves to nothing — both of which the callers already
+        refuse on.
+
+        Memoised per instance, including the empty answer: a name that does not
+        resolve must not cost a directory refresh on every message.
+        """
+        if self._central is not None:
+            return self._central
+        declared = self.config.channel
+        if not declared:
+            self._central = ""
+            return ""
+        if is_conversation_id(declared):
+            self._central = declared
+            return declared
+        resolved = self.directory().conversation_id(declared)
+        if not resolved:
+            logger.warning(
+                "slack: channels.slack.channel is %r, which resolves to no channel "
+                "this bot can see — check the spelling, invite the bot, and make "
+                "sure the app carries channels:read / groups:read",
+                declared,
+            )
+        self._central = resolved
+        return resolved
+
+    def directory(self):
+        """The name→id directory beside this channel's own state file."""
+        from .directory import SlackDirectory
+
+        return SlackDirectory.beside(
+            self.state_path,
+            token_env=self.config.bot_token_env,
+            client_factory=self._client_factory,
+        )
+
     def home_for(self, work_item: str) -> str:
         """The channel this work item's conversation belongs in (issue-375).
 
@@ -1145,15 +1212,25 @@ class SlackBotChannel:
             declared = self.stores.declared(work_item)
             if declared:
                 return declared
-        return self.config.channel
+        return self.central_channel()
 
     def _no_channel(self, work_item: str) -> ChannelError:
+        """No room to post in — nothing configured, nothing declared, or a name
+        that resolves to nothing this bot can see."""
+        declared = self.config.channel
+        why = (
+            f" (channels.slack.channel is {declared!r}, which resolves to no "
+            "channel this bot can see — check the spelling, invite the bot, and "
+            "make sure the app carries channels:read / groups:read)"
+            if declared
+            else ""
+        )
         return ChannelError(
             "slack: no channel to post "
             + (f"{work_item} in" if work_item else "in")
             + " — set channels.slack.channel to the channel the bot posts into "
-            "(C…), or declare one on the work item with `the-loop add-channel "
-            "slack@C…`"
+            "(its name or its C… id), or declare one on the work item with "
+            "`the-loop add-channel slack@#room`" + why
         )
 
     def _conversation(
@@ -1217,9 +1294,7 @@ class SlackBotChannel:
         is a :class:`ChannelError` and never a second root (R2.3) — only "no
         binding" opens one. An event with no work item posts top-level, unbound.
         """
-        if not self.config.channel and not (
-            event.work_item and self.home_for(event.work_item)
-        ):
+        if not self.home_for(event.work_item):
             raise self._no_channel(event.work_item)
         client = self._client()
         bound: Optional[Tuple[str, str]] = None
@@ -1246,7 +1321,7 @@ class SlackBotChannel:
         text = render(fallback, self.config.verbosity)
         try:
             response = client.chat_postMessage(
-                channel=bound[0] if bound and bound[0] else self.config.channel,
+                channel=bound[0] if bound and bound[0] else self.central_channel(),
                 text=text,
                 blocks=blocks,
                 thread_ts=bound[1] if bound else None,
@@ -1300,7 +1375,7 @@ class SlackBotChannel:
         (issue-375: the work item was declared into a room after its
         conversation had already started elsewhere). ``channel_id`` is the room
         to open it in, defaulting to the operator's central channel."""
-        room = channel_id or self.config.channel
+        room = channel_id or self.central_channel()
         url = _work_item_url(work_item)
         text, blocks = render_root(
             work_item, url, reading=self.config.read_mode != "off"
@@ -1345,7 +1420,7 @@ class SlackBotChannel:
         with ``blocks`` when the caller rendered any (its Start button, issue-337)."""
         try:
             self._client().chat_postMessage(
-                channel=channel_id or self.config.channel,
+                channel=channel_id or self.central_channel(),
                 text=text,
                 thread_ts=thread or None,
                 blocks=blocks,
@@ -1367,7 +1442,7 @@ class SlackBotChannel:
         The thread a member started **is** the conversation (issue-312 R1.5)."""
         with ChannelState.locked(self.state_path, self.stores) as state:
             state.bind(
-                thread, work_item, channel_id or self.config.channel, origin=origin
+                thread, work_item, channel_id or self.central_channel(), origin=origin
             )
             state.save(self.state_path)
         eventlog.emit(
@@ -1375,7 +1450,7 @@ class SlackBotChannel:
             channel=self.name,
             work_item=work_item,
             thread=thread,
-            channel_id=channel_id or self.config.channel,
+            channel_id=channel_id or self.central_channel(),
             origin=origin,
         )
 
@@ -1399,7 +1474,7 @@ class SlackBotChannel:
         content = config.content_for(state)
         if not content:
             return False  # the state is skipped ("") or unknown
-        channel_id = reply.channel_id or self.config.channel
+        channel_id = reply.channel_id or self.central_channel()
         if not reply.ts or not channel_id:
             logger.debug(
                 "slack: nothing to react on for %s (%s)", reply.work_item, state
@@ -1467,7 +1542,7 @@ class SlackBotChannel:
         *processed* press — a dropped one is not reported, because a refusal
         leaves no mark (decision-111 D1).
         """
-        channel_id = reply.channel_id or self.config.channel
+        channel_id = reply.channel_id or self.central_channel()
         if not reply.ts or not channel_id:
             return False
         try:
@@ -1538,7 +1613,7 @@ class SlackBotChannel:
         replies: List[InboundReply] = []
         for thread, info in state.threads.items():
             cursor = state.cursor(thread)
-            channel_id = info.get("channel") or self.config.channel
+            channel_id = info.get("channel") or self.central_channel()
             try:
                 response = client.conversations_replies(
                     channel=channel_id,
@@ -1584,7 +1659,7 @@ class SlackBotChannel:
         if not self.config.kickoff_enabled:
             return []
         if self.stores is not None and self.stores.declared_work_item(
-            self.config.channel
+            self.central_channel()
         ):
             # The central channel is somebody's declared room (issue-375). A
             # dedicated room has one subject, so a message there is a message on
@@ -1592,12 +1667,12 @@ class SlackBotChannel:
             # second issue from it would be the opposite of what was declared.
             return []
         state = ChannelState.load(self.state_path, self.stores)
-        key = kickoff_cursor_key(self.config.channel)
+        key = kickoff_cursor_key(self.central_channel())
         cursor = state.cursors.get(key, "")
         client = self._client()
         try:
             response = client.conversations_history(
-                channel=self.config.channel, oldest=cursor or None
+                channel=self.central_channel(), oldest=cursor or None
             )
         except Exception as exc:
             logger.warning("slack: conversations.history failed: %s", exc)
@@ -1636,7 +1711,7 @@ class SlackBotChannel:
                     or message.get("subtype") == "bot_message"
                     or bool(own_user and author == own_user),
                     top_level=True,
-                    channel_id=self.config.channel,
+                    channel_id=self.central_channel(),
                 )
             )
         return found
@@ -1729,7 +1804,7 @@ class SlackBotChannel:
             state.save(self.state_path)
 
     def advance_kickoff(self, ts: str) -> None:
-        self.advance(kickoff_cursor_key(self.config.channel), ts)
+        self.advance(kickoff_cursor_key(self.central_channel()), ts)
 
 
 def _press_line(

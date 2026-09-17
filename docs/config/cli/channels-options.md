@@ -107,7 +107,8 @@ closed, never half-enabled.
 The environment variable holding the bot token (`xoxb-…`, needing `chat:write` to post,
 `channels:history` to read — `groups:history` in a private channel — `reactions:write` to
 [acknowledge](/config/cli/channels-options#slack-reactions-enabled) a reply on the reply
-itself, and `commands` for the [slash command](#the-slash-command); the packaged
+itself, `commands` for the [slash command](#the-slash-command), and the three read-only
+scopes that turn a name into an id — `channels:read`, `groups:read`, `users:read`; the packaged
 [app manifest](/guide/slack#_1-create-the-slack-app-from-the-manifest) declares them all). The config names
 the *variable*, the token is read from the environment **at call time**, and the value
 never appears in config, state files, `channels status` output or the event log.
@@ -129,9 +130,20 @@ button press. Unused in `poll` mode.
 - **Type:** `string`
 - **Default:** `""`
 
-The id of the Slack channel the bot posts into (`C…` — copy it from the channel's
-details pane; ids, unlike names, survive renames). The bot must be a member. Empty
-disables posting, with a recorded reason per attempt.
+The Slack channel the bot posts into, by **name** (`#the-loop`, or bare) or by
+**conversation id** (`C…` — copy it from the channel's details pane). The bot must be
+a member either way. Empty disables posting, with a recorded reason per attempt.
+
+A name is resolved to an id **once per process**, over a workspace directory cached
+under `<state.root>/local/slack-directory.json` and refreshed at most hourly, so every
+outbound path reads one id and no message costs a lookup. Resolving needs the app's
+`channels:read` (public) / `groups:read` (private) scopes — the packaged
+[app manifest](/guide/slack#_1-create-the-slack-app-from-the-manifest) declares both —
+and a name that resolves to nothing **raises** rather than posting somewhere else.
+
+**An id is the stronger form**: it needs no scope, no lookup and no cache, and it
+survives a rename. Prefer it in a config file that is written once and read forever;
+use a name when you want the file to read the way people talk.
 
 ### `slack.subscribe`
 

@@ -95,15 +95,20 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
 - **Collaboration channels** (`routing.control.keywords.add-channel`, issue-375).
   `channels.slack.channel` is the operator's one channel, so a work item people spun a
   room up for was discussed in two places and joined in neither. An authorized user now
-  types `the-loop add-channel slack@C0123ABCD` (or runs
-  `the-loop add-channel slack@C0123ABCD --work-item <ref>`) and that work item's updates
+  types `the-loop add-channel slack@#tmp-issue-375` (or runs
+  `the-loop add-channel slack@#tmp-issue-375 --work-item <ref>`) and that work item's updates
   are posted **there**, while every message in that room that no thread binding already
   claims — a top-level one included — reaches that work item as input instead of opening
   a new one. It grants nobody anything: who may speak stays `channels.slack`'s allow-list
   and who may direct the loop stays `authorizedUsers`, so declaring the room and inviting
-  the people can happen in either order. The argument is `<type>@<target>` — a Slack
-  **conversation id**, never a `#name` — with `<type>://<target>` accepted as the same
-  thing; the type is what makes a future Jira or WhatsApp channel additive. One channel
+  the people can happen in either order. The argument is `<type>@<target>` — a Slack channel's
+  **name or its conversation id** — with `<type>://<target>` accepted as the same thing;
+  the type is what makes a future Jira or WhatsApp channel additive. A name is resolved
+  to an id when the channel is declared and the id is what is stored, so a rename changes
+  nothing; a name that resolves to no channel the bot can see is refused. The same holds
+  for `channels.slack.channel` and for `routing.authorizedUsers[].slack` (`@dana`), with
+  one caveat worth knowing before you write a config: a handle authorizes **whoever holds
+  it**, so a member id is the form that names one person for good. One channel
   per type per work item (a second declaration moves the conversation and leaves a
   pointer behind), one work item per channel, and the declaration is cleared when the
   item closes. Revoked with `the-loop remove-channel <type>@<target>`.

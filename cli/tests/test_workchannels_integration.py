@@ -26,6 +26,28 @@ def declarations(dispatcher, ref=REF):
     return [record.ref for record in dispatcher.channel_store.list(ref)]
 
 
+def _resolving(dispatcher, names):
+    """Point the dispatcher's one resolution seam at a fixed workspace.
+
+    The seam `_resolve_channel` exists so the whole command path can be driven
+    with no workspace at all — the only thing stubbed is the call that would talk
+    to Slack, and the grammar, the store and the refusals stay real.
+    """
+    from the_loop.workchannels import ChannelRef, parse_channel_ref
+
+    def resolve(ref):
+        channel = parse_channel_ref(ref)
+        assert channel is not None
+        if channel.is_id:
+            return channel, ""
+        found = names.get(channel.name, "")
+        if not found:
+            raise ValueError(f"no Slack channel named {channel.target!r}")
+        return ChannelRef(type=channel.type, target=found), channel.name
+
+    dispatcher._resolve_channel = resolve
+
+
 def test_a_declaration_from_an_authorized_comment_is_recorded_and_acknowledged(
     tmp_path, monkeypatch
 ):
@@ -68,20 +90,48 @@ def test_the_uri_spelling_declares_the_same_channel(tmp_path, monkeypatch):
     assert declarations(dispatcher) == [ROOM]
 
 
-def test_a_channel_name_is_refused_and_nothing_is_written(tmp_path, monkeypatch):
+def test_a_channel_name_is_resolved_to_its_id(tmp_path, monkeypatch):
     """
     Feature: a work item is declared into a channel from its ticket
-      Scenario: a Slack channel NAME rather than its conversation id
+      Scenario: the name a person actually knows
         Given control is enabled and octocat is an authorized user
         When octocat comments `the-loop add-channel slack@#tmp-issue-375`
-        Then nothing is declared and the comment is acknowledged as an error
+        Then the record stores the conversation ID, keeps the NAME for display,
+             and the comment is acknowledged
 
-    Requirement: docs/specs/issue-375/requirements.md R1.5
+    Requirement: docs/specs/issue-375/requirements.md R1.5, R6.1
     """
     tmux = FakeTmux()
     dispatcher, runner = make_control_dispatcher(tmp_path, tmux, monkeypatch)
+    _resolving(dispatcher, {"tmp-issue-375": "C0TMP375"})
 
     dispatcher.handle(routed_command("the-loop add-channel slack@#tmp-issue-375"))
+    assert wait_until(lambda: len(runner.commands) == 1)
+    dispatcher.stop()
+
+    (record,) = dispatcher.channel_store.list(REF)
+    assert record.ref == ROOM  # the ID is what the ingress will route on
+    assert record.name == "tmp-issue-375"  # …and the name is what a human reads
+    assert record.label == "slack@#tmp-issue-375"
+    assert contents(runner) == ["content=hooray"]
+
+
+def test_a_name_that_resolves_to_nothing_is_refused(tmp_path, monkeypatch):
+    """
+    Feature: a work item is declared into a channel from its ticket
+      Scenario: a channel the bot cannot see
+        Given a workspace where #ghost does not exist (or the bot is not in it)
+        When octocat declares it
+        Then nothing is declared and the comment is acknowledged as an error —
+             a declaration that would fail at the first post never happens
+
+    Requirement: docs/specs/issue-375/requirements.md R6.3
+    """
+    tmux = FakeTmux()
+    dispatcher, runner = make_control_dispatcher(tmp_path, tmux, monkeypatch)
+    _resolving(dispatcher, {})
+
+    dispatcher.handle(routed_command("the-loop add-channel slack@#ghost"))
     assert wait_until(lambda: len(runner.commands) == 1)
     dispatcher.stop()
 

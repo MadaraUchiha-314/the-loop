@@ -1998,13 +1998,23 @@ class Dispatcher:
         note = str((routed.payload.get("comment") or {}).get("html_url") or "")
         for ref in control.subjects:
             try:
+                # A person types the name they know; the record keeps the id the
+                # ingress routes on (PR #376 review). Resolution is the only step
+                # here that talks to a workspace, so it is also the only one that
+                # can fail on a channel that is real but invisible to the bot.
+                channel, name = self._resolve_channel(ref)
                 if command == ADD_CHANNEL:
                     changed, replaced = self.channel_store.add(
-                        target, ref, actor=actor, source="comment", note=note
+                        target,
+                        channel,
+                        actor=actor,
+                        source="comment",
+                        note=note,
+                        name=name,
                     )
                     effect = "declared" if changed else "already-declared"
                 else:
-                    changed = self.channel_store.remove(target, ref)
+                    changed = self.channel_store.remove(target, channel)
                     replaced = None
                     effect = "undeclared" if changed else "not-a-channel"
             except ChannelTakenError as exc:
@@ -2013,7 +2023,11 @@ class Dispatcher:
                 logger.warning("refusing to declare %s on %s: %s", ref, target.ref, exc)
                 self._reject_control(command, routed, actor, "channel-taken")
                 return
-            except ValueError as exc:  # a ref that parsed here but not there
+            except ValueError as exc:
+                # A ref that parsed but names no channel this bot can see, or a
+                # name that could not be resolved at all. Refused rather than
+                # stored: a declaration that fails at the first post is worse
+                # than one that never happened.
                 logger.warning("refusing the %s command: %s", command, exc)
                 self._reject_control(command, routed, actor, "missing-channel")
                 return
@@ -2040,6 +2054,20 @@ class Dispatcher:
         # The comment WAS the instruction — executed here, never forwarded — so the
         # delivery it arrived on is finished with (issue-270).
         self._settle(routed, SETTLED_CONTROL_EXECUTED)
+
+    def _resolve_channel(self, ref: str):
+        """``(ChannelRef, name)`` for ``ref`` — its id, plus the name if given.
+
+        A seam rather than a call so a test can drive the whole command path with
+        no workspace, and so the one place a name becomes an id is nameable.
+        Raises :class:`ValueError` exactly as :func:`resolve_channel_ref` does.
+        """
+        from ..workchannels import parse_channel_ref, resolve_channel_ref
+
+        channel = parse_channel_ref(ref)
+        if channel is None:  # unreachable: `parse_command` validated it
+            raise ValueError(f"not a channel: {ref!r}")
+        return resolve_channel_ref(channel, self.cli_config)
 
     def _apply_control(self, command: str, routed: RoutedEvent) -> None:
         """Execute a control command carried by an authorized user's comment.

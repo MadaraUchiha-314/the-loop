@@ -50,6 +50,11 @@ def store(tmp_path):
         ("slack@C0TMP375`", "slack@C0TMP375"),  # `…add-channel slack@C0TMP375`
         ("slack@GABC123", "slack@GABC123"),
         ("slack@D0A1B2C", "slack@D0A1B2C"),
+        # …and the spelling a person actually knows (PR #376 review): a channel
+        # NAME, with or without its #, resolved to an id before it is stored.
+        ("slack@#tmp-issue-375", "slack@#tmp-issue-375"),
+        ("slack@tmp-issue-375", "slack@tmp-issue-375"),
+        ("slack://#tmp-issue-375", "slack@#tmp-issue-375"),
     ],
 )
 def test_a_channel_ref_is_canonicalised(raw, expected):
@@ -73,9 +78,6 @@ def test_a_channel_ref_is_canonicalised(raw, expected):
         "slack",
         "slack@",
         "@C0TMP375",
-        "slack@#tmp-issue-375",  # a NAME, which nothing here can resolve
-        "slack@c0tmp375",  # lower case is not a conversation id
-        "slack@X0TMP375",  # not one of C/G/D
         "jira@PROJ-1",  # no adapter on this deployment
         "Slack@C0TMP375",  # the type is lower case
         "slack@C0TMP375/../etc",
@@ -207,9 +209,25 @@ def test_removing_and_clearing(store):
 
 def test_a_malformed_ref_is_a_valueerror_not_a_write(store):
     with pytest.raises(ValueError):
-        store.add(REF, "slack@#tmp-issue-375")
+        store.add(REF, "jira@PROJ-1")
     with pytest.raises(ValueError):
         store.remove(REF, "nonsense")
+    assert store.list(REF) == []
+
+
+def test_the_store_refuses_an_unresolved_name(store):
+    """
+    Feature: a work item names the room it is worked in
+      Scenario: a name reaches the store without being resolved
+        Given `slack@#tmp-issue-375`, which parses but is not an id
+        When it is declared
+        Then the store refuses it, so there is exactly ONE place a name becomes
+             an id and exactly one place that failure is reported
+
+    Requirement: docs/specs/issue-375/requirements.md R1.11
+    """
+    with pytest.raises(ValueError, match="resolve it"):
+        store.add(REF, "slack@#tmp-issue-375")
     assert store.list(REF) == []
 
 
@@ -245,8 +263,12 @@ def test_a_contested_room_is_attributed_to_nobody(store, tmp_path):
 
 
 def test_an_unreadable_entry_declares_nothing(store, tmp_path):
+    """A hand-edited record naming a channel by NAME is ignored too: the ingress
+    routes on ids, and a stored name would mean a lookup per message."""
     WorkItemStore(tmp_path / "portable").write_section(
-        REF, COLLABORATION_CHANNELS, {"channels": [{"ref": "slack@#name"}, "junk"]}
+        REF,
+        COLLABORATION_CHANNELS,
+        {"channels": [{"ref": "slack@a/b"}, {"ref": "slack@#a-name"}, "junk"]},
     )
     assert store.list(REF) == []
     assert store.for_type(REF) is None

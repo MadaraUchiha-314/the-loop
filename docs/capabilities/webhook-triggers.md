@@ -250,8 +250,11 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     (`control.rejected` / `missing-channel`), so nothing else from the comment reaches
     a store, a path or an API call; `<type>://<target>` is the same declaration, stored
     canonically as `<type>@<target>`. A type the-loop has no adapter for is refused
-    rather than stored and ignored, and a **Slack target is a conversation id, never a
-    `#name`** — the bot holds no `channels:read` scope to resolve one.
+    rather than stored and ignored. A **Slack target may be the channel's name or its
+    conversation id**: a name is resolved to an id when the channel is declared — which
+    needs the app's `channels:read` / `groups:read` scopes — and the **id** is what is
+    stored, so a later rename changes nothing and no message costs a lookup. A name
+    that resolves to nothing is refused rather than stored.
   - WHEN a work item has a declared channel THEN its conversation SHALL live there
     rather than in `channels.slack.channel`, and WHEN it was already bound elsewhere
     THEN the next update SHALL open a root in the declared room, rebind, and say in the

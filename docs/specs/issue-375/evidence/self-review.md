@@ -36,10 +36,43 @@ workItem: "github:MadaraUchiha-314/the-loop#375"
   one — so both paths raise one message naming both routes. The existing test that
   asserted the old wording is updated rather than deleted, with a line saying why.
 
+## Round 2 — the author's review of PR #376
+
+The review overruled the narrowing this work item had chosen (*"Not an issue, we can
+change the manifest. We should be able to do with channel name"*) and asked for two more
+surfaces to accept names. What I went looking for the second time:
+
+| # | Question | Answer |
+|---|---|---|
+| 8 | Does accepting names cost anything for a deployment that uses ids? | No, and it is asserted: an id short-circuits before any lookup in both `conversation_id` and `user_id`, `test_an_id_is_returned_without_a_lookup` pins the call count at zero, and `test_an_id_still_needs_no_directory_at_all` drives a whole post with no cache and no directory scopes |
+| 9 | Can a lookup happen on the hot path? | No, by construction: what is stored is always an id (`CollaborationChannel.from_dict` **rejects** a record carrying a name), the central channel resolves once per `SlackBotChannel`, and only an allow-list **miss** on a handle reaches the directory. A message from a member whose id is listed costs a set membership test, as before |
+| 10 | Can an unresolvable name widen anything? | No. Every failure is `""`, and `""` never matches a member id, so an allow-list entry that cannot be resolved contributes nothing. `test_an_unresolvable_handle_authorizes_nobody` asserts it rather than arguing it |
+| 11 | Does a typo cost an API call per message? | No: a miss on a *fresh* map answers `""` without re-reading, so a refresh is at most one listing per TTL. `test_a_miss_on_a_fresh_map_does_not_re_read` pins the count |
+| 12 | Did the two id regexes reject anything that used to work? | They did, and the suite caught it twice — `C9` in the channel tests and `C-OPS` in the standing-session tests. The rule is now the real invariant: Slack folds names to lowercase, so a token with no lowercase in it is an id, whatever its shape |
+
+## Two bugs the tests caught, both mine
+
+1. **`normalize_name` folded case before checking for an id**, so `dana` was upper-cased
+   to `DANA`, matched `[CGD]…` as a conversation id, and resolved to nothing. The id
+   checks now run on the text as given, which is also the only order that can work: the
+   two kinds are distinguished *by* case.
+2. **The "handle moved" warning could never fire.** `_lookup` served a cache hit at any
+   age, so the cached and resolved ids were always equal by construction. Fixed with a
+   `follow` flag that re-reads a stale map on a hit — for users only, because a
+   conversation id is stable and a handle is not. Without it the accept-both feature was
+   subtly broken in the other direction too: the mapping would have frozen at whatever
+   the workspace said the first time this machine asked.
+
 ## What I deliberately did not do
 
-- **Resolve `#names`.** It would need a new OAuth scope on every existing install
-  (`design.md` §1). The refusal says what to type instead.
+- **Index display names.** The ask was for `@<slack-user-name>` — the handle, which
+  Slack keeps unique. A display name is neither unique nor constrained, and
+  `routing.authorizedUsers` has warned against exactly that since issue-309. Resolving
+  one would have widened an authorization surface past what was asked for, so only the
+  handle resolves. (An earlier draft of the directory indexed both; removed.)
+- **Claim the handle caveat is solved.** The warning makes a reassigned handle loud, not
+  safe. The option was put to the author with that cost stated; the documentation says
+  it in a `::: warning` block rather than a footnote.
 - **Post a refusal comment.** The dispatcher's refusals are a reaction plus an event-log
   line for every control command; adding a comment path for this one would be
   inconsistent and is its own work item (`design.md` §2, §6).

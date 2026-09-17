@@ -19,7 +19,7 @@ import pytest
 
 from conftest import _state_with_stores
 from the_loop.channels import inbound
-from the_loop.channels.base import Event
+from the_loop.channels.base import ChannelError, Event
 from the_loop.channels.slack import (
     DEFAULT_BOT_TOKEN_ENV,
     SlackBotChannel,
@@ -393,4 +393,109 @@ def test_the_poll_read_ignores_a_room_nobody_declared(tmp_path):
     client.history = [{"ts": "1700.000005", "user": "UHUMAN", "text": "hello"}]
     sink = Sink()
     assert poll(config, sink, client)["replies"] == 0
+    assert sink.delivered == []
+
+
+# -- names, not ids (PR #376 review) ---------------------------------------------
+
+
+def _with_directory(config, names):
+    """Seed the directory cache so a name resolves with no Slack call at all."""
+    import json
+    import time
+
+    path = Path(config["state"]["root"]) / "local" / "slack-directory.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"conversations": {"names": dict(names), "fetchedAt": time.time()}})
+    )
+
+
+def test_the_central_channel_may_be_declared_by_name(tmp_path):
+    """
+    Feature: an operator names the room, not its id
+      Scenario: channels.slack.channel is `#the-loop`
+        Given the workspace has #the-loop as C123
+        When a work item's first event is posted
+        Then the root lands in C123 — the name resolved once, and every
+             outbound path read the same id
+
+    Requirement: docs/specs/issue-375/requirements.md R5.1
+    """
+    config = cli_config(tmp_path, channel="#the-loop")
+    _with_directory(config, {"the-loop": CENTRAL})
+    client = FakeSlackClient()
+
+    channel_for(config, client).post(
+        Event(event_type="comment.human", work_item=REF, text="hello")
+    )
+
+    assert [post["channel"] for post in client.posted] == [CENTRAL, CENTRAL]
+    assert conversation(config)["channel"] == CENTRAL
+
+
+def test_a_central_channel_name_that_resolves_to_nothing_refuses(tmp_path):
+    """R5.3: an unresolvable name is not a silent fallback to nothing — the post
+    raises, and the message says what to check."""
+    config = cli_config(tmp_path, channel="#gone")
+    _with_directory(config, {})
+    client = FakeSlackClient()
+
+    with pytest.raises(ChannelError, match="resolves to no channel"):
+        channel_for(config, client).post(
+            Event(event_type="comment.human", work_item=REF, text="hello")
+        )
+    assert client.posted == []
+
+
+def test_an_id_still_needs_no_directory_at_all(tmp_path):
+    """R6.2: the pre-existing configuration keeps working with no cache, no
+    scope and no lookup."""
+    config = cli_config(tmp_path)  # channel="C123", an id
+    client = FakeSlackClient()
+    channel_for(config, client).post(
+        Event(event_type="comment.human", work_item=REF, text="hello")
+    )
+    assert [post["channel"] for post in client.posted] == [CENTRAL, CENTRAL]
+
+
+def test_an_allow_list_handle_authorizes_its_member(tmp_path):
+    """
+    Feature: an operator names the person, not their member id
+      Scenario: routing.authorizedUsers names @dana
+        Given the allow-list carries the handle `dana` rather than U0DANA
+        When U0DANA posts in a declared room
+        Then the message is processed — the handle resolved to that id
+
+    Requirement: docs/specs/issue-375/requirements.md R5.2
+    """
+    import json
+    import time
+
+    config = cli_config(tmp_path, authorized=("dana",))
+    declare(config)
+    path = Path(config["state"]["root"]) / "local" / "slack-directory.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"users": {"names": {"dana": "U0DANA"}, "fetchedAt": time.time()}})
+    )
+    sink = Sink()
+
+    outcome = socket(config, _message("hello", user="U0DANA"), sink)
+
+    assert outcome["outcome"] == "processed"
+    assert sink.refs == [REF]
+
+
+def test_an_unresolvable_handle_authorizes_nobody(tmp_path):
+    """R5.3: fail closed — an entry that cannot be resolved contributes no id,
+    so the failure direction is fewer people, never more."""
+    config = cli_config(tmp_path, authorized=("ghost",))
+    declare(config)
+    _with_directory(config, {})
+    sink = Sink()
+
+    outcome = socket(config, _message("hello", user="U0DANA"), sink)
+
+    assert outcome["outcome"] == "unauthorized-actor"
     assert sink.delivered == []

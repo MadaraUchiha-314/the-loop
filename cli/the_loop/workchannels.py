@@ -33,10 +33,19 @@ that is declared and does nothing is worse than one that was never accepted.
 
 The target is validated **per type**, and the whole of that validation is a regex:
 nothing else from a comment body reaches the roster, a path, an argv or an API
-call. Slack's is a conversation id (``C…``/``G…``/``D…``), the same thing
-``channels.slack.channel`` requires and for the same reason — the bot's scopes
-(``chat:write``, ``*:history``) do not include ``channels:read``, so the-loop
-cannot turn ``#tmp-issue-375`` into an id and will not pretend to.
+call. Slack's accepts either spelling a person might use — a conversation id
+(``C…``/``G…``/``D…``) or the channel **name** they actually know
+(``#tmp-issue-375``, or bare).
+
+A name is **resolved to an id before anything is stored** (:mod:`the_loop.
+channels.directory`), and that ordering is the whole of the design: what a human
+types is a name, what the ingress routes on is an id. A name that cannot be
+resolved — no such channel, the bot cannot see it, the app is missing
+``channels:read``/``groups:read`` — refuses the declaration rather than storing
+a value that would fail at the first post. The name is kept beside the id for
+display, so the ticket can say ``#tmp-issue-375`` while the router says
+``C0TMP375``; a channel that is renamed keeps working, because the id did not
+change.
 
 ## One channel, one work item
 
@@ -81,6 +90,7 @@ logger = logging.getLogger("the-loop.workchannels")
 __all__ = [
     "CHANNEL_TYPES",
     "ChannelRef",
+    "resolve_channel_ref",
     "CollaborationChannel",
     "CollaborationChannelStore",
     "SLACK",
@@ -91,13 +101,12 @@ __all__ = [
 #: The one channel type the-loop can actually carry a conversation on today.
 SLACK = "slack"
 
-#: What a Slack target may be: a conversation id, as ``conversations.info`` and
-#: ``chat.postMessage`` take it. ``C`` public, ``G`` private, ``D`` a direct
-#: message — the same three prefixes :func:`the_loop.channels.slack.kinds_from_id`
-#: recognises. A channel *name* is refused: the bot has no ``channels:read``
-#: scope, so nothing here could resolve one, and accepting it would move the
-#: failure to the first post.
-_SLACK_TARGET_RE = re.compile(r"^[CGD][A-Z0-9]{2,20}$")
+#: What a Slack target may be: a conversation id (``C`` public, ``G`` private,
+#: ``D`` a direct message) **or** a channel name, with or without its ``#``.
+#: A name is resolved to an id before anything is stored (:mod:`.channels.
+#: directory`), so what the ingress routes on is always an id — the immutable
+#: identifier — while what a person types is the one they know.
+_SLACK_TARGET_RE = re.compile(r"^(?:[CGD][A-Z0-9_-]{1,20}|#?[^\s@#/\\]{1,80})$")
 
 #: The declared types, each with the pattern its target must match and a line
 #: saying what that target is when it does not. **The extension point**: a new
@@ -105,11 +114,11 @@ _SLACK_TARGET_RE = re.compile(r"^[CGD][A-Z0-9]{2,20}$")
 CHANNEL_TYPES: Dict[str, Tuple[re.Pattern, str]] = {
     SLACK: (
         _SLACK_TARGET_RE,
-        "a Slack conversation id — C… (public), G… (private) or D… (a direct "
-        "message), which Slack shows under 'View channel details'. A channel "
-        "NAME cannot be used: the-loop's bot has no `channels:read` scope to "
-        "resolve one with, and `channels.slack.channel` takes an id for the "
-        "same reason",
+        "a Slack channel — its name (`#tmp-issue-375`, or bare) or its "
+        "conversation id (C…, G…, D…, shown under 'View channel details'). A "
+        "name is resolved to an id when the channel is declared, so the bot "
+        "must be able to see the channel and the app must carry the "
+        "`channels:read` / `groups:read` scopes",
     ),
 }
 
@@ -143,8 +152,63 @@ class ChannelRef:
         """The canonical spelling — what is stored, printed and compared."""
         return f"{self.type}@{self.target}"
 
+    @property
+    def is_id(self) -> bool:
+        """Whether the target is already this type's native identifier.
+
+        The question :func:`resolve_channel_ref` asks first, so an id never costs
+        an API call — and the question a *stored* record must always answer yes
+        to, because the ingress routes on ids alone.
+        """
+        if self.type == SLACK:
+            from .channels.directory import is_conversation_id
+
+            return is_conversation_id(self.target)
+        return True  # a type with no directory has nothing to resolve
+
+    @property
+    def name(self) -> str:
+        """The target as a bare name, or ``""`` when it is an id."""
+        return "" if self.is_id else self.target.lstrip("#")
+
     def __str__(self) -> str:  # pragma: no cover - trivial
         return self.ref
+
+
+def resolve_channel_ref(
+    channel: "ChannelRef",
+    cli_config: Optional[Any] = None,
+    directory: Optional[Any] = None,
+) -> Tuple["ChannelRef", str]:
+    """``(resolved, name)`` — ``channel`` with its target as a native id.
+
+    ``name`` is the spelling the caller gave when it was a name, so the record
+    can display what a human typed while routing on what Slack guarantees. An id
+    in, an id out, no API call, no name.
+
+    Raises :class:`ValueError` naming the failure when a name cannot be resolved.
+    That refusal is deliberate and is the reason this is a separate step rather
+    than something :func:`parse_channel_ref` does: parsing is total and offline,
+    resolving talks to a workspace and can fail, and a declaration that stored an
+    unresolvable name would move the failure to the first post — the worst moment
+    to learn the room does not exist.
+    """
+    if channel.is_id:
+        return channel, ""
+    if channel.type != SLACK:  # unreachable while slack is the only directory
+        raise ValueError(f"cannot resolve a {channel.type} name")
+    from .channels.directory import SlackDirectory
+
+    index = directory or SlackDirectory(cli_config)
+    resolved = index.conversation_id(channel.target)
+    if not resolved:
+        raise ValueError(
+            f"no Slack channel named {channel.target!r} that this bot can see — "
+            "check the spelling, invite the bot to the channel, and make sure "
+            "the app carries the `channels:read` (public) / `groups:read` "
+            "(private) scopes. Its conversation id always works"
+        )
+    return ChannelRef(type=channel.type, target=resolved), channel.name
 
 
 def parse_channel_ref(raw: object) -> Optional[ChannelRef]:
@@ -214,7 +278,13 @@ def parse_channel_refs(text: str) -> List[ChannelRef]:
 
 @dataclass(frozen=True)
 class CollaborationChannel:
-    """One declaration: which channel, declared by whom, when, through which surface."""
+    """One declaration: which channel, declared by whom, when, through which surface.
+
+    ``target`` is always the type's native **id**; ``name`` is the spelling the
+    person used when they typed a name, kept for display only. Nothing routes on
+    it — which is what makes a renamed channel a cosmetic problem rather than a
+    lost conversation.
+    """
 
     type: str
     target: str
@@ -222,16 +292,23 @@ class CollaborationChannel:
     added_at: str = ""
     source: str = "comment"  # comment | cli
     note: str = ""  # the declaring comment's url, when there is one
+    name: str = ""  # what the declarer typed, when it was a name
 
     @property
     def ref(self) -> str:
         return f"{self.type}@{self.target}"
+
+    @property
+    def label(self) -> str:
+        """How a human should see it: the name they typed, else the id."""
+        return f"{self.type}@#{self.name}" if self.name else self.ref
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "ref": self.ref,
             "type": self.type,
             "target": self.target,
+            "name": self.name,
             "addedBy": self.added_by,
             "addedAt": self.added_at,
             "source": self.source,
@@ -252,6 +329,14 @@ class CollaborationChannel:
         channel = parse_channel_ref(data.get("ref"))
         if channel is None:
             return None
+        if not channel.is_id:
+            # A record must carry an id: the ingress routes on it, and a stored
+            # name would mean a lookup — and a possible failure — per message.
+            logger.warning(
+                "ignoring a channel declaration that stores a name, not an id: %s",
+                channel.ref,
+            )
+            return None
         return cls(
             type=channel.type,
             target=channel.target,
@@ -259,6 +344,7 @@ class CollaborationChannel:
             added_at=str(data.get("addedAt") or ""),
             source=str(data.get("source") or "comment"),
             note=str(data.get("note") or ""),
+            name=str(data.get("name") or ""),
         )
 
 
@@ -414,6 +500,7 @@ class CollaborationChannelStore:
         actor: str = "",
         source: str = "comment",
         note: str = "",
+        name: str = "",
     ) -> Tuple[bool, Optional[CollaborationChannel]]:
         """Declare ``channel`` on ``work_item``.
 
@@ -430,6 +517,14 @@ class CollaborationChannelStore:
         )
         if target is None:
             raise ValueError(describe_refusal(channel))
+        if not target.is_id:
+            # The caller resolves (`resolve_channel_ref`); the store refuses to,
+            # so there is exactly one place a name becomes an id and exactly one
+            # place that failure is reported.
+            raise ValueError(
+                f"{target.ref} names a channel rather than an id; resolve it "
+                "before declaring it"
+            )
         item = _as_ref(work_item)
         holder = self.declared_by(target)
         if holder and holder != item.ref:
@@ -452,6 +547,7 @@ class CollaborationChannelStore:
                 added_at=_utcnow(),
                 source=source,
                 note=note,
+                name=name,
             )
         )
         self._write(item, remaining)

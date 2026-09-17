@@ -44,7 +44,13 @@ overrides: {}
 | T17 | Docs parity | yes | both commands have a page, both keywords have an option entry, the schema copies are byte-identical, and `docs/cli/state.md` describes the section (R5.1, R5.2) | `cli/tests/test_docs_parity.py`, `cli/tests/test_config_schema_parity.py`, `cli/tests/test_state_portability.py` |
 | T18 | Performance | n/a | — the added work is one directory read per outbound post and per inbound message, on the same files the bindings already come from, and no path gained a network call | — |
 | T19 | Contract (OpenAPI) | n/a | — no control-plane route is added: the two verbs run in-process, like `add-collaborator` (decision-102) | — |
-| T20 | Manual / exploratory | yes | one real Slack workspace: declare a room on a live work item, confirm the root lands there, type in it, confirm the comment appears on the ticket and the session receives it | recorded in `evidence/final-validation.md` |
+| T21 | Unit | yes | the directory: an id costs no call; a name costs one and is then cached; a miss on a fresh map does not re-read; a stale map refreshes on a miss; the two maps do not clobber each other (R6.1–R6.5) | `cli/tests/test_channels_directory.py` |
+| T22 | Unit | yes | the directory fails closed: a failing read, no token and an unreadable cache each resolve to `""` and cache nothing; a deleted member resolves to nobody; **only the handle resolves, never the display name**; a handle that moved is warned about (R5.3–R5.5) | `cli/tests/test_channels_directory.py` |
+| T23 | Integration | yes | `the-loop add-channel slack@#tmp-issue-375` stores the **id** and keeps the name for display; a name that resolves to nothing is refused with nothing written (R1.5, R1.11, R6.3) | `cli/tests/test_workchannels_integration.py` |
+| T24 | Integration | yes | `channels.slack.channel: "#the-loop"` posts into the resolved id; an unresolvable name raises rather than posting elsewhere; an **id needs no directory at all** (R5.1, R5.3, R6.2) | `cli/tests/test_channels_declared_integration.py` |
+| T25 | Integration | yes | `routing.authorizedUsers[].slack: dana` authorizes that member id; an unresolvable handle authorizes **nobody** (R5.2, R5.3) | `cli/tests/test_channels_declared_integration.py` |
+| T26 | Regression | yes | every pre-existing id-shaped configuration is untouched: the channel suite, the kickoff suites and the standing-session channel tests all pass unmodified, including a fixture whose "id" is `C-OPS` (R6.2) | `cli/tests/test_channels*.py`, `cli/tests/test_standing_channels_integration.py` |
+| T20 | Manual / exploratory | yes | one real Slack workspace, on a re-installed app: declare a room **by name** on a live work item, confirm the root lands there, type in it, confirm the comment appears on the ticket and the session receives it; and confirm an allow-list `@handle` authorizes its member | recorded in `evidence/final-validation.md` |
 
 ## Verification environment
 
@@ -67,4 +73,8 @@ code already takes as a parameter; nothing here monkeypatches a private function
 - [x] T12–T14 the control vocabulary and the dispatcher
 - [x] T15 the gate
 - [x] T16–T17 state portability and docs parity
-- [ ] T20 manual validation in a real workspace (operator-run; not reproducible in CI)
+- [x] T21–T26 name resolution: the directory, and each of the three surfaces
+- [ ] T20 manual validation in a real workspace (operator-run; not reproducible in CI).
+      **Now also covers the re-install**: the three new scopes (`channels:read`,
+      `groups:read`, `users:read`) reach an existing install only when the app is
+      re-installed from the updated manifest

@@ -34,7 +34,20 @@ workItem: "github:MadaraUchiha-314/the-loop#375"
 | T17 | `pytest cli/tests/test_docs_parity.py cli/tests/test_config_schema_parity.py` | pass — both commands have a page, both keywords an option entry, the schema copies byte-identical | existing suites |
 | T18 | — | n/a — one directory read per outbound post and per inbound message, over files the bindings already come from; no path gained a network call | — |
 | T19 | — | n/a — no control-plane route added (decision-102's in-process class) | — |
-| T20 | manual, in a real Slack workspace | **not run here** — this session has no workspace, token or live work item. It is the one row of the plan that is an operator's to run; the automated rows cover every branch that does not need Slack itself | — |
+| T20 | manual, in a real Slack workspace | **not run here** — this session has no workspace, token or live work item. It is the one row of the plan that is an operator's to run; the automated rows cover every branch that does not need Slack itself. Since the review it also covers the **re-install**: the three new scopes reach an existing app only when it is re-installed from the updated manifest | — |
+
+## Round 2 — names instead of ids (the author's review of PR #376)
+
+| # | Command | Outcome | Artifact |
+|---|---|---|---|
+| T21 | `pytest cli/tests/test_channels_directory.py` | pass — an id costs no call; a name costs one and is cached; a miss on a fresh map does not re-read; a stale map refreshes on a miss; the two maps survive each other | `test_an_id_is_returned_without_a_lookup`, `test_a_name_is_resolved_once_and_then_cached`, `test_a_miss_on_a_fresh_map_does_not_re_read`, `test_a_stale_map_is_refreshed_on_a_miss`, `test_the_two_maps_do_not_clobber_each_other` |
+| T22 | `pytest cli/tests/test_channels_directory.py -k fail or handle or display` | pass — a failing read, no token and an unreadable cache each resolve to `""`; a deleted member resolves to nobody; **only the handle resolves**; a moved handle is warned about | `test_a_failing_read_resolves_to_nothing`, `test_only_the_handle_resolves_never_the_display_name`, `test_a_handle_that_moved_is_warned_about` |
+| T23 | `pytest cli/tests/test_workchannels_integration.py` | pass — `slack@#tmp-issue-375` stores `slack@C0TMP375` with `name="tmp-issue-375"` and `label="slack@#tmp-issue-375"`; `#ghost` is refused 😕 with nothing written | `test_a_channel_name_is_resolved_to_its_id`, `test_a_name_that_resolves_to_nothing_is_refused` |
+| T24 | `pytest cli/tests/test_channels_declared_integration.py -k central or id_still` | pass — `channel: "#the-loop"` posts into `C123`; `#gone` raises naming what to check; an id drives a whole post with no directory at all | `test_the_central_channel_may_be_declared_by_name`, `test_a_central_channel_name_that_resolves_to_nothing_refuses`, `test_an_id_still_needs_no_directory_at_all` |
+| T25 | `pytest cli/tests/test_channels_declared_integration.py -k allow_list or handle` | pass — the handle `dana` authorizes `U0DANA`; `ghost` authorizes nobody | `test_an_allow_list_handle_authorizes_its_member`, `test_an_unresolvable_handle_authorizes_nobody` |
+| T26 | `pytest cli/tests/test_channels*.py cli/tests/test_standing_channels_integration.py` | pass, unmodified — including the two fixtures whose "ids" are `C9` and `C-OPS`, which is what forced the id rule to be about **case** rather than shape | existing suites |
+
+The issue-375 files and the suites they extend now run **199 tests**.
 
 ## Gates
 
@@ -54,10 +67,13 @@ The issue-375 files alone: 161 tests across `test_workchannels.py`,
 
 ## What a reviewer should distrust
 
-1. **T20 is unrun.** Everything below Slack's API boundary is proved; that the bot can
-   actually post in a room an operator declared is not, because it needs a workspace.
-   The failure mode is loud (a `ChannelError` reported like any other post failure) and
-   the likely cause is mundane — the bot has not been invited to the channel.
+1. **T20 is unrun, and it now matters more.** Everything below Slack's API boundary is
+   proved, including every branch of the resolver against a fake `conversations.list` /
+   `users.list`. What is *not* proved is that the real methods answer the shape the
+   resolver reads and that the three scopes are sufficient — that needs a workspace and a
+   re-installed app. The failure mode is loud: a name resolves to nothing, the log names
+   the probably-missing scope, and the declaration or the post is refused rather than
+   going somewhere unexpected.
 2. **Poll mode sees less than Socket Mode** (`design.md` §4). Tested as designed, not as
    an operator might assume: a reply in a thread the-loop did not open, in a declared
    room, is delivered under `socket` and not under `poll`.

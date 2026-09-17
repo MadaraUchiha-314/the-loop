@@ -45,19 +45,21 @@ The type is the extension point the issue asked for — Jira and WhatsApp are a 
 ignore it — produces a work item whose ticket says its conversation is somewhere it will
 never be. A declaration that does nothing is worse than a refusal that says why.
 
-**A Slack target is a conversation id, never a `#name`.** `chat.postMessage` needs an id,
-and resolving a name needs `conversations:read`, which
-`channels/slack-app-manifest.yaml` does not request. Three options were on the table:
+**A Slack target is the name a person knows, or its id.** `chat.postMessage` needs an
+id, so one of the two has to be translated. The first draft refused names outright and
+said so in the PR; the author's review overruled that — *"Not an issue, we can change the
+manifest. We should be able to do with channel name."* — so the manifest now carries
+`channels:read` and `groups:read`, and §8 is the resolver those scopes pay for.
 
-| Option | Why not |
+What survives from the refusal is its reasoning, as an **ordering** rule rather than a
+prohibition: resolving at the *first post* is the worst moment to learn a room does not
+exist, so a name is resolved **when it is declared** and the **id** is what is stored.
+
+| Option | Verdict |
 |---|---|
-| Add `channels:read` and resolve names | A new OAuth scope on every existing install, for a nicety — and the resolution can still fail at post time, which is the worst moment to learn the room does not exist |
-| Accept a name and resolve lazily | Moves a declaration-time refusal to a post-time failure |
-| **Refuse a name, say what to type instead** | Chosen. It is what `channels.slack.channel` already requires, so an operator meets the rule once |
-
-This is the one place the implementation is narrower than the issue's own example
-(`slack@tmp-isssue-abc`). Adding name resolution later is additive: the grammar already
-accepts the token, and only the Slack target validator would widen.
+| Refuse a name | Overruled by the author. It was never the safer design, only the cheaper one |
+| Accept a name and resolve lazily at post time | Rejected. Moves a declaration-time refusal into a delivery-time failure, and makes every message depend on a lookup |
+| **Accept a name, resolve at declaration, store the id** | Chosen. One lookup per declaration, none per message, and a channel that is renamed keeps working because the id did not change |
 
 **The store** is `CollaborationChannelStore` over a new `collaborationChannels` section of
 the work item's portable record — deliberately *not* the existing `channels` section, which
@@ -177,6 +179,55 @@ because `parse_command` refuses a body carrying two different keywords.
 `registryDir`, `sessionPerPr` and `harness`: a graph hook must not build a routing config
 of its own.
 
+## §8 Names, and the directory that resolves them
+
+Added by the author's review of PR #376, which asked for three surfaces to accept names:
+`the-loop add-channel`, `channels.slack.channel`, and `routing.authorizedUsers[].slack`.
+
+**One module, two maps, one rule.** `channels/directory.py` keeps `name → id` for
+conversations and for members, cached in a JSON file under `<state.root>/local/` that
+every process on the machine shares. The rule the whole design turns on:
+
+> resolve once, at the edge, and route on ids.
+
+```mermaid
+flowchart LR
+  A["`add-channel slack@#tmp-375`"] -->|"declaration time"| R[("directory<br/>name → id")]
+  B["`channels.slack.channel: #the-loop`"] -->|"once per process"| R
+  C["`authorizedUsers[].slack: @dana`"] -->|"per allow-list miss"| R
+  R --> D["ids: C0TMP375 · C123 · U0DANA"]
+  D --> E["every store, comparison and API call"]
+```
+
+An id short-circuits before any lookup, so **every configuration that worked before this
+change costs exactly nothing** — no scope, no call, no cache.
+
+**Where each is resolved, and why there:**
+
+| Surface | Resolved | Because |
+|---|---|---|
+| `add-channel` | at declaration, in the dispatcher and the CLI verb | the record stores the id, so no message ever depends on a lookup; a bad name is refused while somebody is watching |
+| `channels.slack.channel` | once per `SlackBotChannel`, memoised | eighteen call sites read one id and cannot disagree about which room they mean — the read cursor's key included, which must stay stable across a spelling change |
+| `authorizedUsers[].slack` | on an allow-list miss | an id compares directly; only a handle costs a lookup, and only when it did not already match |
+
+**The two caches behave differently, on purpose.** A conversation id is stable, so a
+cached one is simply right and is served at any age. A **handle can move**, so the user
+lookup re-reads a stale map even on a hit and warns when the id behind a handle changes.
+That is the difference between a name that identifies a room and a name that identifies
+a person who may direct the loop.
+
+**What was deliberately not widened.** A Slack **display name** resolves to nobody.
+`routing.authorizedUsers` has warned against display names since issue-309 ("never a
+display name — names are attacker-chosen"), and the ask was for `@<slack-user-name>` —
+the handle, which Slack keeps unique. Indexing a field anyone can set to anything would
+have widened an authorization surface past what was asked for.
+
+**The caveat the author accepted.** A handle authorizes *whoever holds it*: if dana
+renames or leaves and somebody else takes `@dana`, that person inherits the grant. The
+warning makes it loud, not safe. The option was put to the author with this cost stated,
+they chose "accept both, document the caveat", and the documentation says so in a
+`::: warning` block where the key is documented rather than in a footnote.
+
 ## §6 What this costs
 
 - **A refused declaration is terse on the ticket** (§2): a 😕 and an event-log line. An
@@ -190,8 +241,14 @@ of its own.
 - **A new portable section** is one more thing `reset`, `cleanup` and the poller's
   "is this tracked?" scan must know about. All three are updated here; the state-portability
   test is what will catch the next one.
-- **No name resolution** (§1). The most visible gap against the issue's own example, and
-  additive to close.
+- **A new OAuth scope trio** (§8): `channels:read`, `groups:read`, `users:read`. They are
+  read-only, but **an existing install must be re-installed** to pick them up, and an
+  install that is not will find names resolving to nothing — loudly, with the missing
+  scope named in the log, but still a step every operator has to take.
+- **A handle can change hands** (§8). Accepted on the author's decision, warned about,
+  and documented; not closed.
+- **One directory read per work item's declaration, and per allow-list miss.** Bounded by
+  a cache and a TTL, and zero for a deployment that uses ids.
 
 ## §7 What to check first
 
@@ -201,3 +258,8 @@ of its own.
    silently drops or double-delivers a message.
 3. `slack.SlackBotChannel._conversation` — the three cases, and that case two is
    byte-identical to today for an undeclared work item.
+4. `channels/directory.py::_lookup` — the `follow` flag. It is the one place the two
+   maps behave differently, and the difference is an authorization decision.
+5. `channels/directory.py::normalize_name` — the id checks run **before** the case fold.
+   Doing it the other way round read `dana` as the conversation id `DANA`, which the
+   tests caught and which is the shape of bug this layer exists to avoid.

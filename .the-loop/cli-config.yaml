@@ -140,9 +140,12 @@ routing:
       add-collaborator: "the-loop add-collaborator"
       remove-collaborator: "the-loop remove-collaborator"
       # A ROOM, NOT A PERMISSION (issue-375). Declares a COLLABORATION CHANNEL
-      # on THIS work item: `the-loop add-channel slack@C0123ABCD` (a Slack
-      # CONVERSATION ID, not a #name — the bot has no channels:read scope to
-      # resolve one; `slack://C0123ABCD` is the same thing). From then on this
+      # on THIS work item: `the-loop add-channel slack@#tmp-issue-375` — the
+      # channel's NAME or its conversation id, with slack://<target> accepted
+      # as the same thing. A name is resolved to an id when the channel is
+      # declared (needs the app's channels:read / groups:read scopes) and the
+      # ID is what is stored, so a later rename changes nothing; a name that
+      # resolves to nothing is refused rather than stored. From then on this
       # item's updates are posted there instead of channels.slack.channel, and
       # messages there from that channel's authorized users reach this item
       # rather than opening a new one. It grants nobody anything. Only a NAMED
@@ -196,8 +199,16 @@ routing:
   # Each entry is one PERSON, declared once with their id on every channel
   # they act on (issue-309, decision-103): a bare string is a GitHub login; a
   # mapping names the channel ids — `github:` is what both ingresses and the
-  # graph's human gates read, `slack:` the MEMBER id (U…) the Slack channel
-  # reads. `channels.slack.authorizedUsers` is gone: one list, read per channel.
+  # graph's human gates read, `slack:` the member id (U…/W…) or the handle
+  # (@dana) the Slack channel reads. `channels.slack.authorizedUsers` is gone:
+  # one list, read per channel.
+  #
+  # PREFER THE MEMBER ID on `slack:`. A handle is resolved through the cached
+  # workspace directory (needs the app's users:read scope) and an entry that
+  # cannot be resolved authorizes nobody — but a handle can CHANGE HANDS, so an
+  # entry naming one authorizes whoever holds it today. An id names one person
+  # for good. the-loop warns when a handle it resolved starts pointing
+  # elsewhere; only an id makes that impossible.
   authorizedUsers: []
   # - github: MadaraUchiha-314
   #   slack: U0123456789
@@ -469,7 +480,9 @@ channels:
     enabled: false
     # botTokenEnv: THE_LOOP_SLACK_BOT_TOKEN  # xoxb-, chat:write + channels.history
     # appTokenEnv: THE_LOOP_SLACK_APP_TOKEN  # xapp-, only for read.mode: socket
-    # channel: ""                            # the channel id the bot posts into (C…)
+    # channel: ""                            # where the bot posts: #name or a C… id
+    #                                        # (a name needs channels:read/groups:read
+    #                                        #  and is resolved once; an id needs neither)
     # subscribe: [session.awaiting_input]    # what this channel RECEIVES
     # publish: [work-item.reply]             # what a message here MAY BECOME
     #                                        # (+ gate.feedback, control.command, work-item.create,

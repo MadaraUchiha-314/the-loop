@@ -203,6 +203,40 @@ def classify(
     return _classify(reply, cli_config, grants)[0]
 
 
+def _authorized(author: str, config: SlackChannelConfig, cli_config=None) -> bool:
+    """Whether ``author`` (a member id) is on the channel's allow-list.
+
+    ``routing.authorizedUsers[].slack`` may name a person by **member id**
+    (``U0456GHIJ``) or by **handle** (``@dana``) since PR #376's review. An id is
+    compared directly, as it always was; a handle is resolved through the cached
+    directory and compared to the resolved id, so what this returns is still an
+    exact match on an immutable identifier.
+
+    **Fail closed twice over.** An empty list authorizes nobody, and an entry that
+    cannot be resolved — no such handle, no token, a missing ``users:read`` scope
+    — authorizes nobody *in particular*: it simply contributes no id, so the
+    failure direction is fewer people, never more.
+
+    The resolution costs nothing in the common case: an id short-circuits before
+    any lookup, and a handle that resolved once is served from the file cache
+    until it is evicted, so the hot path stays a set membership test.
+    """
+    if not author or not config.authorized_users:
+        return False
+    declared = set(config.authorized_users)
+    if author in declared:
+        return True
+    from .directory import SlackDirectory, is_member_id
+
+    handles = [entry for entry in declared if not is_member_id(entry)]
+    if not handles:
+        return False
+    index = SlackDirectory.beside(
+        slack_state_path(cli_config), token_env=config.bot_token_env
+    )
+    return any(index.user_id(handle) == author for handle in handles)
+
+
 def _drop(reply: InboundReply, reason: str, level: str = "info", **fields) -> Dict:
     eventlog.emit(
         "channel.dropped",
@@ -236,7 +270,7 @@ def process_reply(
         # The Slack-side half of loop prevention (R4.5): a bot — the-loop's own
         # bot included — never speaks *to* the loop.
         return _drop(reply, "self-authored")
-    if not config.authorized_users or reply.author not in set(config.authorized_users):
+    if not _authorized(reply.author, config, cli_config):
         # Fail closed (R5.1): an empty allow-list denies everyone, and an
         # unauthorized reply is neither delivered nor recorded — the record
         # would be a ticket write on an attacker's behalf.
@@ -449,7 +483,7 @@ def process_kickoff(
         return _drop(reply, "self-authored")
     if "work-item.create" not in config.publish:
         return _drop(reply, "unpublishable-event", kind="work-item.create")
-    if not config.authorized_users or reply.author not in set(config.authorized_users):
+    if not _authorized(reply.author, config, cli_config):
         return _drop(reply, "unauthorized-actor", level="warning", actor=reply.author)
     if not reply.text.strip():
         return _drop(reply, "unmapped", actor=reply.author)
@@ -652,7 +686,7 @@ def process_kickoff_answer(
         return _drop(
             reply, "unpublishable-event", level="warning", kind="work-item.create"
         )
-    if not config.authorized_users or reply.author not in set(config.authorized_users):
+    if not _authorized(reply.author, config, cli_config):
         return _drop(reply, "unauthorized-actor", level="warning", actor=reply.author)
     state = ChannelState.load(bot.state_path, bot.stores)
     record = state.pending_for(reply.thread)
