@@ -68,6 +68,14 @@ oauth_config:
       - mpim:history        # the same in a group direct message (issue-362)
       - reactions:write     # acknowledge an accepted message on itself (issue-325)
       - commands            # the /the-loop slash command (issue-334)
+      # Name resolution (issue-375): a person types #tmp-issue-375 and @dana;
+      # Slack's API takes C0123ABCD and U0456GHIJ. These three scopes are READ
+      # ONLY and are what turns one into the other — for channels.slack.channel,
+      # for `the-loop add-channel`, and for routing.authorizedUsers[].slack.
+      # Without them the-loop still works; it just needs ids everywhere.
+      - channels:read       # resolve a PUBLIC channel name to its id
+      - groups:read         # the same for a private channel the bot is in
+      - users:read          # resolve @handle to a member id
 settings:
   event_subscriptions:
     bot_events:
@@ -82,6 +90,19 @@ settings:
   token_rotation_enabled: false
 ```
 
+::: tip Names instead of ids (issue-375)
+The last three scopes are read-only and buy one thing: you write `#the-loop`, `@dana` and
+`the-loop add-channel slack@#tmp-issue-375` instead of `C0123ABCD`, `U0456GHIJ` and a trip
+to the channel details pane. the-loop resolves each **once**, caches the workspace
+directory under `<state.root>/local/`, and stores and routes on the **id** — so a rename
+changes nothing and no message costs a lookup.
+
+Leave them out and the-loop works exactly as before; it just needs an id everywhere, and
+says which scope is missing when it meets a name. **An id is also the stronger form for
+`routing.authorizedUsers[].slack`**: a handle authorizes whoever holds it, while a member
+id names one person for good.
+:::
+
 The manifest is the "reusable, importable" definition the ticket asked about — Slack's
 own format, checked into the-loop, the same for every workspace. (It is *not* a Workflow
 Builder workflow; [why](#why-not-slack-workflow-builder).)
@@ -89,10 +110,12 @@ Builder workflow; [why](#why-not-slack-workflow-builder).)
 ### Upgrading the app you already have (1b)
 
 An app created for an earlier the-loop (issue-245 / issue-309 — thread replies and
-buttons, no command) needs four things added: the `commands` scope and the `/the-loop`
+buttons, no command) needs five things added: the `commands` scope and the `/the-loop`
 command, the private-channel scope and event (`groups:history`, `message.groups`), the
 **direct-message** scopes and events (`im:history` / `mpim:history`, `message.im` /
 `message.mpim` — [issue-362](https://github.com/MadaraUchiha-314/the-loop/issues/362)),
+the three **read-only name-resolution** scopes (`channels:read`, `groups:read`,
+`users:read` — [issue-375](https://github.com/MadaraUchiha-314/the-loop/issues/375)),
 and — if it never used Socket Mode — Socket Mode itself. Two ways, pick one:
 
 - **Replace the manifest** (recommended, one step). At
@@ -106,7 +129,7 @@ and — if it never used Socket Mode — Socket Mode itself. Two ways, pick one:
 
   | Page | Add |
   |------|-----|
-  | *OAuth & Permissions → Bot Token Scopes* | `commands`, `groups:history`, `im:history`, `mpim:history` (and `reactions:write` if the app predates issue-325) |
+  | *OAuth & Permissions → Bot Token Scopes* | `commands`, `groups:history`, `im:history`, `mpim:history`, `channels:read`, `groups:read`, `users:read` (and `reactions:write` if the app predates issue-325) |
   | *Socket Mode* | *Enable Socket Mode* (if not already) |
   | *Slash Commands → Create New Command* | command `/the-loop`, any description and usage hint; **no Request URL** is needed in Socket Mode |
   | *Event Subscriptions → Subscribe to bot events* | `message.groups`, `message.im`, `message.mpim` (beside the existing `message.channels`) |

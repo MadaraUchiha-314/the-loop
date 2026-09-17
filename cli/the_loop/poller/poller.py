@@ -48,7 +48,14 @@ from ..comments import post_issue_comment
 from ..control import ControlConfig, ControlStore, parse_command
 from ..reload import Reloader
 from ..sessions import SessionRegistry, WorkItemRef
-from ..workitem import COLLABORATORS, CONTROL, GRAPH, POLL, WorkItemStore
+from ..workitem import (
+    COLLABORATION_CHANNELS,
+    COLLABORATORS,
+    CONTROL,
+    GRAPH,
+    POLL,
+    WorkItemStore,
+)
 from ..webhook.dispatcher import Dispatcher
 from .base import (
     KIND_PULL_REQUEST,
@@ -1060,7 +1067,7 @@ class Poller:
                 continue
             if any(
                 store.section(ref, name) is not None
-                for name in (CONTROL, GRAPH, COLLABORATORS)
+                for name in (CONTROL, GRAPH, COLLABORATORS, COLLABORATION_CHANNELS)
             ):
                 tracked[ref] = item
             elif store.section(ref, POLL) is not None:

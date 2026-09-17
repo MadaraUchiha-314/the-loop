@@ -11,10 +11,14 @@ import pytest
 from the_loop.authz import SELF_COMMENT_MARKER, is_self_authored
 from the_loop.migrations import CURRENT_CONFIG_VERSION
 from the_loop.control import (
+    ADD_CHANNEL,
     ADD_COLLABORATOR,
+    ARGUMENT_COMMANDS,
+    CHANNEL_COMMANDS,
     COLLABORATOR_COMMANDS,
     COMMANDS,
     DEFAULT_KEYWORDS,
+    REMOVE_CHANNEL,
     REMOVE_COLLABORATOR,
     PAUSE,
     RESUME,
@@ -389,3 +393,56 @@ def test_a_malformed_ended_reads_as_not_ended(tmp_path):
     record[ENDED] = "closed"
     path.write_text(json.dumps(record))
     assert ControlStore(tmp_path / "portable").ended(REF) is None
+
+
+# -- the two commands that carry a CHANNEL (issue-375) --------------------------
+
+
+def test_the_channel_keywords_are_declared_like_every_other():
+    config = ControlConfig()
+    assert config.keyword(ADD_CHANNEL) == "the-loop add-channel"
+    assert config.keyword(REMOVE_CHANNEL) == "the-loop remove-channel"
+    assert set(CHANNEL_COMMANDS) <= set(COMMANDS)
+    assert set(ARGUMENT_COMMANDS) == set(COLLABORATOR_COMMANDS) | set(CHANNEL_COMMANDS)
+
+
+def test_a_channel_command_carries_the_channel_it_named():
+    result = parse_command("the-loop add-channel slack@C0TMP375", ControlConfig())
+    assert result.command == ADD_CHANNEL
+    assert result.subjects == ["slack@C0TMP375"]
+
+
+def test_the_uri_spelling_parses_to_the_canonical_one():
+    result = parse_command("the-loop add-channel slack://C0TMP375", ControlConfig())
+    assert result.subjects == ["slack@C0TMP375"]
+
+
+def test_nothing_but_a_channel_reaches_the_caller():
+    """A1: prose, names and argv fragments after the keyword are not subjects."""
+    config = ControlConfig()
+    assert parse_command("the-loop add-channel #tmp-issue-375", config).subjects == []
+    assert parse_command("the-loop add-channel jira@PROJ", config).subjects == []
+    body = "the-loop add-channel slack@C0TMP375 --permission-mode bypass"
+    assert parse_command(body, config).subjects == ["slack@C0TMP375"]
+
+
+def test_a_channel_keyword_matches_as_a_whole_token():
+    config = ControlConfig()
+    assert parse_command("the-loop add-channels slack@C0A", config).command is None
+    assert parse_command("THE-LOOP ADD-CHANNEL slack@C0TMP375", config).subjects == [
+        "slack@C0TMP375"
+    ]
+
+
+def test_the_paper_trail_comment_spells_a_channel_without_an_at_prefix():
+    """A login is `@dana` and a channel is `slack@C…`: the COMMAND decides."""
+    body = command_comment(
+        ADD_CHANNEL,
+        ControlConfig(),
+        actor="octocat",
+        subject="slack@C0TMP375",
+        invocation="the-loop add-channel",
+    )
+    assert body.startswith("the-loop add-channel slack@C0TMP375")
+    assert "@slack@" not in body
+    assert is_self_authored(body)

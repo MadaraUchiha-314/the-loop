@@ -26,7 +26,7 @@ you say otherwise, never relative to whatever directory a command was run from
 .the-loop/
 ├── portable/
 │   ├── index.json                 # what this directory holds, derived — tracked
-│   └── github-octo-repo-15.json   # one per work item: control, poll, graph, collaborators — tracked
+│   └── github-octo-repo-15.json   # one per work item: control, poll, collaborators, channels — tracked
 ├── local/
 │   ├── github-octo-repo-15.json   # that item's session handle(s) — never tracked
 │   └── model-verdicts.json        # which models this box's harnesses accept — never tracked
@@ -221,8 +221,8 @@ classified on exactly that reasoning.
 
 **One file per work item, whatever delivers it.** Named for its ref
 (`github:octo/repo#15` → `github-octo-repo-15.json`), with independent sections —
-`control`, `poll`, `pullRequests`, `collaborators`, `channels` and, once the item has
-ended, `ended` — and, since
+`control`, `poll`, `pullRequests`, `collaborators`, `collaborationChannels`, `channels`
+and, once the item has ended, `ended` — and, since
 [issue-130](https://github.com/MadaraUchiha-314/the-loop/issues/130), a link to the work
 item itself.
 
@@ -278,6 +278,19 @@ own record, because it *is* the work item.
         "addedAt": "2026-08-31T16:20:11Z",
         "source": "comment",
         "note": "https://github.com/octo/repo/issues/15#issuecomment-1"
+      }
+    ]
+  },
+  "collaborationChannels": {
+    "channels": [
+      {
+        "ref": "slack@C0TMP375",
+        "type": "slack",
+        "target": "C0TMP375",
+        "addedBy": "octocat",
+        "addedAt": "2026-09-16T21:30:00Z",
+        "source": "comment",
+        "note": "https://github.com/octo/repo/issues/15#issuecomment-2"
       }
     ]
   }
@@ -362,7 +375,7 @@ re-baselines it. Nothing else.
 | `channel` | the channel id the thread is in |
 | `thread` | the thread's `ts` — the conversation this work item's messages go to |
 | `opened` | when the-loop opened it |
-| `origin` | how: `start` (when the work item started), `event` (the first event delivered), `kickoff` (a member's message became the work item), `legacy` (a binding from before [issue-312](https://github.com/MadaraUchiha-314/the-loop/issues/312)) |
+| `origin` | how: `start` (when the work item started), `event` (the first event delivered), `kickoff` (a member's message became the work item), `declared` (the work item was declared into a collaboration channel after its conversation had started elsewhere, [issue-375](https://github.com/MadaraUchiha-314/the-loop/issues/375)), `legacy` (a binding from before [issue-312](https://github.com/MadaraUchiha-314/the-loop/issues/312)) |
 | `permalink` | the link Slack returned |
 
 A thread is a **remote entity the-loop created**, so it travels with the work item
@@ -413,6 +426,38 @@ keeps it, as it keeps `control`: cleanup releases *local resources*, and this is
 **If you delete it:** everyone invited onto the item goes quiet. Their comments are
 dropped at the ingress again — no error, exactly the behaviour of a work item nobody was
 invited to — and an authorized user has to grant again.
+
+### `collaborationChannels` — where this work item is worked
+
+| Field | Meaning |
+|---|---|
+| `ref` | the canonical channel, `<type>@<target>` — `slack@C0TMP375` |
+| `type` | the channel type; `slack` is the one the-loop can carry a conversation on today |
+| `target` | the type's own identifier — for Slack, a conversation id (`C…`, `G…`, `D…`), never a `#name` |
+| `addedBy` | who declared it — the authorized user who typed the keyword, or the local user who ran the CLI |
+| `addedAt` | when |
+| `source` | `comment` or `cli` |
+| `note` | the declaring comment's URL, when there was one |
+
+Written when an authorized user issues `the-loop add-channel slack@C0TMP375`
+([issue-375](https://github.com/MadaraUchiha-314/the-loop/issues/375)), from the ticket or
+from the CLI. Two things follow, and only these two: this work item's updates are posted
+in that channel instead of `channels.slack.channel`, and messages there from authorized
+users reach this work item rather than opening a new one. **It grants nobody anything** —
+who may speak is still `channels.slack`'s allow-list, and who may direct the loop is still
+`routing.authorizedUsers`.
+
+One channel per type per work item (a second declaration moves the conversation), and one
+work item per channel — a channel another item declares is refused, because attributing a
+room's messages must not be a guess.
+
+Cleared when the work item closes, and by `the-loop sessions reset`, exactly as
+`collaborators` is. Distinct from `channels` above, which records the thread the-loop
+actually opened: a declaration says where the conversation *belongs*, a binding says where
+it *is*, and when they disagree the next update moves it.
+
+**If you delete it:** the conversation goes back to the operator's central channel at the
+next update, and messages in the room are dropped at the ingress as `unmapped`.
 
 ### `ended` — the work item is over
 
@@ -526,7 +571,7 @@ tracking?"* without opening every record ([issue-130](https://github.com/MadaraU
 |---|---|
 | `ref` / `url` | the work item, and its page — same rule as the record above (`url` is absent when none can be derived) |
 | `file` | the record's name inside `portable/` |
-| `sections` | which of `control` / `poll` / `graph` / `collaborators` / `ended` that record actually holds |
+| `sections` | which of `control` / `poll` / `graph` / `collaborators` / `collaborationChannels` / `ended` that record actually holds |
 | `sealed` | present only on an [upgrade tombstone](#upgrading-from-the-pre-issue-128-layout), which is why it has no sections |
 
 **Lifecycle.** Rewritten after every record write and every removal, by scanning the
@@ -911,7 +956,7 @@ flight is still holding a conversation the old code started.
 | Path | What a reset does to it |
 |---|---|
 | `<root>/local/<slug>.json` | deleted (the session is closed through the normal close path first) |
-| `<root>/portable/<slug>.json` | `control`, `poll`, `collaborators` and `ended` cleared — the file is removed, or left `sealed` while a pre-issue-128 tree still holds something for that item |
+| `<root>/portable/<slug>.json` | `control`, `poll`, `collaborators`, `collaborationChannels` and `ended` cleared — the file is removed, or left `sealed` while a pre-issue-128 tree still holds something for that item |
 | `<root>/portable/index.json` | rewritten to match, on the same write |
 | `<root>/logs/events.jsonl` | **appended to** — one `session.reset` line. Never rewritten: a command that could erase its own trail is not auditable |
 | `<root>/gh-webhook.pid` | untouched. Reset does not stop the daemon — it warns when one is running, because a daemon holds poll state in memory and can write it back |

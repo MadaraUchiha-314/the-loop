@@ -37,6 +37,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .. import eventlog
 from ..identity import Principal, ids_for, parse_authorized_users
+from .directory import is_conversation_id
 from .base import (
     DEFAULT_EVENTS,
     DEFAULT_PUBLISH,
@@ -270,11 +271,14 @@ def probe_subscription(
     config: "SlackChannelConfig",
     *,
     client_factory: Optional[Callable[[str], Any]] = None,
+    channel_id: str = "",
 ) -> Dict[str, Any]:
     """Ask the installed app what the configured channel is and what it may read.
 
     Two fixed calls (bugfix §AC4): ``conversations.info`` on the operator's own
-    configured id, and ``auth.test`` for the granted scopes. Returns either
+    configured channel, and ``auth.test`` for the granted scopes. ``channel_id``
+    lets a caller that already resolved the configured value pass the id in; left
+    out, a configured **name** is resolved here (PR #376 review). Returns either
     ``{"skipped": why}`` or ``{"kind", "scopes", "findings"}``; it never raises,
     because a diagnostic that fails is not an error (R2.3).
     """
@@ -284,9 +288,26 @@ def probe_subscription(
     if not token:
         return {"skipped": f"no bot token — {config.bot_token_env} is unset"}
     factory = client_factory or build_client
+    # `conversations.info` takes an id; the operator may have declared a NAME
+    # (PR #376 review). Resolved here so the diagnostic reports on the channel
+    # they meant rather than skipping with an opaque API error.
+    channel_id = channel_id or config.channel
+    if not is_conversation_id(channel_id):
+        from .directory import SlackDirectory
+
+        channel_id = SlackDirectory(
+            token_env=config.bot_token_env, client_factory=client_factory
+        ).conversation_id(channel_id)
+        if not channel_id:
+            return {
+                "skipped": (
+                    f"channels.slack.channel is {config.channel!r}, which resolves "
+                    "to no channel this bot can see (channels:read / groups:read?)"
+                )
+            }
     try:
         client = factory(token)
-        info = (client.conversations_info(channel=config.channel) or {}).get(
+        info = (client.conversations_info(channel=channel_id) or {}).get(
             "channel"
         ) or {}
         kind = kind_from_info(info)
@@ -296,7 +317,7 @@ def probe_subscription(
     return {
         "kind": kind,
         "scopes": scopes,
-        "findings": subscription_findings(config.channel, (kind,), scopes),
+        "findings": subscription_findings(channel_id, (kind,), scopes),
     }
 
 
@@ -1107,6 +1128,8 @@ class SlackBotChannel:
         self.stores = ChannelStores.beside(self.state_path, self.name)
         self._client_factory = client_factory
         self._own_user: Optional[str] = None
+        #: The resolved central channel (PR #376 review), memoised per instance.
+        self._central: Optional[str] = None
 
     def subscribes(self, event_type: str) -> bool:
         return event_type in self.config.subscribe
@@ -1133,6 +1156,134 @@ class SlackBotChannel:
 
     # -- outbound (R3) ---------------------------------------------------------
 
+    def central_channel(self) -> str:
+        """``channels.slack.channel`` as a conversation id (PR #376 review).
+
+        The operator may declare the room by **name** — ``#the-loop`` — which is
+        what they call it; Slack's API wants ``C0123ABCD``. Resolved once per
+        instance over the shared directory cache, so the eighteen places that
+        used to read ``config.channel`` read one id and cannot disagree about
+        which room they mean. ``""`` when nothing is configured, or when a
+        configured name resolves to nothing — both of which the callers already
+        refuse on.
+
+        Memoised per instance, including the empty answer: a name that does not
+        resolve must not cost a directory refresh on every message.
+        """
+        if self._central is not None:
+            return self._central
+        declared = self.config.channel
+        if not declared:
+            self._central = ""
+            return ""
+        if is_conversation_id(declared):
+            self._central = declared
+            return declared
+        resolved = self.directory().conversation_id(declared)
+        if not resolved:
+            logger.warning(
+                "slack: channels.slack.channel is %r, which resolves to no channel "
+                "this bot can see — check the spelling, invite the bot, and make "
+                "sure the app carries channels:read / groups:read",
+                declared,
+            )
+        self._central = resolved
+        return resolved
+
+    def directory(self):
+        """The name→id directory beside this channel's own state file."""
+        from .directory import SlackDirectory
+
+        return SlackDirectory.beside(
+            self.state_path,
+            token_env=self.config.bot_token_env,
+            client_factory=self._client_factory,
+        )
+
+    def home_for(self, work_item: str) -> str:
+        """The channel this work item's conversation belongs in (issue-375).
+
+        Its **declared** collaboration channel when it has one, the operator's
+        ``channels.slack.channel`` otherwise. One resolver, used by every outbound
+        path, so a thread root, a reply and an acknowledgment can never end up in
+        different rooms.
+        """
+        if self.stores is not None and work_item:
+            declared = self.stores.declared(work_item)
+            if declared:
+                return declared
+        return self.central_channel()
+
+    def _no_channel(self, work_item: str) -> ChannelError:
+        """No room to post in — nothing configured, nothing declared, or a name
+        that resolves to nothing this bot can see."""
+        declared = self.config.channel
+        why = (
+            f" (channels.slack.channel is {declared!r}, which resolves to no "
+            "channel this bot can see — check the spelling, invite the bot, and "
+            "make sure the app carries channels:read / groups:read)"
+            if declared
+            else ""
+        )
+        return ChannelError(
+            "slack: no channel to post "
+            + (f"{work_item} in" if work_item else "in")
+            + " — set channels.slack.channel to the channel the bot posts into "
+            "(its name or its C… id), or declare one on the work item with "
+            "`the-loop add-channel slack@#room`" + why
+        )
+
+    def _conversation(
+        self, client, state: ChannelState, work_item: str, *, origin: str = "event"
+    ) -> Tuple[str, str]:
+        """``(channel_id, thread_ts)`` for ``work_item`` — opening or MOVING it.
+
+        Three cases, and the third is the whole of R2.2: no binding opens a root
+        in the work item's home; a binding already in that home is returned
+        untouched; a binding in another channel means the work item was declared
+        into a new room after its conversation had started, so a root is opened
+        **there** and the binding follows it.
+
+        A work item has exactly one conversation (issue-312), so the move is a
+        move: replies in the old thread are `unmapped` from then on. That is why
+        :meth:`_say_moved` is not a courtesy — it is the only thing standing
+        between somebody still typing there and silence.
+
+        Called inside the caller's state lock.
+        """
+        home = self.home_for(work_item)
+        if not home:
+            raise self._no_channel(work_item)
+        bound = state.thread_for(work_item)
+        if bound and bound[0] and bound[0] != home:
+            moved = self._open_thread(
+                client, state, work_item, channel_id=home, origin="declared"
+            )
+            self._say_moved(bound, moved, work_item)
+            return moved
+        if bound:
+            return bound
+        return self._open_thread(
+            client, state, work_item, channel_id=home, origin=origin
+        )
+
+    def _say_moved(
+        self, old: Tuple[str, str], new: Tuple[str, str], work_item: str
+    ) -> None:
+        """Leave a pointer in the thread the conversation just left (R2.2).
+
+        Best-effort, and the one thing that makes the move readable: a work item
+        has one conversation, so replies in this thread reach nobody from now on.
+        Saying where it went is cheaper than the silence it replaces.
+        """
+        self.say(
+            old[1],
+            f"the-loop: {work_item}'s conversation has moved to its declared "
+            f"collaboration channel (<#{new[0]}>). Replies here no longer reach "
+            "it — continue there.",
+            old[0],
+        )
+
     def post(self, event: Event) -> PostResult:
         """Deliver ``event`` as a reply in its work item's thread — opening the
         thread first, once, when none is bound (issue-312 R1).
@@ -1143,19 +1294,15 @@ class SlackBotChannel:
         is a :class:`ChannelError` and never a second root (R2.3) — only "no
         binding" opens one. An event with no work item posts top-level, unbound.
         """
-        if not self.config.channel:
-            raise ChannelError(
-                "slack: no channel id configured — set channels.slack.channel "
-                "to the channel the bot posts into (C…)"
-            )
+        if not self.home_for(event.work_item):
+            raise self._no_channel(event.work_item)
         client = self._client()
         bound: Optional[Tuple[str, str]] = None
         if event.work_item:
             with ChannelState.locked(self.state_path, self.stores) as state:
-                bound = state.thread_for(event.work_item)
-                if not bound:
-                    bound = self._open_thread(client, state, event.work_item)
-                elif state.backfilled:
+                before = state.thread_for(event.work_item)
+                bound = self._conversation(client, state, event.work_item)
+                if before == bound and state.backfilled:
                     state.save(self.state_path)  # a 13.0.1 file, now keyed (R3.4)
         blocks = render_blocks(
             event,
@@ -1174,7 +1321,7 @@ class SlackBotChannel:
         text = render(fallback, self.config.verbosity)
         try:
             response = client.chat_postMessage(
-                channel=bound[0] if bound and bound[0] else self.config.channel,
+                channel=bound[0] if bound and bound[0] else self.central_channel(),
                 text=text,
                 blocks=blocks,
                 thread_ts=bound[1] if bound else None,
@@ -1197,39 +1344,45 @@ class SlackBotChannel:
         start is accepted: the same lock, root, bind and save as the lazy path
         in :meth:`post`, with ``origin="start"`` on the record, and nothing
         posted for a work item that is already bound. The refusals are
-        :meth:`post`'s — no channel id, no token — raised before any call; a
+        :meth:`post`'s — no channel at all, no token — raised before any call; a
         root that fails to post raises and binds nothing, so the next event
         opens the thread lazily as before (R1.5).
         """
-        if not self.config.channel:
-            raise ChannelError(
-                "slack: no channel id configured — set channels.slack.channel "
-                "to the channel the bot posts into (C…)"
-            )
+        if not self.home_for(work_item):
+            raise self._no_channel(work_item)
         client = self._client()
         with ChannelState.locked(self.state_path, self.stores) as state:
-            bound = state.thread_for(work_item)
-            if not bound:
-                bound = self._open_thread(client, state, work_item, origin="start")
-            elif state.backfilled:
+            before = state.thread_for(work_item)
+            bound = self._conversation(client, state, work_item, origin="start")
+            if before == bound and state.backfilled:
                 state.save(self.state_path)  # a 13.0.1 file, now keyed (R3.4)
         return PostResult(channel=self.name, ok=True, thread=bound[1])
 
     def _open_thread(
-        self, client, state: ChannelState, work_item: str, *, origin: str = "event"
+        self,
+        client,
+        state: ChannelState,
+        work_item: str,
+        *,
+        channel_id: str = "",
+        origin: str = "event",
     ) -> Tuple[str, str]:
         """Post the root for ``work_item``, bind it, save — inside the caller's
         lock. Returns ``(channel_id, thread_ts)``. A root that fails to post
         binds nothing, so the next event tries again. ``origin`` is how the
         record and ``channel.thread_opened`` say the thread came to be:
-        ``event`` (the lazy path) or ``start`` (issue-317)."""
+        ``event`` (the lazy path), ``start`` (issue-317) or ``declared``
+        (issue-375: the work item was declared into a room after its
+        conversation had already started elsewhere). ``channel_id`` is the room
+        to open it in, defaulting to the operator's central channel."""
+        room = channel_id or self.central_channel()
         url = _work_item_url(work_item)
         text, blocks = render_root(
             work_item, url, reading=self.config.read_mode != "off"
         )
         try:
             response = client.chat_postMessage(
-                channel=self.config.channel, text=text, blocks=blocks, thread_ts=None
+                channel=room, text=text, blocks=blocks, thread_ts=None
             )
         except Exception as exc:  # SlackApiError and transport errors alike
             raise ChannelError(f"slack: could not open a thread: {exc}") from None
@@ -1239,26 +1392,22 @@ class SlackBotChannel:
         permalink = ""
         try:
             permalink = str(
-                client.chat_getPermalink(
-                    channel=self.config.channel, message_ts=ts
-                ).get("permalink")
+                client.chat_getPermalink(channel=room, message_ts=ts).get("permalink")
                 or ""
             )
         except Exception as exc:  # noqa: BLE001 — a nicety; the binding stands (A3)
             logger.debug("slack: no permalink for thread %s: %s", ts, exc)
-        state.bind(
-            ts, work_item, self.config.channel, origin=origin, permalink=permalink
-        )
+        state.bind(ts, work_item, room, origin=origin, permalink=permalink)
         state.save(self.state_path)
         eventlog.emit(
             "channel.thread_opened",
             channel=self.name,
             work_item=work_item,
             thread=ts,
-            channel_id=self.config.channel,
+            channel_id=room,
             origin=origin,
         )
-        return (self.config.channel, ts)
+        return (room, ts)
 
     def say(
         self,
@@ -1271,7 +1420,7 @@ class SlackBotChannel:
         with ``blocks`` when the caller rendered any (its Start button, issue-337)."""
         try:
             self._client().chat_postMessage(
-                channel=channel_id or self.config.channel,
+                channel=channel_id or self.central_channel(),
                 text=text,
                 thread_ts=thread or None,
                 blocks=blocks,
@@ -1293,7 +1442,7 @@ class SlackBotChannel:
         The thread a member started **is** the conversation (issue-312 R1.5)."""
         with ChannelState.locked(self.state_path, self.stores) as state:
             state.bind(
-                thread, work_item, channel_id or self.config.channel, origin=origin
+                thread, work_item, channel_id or self.central_channel(), origin=origin
             )
             state.save(self.state_path)
         eventlog.emit(
@@ -1301,7 +1450,7 @@ class SlackBotChannel:
             channel=self.name,
             work_item=work_item,
             thread=thread,
-            channel_id=channel_id or self.config.channel,
+            channel_id=channel_id or self.central_channel(),
             origin=origin,
         )
 
@@ -1325,7 +1474,7 @@ class SlackBotChannel:
         content = config.content_for(state)
         if not content:
             return False  # the state is skipped ("") or unknown
-        channel_id = reply.channel_id or self.config.channel
+        channel_id = reply.channel_id or self.central_channel()
         if not reply.ts or not channel_id:
             logger.debug(
                 "slack: nothing to react on for %s (%s)", reply.work_item, state
@@ -1393,7 +1542,7 @@ class SlackBotChannel:
         *processed* press — a dropped one is not reported, because a refusal
         leaves no mark (decision-111 D1).
         """
-        channel_id = reply.channel_id or self.config.channel
+        channel_id = reply.channel_id or self.central_channel()
         if not reply.ts or not channel_id:
             return False
         try:
@@ -1464,7 +1613,7 @@ class SlackBotChannel:
         replies: List[InboundReply] = []
         for thread, info in state.threads.items():
             cursor = state.cursor(thread)
-            channel_id = info.get("channel") or self.config.channel
+            channel_id = info.get("channel") or self.central_channel()
             try:
                 response = client.conversations_replies(
                     channel=channel_id,
@@ -1509,13 +1658,21 @@ class SlackBotChannel:
         """
         if not self.config.kickoff_enabled:
             return []
+        if self.stores is not None and self.stores.declared_work_item(
+            self.central_channel()
+        ):
+            # The central channel is somebody's declared room (issue-375). A
+            # dedicated room has one subject, so a message there is a message on
+            # that work item — `fetch_channel_messages` reads it — and opening a
+            # second issue from it would be the opposite of what was declared.
+            return []
         state = ChannelState.load(self.state_path, self.stores)
-        key = kickoff_cursor_key(self.config.channel)
+        key = kickoff_cursor_key(self.central_channel())
         cursor = state.cursors.get(key, "")
         client = self._client()
         try:
             response = client.conversations_history(
-                channel=self.config.channel, oldest=cursor or None
+                channel=self.central_channel(), oldest=cursor or None
             )
         except Exception as exc:
             logger.warning("slack: conversations.history failed: %s", exc)
@@ -1554,9 +1711,89 @@ class SlackBotChannel:
                     or message.get("subtype") == "bot_message"
                     or bool(own_user and author == own_user),
                     top_level=True,
-                    channel_id=self.config.channel,
+                    channel_id=self.central_channel(),
                 )
             )
+        return found
+
+    def fetch_channel_messages(self) -> List[InboundReply]:
+        """Every not-yet-seen message in a channel a work item DECLARED (issue-375).
+
+        The reader half of "a dedicated room has one subject": a top-level message
+        in that room is a message *on that work item*, not a new issue and not an
+        unmapped drop. Each declared channel carries its own cursor — the same
+        ``channel:<id>`` key the kickoff read uses — so a room is read once
+        whatever else is being polled.
+
+        **First sight baselines**, exactly as the kickoff read does: declaring a
+        channel with a month of history in it must not deliver that month to the
+        session. With no cursor for the room, the newest ts is recorded and
+        nothing is returned.
+
+        What this path does *not* see is a reply inside a thread it did not open:
+        ``conversations.history`` returns top-level messages, so an unbound
+        thread's replies are read only under Socket Mode, where Slack delivers
+        every message. A thread the-loop DID bind is read by
+        :meth:`fetch_replies`, and its root is skipped here so the two reads
+        cannot both claim one message.
+        """
+        if self.stores is None:
+            return []
+        targets = self.stores.declared_targets()
+        if not targets:
+            return []
+        state = ChannelState.load(self.state_path, self.stores)
+        client = self._client()
+        own_user = self._own_user_id(client)
+        found: List[InboundReply] = []
+        for target, work_item in sorted(targets.items()):
+            key = kickoff_cursor_key(target)
+            cursor = state.cursors.get(key, "")
+            try:
+                response = client.conversations_history(
+                    channel=target, oldest=cursor or None
+                )
+            except Exception as exc:
+                logger.warning(
+                    "slack: conversations.history failed for %s: %s", target, exc
+                )
+                continue
+            messages = [m for m in (response.get("messages") or []) if m.get("ts")]
+            if not cursor:
+                newest = max((str(m["ts"]) for m in messages), key=_ts_key, default="0")
+                self.advance(key, newest)
+                logger.info(
+                    "slack: %s's collaboration channel %s baselined at %s — earlier "
+                    "messages are never delivered",
+                    work_item,
+                    target,
+                    newest,
+                )
+                continue
+            for message in sorted(messages, key=lambda m: _ts_key(str(m["ts"]))):
+                ts = str(message["ts"])
+                thread_ts = str(message.get("thread_ts") or "")
+                if _ts_key(ts) <= _ts_key(cursor):
+                    continue
+                if thread_ts and thread_ts != ts:
+                    continue  # a broadcast reply; the thread reader owns it
+                if state.work_item_for(ts):
+                    continue  # a bound thread's root — `fetch_replies` owns it
+                author = str(message.get("user") or "")
+                found.append(
+                    InboundReply(
+                        channel=self.name,
+                        work_item=work_item,
+                        author=author,
+                        text=str(message.get("text") or ""),
+                        thread=ts,
+                        ts=ts,
+                        is_bot=bool(message.get("bot_id"))
+                        or message.get("subtype") == "bot_message"
+                        or bool(own_user and author == own_user),
+                        channel_id=target,
+                    )
+                )
         return found
 
     def advance(self, thread: str, ts: str) -> None:
@@ -1567,7 +1804,7 @@ class SlackBotChannel:
             state.save(self.state_path)
 
     def advance_kickoff(self, ts: str) -> None:
-        self.advance(kickoff_cursor_key(self.config.channel), ts)
+        self.advance(kickoff_cursor_key(self.central_channel()), ts)
 
 
 def _press_line(

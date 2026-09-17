@@ -9,6 +9,7 @@ true on any machine::
       "control": {"command": "start", "actor": "octocat", …},
       "poll":    {"seenComments": [...], "commentAttempts": {...}, …},
       "collaborators": {"users": [{"login": "dana", "addedBy": "octocat", …}]},
+      "collaborationChannels": {"channels": [{"ref": "slack@C0123ABCD", …}]},
       "ended":   {"state": "merged", "reason": "pr-merged", "at": "…", …}
     }
 
@@ -65,6 +66,7 @@ logger = logging.getLogger("the-loop.workitem")
 
 __all__ = [
     "CHANNELS",
+    "COLLABORATION_CHANNELS",
     "COLLABORATORS",
     "CONTROL",
     "ENDED",
@@ -116,6 +118,16 @@ PULL_REQUESTS = "pullRequests"
 #: for the plugin and is never read by the daemon.
 COLLABORATORS = "collaborators"
 
+#: The channels an authorized user declared as this work item's collaboration
+#: rooms (issue-375): ``{"channels": [{ref, type, target, addedBy, addedAt, …}]}``.
+#: **Portable** for the collaborator roster's reason — "an authorized user said
+#: this work item is worked in `#tmp-issue-375`" is true on any machine — and
+#: deliberately NOT the `channels` section above, which holds the conversation
+#: the-loop opened and is rewritten wholesale every time a thread is bound. A
+#: declaration says where the next thread SHOULD go; a binding says where the
+#: current one IS. See :mod:`the_loop.workchannels`.
+COLLABORATION_CHANNELS = "collaborationChannels"
+
 #: The closure fact (issue-329): the work item ended upstream — how (`state`:
 #: closed | merged, `kind`, `reason`), when (`at`), which ingress saw it
 #: (`source`) and who closed it (`actor`, or "" when the event named none).
@@ -131,7 +143,16 @@ ENDED = "ended"
 #: longer written, but a record that carries one from before issue-368 is a
 #: record the-loop knows something about, and dropping it from this tuple would
 #: delete that work item's file the next time any other section was cleared.
-SECTIONS = (CONTROL, POLL, GRAPH, COLLABORATORS, ENDED, CHANNELS, PULL_REQUESTS)
+SECTIONS = (
+    CONTROL,
+    POLL,
+    GRAPH,
+    COLLABORATORS,
+    COLLABORATION_CHANNELS,
+    ENDED,
+    CHANNELS,
+    PULL_REQUESTS,
+)
 
 #: The directory's index (issue-130) — one file listing every record beside it,
 #: so ``portable/`` answers "what is being tracked?" without opening each record.

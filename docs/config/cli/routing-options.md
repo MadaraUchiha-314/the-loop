@@ -55,7 +55,7 @@ routing:
   authorizedUsers:
     - octocat                          # a GitHub login
     - github: hubot                    # one person, every channel they act on
-      slack: U0456GHIJKL               # the Slack MEMBER id (U…), never a display name
+      slack: U0456GHIJKL               # the Slack member id (U…/W…) — or "@hubot"
       name: Hu
 ```
 
@@ -81,10 +81,30 @@ match, as it has always been. A bare string entry is shorthand for exactly this 
 - **Type:** `string`
 - **Default:** none
 
-The person's Slack **member id** (`U…`, never a display name — names are
-attacker-chosen): what the [Slack channel](/config/cli/channels-options) authorizes
-replies, button presses and kickoffs on, and what a ledger record of their message
-carries in its envelope beside their login.
+The person's Slack identity: what the [Slack channel](/config/cli/channels-options)
+authorizes replies, button presses and kickoffs on, and what a ledger record of their
+message carries in its envelope beside their login. Either form is accepted:
+
+- a **member id** — `U0456GHIJKL`, or `W…` on Enterprise Grid. Compared directly, as
+  it always has been. No scope, no lookup, no cache.
+- a **handle** — `@hubot`, or bare. Resolved to that member's id through the cached
+  workspace directory, which needs the app's `users:read` scope. An entry that cannot
+  be resolved — no such handle, no token, no scope — authorizes **nobody**, so the
+  failure direction is fewer people, never more.
+
+::: warning An id names a person; a handle names whoever holds it.
+Slack handles can be changed and re-used. An entry naming `@dana` authorizes whoever
+holds that handle *at the time the directory is read* — so if dana renames or leaves
+and somebody else takes it, that person inherits the grant. the-loop re-reads a stale
+directory and logs a warning when a handle it had resolved starts pointing at a
+different member, but it cannot close the hole: only a member id can.
+
+**Prefer the member id** for anyone whose authorization matters. Use a handle when the
+convenience of a readable config outweighs that, and know which you chose.
+:::
+
+A **display name** is not accepted in either form. It is neither unique nor
+constrained — the person sets it themselves — so only the handle resolves.
 
 ### `authorizedUsers[].name`
 
@@ -400,6 +420,59 @@ never reads it. This is runtime state: a roster per work item.
 Revoke a grant. Same authorization — a named login in `authorizedUsers`, never the
 collaborator themselves — and it takes effect on the next event, because the roster is
 read per event and never cached in a running session.
+
+### `control.keywords.add-channel`
+
+- **Type:** `string`
+- **Default:** `the-loop add-channel`
+- **Related:** [`the-loop add-channel`](/cli/commands/add-channel) · [channels](/capabilities/channels)
+
+Declare a **collaboration channel** on this work item
+([issue-375](https://github.com/MadaraUchiha-314/the-loop/issues/375)):
+
+```text
+the-loop add-channel slack@#tmp-issue-375   — the name people know it by
+the-loop add-channel slack@C0TMP375         — or its conversation id
+the-loop add-channel slack://C0TMP375       — same thing, stored canonically
+```
+
+From then on this work item's updates are posted in that channel instead of
+[`channels.slack.channel`](/config/cli/channels-options#slack-channel), and messages there
+from that channel's own authorized users reach this work item as input rather than opening
+a new one. A top-level message in a declared room is a reply on the work item, never a
+kickoff — a dedicated room has one subject.
+
+**It grants nobody anything.** Who may speak is still `channels.slack`'s principals; who
+may direct the loop is still [`authorizedUsers`](#authorizedusers); who may be input on one
+work item is still the collaborator roster. A channel is a place, not a person, which is
+why declaring the room and inviting the people can happen in either order.
+
+Only a **named** login in `authorizedUsers` may declare. A declaration is scoped to **one**
+work item and is cleared when the item closes. **One channel per type per work item** — a
+second declaration *moves* the conversation, opening a root in the new room and leaving a
+pointer in the old thread — and **one work item per channel**: a channel another live work
+item declares is refused (`control.rejected` / `channel-taken`), because attributing a
+room's messages must not be a guess.
+
+The argument is `<type>@<target>`, validated per type and never treated as prose. A Slack
+target may be the channel's **name** or its **conversation id**: a name is resolved to an
+id when the channel is declared — which needs the app's `channels:read` (public) /
+`groups:read` (private) scopes and a bot that can see the channel — and the **id** is what
+is stored, so a later rename changes nothing and no message costs a lookup. A name that
+resolves to nothing, a type the-loop has no adapter for, and a body naming no valid channel
+are each refused (`control.rejected` / `missing-channel`) rather than stored.
+
+### `control.keywords.remove-channel`
+
+- **Type:** `string`
+- **Default:** `the-loop remove-channel`
+- **Related:** [`the-loop remove-channel`](/cli/commands/remove-channel)
+
+Undeclare a collaboration channel. Same authorization — a named login in
+`authorizedUsers` — and it takes effect on the next event, because the declarations are
+read per event and never cached in a running session. The conversation returns to the
+central channel at the next update; the thread already open in the room stays bound, so
+replies in it still reach the work item.
 
 Keywords match as **whole tokens, case-insensitively, anywhere** in a comment body.
 Setting one to an empty string disables that command. A comment carrying **two different**

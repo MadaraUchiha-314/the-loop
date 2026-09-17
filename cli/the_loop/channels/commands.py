@@ -483,8 +483,13 @@ def handle_slash_command(
         # The listener never runs for a disabled channel; an embedder calling this
         # directly gets the same fail-closed answer the transports give.
         return _drop("channel-disabled", member)
-    # 1. Authorize before anything is read from the text (R3.1, A1).
-    if not config.authorized_users or member not in set(config.authorized_users):
+    # 1. Authorize before anything is read from the text (R3.1, A1). The same
+    #    check the thread pipeline makes, through the same function, so an
+    #    allow-list entry naming a handle rather than a member id works on every
+    #    inbound surface or on none (PR #376 review).
+    from .inbound import _authorized
+
+    if not _authorized(member, config, cli_config):
         return _drop("unauthorized-actor", member, level="warning")
     # 2. A trigger acts once (A9).
     if not _first_sight(str(payload.get("trigger_id") or "")):

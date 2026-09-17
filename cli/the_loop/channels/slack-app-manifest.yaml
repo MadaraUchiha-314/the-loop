@@ -28,6 +28,14 @@ oauth_config:
       - mpim:history        # the same in a group direct message (issue-362)
       - reactions:write     # acknowledge an accepted message on itself (issue-325)
       - commands            # the /the-loop slash command (issue-334)
+      # Name resolution (issue-375): a person types #tmp-issue-375 and @dana;
+      # Slack's API takes C0123ABCD and U0456GHIJ. These three scopes are READ
+      # ONLY and are what turns one into the other — for channels.slack.channel,
+      # for `the-loop add-channel`, and for routing.authorizedUsers[].slack.
+      # Without them the-loop still works; it just needs ids everywhere.
+      - channels:read       # resolve a PUBLIC channel name to its id
+      - groups:read         # the same for a private channel the bot is in
+      - users:read          # resolve @handle to a member id
 settings:
   event_subscriptions:
     bot_events:

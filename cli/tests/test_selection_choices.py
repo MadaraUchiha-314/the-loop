@@ -276,3 +276,72 @@ def test_an_authorized_reply_freezes_both_choices(monkeypatch):
     # ...and the human is told, in both directions (R1.6).
     confirmation = next(kw["body"] for verb, kw in posted if verb == "add-comment")
     assert "fable-5.1" in confirmation and "high" in confirmation
+
+
+# -- the collaboration-channel section (issue-375) -------------------------------
+
+
+def _with_portable(tmp_path, *declare):
+    """A context whose `portableDir` carries the given declarations."""
+    from the_loop.workchannels import CollaborationChannelStore
+
+    store = CollaborationChannelStore(tmp_path / "portable")
+    for ref in declare:
+        store.add("github:octo/repo#358", ref, actor="octocat", source="cli")
+    return _ctx(portableDir=str(tmp_path / "portable"))
+
+
+def test_the_channel_section_says_how_to_declare_one_when_none_is():
+    """
+    Feature: the gate asks where this work item is worked
+      Scenario: nothing declared yet
+        Given a work item with no collaboration channel
+        When the phase-selection checklist is rendered
+        Then it says the updates go to the central channel and names the
+             keyword that changes that
+
+    Requirement: docs/specs/issue-375/requirements.md R4.1
+    """
+    body = "\n".join(selection._channel_lines(_ctx()))
+    assert "None declared" in body
+    assert "the-loop add-channel slack@C0123ABCD" in body
+
+
+def test_the_channel_section_names_what_is_already_declared(tmp_path):
+    """R4.1: a room declared before the gate is named back to the signer."""
+    body = "\n".join(selection._channel_lines(_with_portable(tmp_path, "slack@C0TMP")))
+    assert "`slack@C0TMP`" in body
+    assert "the-loop remove-channel" in body
+
+
+def test_the_section_is_not_a_checkbox(tmp_path):
+    """
+    Feature: the gate asks where this work item is worked
+      Scenario: the channel is a value, not a row
+        Given the checklist's parser treats every `- [ ] token` line as a phase
+        When the channel section is rendered
+        Then it carries no checkbox at all, so nothing in it can be read as a
+             phase to skip or an opt-in to select
+
+    Requirement: docs/specs/issue-375/requirements.md R4.3
+    """
+    body = "\n".join(selection._channel_lines(_with_portable(tmp_path, "slack@C0TMP")))
+    assert not selection._CHECK_LINE.search(body)
+
+
+def test_the_confirmation_names_the_declared_channel(tmp_path):
+    ctx = _with_portable(tmp_path, "slack@C0TMP")
+    confirmed = selection._confirmation(
+        ctx, "octocat", [], [], channels=selection._declared_channels(ctx)
+    )
+    assert "Collaboration channel: **`slack@C0TMP`**" in confirmed
+
+
+def test_the_confirmation_says_so_when_there_is_none():
+    confirmed = selection._confirmation(_ctx(), "octocat", [], [], channels=[])
+    assert "Collaboration channel: **none**" in confirmed
+
+
+def test_an_unreadable_store_offers_nothing_and_wedges_nothing():
+    assert selection._declared_channels(_ctx(portableDir="/nonexistent/nowhere")) == []
+    assert selection._declared_channels(_ctx()) == []

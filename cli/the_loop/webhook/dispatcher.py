@@ -33,7 +33,9 @@ from ..authz import is_authorized
 from ..cleanup import CleanupOutcome, cleanup_work_item
 from ..collaborators import CollaboratorStore
 from ..control import (
+    ADD_CHANNEL,
     ADD_COLLABORATOR,
+    CHANNEL_COMMANDS,
     CLEANUP,
     COLLABORATOR_COMMANDS,
     GRAPH_COMMANDS,
@@ -86,6 +88,7 @@ from ..runner import SESSION_LIVE, TmuxRunner
 from ..graph.state import WorkItemState
 from ..sessions import Session, SessionRegistry, WorkItemRef
 from ..state import LegacyLayout, StateLayout, layout_from_config, legacy_layout
+from ..workchannels import ChannelTakenError, CollaborationChannelStore
 from ..workitem import SECTIONS
 from ..harness_plugins import PluginConfig
 from ..identity import github_logins, parse_authorized_users
@@ -601,6 +604,7 @@ class Dispatcher:
         announcer: Optional[SessionAnnouncer] = None,
         control_store: Optional[ControlStore] = None,
         collaborator_store: Optional[CollaboratorStore] = None,
+        channel_store: Optional[CollaborationChannelStore] = None,
         verifier: Optional[WorkItemVerifier] = None,
         opener: Optional[Callable[[str], None]] = None,
         cli_config: Optional[Dict[str, Any]] = None,
@@ -640,6 +644,14 @@ class Dispatcher:
         # dispatcher is where the two commands that write it are executed, and read
         # from here by the router and the poller — one roster, one directory.
         self.collaborator_store = collaborator_store or CollaboratorStore(
+            self.config.portable_dir, legacy=self.config.legacy
+        )
+        # And the work item's collaboration channels, in the same record for the
+        # same reason (issue-375): "this work item is worked in #tmp-issue-375" is
+        # a fact about the work. Owned here because the two commands that write it
+        # are executed here; read from here by the Slack channel, which asks it
+        # where a work item's conversation goes and whose conversation a room is.
+        self.channel_store = channel_store or CollaborationChannelStore(
             self.config.portable_dir, legacy=self.config.legacy
         )
         # The one runner every session is hosted in (issue-156).
@@ -1019,6 +1031,12 @@ class Dispatcher:
                 # work item's collaborator roster (issue-307) and the comment that
                 # carried them is consumed, never forwarded.
                 self._apply_collaborator(control, routed, actor)
+                return
+            if control.command in CHANNEL_COMMANDS:
+                # The same shape one record over (issue-375): these two write the
+                # work item's collaboration channels, and the comment that carried
+                # them is consumed rather than forwarded.
+                self._apply_channel(control, routed, actor)
                 return
             if control.command in GRAPH_COMMANDS:
                 # `the-loop execute` acts on the GRAPH, not the session
@@ -1825,6 +1843,10 @@ class Dispatcher:
             return
         self.control_store.clear(work_item)
         self.collaborator_store.clear(work_item)
+        # The room outlives the work item; the-loop's claim on it does not
+        # (issue-375). Cleared with the roster, so the channel is free to back
+        # the next work item the moment this one ends.
+        self.channel_store.clear(work_item)
         actor = event_actor(routed.event, routed.payload) or ""
         source = (
             "poll"
@@ -1944,6 +1966,108 @@ class Dispatcher:
         # The comment WAS the instruction — executed here, never forwarded — so the
         # delivery it arrived on is finished with (issue-270).
         self._settle(routed, SETTLED_CONTROL_EXECUTED)
+
+    def _apply_channel(
+        self, control: ControlResult, routed: RoutedEvent, actor: str
+    ) -> None:
+        """Declare or undeclare a work item's collaboration channel (issue-375).
+
+        Reached after the same named-and-allowlisted-actor check every other control
+        command passes — a declaration moves where the-loop talks about a work item,
+        so it is the operator's people who may make one, never a collaborator.
+
+        Writes **no** :class:`ControlStore` record, for :meth:`_apply_collaborator`'s
+        reason: naming a room neither arms nor disarms anything, and recording it as
+        the work item's control state would make an item look started because
+        somebody said where it would be discussed.
+
+        Nothing here re-opens a thread. The declaration is a fact; the channel acts
+        on it when it next posts, which is what makes the order of "declare" and
+        "start" immaterial (R1.8).
+        """
+        command = control.command or ""
+        target = self._target_work_item(routed)
+        if target is None:  # unreachable: handle() drops an event with no items
+            return
+        if not control.subjects:
+            # The keyword with no channel named, or one that did not match the
+            # grammar — a channel NAME rather than an id is the common case.
+            # Refused rather than guessed at, exactly as `missing-collaborator` is.
+            self._reject_control(command, routed, actor, "missing-channel")
+            return
+        note = str((routed.payload.get("comment") or {}).get("html_url") or "")
+        for ref in control.subjects:
+            try:
+                # A person types the name they know; the record keeps the id the
+                # ingress routes on (PR #376 review). Resolution is the only step
+                # here that talks to a workspace, so it is also the only one that
+                # can fail on a channel that is real but invisible to the bot.
+                channel, name = self._resolve_channel(ref)
+                if command == ADD_CHANNEL:
+                    changed, replaced = self.channel_store.add(
+                        target,
+                        channel,
+                        actor=actor,
+                        source="comment",
+                        note=note,
+                        name=name,
+                    )
+                    effect = "declared" if changed else "already-declared"
+                else:
+                    changed = self.channel_store.remove(target, channel)
+                    replaced = None
+                    effect = "undeclared" if changed else "not-a-channel"
+            except ChannelTakenError as exc:
+                # One channel backs one work item (R3.4): attributing a room's
+                # messages is the whole feature, and two owners make that a guess.
+                logger.warning("refusing to declare %s on %s: %s", ref, target.ref, exc)
+                self._reject_control(command, routed, actor, "channel-taken")
+                return
+            except ValueError as exc:
+                # A ref that parsed but names no channel this bot can see, or a
+                # name that could not be resolved at all. Refused rather than
+                # stored: a declaration that fails at the first post is worse
+                # than one that never happened.
+                logger.warning("refusing the %s command: %s", command, exc)
+                self._reject_control(command, routed, actor, "missing-channel")
+                return
+            logger.info(
+                "control command %s from %s on %s: %s %s%s",
+                command,
+                actor or "(unknown)",
+                target.ref,
+                effect,
+                ref,
+                f" (replacing {replaced.ref})" if replaced else "",
+            )
+            eventlog.emit(
+                "control.command",
+                work_item=target.ref,
+                command=command,
+                source="comment",
+                actor=actor or None,
+                channel=ref,
+                replaced=replaced.ref if replaced else None,
+                effect=effect,
+                delivery_id=routed.delivery_id or None,
+            )
+        # The comment WAS the instruction — executed here, never forwarded — so the
+        # delivery it arrived on is finished with (issue-270).
+        self._settle(routed, SETTLED_CONTROL_EXECUTED)
+
+    def _resolve_channel(self, ref: str):
+        """``(ChannelRef, name)`` for ``ref`` — its id, plus the name if given.
+
+        A seam rather than a call so a test can drive the whole command path with
+        no workspace, and so the one place a name becomes an id is nameable.
+        Raises :class:`ValueError` exactly as :func:`resolve_channel_ref` does.
+        """
+        from ..workchannels import parse_channel_ref, resolve_channel_ref
+
+        channel = parse_channel_ref(ref)
+        if channel is None:  # unreachable: `parse_command` validated it
+            raise ValueError(f"not a channel: {ref!r}")
+        return resolve_channel_ref(channel, self.cli_config)
 
     def _apply_control(self, command: str, routed: RoutedEvent) -> None:
         """Execute a control command carried by an authorized user's comment.

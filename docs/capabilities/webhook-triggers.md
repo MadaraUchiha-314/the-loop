@@ -165,7 +165,9 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   `the-loop cleanup` (issue-186), the
   other end of the life cycle — and, touching neither the session nor the graph,
   `the-loop add-collaborator @login` / `the-loop remove-collaborator @login`
-  (issue-307), which write the work item's collaborator roster (below). All
+  (issue-307), which write the work item's collaborator roster (below), and
+  `the-loop add-channel <type>@<target>` / `the-loop remove-channel <type>@<target>`
+  (issue-375), which declare the room it is worked in (below). All
   configurable (issue-135 — the pre-issue-135 defaults were
   `the-loop:start-execution` and its three siblings).
   - WHEN an **authorized** user's comment on the work item or its PR carries one of
@@ -235,6 +237,54 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   - Every command is recorded (`control.command` with actor, source and effect;
     `control.rejected` when a work item is not armed), and the last command per work
     item is kept beside its session (`<registryDir>/control/`).
+- **Collaboration channels: a room for one work item, and nothing more** (issue-375,
+  `routing.control.keywords.add-channel` / `remove-channel`). `channels.slack.channel`
+  is the operator's one channel, so following one work item means following all of them
+  — and the people who care about *this* migration are already in a channel of its own,
+  where the-loop said nothing and heard nothing.
+  - WHEN a **named** user in `authorizedUsers` comments `the-loop add-channel
+    <type>@<target>` on a work item THEN that channel SHALL be recorded in the
+    `collaborationChannels` section of its portable record, with who declared it, when,
+    through which surface and the comment's URL. `remove-channel` undeclares. The
+    argument is matched against a per-type grammar and refused if it does not fit
+    (`control.rejected` / `missing-channel`), so nothing else from the comment reaches
+    a store, a path or an API call; `<type>://<target>` is the same declaration, stored
+    canonically as `<type>@<target>`. A type the-loop has no adapter for is refused
+    rather than stored and ignored. A **Slack target may be the channel's name or its
+    conversation id**: a name is resolved to an id when the channel is declared — which
+    needs the app's `channels:read` / `groups:read` scopes — and the **id** is what is
+    stored, so a later rename changes nothing and no message costs a lookup. A name
+    that resolves to nothing is refused rather than stored.
+  - WHEN a work item has a declared channel THEN its conversation SHALL live there
+    rather than in `channels.slack.channel`, and WHEN it was already bound elsewhere
+    THEN the next update SHALL open a root in the declared room, rebind, and say in the
+    thread it left where the conversation went.
+  - WHEN a message arrives in a declared channel and no thread **binding** already
+    claims it THEN it SHALL be attributed to the declaring work item — a top-level
+    message included, which is why a declared channel never opens a new work item, the
+    configured kickoff channel included.
+  - A declaration buys **that and nothing else**. It grants nobody anything: who may
+    speak on the channel is still `channels.slack`'s principals, who may direct the loop
+    is still `authorizedUsers`, and who may be input on one work item is still the
+    collaborator roster. Declaring is an **action**, so the command path's
+    named-and-allowlisted-actor re-check applies and a collaborator cannot make one.
+  - **One channel per type per work item** — a second declaration moves the conversation
+    and says what it replaced — and **one work item per channel**: a channel another work
+    item holds is refused (`control.rejected` / `channel-taken`), and a channel two
+    records somehow name attributes messages to neither. Attributing a room's messages
+    must never be a guess.
+  - A declared room is **baselined on first sight**, so declaring one never delivers its
+    backlog. In `socket` read mode every message in it is seen; in `poll` mode its
+    top-level messages and its bound threads' replies are.
+  - WHEN the work item closes THEN its declarations SHALL be cleared with its control
+    record — which is what frees the room for the next work item — and
+    `the-loop sessions reset` SHALL forget them. `the-loop cleanup` keeps them, as it
+    keeps the roster.
+  - The same two verbs exist as CLI commands —
+    [`the-loop add-channel`](../cli/commands/add-channel) and
+    [`remove-channel`](../cli/commands/remove-channel) — which post the same keyword and
+    channel back to the work item, self-marked, so the thread stays the record of who
+    declared what however it was issued.
 - **Work-item collaborators: input for one work item, and nothing more** (issue-307,
   `routing.control.keywords.add-collaborator` / `remove-collaborator`).
   `routing.authorizedUsers` is global — a login directs every work item this daemon
@@ -822,6 +872,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-375 | Two more control keywords, and the second family to carry an argument (2026-09-17): `the-loop add-channel <type>@<target>` / `remove-channel` declare the **collaboration channel** a work item is worked in. Like the collaborator pair they touch neither the session registry nor the graph — they write one section of the work item's portable record, consume the comment that carried them, and arm nothing — and like it they are refused for anyone who is not a named, allowlisted user, because declaring is an action. The argument is parsed by a per-type grammar and refused if it does not fit, so no comment text reaches a store or an API call; a channel another work item holds is refused outright, because a room's messages are attributed to its work item and that must never be a guess | [spec](../specs/issue-375/), [channels](channels.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/375) |
 | issue-371 | Every event the dispatcher **finishes with** is acknowledged, not only the ones it delivers (2026-09-16). Issue-84 wired reactions to `_worker`, the thread that delivers an event to a session — so a comment that *was* an instruction (`the-loop add-collaborator @someone` wrote the roster and returned), one that was refused, one carrying two keywords, and one suppressed on purpose all ended in silence, leaving the person who typed it unable to tell a granted collaborator from a daemon that is not running. The acknowledgement now hangs off `_settle`, the seam that already meant "finished with this delivery": a fixed table maps each settled outcome to one of the three states the operator already configures — `completed` for an executed command, `error` for a refused or unreadable one, `started` for the suppressed family (seen, and pending). No new config key, no new event type, record written before the decoration is attempted. Out-of-scope refusals stay silent on every route into them, and the delivered branch is untouched | [spec](../specs/issue-371/), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/371) |
 | issue-370 | the-loop stopped guessing which pull requests belong to a work item (2026-09-16). The poller's third owner question — GitHub's closing references, the `issue-<n>` branch, a closing keyword — filed a stranger's pull request under a work item's portable record, and the dispatcher wrote the same guess into the work item's **checked-in** state as `linkedBy: "event"`; both are gone, so tracking is what `the-loop sessions link-pr` recorded and nothing else. To make that record reliable rather than a rule the model had to remember, a `PostToolUse` hook runs the command when a session creates a pull request, and the tmux runner finally exports `THE_LOOP_WORK_ITEM` — the variable the plugin's hooks have read since issue-109 and nothing ever set. Delivery routing is unchanged | [spec](../specs/issue-370/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/370) |
 | issue-368 | The daemon reads a work item's frozen choices from its **own checked-in state** (2026-09-15) rather than from the operator's portable record, and records each pull request it routes for in that same file through the coupling (`graph.pull_request_linked`); a closing pull request with an owner has its upstream state recorded there and its nested poll ledger dropped instead of being stamped `ended`, which is what used to mint it a portable record of its own. A work item frozen before the change keeps its `graph` section and is routed by it, read and never rewritten | [spec](../specs/issue-368/), [decision-128](../decisions/decision-128.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/368) |

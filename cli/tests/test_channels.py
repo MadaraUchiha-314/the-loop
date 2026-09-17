@@ -1131,13 +1131,17 @@ def test_open_is_idempotent_for_a_bound_work_item(tmp_path, monkeypatch):
 
 
 def test_open_fails_closed_like_post(tmp_path, monkeypatch):
-    """R1.5: no channel id and no token refuse before any call, as `post` does."""
+    """R1.5: no channel and no token refuse before any call, as `post` does.
+
+    Since issue-375 "no channel" means neither the operator's central one nor a
+    collaboration channel declared on the work item, so the refusal names both.
+    """
     client = FakeSlackClient()
     monkeypatch.delenv(DEFAULT_BOT_TOKEN_ENV, raising=False)
     with pytest.raises(ChannelError, match="no bot token"):
         make_channel(tmp_path, client).open("github:o/r#7")
     monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
-    with pytest.raises(ChannelError, match="no channel id"):
+    with pytest.raises(ChannelError, match="no channel to post"):
         make_channel(tmp_path, client, channel="").open("github:o/r#7")
     assert client.posted == []
     assert (
