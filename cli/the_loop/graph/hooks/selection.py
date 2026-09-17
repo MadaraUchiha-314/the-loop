@@ -272,6 +272,66 @@ def _effort_rows(ctx: HookContext) -> List[str]:
     return _offerable(ctx, "effort", declared_effort(ctx.config or {}))
 
 
+def _declared_channels(ctx: HookContext) -> List[str]:
+    """The collaboration channels already declared on this work item (issue-375).
+
+    Read, never written: the gate **asks** the question and the control keyword
+    answers it, so there is exactly one parser for the grammar and a checklist a
+    reader ticks cannot silently contradict a declaration somebody typed. An
+    unreadable store, or a ``check`` run outside a deployment, offers nothing —
+    the section then says how to declare one and names none.
+    """
+    portable = str((ctx.config or {}).get("portableDir") or "")
+    if not portable:
+        return []
+    try:
+        from ...workchannels import CollaborationChannelStore
+
+        store = CollaborationChannelStore(portable)
+        return [record.ref for record in store.list(ctx.work_item.ref)]
+    except Exception as exc:  # noqa: BLE001 — never wedge the gate over a read
+        logger.debug("could not read the declared channels: %s", exc)
+        return []
+
+
+def _channel_lines(ctx: HookContext) -> List[str]:
+    """The collaboration-channel section of the checklist (issue-375).
+
+    Not a row, because a channel is a **value** rather than a choice among
+    offered ones: the reader types the keyword, here or at any other time. The
+    section exists so the question is asked where every other question about
+    this work item is asked, and so a room declared before the gate is named
+    back to the person about to sign the selection.
+    """
+    declared = _declared_channels(ctx)
+    lines = [
+        "**Is this work item worked in a channel of its own?** Also not a "
+        "phase — it is where the-loop posts this item's updates, and where "
+        "messages from authorized users reach it:",
+        "",
+    ]
+    if declared:
+        lines += [
+            "Already declared: " + ", ".join(f"`{ref}`" for ref in declared) + ".",
+            "",
+            "Reply `the-loop remove-channel <type>@<target>` to undeclare one, or "
+            "`the-loop add-channel <type>@<target>` to move the conversation.",
+        ]
+    else:
+        lines += [
+            "None declared — this item's updates go to the operator's central "
+            "channel. Reply `the-loop add-channel slack@C0123ABCD` (its "
+            "conversation id, not `#name`) to give it a room of its own.",
+        ]
+    lines += [
+        "",
+        "Declare it in a comment of its own, before or after this gate — the "
+        "order does not matter, and a comment may carry only one keyword.",
+        "",
+    ]
+    return lines
+
+
 def _about(ctx: HookContext, name: str) -> str:
     """A declared model's one-line ``about``, flattened for a checklist row."""
     for entry in (ctx.config or {}).get("models") or []:
@@ -520,6 +580,7 @@ def _checklist_body(ctx: HookContext) -> str:
         "`session.pr_session_declined`.",
         "",
     ]
+    lines += _channel_lines(ctx)
     lines += _choice_lines(ctx)
     lines += [
         "A doc fix usually needs little more than implementation and "
@@ -752,6 +813,7 @@ def _confirmation(
     effort: str = "",
     model_offered: Optional[List[str]] = None,
     effort_offered: Optional[List[str]] = None,
+    channels: Optional[List[str]] = None,
 ) -> str:
     lines = ["🤖 _the-loop_ — **phase selection recorded**", ""]
     if skips:
@@ -831,6 +893,22 @@ def _confirmation(
                 else "Effort: **the harness's own** — no single row was ticked."
             ),
         ]
+    # Named in both directions (issue-375), for the reason the model is: a work
+    # item whose conversation is about to move to another room should say so
+    # here, and one that is staying put should say that rather than nothing.
+    lines += [
+        "",
+        (
+            "Collaboration channel: "
+            + ", ".join(f"**`{ref}`**" for ref in channels)
+            + " — this item's updates go there, and messages there from "
+            "authorized users reach it."
+            if channels
+            else "Collaboration channel: **none** — this item's updates go to "
+            "the operator's central channel. `the-loop add-channel "
+            "<type>@<target>` still declares one at any time."
+        ),
+    ]
     lines += [
         "",
         "Starting the loop.",
@@ -913,6 +991,7 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
                 effort=effort,
                 model_offered=model_offered,
                 effort_offered=effort_offered,
+                channels=_declared_channels(ctx),
             ),
         )
     except Exception as exc:  # noqa: BLE001

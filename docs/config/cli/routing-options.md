@@ -401,6 +401,56 @@ Revoke a grant. Same authorization — a named login in `authorizedUsers`, never
 collaborator themselves — and it takes effect on the next event, because the roster is
 read per event and never cached in a running session.
 
+### `control.keywords.add-channel`
+
+- **Type:** `string`
+- **Default:** `the-loop add-channel`
+- **Related:** [`the-loop add-channel`](/cli/commands/add-channel) · [channels](/capabilities/channels)
+
+Declare a **collaboration channel** on this work item
+([issue-375](https://github.com/MadaraUchiha-314/the-loop/issues/375)):
+
+```text
+the-loop add-channel slack@C0TMP375
+the-loop add-channel slack://C0TMP375 — same thing, stored as the first form
+```
+
+From then on this work item's updates are posted in that channel instead of
+[`channels.slack.channel`](/config/cli/channels-options#slack-channel), and messages there
+from that channel's own authorized users reach this work item as input rather than opening
+a new one. A top-level message in a declared room is a reply on the work item, never a
+kickoff — a dedicated room has one subject.
+
+**It grants nobody anything.** Who may speak is still `channels.slack`'s principals; who
+may direct the loop is still [`authorizedUsers`](#authorizedusers); who may be input on one
+work item is still the collaborator roster. A channel is a place, not a person, which is
+why declaring the room and inviting the people can happen in either order.
+
+Only a **named** login in `authorizedUsers` may declare. A declaration is scoped to **one**
+work item and is cleared when the item closes. **One channel per type per work item** — a
+second declaration *moves* the conversation, opening a root in the new room and leaving a
+pointer in the old thread — and **one work item per channel**: a channel another live work
+item declares is refused (`control.rejected` / `channel-taken`), because attributing a
+room's messages must not be a guess.
+
+The argument is `<type>@<target>`, validated per type and never treated as prose: a Slack
+target is a **conversation id** (`C…`, `G…`, `D…`), not a `#name`, because the bot has no
+`channels:read` scope to resolve a name with. A type the-loop has no adapter for is refused
+rather than stored, and a body naming no valid channel is refused
+(`control.rejected` / `missing-channel`).
+
+### `control.keywords.remove-channel`
+
+- **Type:** `string`
+- **Default:** `the-loop remove-channel`
+- **Related:** [`the-loop remove-channel`](/cli/commands/remove-channel)
+
+Undeclare a collaboration channel. Same authorization — a named login in
+`authorizedUsers` — and it takes effect on the next event, because the declarations are
+read per event and never cached in a running session. The conversation returns to the
+central channel at the next update; the thread already open in the room stays bound, so
+replies in it still reach the work item.
+
 Keywords match as **whole tokens, case-insensitively, anywhere** in a comment body.
 Setting one to an empty string disables that command. A comment carrying **two different**
 keywords is refused outright — nothing executed, nothing forwarded. Commands live in

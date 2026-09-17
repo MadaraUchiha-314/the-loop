@@ -46,6 +46,7 @@ from . import eventlog
 from .sessions import Session, SessionRegistry, WorkItemRef
 from .workitem import (
     CHANNELS,
+    COLLABORATION_CHANNELS,
     COLLABORATORS,
     CONTROL,
     ENDED,
@@ -57,6 +58,7 @@ from .workitem import (
 logger = logging.getLogger("the-loop.reset")
 
 __all__ = [
+    "COLLABORATION_CHANNELS",
     "COLLABORATORS",
     "CONTROL",
     "ENDED",
@@ -77,7 +79,14 @@ SESSION = "session"
 #: Everything a reset can remove, in removal order. A work item's pull-request
 #: endpoints need no piece of their own (issue-172): they live *inside* the
 #: session record, so deleting it takes them with it.
-PIECES: Tuple[str, ...] = (WORKSPACE, SESSION, CONTROL, POLL, COLLABORATORS)
+PIECES: Tuple[str, ...] = (
+    WORKSPACE,
+    SESSION,
+    CONTROL,
+    POLL,
+    COLLABORATORS,
+    COLLABORATION_CHANNELS,
+)
 
 #: Ends a live session and reports whether a workspace checkout went with it.
 #: ``Dispatcher.close_session`` is the production implementation.
@@ -168,11 +177,21 @@ def reset_work_item(
     # outlived the start-over would be authority nobody re-issued. The closure
     # stamp goes too (issue-329): a reset is start-over, and an item that starts
     # over is open again as far as this machine knows.
+    # The collaboration channels go too (issue-375): a declaration says where
+    # this work item is worked, and an item that starts over re-declares it.
     # The channel binding and the pull requests' ledgers go with them
     # (issue-368): a reset is "forget what this machine holds about this work
     # item so it starts over", and a thread this deployment opened, like a
     # ledger of what it has already seen, is exactly that.
-    for section in (CONTROL, POLL, COLLABORATORS, ENDED, CHANNELS, PULL_REQUESTS):
+    for section in (
+        CONTROL,
+        POLL,
+        COLLABORATORS,
+        COLLABORATION_CHANNELS,
+        ENDED,
+        CHANNELS,
+        PULL_REQUESTS,
+    ):
         try:
             if store.section(ref, section) is None:
                 continue
@@ -245,7 +264,14 @@ def work_items_with_state(
             continue
         if any(
             store.section(item, section) is not None
-            for section in (CONTROL, POLL, COLLABORATORS, CHANNELS, PULL_REQUESTS)
+            for section in (
+                CONTROL,
+                POLL,
+                COLLABORATORS,
+                COLLABORATION_CHANNELS,
+                CHANNELS,
+                PULL_REQUESTS,
+            )
         ):
             found[ref] = item
     return [found[ref] for ref in sorted(found)]

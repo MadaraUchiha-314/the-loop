@@ -226,6 +226,13 @@ behalf.
   neither hand-maintained nor declared here, it is not a role, and it grants no
   authority: a work-item collaborator cannot command the-loop, arm a session, or answer
   a phase gate. See `reference/automation.md`.
+- **A work item can also name the room it is worked in** (issue-375). Where a work-item
+  collaborator says *who else may be input*, a **collaboration channel** says *where the
+  conversation happens*: an authorized user typing `the-loop add-channel slack@C…` moves
+  that work item's updates into that channel and makes every message there — not only a
+  thread reply — a message on that work item. It is a place, not a person: it grants
+  nobody anything, and it is declared and revoked independently of the roster, in either
+  order. See `reference/automation.md`.
 - The CLI daemon never reads this file (decision-032): it watches many repositories and
   belongs to none of them — see `reference/automation.md`.
 

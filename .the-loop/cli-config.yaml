@@ -139,6 +139,18 @@ routing:
       # cannot answer a human gate; those keep reading authorizedUsers alone.
       add-collaborator: "the-loop add-collaborator"
       remove-collaborator: "the-loop remove-collaborator"
+      # A ROOM, NOT A PERMISSION (issue-375). Declares a COLLABORATION CHANNEL
+      # on THIS work item: `the-loop add-channel slack@C0123ABCD` (a Slack
+      # CONVERSATION ID, not a #name — the bot has no channels:read scope to
+      # resolve one; `slack://C0123ABCD` is the same thing). From then on this
+      # item's updates are posted there instead of channels.slack.channel, and
+      # messages there from that channel's authorized users reach this item
+      # rather than opening a new one. It grants nobody anything. Only a NAMED
+      # user in routing.authorizedUsers may declare; one channel per type per
+      # item and one item per channel; cleared when the item closes. Set either
+      # to "" to disable.
+      add-channel: "the-loop add-channel"
+      remove-channel: "the-loop remove-channel"
   # Where a session the daemon drives takes its ANSWERS from (issue-134).
   # Until this existed, a spawned session was never told whether a human was
   # at its terminal, so the model guessed — and both guesses fail: asking

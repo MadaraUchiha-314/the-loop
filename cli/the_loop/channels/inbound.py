@@ -46,6 +46,7 @@ from .slack import (
     _ts_key,
     action_value,
     is_kickoff_repo_action,
+    kickoff_cursor_key,
     render_kickoff_question,
     render_reply_blocks,
     slack_state_path,
@@ -732,12 +733,20 @@ def poll_once(
     )
     try:
         replies = channel.fetch_replies()
+        declared = channel.fetch_channel_messages()
         kickoffs = channel.fetch_kickoffs()
     except ChannelError as exc:
         logger.warning("channels poll skipped: %s", exc)
         return {"skipped": str(exc), "replies": 0}
+    # A message in a declared collaboration channel is a message ON that work
+    # item (issue-375), so it goes through the reply pipeline — the same
+    # classification, grants, ledger record and delivery a thread reply gets.
+    # Its cursor is the ROOM's, not a thread's, which is why it is advanced
+    # separately below.
+    seen = {(reply.channel_id, reply.ts) for reply in replies}
+    declared = [msg for msg in declared if (msg.channel_id, msg.ts) not in seen]
     summary: Dict[str, Any] = {
-        "replies": len(replies) + len(kickoffs),
+        "replies": len(replies) + len(declared) + len(kickoffs),
         "processed": 0,
         "delivered": 0,
         "created": 0,
@@ -755,6 +764,23 @@ def poll_once(
         # The cursor advances whatever the outcome: processed at most once
         # (R4.6). A failed record/delivery is a recorded failure, not a replay.
         channel.advance(reply.thread, reply.ts)
+        if outcome["outcome"] == "processed":
+            summary["processed"] += 1
+            summary["delivered"] += 1 if outcome.get("delivered") else 0
+        else:
+            summary["dropped"] += 1
+    for message in declared:
+        outcome = process_reply(
+            message,
+            config,
+            cli_config,
+            post_comment=post_comment,
+            deliver=deliver,
+            channel=channel,
+        )
+        # The room's cursor, not the message's thread: the next cycle asks Slack
+        # for what came after this message in the channel (R3.6).
+        channel.advance(kickoff_cursor_key(message.channel_id), message.ts)
         if outcome["outcome"] == "processed":
             summary["processed"] += 1
             summary["delivered"] += 1 if outcome.get("delivered") else 0
@@ -792,7 +818,9 @@ def handle_socket_event(
     The bindings decide relevance (R4.4): a message outside a bound thread is
     dropped as ``unmapped`` — unless it is a top-level message in the configured
     channel and the channel holds the ``work-item.create`` grant, in which case
-    it is a kickoff candidate through the same function the poll read uses.
+    it is a kickoff candidate through the same function the poll read uses, or it
+    is in a channel a work item **declared** (issue-375), in which case it is a
+    message on that work item wherever in the channel it was typed.
     ``client_factory`` is the same injection point ``poll_once`` has (issue-325):
     the channel built here is what acknowledges the message.
     """
@@ -804,8 +832,21 @@ def handle_socket_event(
     thread = str(event.get("thread_ts") or "")
     channel_id = str(event.get("channel") or "")
     is_bot = bool(event.get("bot_id")) or event.get("subtype") == "bot_message"
+    # Whose room is this? (issue-375) Read BEFORE the kickoff branch, because a
+    # declared channel never opens a work item: a dedicated room has one subject,
+    # and a message in it is a message on that subject. A bound thread still wins
+    # over the room below — a work item whose conversation the-loop opened in this
+    # channel keeps it, which is what stops a declaration on the CENTRAL channel
+    # re-attributing every other work item's thread in it.
+    room_work_item = (
+        bot.stores.declared_work_item(channel_id) if bot.stores is not None else ""
+    )
     if (not thread or thread == ts) and channel_id == config.channel:
-        if config.kickoff_enabled and not state.work_item_for(ts):
+        if (
+            config.kickoff_enabled
+            and not room_work_item
+            and not state.work_item_for(ts)
+        ):
             reply = InboundReply(
                 channel="slack",
                 work_item="",
@@ -825,7 +866,26 @@ def handle_socket_event(
                 post_comment=post_comment,
                 create_issue=create_issue,
             )
-    work_item = state.work_item_for(thread) or "" if thread else ""
+    bound = state.work_item_for(thread) or "" if thread else ""
+    work_item = bound or room_work_item
+    # From the ROOM rather than from a binding (issue-375): a top-level message
+    # in a declared channel is its own thread, so the record and any reply
+    # the-loop posts hang off the message itself.
+    from_room = not bound and bool(room_work_item)
+    thread = thread or (ts if from_room else "")
+    # Which cursor says whether this was already processed. A message that IS
+    # the root of its own thread has no thread cursor to be older than — the
+    # thread-cursor default is the root's own ts — so the ROOM's cursor answers
+    # for it, the same one the poll transport advances (R3.6). Everything else
+    # keeps the thread cursor it always had.
+    cursor_key = (
+        kickoff_cursor_key(channel_id) if from_room and thread == ts else thread
+    )
+    seen = (
+        state.cursors.get(cursor_key, "")
+        if cursor_key.startswith("channel:")
+        else state.cursor(cursor_key)
+    )
     reply = InboundReply(
         channel="slack",
         work_item=work_item,
@@ -836,7 +896,7 @@ def handle_socket_event(
         is_bot=is_bot,
         channel_id=channel_id,
     )
-    if work_item and ts and _ts_key(ts) <= _ts_key(state.cursor(thread)):
+    if work_item and ts and seen and _ts_key(ts) <= _ts_key(seen):
         # Already processed — by the catch-up read after a reconnect, or by a
         # poll cycle — and now redelivered by Slack's retry (issue-334). The
         # shared cursor is the at-most-once contract across both transports.
@@ -855,7 +915,7 @@ def handle_socket_event(
         # lock (issue-312): a cursor advance never overwrites a binding a
         # writer in another process saved beside it.
         with ChannelState.locked(state_path, ChannelStores.beside(state_path)) as fresh:
-            fresh.advance(thread, reply.ts)
+            fresh.advance(cursor_key, reply.ts)
             fresh.save(state_path)
     return outcome
 

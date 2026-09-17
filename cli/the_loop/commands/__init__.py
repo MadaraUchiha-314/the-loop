@@ -18,5 +18,6 @@ from . import models_cmd  # noqa: F401,E402
 from . import scenarios  # noqa: F401,E402
 from . import sessions_cmd  # noqa: F401,E402
 from . import standing_cmd  # noqa: F401,E402
+from . import workchannels_cmd  # noqa: F401,E402  (add-/remove-channel)
 
 __all__ = ["Command", "iter_commands", "register"]

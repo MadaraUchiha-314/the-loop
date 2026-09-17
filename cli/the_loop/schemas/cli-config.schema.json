@@ -459,6 +459,24 @@
                     "the-loop remove-collaborator",
                     ""
                   ]
+                },
+                "add-channel": {
+                  "type": "string",
+                  "default": "the-loop add-channel",
+                  "description": "Declares a COLLABORATION CHANNEL on this work item (issue-375): the room its conversation is carried in. Written as `the-loop add-channel <type>@<target>` — `the-loop add-channel slack@C0123ABCD`, with `slack://C0123ABCD` accepted as the same thing and stored canonically. Two things follow, and only these two: this work item's updates are posted in that channel instead of `channels.slack.channel`, and messages there from users on the channel's own allow-list reach this work item as input rather than opening a new one. It GRANTS NOBODY ANYTHING — who may speak is still `channels.slack`'s principals, who may direct the loop is still `routing.authorizedUsers`, and who may be input on one work item is still the collaborator roster. Only a NAMED user in `routing.authorizedUsers` may declare; the declaration is scoped to ONE work item and cleared when that item closes. A Slack target is a CONVERSATION ID, not a `#name`: the bot has no `channels:read` scope to resolve a name with. One channel per type per work item (a second declaration moves the conversation, leaving a pointer in the old thread) and one work item per channel (a channel another item holds is refused). A type the-loop has no adapter for is refused rather than stored. Set to an empty string to disable the word entirely.",
+                  "examples": [
+                    "the-loop add-channel",
+                    ""
+                  ]
+                },
+                "remove-channel": {
+                  "type": "string",
+                  "default": "the-loop remove-channel",
+                  "description": "Undeclares a work item's collaboration channel (issue-375). Same authorization as `add-channel` — a NAMED user in `routing.authorizedUsers` — and it takes effect on the next event, because the declarations are read per event and never cached in the session. The conversation returns to `channels.slack.channel` at the next update; messages in the undeclared room are dropped at the ingress as `unmapped`. Set to an empty string to disable the word entirely.",
+                  "examples": [
+                    "the-loop remove-channel",
+                    ""
+                  ]
                 }
               }
             }

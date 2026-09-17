@@ -195,6 +195,11 @@ def build_runtime(
             ((cli_cfg.get("routing") or {}).get("registryDir") or "")
             or layout_from_config(cli_cfg).local_dir
         )
+        # And where the work item's PORTABLE record lives (issue-375): the
+        # phase-selection gate names the collaboration channels declared on this
+        # work item, and they are a section of that record. Seeded for the reason
+        # `registryDir` is — a hook must not build a routing config of its own.
+        config["portableDir"] = str(layout_from_config(cli_cfg).portable_dir)
     routing = cli_cfg.get("routing") or {}
     if not isinstance(routing, dict):
         routing = {}

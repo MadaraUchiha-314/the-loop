@@ -103,6 +103,29 @@ flowchart LR
   derived from the work item's ref, which on GitHub Enterprise carries the host
   `integrations.github.host` resolves (issue-311) — so the link a Slack member clicks
   and the comment the ledger wrote are on the same GitHub.
+- **A work item can be given a room of its own** (issue-375). `channels.slack.channel` is
+  the deployment's default; a **collaboration channel** is one work item's, declared by an
+  authorized user with `the-loop add-channel <type>@<target>` (or the CLI verb) and
+  recorded in that work item's portable record. Two consequences, and only these two:
+  WHEN a work item has a declared channel THEN its thread root SHALL be opened there
+  instead of in the central channel — and when its conversation is already bound
+  elsewhere, a root SHALL be opened in the declared room, the binding SHALL follow it
+  (`origin: declared`) and the thread it left SHALL be told where it went, because a work
+  item has one conversation and replies in the old one reach nobody. WHEN a message
+  arrives in a declared channel and no **binding** already claims its thread THEN it SHALL
+  be attributed to the declaring work item — a top-level message included, so a dedicated
+  room never opens a new work item, the configured kickoff channel included. Authorization
+  is untouched: the declaration moves a conversation and grants nobody anything. The
+  grammar is `<type>@<target>` (`<type>://<target>` is the same thing, stored canonically),
+  validated per type — Slack takes a conversation id, never a `#name`, because the bot
+  holds no `channels:read` scope — and a type with no adapter is refused rather than stored
+  and ignored. One channel per type per work item (a second declaration moves the
+  conversation) and **one work item per channel**: a held channel is refused, and a channel
+  two records somehow claim attributes messages to neither. A declared room is **baselined
+  on first sight**, so declaring one never delivers its backlog; in `poll` mode its
+  top-level messages and its bound threads' replies are read, and in `socket` mode every
+  message in it is. Declarations are cleared when the work item ends, which is what frees
+  the room for the next one.
 - **One thread per work item, rooted on the work item** (issue-312, decision-105). WHEN
   the Slack channel receives an event for a work item that has no bound conversation THEN
   it SHALL open a root message naming the work item (its ref, and an *Open on GitHub*
@@ -114,7 +137,8 @@ flowchart LR
   `channel.post_failed` and never a second root. A kickoff thread (a member's top-level
   message that became the work item) is that work item's conversation, no root opened; a
   standing session's thread follows the same rule. The conversation is a keyed record —
-  work item → channel, thread, opened, origin (`event` | `kickoff` | `legacy`),
+  work item → channel, thread, opened, origin (`event` | `kickoff` | `legacy` |
+  `start` | `declared`),
   permalink — in the local channel state, listed by `the-loop channels threads`
   (`--work-item`, `--json`), counted by `channels status`, and announced by
   `channel.thread_opened` (ids only). A ref spelled with the default host
@@ -357,7 +381,7 @@ flowchart LR
   `kickoff-empty-message` / `kickoff-already-asked` / `kickoff-ask-failed` /
   `not-your-kickoff` / `no-pending-kickoff` / `undeclared-repository` /
   `create-failed`, `channel.kickoff_asked`, `channel.created`, `channel.thread_opened` (origin `event` |
-  `kickoff` | `start`), `channel.open_failed`, `channel.reaction_added`,
+  `kickoff` | `start` | `declared`), `channel.open_failed`, `channel.reaction_added`,
   `channel.reaction_failed`, and the slash command's `channel.command_received`,
   `channel.command_completed`, `channel.command_answer_failed`, `channel.caught_up`,
   the drop reasons `unknown-command` / `unknown-target` / `duplicate`, and the press
@@ -422,6 +446,7 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-375 | A work item can name the **room it is worked in** (2026-09-17). `the-loop add-channel slack@C…`, from an authorized user on the ticket or from the terminal, records a collaboration channel in that work item's portable record; its thread root is then opened there instead of in `channels.slack.channel`, and every message in that room that no binding already claims is a message on that work item — a top-level one included, so the room never opens a second issue. A declaration made after the conversation started **moves** it, leaving a pointer in the thread it left. The grammar is `<type>@<target>` (with `<type>://<target>` as an alias), which is the extension point: a future Jira or WhatsApp channel is a type row plus an adapter. A Slack target must be a conversation id — the bot has no `channels:read` scope to resolve a `#name`, the constraint `channels.slack.channel` already carries. One channel per type per work item and one work item per channel, enforced on write and again on read, because attributing a room's messages must never be a guess. The declaration moves a conversation and grants nobody anything: who may speak stays `channels.slack`'s allow-list and who may direct the loop stays `routing.authorizedUsers` | [spec](../specs/issue-375/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/375) |
 | issue-368 | A work item's thread binding moved out of `channels/<channel>.json` and into that work item's **portable record** (2026-09-15): the thread is a remote entity the-loop created, so a second machine continues the conversation instead of opening a second root and dropping replies in the first as `unmapped`. It stays in the operator's record rather than the repository because a channel id, a thread ts and a workspace permalink are the operator's workspace's. The read cursor went the other way, into this machine's session record beside the handles, because it states what this deployment has already mirrored — with the channel file keeping the cursor for a work item that has no session record here, which would otherwise re-process every reply. What remains in the file belongs to no work item: the per-channel kickoff cursor, the pending questions, and a standing session's binding. A binding written before the change is honoured and moved on the next write | [spec](../specs/issue-368/), [decision-128](../decisions/decision-128.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/368) |
 | issue-362 | A **direct message is a channel like any other**. The shipped app manifest now carries all four conversation kinds — `im:history`/`message.im` and `mpim:history`/`message.mpim` beside the public and private pairs — closing a failure in which a `D…` channel bound threads, posted, reacted and answered button presses normally while **nothing anyone typed was ever delivered**: Slack emits `message.im` in a DM, the app was subscribed only to `message.channels`/`message.groups`, and the bot token's own history scopes still let the connect-time catch-up read recover everything hours later, so nothing ever logged an error. Two things make the class of failure loud instead: `channels status` names the conversation kind from the id's prefix with no API call and flags a `D…`, and `--probe` (also run once when the listener connects, logging at `warning`) measures it against the installed app with `conversations.info` + `auth.test`'s `x-oauth-scopes` — a finding needs every candidate kind's scope missing, and unreadable scopes yield none. Third, socket mode now **reconciles periodically** rather than only at connect (`read.catchUpSeconds`, default 900, `0` = connect-only, a non-zero value under 60 raised to 60), bounding every cause of a missed envelope. The listener's filter stays kind-agnostic — no DM branch — and no grant, state or config version changes | [spec](../specs/issue-362/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/362) |
 | issue-349 | An unresolved kickoff is **asked about** rather than refused: the declared repositories arrive as Block Kit options (buttons at five or fewer, a static select above), and the pick finishes opening the work item through exactly the path a resolved prefix takes — same `work-item.create` event, same ledger record, same binding, same Start button. The held message is a fourth map in the channel state (`pending`), keyed by the message `ts`, expiring after a day, capped at fifty, and claimed under the state lock before the create so a double press opens one issue; only the message's own author may answer, and an unauthorized presser is refused above the record read. `read.mode: socket` is required — in `poll` mode the typed prefix stays the only route and `channels status` says so — and `KickoffTarget.text` now means the same thing on every outcome, which makes a message that is nothing but an ambiguous or unknown prefix an `empty-message` refusal. No new grant, scope, config key or schema change | [spec](../specs/issue-349/), [decision-122](../decisions/decision-122.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/349) |

@@ -562,6 +562,14 @@ ATTRIBUTES: Tuple[Attribute, ...] = (
     ),
     Attribute(
         OPERATOR_FILE,
+        "collaborationChannels",
+        "operator-ledger",
+        "the channels an authorized user declared this work item is worked in "
+        "(issue-375) — the operator's workspace's ids, and a statement only an "
+        "authorized human can make",
+    ),
+    Attribute(
+        OPERATOR_FILE,
         "ended",
         "operator-ledger",
         "the item ended upstream: state, kind, reason, when, which ingress, who",

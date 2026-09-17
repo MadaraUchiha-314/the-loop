@@ -84,6 +84,8 @@ from .workitem import CONTROL, ENDED, GRAPH, WorkItemStore
 logger = logging.getLogger("the-loop.control")
 
 __all__ = [
+    "ARGUMENT_COMMANDS",
+    "CHANNEL_COMMANDS",
     "COLLABORATOR_COMMANDS",
     "COMMANDS",
     "GRAPH_COMMANDS",
@@ -133,6 +135,11 @@ START, STOP, PAUSE, RESUME, EXECUTE, CONTRIBUTE, CLEANUP, DO, REVIEW = (
 # **work-item collaborator** status — a per-work-item allow-list whose members' comments
 # become agent input on that item and nothing else. See :mod:`the_loop.collaborators`.
 ADD_COLLABORATOR, REMOVE_COLLABORATOR = ("add-collaborator", "remove-collaborator")
+# The twelfth and thirteenth (issue-375): the other pair that acts on neither the session
+# nor the graph, and the other pair to carry an argument. They declare and undeclare a
+# work item's **collaboration channel** — the room its conversation is carried in, and
+# whose messages are about it. See :mod:`the_loop.workchannels`.
+ADD_CHANNEL, REMOVE_CHANNEL = ("add-channel", "remove-channel")
 COMMANDS = (
     START,
     STOP,
@@ -145,6 +152,8 @@ COMMANDS = (
     REVIEW,
     ADD_COLLABORATOR,
     REMOVE_COLLABORATOR,
+    ADD_CHANNEL,
+    REMOVE_CHANNEL,
 )
 
 #: Commands the *graph* acts on rather than the session registry. The
@@ -157,6 +166,16 @@ GRAPH_COMMANDS = (EXECUTE,)
 #: dispatcher branches on a constant, and the one class of command that carries an
 #: argument should be recognisable as such wherever it is handled.
 COLLABORATOR_COMMANDS = (ADD_COLLABORATOR, REMOVE_COLLABORATOR)
+
+#: Commands that act on the work item's **collaboration channels** (issue-375). The
+#: second argument-carrying family, named as a set for the same reason as the first:
+#: the dispatcher branches on a constant, and a reader of `parse_command` can see at a
+#: glance which commands put something other than a command in `subjects`.
+CHANNEL_COMMANDS = (ADD_CHANNEL, REMOVE_CHANNEL)
+
+#: Every command whose keyword may be followed by an argument. One rule, one
+#: check: a command outside this set has an empty `subjects` by construction.
+ARGUMENT_COMMANDS = COLLABORATOR_COMMANDS + CHANNEL_COMMANDS
 
 #: Commands whose effect is **destruction of local state** rather than a
 #: session transition (issue-186). Named as a set so the dispatcher and the
@@ -200,6 +219,11 @@ DEFAULT_KEYWORDS: Dict[str, str] = {
     # add-collaborators` does not match `the-loop add-collaborator` (issue-307).
     ADD_COLLABORATOR: "the-loop add-collaborator",
     REMOVE_COLLABORATOR: "the-loop remove-collaborator",
+    # Same boundary story again (issue-375): the hyphen inside the second word is
+    # one of the characters the boundary rule excludes on either side, so
+    # `the-loop add-channels` does not match `the-loop add-channel`.
+    ADD_CHANNEL: "the-loop add-channel",
+    REMOVE_CHANNEL: "the-loop remove-channel",
 }
 
 # What may NOT sit directly against a keyword for it to count as a whole token.
@@ -259,13 +283,15 @@ class ControlResult:
     the body carried two or more *different* commands — the caller must then do
     nothing at all (execute nothing, forward nothing).
 
-    ``subjects`` carries the command's argument for the one class of command that
-    has one (:data:`COLLABORATOR_COMMANDS`, issue-307): the ``@login`` tokens that
-    followed the keyword, canonicalised by
-    :func:`the_loop.collaborators.parse_logins` and therefore each a valid GitHub
-    login or absent. Empty for every other command, and empty for a collaborator
-    command whose body named nobody — which the caller refuses rather than
-    guessing at.
+    ``subjects`` carries the command's argument for the two classes of command that
+    have one (:data:`ARGUMENT_COMMANDS`): the ``@login`` tokens that followed a
+    collaborator keyword (issue-307), canonicalised by
+    :func:`the_loop.collaborators.parse_logins`, or the ``<type>@<target>`` tokens
+    that followed a channel keyword (issue-375), canonicalised by
+    :func:`the_loop.workchannels.parse_channel_refs`. Either way each entry is a
+    token that matched a fixed grammar, never body text. Empty for every other
+    command, and empty for an argument command whose body named nothing — which
+    the caller refuses rather than guessing at.
     """
 
     command: Optional[str] = None
@@ -275,6 +301,17 @@ class ControlResult:
 
     def __bool__(self) -> bool:
         return self.command is not None or self.ambiguous
+
+
+def _parse_channels(text: str) -> List[str]:
+    """:func:`the_loop.workchannels.parse_channel_refs`, as canonical strings.
+
+    Imported lazily and adapted here so :data:`ARGUMENT_COMMANDS` needs one calling
+    convention — ``str -> List[str]`` — rather than a branch at the call site.
+    """
+    from .workchannels import parse_channel_refs
+
+    return [channel.ref for channel in parse_channel_refs(text)]
 
 
 def parse_command(body: Optional[str], config: ControlConfig) -> ControlResult:
@@ -302,16 +339,18 @@ def parse_command(body: Optional[str], config: ControlConfig) -> ControlResult:
         return ControlResult(ambiguous=True, matched=found)
     command = found[0]
     subjects: List[str] = []
-    if command in COLLABORATOR_COMMANDS:
-        # Every occurrence, not just the first: two lines each naming one person is
+    if command in ARGUMENT_COMMANDS:
+        # Every occurrence, not just the first: two lines each naming one subject is
         # the natural way to write this, and honouring only the first would silently
-        # drop the second. What each contributes is `parse_logins`'s output — a run
-        # of valid logins, ending at the first token that is not one — so the prose
-        # around them reaches nothing.
+        # drop the second. What each contributes is the argument parser's output — a
+        # run of valid tokens, ending at the first that is not one — so the prose
+        # around them reaches nothing. Which parser is the command's: a login for the
+        # collaborator pair, a channel ref for the channel pair (issue-375).
+        parse = parse_logins if command in COLLABORATOR_COMMANDS else _parse_channels
         for match in re.finditer(patterns[command], body, re.IGNORECASE):
-            for login in parse_logins(body[match.end() :]):
-                if login not in subjects:
-                    subjects.append(login)
+            for subject in parse(body[match.end() :]):
+                if subject not in subjects:
+                    subjects.append(subject)
     return ControlResult(command=command, matched=found, subjects=subjects)
 
 
@@ -333,9 +372,9 @@ def command_comment(
     own comment back and apply it again (the issue-104 contract).
 
     Built only from the configured keyword, the local ``actor`` name and — for the
-    one class of command that takes an argument — a ``subject`` the caller has
-    already validated as a GitHub login (issue-307). No payload-derived text
-    reaches it.
+    two classes of command that take an argument — a ``subject`` the caller has
+    already validated: a GitHub login (issue-307) or a channel ref (issue-375). No
+    payload-derived text reaches it.
 
     ``invocation`` names the CLI form to quote; it defaults to
     ``the-loop sessions <command>``, which is right for the session verbs and
@@ -349,7 +388,17 @@ def command_comment(
     caller validated (``instance.NAME_RE``), never text from an event.
     """
     keyword = config.keyword(command) or command
-    line = f"{keyword} @{subject}" if subject else keyword
+    # How the argument is spelled is the COMMAND's, never the caller's: a login
+    # is `@dana` and a channel ref is `slack@C0123ABCD`, and a second parameter
+    # saying which would be a way for the two to disagree (issue-375).
+    if subject:
+        line = (
+            f"{keyword} {subject}"
+            if command in CHANNEL_COMMANDS
+            else (f"{keyword} @{subject}")
+        )
+    else:
+        line = keyword
     if address:
         line = f"{line} instance:{address}"
     who = f" by `{actor}`" if actor else ""

@@ -67,10 +67,18 @@ THREAD_CAP = 200
 
 #: How a conversation came to be bound: the-loop opened a root for an event;
 #: a member's top-level message became the work item (``work-item.create``);
-#: the binding predates issue-312 and was derived from the thread map; or
+#: the binding predates issue-312 and was derived from the thread map;
 #: the-loop opened the root when the work item **started** (issue-317) — before
-#: any event, on the dispatcher's spawn path.
-CONVERSATION_ORIGINS: Tuple[str, ...] = ("event", "kickoff", "legacy", "start")
+#: any event, on the dispatcher's spawn path; or the work item was **declared**
+#: into a collaboration channel after its conversation had started somewhere
+#: else, so the root was re-opened there (issue-375).
+CONVERSATION_ORIGINS: Tuple[str, ...] = (
+    "event",
+    "kickoff",
+    "legacy",
+    "start",
+    "declared",
+)
 
 #: How long an unanswered kickoff question stays answerable (issue-349 R3.2).
 #: A day is phone-shaped: long enough to answer in the morning, short enough that
@@ -219,6 +227,54 @@ class ChannelStores:
             store.write_section(work_item, "channels", channels or None)
         except (OSError, ValueError) as exc:
             logger.warning("could not drop %s's channel binding: %s", work_item, exc)
+
+    # -- declarations, in the same portable records (issue-375) ----------------
+
+    def _declarations(self):
+        from ..workchannels import CollaborationChannelStore
+
+        return CollaborationChannelStore(self.portable_dir)
+
+    def declared(self, work_item: str) -> str:
+        """The channel ``work_item`` was DECLARED to live in, or ``""``.
+
+        The difference from :meth:`bindings` is the difference the feature turns
+        on: a binding says where this work item's conversation *is*, a
+        declaration says where it *belongs*. When the two disagree the channel
+        moves the conversation; when there is no declaration the operator's
+        central channel answers, exactly as it did before issue-375.
+        """
+        if not work_item:
+            return ""
+        try:
+            record = self._declarations().for_type(work_item, self.channel)
+        except (OSError, ValueError) as exc:
+            logger.debug("could not read %s's declared channel: %s", work_item, exc)
+            return ""
+        return record.target if record else ""
+
+    def declared_work_item(self, target: str) -> str:
+        """The work item that declared ``target`` — ``""`` when none did.
+
+        The reverse lookup the ingress reads to decide whose conversation a room
+        is. A target two work items claim answers ``""``: see
+        :meth:`the_loop.workchannels.CollaborationChannelStore.declared_by`.
+        """
+        if not target:
+            return ""
+        try:
+            return self._declarations().declared_by(f"{self.channel}@{target}")
+        except (OSError, ValueError) as exc:
+            logger.debug("could not read the declaration for %s: %s", target, exc)
+            return ""
+
+    def declared_targets(self) -> Dict[str, str]:
+        """``{target: work item}`` for every declared channel of this type."""
+        try:
+            return self._declarations().targets(self.channel)
+        except (OSError, ValueError) as exc:
+            logger.debug("could not read the channel declarations: %s", exc)
+            return {}
 
     # -- cursors, in this machine's session records ----------------------------
 
