@@ -1,3 +1,9 @@
+## v19.2.0 (2026-09-17)
+
+### Feat
+
+- **issue-375**: a work item names the room it is worked in (#376)
+
 ## v19.1.0 (2026-09-16)
 
 ### Feat
