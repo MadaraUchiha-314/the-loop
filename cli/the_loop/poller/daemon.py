@@ -27,7 +27,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, List, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Callable, List, Mapping, Optional, Sequence
 
 from .. import cli_config, eventlog
 from ..authz import resolve_authorized_users
@@ -72,14 +72,14 @@ def _load_polling_config() -> dict:
 
 
 def _build_providers(
-    data: Mapping[str, Any], *, default_label: str
+    data: Mapping[str, Any], *, default_labels: Sequence[str]
 ) -> "List[PollProvider]":
     """Every source in the CLI config ``data``, bound to the resolved host (issue-331)
     and to the instance's declared repositories (issue-348).
 
     The one loaded config answers all three questions: what to poll (the top-level
     ``repositories`` — the same list that bounds the webhook receiver), how to poll it
-    (``polling.sources``: provider, label, monitor, binary), and where a bare
+    (``polling.sources``: provider, labels, monitor, binary), and where a bare
     ``OWNER/REPO`` is — ``ghhost.github_host`` over that same mapping and ``$GH_HOST``,
     with no checkout to consult: a daemon runs outside any. The pre-flight, the first
     plan and every hot reload come through here, so an edit to ``repositories`` takes
@@ -97,7 +97,7 @@ def _build_providers(
     return [
         build_provider(
             source,
-            default_label=default_label,
+            default_labels=default_labels,
             default_host=default_host,
             repositories=repositories,
         )
@@ -326,7 +326,8 @@ def run(
 
     try:
         _build_providers(
-            cli_config.load_cli_config(_config_path(), strict=False), default_label=""
+            cli_config.load_cli_config(_config_path(), strict=False),
+            default_labels=(),
         )
     except ProviderError as exc:
         logger.error("%s", exc)
@@ -401,7 +402,7 @@ def _run_locked(
     def build_plan() -> PollPlan:
         data = cli_config.load_cli_config(_config_path(), strict=False)
         cfg = PollConfig.from_mapping(data.get("polling") or {})
-        providers = _build_providers(data, default_label=routing.auto_execute_label)
+        providers = _build_providers(data, default_labels=routing.auto_execute_labels)
         return PollPlan(providers=providers, interval_seconds=cfg.interval_seconds)
 
     try:
@@ -494,10 +495,11 @@ def _run_locked(
         signal.signal(signal.SIGINT, _shutdown)
 
     logger.info(
-        "poll: %s every %ss (spawnOnUnmatched=%s, state=%s)",
+        "poll: %s every %ss (spawnOnUnmatched=%s, labels=%s, state=%s)",
         "; ".join(p.describe() for p in providers),
         config.interval_seconds,
         routing.spawn_on_unmatched,
+        routing.auto_execute_labels,
         options.state_dir,
     )
     if routing.control.enabled and routing.control.require_start_command:

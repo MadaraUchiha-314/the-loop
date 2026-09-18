@@ -306,8 +306,8 @@ Both remove things; they answer different questions.
 ## Label-gated auto-execution
 
 With [`spawnOnUnmatched: labeled`](/config/cli/routing-options#spawnonunmatched): give an
-issue or PR the configurable
-[`autoExecuteLabel`](/config/cli/routing-options#autoexecutelabel), have an authorized user
+issue or PR every label in the configurable
+[`autoExecuteLabels`](/config/cli/routing-options#autoexecutelabels), have an authorized user
 comment `the-loop start` (or run `sessions start`), and the ingress spawns a
 session and starts `/the-loop:work-on` on it — then routes that item's later activity
 (comments, reviews, CI, and **every** PR linked to it) to the same session, and auto-closes

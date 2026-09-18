@@ -606,9 +606,9 @@ WITH_POLL_REPOS = {
 }
 
 
-def test_the_current_config_version_is_0_9_0():
-    """R5.5 — the version the break is gated on."""
-    assert CURRENT_CONFIG_VERSION == "0.9.0"
+def test_the_current_config_version_is_0_10_0():
+    """The version the break is gated on (issue-348, then issue-381)."""
+    assert CURRENT_CONFIG_VERSION == "0.10.0"
 
 
 def test_the_repository_lists_move_up():
@@ -625,7 +625,7 @@ def test_the_repository_lists_move_up():
     ]
     assert report.config["polling"]["sources"][0] == {
         "provider": "github",
-        "label": "x",
+        "labels": ["x"],  # its own key moved too (issue-381)
     }
     assert WITH_POLL_REPOS == before  # the input is never mutated
     assert_current(report.config)
@@ -701,6 +701,117 @@ def test_another_providers_repos_key_is_neither_migrated_nor_refused():
     config = {
         "version": CURRENT_CONFIG_VERSION,
         "polling": {"sources": [{"provider": "jira", "repos": ["PROJ"]}]},
+    }
+    assert needs_migration(config) is False
+    assert_current(config)
+
+
+# -- issue-381: one label becomes a list, every one required ------------------
+
+WITH_ONE_LABEL = {
+    "version": "0.9.0",
+    "routing": {"autoExecuteLabel": "team-a: run", "enabled": True},
+    "polling": {
+        "sources": [
+            {"provider": "github", "label": "team-a: poll"},
+            {"provider": "github", "label": ""},
+            {"provider": "jira", "label": "PROJ"},
+        ]
+    },
+}
+
+
+def test_the_label_keys_become_lists():
+    """R3.2 — wrap; an empty source label is removed (absent already means reuse);
+    another provider's `label` is that provider's key."""
+    before = copy.deepcopy(WITH_ONE_LABEL)
+    report = migrate_cli_config(WITH_ONE_LABEL)
+    assert report.config["routing"] == {
+        "autoExecuteLabels": ["team-a: run"],
+        "enabled": True,
+    }
+    assert report.config["polling"]["sources"] == [
+        {"provider": "github", "labels": ["team-a: poll"]},
+        {"provider": "github"},
+        {"provider": "jira", "label": "PROJ"},
+    ]
+    assert report.config["version"] == "0.10.0"
+    assert WITH_ONE_LABEL == before  # the input is never mutated
+    assert any(
+        "autoExecuteLabel" in m and "autoExecuteLabels" in m for m in report.moves
+    )
+    assert any("polling.sources[].label" in m and "labels" in m for m in report.moves)
+    assert_current(report.config)
+
+
+def test_a_half_migrated_label_keeps_the_new_key_and_says_so():
+    """R3.4"""
+    report = migrate_cli_config(
+        {
+            "version": "0.9.0",
+            "routing": {
+                "autoExecuteLabel": "old",
+                "autoExecuteLabels": ["new", "mine"],
+            },
+        }
+    )
+    assert report.config["routing"] == {"autoExecuteLabels": ["new", "mine"]}
+    assert any("already declared" in n and "'old'" in n for n in report.notes)
+
+
+def test_an_empty_routing_label_is_moved_and_flagged():
+    """`autoExecuteLabel: ""` armed nothing; `[]` is what the schema now refuses, so
+    the report says to declare at least one label rather than writing a file the
+    daemon will not load in silence."""
+    report = migrate_cli_config(
+        {"version": "0.9.0", "routing": {"autoExecuteLabel": ""}}
+    )
+    assert report.config["routing"] == {"autoExecuteLabels": []}
+    assert any("at least one" in n for n in report.notes)
+
+
+def test_the_label_migration_is_idempotent():
+    """R3.3"""
+    once = migrate_cli_config(WITH_ONE_LABEL)
+    twice = migrate_cli_config(once.config)
+    assert twice.changed is False
+    assert twice.config == once.config
+
+
+@pytest.mark.parametrize(
+    "config, key, replacement",
+    [
+        (
+            {"version": CURRENT_CONFIG_VERSION, "routing": {"autoExecuteLabel": "x"}},
+            "routing.autoExecuteLabel",
+            "autoExecuteLabels",
+        ),
+        (
+            {
+                "version": CURRENT_CONFIG_VERSION,
+                "polling": {"sources": [{"provider": "github", "label": "x"}]},
+            },
+            "polling.sources[].label",
+            "labels",
+        ),
+    ],
+)
+def test_an_un_migrated_label_key_is_refused(config, key, replacement):
+    """R3.1, A4 — a custom label silently replaced by the shared default would arm
+    MORE than the operator set; the daemon refuses instead."""
+    assert needs_migration(config)
+    with pytest.raises(ConfigTooOld) as excinfo:
+        assert_current(config)
+    message = str(excinfo.value)
+    assert key in message
+    assert replacement in message
+    assert "/the-loop:upgrade-the-loop" in message
+
+
+def test_another_providers_label_key_is_neither_migrated_nor_refused():
+    config = {
+        "version": CURRENT_CONFIG_VERSION,
+        "polling": {"sources": [{"provider": "jira", "label": "PROJ"}]},
     }
     assert needs_migration(config) is False
     assert_current(config)

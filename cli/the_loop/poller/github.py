@@ -34,8 +34,9 @@ from ..sessions import DEFAULT_GITHUB_HOST, WorkItemRef, is_github_host
 from ..webhook.router import (
     POLL_CLOSURE_DELIVERY_PREFIX,
     RoutedEvent,
-    event_carries_label,
+    event_carries_labels,
     extract_work_items,
+    normalize_labels,
 )
 from .base import (
     REPROBE_EVERY_CYCLES,
@@ -232,18 +233,27 @@ class GhClient:
 
     # -- listing ---------------------------------------------------------------
 
+    @staticmethod
+    def _label_flags(labels: Sequence[str]) -> List[str]:
+        """One ``--label`` per label (issue-381). GitHub's list filter returns the
+        items carrying every named label; the provider re-checks the listing
+        regardless, so tracking never rides on the filter's semantics."""
+        flags: List[str] = []
+        for label in labels:
+            flags += ["--label", label]
+        return flags
+
     def list_labeled_issues(
-        self, owner: str, repo: str, label: str, host: str = ""
+        self, owner: str, repo: str, labels: Sequence[str], host: str = ""
     ) -> List[GhItem]:
-        """Open issues in ``owner/repo`` carrying ``label`` (PRs excluded)."""
+        """Open issues in ``owner/repo`` carrying every label (PRs excluded)."""
         data = self._run_json(
             [
                 "issue",
                 "list",
                 "--repo",
                 self._repo_flag(owner, repo, host),
-                "--label",
-                label,
+                *self._label_flags(labels),
                 "--state",
                 "open",
                 "--limit",
@@ -255,9 +265,9 @@ class GhClient:
         return [self._item_from_json(row, is_pr=False) for row in data or []]
 
     def list_labeled_prs(
-        self, owner: str, repo: str, label: str, host: str = ""
+        self, owner: str, repo: str, labels: Sequence[str], host: str = ""
     ) -> List[GhItem]:
-        """Open PRs in ``owner/repo`` carrying ``label``, with their linked issues.
+        """Open PRs in ``owner/repo`` carrying every label, with their linked issues.
 
         Degrades (once, then latched) to the legacy field list when the installed
         ``gh`` does not know ``closingIssuesReferences`` — routing then falls back
@@ -267,7 +277,7 @@ class GhClient:
         """
         fields = _PR_FIELDS_LEGACY if self._no_link_field else _PR_FIELDS
         try:
-            data = self._list_prs(owner, repo, label, fields, host)
+            data = self._list_prs(owner, repo, labels, fields, host)
         except GhError as exc:
             if self._no_link_field or _PR_LINK_FIELD.lower() not in str(exc).lower():
                 raise
@@ -280,18 +290,24 @@ class GhClient:
                 _GH_INSTALL_HINT,
             )
             self._no_link_field = True
-            data = self._list_prs(owner, repo, label, _PR_FIELDS_LEGACY, host)
+            data = self._list_prs(owner, repo, labels, _PR_FIELDS_LEGACY, host)
         return [self._item_from_json(row, is_pr=True) for row in data or []]
 
-    def _list_prs(self, owner: str, repo: str, label: str, fields: str, host: str = ""):
+    def _list_prs(
+        self,
+        owner: str,
+        repo: str,
+        labels: Sequence[str],
+        fields: str,
+        host: str = "",
+    ):
         return self._run_json(
             [
                 "pr",
                 "list",
                 "--repo",
                 self._repo_flag(owner, repo, host),
-                "--label",
-                label,
+                *self._label_flags(labels),
                 "--state",
                 "open",
                 "--limit",
@@ -613,13 +629,15 @@ class GitHubPollProvider(PollProvider):
     def __init__(
         self,
         repos: List[RepoSpec],
-        label: str,
+        labels: Sequence[str],
         monitor_issues: bool = True,
         monitor_prs: bool = True,
         gh: Optional[GhClient] = None,
     ):
         self.repos = repos
-        self.label = label
+        # Every one of these must be on an item for this source to track it
+        # (issue-381); an empty list lists and tracks nothing.
+        self.labels = normalize_labels(labels)
         self.monitor_issues = monitor_issues
         self.monitor_prs = monitor_prs
         self.gh = gh or GhClient()
@@ -635,7 +653,7 @@ class GitHubPollProvider(PollProvider):
         cls,
         source: dict,
         *,
-        default_label: str,
+        default_labels: Sequence[str],
         default_host: str = "",
         repositories: Sequence[str] = (),
     ) -> "GitHubPollProvider":
@@ -662,7 +680,9 @@ class GitHubPollProvider(PollProvider):
             repos=parse_repos(
                 [str(r) for r in repositories], default_host=default_host
             ),
-            label=str(source.get("label") or "") or default_label,
+            # The source's own list replaces the routing list; an empty or
+            # absent one reuses it (issue-381).
+            labels=normalize_labels(source.get("labels")) or list(default_labels),
             monitor_issues=bool(monitor.get("issues", True)),
             monitor_prs=bool(monitor.get("pullRequests", True)),
             gh=GhClient(binary=str(source.get("ghBinary", "gh"))),
@@ -737,13 +757,17 @@ class GitHubPollProvider(PollProvider):
         if self.monitor_prs:
             try:
                 prs = self.gh.list_labeled_prs(
-                    spec.owner, spec.repo, self.label, host=spec.host
+                    spec.owner, spec.repo, self.labels, host=spec.host
                 )
             except GhError as exc:
                 out.failures.append(ScopeFailure(scope, str(exc)))
             else:
                 answered = True
-                out.items.extend(self._work_item(spec, gh_item) for gh_item in prs)
+                out.items.extend(
+                    self._work_item(spec, gh_item)
+                    for gh_item in prs
+                    if self._carries_every_label(gh_item)
+                )
         if answered:
             out.polled.append(scope)
 
@@ -765,7 +789,7 @@ class GitHubPollProvider(PollProvider):
             return False
         try:
             issues = self.gh.list_labeled_issues(
-                spec.owner, spec.repo, self.label, host=spec.host
+                spec.owner, spec.repo, self.labels, host=spec.host
             )
         except GhError as exc:
             if _ISSUES_DISABLED not in str(exc).lower():
@@ -782,8 +806,22 @@ class GitHubPollProvider(PollProvider):
         if since is not None:
             del self._issues_off[scope]
             out.recovered.append(scope)
-        out.items.extend(self._work_item(spec, gh_item) for gh_item in issues)
+        out.items.extend(
+            self._work_item(spec, gh_item)
+            for gh_item in issues
+            if self._carries_every_label(gh_item)
+        )
         return True
+
+    def _carries_every_label(self, gh_item: GhItem) -> bool:
+        """Whether a listed item carries every configured label (issue-381, R2.1).
+
+        ``gh`` is asked for items carrying all of them, and GitHub's filter
+        answers that way — but the tracking decision is this provider's, so it
+        is taken on the labels the listing actually returned, not on a CLI's
+        filter semantics. An empty list keeps nothing, as the gate arms nothing.
+        """
+        return bool(self.labels) and set(self.labels) <= set(gh_item.labels)
 
     def list_comments(self, item: WorkItem) -> List[Comment]:
         gh_comments = self.gh.list_comments(
@@ -828,7 +866,7 @@ class GitHubPollProvider(PollProvider):
             delivery_id=f"poll-presence-{item.ref}-{uuid.uuid4()}",
             work_items=refs,
             payload=payload,
-            labeled=event_carries_label(payload, self.label),
+            labeled=event_carries_labels(payload, self.labels),
         )
 
     def comment_event(

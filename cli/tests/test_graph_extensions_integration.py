@@ -48,7 +48,7 @@ def licence_header(ctx):
 """
 
 HOOKS = """
-version: "0.9.0"
+version: "0.10.0"
 routing:
   graph:
     hooks:
@@ -186,7 +186,7 @@ def test_an_undeclared_module_in_a_checkout_is_never_run(tmp_path, monkeypatch):
     Requirement: docs/specs/issue-352/requirements.md R2.3
     """
     repo = _repository(tmp_path, module="raise RuntimeError('never run me')\n")
-    _cli_config(tmp_path, monkeypatch, 'version: "0.9.0"\n')
+    _cli_config(tmp_path, monkeypatch, 'version: "0.10.0"\n')
     graph = build_runtime(repo).graph
     assert graph.extension_hooks == {}
     assert graph.node("complete").exit == ()
@@ -203,7 +203,7 @@ def test_a_machine_that_declares_nothing_runs_the_shipped_graph(tmp_path, monkey
     Requirement: docs/specs/issue-248/requirements.md R1.6
     """
     repo = _repository(tmp_path)
-    _cli_config(tmp_path, monkeypatch, 'version: "0.9.0"\n')
+    _cli_config(tmp_path, monkeypatch, 'version: "0.10.0"\n')
     graph = build_runtime(repo).graph
     shipped = load_graph()
     assert graph.extension_hooks == {}

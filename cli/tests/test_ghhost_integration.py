@@ -41,7 +41,7 @@ def _runtime(repo, **kwargs):
 
 def _cli_config(tmp_path, monkeypatch, body: str):
     path = tmp_path / "cli-config.yaml"
-    path.write_text('version: "0.9.0"\n' + body, encoding="utf-8")
+    path.write_text('version: "0.10.0"\n' + body, encoding="utf-8")
     monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(path))
     monkeypatch.delenv("GH_HOST", raising=False)
     return path

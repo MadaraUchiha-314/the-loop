@@ -82,7 +82,7 @@ def stack(tmp_path):
         router = Router(
             events=["issue_comment"],
             deduper=dispatcher.deduper,
-            auto_execute_label=config.auto_execute_label,
+            auto_execute_labels=config.auto_execute_labels,
             authorized_users=["octocat"],
         )
 

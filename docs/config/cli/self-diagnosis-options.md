@@ -75,8 +75,8 @@ there first.
 Label requested on each created issue. GitHub silently drops the request for callers
 without triage rights on the target repository; the body names the intended label either
 way, so the marker survives the permission gap. Must never equal
-[`routing.autoExecuteLabel`](/config/cli/routing-options) or any
-`polling.sources[].label` — the label must mark, never arm.
+one of [`routing.autoExecuteLabels`](/config/cli/routing-options#autoexecutelabels) or
+of any `polling.sources[].labels` — the label must mark, never arm.
 
 ### `harness`
 

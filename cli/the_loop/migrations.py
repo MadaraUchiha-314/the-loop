@@ -53,9 +53,9 @@ __all__ = [
 ]
 
 #: Bumped by issue-109, then issue-128, then issue-142, then issue-245, then
-#: issue-304, then issue-309, then issue-348. A config below this needs
-#: `/the-loop:upgrade-the-loop`.
-CURRENT_CONFIG_VERSION = "0.9.0"
+#: issue-304, then issue-309, then issue-348, then issue-381. A config below this
+#: needs `/the-loop:upgrade-the-loop`.
+CURRENT_CONFIG_VERSION = "0.10.0"
 
 _UPGRADE = "/the-loop:upgrade-the-loop"
 
@@ -139,6 +139,18 @@ _REPO_HOOKS_SITE: Tuple[str, ...] = ("routing", "graph")
 _REPO_HOOKS_KEY = "repoHooks"
 _REPO_HOOKS_REPLACEMENT = "routing.graph.hooks"
 
+# issue-381 makes the arming label a LIST, every entry required: an operator on a
+# shared repository declares the common label plus one of their own, and only an
+# item carrying both is theirs. The single-label keys are moved, not read: a custom
+# label silently replaced by the shared default would arm MORE than the operator
+# set, which is the drift this module exists to prevent.
+_LABEL_SITE: Tuple[str, ...] = ("routing",)
+_LABEL_KEY = "autoExecuteLabel"
+_LABEL_REPLACEMENT = "autoExecuteLabels"
+_SOURCE_LABEL_SITE = "polling.sources[].label"
+_SOURCE_LABEL_KEY = "label"
+_SOURCE_LABEL_REPLACEMENT = "labels"
+
 
 def _github_sources(config: Mapping[str, Any]) -> List[Dict[str, Any]]:
     """Every ``provider: github`` entry of ``polling.sources``.
@@ -214,6 +226,10 @@ def needs_migration(config: Mapping[str, Any]) -> bool:
     if any(_REPOS_KEY in source for source in _github_sources(config)):
         return True
     if (_dig(config, _REPO_HOOKS_SITE) or {}).get(_REPO_HOOKS_KEY) is not None:
+        return True
+    if _LABEL_KEY in (_dig(config, _LABEL_SITE) or {}):
+        return True
+    if any(_SOURCE_LABEL_KEY in source for source in _github_sources(config)):
         return True
     return any(
         (section or {}).get("ghBinary") is not None
@@ -328,6 +344,24 @@ def assert_current(config: Mapping[str, Any]) -> None:
             "the poller had one. It is NOT being ignored: the two doors into your "
             "machine being bounded by two different answers is exactly the drift this "
             f"key was removed to end. Run `{_UPGRADE}` to migrate."
+        )
+    if _LABEL_KEY in (_dig(config, _LABEL_SITE) or {}):
+        raise ConfigTooOld(
+            f"this CLI config still declares `routing.{_LABEL_KEY}`. The arming label "
+            f"is a LIST now (`routing.{_LABEL_REPLACEMENT}`), every entry of which an "
+            "issue/PR must carry — so an instance sharing a repository can add a label "
+            "of its own and stop arming everybody's items (issue-381). It is NOT being "
+            "ignored: reading the shared default in place of the label you set would "
+            f"arm MORE than you asked for. Run `{_UPGRADE}` to migrate."
+        )
+    if any(_SOURCE_LABEL_KEY in source for source in _github_sources(config)):
+        raise ConfigTooOld(
+            f"this CLI config still declares `{_SOURCE_LABEL_SITE}`. A poll source's "
+            f"label is a LIST now (`{_SOURCE_LABEL_REPLACEMENT}`, every entry required), "
+            f"reusing `routing.{_LABEL_REPLACEMENT}` when empty (issue-381). It is NOT "
+            "being ignored: a source silently polling the shared default instead of "
+            f"the label you set would track items that are not yours. Run `{_UPGRADE}` "
+            "to migrate."
         )
     declared = config.get("version")
     if declared is not None and _parts(str(declared)) < _parts(CURRENT_CONFIG_VERSION):
@@ -496,6 +530,7 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
     _migrate_slack_channel(data, report)
     _promote_repositories(data, report)
     _retire_repo_hooks(data, report)
+    _migrate_auto_execute_labels(data, report)
 
     if _parts(str(data.get("version", "0"))) < _parts(CURRENT_CONFIG_VERSION):
         report.moves.append(
@@ -505,6 +540,65 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
         report.changed = True
 
     return report
+
+
+def _migrate_auto_execute_labels(data: Dict[str, Any], report: MigrationReport) -> None:
+    """Wrap the single arming label into the list that replaced it (issue-381).
+
+    ``routing.autoExecuteLabel: x`` becomes ``routing.autoExecuteLabels: [x]`` and a
+    github source's ``label: x`` becomes ``labels: [x]``. Lossless, so nothing is
+    dropped: an item that was armed by one label is armed by a list of that one
+    label. Two edges are said rather than guessed at — a list already declared
+    beside the old key wins (the operator wrote it later), and an empty routing
+    label becomes ``[]``, which the schema refuses, so the report says to declare
+    at least one. An empty source label simply goes: absent already means *reuse
+    the routing list*.
+    """
+    routing = _dig(data, _LABEL_SITE)
+    if routing is not None and _LABEL_KEY in routing:
+        old = routing.pop(_LABEL_KEY)
+        report.changed = True
+        wrapped = [str(old)] if old not in (None, "") else []
+        if _LABEL_REPLACEMENT in routing:
+            report.notes.append(
+                f"`routing.{_LABEL_REPLACEMENT}` was already declared; kept it and "
+                f"dropped `routing.{_LABEL_KEY}` ({old!r})"
+            )
+        else:
+            routing[_LABEL_REPLACEMENT] = wrapped
+            if not wrapped:
+                report.notes.append(
+                    f"`routing.{_LABEL_KEY}` was empty, so `routing.{_LABEL_REPLACEMENT}` "
+                    "is `[]` — declare at least one label (the schema requires it), or "
+                    "set `spawnOnUnmatched: never` if arming nothing was the intent"
+                )
+        report.moves.append(
+            f"routing.{_LABEL_KEY} → routing.{_LABEL_REPLACEMENT} ({wrapped!r}; a "
+            "LIST now, every entry required — issue-381)"
+        )
+    for source in _github_sources(data):
+        if _SOURCE_LABEL_KEY not in source:
+            continue
+        old = source.pop(_SOURCE_LABEL_KEY)
+        report.changed = True
+        wrapped = [str(old)] if old not in (None, "") else []
+        if _SOURCE_LABEL_REPLACEMENT in source:
+            report.notes.append(
+                f"a github source already declared `{_SOURCE_LABEL_REPLACEMENT}`; kept "
+                f"it and dropped its `{_SOURCE_LABEL_KEY}` ({old!r})"
+            )
+        elif wrapped:
+            source[_SOURCE_LABEL_REPLACEMENT] = wrapped
+        report.moves.append(
+            f"{_SOURCE_LABEL_SITE} → {_SOURCE_LABEL_REPLACEMENT} ({wrapped!r}"
+            + (
+                ""
+                if wrapped
+                else "; it was empty, and absent already means reuse "
+                f"`routing.{_LABEL_REPLACEMENT}`"
+            )
+            + ")"
+        )
 
 
 def _retire_repo_hooks(data: Dict[str, Any], report: MigrationReport) -> None:

@@ -301,7 +301,7 @@ def test_an_unverifiable_splice_writes_nothing(config_file, monkeypatch):
     """
     monkeypatch.setattr(yamlpatch, "_dump_inline", lambda value: "0")
     _refusal_leaves_the_file_alone(
-        config_file, {"routing": {"autoExecuteLabel": "x"}}, yamlpatch.SpliceError
+        config_file, {"routing": {"spawnWorkdir": "x"}}, yamlpatch.SpliceError
     )
 
 
