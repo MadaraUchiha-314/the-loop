@@ -74,7 +74,7 @@ which it says at start.
 
 - **Type:** `string`
 - **Default:** none — unset is accepted
-- **Current:** `0.9.0`
+- **Current:** `0.10.0`
 
 Schema version of this file. The CLI **refuses to start** against a config that declares
 a version older than the one it needs, naming the key, its replacement and the exact
@@ -92,7 +92,10 @@ The gate is narrow on purpose — it refuses exactly two things:
    block and a key named `webhooks` said otherwise; and `polling.sources[].repos`,
    promoted in issue-348 to the top-level
    [`repositories`](/config/cli/repositories-options) because the repository list bounds
-   every ingress — the webhook receiver, which never read it, included;
+   every ingress — the webhook receiver, which never read it, included; and
+   `routing.autoExecuteLabel` with `polling.sources[].label`, wrapped in issue-381 into
+   the lists [`autoExecuteLabels`](/config/cli/routing-options#autoexecutelabels) and
+   `labels`, every entry of which an item must carry;
 2. the config **declares** a version older than the current one — it says it is stale, so
    it is believed.
 

@@ -50,7 +50,7 @@ webhooks:
       enabled: true
       authorizedUsers: ["your-github-login"]     # REQUIRED — see below
       spawnOnUnmatched: labeled
-      autoExecuteLabel: "the-loop: auto-execute"
+      autoExecuteLabels: ["the-loop: auto-execute"]  # every one must be on the item
       defaultHarness: claude
       control:
         enabled: true

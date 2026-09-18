@@ -35,7 +35,9 @@ from the_loop.webhook.router import (
     event_actor,
     event_body,
     event_carries_label,
+    event_carries_labels,
     extract_work_items,
+    normalize_labels,
     pr_work_item,
 )
 
@@ -706,7 +708,7 @@ def test_event_carries_label_false_when_absent_or_unlabelled():
 
 
 def test_router_sets_labeled_flag():
-    router = Router(events=[], auto_execute_label=LABEL)
+    router = Router(events=[], auto_execute_labels=[LABEL])
     labeled = router.route(
         "issues",
         {
@@ -2886,3 +2888,76 @@ def test_a_record_written_before_the_launch_fields_still_parses(tmp_path):
     record = registry.find_by_work_item(REF)
     assert record is not None
     assert record.model == "" and record.effort == "" and record.harness_args == []
+
+
+# -- a set of labels, every one required (issue-381) ---------------------------
+
+MINE = "mine: run"
+
+
+def _issue_with(labels, action="created", added=None):
+    payload = {
+        "action": action,
+        "issue": {"number": 15, "labels": [{"name": n} for n in labels]},
+    }
+    if added is not None:
+        payload["label"] = {"name": added}
+    return payload
+
+
+def test_event_carries_labels_requires_every_label():
+    """R1.2, R1.3, A1 — a subset is not armed, whichever label is the missing one."""
+    assert event_carries_labels(_issue_with([LABEL, MINE]), [LABEL, MINE]) is True
+    assert event_carries_labels(_issue_with([LABEL]), [LABEL, MINE]) is False
+    assert event_carries_labels(_issue_with([LABEL]), [MINE, LABEL]) is False
+    assert event_carries_labels(_issue_with([MINE]), [LABEL, MINE]) is False
+    assert event_carries_labels(_issue_with([LABEL]), [LABEL]) is True  # one: as before
+
+
+def test_event_carries_labels_counts_the_label_being_added():
+    """R1.4, A2 — the last missing label arms on the event that adds it; another
+    label being added does not."""
+    last = _issue_with([LABEL], action="labeled", added=MINE)
+    assert event_carries_labels(last, [LABEL, MINE]) is True
+    other = _issue_with([LABEL], action="labeled", added="bug")
+    assert event_carries_labels(other, [LABEL, MINE]) is False
+
+
+def test_an_empty_label_list_arms_nothing():
+    """R1.5, A3 — `all([])` would be True; the predicate fails closed instead."""
+    assert event_carries_labels(_issue_with([LABEL, MINE]), []) is False
+
+
+def test_normalize_labels_reads_what_the_config_held():
+    """R1.1 — one helper for every reader: order kept, empties and repeats dropped."""
+    assert normalize_labels(None) == []
+    assert normalize_labels("") == []
+    assert normalize_labels(LABEL) == [LABEL]
+    assert normalize_labels([LABEL, "", MINE, LABEL, None, " "]) == [LABEL, MINE]
+
+
+def test_routing_config_reads_the_label_list():
+    """R1.1 — the default is the single label every install shipped with."""
+    assert RoutingConfig().auto_execute_labels == [LABEL]
+    assert RoutingConfig.from_mapping({}).auto_execute_labels == [LABEL]
+    assert RoutingConfig.from_mapping(
+        {"autoExecuteLabels": [LABEL, MINE]}
+    ).auto_execute_labels == [LABEL, MINE]
+
+
+def test_router_flags_labeled_only_when_every_label_is_present():
+    """R1.2, R1.3"""
+    router = Router(events=[], auto_execute_labels=[LABEL, MINE])
+
+    def route(labels, delivery):
+        payload = {
+            "repository": {"full_name": "octo/repo"},
+            **_issue_with(labels, "opened"),
+        }
+        routed = router.route("issues", payload, delivery)
+        assert routed is not None
+        return routed.labeled
+
+    assert route([LABEL, MINE], "d-both") is True
+    assert route([LABEL], "d-one") is False
+    assert route([MINE], "d-other") is False

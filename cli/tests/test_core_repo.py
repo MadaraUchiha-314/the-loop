@@ -9,7 +9,7 @@ from the_loop.scenarios import DEFAULT_GLOBS
 
 def _cli_config(tmp_path, monkeypatch, body: str = "") -> None:
     path = tmp_path / "cli-config.yaml"
-    path.write_text('version: "0.9.0"\n' + body)
+    path.write_text('version: "0.10.0"\n' + body)
     monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(path))
 
 

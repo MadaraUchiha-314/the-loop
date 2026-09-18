@@ -134,15 +134,37 @@ their comment gets through whoever opened the item.
 [decision-074](/decisions/decision-074).
 :::
 
-### `autoExecuteLabel`
+### `autoExecuteLabels`
 
-- **Type:** `string`
-- **Default:** `the-loop: auto-execute`
+- **Type:** `string[]` — at least one entry
+- **Default:** `["the-loop: auto-execute"]`
 
-Issue/PR label that **arms** a work item for autonomous execution. Read straight from the
-webhook payload — no extra API call. Necessary but not sufficient: with
-`control.requireStartCommand` left at its default (see
+Issue/PR labels that **arm** a work item for autonomous execution — **every one of them
+must be on the item** (issue-381). Keep the shared `the-loop: auto-execute` (it is what
+`/the-loop:work-on` applies and what a Slack kickoff's `labels` names) and add a label of
+your own when other instances watch the same repository:
+
+```yaml
+routing:
+  autoExecuteLabels:
+    - "the-loop: auto-execute"   # the shared convention
+    - "the-loop: alice"          # only the items alice also labels are hers
+```
+
+Two operators on one repository each add their own second label, and neither instance
+arms the other's items. Adding a label can only narrow what an instance arms; an item
+carrying some of the list is not armed, whichever entry is missing. Read straight from
+the webhook payload and the poll listing — no extra API call. Necessary but not
+sufficient: with `control.requireStartCommand` left at its default (see
 [execution control](#execution-control)), an armed item still waits for an explicit start.
+
+::: warning Upgrading from ≤ 19.3 (issue-381)
+`autoExecuteLabel` (one string) was replaced by this list. A config still declaring it is
+**refused** rather than read, because reading the shared default in place of a label you
+set would arm more than you asked for. Run
+[`the-loop migrate-config`](/cli/commands/migrate-config) — it wraps your label into a
+one-entry list, which behaves exactly as before.
+:::
 
 ### `spawnOnUnmatched`
 
@@ -154,7 +176,7 @@ Policy for an event that matches no registered session:
 | Value | Behaviour |
 |-------|-----------|
 | `never` | Log and drop. Sessions must be registered by hand with [`sessions register`](/cli/commands/sessions). |
-| `labeled` | Spawn only when the issue/PR carries `autoExecuteLabel`. |
+| `labeled` | Spawn only when the issue/PR carries every label in `autoExecuteLabels`. |
 | `always` | Spawn and register for any unmatched event. |
 
 `always` widens **which** items may spawn — never **who** may start them.
@@ -169,7 +191,7 @@ Harness used when spawning a session for an unmatched event.
 
 ## Execution control
 
-`authorizedUsers` says **who** may be an input and `autoExecuteLabel` says **which** items
+`authorizedUsers` says **who** may be an input and `autoExecuteLabels` says **which** items
 may run. These say **when**. A comment carrying a declared keyword is interpreted by
 the-loop and is **not** forwarded to the agent.
 

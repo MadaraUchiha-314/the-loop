@@ -58,7 +58,7 @@ class _Instance:
             registry_dir=str(root / "local"),
             portable_dir=str(root / "portable"),
             spawn_on_unmatched="labeled",
-            auto_execute_label=LABEL,
+            auto_execute_labels=[LABEL],
             spawn_workdir=str(root),
             control=ControlConfig(),
             authorized_users=["octocat"],

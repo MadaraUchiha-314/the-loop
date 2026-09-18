@@ -308,10 +308,14 @@
                 ],
                 "description": "Which poll provider handles this source. Only `github` ships today (jira is reserved for a follow-up)."
               },
-              "label": {
-                "type": "string",
-                "default": "",
-                "description": "Label gating what this source polls. Empty = reuse routing.autoExecuteLabel."
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "uniqueItems": true,
+                "default": [],
+                "description": "Labels gating what this source polls — every one required on an item (issue-381). Empty = reuse routing.autoExecuteLabels. Replaces the single-string `label`, which `the-loop migrate-config` wraps."
               },
               "monitor": {
                 "type": "object",
@@ -365,16 +369,23 @@
             "labeled"
           ],
           "default": "never",
-          "description": "Policy for events matching no registered session: 'never' log-and-drop; 'always' spawn+register a new session; 'labeled' spawn only when the issue/PR carries autoExecuteLabel."
+          "description": "Policy for events matching no registered session: 'never' log-and-drop; 'always' spawn+register a new session; 'labeled' spawn only when the issue/PR carries every label in autoExecuteLabels."
         },
-        "autoExecuteLabel": {
-          "type": "string",
-          "default": "the-loop: auto-execute",
-          "description": "Issue/PR label that opts a work item into autonomous execution (spawnOnUnmatched: labeled). Read from the webhook payload, no API call."
+        "autoExecuteLabels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "default": [
+            "the-loop: auto-execute"
+          ],
+          "description": "Issue/PR labels that opt a work item into autonomous execution (spawnOnUnmatched: labeled) — EVERY one of them must be on the item (issue-381). Keep the shared `the-loop: auto-execute` (the commands and the Slack kickoff apply it) and add a label of your own when other instances watch the same repository, so only the items carrying both are yours. Read from the webhook payload and the poll listing, no extra API call. Replaces the single-string `autoExecuteLabel`, which `the-loop migrate-config` wraps."
         },
         "control": {
           "type": "object",
-          "description": "Execution control: the keywords an AUTHORIZED user steers the-loop with, in a comment on the work item or its PR (issue-106). Before this, `authorizedUsers` said WHO may be an input and `autoExecuteLabel` said WHICH items may run — nothing said WHEN, so labelling an issue was itself an irreversible trigger. A comment carrying a declared keyword is interpreted by the-loop and NOT forwarded to the harness; the five session commands are also available as `the-loop sessions start|pause|resume|stop|cleanup`, which post the same keyword back to the ticket (marked as the-loop's own so it is never read back). Control parsing runs strictly AFTER the existing guards — the self-comment marker and authorizedUsers — so it never becomes a second, weaker way in; the parser recognises the fixed vocabulary only and yields one of the declared commands, never text from the comment.",
+          "description": "Execution control: the keywords an AUTHORIZED user steers the-loop with, in a comment on the work item or its PR (issue-106). Before this, `authorizedUsers` said WHO may be an input and `autoExecuteLabel` (now `autoExecuteLabels`) said WHICH items may run — nothing said WHEN, so labelling an issue was itself an irreversible trigger. A comment carrying a declared keyword is interpreted by the-loop and NOT forwarded to the harness; the five session commands are also available as `the-loop sessions start|pause|resume|stop|cleanup`, which post the same keyword back to the ticket (marked as the-loop's own so it is never read back). Control parsing runs strictly AFTER the existing guards — the self-comment marker and authorizedUsers — so it never becomes a second, weaker way in; the parser recognises the fixed vocabulary only and yields one of the declared commands, never text from the comment.",
           "additionalProperties": false,
           "properties": {
             "enabled": {
@@ -1191,7 +1202,7 @@
                     "type": "string"
                   },
                   "default": [],
-                  "description": "Labels applied to the created issue — from here and ONLY here, never from the message. Add `routing.autoExecuteLabel` to arm the item for `the-loop start`; leave empty to file it and stop."
+                  "description": "Labels applied to the created issue — from here and ONLY here, never from the message. Add every label in `routing.autoExecuteLabels` to arm the item for `the-loop start`; leave empty to file it and stop."
                 }
               }
             },
@@ -1527,7 +1538,7 @@
         "label": {
           "type": "string",
           "default": "the-loop: self-diagnosed",
-          "description": "Label requested on each created issue. GitHub silently drops the request for callers without triage rights on the target repository; the body names the intended label either way, so the marker survives the permission gap. Must never equal `routing.autoExecuteLabel` or any `polling.sources[].label`."
+          "description": "Label requested on each created issue. GitHub silently drops the request for callers without triage rights on the target repository; the body names the intended label either way, so the marker survives the permission gap. Must never be one of `routing.autoExecuteLabels` or of any `polling.sources[].labels`."
         },
         "harness": {
           "type": "string",

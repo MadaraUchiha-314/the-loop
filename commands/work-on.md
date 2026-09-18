@@ -57,18 +57,19 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
 2. **Identify collaborators up-front** from the work item + `collaborators.yaml`. Not
    every task needs every persona (a bug fix needs the engineer; a content fix may not).
 
-   **Stay monitorable (auto-execute label + session registration).** So the-loop's CLI
+   **Stay monitorable (auto-execute labels + session registration).** So the-loop's CLI
    (webhook receiver / poller) can route the item's later activity back to this session:
-   - **GitHub ticketing:** add the auto-execute label to the issue (create it if missing)
-     and register the session (`the-loop sessions register --work-item
-     github:OWNER/REPO#N …`, see the skill's `reference/automation.md`). The label's
-     value is `routing.autoExecuteLabel` in the operator's **CLI
+   - **GitHub ticketing:** add **every** auto-execute label to the issue (create each if
+     missing) and register the session (`the-loop sessions register --work-item
+     github:OWNER/REPO#N …`, see the skill's `reference/automation.md`). The labels are
+     the list `routing.autoExecuteLabels` in the operator's **CLI
      config** (`cli-config.yaml` — resolved via `--config`/env/cwd/home, independent of
-     this repo's plugin config, decision-032); read it there when reachable, otherwise
-     use the documented default `the-loop: auto-execute`.
+     this repo's plugin config, decision-032); an item is armed only when it carries all
+     of them (issue-381). Read the list there when reachable, otherwise use the
+     documented default `["the-loop: auto-execute"]`.
    - **Jira / other ticketing providers:** the ticket itself is not a GitHub object, but
      the **PR still is** — as soon as the PR exists, **automatically add the same
-     auto-execute label to the PR directly** and register the session against the PR's
+     auto-execute labels to the PR directly** and register the session against the PR's
      own ref (`github:OWNER/REPO#<pr-number>`). PR comments, reviews and CI results then
      resume this session exactly as for a GitHub-ticketed item, and that PR's
      merge/close auto-closes it.

@@ -103,11 +103,17 @@ from .router import (
     branch_derived_refs,
     event_actor,
     event_body,
-    event_carries_label,
+    event_carries_labels,
+    normalize_labels,
     pr_work_item,
 )
 
 logger = logging.getLogger("the-loop.gh-webhook")
+
+#: The one label every install shipped with. `routing.autoExecuteLabels` is a
+#: list since issue-381, and this is its default and its first entry by
+#: convention — the commands and the Slack kickoff apply it.
+DEFAULT_AUTO_EXECUTE_LABEL = "the-loop: auto-execute"
 
 
 # Conservative shape a recorded harness session id must have before it is passed
@@ -386,7 +392,11 @@ class RoutingConfig:
     tmux: TmuxConfig = field(default_factory=TmuxConfig)
     web_terminal: WebTerminalConfig = field(default_factory=WebTerminalConfig)
     spawn_on_unmatched: str = "never"  # never | always | labeled
-    auto_execute_label: str = "the-loop: auto-execute"
+    # Every one of these must be on an issue/PR for it to be armed (issue-381):
+    # the shared convention plus, if the operator wants one, a label of their own.
+    auto_execute_labels: List[str] = field(
+        default_factory=lambda: [DEFAULT_AUTO_EXECUTE_LABEL]
+    )
     spawn_workdir: str = "."
     workspace: WorkspaceConfig = field(default_factory=WorkspaceConfig)
     max_concurrent_dispatches: int = 4
@@ -462,8 +472,8 @@ class RoutingConfig:
             tmux=TmuxConfig.from_mapping(data.get("tmux") or {}),
             web_terminal=WebTerminalConfig.from_mapping(data.get("webTerminal") or {}),
             spawn_on_unmatched=str(data.get("spawnOnUnmatched", "never")),
-            auto_execute_label=str(
-                data.get("autoExecuteLabel", "the-loop: auto-execute")
+            auto_execute_labels=normalize_labels(
+                data.get("autoExecuteLabels", [DEFAULT_AUTO_EXECUTE_LABEL])
             ),
             spawn_workdir=str(data.get("spawnWorkdir", ".")),
             workspace=WorkspaceConfig.from_mapping(data.get("workspace") or {}),
@@ -824,8 +834,8 @@ class Dispatcher:
         if mode == "always":
             return True
         if mode == "labeled":
-            return routed.labeled or event_carries_label(
-                routed.payload, self.config.auto_execute_label
+            return routed.labeled or event_carries_labels(
+                routed.payload, self.config.auto_execute_labels
             )
         return False
 
@@ -2248,7 +2258,7 @@ class Dispatcher:
             (
                 "the work item is not armed for autonomous execution "
                 f"(spawnOnUnmatched={self.config.spawn_on_unmatched!r}, "
-                f"label {self.config.auto_execute_label!r})"
+                f"labels {self.config.auto_execute_labels!r})"
                 if reason == "spawn-policy"
                 else reason
             ),

@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [131](decision-131.md) | A work item is armed by a set of labels, every one of which must be present (`routing.autoExecuteLabels`, and a poll source's `labels`); the single-label keys are refused and migrated, never read as an alias (config `0.10.0`) | proposed | 2026-09-18 |
 | [130](decision-130.md) | A work item's lifecycle (`phase.started`, `phase.completed`, `work-item.closed`) is published by the runtime and the dispatcher, never recorded; a declared room is the conversation (channel-based) while the central channel stays threaded; the next channel type is a provider row | proposed | 2026-09-18 |
 | [129](decision-129.md) | Routing may guess which work item an event is about; tracking may not — a pull request is tracked because the-loop recorded opening it | proposed | 2026-09-16 |
 | [128](decision-128.md) | An attribute belongs to a party — the repository, the operator, or the machine | proposed | 2026-09-15 |

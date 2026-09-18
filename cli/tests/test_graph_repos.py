@@ -31,7 +31,7 @@ def _unbounded_instance(tmp_path, monkeypatch):
     whatever this checkout happens to be configured for.
     """
     config = tmp_path / "cli-config-empty.yaml"
-    config.write_text("version: '0.9.0'\n", encoding="utf-8")
+    config.write_text("version: '0.10.0'\n", encoding="utf-8")
     monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(config))
 
 
@@ -134,7 +134,7 @@ def test_a_repository_this_instance_never_declared_is_refused(
     time, naming the set, is the difference between a message and a hang."""
     config = tmp_path / "cli-config.yaml"
     config.write_text(
-        "version: '0.9.0'\nrepositories:\n  - octo/app\n", encoding="utf-8"
+        "version: '0.10.0'\nrepositories:\n  - octo/app\n", encoding="utf-8"
     )
     monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(config))
     result = graphs.repos(str(repo), "issue-15", ["octo/elsewhere"])

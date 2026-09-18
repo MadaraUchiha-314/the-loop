@@ -44,7 +44,7 @@ def _cli_config(tmp_path: Path, monkeypatch, critics: str) -> Path:
     """The operator's CLI config, declaring ``critics`` (dedented), as the CLI resolves it."""
     path = tmp_path / "cli-config.yaml"
     path.write_text(
-        'version: "0.9.0"\ncritics:\n' + textwrap.dedent(critics).rstrip() + "\n"
+        'version: "0.10.0"\ncritics:\n' + textwrap.dedent(critics).rstrip() + "\n"
     )
     monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(path))
     return path

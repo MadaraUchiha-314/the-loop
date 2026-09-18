@@ -1123,7 +1123,7 @@ among others.
 a forged `start` merged into a repository the daemon later pulls is an attempt to arm a
 work item without commenting on it. Three things bound that:
 
-1. **The record only arms.** The [auto-execute label](/config/cli/routing-options#autoexecutelabel)
+1. **The record only arms.** The [auto-execute labels](/config/cli/routing-options#autoexecutelabels)
    is still required and [`spawnOnUnmatched`](/config/cli/routing-options#spawnonunmatched)
    still governs — and applying a label needs write access to the repository.
 2. **The diff is loud.** A pull request touching `.the-loop/portable/` is a configuration

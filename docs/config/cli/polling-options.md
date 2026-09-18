@@ -24,7 +24,7 @@ polling:
   sources:
     - provider: github     # HOW it is polled
       monitor: { issues: true, pullRequests: true }
-      label: ""            # empty = reuse routing.autoExecuteLabel
+      labels: []           # empty = reuse routing.autoExecuteLabels
 ```
 
 ## The run loop
@@ -126,14 +126,17 @@ enabled-but-sourceless poller as *misconfigured* without spawning one.
 
 Which poll provider handles this source.
 
-### `sources[].label`
+### `sources[].labels`
 
-- **Type:** `string`
-- **Default:** `""`
+- **Type:** `string[]`
+- **Default:** `[]`
 
-Label gating what this source polls. Empty reuses
-[`routing.autoExecuteLabel`](/config/cli/routing-options#autoexecutelabel), so one label
-drives both ingresses.
+Labels gating what this source polls — **every one required** on an item (issue-381).
+Empty reuses [`routing.autoExecuteLabels`](/config/cli/routing-options#autoexecutelabels),
+so one list drives both ingresses. Each label is passed to `gh` as its own `--label`, and
+the provider drops any listed item that does not carry the whole set, so what is tracked
+never depends on `gh`'s filter semantics. The single-string `label` this replaces is
+refused and migrated by [`the-loop migrate-config`](/cli/commands/migrate-config).
 
 ### Which repositories are polled
 

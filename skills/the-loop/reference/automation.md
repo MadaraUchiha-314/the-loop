@@ -54,10 +54,13 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   sessions; duplicates (`X-GitHub-Delivery`) processed at most once; unmatched events
   follow `routing.spawnOnUnmatched`. Design: `docs/specs/issue-15/design.md`,
   decision: `docs/decisions/decision-016.md`.
-- **Label-gated auto-execution** (`spawnOnUnmatched: labeled`): a configurable label
-  (`routing.autoExecuteLabel`, default `the-loop: auto-execute`) **arms** a work item
-  for autonomous execution. The item's later activity (and that of **every** PR linked
-  to it) resumes its session; the item being **closed** auto-closes it. An unlabelled
+- **Label-gated auto-execution** (`spawnOnUnmatched: labeled`): a configurable **list**
+  of labels (`routing.autoExecuteLabels`, default `["the-loop: auto-execute"]`), **every
+  one of which** must be on a work item to **arm** it for autonomous execution
+  (issue-381) — an operator sharing a repository adds a label of their own to the shared
+  one, so instances do not arm each other's items. Apply the whole list when you arm an
+  item. The item's later activity (and that of **every** PR linked to it) resumes its
+  session; the item being **closed** auto-closes it. An unlabelled or partly labelled
   new issue is received and ignored. Label presence is read from the webhook payload (no
   extra API call).
 - **Execution control — the label is necessary, not sufficient** (`routing.control`,
@@ -194,8 +197,8 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   `harnessTrust.enabled: false` if that is not what you want. Design:
   `docs/specs/issue-90/design.md` and `docs/specs/issue-136/design.md`,
   decisions: `docs/decisions/decision-037.md`, `docs/decisions/decision-052.md`.
-- **The label works on PRs directly — the ticketing system need not be GitHub.** A PR
-  carrying the auto-execute label is routed as its own work item
+- **The labels work on PRs directly — the ticketing system need not be GitHub.** A PR
+  carrying every auto-execute label is routed as its own work item
   (`github:OWNER/REPO#<pr-number>`) when it is linked to no GitHub issue. This is
   the supported path when work items live in **Jira or another provider**: the ticket
   itself can't be routed, but the PR delivering it is still monitorable by the-loop's

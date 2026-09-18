@@ -79,6 +79,18 @@ command reconciles them.
    the operator what their old targets were and point them there, rather than writing a
    shape the schema now refuses.
 
+   **List-of-labels migration (issue-381, decision-131) — CLI config `0.9.0` → `0.10.0`:**
+   if `.the-loop/cli-config.yaml` still declares `routing.autoExecuteLabel` (one string)
+   or a github poll source's `label`, the runtime refuses to start. Run
+   `the-loop migrate-config`: it wraps each into the list that replaced it
+   (`routing.autoExecuteLabels: [<label>]`, `polling.sources[].labels: [<label>]`), drops
+   an empty source label, keeps a list already declared beside the old key, and bumps the
+   version. Every label in the list must be on an item for it to be armed, so a
+   one-entry list arms exactly what the string did; tell the operator they may now add a
+   label of their own when other instances watch the same repositories. Report the move
+   explicitly. An empty `autoExecuteLabel` becomes `[]`, which the schema refuses — surface
+   that under **needs-user** (declare at least one label, or `spawnOnUnmatched: never`).
+
    **Retired-block migration (issue-304):** if `.the-loop/cli-config.yaml` still carries
    a top-level `collaborators` or `notifications` block, or a collaborator in
    `.the-loop/collaborators.yaml` still carries a `notifications` sub-object, those are
@@ -163,7 +175,8 @@ command reconciles them.
      `capabilitiesDir`/`learningsDir` is the same choice: move the tree, or report it.
    - Bump `version` to `0.3.0`, re-validate against the plugin's
      `harness-config.schema.json`, and run `the-loop migrate-config` for the CLI config
-     (it strips `routing.graph.repoHooks` and bumps to `0.9.0`; a pre-rename
+     (it strips `routing.graph.repoHooks` and bumps to `0.9.0`, then — issue-381 — wraps
+     the arming label into `routing.autoExecuteLabels` and bumps to `0.10.0`; a pre-rename
      `.the-loop/config.yaml` is no longer read by anything, so the rename in step 4 is
      now required rather than merely advised).
 

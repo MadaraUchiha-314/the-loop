@@ -191,7 +191,7 @@ class PollProvider:
         cls,
         source: dict,
         *,
-        default_label: str,
+        default_labels: Sequence[str],
         default_host: str = "",
         repositories: Sequence[str] = (),
     ) -> "PollProvider":
@@ -310,7 +310,7 @@ def provider_names() -> List[str]:
 def build_provider(
     source: dict,
     *,
-    default_label: str,
+    default_labels: Sequence[str],
     default_host: str = "",
     repositories: Sequence[str] = (),
 ) -> PollProvider:
@@ -333,7 +333,7 @@ def build_provider(
         )
     return cls.from_source(
         source,
-        default_label=default_label,
+        default_labels=default_labels,
         default_host=default_host,
         repositories=repositories,
     )

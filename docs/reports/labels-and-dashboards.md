@@ -64,11 +64,13 @@ The label is the *ticket-visible* mirror of the phase that also lives in each wo
 `docs/specs/<id>/execution-log.md` front-matter — single source of truth is the spec, the
 label is the at-a-glance projection (SKILL.md "Reference, don't duplicate").
 
-### 2. The auto-execute label — `the-loop: auto-execute`
+### 2. The auto-execute labels — `the-loop: auto-execute`, plus your own
 
 A different axis entirely: the CLI's **routing gate**
-(`routing.autoExecuteLabel`, [`reference/automation.md`](../../skills/the-loop/reference/automation.md)).
-Applying it to an issue/PR opts that item into autonomous execution — the poller/webhook
+(`routing.autoExecuteLabels`, [`reference/automation.md`](../../skills/the-loop/reference/automation.md)).
+Applying every label in that list to an issue/PR opts that item into autonomous execution
+(since issue-381 an operator adds a label of their own to the shared one, so instances
+sharing a repository do not arm each other's items) — the poller/webhook
 receiver spawns a session that runs `/the-loop:work-on` and routes the item's later
 activity back to that session. It is a *control* label, not a *status* label, and is
 deliberately outside the `loop:` namespace.

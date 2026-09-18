@@ -108,7 +108,7 @@ Three separate questions, answered by three separate settings:
 | Question | Setting |
 |---|---|
 | **Who** may be an input? | [`authorizedUsers`](/config/cli/routing-options#authorizedusers) |
-| **Which** items may run? | [`autoExecuteLabel`](/config/cli/routing-options#autoexecutelabel) + [`spawnOnUnmatched`](/config/cli/routing-options#spawnonunmatched) |
+| **Which** items may run? | [`autoExecuteLabels`](/config/cli/routing-options#autoexecutelabels) + [`spawnOnUnmatched`](/config/cli/routing-options#spawnonunmatched) |
 | **When** does one start? | [`control` keywords](/config/cli/routing-options#execution-control) |
 
 Labelling an issue **arms** it. An authorized user's `the-loop start` comment
