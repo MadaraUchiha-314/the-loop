@@ -429,8 +429,11 @@ EVENT_TYPES: Dict[str, str] = {
         "`event` means the-loop opened a root for the first event it delivered; "
         "`kickoff` means a member's top-level message became the work item and "
         "that thread is its conversation; `start` means the-loop opened the root "
-        "when the work item started, before any event (issue-317). Every later "
-        "message is a reply into it. Ids only, never text."
+        "when the work item started, before any event (issue-317); `declared` "
+        "means it was re-opened in a room the work item declared (issue-375). "
+        "With `mode: channel` (issue-378) the conversation is the room itself, "
+        "`thread` is empty and every update is a top-level message there. "
+        "Otherwise every later message is a reply into it. Ids only, never text."
     ),
     "channel.open_failed": (
         "A work item started but a channel could not open its conversation "

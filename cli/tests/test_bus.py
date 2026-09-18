@@ -623,3 +623,115 @@ def test_the_daemon_opener_reads_the_config_per_call_and_needs_a_channels_sectio
     broken = conversation_opener(lambda: (_ for _ in ()).throw(OSError("mid-edit")))
     broken("github:o/r#7")  # never raises
     assert len(seen) == 1
+
+
+# -- the lifecycle rows and their publisher (issue-378) --------------------------------
+
+
+def test_the_lifecycle_rows_are_subscribable_never_publishable_never_recorded():
+    """R1.6, R3.4, A6."""
+    from the_loop.channels.events import LIFECYCLE_EVENTS
+
+    assert set(LIFECYCLE_EVENTS) == {
+        "phase.started",
+        "phase.completed",
+        "work-item.closed",
+    }
+    for name in LIFECYCLE_EVENTS:
+        assert name in SUBSCRIBABLE_EVENTS, name
+        assert name not in PUBLISHABLE_EVENTS, name
+        assert not is_recorded(name), name
+        assert EVENTS[name].origin == "loop"
+    assert not set(LIFECYCLE_EVENTS) & set(NOTIFICATION_EVENTS)
+
+
+def test_publish_lifecycle_builds_nothing_without_a_channels_section(monkeypatch):
+    """R1.7: no section → no event, and the bus is never called."""
+    from the_loop.channels import bus, publishers
+
+    called = []
+    monkeypatch.setattr(bus, "publish", lambda *a, **k: called.append((a, k)))
+    assert (
+        publishers.publish_lifecycle("phase.started", "github:o/r#1", "t", {}, {})
+        is False
+    )
+    assert (
+        publishers.publish_lifecycle("phase.started", "github:o/r#1", "t", {}, None)
+        is False
+    )
+    assert called == []
+
+
+def test_publish_lifecycle_never_records_and_never_raises(monkeypatch):
+    """R1.6, R1.7: `record=False` whatever the catalog says; a bus fault is False."""
+    from the_loop.channels import bus, publishers
+
+    seen = []
+
+    def fake_publish(event, cli_config, **kwargs):
+        seen.append((event, kwargs))
+        return PublishResult(posts=[PostResult(channel="x", ok=True)])
+
+    monkeypatch.setattr(bus, "publish", fake_publish)
+    config = {"channels": {"x": {"enabled": True}}}
+    assert publishers.publish_lifecycle(
+        "work-item.closed", "github:o/r#1", "gone", {"state": "closed"}, config
+    )
+    ((event, kwargs),) = seen
+    assert event.event_type == "work-item.closed"
+    assert event.source == "loop"
+    assert event.detail == {"state": "closed"}
+    assert kwargs["record"] is False
+
+    def boom(*a, **k):
+        raise RuntimeError("bus down")
+
+    monkeypatch.setattr(bus, "publish", boom)
+    assert (
+        publishers.publish_lifecycle("phase.started", "github:o/r#1", "t", {}, config)
+        is False
+    )
+
+
+def test_the_daemon_lifecycle_publisher_reads_the_config_per_call(monkeypatch):
+    """R6.1: the reloadable form, like the comment publisher and the opener."""
+    from the_loop.channels import bus, publishers
+
+    seen = []
+    monkeypatch.setattr(
+        bus,
+        "publish",
+        lambda event, cli_config, **k: seen.append(cli_config) or PublishResult(),
+    )
+    configs = iter([{}, {"channels": {"x": {}}}])
+    publish = publishers.lifecycle_publisher(lambda: next(configs))
+    publish("phase.started", "github:o/r#1", "t", {})
+    publish("phase.started", "github:o/r#1", "t", {})
+    assert seen == [{"channels": {"x": {}}}]
+
+    def raising():
+        raise OSError("half-saved")
+
+    publishers.lifecycle_publisher(raising)("phase.started", "github:o/r#1", "t", {})
+    assert len(seen) == 1
+
+
+def test_the_notify_hooks_skipped_message_names_no_channel(tmp_path):
+    """R6.4."""
+    from the_loop.graph.contract import HookContext, WorkItem
+    from the_loop.graph.hooks.sideeffects import notify
+
+    spec = tmp_path / "docs" / "specs" / "issue-1"
+    spec.mkdir(parents=True)
+    ctx = HookContext(
+        work_item=WorkItem(ref="github:o/r#1", id="issue-1", spec_dir=spec),
+        node={"id": "gate"},
+        boundary="entry",
+        repo=tmp_path,
+        config={"state": {"root": str(tmp_path)}},
+    )
+    ctx.params = {"event": "phase-approval-pending"}
+    result = notify(ctx)
+    assert result.status == "skip"
+    assert "slack" not in result.render().lower()
+    assert "subscribe" in result.render()

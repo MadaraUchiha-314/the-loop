@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [130](decision-130.md) | A work item's lifecycle (`phase.started`, `phase.completed`, `work-item.closed`) is published by the runtime and the dispatcher, never recorded; a declared room is the conversation (channel-based) while the central channel stays threaded; the next channel type is a provider row | proposed | 2026-09-18 |
 | [129](decision-129.md) | Routing may guess which work item an event is about; tracking may not — a pull request is tracked because the-loop recorded opening it | proposed | 2026-09-16 |
 | [128](decision-128.md) | An attribute belongs to a party — the repository, the operator, or the machine | proposed | 2026-09-15 |
 | [127](decision-127.md) | The state file is the work item's, and the repositories it spans are the agent's to declare — once the design says what they are | proposed | 2026-09-14 |

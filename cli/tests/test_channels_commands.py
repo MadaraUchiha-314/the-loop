@@ -770,3 +770,200 @@ def test_the_docs_list_every_publishable_event():
     )
     for name in PUBLISHABLE_EVENTS:
         assert f"| `{name}` |" in page, name
+
+
+# -- `/the-loop new` (issue-378, T7–T10) --------------------------------------------
+
+
+from pathlib import Path  # noqa: E402
+
+from conftest import _state_with_stores  # noqa: E402
+from test_channels import FakeSlackClient  # noqa: E402
+
+
+def run_new(tmp_path, text, *, config=None, client=None, create_ok=True, **kw):
+    """The handler with the kickoff's two extra seams: the issue writer and the
+    Slack client. Returns (outcome, created, answers, client)."""
+    created, answers, posts = [], [], []
+    config = config or cli_config(tmp_path, publish=[*ALL_GRANTS, "work-item.create"])
+    client = client or FakeSlackClient()
+
+    def create_issue(repo, title, body, labels=(), gh_binary="gh"):
+        created.append((repo, title, body, tuple(labels)))
+        if not create_ok:
+            return False, "gh exited 1", "", ""
+        return True, "", "github:o/r#99", "https://x/99"
+
+    def post_comment(item, body, gh_binary="gh"):
+        posts.append((item.ref, body))
+        return True, "", "https://x/c1"
+
+    def respond(url, message):
+        answers.append((url, message))
+        return True
+
+    factory = kw.pop("client_factory", None) or (lambda token: client)
+    outcome = commands.handle_slash_command(
+        payload(text, **kw),
+        config,
+        respond=respond,
+        post_comment=post_comment,
+        create_issue=create_issue,
+        client_factory=factory,
+        lifecycle=FakeLifecycle(),
+        standing=FakeStanding(),
+    )
+    return outcome, created, answers, client
+
+
+@pytest.fixture(autouse=True)
+def _bot_token(monkeypatch):
+    monkeypatch.setenv("THE_LOOP_SLACK_BOT_TOKEN", "xoxb-test")
+
+
+def test_new_opens_the_work_item_and_its_thread(tmp_path):
+    """
+    Feature: a work item is created from the slash command
+      Scenario: an authorized member files one with a repository prefix
+        Given the channel holds work-item.create and o/r is declared
+        When UHUMAN runs `/the-loop new o/r: Flaky teardown` with a body
+        Then the issue is created in o/r with the prefix stripped and kickoff.labels
+        And the work item's thread is opened in the home channel, origin kickoff
+        And the thread's first reply carries the link and the Start button
+        And the member is answered with the link and where the thread is
+
+    Requirement: docs/specs/issue-378/requirements.md R4.1, R4.2
+    """
+    config = cli_config(tmp_path, publish=["work-item.create", "control.command"])
+    config["channels"]["slack"]["kickoff"]["labels"] = ["the-loop: auto-execute"]
+    outcome, created, answers, client = run_new(
+        tmp_path, "new o/r: Flaky teardown\nIt fails every third run.", config=config
+    )
+
+    assert outcome["outcome"] == "created"
+    assert outcome["workItem"] == "github:o/r#99"
+    ((repo, title, body, labels),) = created
+    assert (repo, title, labels) == (
+        "o/r",
+        "Flaky teardown",
+        ("the-loop: auto-execute",),
+    )
+    # The kickoff's own body: the prefix stripped, the attribution and the envelope
+    assert body.startswith("Flaky teardown\nIt fails every third run.")
+    assert "Opened from the **slack** channel" in body
+    root, reply = client.posted
+    assert (root["channel"], root["thread_ts"]) == ("C123", None)
+    assert reply["thread_ts"] == root["text"] or reply["thread_ts"]  # into the root
+    assert "https://x/99" in reply["text"]
+    buttons = [
+        e["value"]
+        for block in reply["blocks"]
+        if block["type"] == "actions"
+        for e in block["elements"]
+        if e.get("value")
+    ]
+    assert buttons == ["the-loop start"]
+    state = _state_with_stores(
+        Path(config["state"]["root"]) / "channels" / "slack.json"
+    )
+    record = state.conversation("github:o/r#99")
+    assert record is not None and record["origin"] == "kickoff"
+    assert record["channel"] == "C123" and record["thread"] == reply["thread_ts"]
+    assert "https://x/99" in answers[-1][1] and "<#C123>" in answers[-1][1]
+
+
+def test_new_falls_back_to_kickoff_repo_without_a_prefix(tmp_path):
+    """R4.1: no prefix → `kickoff.repo`, exactly as a top-level message."""
+    outcome, created, _, _ = run_new(tmp_path, "new Just a title")
+    assert outcome["outcome"] == "created"
+    assert created[0][:2] == ("o/r", "Just a title")
+
+
+@pytest.mark.parametrize(
+    "text, repos, kickoff_repo, expected",
+    [
+        ("new Just a title", ["o/r"], "", "no default repository"),
+        ("new nobody/x: title", ["o/r"], "o/r", "don't know a repository"),
+        ("new r: title", ["a/r", "b/r"], "", "more than one repository"),
+        ("new o/r:", ["o/r"], "o/r", "said nothing else"),
+    ],
+)
+def test_new_refuses_what_the_kickoff_refuses(
+    tmp_path, text, repos, kickoff_repo, expected
+):
+    """R4.3, R4.4, A1: the kickoff's own grammar and refusal text; nothing created."""
+    config = cli_config(tmp_path, publish=["work-item.create"], repositories=repos)
+    config["channels"]["slack"]["kickoff"]["repo"] = kickoff_repo
+    outcome, created, answers, client = run_new(tmp_path, text, config=config)
+    assert outcome["outcome"].startswith("kickoff-"), outcome
+    assert created == [] and client.posted == []
+    assert expected in answers[-1][1]
+
+
+def test_new_with_an_empty_title_is_refused(tmp_path):
+    """R4.4."""
+    outcome, created, answers, _ = run_new(tmp_path, "new")
+    assert outcome["outcome"] == "unknown-command"
+    assert created == []
+    assert "new" in answers[-1][1]
+
+
+def test_new_needs_the_create_grant(tmp_path):
+    """R4.5, A3: the same row the kickoff needs."""
+    config = cli_config(tmp_path, publish=["work-item.reply", "control.command"])
+    outcome, created, answers, _ = run_new(tmp_path, "new o/r: title", config=config)
+    assert outcome["outcome"] == "unpublishable-event"
+    assert created == []
+    assert "work-item.create" in answers[-1][1]
+
+
+def test_new_from_an_unlisted_member_creates_nothing(tmp_path):
+    """R4.5, A2: authorized before the text is read; answered with nothing."""
+    outcome, created, answers, _ = run_new(tmp_path, "new o/r: title", user="USTRANGER")
+    assert outcome["outcome"] == "unauthorized-actor"
+    assert created == [] and answers == []
+
+
+def test_new_acts_once_per_trigger(tmp_path):
+    """A4."""
+    run_new(tmp_path, "new o/r: title", trigger="t-same")
+    outcome, created, _, _ = run_new(tmp_path, "new o/r: title", trigger="t-same")
+    assert outcome["outcome"] == "duplicate" and created == []
+
+
+def test_new_survives_a_thread_that_cannot_be_opened(tmp_path):
+    """R4.6: the issue exists; the answer says so; nothing is bound."""
+
+    def broken(token):
+        raise RuntimeError("slack is down")
+
+    outcome, created, answers, _ = run_new(
+        tmp_path, "new o/r: title", client_factory=broken
+    )
+    assert outcome["outcome"] == "created"
+    assert len(created) == 1
+    assert "https://x/99" in answers[-1][1]
+    assert "could not" in answers[-1][1].lower()
+    config = cli_config(tmp_path)
+    state = _state_with_stores(
+        Path(config["state"]["root"]) / "channels" / "slack.json"
+    )
+    assert state.conversation("github:o/r#99") is None
+
+
+def test_new_when_the_ledger_refuses_is_a_recorded_outcome(tmp_path):
+    outcome, created, answers, client = run_new(
+        tmp_path, "new o/r: title", create_ok=False
+    )
+    assert outcome["outcome"] == "create-failed"
+    assert len(created) == 1 and client.posted == []
+    assert "gh exited 1" in answers[-1][1]
+
+
+def test_usage_and_help_name_the_new_verb_and_its_grant(tmp_path):
+    """R4.5, T10."""
+    assert "/the-loop new" in commands.usage()
+    assert commands.FAMILY_GRANTS["create"] == "work-item.create"
+    config = cli_config(tmp_path, publish=["work-item.reply"])
+    _, _, answers, _ = run_new(tmp_path, "help", config=config)
+    assert "work-item.create" in answers[0][1] and "not granted" in answers[0][1]

@@ -43,7 +43,17 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
+from typing import (
+    Any,
+    Dict,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 from .. import runlock
 
@@ -53,11 +63,17 @@ __all__ = [
     "CONVERSATION_ORIGINS",
     "PENDING_CAP",
     "PENDING_TTL_SECONDS",
+    "ROOM_MODE",
     "THREAD_CAP",
     "ChannelState",
     "ChannelStores",
     "canonical",
 ]
+
+#: A conversation's ``mode`` when it is a whole channel rather than a thread
+#: (issue-378): the work item was declared into a room of its own, so every
+#: update is a top-level message there. Absent on every thread record.
+ROOM_MODE = "channel"
 
 #: How many conversations one channel file remembers. Past the cap the OLDEST
 #: binding is dropped: an unmapped thread is inert (the pipeline drops its
@@ -199,7 +215,7 @@ class ChannelStores:
             store = self._store()
             for _, record in store._records():  # noqa: SLF001 — same package's store
                 entry = (record.get("channels") or {}).get(self.channel)
-                if isinstance(entry, dict) and entry.get("thread"):
+                if isinstance(entry, dict) and (entry.get("thread") or _is_room(entry)):
                     found[str(record["ref"])] = {
                         str(k): str(v) for k, v in entry.items()
                     }
@@ -567,19 +583,26 @@ class ChannelState:
         *,
         origin: str = "event",
         permalink: str = "",
+        mode: str = "",
     ) -> None:
         """Record that ``thread`` carries ``work_item``'s conversation.
 
         Writes both maps: the reader's (thread → work item) and the writer's
         (work item → thread). A work item bound again moves to the new thread;
         the old thread stays readable and still attributed, as before.
+
+        With ``mode="channel"`` and an empty ``thread`` (issue-378) the
+        conversation is the room ``channel_id`` itself: only the writer's map is
+        written, because there is no thread for the reader to look up — a
+        message in the room is attributed through the declaration instead.
         """
         work_item = canonical(work_item) if work_item else work_item
-        self.threads.pop(thread, None)  # re-binding moves it to newest
-        self.threads[thread] = {"workItem": work_item, "channel": channel_id}
+        if thread:
+            self.threads.pop(thread, None)  # re-binding moves it to newest
+            self.threads[thread] = {"workItem": work_item, "channel": channel_id}
         if work_item:
             self.conversations[work_item] = _record(
-                thread, channel_id, origin=origin, permalink=permalink
+                thread, channel_id, origin=origin, permalink=permalink, mode=mode
             )
             self._dirty_bindings.add(work_item)
         while len(self.threads) > THREAD_CAP:
@@ -592,10 +615,25 @@ class ChannelState:
                 self._dirty_bindings.add(item)
 
     def thread_for(self, work_item: str) -> Optional[Tuple[str, str]]:
-        """``(channel_id, thread_ts)`` of ``work_item``'s conversation, or None."""
+        """``(channel_id, thread_ts)`` of ``work_item``'s conversation, or None —
+        also None for a **room** conversation, which has no thread to reply in
+        or to read (issue-378); the writer's view is :meth:`conversation_for`."""
         record = self.conversations.get(canonical(work_item)) if work_item else None
         if record and record.get("thread"):
             return (record.get("channel", ""), record["thread"])
+        return None
+
+    def conversation_for(self, work_item: str) -> Optional[Tuple[str, str]]:
+        """``(channel_id, thread_ts)`` of where ``work_item``'s next message goes
+        (issue-378): a thread, or a room with ``thread_ts == ""``. None when the
+        work item has no conversation on this channel."""
+        record = self.conversations.get(canonical(work_item)) if work_item else None
+        if not record:
+            return None
+        if record.get("thread"):
+            return (record.get("channel", ""), record["thread"])
+        if _is_room(record) and record.get("channel"):
+            return (record["channel"], "")
         return None
 
     def conversation(self, work_item: str) -> Optional[Dict[str, str]]:
@@ -734,12 +772,27 @@ def _expired(record: Dict[str, Any]) -> bool:
 
 
 def _record(
-    thread: str, channel_id: str, *, origin: str, permalink: str = ""
+    thread: str,
+    channel_id: str,
+    *,
+    origin: str,
+    permalink: str = "",
+    mode: str = "",
 ) -> Dict[str, str]:
-    return {
+    record = {
         "channel": channel_id,
         "thread": thread,
         "opened": _now(),
         "origin": origin if origin in CONVERSATION_ORIGINS else "event",
         "permalink": permalink or "",
     }
+    if mode == ROOM_MODE:
+        # A room conversation (issue-378): the channel itself, no thread. The key
+        # is written only for a room, so every record from before the feature —
+        # and every thread — reads exactly as it did.
+        record["mode"] = ROOM_MODE
+    return record
+
+
+def _is_room(record: Optional[Mapping[str, Any]]) -> bool:
+    return bool(record) and str(record.get("mode") or "") == ROOM_MODE

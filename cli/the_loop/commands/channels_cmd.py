@@ -293,6 +293,8 @@ def _threads(config: dict, work_item: str, as_json: bool) -> int:
         "opened": max(len("opened"), *(len(r.get("opened", "")) for r in records)),
         "origin": max(len("origin"), *(len(r.get("origin", "")) for r in records)),
     }
+    # A room conversation (issue-378) has no thread: the column says so.
+    widths["thread"] = max(widths["thread"], len("(channel)"))
     header = (
         f"{'work item':<{widths['workItem']}}  {'channel':<{widths['channel']}}  "
         f"{'thread':<{widths['thread']}}  {'opened':<{widths['opened']}}  "
@@ -303,7 +305,7 @@ def _threads(config: dict, work_item: str, as_json: bool) -> int:
         print(
             f"{record['workItem']:<{widths['workItem']}}  "
             f"{record.get('channel', ''):<{widths['channel']}}  "
-            f"{record.get('thread', ''):<{widths['thread']}}  "
+            f"{record.get('thread') or '(channel)':<{widths['thread']}}  "
             f"{record.get('opened', ''):<{widths['opened']}}  "
             f"{record.get('origin', ''):<{widths['origin']}}  "
             f"{record.get('permalink') or '—'}"

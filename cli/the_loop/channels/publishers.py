@@ -21,6 +21,13 @@ The same shape carries the other thing the daemons hand the bus (issue-317): the
 **conversation opener** the dispatcher calls on its spawn path, so a work item's
 thread exists the moment its start is accepted. Config per call, nothing built
 without a ``channels`` section, never raises — the publisher's contract exactly.
+
+And a third (issue-378): the **lifecycle publisher**. The graph runtime publishes
+``phase.started`` / ``phase.completed`` beside the ``graph.*`` lines it already
+emits, and the dispatcher publishes ``work-item.closed`` where it records a
+closure — both through :func:`publish_lifecycle`, which speaks in
+:class:`~the_loop.channels.base.Event` and names no channel type. Never recorded:
+the ``loop:<phase>`` label and the closure are the ledger's own record.
 """
 
 from __future__ import annotations
@@ -34,11 +41,14 @@ from .envelope import has_envelope
 logger = logging.getLogger("the-loop.channels")
 
 __all__ = [
+    "Lifecycle",
     "Opener",
     "Publisher",
     "comment_publisher",
     "conversation_opener",
+    "lifecycle_publisher",
     "publish_comment",
+    "publish_lifecycle",
 ]
 
 #: ``(kind, work_item_ref, author, body, url) -> None``; ``kind`` is ``agent``/``human``.
@@ -47,6 +57,11 @@ Publisher = Callable[[str, str, str, str, str], None]
 #: ``(work_item_ref) -> None`` — open the work item's conversation on every
 #: configured channel (issue-317). What the dispatcher is handed.
 Opener = Callable[[str], None]
+
+#: ``(event_type, work_item_ref, text, detail) -> None`` — publish one lifecycle
+#: event (issue-378). What the dispatcher is handed; the runtime calls
+#: :func:`publish_lifecycle` directly, holding its config already.
+Lifecycle = Callable[[str, str, str, Mapping[str, str]], None]
 
 _TYPES = {"agent": "comment.agent", "human": "comment.human"}
 
@@ -125,3 +140,71 @@ def conversation_opener(config_getter: Callable[[], Mapping[str, Any]]) -> Opene
             logger.exception("opening the conversation for %s raised", work_item)
 
     return opener
+
+
+def publish_lifecycle(
+    event_type: str,
+    work_item: str,
+    text: str,
+    detail: Optional[Mapping[str, str]],
+    cli_config: Optional[Mapping[str, Any]],
+    url: str = "",
+) -> bool:
+    """Publish one lifecycle event on the bus (issue-378 R1.7, R6.1).
+
+    Nothing is built without a ``channels`` section — a runtime walking a
+    repository whose operator configured no channel must not even load the
+    ledger. ``record=False`` is passed explicitly rather than left to the
+    catalog: a publisher that is one day handed a custom event type must never
+    write a comment by accident. Never raises; ``True`` when at least one
+    channel took it.
+    """
+    if not work_item or not cli_config or not cli_config.get("channels"):
+        return False
+    from .bus import publish
+
+    try:
+        result = publish(
+            Event(
+                event_type=event_type,
+                work_item=work_item,
+                text=text,
+                url=url or _work_item_url(work_item),
+                detail={str(k): str(v) for k, v in dict(detail or {}).items()},
+                source="loop",
+            ),
+            dict(cli_config),
+            record=False,
+        )
+    except Exception:  # noqa: BLE001 — a channel bug never touches a transition
+        logger.exception("publishing %s for %s raised", event_type, work_item)
+        return False
+    return result.delivered
+
+
+def lifecycle_publisher(config_getter: Callable[[], Mapping[str, Any]]) -> Lifecycle:
+    """A :data:`Lifecycle` reading the CLI config afresh on every call — the
+    daemons' reloadable form, the comment publisher's contract exactly."""
+
+    def publish(
+        event_type: str, work_item: str, text: str, detail: Mapping[str, str]
+    ) -> None:
+        try:
+            cli_config = dict(config_getter() or {})
+        except Exception:  # noqa: BLE001 — a half-saved config is not the closure's problem
+            logger.debug("lifecycle publisher: could not read the CLI config")
+            return
+        if not cli_config.get("channels"):
+            return
+        publish_lifecycle(event_type, work_item, text, detail, cli_config)
+
+    return publish
+
+
+def _work_item_url(ref: str) -> str:
+    from ..sessions import WorkItemRef
+
+    try:
+        return WorkItemRef.parse(ref).url
+    except ValueError:
+        return ""

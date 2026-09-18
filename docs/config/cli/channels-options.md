@@ -73,6 +73,16 @@ started that became a work item (`work-item.create`) is that work item's thread.
 [`the-loop channels threads`](/cli/commands/channels) lists which thread carries which
 work item, and how it was opened.
 
+**A room a work item declared is the conversation itself**
+([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378),
+[decision-130](/decisions/decision-130)). When an authorized user has run
+`the-loop add-channel slack@#room` on a work item ([issue-375](https://github.com/MadaraUchiha-314/the-loop/issues/375)),
+the-loop opens no thread there: one message says the room is the work item's, and every
+event after it is a **top-level message** in the room, so the channel reads as the work
+item's timeline. The central channel is shared by every work item, which is why it keeps
+its threads. A reply under any of the-loop's messages in the room reaches the work item,
+as any message in the room does.
+
 ## The ledger
 
 ### `ledger`
@@ -164,9 +174,16 @@ from **one catalog** (printed with subscription ticks by
 | `security-sign-off-pending` | the work item's risk tier requires a named human security sign-off |
 | `conflict-escalated` | the loop hit a genuine block, logged the conflict and escalated once |
 | `work-item-complete` | the work item reached `complete` (fired since issue-309 — a channel that had subscribed starts receiving it) |
+| `phase.started` | a phase of the work item's loop began — the node carrying the next `loop:<phase>` label was entered; published by the runtime on every walk of every graph, so it needs no `notify` hook, and a human node's message says it is waiting on a person ([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378)) |
+| `phase.completed` | a phase ended — the loop left its last node on a satisfied outcome, or finished at a terminal node; carries the outcome and the node entered next (issue-378) |
+| `work-item.closed` | the work item ended on the ledger — its issue was closed, or the pull request that *is* the work item merged or closed; published before the item's collaboration channel is forgotten, so a room hears its own ending (issue-378). A delivering pull request's end fires nothing |
 | `comment.agent` | the agent's own comment landed on the work item (marker-stamped): the requirements summary, the phase checklist, a review note |
 | `comment.human` | a human comment the ledger accepted — an authorized user's or a work-item collaborator's. A stranger's comment is relayed nowhere |
 | `standing.started` | a [standing session](/capabilities/standing-sessions) came up and opened its thread |
+
+None of the three lifecycle rows is recorded on the ledger: the `loop:<phase>` label
+and the closure are its record. A channel that subscribes to nothing new sees nothing
+new.
 
 A name outside the catalog is **kept but warned about** (a custom process graph may
 fire a custom `notify` event; a typo would otherwise fail silently). A test pins the
@@ -193,7 +210,7 @@ typed on a channel without the grant does not reach the agent as prose either.
 | `work-item.reply` | none of the below applies | mirrored onto the work item as the-loop's own marked comment (quoted, scrubbed, keywords defanged) and **delivered into the waiting session** — 12.1.0's behaviour, the default |
 | `gate.feedback` | the work item's graph is parked at a human gate — or the pipeline **cannot tell** (no session record, no checkout, a read fault) | recorded on the ledger as an **unmarked** comment under your own credential, with the envelope and a visible "answer from `slack:U…`" attribution (a "reply from" when the gate could not be read); the ledger's ingress then classifies it exactly as a typed approval — with the graph it actually keeps — and the artifact's `approvedBy` names the person the envelope names |
 | `control.command` | the text carries a [control keyword](/config/cli/routing-options#execution-control) — typed, or pressed as the **Execute** / **Start** button ([issue-337](https://github.com/MadaraUchiha-314/the-loop/issues/337)) | recorded the same way, keyword intact; the ledger's ingress executes it through the same named-actor control seam. With `read.mode: socket` this grant also renders the Execute button on the phase-selection checklist and the Start button on a kickoff's reply, each carrying the configured keyword as its value |
-| `work-item.create` | the message is **top-level** in the configured channel | an issue is created in the repository the message named, else `kickoff.repo`, with `kickoff.labels` — needs the grant, and a target inside the declared `repositories`. With `read.mode: socket` this grant also renders the **repository picker** on a message that named none the-loop knows ([issue-349](https://github.com/MadaraUchiha-314/the-loop/issues/349)) |
+| `work-item.create` | the message is **top-level** in the configured channel, or a [`/the-loop new`](#the-slash-command) slash command ([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378)) | an issue is created in the repository the message named, else `kickoff.repo`, with `kickoff.labels` — needs the grant, and a target inside the declared `repositories`. With `read.mode: socket` this grant also renders the **repository picker** on a message that named none the-loop knows ([issue-349](https://github.com/MadaraUchiha-314/the-loop/issues/349)) |
 | `instance.command` | a `/the-loop status`, `restart` or `upgrade` [slash command](#the-slash-command) | the core facade `the-loop status` / `the-loop restart [--with-upgrade]` run — answered ephemerally; **not recorded** (no ticket), the event log is the trail ([issue-334](https://github.com/MadaraUchiha-314/the-loop/issues/334)) |
 | `standing.command` | a `/the-loop standing list\|start\|stop\|restart <name>` slash command | the same core verb `the-loop standing <verb>` runs; not recorded |
 
@@ -407,6 +424,7 @@ member gets no answer — and each verb family needs its grant in `publish`:
 | Verbs | Grant | Where it goes |
 |-------|-------|---------------|
 | `<keyword> <work-item> [@login] [instance:<name>]` — `start`, `stop`, `pause`, `resume`, `execute`, `contribute`, `do`, `review`, `cleanup`, `add-collaborator`, `remove-collaborator` | `control.command` | the ledger, as an unmarked comment composed from the configured keyword; the ingress executes it. The work item (`#N` against `kickoff.repo`, `owner/repo#N`, `github:…`, a URL) must be in a repository this instance is configured for (the top-level `repositories`) or one it already manages |
+| `new [<repo>:] <title>` (alias `create`; more lines are the body) | `work-item.create` | the ledger opens the issue exactly as a top-level kickoff message would — the first line's `<repo>:` prefix resolved against the declared `repositories`, else `kickoff.repo`, with `kickoff.labels` — then the work item's thread is opened in the home channel and told the link with the **Start** button; the answer carries the link and the channel. An unresolved or ambiguous repository is refused with the kickoff's own text and nothing is created — there is no message to hold a picker on ([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378)) |
 | `status` · `restart` · `upgrade` | `instance.command` | `core.lifecycle` — what `the-loop status` and `the-loop restart [--with-upgrade]` run |
 | `standing list` · `standing start\|stop\|restart <name>` | `standing.command` | `core.standing` — what `the-loop standing <verb>` runs |
 

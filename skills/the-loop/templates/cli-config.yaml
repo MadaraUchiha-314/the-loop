@@ -596,12 +596,15 @@ channels:
     #                                        # (a name needs channels:read/groups:read
     #                                        #  and is resolved once; an id needs neither)
     # subscribe: [session.awaiting_input]    # what this channel RECEIVES; add the notify
-    #                                        # events (phase-approval-pending, work-item-complete, …)
+    #                                        # events (phase-approval-pending, work-item-complete, …),
+    #                                        # the lifecycle (phase.started, phase.completed,
+    #                                        # work-item.closed — issue-378)
     #                                        # and the ledger's comment.agent / comment.human
     # publish: [work-item.reply]             # what a Slack message MAY BECOME (its authority):
     #                                        # + gate.feedback (answer a human gate),
     #                                        # + control.command (run a control keyword),
-    #                                        # + work-item.create (open an issue — needs kickoff.repo),
+    #                                        # + work-item.create (open an issue from a top-level
+    #                                        #   message or `/the-loop new` — needs a declared repo),
     #                                        # + instance.command (/the-loop status|restart|upgrade),
     #                                        # + standing.command (/the-loop standing …) — issue-334;
     #                                        # the slash command's work-item verbs ride on control.command.

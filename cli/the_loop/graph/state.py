@@ -387,6 +387,12 @@ class WorkItemState:
     #: whole file, so readers accept only shipped loop names (fail closed to
     #: the default) — see ``model.SHIPPED_LOOPS``.
     loop: str = ""
+    #: The phase the walk is in (issue-378) — the phase of the last node entered
+    #: that declares one, i.e. what the ``loop:<phase>`` label says. Written on
+    #: every transition so the lifecycle events follow the label exactly, a
+    #: node without a phase inheriting the one before it. Additive: absent in
+    #: an older file, where the runtime derives it from the node records.
+    phase: str = ""
     #: How many tmux+harness sessions this work item's pull requests get
     #: (issue-260), which model they run on and at what effort (issue-358) —
     #: frozen by the authorized reply at `phase-selection`, beside every other
@@ -479,6 +485,7 @@ class WorkItemState:
             # itself refuses that, and a non-list here is *no declaration*.
             repos=_string_list(data.get("repos")),
             loop=str(data.get("loop") or ""),
+            phase=str(data.get("phase") or ""),
             session_per_pr=str(data.get("sessionPerPr") or ""),
             model=str(data.get("model") or ""),
             effort=str(data.get("effort") or ""),
@@ -523,6 +530,7 @@ class WorkItemState:
             "repos": self.repos,
             "pullRequests": [pr.as_dict() for pr in self.pull_requests],
             "loop": self.loop,
+            "phase": self.phase,
         }
 
     # -- pull requests (issue-368) --------------------------------------------

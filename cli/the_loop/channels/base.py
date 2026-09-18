@@ -11,16 +11,28 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, List, Mapping, Optional, Protocol, Tuple, runtime_checkable
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Protocol,
+    Tuple,
+    runtime_checkable,
+)
 
 from ..identity import Principal
 
 logger = logging.getLogger("the-loop.channels")
 
 __all__ = [
+    "CHANNEL_PROVIDERS",
     "DEFAULT_EVENTS",
     "DEFAULT_PUBLISH",
     "LEDGERS",
+    "Loader",
     "VERBOSITIES",
     "Channel",
     "ChannelError",
@@ -210,6 +222,32 @@ def load_ledger(cli_config: Optional[Mapping[str, Any]]) -> Ledger:
     return GitHubLedger(dict(cli_config or {}))
 
 
+#: ``(cli_config, client_factory) -> Channel | None`` — build one channel type
+#: from the CLI config, or ``None`` when that type is absent, disabled or
+#: malformed (loudly, in the malformed case). The loader's contract is the
+#: bus's fail-closed one: config in, an enabled channel or nothing out.
+Loader = Callable[[Mapping[str, Any], Optional[Callable]], Optional[Channel]]
+
+
+def _load_slack(config: Mapping[str, Any], client_factory: Optional[Callable]):
+    from .slack import SlackBotChannel, SlackChannelConfig, slack_state_path
+
+    slack_config = SlackChannelConfig.from_mapping(config)
+    if not slack_config.enabled:
+        return None
+    return SlackBotChannel(
+        slack_config, slack_state_path(config), client_factory=client_factory
+    )
+
+
+#: The channel types this process can load, ``name → loader`` (issue-378 R6.2).
+#: **The extension point**: the next type — Jira, WhatsApp — is a row here plus
+#: a module, and the bus, the runtime and the dispatcher never learn its name.
+#: Module-level and mutable on purpose, so an embedder registers its own without
+#: forking the loader. Walked in declaration order.
+CHANNEL_PROVIDERS: Dict[str, Loader] = {"slack": _load_slack}
+
+
 def load_channels(
     cli_config: Optional[Mapping[str, Any]], client_factory=None
 ) -> List[Channel]:
@@ -219,6 +257,7 @@ def load_channels(
     Fail closed at every step (R6.1): no section, a disabled channel or a
     malformed one yields nothing — a malformed one loudly, because silence
     here would read as "configured and quiet" to the operator who wrote it.
+    Which types exist is :data:`CHANNEL_PROVIDERS`; this function names none.
     """
     config = dict(cli_config or {})
     section = config.get("channels")
@@ -230,14 +269,13 @@ def load_channels(
             "is disabled (fail closed)"
         )
         return []
-
-    from .slack import SlackBotChannel, SlackChannelConfig, slack_state_path
-
-    slack_config = SlackChannelConfig.from_mapping(config)
-    if not slack_config.enabled:
-        return []
-    return [
-        SlackBotChannel(
-            slack_config, slack_state_path(config), client_factory=client_factory
-        )
-    ]
+    loaded: List[Channel] = []
+    for name, load in CHANNEL_PROVIDERS.items():
+        try:
+            channel = load(config, client_factory)
+        except Exception:  # noqa: BLE001 — one provider's fault never hides the rest
+            logger.exception("channels: could not load the %s channel", name)
+            continue
+        if channel is not None:
+            loaded.append(channel)
+    return loaded

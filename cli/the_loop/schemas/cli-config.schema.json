@@ -1138,7 +1138,7 @@
               "default": [
                 "session.awaiting_input"
               ],
-              "description": "The event types this channel RECEIVES (was `events` before issue-309). session.awaiting_input is the ask (`the-loop ask`); the graph's notification events (phase-approval-pending, pr-review-pending, decision-pending, security-sign-off-pending, conflict-escalated, work-item-complete) and the ledger's comment events (comment.agent — the agent's own comments; comment.human — an authorized user's or collaborator's) are the rest of the catalog — add the ones you want. `the-loop channels status` prints the catalog with ticks."
+              "description": "The event types this channel RECEIVES (was `events` before issue-309). session.awaiting_input is the ask (`the-loop ask`); the graph's notification events (phase-approval-pending, pr-review-pending, decision-pending, security-sign-off-pending, conflict-escalated, work-item-complete), the loop's lifecycle events (phase.started, phase.completed — every phase of every graph, published by the runtime as the `loop:<phase>` label changes; work-item.closed — the issue closed or the pull request merged, issue-378) and the ledger's comment events (comment.agent — the agent's own comments; comment.human — an authorized user's or collaborator's) are the rest of the catalog — add the ones you want. `the-loop channels status` prints the catalog with ticks."
             },
             "publish": {
               "type": "array",

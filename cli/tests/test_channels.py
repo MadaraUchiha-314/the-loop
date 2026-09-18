@@ -2012,3 +2012,82 @@ def test_a_standing_sessions_binding_stays_in_the_channel_file(tmp_path, monkeyp
     assert not list((tmp_path / "state" / "portable").glob("standing*.json"))
     state = _state_with_stores(_state_path(tmp_path))
     assert state.work_item_for("1900.1") == "standing:supervisor"
+
+
+# -- issue-378: a room conversation in the state (T14, T16) ---------------------------
+
+
+def test_a_room_conversation_round_trips_and_is_never_a_thread(tmp_path):
+    """R5.6: `mode: channel`, no thread, no thread-map entry; a record without a
+    mode is a thread, as every record written before issue-378 is."""
+    from conftest import _state_with_stores
+
+    path = tmp_path / "state" / "channels" / "slack.json"
+    state = _state_with_stores(path)
+    state.bind("", "github:o/r#7", "C0ROOM", origin="start", mode="channel")
+    state.bind("1700.1", "github:o/r#8", "C123", origin="event")
+    state.save(path)
+
+    again = _state_with_stores(path)
+    assert again.conversation_for("github:o/r#7") == ("C0ROOM", "")
+    assert again.thread_for("github:o/r#7") is None
+    room_record = again.conversation("github:o/r#7")
+    assert room_record is not None and room_record["mode"] == "channel"
+    assert "" not in again.threads
+    assert again.conversation_for("github:o/r#8") == ("C123", "1700.1")
+    assert again.thread_for("github:o/r#8") == ("C123", "1700.1")
+    thread_record = again.conversation("github:o/r#8")
+    assert thread_record is not None and "mode" not in thread_record
+
+
+def test_channels_threads_lists_a_room_conversation_with_its_mode(
+    tmp_path, monkeypatch, capsys
+):
+    """R5.6."""
+    from conftest import _state_with_stores
+
+    path = tmp_path / "state" / "channels" / "slack.json"
+    state = _state_with_stores(path)
+    state.bind("", "github:o/r#7", "C0ROOM", origin="start", mode="channel")
+    state.save(path)
+    assert _threads_command(tmp_path, monkeypatch, "threads") == 0
+    out = capsys.readouterr().out
+    assert "C0ROOM" in out and "channel" in out
+    assert _threads_command(tmp_path, monkeypatch, "threads", "--json") == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert rows[0]["mode"] == "channel" and rows[0]["thread"] == ""
+
+
+def test_load_channels_walks_the_provider_table(tmp_path, monkeypatch):
+    """R6.2: a registered provider is loaded beside Slack; a loader answering
+    None contributes nothing; one that raises hides nothing else."""
+    from the_loop.channels import base
+    from the_loop.channels.base import PostResult
+
+    class Fake:
+        name = "fake"
+
+        def subscribes(self, event_type: str) -> bool:
+            return True
+
+        def may_publish(self, event_type: str) -> bool:
+            return False
+
+        def post(self, event) -> PostResult:
+            return PostResult(channel="fake", ok=True)
+
+    def boom(config, factory):
+        raise RuntimeError("bad provider")
+
+    providers = dict(base.CHANNEL_PROVIDERS)
+    providers["fake"] = lambda config, factory: Fake()
+    providers["none"] = lambda config, factory: None
+    providers["broken"] = boom
+    monkeypatch.setattr(base, "CHANNEL_PROVIDERS", providers)
+
+    names = [c.name for c in load_channels(cli_config(tmp_path))]
+    assert names == ["slack", "fake"]
+    assert load_channels({"state": {"root": str(tmp_path)}}) == []
+    assert [c.name for c in load_channels(cli_config(tmp_path, enabled=False))] == [
+        "fake"
+    ]

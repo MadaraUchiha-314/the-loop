@@ -295,13 +295,15 @@ because Slack delivers both only to a connection that acknowledges within second
 
 | You want to… | Do this in Slack | The grant it needs | What happens |
 |--------------|------------------|--------------------|--------------|
-| see what the loop needs from you | nothing — subscribe the events | — (`subscribe`) | one thread per work item, opened when it starts; every event a reply into it |
+| see what the loop needs from you | nothing — subscribe the events | — (`subscribe`) | one thread per work item, opened when it starts; every event a reply into it (in a [room the work item declared](#a-room-for-one-work-item), a message in the room) |
+| follow the work as it moves | subscribe `phase.started`, `phase.completed`, `work-item.closed` | — (`subscribe`) | every phase's start and end as the `loop:<phase>` label changes — a human gate's start says it is waiting on you — and the work item's end when its issue is closed or its pull request merged ([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378)) |
 | answer the agent's question | reply in the work item's thread | `work-item.reply` (default) | mirrored onto the work item as the-loop's own marked comment, delivered into the waiting session |
 | approve or reject a phase, a PR | reply `approved` / `changes requested`, or press the button | `gate.feedback` | recorded on the work item unmarked, as your answer; the gate reads it there |
 | start, stop, pause, resume, execute, cleanup… a work item **that has a thread** | type the control keyword in its thread (`the-loop start`) | `control.command` | recorded on the work item unmarked, keyword intact; the ledger's ingress executes it — exactly as if you had typed it on the ticket |
 | sign the phase-selection checklist | press **Execute** on the checklist message (or type `the-loop execute`) | `control.command` (+ `read.mode: socket`) | the same unmarked `the-loop execute` record; the message is edited to say so ([buttons](#the-buttons)) |
 | start a work item you just filed from Slack | press **Start** on the-loop's "opened …" reply (or type `the-loop start`) | `control.command` (+ socket) | the same unmarked `the-loop start` record; the message is edited to say so |
 | start a work item **that has no thread yet** | `/the-loop start #123` | `control.command` (+ `read.mode: socket`) | the same record on the ticket; the start opens the thread |
+| file a new work item from anywhere | `/the-loop new <repo>: <title>` | `work-item.create` (+ socket) | the same issue a top-level message opens; its thread is opened in the home channel and you are answered with the link ([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378)) |
 | file a new work item | post a top-level message in the channel, optionally starting `<repo>:` | `work-item.create` | an issue is created in the repository the message named (or `kickoff.repo`) with `kickoff.labels`, the thread is bound to it and told the link. Named none it knows? the-loop asks, with your declared repositories as options (`read.mode: socket`) |
 | talk to a standing session | reply in its thread | `work-item.reply` | delivered into its pane (no ticket, so no mirror — the event log is the trail) |
 | start, stop or restart a standing session | `/the-loop standing start <name>` | `standing.command` (+ socket) | the same verb `the-loop standing start` runs |
@@ -314,6 +316,28 @@ allow-list and the grant, ✅ when the action landed, ⚠️ when it did not
 message that was dropped — a stranger's, a bot's, a kind the channel is not granted —
 gets nothing: a refusal leaves no mark. A slash command has no message of yours to react
 on; its receipt is the ephemeral answer only you see.
+
+## A room for one work item
+
+The central channel holds every work item, one thread each. When one work item has a
+room of its own — `#tmp-issue-378`, with the six people who care about it — an authorized
+user declares it on the ticket or from a shell
+([issue-375](https://github.com/MadaraUchiha-314/the-loop/issues/375)):
+
+```text
+the-loop add-channel slack@#tmp-issue-378
+```
+
+From then on the room **is** the conversation
+([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378)): the-loop posts one
+message saying so, and every update — a question, an approval request, a phase starting
+or ending, a comment mirrored from the ticket, the close — is a **message in the channel**,
+not a reply inside a thread nobody opens. Anything an authorized member types in the room,
+top-level or under one of the-loop's messages, is a message on that work item; nothing
+posted there ever opens a new issue. Subscribe the room's events like any other:
+`phase.started` and `phase.completed` give the room a timeline, `work-item.closed` gives
+it an ending. A conversation that already lived in a thread moves to the room when the
+room is declared, and the thread it left is told where it went.
 
 ## Reading it on a phone
 
@@ -383,7 +407,17 @@ and everything after that is a reply into it. `#123` resolves against
 only a repository this instance is configured for (the top-level `repositories`) or a
 work item it already manages — anything else is refused, and nothing is written.
 
-**It does not exist yet.** Post a **top-level message** in the channel — the first line is
+**It does not exist yet, and you are anywhere in Slack.** Run
+`/the-loop new <repo>: <title>` — more lines are the body, `create` is an alias
+([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378)). With the
+`work-item.create` grant the-loop opens the issue exactly as a top-level message would
+(the same prefix rule below, `kickoff.repo` as the fallback, `kickoff.labels`), opens the
+work item's thread in the home channel with the link and the **Start** button, and answers
+you — only you — with the link and where the thread is. A repository it cannot resolve is
+refused with the candidates named and nothing is created: a slash command has no message
+to hang a picker on, so the `<repo>:` prefix is the answer.
+
+**It does not exist yet, and you are in the channel.** Post a **top-level message** in the channel — the first line is
 the title, the rest the body. With the `work-item.create` grant, the-loop opens the issue
 (labelled from `kickoff.labels`, so add the auto-execute label there to arm it), binds
 the message's thread to it and replies with the link. Then type `the-loop start` **in
@@ -529,10 +563,17 @@ same decision as letting it restart the daemon ([decision-116](/decisions/decisi
 ```text
 /the-loop help
 /the-loop <keyword> <work-item> [@login] [instance:<name>]
+/the-loop new [<repo>:] <title>
 /the-loop status | restart | upgrade
 /the-loop standing list
 /the-loop standing start|stop|restart <name>
 ```
+
+- **`new [<repo>:] <title>`** (`create` is an alias) opens a work item
+  ([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378)): the text is read
+  exactly as a top-level kickoff message is — first line the title with an optional
+  `<repo>:` prefix, the rest the body — and needs `work-item.create`. The thread is opened
+  in the home channel and the answer carries the link.
 
 - **`<keyword>`** is any configured control keyword's last word — `start`, `stop`,
   `pause`, `resume`, `execute`, `contribute`, `do`, `review`, `cleanup`,
@@ -551,8 +592,8 @@ same decision as letting it restart the daemon ([decision-116](/decisions/decisi
   member gets no answer at all.
 - **Who may use it:** the `slack` ids of `routing.authorizedUsers` — the same people who
   may type a keyword on the ticket. Each verb family needs its grant in
-  `channels.slack.publish`: `control.command`, `instance.command`, `standing.command`.
-  `/the-loop help` lists which this channel holds.
+  `channels.slack.publish`: `control.command`, `work-item.create`, `instance.command`,
+  `standing.command`. `/the-loop help` lists which this channel holds.
 
 ## Through the ledger, never around it
 

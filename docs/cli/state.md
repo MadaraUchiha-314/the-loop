@@ -106,6 +106,7 @@ from the artifacts alone.
 | `version` | derived | the file's shape |
 | `workItem` | pointer | which work item this is |
 | `loop` | pointer | which shipped loop it walks |
+| `phase` | pointer | the phase the walk is in — what the `loop:<phase>` label says; the lifecycle events follow it ([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378)) |
 | `currentNode` | pointer | where the pointer is |
 | `nodes` | pointer | per node: `attempts`, `outcome`, `enteredAt`, `exitedAt`, `lastBlock`, `forced` |
 | `completions` | pointer | the claims sessions have made |
@@ -373,7 +374,8 @@ re-baselines it. Nothing else.
 | Field | Meaning |
 |---|---|
 | `channel` | the channel id the thread is in |
-| `thread` | the thread's `ts` — the conversation this work item's messages go to |
+| `thread` | the thread's `ts` — the conversation this work item's messages go to; empty for a **room** conversation |
+| `mode` | `channel` when the conversation is the declared room itself and every update is a top-level message there ([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378)); absent for a thread |
 | `opened` | when the-loop opened it |
 | `origin` | how: `start` (when the work item started), `event` (the first event delivered), `kickoff` (a member's message became the work item), `declared` (the work item was declared into a collaboration channel after its conversation had started elsewhere, [issue-375](https://github.com/MadaraUchiha-314/the-loop/issues/375)), `legacy` (a binding from before [issue-312](https://github.com/MadaraUchiha-314/the-loop/issues/312)) |
 | `permalink` | the link Slack returned |
