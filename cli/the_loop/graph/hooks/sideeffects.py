@@ -254,7 +254,8 @@ def notify(ctx: HookContext) -> HookResult:
     if not result.posts:
         return HookResult.skipped(
             name,
-            f"no channel subscribed to {event} — add it to channels.slack.subscribe",
+            f"no channel subscribed to {event} — add it to the channel's "
+            "`subscribe` list (channels.<name>.subscribe)",
         )
     errors = "; ".join(post.error for post in result.posts if not post.ok)
     if not result.delivered:

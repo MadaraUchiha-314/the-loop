@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 from .. import eventlog
 from .chain import ChainOutcome, run_chain
 from .contract import BLOCK, PASS, SKIP, WAIT, HookContext, WorkItem
-from .model import Graph, artifact_names, load_graph
+from .model import Graph, GraphConfigError, artifact_names, load_graph
 from .refs import derive_ref
 from .state import WorkItemState, StateLockBusy, state_lock, utc_now
 
@@ -376,6 +376,64 @@ class Runtime:
             decisions=dict(decisions or {}),
             **extra,
         )
+
+    # -- the lifecycle on the bus (issue-378) ----------------------------------
+
+    def phase_of(self, node_id: str, before: str = "") -> str:
+        """The phase ``node_id`` is in — its own ``phase``, or the phase it
+        inherits from the node before it (issue-378 R1.3).
+
+        The lifecycle follows the **label**: `set-phase-label` writes a node's own
+        phase and leaves the label alone for a node that declares none, so an
+        approval node sits under its author node's phase and the transition into
+        it is silent. ``before`` is the phase the walk was in; ``""`` when the
+        graph is being entered.
+        """
+        try:
+            node = self.graph.node(node_id)
+        except GraphConfigError:
+            return before
+        return node.phase or before
+
+    def _lifecycle(
+        self, item: WorkItem, event_type: str, node_id: str, phase: str, **detail
+    ) -> None:
+        """Publish one ``phase.*`` event for ``item`` — best-effort, never raising,
+        and nothing at all when the config has no ``channels`` section.
+
+        Called AFTER the state is saved and the entry chain has run, beside the
+        ``graph.*`` line the runtime already emits, so a subscriber that reads the
+        ticket on the event finds the label already set. The text is fixed words
+        plus ids: nothing from an artifact, a comment or the environment.
+        """
+        if not phase:
+            return
+        try:
+            node = self.graph.node(node_id)
+            actor = node.actor
+        except GraphConfigError:
+            actor = ""
+        loop = self.graph.name or ""
+        if event_type == "phase.started":
+            text = f"the-loop: {item.id} started phase *{phase}* ({node_id})."
+            if actor == "human":
+                text += " — waiting on a person"
+        else:
+            outcome = str(detail.get("outcome") or "")
+            text = (
+                f"the-loop: {item.id} completed phase *{phase}* "
+                f"({node_id}{': ' + outcome if outcome else ''})."
+            )
+        fields = {"node": node_id, "phase": phase, "loop": loop, "actor": actor}
+        fields.update({k: v for k, v in detail.items() if v})
+        # Call-time import, the `_integration` rule: the seam tests patch is the
+        # channels module, and a module-level binding would slip past them.
+        from ..channels.publishers import publish_lifecycle
+
+        try:
+            publish_lifecycle(event_type, item.ref, text, fields, self.config)
+        except Exception:  # noqa: BLE001 — belt and braces over the publisher's own
+            logger.exception("lifecycle %s for %s raised", event_type, item.ref)
 
     def _note_degradations(
         self, report: NodeReport, item: WorkItem, node_id: str, outcome: ChainOutcome
@@ -792,6 +850,7 @@ class Runtime:
         # check`, the graph verbs — resolves the same graph without re-deriving
         # it from a control record that may live on another machine.
         state.loop = self.graph.name or state.loop
+        state.phase = self.phase_of(node_id)  # what the label will say (issue-378)
         state.save(
             self.state_dir(item)
         )  # persist BEFORE any dependent side effect (R8.2)
@@ -801,6 +860,7 @@ class Runtime:
         )
         eventlog.emit("graph.started", work_item=item.ref, node=node_id)
         logger.info("%s entered the graph at %s", item.ref, node_id)
+        self._lifecycle(item, "phase.started", node_id, state.phase)
         report = NodeReport(
             node=node_id,
             status=PASS,
@@ -848,6 +908,7 @@ class Runtime:
             return None  # idempotent: a second cleanup re-runs no entry chain
         from_node = state.current_node
         state.enter(CLEANUP_NODE)
+        state.phase = self.phase_of(CLEANUP_NODE, state.phase)
         state.save(self.state_dir(item))  # persist BEFORE any side effect (R8.2)
         entered = run_chain(
             node.entry,
@@ -858,6 +919,9 @@ class Runtime:
             work_item=item.ref,
             **{"from": from_node},
             reason=reason or None,
+        )
+        self._lifecycle(
+            item, "phase.started", CLEANUP_NODE, state.phase, **{"from": from_node}
         )
         logger.info(
             "%s entered %s from %s — its local resources are being released",
@@ -1041,6 +1105,9 @@ class Runtime:
         # very next hop routes around.
         if self._record_selected_skips(state, item, outcome):
             skips = self.declared_skips(state)
+        # The phase this walk is in, before the pointer moves (issue-378): the
+        # node's own, or the one it inherited from the nodes before it.
+        left_phase = state.phase or self._current_phase(state, node_id)
         state.exit(node_id, outcome.outcome)
         target = self.graph.next_node(node_id, outcome.outcome)
         if target is not None:
@@ -1052,6 +1119,13 @@ class Runtime:
                 state.current_node = node_id
                 state.save(self.state_dir(item))
                 eventlog.emit("graph.completed", work_item=item.ref, node=node_id)
+                self._lifecycle(
+                    item,
+                    "phase.completed",
+                    node_id,
+                    left_phase,
+                    outcome=outcome.outcome,
+                )
                 return report
             state.park(
                 node_id, f"no declared edge from {node_id} on {outcome.outcome!r}"
@@ -1071,6 +1145,8 @@ class Runtime:
             return report
 
         state.enter(target)
+        entered_phase = self.phase_of(target, left_phase)
+        state.phase = entered_phase
         state.save(
             self.state_dir(item)
         )  # persist BEFORE any dependent side effect (R8.2)
@@ -1105,7 +1181,35 @@ class Runtime:
         # checklist and the phase label are posted, and where issue-194's silence
         # was loudest: the work item parked on a question nobody was asked.
         self._note_degradations(report, item, target, entered)
+        # The lifecycle follows the label (issue-378): a phase completes and the
+        # next starts only when the label changed — after the entry chain, so a
+        # subscriber reading the ticket on the event finds the label already set.
+        if entered_phase != left_phase:
+            self._lifecycle(
+                item,
+                "phase.completed",
+                node_id,
+                left_phase,
+                outcome=outcome.outcome,
+                to=target,
+            )
+            self._lifecycle(item, "phase.started", target, entered_phase)
         return report
+
+    def _current_phase(self, state: "WorkItemState", node_id: str) -> str:
+        """The phase ``node_id`` is in, for a state file written before
+        ``state.phase`` existed (issue-378): its own, else the phase of the
+        nearest node before it in the walk's record that declares one. A best
+        effort for one transition — the next one writes ``state.phase``."""
+        own = self.phase_of(node_id)
+        if own:
+            return own
+        entered = [nid for nid in state.nodes if nid != node_id]
+        for previous in reversed(entered):
+            phase = self.phase_of(previous)
+            if phase:
+                return phase
+        return ""
 
 
 def _announce_force(runtime: "Runtime", item: WorkItem, record: Dict[str, Any]) -> str:
@@ -1477,6 +1581,10 @@ def force(
     # Mark the destination forced — NOT the bypassed gate satisfied.
     state.enter(to_node)
     state.record(to_node).forced = True
+    # The phase pointer follows the move (issue-378) so the next ordinary
+    # transition compares against where the walk actually is; nothing is
+    # published — a force runs no entry chain and sets no label.
+    state.phase = runtime.phase_of(to_node, state.phase)
     state.save(runtime.state_dir(item))
 
     eventlog.emit(

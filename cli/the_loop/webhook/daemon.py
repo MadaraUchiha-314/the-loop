@@ -148,7 +148,11 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
     dispatcher so :func:`run` can drain it on shutdown.
     """
     from ..authz import resolve_authorized_users
-    from ..channels.publishers import comment_publisher, conversation_opener
+    from ..channels.publishers import (
+        comment_publisher,
+        conversation_opener,
+        lifecycle_publisher,
+    )
     from ..harness import build_adapters
     from ..reload import Reloader
     from ..repos import repository_bounds
@@ -175,6 +179,10 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
         # The bus (issue-317): a start opens the work item's conversation on
         # every configured channel. Reads the config per call, like the publisher.
         opener=conversation_opener(lambda: cli_config.load_cli_config(_config_path())),
+        # The lifecycle (issue-378): a closure is announced on every channel.
+        lifecycle=lifecycle_publisher(
+            lambda: cli_config.load_cli_config(_config_path())
+        ),
         # The three top-level choice sections (issue-358): `harnesses`, `models`,
         # `effort`. Taken whole rather than through `RoutingConfig`, because they
         # are not routing policy — and refreshed on every reload below, so

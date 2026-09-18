@@ -53,7 +53,9 @@ definition at the terminal — that is `cli` behaviour, with the same paper-trai
 (issue-245, issue-309, decision-103). When the operator's CLI config declares `channels`
 (today: a Slack bot — `channels.slack`), everything the loop says is an **event**: the
 ask, the graph's notifications (an approval request carries the work item's link and an
-excerpt of the artifact; `work-item-complete` fires at the end), and the comments the
+excerpt of the artifact; `work-item-complete` fires at the end), the loop's lifecycle
+(`phase.started` / `phase.completed` as the phase label changes, `work-item.closed` when
+the ticket closes — published by the runtime and the daemon, issue-378), and the comments the
 ledger's ingress sees (`comment.agent` — your own marked comments; `comment.human` — an
 authorized user's or collaborator's). A channel receives the ones its `subscribe` list
 names, renders them natively (Slack: Block Kit, a link button, Approve / Request changes

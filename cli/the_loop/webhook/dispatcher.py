@@ -18,7 +18,7 @@ import uuid
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from string import Template
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple
 
 from .. import eventlog
 from ..announce import AnnounceConfig, SessionAnnouncer
@@ -608,6 +608,7 @@ class Dispatcher:
         verifier: Optional[WorkItemVerifier] = None,
         opener: Optional[Callable[[str], None]] = None,
         cli_config: Optional[Dict[str, Any]] = None,
+        lifecycle: Optional[Callable[[str, str, str, Mapping[str, str]], None]] = None,
     ):
         self.registry = registry
         self.adapters = adapters
@@ -632,6 +633,13 @@ class Dispatcher:
         # config per call, so `reload` leaves it alone. None (tests, embedders
         # that opted out) opens nothing: the 13.1.1 behaviour, exactly.
         self.opener = opener
+        # The lifecycle publisher (issue-378): called with `work-item.closed`
+        # where a closure is recorded, BEFORE the item's room is forgotten, so
+        # the announcement lands where the people are. Injected like the opener
+        # (`channels.publishers.lifecycle_publisher` over the daemons' config
+        # getter); None publishes nothing — every embedder and test that built a
+        # dispatcher before this feature gets exactly what it had.
+        self.lifecycle = lifecycle
         # Control records are the portable half of a work item's state (issue-128),
         # so they follow `state.root` rather than the registry: a relocated
         # registry moves the machine-local handles, not the facts about the work.
@@ -1850,12 +1858,6 @@ class Dispatcher:
                 state="merged" if reason == "pr-merged" else "closed",
             )
             return
-        self.control_store.clear(work_item)
-        self.collaborator_store.clear(work_item)
-        # The room outlives the work item; the-loop's claim on it does not
-        # (issue-375). Cleared with the roster, so the channel is free to back
-        # the next work item the moment this one ends.
-        self.channel_store.clear(work_item)
         actor = event_actor(routed.event, routed.payload) or ""
         source = (
             "poll"
@@ -1869,6 +1871,16 @@ class Dispatcher:
             "source": source,
             "actor": actor,
         }
+        # Announced BEFORE anything is cleared (issue-378 R3.1): the Slack
+        # channel resolves the item's room from the declaration this method is
+        # about to forget, and the closure is the room's last message.
+        self._announce_closed(work_item, stamp)
+        self.control_store.clear(work_item)
+        self.collaborator_store.clear(work_item)
+        # The room outlives the work item; the-loop's claim on it does not
+        # (issue-375). Cleared with the roster, so the channel is free to back
+        # the next work item the moment this one ends.
+        self.channel_store.clear(work_item)
         self.control_store.record_ended(work_item, stamp)
         eventlog.emit(
             "work_item.ended",
@@ -1880,6 +1892,22 @@ class Dispatcher:
             actor=actor or None,
             delivery_id=routed.delivery_id or None,
         )
+
+    def _announce_closed(self, work_item: WorkItemRef, stamp: Dict[str, str]) -> None:
+        """Publish ``work-item.closed`` on the bus (issue-378 R3) — fixed words
+        and the closure's own facts, never a comment's text. Best-effort: the
+        publisher never raises by contract, and this guards the seam itself."""
+        if self.lifecycle is None:
+            return
+        state = stamp.get("state") or "closed"
+        kind = "pull request" if stamp.get("kind") == "pull-request" else "issue"
+        who = f" by {stamp['actor']}" if stamp.get("actor") else ""
+        text = f"the-loop: {work_item.ref} is {state} — its {kind} was {state}{who}."
+        detail = {k: v for k, v in stamp.items() if v}
+        try:
+            self.lifecycle("work-item.closed", work_item.ref, text, detail)
+        except Exception:  # noqa: BLE001 — a channel bug never touches a closure
+            logger.exception("announcing the closure of %s raised", work_item.ref)
 
     def _record_reopen(self, routed: RoutedEvent, source: str) -> None:
         """Clear the closure stamp of every ref the event reopened (issue-329)."""

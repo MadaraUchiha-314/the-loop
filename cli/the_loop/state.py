@@ -476,6 +476,12 @@ ATTRIBUTES: Tuple[Attribute, ...] = (
     Attribute(REPOSITORY_FILE, "version", "derived", "the file's shape"),
     Attribute(REPOSITORY_FILE, "workItem", "pointer", "which work item this is"),
     Attribute(REPOSITORY_FILE, "loop", "pointer", "which shipped loop it walks"),
+    Attribute(
+        REPOSITORY_FILE,
+        "phase",
+        "pointer",
+        "the phase the walk is in — what the `loop:<phase>` label says (issue-378)",
+    ),
     Attribute(REPOSITORY_FILE, "currentNode", "pointer", "where the pointer is"),
     Attribute(
         REPOSITORY_FILE,

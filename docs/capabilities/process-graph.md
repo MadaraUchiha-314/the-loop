@@ -24,6 +24,17 @@ There are exactly **two** runtime concepts and **one** contract between them.
   `cli/the_loop/graph/pdlc-work-item-loop.yaml`, versioned and validated against its
   schema — and the runtime SHALL execute that declaration rather than re-deriving the
   process from prose.
+- **The runtime publishes the lifecycle** (issue-378,
+  [decision-130](../decisions/decision-130.md)). Beside the `graph.started`,
+  `graph.advanced`, `graph.completed` and `graph.cleaned` lines it already writes, the
+  runtime SHALL publish `phase.started` and `phase.completed` on the channel bus — for
+  every graph, shipped or custom, with no `notify` hook — following the `loop:<phase>`
+  label: the phase the walk is in is the state file's `phase` (the last node entered
+  that declares one), so two nodes under one phase are silent, a node without a phase
+  inherits the one before it, and a force (no entry chain, no label) publishes nothing.
+  `cleanup` starts its own phase and completes none. A config with no `channels` section
+  publishes nothing and the transition is unchanged. See
+  [channels](channels.md).
 - **The process is two loops** (issue-172, [decision-065](../decisions/decision-065.md)).
   The **outer** `pdlc-work-item-loop` walks a *work item* through the full PDLC, exactly
   as the single graph always did. The **inner** `pdlc-pr-loop` walks one *pull request*
@@ -877,6 +888,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-378 | The runtime publishes `phase.started` / `phase.completed` on the channel bus at every transition of every graph (2026-09-18), following the label rather than the node: `WorkItemState.phase` records the phase the walk is in, an approval node inherits its author node's phase, a force publishes nothing, `cleanup` starts its phase and completes none. Nothing about the graphs' YAML, the verdicts or the pointer changed | [spec](../specs/issue-378/), [decision-130](../decisions/decision-130.md), [channels](channels.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/378) |
 | issue-370 (owner ruling) | A pull request armed as its **own** work item is recorded in its `pullRequests[]` too (2026-09-16), marked `self: true` and carrying no `stateDir` — the work item's own directory is the loop, so the derived inner-loop path would nest it inside itself. `the-loop review` and `the-loop contribute` are armed on a pull request, and the entity the-loop manages is a work item whatever represents it, so both relations a pull request can have to a work item live in one list and the marker says which | [spec](../specs/issue-370/), [PR #372](https://github.com/MadaraUchiha-314/the-loop/pull/372), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/370) |
 | issue-370 | `pullRequests[]` got one writer (2026-09-16): `the-loop sessions link-pr`, run by the session that opened the pull request. The first event that routed for a pull request used to write there too, as `linkedBy: "event"` — so an `issue-<n>` branch in a fork, or a `fixes #<n>` in a body, added a row to a committed file for a pull request nobody on the work item had heard of. A row from before the change keeps its `"event"` provenance, read and never rewritten. The `linked-pulls` integration op went with it: a work-item review's scope is pre-filled from what the-loop recorded, then its `pr-loops/` state, and GitHub is not asked | [spec](../specs/issue-370/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/370) |
 | issue-368 | The work item's own file gained what the repository may know, and lost what it may not (2026-09-15): `sessionPerPr`, `model` and `effort` moved in from the portable record's now-retired `graph` section, `pullRequests[]` records each pull request delivering the item (ref, repository, number, url, inner-loop directory, upstream state, provenance), and the `session` block left — a harness conversation id is a handle to one machine, so `session: inherit` resolves through that machine's session registry and falls back to a fresh session seeded with the artifacts where there is none (CI). A legacy `session` block is ignored on read and dropped on the next save; it is never resumed | [spec](../specs/issue-368/), [decision-128](../decisions/decision-128.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/368) |

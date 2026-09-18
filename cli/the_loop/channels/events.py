@@ -25,6 +25,7 @@ from typing import Dict, Tuple
 __all__ = [
     "EVENTS",
     "EventSpec",
+    "LIFECYCLE_EVENTS",
     "NOTIFICATION_EVENTS",
     "PUBLISHABLE_EVENTS",
     "SUBSCRIBABLE_EVENTS",
@@ -53,6 +54,17 @@ NOTIFICATION_EVENTS: Tuple[str, ...] = (
     "security-sign-off-pending",
     "conflict-escalated",
     "work-item-complete",
+)
+
+#: The lifecycle a work item's loop publishes on its own (issue-378): the runtime
+#: fires the two phase events on every walk of every graph — following the
+#: `loop:<phase>` label, so two nodes sharing a phase publish nothing between
+#: them — and the dispatcher fires the closure when the ledger says the item
+#: ended. None is recorded: the label and the closure ARE the ledger's record.
+LIFECYCLE_EVENTS: Tuple[str, ...] = (
+    "phase.started",
+    "phase.completed",
+    "work-item.closed",
 )
 
 #: The notifications a human answers with an approval — where a Slack message may
@@ -88,6 +100,21 @@ EVENTS: Dict[str, EventSpec] = {
         "The loop hit a genuine block, logged the conflict and escalated once."
     ),
     "work-item-complete": EventSpec("The work item reached `complete`."),
+    "phase.started": EventSpec(
+        "A phase of the work item's loop began — the node carrying the next "
+        "`loop:<phase>` label was entered (published by the runtime on every "
+        "walk, so every graph fires it; a human node says it waits on a person)."
+    ),
+    "phase.completed": EventSpec(
+        "A phase ended — the loop left its last node on a satisfied outcome, or "
+        "finished at a terminal one (published by the runtime)."
+    ),
+    "work-item.closed": EventSpec(
+        "The work item ended on the ledger — its issue was closed, or the pull "
+        "request that is the work item merged or closed — and this deployment "
+        "released it (published by the dispatcher before the item's room is "
+        "forgotten)."
+    ),
     "comment.agent": EventSpec(
         "The agent's own comment on the work item (marker-stamped) — the "
         "requirements summary, the phase checklist, a review note.",

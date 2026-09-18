@@ -136,7 +136,7 @@ def _build_dispatcher(
     and the file at the resolved path is read; the core facade passes the config
     it was handed, so a caller's explicit config is never overruled by disk.
     """
-    from ..channels.publishers import conversation_opener
+    from ..channels.publishers import conversation_opener, lifecycle_publisher
     from ..harness import build_adapters
     from ..sessions import SessionRegistry
     from ..webhook.dispatcher import Dispatcher, RoutingConfig
@@ -159,6 +159,8 @@ def _build_dispatcher(
         ),
         config=routing,
         opener=conversation_opener(getter),
+        # The lifecycle (issue-378): a closure is announced on every channel.
+        lifecycle=lifecycle_publisher(getter),
         # The three top-level choice sections (issue-358) — see the receiver's
         # copy of this call: the poller composes the same dispatcher, so a work
         # item's model resolves identically whichever ingress found it.

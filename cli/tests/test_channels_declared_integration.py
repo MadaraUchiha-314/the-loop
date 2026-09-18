@@ -499,3 +499,127 @@ def test_an_unresolvable_handle_authorizes_nobody(tmp_path):
 
     assert outcome["outcome"] == "unauthorized-actor"
     assert sink.delivered == []
+
+
+# -- issue-378: a declared room is the conversation (T11, T12, T13, T15) ---------
+
+
+def test_a_declared_room_is_the_conversation_and_events_are_top_level(tmp_path):
+    """
+    Feature: a declared room is channel-based
+      Scenario: the first event on a work item declared into a room
+        Given #375 has declared slack@C0TMP375 and has no conversation yet
+        When the-loop posts that work item's first event
+        Then one top-level message opens the room as the conversation
+        And the event is a top-level message in the room, not a reply
+        And the record carries no thread and `mode: channel`
+
+    Requirement: docs/specs/issue-378/requirements.md R5.1, R5.2
+    """
+    config = cli_config(tmp_path)
+    declare(config)
+    client = FakeSlackClient()
+    bot = channel_for(config, client)
+
+    result = bot.post(Event(event_type="comment.human", work_item=REF, text="hello"))
+
+    assert [(p["channel"], p["thread_ts"]) for p in client.posted] == [
+        (ROOM, None),
+        (ROOM, None),
+    ]
+    assert "posted in this channel" in client.posted[0]["text"]
+    record = conversation(config)
+    assert record["channel"] == ROOM
+    assert record["thread"] == ""
+    assert record["mode"] == "channel"
+    assert result.ok
+    state = state_of(config)
+    assert state.thread_for(REF) is None
+    assert state.conversation_for(REF) == (ROOM, "")
+
+
+def test_a_room_conversation_is_opened_once_and_every_event_is_top_level(tmp_path):
+    """R5.2, R5.7: `open` is idempotent; the second event opens nothing."""
+    config = cli_config(tmp_path)
+    declare(config)
+    client = FakeSlackClient()
+    bot = channel_for(config, client)
+
+    assert bot.open(REF).ok
+    assert bot.open(REF).ok
+    bot.post(Event(event_type="phase.started", work_item=REF, text="started"))
+    bot.post(Event(event_type="phase.completed", work_item=REF, text="done"))
+
+    assert [(p["channel"], p["thread_ts"]) for p in client.posted] == [
+        (ROOM, None),
+        (ROOM, None),
+        (ROOM, None),
+    ]
+    assert conversation(config)["origin"] == "start"
+
+
+def test_a_thread_declared_into_a_room_moves_to_the_room_as_a_room(tmp_path):
+    """R5.4: the room opens as a conversation, the old thread is told and unmapped."""
+    config = cli_config(tmp_path)
+    client = FakeSlackClient()
+    bot = channel_for(config, client)
+    bot.post(Event(event_type="comment.human", work_item=REF, text="first"))
+    old_thread = conversation(config)["thread"]
+
+    declare(config)
+    bot.post(Event(event_type="comment.human", work_item=REF, text="second"))
+
+    record = conversation(config)
+    assert (record["channel"], record["thread"], record["mode"], record["origin"]) == (
+        ROOM,
+        "",
+        "channel",
+        "declared",
+    )
+    pointer = [p for p in client.posted if p["thread_ts"] == old_thread]
+    assert any("has moved" in p["text"] for p in pointer)
+    assert (
+        client.posted[-1]["channel"] == ROOM and client.posted[-1]["thread_ts"] is None
+    )
+    assert state_of(config).work_item_for(old_thread) is None
+
+
+def test_a_thread_already_bound_inside_the_room_keeps_its_shape(tmp_path):
+    """R5.5: a conversation opened as a thread in the room (before this change)
+    stays a thread — a restart never changes the shape of what exists."""
+    config = cli_config(tmp_path)
+    declare(config)
+    client = FakeSlackClient()
+    bot = channel_for(config, client)
+    bot.bind("1700.000042", REF, ROOM, origin="event")
+
+    bot.post(Event(event_type="comment.human", work_item=REF, text="hello"))
+
+    assert [(p["channel"], p["thread_ts"]) for p in client.posted] == [
+        (ROOM, "1700.000042")
+    ]
+    assert conversation(config)["thread"] == "1700.000042"
+
+
+def test_a_reply_under_a_room_message_reaches_the_work_item(tmp_path):
+    """R5.6, A8: a thread under one of the-loop's room messages is the item's."""
+    config = cli_config(tmp_path)
+    declare(config)
+    client = FakeSlackClient()
+    bot = channel_for(config, client)
+    bot.post(Event(event_type="phase.started", work_item=REF, text="started"))
+    room_message = client.posted[-1]
+    sink = Sink()
+
+    outcome = socket(
+        config,
+        _message(
+            "a reply under the-loop's message", ts="1700.000900", thread="1700.000002"
+        ),
+        sink,
+        client=client,
+    )
+
+    assert room_message["thread_ts"] is None
+    assert outcome["outcome"] == "processed"
+    assert sink.refs == [REF]

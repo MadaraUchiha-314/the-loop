@@ -36,7 +36,8 @@ flowchart LR
   config parser warns against it, `the-loop channels status` prints it with ticks, and
   the [channels options](/config/cli/channels-options) page lists it — a test pins the
   three together. Subscribable: `session.awaiting_input`, the six graph notifications
-  (`work-item-complete` now fires from the `complete` node), `comment.agent`,
+  (`work-item-complete` now fires from the `complete` node), the three lifecycle events
+  (`phase.started`, `phase.completed`, `work-item.closed` — issue-378), `comment.agent`,
   `comment.human`, `standing.started`. Publishable: `work-item.reply`, `gate.feedback`,
   `control.command`, `work-item.create`, and — since issue-334 — `instance.command`,
   `standing.command`. Recorded: the ask and the four ticket-bound publishable ones; the
@@ -389,6 +390,65 @@ flowchart LR
   nothing was connected fails visibly to the member and is not recovered — an
   interactive gesture is re-issued, never replayed. A keyword or gate answer already on
   the ledger survives any downtime: the ledger's ingress executes it on its next cycle.
+- **A work item's whole life is on the bus** (issue-378,
+  [decision-130](../decisions/decision-130.md)). Three catalog rows any channel may
+  subscribe to, published by the loop itself rather than by a hook a graph author has to
+  remember: `phase.started`, `phase.completed` and `work-item.closed`. WHEN the runtime
+  enters a node whose phase differs from the phase the walk was in — the graph's first
+  node, an edge into a new phase, the `cleanup` node — THEN it SHALL publish
+  `phase.started` (the ref, its URL, the node, the phase, the loop's name and the node's
+  actor; a human node's text says it is *waiting on a person*); WHEN it leaves a phase on
+  a satisfied outcome, or finishes at a terminal node, THEN it SHALL publish
+  `phase.completed` with the outcome and the node entered next. The events follow the
+  **label**: two consecutive nodes under one phase (an author node and its approval
+  gate) publish nothing between them, a node without a phase inherits the phase before
+  it, and a `force` — which runs no entry chain and sets no label — publishes nothing.
+  WHEN the dispatcher records a closure — the issue closed, or the pull request that *is*
+  the work item merged or closed — THEN it SHALL publish `work-item.closed` (state,
+  reason, the closer GitHub named, the kind) **before** it clears the item's
+  collaboration-channel declaration, so the announcement lands in the room the item was
+  worked in; a delivering pull request's end publishes nothing. None of the three is
+  recorded on the ledger: the `loop:<phase>` label and the closure are its record. A
+  config with no `channels` section builds no event at all, and every publish is
+  best-effort in the bus's sense — the transition, the pointer and the label are what
+  they were. Every human gate of the outer loop is announced by construction: it carries
+  a phase (so `phase.started` says `actor: human`) or runs `notify` on entry, and a test
+  pins that against the shipped graph.
+- **A declared room is the conversation; the central channel keeps its threads**
+  (issue-378, decision-130). WHEN a work item has a declared collaboration channel
+  (issue-375) and no conversation bound there THEN the Slack channel SHALL open the
+  conversation as the **room itself** — one top-level message naming the work item, a
+  record with no thread and `mode: channel` — and every event for it SHALL be a
+  top-level message in that room, never a reply. A work item with no declaration is
+  unchanged: a thread rooted on the work item in `channels.slack.channel`, every event a
+  reply. A conversation declared into a room after it began as a thread moves as
+  issue-375 says, and is opened as a room on arrival; a conversation already bound as a
+  thread *inside* a room keeps that shape, because a restart never changes the shape of
+  a conversation that exists (`remove-channel` then `add-channel` re-opens it as a
+  room). `open` stays idempotent for a room, `the-loop channels threads` lists a room
+  with `(channel)` in the thread column and `mode` in its JSON, and the inbound pipeline
+  is untouched — a reply under any of the-loop's room messages is a message on the work
+  item, as issue-375 already attributes it.
+- **A work item can be opened from the slash command** (issue-378).
+  `/the-loop new [<repo>:] <title>` (more lines are the body; `create` is an alias) is
+  the kickoff with the text in the command: authorized first, judged under the same
+  `work-item.create` grant, acting once per trigger, and resolved by the kickoff's own
+  grammar — a first-line `<repo>:` prefix against the declared `repositories`, else
+  `kickoff.repo` — so what reaches the ledger is a **declared** slug and never the
+  member's text. WHEN the text resolves THEN the issue SHALL be created through the same
+  `work-item.create` event with `kickoff.labels`, the work item's conversation SHALL be
+  opened the way a start opens it (a thread in the home channel, origin `kickoff`), told
+  the link with the **Start** button where a press can be received, and the member
+  answered ephemerally with the link and where the conversation is. WHEN the text
+  resolves to no repository, to several, to an undeclared one, or is nothing but a
+  prefix THEN it SHALL be refused with the kickoff's own refusal text and nothing
+  created — a slash command has no message to hold and no thread to ask in, so the
+  prefix is the answer. A conversation that cannot be opened never fails the creation.
+- **The next channel type is a row** (issue-378). `load_channels` walks
+  `CHANNEL_PROVIDERS` (`name → loader`) instead of naming Slack; a loader answers an
+  enabled channel or nothing, fail-closed as before, and one that raises hides no other.
+  The lifecycle publishers speak `Event` and `bus.publish` only, and a test drives a
+  provider the-loop does not ship through a runtime walk with no Slack configured.
 - Reads, tokens, state: as before — `poll` or `socket` (`listen` now also handles
   `block_actions`, top-level messages and `slash_commands`), env-named tokens read at
   call time, bindings and cursors in `<state.root>/channels/slack.json` (plus a
@@ -399,7 +459,7 @@ flowchart LR
   `kickoff-empty-message` / `kickoff-already-asked` / `kickoff-ask-failed` /
   `not-your-kickoff` / `no-pending-kickoff` / `undeclared-repository` /
   `create-failed`, `channel.kickoff_asked`, `channel.created`, `channel.thread_opened` (origin `event` |
-  `kickoff` | `start` | `declared`), `channel.open_failed`, `channel.reaction_added`,
+  `kickoff` | `start` | `declared`; `mode: channel` for a room, issue-378), `channel.open_failed`, `channel.reaction_added`,
   `channel.reaction_failed`, and the slash command's `channel.command_received`,
   `channel.command_completed`, `channel.command_answer_failed`, `channel.caught_up`,
   the drop reasons `unknown-command` / `unknown-target` / `duplicate`, and the press
@@ -408,6 +468,14 @@ flowchart LR
 
 ## Design
 
+- [`docs/specs/issue-378/design.md`](../specs/issue-378/design.md) — the three lifecycle
+  rows and `publish_lifecycle` / `lifecycle_publisher`; the runtime's `phase_of` and
+  `_lifecycle` on `start` / `advance` / `cleanup` with the phase pointer in the state
+  file; the dispatcher's `_announce_closed` above the clears; `_open_home` / `_open_room`
+  and `conversation_for`; the `create` verb family; `CHANNEL_PROVIDERS`.
+- [`decision-130`](../decisions/decision-130.md) — the lifecycle is the runtime's and
+  follows the label, never recorded; a declared room is channel-based, the central
+  channel threaded; the next channel type is a provider row.
 - [`docs/specs/issue-338/design.md`](../specs/issue-338/design.md) — `channels/digest.py`
   (`to_mrkdwn`, `condense`, `fit`), the renderer's `long_messages`, the post's fallback
   text, the key in both schema copies, the status line.
@@ -464,6 +532,7 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-378 | A work item's **whole life reaches every channel**, and Slack can begin one (2026-09-18). Three catalog rows — `phase.started`, `phase.completed`, `work-item.closed` — published by the runtime on every transition of every graph and by the dispatcher on a closure, following the `loop:<phase>` label (two nodes under one phase are silent, a phase-less gate inherits, a force publishes nothing) and never recorded; the closure is announced **before** the item's room is forgotten. Before this a channel heard from the loop only where a graph author had written a `notify` hook — four nodes of the outer loop — and a work item closed on GitHub reached no channel, which is the *hit or miss* the ticket names. A **declared room is now the conversation**: the-loop's updates there are top-level messages and the record carries `mode: channel` with no thread, while the central channel keeps one thread per work item; a thread already bound inside a room keeps its shape. `/the-loop new [<repo>:] <title>` opens a work item through the kickoff's own grammar and grant, then opens its thread and answers with the link. `load_channels` walks a **provider table**, so the next channel type is a row and a module. No config key, grant, scope or version change; one optional key on a conversation record and one `phase` pointer in the state file | [spec](../specs/issue-378/), [decision-130](../decisions/decision-130.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/378) |
 | issue-375 | A work item can name the **room it is worked in** (2026-09-17). `the-loop add-channel slack@C…`, from an authorized user on the ticket or from the terminal, records a collaboration channel in that work item's portable record; its thread root is then opened there instead of in `channels.slack.channel`, and every message in that room that no binding already claims is a message on that work item — a top-level one included, so the room never opens a second issue. A declaration made after the conversation started **moves** it, leaving a pointer in the thread it left. The grammar is `<type>@<target>` (with `<type>://<target>` as an alias), which is the extension point: a future Jira or WhatsApp channel is a type row plus an adapter. From the author's review of PR #376, **a person names the room and the person rather than looking up ids**: `the-loop add-channel`, `channels.slack.channel` and `routing.authorizedUsers[].slack` each take a name or an id, resolved through a `name → id` directory cached on the machine and stored as an **id**, so no message ever costs a lookup and a rename changes nothing. An id short-circuits before any lookup, so a pre-existing configuration is untouched; every failure to resolve fails closed, naming the scope likely missing; a display name resolves to nobody; and a handle names whoever holds it, which the allow-list's documentation says plainly because only a member id names one person for good. Three read-only scopes (`channels:read`, `groups:read`, `users:read`) join the shipped manifest, so an existing install must be re-installed. One channel per type per work item and one work item per channel, enforced on write and again on read, because attributing a room's messages must never be a guess. The declaration moves a conversation and grants nobody anything: who may speak stays `channels.slack`'s allow-list and who may direct the loop stays `routing.authorizedUsers` | [spec](../specs/issue-375/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/375) |
 | issue-368 | A work item's thread binding moved out of `channels/<channel>.json` and into that work item's **portable record** (2026-09-15): the thread is a remote entity the-loop created, so a second machine continues the conversation instead of opening a second root and dropping replies in the first as `unmapped`. It stays in the operator's record rather than the repository because a channel id, a thread ts and a workspace permalink are the operator's workspace's. The read cursor went the other way, into this machine's session record beside the handles, because it states what this deployment has already mirrored — with the channel file keeping the cursor for a work item that has no session record here, which would otherwise re-process every reply. What remains in the file belongs to no work item: the per-channel kickoff cursor, the pending questions, and a standing session's binding. A binding written before the change is honoured and moved on the next write | [spec](../specs/issue-368/), [decision-128](../decisions/decision-128.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/368) |
 | issue-362 | A **direct message is a channel like any other**. The shipped app manifest now carries all four conversation kinds — `im:history`/`message.im` and `mpim:history`/`message.mpim` beside the public and private pairs — closing a failure in which a `D…` channel bound threads, posted, reacted and answered button presses normally while **nothing anyone typed was ever delivered**: Slack emits `message.im` in a DM, the app was subscribed only to `message.channels`/`message.groups`, and the bot token's own history scopes still let the connect-time catch-up read recover everything hours later, so nothing ever logged an error. Two things make the class of failure loud instead: `channels status` names the conversation kind from the id's prefix with no API call and flags a `D…`, and `--probe` (also run once when the listener connects, logging at `warning`) measures it against the installed app with `conversations.info` + `auth.test`'s `x-oauth-scopes` — a finding needs every candidate kind's scope missing, and unreadable scopes yield none. Third, socket mode now **reconciles periodically** rather than only at connect (`read.catchUpSeconds`, default 900, `0` = connect-only, a non-zero value under 60 raised to 60), bounding every cause of a missed envelope. The listener's filter stays kind-agnostic — no DM branch — and no grant, state or config version changes | [spec](../specs/issue-362/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/362) |

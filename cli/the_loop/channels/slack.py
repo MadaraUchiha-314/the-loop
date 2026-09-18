@@ -50,7 +50,7 @@ from .base import (
 )
 from .digest import DEFAULT_DIGEST_MODE, DIGEST_MODES, fit, truncate
 from .events import APPROVAL_EVENTS, PUBLISHABLE_EVENTS, SUBSCRIBABLE_EVENTS
-from .state import ChannelState, ChannelStores
+from .state import ROOM_MODE, ChannelState, ChannelStores
 
 logger = logging.getLogger("the-loop.channels")
 
@@ -1108,6 +1108,50 @@ def render_root(
     return f"the-loop: conversation for {work_item}{link}", blocks
 
 
+def render_room(
+    work_item: str, url: str = "", *, reading: bool = True
+) -> Tuple[str, List[Dict[str, Any]]]:
+    """The message that opens a **room** conversation (issue-378 R5.1) —
+    ``(text, blocks)`` from the ref alone, like :func:`render_root`: the room is
+    the work item's own, so it says every update lands here as a message."""
+    name = f"<{url}|{work_item}>" if url else f"`{work_item}`"
+    lines = [
+        f"Every update about {name} — questions, approvals, phases, comments — "
+        "is posted in this channel as a message."
+    ]
+    if reading:
+        lines.append("Messages here from an authorized member reach it.")
+    blocks: List[Dict[str, Any]] = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f"the-loop · {work_item}"[:_HEADER_LIMIT],
+            },
+        },
+        {"type": "section", "text": {"type": "mrkdwn", "text": " ".join(lines)}},
+    ]
+    if url:
+        blocks.append(
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "Open on GitHub"},
+                        "url": url,
+                        "action_id": f"{ACTION_PREFIX}open",
+                    }
+                ],
+            }
+        )
+    link = f" — {url}" if url else ""
+    return (
+        f"the-loop: every update about {work_item} is posted in this channel{link}",
+        blocks,
+    )
+
+
 class SlackBotChannel:
     """The bot: one Slack channel, one thread per work item, replies read back."""
 
@@ -1238,11 +1282,18 @@ class SlackBotChannel:
     ) -> Tuple[str, str]:
         """``(channel_id, thread_ts)`` for ``work_item`` — opening or MOVING it.
 
-        Three cases, and the third is the whole of R2.2: no binding opens a root
-        in the work item's home; a binding already in that home is returned
-        untouched; a binding in another channel means the work item was declared
-        into a new room after its conversation had started, so a root is opened
-        **there** and the binding follows it.
+        Three cases, and the third is the whole of R2.2: no binding opens the
+        conversation in the work item's home; a binding already in that home is
+        returned untouched, whatever its shape; a binding in another channel
+        means the work item was declared into a new room after its conversation
+        had started, so the conversation is opened **there** and the binding
+        follows it.
+
+        What "open in the home" means depends on the home (issue-378 R5): a
+        **declared room** is the work item's own, so the conversation is the
+        room itself (``thread_ts == ""``, every update a top-level message); the
+        operator's central channel is shared by every work item, so a thread is
+        opened there, as always.
 
         A work item has exactly one conversation (issue-312), so the move is a
         move: replies in the old thread are `unmapped` from then on. That is why
@@ -1254,15 +1305,23 @@ class SlackBotChannel:
         home = self.home_for(work_item)
         if not home:
             raise self._no_channel(work_item)
-        bound = state.thread_for(work_item)
+        bound = state.conversation_for(work_item)
         if bound and bound[0] and bound[0] != home:
-            moved = self._open_thread(
-                client, state, work_item, channel_id=home, origin="declared"
-            )
+            moved = self._open_home(client, state, work_item, home, origin="declared")
             self._say_moved(bound, moved, work_item)
             return moved
         if bound:
             return bound
+        return self._open_home(client, state, work_item, home, origin=origin)
+
+    def _open_home(
+        self, client, state: ChannelState, work_item: str, home: str, *, origin: str
+    ) -> Tuple[str, str]:
+        """Open ``work_item``'s conversation in ``home``: as the room itself when
+        the home is a room the work item declared, as a thread otherwise."""
+        declared = self.stores.declared(work_item) if self.stores is not None else ""
+        if declared and declared == home:
+            return self._open_room(client, state, work_item, home, origin=origin)
         return self._open_thread(
             client, state, work_item, channel_id=home, origin=origin
         )
@@ -1300,7 +1359,7 @@ class SlackBotChannel:
         bound: Optional[Tuple[str, str]] = None
         if event.work_item:
             with ChannelState.locked(self.state_path, self.stores) as state:
-                before = state.thread_for(event.work_item)
+                before = state.conversation_for(event.work_item)
                 bound = self._conversation(client, state, event.work_item)
                 if before == bound and state.backfilled:
                     state.save(self.state_path)  # a 13.0.1 file, now keyed (R3.4)
@@ -1324,21 +1383,26 @@ class SlackBotChannel:
                 channel=bound[0] if bound and bound[0] else self.central_channel(),
                 text=text,
                 blocks=blocks,
-                thread_ts=bound[1] if bound else None,
+                # A room conversation has no thread (issue-378): top-level, never
+                # `thread_ts=""`, which Slack refuses.
+                thread_ts=(bound[1] or None) if bound else None,
             )
         except ChannelError:
             raise
         except Exception as exc:  # SlackApiError and transport errors alike
             raise ChannelError(f"slack: post failed: {exc}") from None
-        if bound:
+        if bound and bound[1]:
             return PostResult(channel=self.name, ok=True, thread=bound[1])
         return PostResult(
             channel=self.name, ok=True, thread=str(response.get("ts") or "")
         )
 
-    def open(self, work_item: str) -> PostResult:
+    def open(self, work_item: str, *, origin: str = "start") -> PostResult:
         """Open ``work_item``'s thread now — the root alone, no reply — or
-        return the one it already has (issue-317 R1.2, R1.3).
+        return the one it already has (issue-317 R1.2, R1.3). ``origin`` is
+        how the record says the conversation came to be: ``start`` from the
+        spawn path, ``kickoff`` when a member's `/the-loop new` began it
+        (issue-378).
 
         What the dispatcher's spawn path calls, through the bus, the moment a
         start is accepted: the same lock, root, bind and save as the lazy path
@@ -1352,8 +1416,8 @@ class SlackBotChannel:
             raise self._no_channel(work_item)
         client = self._client()
         with ChannelState.locked(self.state_path, self.stores) as state:
-            before = state.thread_for(work_item)
-            bound = self._conversation(client, state, work_item, origin="start")
+            before = state.conversation_for(work_item)
+            bound = self._conversation(client, state, work_item, origin=origin)
             if before == bound and state.backfilled:
                 state.save(self.state_path)  # a 13.0.1 file, now keyed (R3.4)
         return PostResult(channel=self.name, ok=True, thread=bound[1])
@@ -1408,6 +1472,56 @@ class SlackBotChannel:
             origin=origin,
         )
         return (room, ts)
+
+    def _open_room(
+        self,
+        client,
+        state: ChannelState,
+        work_item: str,
+        room: str,
+        *,
+        origin: str = "event",
+    ) -> Tuple[str, str]:
+        """Open ``work_item``'s conversation as the room ``room`` itself (issue-378
+        R5.1): one top-level message naming the work item, a record with no
+        thread and ``mode: channel``, saved — inside the caller's lock. Returns
+        ``(room, "")``. A message that fails to post binds nothing, so the next
+        event tries again, exactly as :meth:`_open_thread` behaves."""
+        url = _work_item_url(work_item)
+        text, blocks = render_room(
+            work_item, url, reading=self.config.read_mode != "off"
+        )
+        try:
+            response = client.chat_postMessage(
+                channel=room, text=text, blocks=blocks, thread_ts=None
+            )
+        except Exception as exc:  # SlackApiError and transport errors alike
+            raise ChannelError(f"slack: could not open the room: {exc}") from None
+        ts = str(response.get("ts") or "")
+        if not ts:
+            raise ChannelError("slack: could not open the room: no ts returned")
+        permalink = ""
+        try:
+            permalink = str(
+                client.chat_getPermalink(channel=room, message_ts=ts).get("permalink")
+                or ""
+            )
+        except Exception as exc:  # noqa: BLE001 — a nicety; the binding stands
+            logger.debug("slack: no permalink for room message %s: %s", ts, exc)
+        state.bind(
+            "", work_item, room, origin=origin, permalink=permalink, mode=ROOM_MODE
+        )
+        state.save(self.state_path)
+        eventlog.emit(
+            "channel.thread_opened",
+            channel=self.name,
+            work_item=work_item,
+            thread="",
+            channel_id=room,
+            origin=origin,
+            mode=ROOM_MODE,
+        )
+        return (room, "")
 
     def say(
         self,

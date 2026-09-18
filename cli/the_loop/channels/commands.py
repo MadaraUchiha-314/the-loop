@@ -61,6 +61,7 @@ from .state import ChannelState, ChannelStores, canonical
 logger = logging.getLogger("the-loop.channels")
 
 __all__ = [
+    "CREATE_VERBS",
     "FAMILY_GRANTS",
     "INSTANCE_VERBS",
     "SLACK_HOOKS_PREFIX",
@@ -81,9 +82,14 @@ __all__ = [
 INSTANCE_VERBS = ("status", "restart", "upgrade")
 #: The standing-session verbs — the control plane's, minus create/delete.
 STANDING_VERBS = ("list", "start", "stop", "restart")
+#: The verbs that open a work item (issue-378): `new`, and `create` as its alias.
+CREATE_VERBS = ("new", "create")
 #: Each verb family's grant — a catalog event type in `channels.slack.publish`.
+#: `create` reuses the kickoff's grant: a slash command that files an issue is
+#: the top-level message's gesture with the text in the command instead.
 FAMILY_GRANTS: Dict[str, str] = {
     "work-item": "control.command",
+    "create": "work-item.create",
     "instance": "instance.command",
     "standing": "standing.command",
 }
@@ -106,9 +112,9 @@ class Invocation:
     """What a command's text asked for — one family and verb, validated tokens, or
     a refusal (``error`` set, ``family`` empty)."""
 
-    family: str = ""  # help | work-item | instance | standing
+    family: str = ""  # help | work-item | create | instance | standing
     verb: str = ""  # a control COMMAND constant, an instance verb, a standing verb
-    target: str = ""  # the raw work-item token, or the standing name
+    target: str = ""  # the raw work-item token, the standing name, or `new`'s text
     subject: str = ""  # @login for the collaborator commands
     address: str = ""  # instance:<name>
     error: str = ""
@@ -127,6 +133,10 @@ def usage() -> str:
         "`contribute`, `do`, `review`, `cleanup`, `add-collaborator @login`, "
         "`remove-collaborator @login`); the work item is `github:owner/repo#N`, "
         "`owner/repo#N`, `#N` (against kickoff.repo) or its GitHub URL\n"
+        "`/the-loop new [<repo>:] <title>` — open a work item (the kickoff's "
+        "grammar: a first-line `<repo>:` prefix against the declared "
+        "`repositories`, else `kickoff.repo`; more lines are the body); its "
+        "thread opens here\n"
         "`/the-loop status` · `/the-loop restart` · `/the-loop upgrade` — this "
         "instance\n"
         "`/the-loop standing list` · `/the-loop standing start|stop|restart <name>` "
@@ -154,6 +164,15 @@ def parse_invocation(text: Optional[str], control: ControlConfig) -> Invocation:
     if not tokens or tokens[0].lower() == "help":
         return Invocation(family="help", verb="help")
     verb, rest = tokens[0].lower(), tokens[1:]
+    if verb in CREATE_VERBS:
+        # The one family whose argument is prose: everything after the verb,
+        # newlines kept, because the kickoff reads a first line and a body.
+        prose = (text or "").strip()[len(tokens[0]) :].strip()
+        if not prose:
+            return _refused(
+                f"`{verb}` needs a title — `/the-loop new [<repo>:] <title>`"
+            )
+        return Invocation(family="create", verb="new", target=prose)
     if verb in INSTANCE_VERBS:
         if rest:
             return _refused(f"`{verb}` takes no argument")
@@ -466,12 +485,16 @@ def handle_slash_command(
     post_comment: Optional[Callable] = None,
     lifecycle: Any = None,
     standing: Any = None,
+    create_issue: Optional[Callable] = None,
+    client_factory: Optional[Callable] = None,
 ) -> Dict[str, Any]:
     """One slash command through authorize → parse → grant → act → answer.
 
     Returns the outcome; **never raises**. ``respond`` is ``(response_url,
     text) -> bool``; ``lifecycle`` and ``standing`` default to the core modules
-    and are the tests' seams, as ``post_comment`` is the ledger writer's.
+    and are the tests' seams, as ``post_comment`` is the ledger writer's,
+    ``create_issue`` the issue writer's and ``client_factory`` the Slack
+    client's (both for `/the-loop new`, issue-378).
     """
     config = SlackChannelConfig.from_mapping(cli_config)
     member = str(payload.get("user_id") or "")
@@ -540,13 +563,24 @@ def handle_slash_command(
         outcome, message = _work_item_verb(
             invocation, config, cli_config, member, post_comment, result
         )
+    elif invocation.family == "create":
+        outcome, message = _create_verb(
+            invocation,
+            config,
+            cli_config,
+            member,
+            post_comment,
+            create_issue,
+            client_factory,
+            result,
+        )
     elif invocation.family == "instance":
         outcome, message = _instance_verb(invocation, cli_config, member, lifecycle)
     else:
         outcome, message = _standing_verb(
             invocation, cli_config, member, standing, result
         )
-    if outcome in ("unknown-target",):
+    if outcome == "unknown-target" or outcome.startswith("kickoff-"):
         reply(message)
         return _drop(outcome, member, target=result.get("workItem") or None)
     eventlog.emit(
@@ -619,6 +653,108 @@ def _work_item_verb(invocation, config, cli_config, member, post_comment, result
         )
     error = (record.error if record else "") or "the ledger did not record it"
     return "record-failed", f"Could not record `{line}` on `{ref.ref}`: {error}"
+
+
+def _create_verb(
+    invocation, config, cli_config, member, post_comment, create_issue, factory, result
+):
+    """`/the-loop new [<repo>:] <title>` — the kickoff's tail with the thread step
+    swapped (issue-378 R4). Returns ``(outcome, answer)``.
+
+    The text goes through the kickoff's own grammar (:func:`resolve_target`),
+    so what reaches the ledger is a **declared** slug and never the member's
+    words (A1); an unresolved target is refused with the kickoff's own text,
+    because a slash command has no message to hold and no thread to ask in
+    (R4.3). The issue is opened through the same ``work-item.create`` event a
+    top-level message publishes; the conversation is then opened the way a
+    start opens it (R4.2), and a thread that cannot be opened never fails the
+    creation (R4.6).
+    """
+    from .kickoff import refusal_text, resolve_target
+
+    target = resolve_target(invocation.target, config, cli_config)
+    if not target.ok:
+        return f"kickoff-{target.outcome}", refusal_text(target)
+    _received(member, invocation, target.repo)
+    event = Event(
+        event_type="work-item.create",
+        work_item="",
+        text=target.text,
+        source="slack",
+        actor=principal_for(config.principals, "slack", member),
+        detail={
+            "repo": target.repo,
+            "labels": ",".join(config.kickoff_labels),
+            "thread": "",
+            "invocation": "slash",
+        },
+    )
+    from .bus import publish
+
+    ledger = GitHubLedger(
+        cli_config, post_comment=post_comment, create_issue=create_issue
+    )
+    record = publish(event, cli_config, channels=[], ledger=ledger).record
+    if not (record and record.ok and record.ref):
+        error = (record.error if record else "") or "the ledger did not create it"
+        return "create-failed", f"Could not open the work item: {error}"
+    result["workItem"] = record.ref
+    result["url"] = record.url
+    link = f" — {record.url}" if record.url else ""
+    # The conversation, opened as a start opens it (issue-317) with the
+    # kickoff's origin, then told the link with the Start button where a press
+    # can be received (issue-337). Best-effort: the issue exists either way.
+    from .slack import SlackBotChannel, render_reply_blocks
+
+    bot = SlackBotChannel(config, slack_state_path(cli_config), client_factory=factory)
+    where = ""
+    try:
+        bot.open(record.ref, origin="kickoff")
+        state = ChannelState.load(bot.state_path, bot.stores)
+        conversation = state.conversation_for(record.ref) or ("", "")
+    except Exception as exc:  # noqa: BLE001 — a thread is a nicety; the issue is the act
+        eventlog.emit(
+            "channel.open_failed",
+            level="warning",
+            channel="slack",
+            work_item=record.ref,
+            error=str(exc),
+        )
+        where = (
+            f" Its conversation here could not be opened ({exc}); the first "
+            "event opens it."
+        )
+    else:
+        channel_id, thread = conversation
+        said = f"Opened {record.ref}{link}. " + (
+            "This thread is now that work item's conversation — replies here reach it."
+            if thread
+            else "This channel is that work item's conversation — messages "
+            "here reach it."
+        )
+        bot.say(
+            thread,
+            said,
+            channel_id,
+            blocks=render_reply_blocks(said, config.command_buttons_for("start")),
+        )
+        eventlog.emit(
+            "channel.created",
+            channel="slack",
+            work_item=record.ref,
+            actor=member,
+            thread=thread or None,
+            channel_id=channel_id or None,
+        )
+        if channel_id:
+            keyword = config.keyword("start")
+            typed = f"type `{keyword}` there, or " if keyword else ""
+            where = (
+                f" Its conversation is {'a thread ' if thread else ''}in "
+                f"<#{channel_id}>; {typed}run `/the-loop start {record.ref}` to "
+                "start it."
+            )
+    return "created", f"Opened `{record.ref}`{link}.{where}"
 
 
 def _instance_verb(invocation, cli_config, member, lifecycle):

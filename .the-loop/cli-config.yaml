@@ -484,7 +484,9 @@ channels:
     # channel: ""                            # where the bot posts: #name or a C… id
     #                                        # (a name needs channels:read/groups:read
     #                                        #  and is resolved once; an id needs neither)
-    # subscribe: [session.awaiting_input]    # what this channel RECEIVES
+    # subscribe: [session.awaiting_input]    # what this channel RECEIVES (+ the notify events,
+    #                                        #  phase.started / phase.completed / work-item.closed,
+    #                                        #  comment.agent / comment.human)
     # publish: [work-item.reply]             # what a message here MAY BECOME
     #                                        # (+ gate.feedback, control.command, work-item.create,
     #                                        #  instance.command, standing.command — issue-334)
