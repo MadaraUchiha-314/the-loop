@@ -33,6 +33,7 @@ from .. import cli_config, eventlog
 from ..authz import resolve_authorized_users
 from ..channels.publishers import comment_publisher
 from ..ghhost import github_host
+from ..pollclocks import PollClockStore
 from ..runlock import RunLock
 from ..state import StateLayout, layout_from_config, legacy_layout
 from ..workitem import WorkItemStore
@@ -58,6 +59,11 @@ class PollerOptions:
     pidfile: str
     status_file: str
     once: bool = False
+    #: Where this machine's poll clocks go (issue-382). Empty means "beside the
+    #: portable directory", which is where :class:`~the_loop.state.StateLayout`
+    #: puts them — the one case that matters is a `state_dir` pointed somewhere
+    #: unusual, where the clocks must follow the records they date.
+    clock_file: str = ""
 
 
 def _config_path() -> Path:
@@ -121,6 +127,7 @@ def default_options(once: bool = False) -> PollerOptions:
         pidfile=str(layout.poll_pidfile),
         status_file=str(layout.poll_status),
         once=once,
+        clock_file=str(layout.poll_clocks),
     )
 
 
@@ -454,7 +461,8 @@ def _run_locked(
         dispatcher=dispatcher,
         config=config,
         state=PollState(
-            WorkItemStore(options.state_dir, legacy=legacy_layout(_state_layout()))
+            WorkItemStore(options.state_dir, legacy=legacy_layout(_state_layout())),
+            clocks=PollClockStore(options.clock_file) if options.clock_file else None,
         ),
         reloader=Reloader(_config_path(), build_plan),
         authorized_users=authorized,
