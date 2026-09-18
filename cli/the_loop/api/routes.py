@@ -180,7 +180,8 @@ class StandingCreateBody(BaseModel):
     cwd: str = ""
     prompt: str = ""
     description: str = ""
-    # None (absent) inherits routing.harnessArgs.<harness>; [] means none.
+    # None (absent) inherits the harness's launch arguments — harnesses[].args,
+    # else the deprecated routing.harnessArgs.<harness> (issue-377); [] means none.
     harnessArgs: Optional[List[str]] = None
     slackEnabled: bool = False
     slackChannel: str = ""

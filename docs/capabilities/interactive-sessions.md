@@ -227,9 +227,9 @@ still carrying the key is warned about and otherwise ignored).
   pre-trusting a clone honours grants authored by anyone who can push to that repository
   — `enabled: false` is the opt-out. All honouring `CLAUDE_CONFIG_DIR`. And, **only**
   when this harness's
-  `harnessArgs` already ask for bypass mode, recording the bypass-permissions
-  disclaimer acceptance (`acceptBypassPermissions: auto`; `always`/`never` decide
-  explicitly). Neither dialog is a permission rule, so no CLI flag —
+  launch arguments (`harnesses[].args`, else the deprecated `routing.harnessArgs`)
+  already ask for bypass mode, recording the bypass-permissions disclaimer acceptance
+  (`acceptBypassPermissions: auto`; `always`/`never` decide explicitly). Neither dialog is a permission rule, so no CLI flag —
   `--dangerously-skip-permissions` included — silences them. Writes touch only those
   keys, merge into what is already there, go through a temp file + atomic replace, are
   **skipped entirely** when the value is already correct, and are never applied to a
@@ -287,9 +287,25 @@ belongs to does not.
   mid-graph work item always spawns and respawns, an inner PR loop is untouched, and every
   existing graph-link skip path means nothing is deferred. An armed work item with no
   session is followed with `the-loop check`, not `sessions list`.
+- WHEN a session is spawned or respawned — on a work item's first event, by the reply
+  that answers its human start gate, on a respawn, or for a pull request endpoint — THEN
+  it SHALL be launched with the harness's **launch arguments**: `harnesses[].args` when
+  that entry declares a list, else the deprecated `routing.harnessArgs.<harness>`,
+  resolved once (`modelchoice.launch_args`) and built into every adapter the daemons,
+  a reload, `the-loop models check` and the standing sessions use (issue-377). A harness
+  declared in both homes launches on the new one, never the union, and the conflict is
+  reported. Nothing declared launches bare; the-loop never adds a permission flag.
+- WHEN an authorized reply unparks a work item from its human start gate THEN the session
+  spawned by that same event SHALL be resolved **after** the gate is advanced and from
+  the checkout just prepared, so it is launched with the model and effort that reply
+  froze and its record says so (issue-377 — until then the adapter was resolved before
+  the gate, so the first session carried neither the choice nor, when the arguments
+  lived in `harnesses[].args`, the arguments).
 - WHEN a session is spawned or respawned for a work item that froze a **model** or an
-  **effort level** at `phase-selection` THEN it SHALL be launched with that harness's own
-  arguments followed by the model's and then the effort's (issue-358). Both are
+  **effort level** at `phase-selection` THEN it SHALL be launched with those same launch
+  arguments followed by the model's and then the effort's (issue-358) — the choice path
+  starts from the adapter the no-choice path launches on, never from a second read of the
+  config (issue-377). Both are
   re-validated on the way in — against what the operator declares *now*, and against the
   probed availability matrix — so a hand-edited state file, a withdrawn declaration or a
   model this machine's harness has started refusing resolves to the harness's own
@@ -301,12 +317,16 @@ belongs to does not.
 - WHEN a session is registered THEN its record SHALL carry the `model`, `effort` and
   `harnessArgs` it was launched with, each omitted when empty, and `the-loop sessions list`
   SHALL show the model (with the effort beside it) — so "what is this running on?" is
-  answered without attaching to a pane.
+  answered without attaching to a pane. The `session.spawned`, `session.respawned` and
+  `session.pr_spawned` events SHALL carry the same `harness_args` (and `model`/`effort`
+  where a work item has them), so the question is answerable from `events.jsonl` alone
+  (issue-377).
 
 ## History
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-377 | **Every session launches on the operator's declared arguments** (2026-09-18). `harnesses[].args` — the documented home since 16.0.0 — was read only on the model-choice path; the shared adapters both daemons build, `the-loop models check` and the standing sessions read the deprecated `routing.harnessArgs` alone, so a config that followed the deprecation warning launched every ordinary session bare and a released work item stalled on its first permission prompt. One resolver (`modelchoice.launch_args`) now feeds every adapter builder, `_adapter_for` derives the choice path from the adapter's own arguments, `_spawn_for` resolves the adapter **after** `on_arm` and from the checkout so the post-gate session carries the frozen choice, and the spawn events carry the argv | [spec](../specs/issue-377/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/377) |
 | issue-368 | The machine-local record became a **map of sessions keyed by the ref each serves** (2026-09-15) — the work item's own and one per pull request — holding handles alone: the pull request's repository, number, URL and upstream state are the repository's facts and live once, in its `work-item-state.json`, joined by that same ref. The record also carries what this deployment has already mirrored of the work item's channel threads. A record written before the change is read as it was and rewritten as a map on its next save | [spec](../specs/issue-368/), [decision-128](../decisions/decision-128.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/368) |
 | issue-358 | A work item picks its **model** and **effort** at `phase-selection`, and the spawn now happens **after** that gate rather than before it: `graphlink.on_spawn` split into `on_arm` (enter the graph) and `on_spawn` (bind the session), so an armed item parked at a human start gate costs no tmux session and the first spawn already carries the frozen choice. `Dispatcher._adapter_for` resolves the choice like `_tmux_for` resolves `sessionPerPr`; the session record gained `model`/`effort`/`harnessArgs` | [spec](../specs/issue-358/), [decision-124](../decisions/decision-124.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/358) |
 | issue-317 | The spawn path opens the work item's channel conversations first: `Dispatcher` takes an injected opener (`channels.publishers.conversation_opener`), called with the ref at the top of `_spawn_for` — behind every refusal, before the checkout — and contained if it raises; both daemons and the core facade's dispatcher wire it | [spec](../specs/issue-317/), [decision-107](../decisions/decision-107.md), [channels](channels.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/317) |

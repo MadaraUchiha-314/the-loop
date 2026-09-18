@@ -1626,8 +1626,9 @@ components:
             type: array
           - type: 'null'
           title: Harnessargs
-          description: Extra CLI arguments for the harness. Absent inherits
-            routing.harnessArgs for the resolved harness; an empty list means none.
+          description: Extra CLI arguments for the harness. Absent inherits the
+            resolved harness's launch arguments (harnesses[].args, else the deprecated
+            routing.harnessArgs); an empty list means none.
         slackEnabled:
           type: boolean
           title: Slackenabled

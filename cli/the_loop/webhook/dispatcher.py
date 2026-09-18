@@ -65,7 +65,7 @@ from ..modelchoice import (
     declared_models,
     effective_args,
     effort_args,
-    harness_args,
+    launch_args,
     model_args,
 )
 from ..modelprobe import VerdictCache, offerable
@@ -756,9 +756,6 @@ class Dispatcher:
         from ..harness import build_adapters
 
         self.config = config
-        self.adapters = build_adapters(
-            config.harness_args, config.harness_trust, config.harness_plugins
-        )
         if cli_config is not None:
             # The choice sections move with the rest of the config on a reload
             # (issue-358): declaring a model should not need a daemon restart,
@@ -767,6 +764,15 @@ class Dispatcher:
             self.cli_config.setdefault(
                 "_verdictCache", layout_from_config(self.cli_config).verdict_cache
             )
+        # The adapters launch on the resolved launch arguments — `harnesses[].args`,
+        # else the deprecated `routing.harnessArgs` (issue-377): one resolver for
+        # every builder, so a reload cannot leave the shared adapters reading a
+        # different home than the choice path does.
+        self.adapters = build_adapters(
+            launch_args(self.cli_config, config.harness_args),
+            config.harness_trust,
+            config.harness_plugins,
+        )
         if not self._workspace_override:
             self.workspace = self._build_workspace(config)
         if not self._reactor_override:
@@ -1597,7 +1603,7 @@ class Dispatcher:
         )
 
     def _adapter_for(
-        self, work_item: WorkItemRef, harness: str
+        self, work_item: WorkItemRef, harness: str, cwd: str = ""
     ) -> Optional[HarnessAdapter]:
         """The operator's adapter with THIS work item's own model and effort applied.
 
@@ -1605,19 +1611,22 @@ class Dispatcher:
         shared adapter unchanged and allocates nothing, so a work item that chose
         nothing is launched byte-identically to how it was before this feature
         existed (R6.1) — which is most of them.
+
+        The base of the choice path is the shared adapter's **own** arguments,
+        never a second read of the config (issue-377): the two branches leave
+        from one adapter, so the argv with a choice is the argv without one plus
+        the choice, by construction. ``cwd`` is the checkout a caller has just
+        prepared — the post-gate spawn, whose registry record does not exist yet
+        — so the choice the gate froze there is read from it rather than missed.
         """
         adapter = self.adapters.get(harness)
         if adapter is None:
             return None
-        model, effort = self._resolved_choice(work_item, harness)
+        model, effort = self._resolved_choice(work_item, harness, cwd)
         if not model and not effort:
             return adapter
         args = effective_args(
-            harness_args(
-                self.cli_config or {},
-                harness,
-                self.config.harness_args.get(harness) or (),
-            ),
+            adapter.extra_args,
             model_args(model, adapter) if model else (),
             effort_args(effort, adapter) if effort else (),
         )
@@ -2814,8 +2823,7 @@ class Dispatcher:
             logger.exception("opening the conversations for %s raised", work_item.ref)
 
     def _spawn_for(self, work_item: WorkItemRef, routed: RoutedEvent) -> bool:
-        adapter = self._adapter_for(work_item, self.config.default_harness)
-        if adapter is None:
+        if self.config.default_harness not in self.adapters:
             logger.error(
                 "no adapter for defaultHarness %r; cannot spawn",
                 self.config.default_harness,
@@ -2882,6 +2890,16 @@ class Dispatcher:
                 reason="parked-at-human-start-gate",
             )
             return True
+        # The adapter is resolved HERE, after `on_arm` and from the prepared
+        # checkout (issue-377): the reply that unparks the gate is what freezes
+        # the work item's model and effort into its state file, so resolving
+        # before it — as this did until issue-377 — read a choice that was not
+        # yet there, and the session that R8 promised would "already carry the
+        # frozen choice" carried none. Resolved once, so what is seeded for,
+        # what is launched and what is recorded are the same adapter.
+        adapter = self._adapter_for(work_item, self.config.default_harness, cwd)
+        if adapter is None:  # pragma: no cover — the membership check above holds
+            return False
         # Reads before the spawn, writes after it (issue-148, D5): the graph
         # context is resolved from the prepared workspace so a respawned
         # mid-graph item is told to RESUME at its current node, while entering
@@ -2984,7 +3002,11 @@ class Dispatcher:
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
             return False
-        model, effort = self._resolved_choice(work_item, self.config.default_harness)
+        # From the checkout, like the adapter was (issue-377): the record must
+        # say what the argv says.
+        model, effort = self._resolved_choice(
+            work_item, self.config.default_harness, cwd
+        )
         session = Session(
             work_item=work_item,
             harness=self.config.default_harness,
@@ -3022,6 +3044,11 @@ class Dispatcher:
             gh_event=routed.event,
             action=routed.action or None,
             delivery_id=routed.delivery_id or None,
+            # The argv, so "was it launched with the flag?" is answerable from
+            # the log alone (issue-377 R1.5).
+            harness_args=session.harness_args or None,
+            model=session.model or None,
+            effort=session.effort or None,
         )
         # The spawned session enters the graph (issue-113/148): a failed spawn
         # must not leave a labelled ticket pointing at a node nobody stands on.
@@ -3227,6 +3254,7 @@ class Dispatcher:
             tmux_target=endpoint.tmux_target,
             gh_event=routed.event,
             delivery_id=routed.delivery_id or None,
+            harness_args=list(adapter.extra_args) or None,
         )
         # The endpoint enters its inner loop (issue-172) — pdlc-pr-loop, state
         # under pr-loops/pr-<n>/. Best-effort like every graph coupling.
@@ -3390,6 +3418,7 @@ class Dispatcher:
                 if routed.delivery_id:
                     self.deduper.discard(routed.delivery_id)
                 return False
+        model, effort = self._resolved_choice(work_item, session.harness, session.cwd)
         respawned = Session(
             work_item=work_item,
             harness=session.harness,
@@ -3399,6 +3428,11 @@ class Dispatcher:
             # Carry the processed-delivery history so restart-surviving dedup
             # still holds after a respawn.
             recent_deliveries=list(session.recent_deliveries),
+            # …and what it was relaunched as (issue-377), so the drift net
+            # compares the next event against this launch, not the dead one's.
+            model=model,
+            effort=effort,
+            harness_args=list(adapter.extra_args),
         )
         # `owner` names the record this endpoint belongs to (issue-172): the work
         # item itself for its own session, and the *issue* for a PR's endpoint —
@@ -3437,6 +3471,9 @@ class Dispatcher:
             gh_event=routed.event,
             action=routed.action or None,
             delivery_id=routed.delivery_id or None,
+            harness_args=respawned.harness_args or None,
+            model=respawned.model or None,
+            effort=respawned.effort or None,
         )
         # The respawned session is the new inheritance target for any
         # `session: inherit` gate (issue-148, D6). `on_spawn` is pointer-

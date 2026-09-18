@@ -26,6 +26,7 @@ from .base import Command, register
 from .sessions_cmd import _cli_config
 from ..harness import build_adapters
 from ..modelchoice import (
+    launch_args,
     EFFORT_LEVELS,
     candidate_harnesses,
     config_findings,
@@ -185,9 +186,9 @@ class ModelsCommand(Command):
     def _check(self, args: argparse.Namespace) -> int:
         config = _cli_config()
         cache = VerdictCache(layout_from_config(config).verdict_cache)
-        adapters = build_adapters(
-            ((config.get("routing") or {}).get("harnessArgs")) or {}
-        )
+        # The adapters a session launches on (issue-377): a verdict is about the
+        # argv that would actually launch, `harnesses[].args` included.
+        adapters = build_adapters(launch_args(config))
         rows: List[Dict[str, Any]] = []
         fresh: List[Verdict] = []
         for harness, kind, name in _combinations(config):
@@ -228,10 +229,7 @@ class ModelsCommand(Command):
     # -- output -----------------------------------------------------------------
 
     def _emit(self, args: argparse.Namespace, config: dict, rows: List[dict]) -> int:
-        findings = config_findings(
-            config,
-            build_adapters(((config.get("routing") or {}).get("harnessArgs")) or {}),
-        )
+        findings = config_findings(config, build_adapters(launch_args(config)))
         if args.format == "json":
             print(
                 json.dumps(

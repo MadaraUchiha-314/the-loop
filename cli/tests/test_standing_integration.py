@@ -729,3 +729,25 @@ def test_an_invalid_created_name_never_becomes_a_tmux_target(tmp_path, tmux):
         with pytest.raises(ValueError):
             core_standing.create_standing(name, cwd=str(tmp_path), config=config)
     assert tmux.spawns == []
+
+
+def test_a_created_session_inherits_the_harnesses_args_declared_in_their_new_home(
+    tmp_path, tmux
+):
+    """issue-377 R3.2 — `the-loop standing create` inherits `harnesses[].args` when
+    the caller declares none; an explicit [] still means none."""
+    config = _config(tmp_path)
+    config["standingSessions"] = {"enabled": True, "sessions": []}
+    config["harnesses"] = [
+        {"name": "claude", "default": True, "args": ["--dangerously-skip-permissions"]}
+    ]
+    core_standing.create_standing("triage", cwd=str(tmp_path), config=config)
+    record = _registry(config).read("triage")
+    assert record is not None
+    assert record.harness_args == ("--dangerously-skip-permissions",)
+
+    core_standing.create_standing(
+        "narrow", cwd=str(tmp_path), harness_args=[], config=config
+    )
+    narrow = _registry(config).read("narrow")
+    assert narrow is not None and narrow.harness_args == ()

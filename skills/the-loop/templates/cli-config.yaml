@@ -100,7 +100,10 @@ repositories: []
 harnesses: []
 # - name: claude
 #   default: true                 # the harness an unmatched event spawns on
-#   args: [--dangerously-skip-permissions]   # new home of routing.harnessArgs.claude
+#   args: [--dangerously-skip-permissions]   # new home of routing.harnessArgs.claude;
+#                                            # reaches EVERY session on this harness
+#                                            # (work item, released, respawned, PR,
+#                                            # standing) and the models-check probe
 # - name: cursor
 
 models: []                        # EMPTY OFFERS NO MODEL CHOICE — today's behaviour
@@ -328,9 +331,9 @@ routing:
   dispatchTimeoutSeconds: 1800
   promptTemplate: skills/the-loop/templates/webhook-event-prompt.md          # internal template; dispatcher falls back to a built-in default when absent
   spawnPromptTemplate: skills/the-loop/templates/webhook-autoexecute-prompt.md  # internal template; dispatcher falls back to a built-in default when absent
-  harnessArgs:
-    claude: []                  # e.g. [--permission-mode, acceptEdits]
-    cursor: []                  # e.g. [--force]
+  harnessArgs:                  # DEPRECATED since 16.0.0 — declare harnesses[].args
+    claude: []                  # (above) instead; still read, with a warning. When
+    cursor: []                  # both declare a harness, harnesses[].args wins.
   # Pre-spawn harness preparation (issue-90). Claude Code's workspace-trust
   # dialog and bypass-permissions disclaimer are NOT permission rules, so no
   # flag (--dangerously-skip-permissions included) silences them — and every
@@ -339,7 +342,8 @@ routing:
   # directory trusted in your harness config (honouring CLAUDE_CONFIG_DIR),
   # merging into what's already there and writing nothing when it's already
   # set. acceptBypassPermissions: auto records the bypass disclaimer ONLY
-  # when harnessArgs above already ask for bypass mode — the-loop never
+  # when the harness's launch arguments (harnesses[].args, or harnessArgs
+  # above) already ask for bypass mode — the-loop never
   # widens permissions you didn't request. Set enabled: false to opt out.
   harnessTrust:
     enabled: true
@@ -474,8 +478,9 @@ reviews:
 # entry names harness arguments and a working directory, and the session runs
 # with YOUR credentials. Review an entry like code.
 #
-# Default off. Each entry inherits `routing.defaultHarness`,
-# `routing.harnessArgs.<harness>` and `routing.spawnWorkdir` unless it says
+# Default off. Each entry inherits `routing.defaultHarness`, the harness's launch
+# arguments (`harnesses[].args`, else `routing.harnessArgs.<harness>`) and
+# `routing.spawnWorkdir` unless it says
 # otherwise, and its `prompt`/`promptFile` is APPENDED to the-loop's own
 # directive (you own no work item; do not answer a phase gate or post a control
 # keyword on any ticket) — never substituted for it.
@@ -486,7 +491,7 @@ standingSessions:
     #                             # `loop-standing-supervisor` in tmux
     #   description: Watches the work items in flight and reports what is stuck.
     #   harness: claude           # claude | cursor (omit = routing.defaultHarness)
-    #   harnessArgs: []           # omit to inherit routing.harnessArgs.<harness>
+    #   harnessArgs: []           # omit to inherit harnesses[].args (or routing.harnessArgs)
     #   cwd: "~/dev/the-loop"     # must exist (omit = routing.spawnWorkdir)
     #   autoStart: true           # false = declared, started only on request
     #   promptFile: ""            # or `prompt:` inline — never both

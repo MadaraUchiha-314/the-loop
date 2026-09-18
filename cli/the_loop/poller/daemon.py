@@ -141,19 +141,28 @@ def _build_dispatcher(
     from ..sessions import SessionRegistry
     from ..webhook.dispatcher import Dispatcher, RoutingConfig
 
+    from ..modelchoice import launch_args
+
     routing = RoutingConfig.from_mapping(routing_map or {}, layout or _state_layout())
     getter = cli_config_getter or (lambda: cli_config.load_cli_config(_config_path()))
+    whole = getter() or {}
     dispatcher = Dispatcher(
         registry=SessionRegistry(routing.registry_dir),
+        # Launched on the resolved launch arguments — `harnesses[].args`, else the
+        # deprecated `routing.harnessArgs` — through the one resolver every
+        # builder uses (issue-377). Until then this read the deprecated key alone,
+        # so an operator who had moved to the new home got bare sessions.
         adapters=build_adapters(
-            routing.harness_args, routing.harness_trust, routing.harness_plugins
+            launch_args(whole, routing.harness_args),
+            routing.harness_trust,
+            routing.harness_plugins,
         ),
         config=routing,
         opener=conversation_opener(getter),
         # The three top-level choice sections (issue-358) — see the receiver's
         # copy of this call: the poller composes the same dispatcher, so a work
         # item's model resolves identically whichever ingress found it.
-        cli_config=getter() or {},
+        cli_config=whole,
     )
     return dispatcher, routing
 

@@ -31,7 +31,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 logger = logging.getLogger("the-loop.modelchoice")
 
@@ -50,6 +50,7 @@ __all__ = [
     "effective_args",
     "effort_args",
     "harness_args",
+    "launch_args",
     "model_args",
 ]
 
@@ -229,6 +230,69 @@ def harness_args(
     return [str(a) for a in fallback]
 
 
+def _routing_args(config: Optional[Mapping[str, Any]]) -> Dict[str, List[str]]:
+    """The deprecated ``routing.harnessArgs`` as the document carries it, or ``{}``."""
+    routing = (config or {}).get("routing")
+    raw = routing.get("harnessArgs") if isinstance(routing, Mapping) else None
+    if not isinstance(raw, Mapping):
+        return {}
+    return {
+        str(name): [str(a) for a in args]
+        for name, args in raw.items()
+        if isinstance(args, (list, tuple))
+    }
+
+
+def launch_args(
+    config: Optional[Mapping[str, Any]],
+    routing_args: Optional[Mapping[str, Sequence[str]]] = None,
+) -> Dict[str, List[str]]:
+    """Every harness's launch arguments, resolved once, for ``build_adapters``.
+
+    The one resolver every adapter builder uses (issue-377): the two daemons, a reload,
+    ``the-loop models check`` and the standing sessions all launch on what this returns,
+    so a session's argv no longer depends on which reader built its adapter. Each harness
+    named in ``harnesses[]`` **or** in the deprecated ``routing.harnessArgs`` resolves
+    through :func:`harness_args`, so the precedence — the new home when it declares a
+    list, else the deprecated one — is written in exactly one place.
+
+    ``routing_args`` is the deprecated block as the caller already parsed it
+    (``RoutingConfig.harness_args``); when it is not given the document's own
+    ``routing.harnessArgs`` is read. A harness declared in **both** homes is launched on
+    the new one — never the union, which could double a flag or pair two permission
+    modes the operator never wrote together — and the conflict is logged here, once per
+    build, and reported by :func:`config_findings` where the operator looks.
+    """
+    fallback = (
+        {str(k): [str(a) for a in v] for k, v in routing_args.items()}
+        if routing_args is not None
+        else _routing_args(config)
+    )
+    declared = declared_harnesses(config)
+    resolved: Dict[str, List[str]] = {}
+    for harness in declared + [name for name in fallback if name not in declared]:
+        resolved[harness] = harness_args(config, harness, fallback.get(harness) or ())
+        if fallback.get(harness) and _declares_args(config, harness):
+            logger.warning(
+                "harnesses[].args for %r wins over routing.harnessArgs.%s; drop the "
+                "deprecated key so the two cannot disagree",
+                harness,
+                harness,
+            )
+    return resolved
+
+
+def _declares_args(config: Optional[Mapping[str, Any]], harness: str) -> bool:
+    """Whether ``harnesses[]`` carries a list of ``args`` for ``harness``."""
+    for entry in _entries(config, HARNESSES_KEY):
+        if not isinstance(entry, Mapping):
+            continue
+        raw = entry.get("name")
+        if isinstance(raw, str) and raw.strip() == harness:
+            return isinstance(entry.get("args"), (list, tuple))
+    return False
+
+
 def model_args(name: str, adapter: Any) -> Tuple[str, ...]:
     """``(adapter.model_flag, name)`` — or ``()`` for a harness with no model flag.
 
@@ -306,6 +370,8 @@ def config_findings(
     findings: List[Finding] = []
     harnesses = declared_harnesses(config)
     models = declared_models(config)
+    if routing_args is None:
+        routing_args = _routing_args(config)
 
     defaults = [
         entry.get("name")
@@ -364,6 +430,16 @@ def config_findings(
                 )
             )
         base = harness_args(config, harness, (routing_args or {}).get(harness) or ())
+        if (routing_args or {}).get(harness) and _declares_args(config, harness):
+            findings.append(
+                Finding(
+                    "warning",
+                    f"{HARNESSES_KEY}[{harness}].args",
+                    f"wins over routing.harnessArgs.{harness}, which is deprecated and "
+                    "not read for this harness; drop the deprecated key so the two "
+                    "cannot disagree (issue-377)",
+                )
+            )
         flag = str(getattr(adapter, "model_flag", "") or "")
         if flag and flag in base:
             findings.append(

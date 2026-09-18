@@ -179,7 +179,8 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   included) silences them. An unattended session therefore used to sit on a modal
   forever. Before every spawn/respawn the dispatcher marks that exact directory
   trusted in the harness's own user config (honouring `CLAUDE_CONFIG_DIR`), and —
-  only when your `harnessArgs` already ask for bypass mode — records the disclaimer
+  only when the harness's launch arguments (`harnesses[].args`, or the deprecated
+  `routing.harnessArgs`) already ask for bypass mode — records the disclaimer
   acceptance too. Writes are narrow and non-destructive (those keys only, merged,
   atomic, skipped when already set, never applied to a file that does not parse),
   audited as `workspace.trusted`, and best-effort: a failure warns and still

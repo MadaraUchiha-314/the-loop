@@ -276,9 +276,9 @@ routing:
   dispatchTimeoutSeconds: 1800
   promptTemplate: skills/the-loop/templates/webhook-event-prompt.md          # internal template; dispatcher falls back to a built-in default when absent
   spawnPromptTemplate: skills/the-loop/templates/webhook-autoexecute-prompt.md  # internal template; dispatcher falls back to a built-in default when absent
-  harnessArgs:
-    claude: []                  # e.g. [--permission-mode, acceptEdits]
-    cursor: []                  # e.g. [--force]
+  harnessArgs:                  # DEPRECATED since 16.0.0 — declare a top-level
+    claude: []                  # `harnesses[].args` instead; still read, with a
+    cursor: []                  # warning. When both declare a harness, `harnesses[].args` wins.
   # Pre-spawn harness preparation (issue-90). Claude Code's workspace-trust
   # dialog and bypass-permissions disclaimer are NOT permission rules, so no
   # flag (--dangerously-skip-permissions included) silences them — and every
@@ -287,7 +287,8 @@ routing:
   # directory trusted in your harness config (honouring CLAUDE_CONFIG_DIR),
   # merging into what's already there and writing nothing when it's already
   # set. acceptBypassPermissions: auto records the bypass disclaimer ONLY
-  # when harnessArgs above already ask for bypass mode — the-loop never
+  # when the harness's launch arguments (harnesses[].args, or harnessArgs
+  # above) already ask for bypass mode — the-loop never
   # widens permissions you didn't request. Set enabled: false to opt out.
   harnessTrust:
     enabled: true

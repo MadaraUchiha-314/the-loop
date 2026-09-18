@@ -111,9 +111,11 @@ apart ([decision-100](../decisions/decision-100.md)):
   tmux session name and a file name; a duplicate name SHALL refuse the whole block with
   both positions named, rather than resolve the collision.
 - An entry that omits `harness`, `harnessArgs` or `cwd` SHALL inherit
-  `routing.defaultHarness`, `routing.harnessArgs.<harness>` and `routing.spawnWorkdir`
-  respectively. An explicit `harnessArgs: []` means *none* — the distinction between
-  omitted and empty is load-bearing.
+  `routing.defaultHarness`, the harness's launch arguments (`harnesses[].args`, else the
+  deprecated `routing.harnessArgs.<harness>` — resolved by the same
+  `modelchoice.launch_args` a work item's session uses, issue-377) and
+  `routing.spawnWorkdir` respectively. An explicit `harnessArgs: []` means *none* — the
+  distinction between omitted and empty is load-bearing.
 - An entry declaring **both** `prompt` and `promptFile` SHALL be refused: there is no
   precedence between them. A `promptFile` that cannot be read at start time SHALL fail
   **that** session and no other.
@@ -242,5 +244,6 @@ runner these share) · [channels](channels.md) (the Slack bot and its pipeline) 
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-377 | An entry that omits `harnessArgs` — declared, or created through `the-loop standing create` / the API — inherits the harness's launch arguments through `modelchoice.launch_args`, so `harnesses[].args` reaches a standing session as it reaches a work item's; until then only the deprecated `routing.harnessArgs` was inherited | [spec](../specs/issue-377/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/377) |
 | issue-334 | `/the-loop standing list` and `/the-loop standing start\|stop\|restart <name>` from Slack, over Socket Mode, under the new `standing.command` grant — `core.standing.list_standing` / `control_standing` called from the Slack channel's slash-command handler and answered ephemerally; the name is validated against `NAME_RE` before any call; create/delete stay the control plane's | [spec](../specs/issue-334/), [decision-116](../decisions/decision-116.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/334) |
 | issue-277 | Introduced standing sessions: the `standingSessions` config block, the `StandingRegistry` under `<state.root>/local/standing/`, `loop-standing-<name>` tmux sessions, the `the-loop standing` command and its REST/MCP/SDK surfaces, the `start`/`stop`/`status` integration with resume-across-restart, the non-configurable boot directive, and the Slack thread a session is announced in and answered on. On review the owner ruled the control plane is **not** a channel and asked for create/delete instead, so a session can be brought into existence and removed through the API rather than only by editing the config — the record then carries the whole definition. The dashboard gained a **Standing** screen when the owner asked whether create works from the control-plane UI — it did not, and neither did `say`, so the third surface the ruling named was unwired | [spec](../specs/issue-277/), [decision-099](../decisions/decision-099.md), [decision-100](../decisions/decision-100.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/277) |

@@ -19,7 +19,7 @@ standingSessions:
     - name: supervisor
       description: Watches the work items in flight and reports what is stuck.
       harness: claude            # omit = routing.defaultHarness
-      harnessArgs: []            # omit = routing.harnessArgs.<harness>
+      harnessArgs: []            # omit = harnesses[].args (or routing.harnessArgs.<harness>)
       cwd: "~/dev/the-loop"      # omit = routing.spawnWorkdir
       autoStart: true
       prompt: |
@@ -103,11 +103,15 @@ message.
 ### `sessions[].harnessArgs`
 
 - **Type:** `array` of `string`
-- **Default:** [`routing.harnessArgs.<harness>`](/config/cli/routing-options#harnessargs)
+- **Default:** the harness's launch arguments —
+  [`harnesses[].args`](/config/cli/harnesses-options#harnesses-args), else the deprecated
+  [`routing.harnessArgs.<harness>`](/config/cli/routing-options#harnessargs)
 
 Extra CLI arguments for this session's harness. **Omitting the key** inherits the
-routing default; writing `[]` explicitly means *none*, which is how you give one session
-a narrower surface than the rest.
+harness's own launch arguments, resolved exactly as a work item's session resolves them
+([issue-377](https://github.com/MadaraUchiha-314/the-loop/issues/377)); writing `[]`
+explicitly means *none*, which is how you give one session a narrower surface than the
+rest.
 
 Widening permissions here widens them for an unattended agent. the-loop never adds a
 permission flag you did not write — the same rule

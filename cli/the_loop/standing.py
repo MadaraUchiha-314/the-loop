@@ -35,6 +35,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from .modelchoice import launch_args
+
 logger = logging.getLogger("the-loop.standing")
 
 __all__ = [
@@ -191,9 +193,11 @@ class StandingConfig:
         if not isinstance(routing, Mapping):
             routing = {}
         default_harness = str(routing.get("defaultHarness") or "claude")
-        harness_args = routing.get("harnessArgs") or {}
-        if not isinstance(harness_args, Mapping):
-            harness_args = {}
+        # A standing session is a session on this harness, so it inherits the
+        # harness's launch arguments — `harnesses[].args`, else the deprecated
+        # `routing.harnessArgs` — through the one resolver every builder uses
+        # (issue-377).
+        harness_args = launch_args(config)
         default_cwd = str(routing.get("spawnWorkdir") or ".")
 
         entries = block.get("sessions") or []

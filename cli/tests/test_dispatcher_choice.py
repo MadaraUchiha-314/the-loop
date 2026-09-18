@@ -15,6 +15,7 @@ import time
 
 from conftest import FakeTmux, StubInteractiveAdapter, _freeze_legacy_graph
 from the_loop.control import ControlConfig, ControlStore
+from the_loop.modelchoice import launch_args
 from the_loop.modelprobe import REFUSED, Verdict, VerdictCache
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
@@ -52,13 +53,19 @@ def _dispatcher(tmp_path, cli_config=None, **over):
     over.setdefault("spawn_on_unmatched", "always")
     over.setdefault("portable_dir", str(tmp_path / "state" / "portable"))
     over.setdefault("harness_args", {"claude": ["--dangerously-skip-permissions"]})
+    if cli_config is None:
+        cli_config = _config(tmp_path)
     tmux = FakeTmux()
+    # The adapter is built the way the daemons build theirs (issue-377): from the
+    # resolved launch arguments, so this suite runs against the real wiring rather
+    # than an adapter that happens to carry nothing.
+    base = launch_args(cli_config, over["harness_args"]).get("claude") or []
     dispatcher = Dispatcher(
         registry=registry,
-        adapters={"claude": _Adapter()},
+        adapters={"claude": _Adapter(extra_args=base)},
         config=RoutingConfig(**over),
         tmux_runner=tmux,
-        cli_config=cli_config if cli_config is not None else _config(tmp_path),
+        cli_config=cli_config,
     )
 
     class _Link:
@@ -138,6 +145,33 @@ def test_a_work_item_that_chose_nothing_gets_the_shared_adapter_untouched(tmp_pa
     registry, dispatcher, tmux = _dispatcher(tmp_path)
     adapter = dispatcher._adapter_for(WorkItemRef.parse(REF), "claude")
     assert adapter is dispatcher.adapters["claude"]
+
+
+def test_a_work_item_that_chose_nothing_launches_on_the_declared_arguments(tmp_path):
+    """issue-377 R1.1 — "untouched" means the shared adapter, and the shared adapter
+    carries `harnesses[].args`. Before the fix it carried only the deprecated key."""
+    config = _config(tmp_path)
+    registry, dispatcher, tmux = _dispatcher(
+        tmp_path, cli_config=config, harness_args={}
+    )
+    dispatcher.handle(_comment())
+    assert _wait(lambda: registry.find_by_work_item(REF) is not None)
+    dispatcher.stop()
+    session = registry.find_by_work_item(REF)
+    assert session is not None
+    assert session.model == ""
+    assert session.harness_args == ["--dangerously-skip-permissions"]
+
+
+def test_the_choice_path_starts_from_the_shared_adapters_own_arguments(tmp_path):
+    """issue-377 R1.2 — the argv with a choice is the argv without one plus the
+    choice, by construction: the base is the adapter's, never a second config read."""
+    _freeze(tmp_path, model="opus-5")
+    registry, dispatcher, tmux = _dispatcher(tmp_path)
+    dispatcher.adapters["claude"].extra_args = ["--only-the-adapter-knows-this"]
+    adapter = dispatcher._adapter_for(WorkItemRef.parse(REF), "claude")
+    assert adapter is not None
+    assert adapter.extra_args == ["--only-the-adapter-knows-this", "--model", "opus-5"]
 
 
 def test_the_choice_is_recorded_on_the_session(tmp_path):
@@ -268,6 +302,42 @@ def test_a_session_running_on_the_wrong_arguments_is_re_launched(tmp_path):
     endpoint = registry.find_by_work_item(REF)
     assert endpoint is not None
     assert dispatcher._choice_drifted(endpoint) is True
+
+
+def test_the_respawned_event_names_the_argv_it_was_relaunched_on(tmp_path):
+    """issue-377 R1.5 — the argv is answerable from events.jsonl alone."""
+    from the_loop import eventlog
+
+    log = tmp_path / "events.jsonl"
+    _freeze(tmp_path, model="fable-5.1")
+    registry, dispatcher, tmux = _dispatcher(tmp_path)
+    registry.register(
+        Session(
+            work_item=WorkItemRef.parse(REF),
+            harness="claude",
+            harness_session_id="s-1",
+            cwd=str(tmp_path),
+            tmux_target="loop-octo-repo-358",
+            model="opus-5",
+            harness_args=["--dangerously-skip-permissions", "--model", "opus-5"],
+        )
+    )
+    eventlog.configure("poll", path=log, enabled=True)
+    try:
+        dispatcher.handle(_comment())
+        assert _wait(lambda: tmux.spawns)
+        dispatcher.stop()
+        (respawned,) = eventlog.read_events(log, types=["session.respawned"])
+        assert respawned["harness_args"] == [
+            "--dangerously-skip-permissions",
+            "--model",
+            "fable-5.1",
+        ]
+        assert respawned["model"] == "fable-5.1"
+        record = registry.find_by_work_item(REF)
+        assert record is not None and record.model == "fable-5.1"
+    finally:
+        eventlog.reset()
 
 
 def test_a_session_recorded_before_this_feature_is_left_alone(tmp_path):

@@ -26,6 +26,7 @@ from .. import eventlog
 from ..harness import build_adapters
 from ..harness.base import HarnessAdapter, TrustResult, UnsupportedRunnerError
 from ..harness_plugins import PluginConfig
+from ..modelchoice import launch_args
 from ..runner import SESSION_DEAD, SESSION_LIVE, SESSION_UNKNOWN, TmuxRunner
 from ..standing import (
     NAME_RE,
@@ -776,8 +777,9 @@ def create_standing(
     resolved_harness = harness or str(routing.get("defaultHarness") or "claude")
     args = harness_args
     if args is None:
-        declared_args = routing.get("harnessArgs") or {}
-        args = list((declared_args or {}).get(resolved_harness) or [])
+        # Inherit the harness's launch arguments — `harnesses[].args`, else the
+        # deprecated `routing.harnessArgs` — as a declared entry does (issue-377).
+        args = list(launch_args(config).get(resolved_harness) or [])
     record = registry.write(
         StandingRecord(
             name=name,
