@@ -9,6 +9,6 @@ workItem: "github:MadaraUchiha-314/the-loop#377"
 
 | Pull request | Repository | Branch | Scope / tasks | State |
 |--------------|------------|--------|---------------|-------|
-| _opened after the first push; recorded below_ | `MadaraUchiha-314/the-loop` | `claude/github-issue-377-7huvvo` | tasks 1–7 | pending |
+| [#379](https://github.com/MadaraUchiha-314/the-loop/pull/379) | `MadaraUchiha-314/the-loop` | `claude/github-issue-377-7huvvo` | tasks 1–7 | open |
 
 The reviewer briefing is posted in the pull request body.
