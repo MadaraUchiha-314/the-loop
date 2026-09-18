@@ -1,3 +1,9 @@
+## v19.5.0 (2026-09-18)
+
+### Feat
+
+- **issue-382**: the poll clocks are this machine's, not the repository's (#384)
+
 ## v19.4.0 (2026-09-18)
 
 ### Feat
