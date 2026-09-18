@@ -1,3 +1,9 @@
+## v19.2.1 (2026-09-18)
+
+### Fix
+
+- **issue-377**: every session is launched with the arguments the operator declared (#379)
+
 ## v19.2.0 (2026-09-17)
 
 ### Feat
