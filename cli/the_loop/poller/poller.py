@@ -46,6 +46,7 @@ from .. import __version__, eventlog
 from ..authz import is_authorized, is_self_authored, mark_self_authored
 from ..comments import post_issue_comment
 from ..control import ControlConfig, ControlStore, parse_command
+from ..pollclocks import CLOCK_KEYS, PollClockStore
 from ..reload import Reloader
 from ..sessions import SessionRegistry, WorkItemRef
 from ..workitem import (
@@ -194,6 +195,12 @@ class PollState:
     - ``spawn`` — ``{attempts, gaveUp, deliveryId}`` for the presence/spawn
       retry (the presence delivery id is stored so the poller can tell an
       in-flight spawn from a failed one across cycles).
+    - ``lastPolledAt`` / ``closureCheckedAt`` — the clocks, held here in memory
+      like any other key but stored in ``<state.root>/local/poll-clocks.json``
+      rather than in the record (issue-382): a clock reading is a fact about a
+      cycle THIS machine ran, and rewriting it into a tracked file every cycle
+      left every operator whose ``state.root`` is a repository with a dirty
+      working tree. See :mod:`the_loop.pollclocks`.
     - ``gaveUp`` — ``{comments, version}``: comments **abandoned** after their
       retry budget was spent, and the CLI version that abandoned them. What makes
       an item stranded by a bug recoverable once the bug is fixed (issue-146);
@@ -213,9 +220,21 @@ class PollState:
     resurrected by a later flush.
     """
 
-    def __init__(self, store: WorkItemStore):
+    def __init__(self, store: WorkItemStore, clocks: Optional[PollClockStore] = None):
         self.store = store
+        #: This machine's poll clocks (issue-382). ``lastPolledAt`` and
+        #: ``closureCheckedAt`` stay ordinary keys of the in-memory ledger — every
+        #: method above :meth:`_load` / :meth:`_store_ledger` is unaware of the
+        #: split — and are peeled off on the way to disk, because a clock reading
+        #: is a fact about a cycle THIS machine ran and the record is tracked in
+        #: git. Defaults to the file beside the portable directory, which is the
+        #: path :attr:`the_loop.state.StateLayout.poll_clocks` declares.
+        self.clocks = clocks or PollClockStore.beside(store.root)
         self._items: Dict[str, dict] = {}
+        #: Each ref's clock-free ledger **as it is on disk**, so a cycle that
+        #: learned nothing rewrites nothing (issue-382, R1.6). Absent means
+        #: "never read from disk", which always writes.
+        self._stored: Dict[str, dict] = {}
         self._dirty: set = set()
         #: ``ref -> the work item whose record holds this ref's ledger``
         #: (issue-368, R10.1). A work item owns itself; a pull request that
@@ -266,20 +285,60 @@ class PollState:
         return self.store.pull_request_ledger(owner, ref)
 
     def _store_ledger(self, ref: str, data: Optional[dict]) -> None:
-        """Write ``ref``'s ledger where its owner keeps it."""
+        """Write ``ref``'s ledger: its clocks here, the rest where its owner keeps it.
+
+        The clocks go first. The failure that matters is a crash between the two
+        writes, and a clock ahead of its body means the next cycle re-reads
+        comment ids the ledger is already idempotent about; a body ahead of its
+        clock would mean a thread recorded as handled with nothing saying when —
+        which is the case the closure schedule reads.
+
+        The body is written only when it differs from what is on disk, so a
+        cycle that learned nothing leaves the tracked record alone (issue-382).
+        Removal (``data is None``) is unconditional: a ledger that must go, goes.
+        """
         owner = self.owner(ref)
+        if data is None:
+            self.clocks.forget(ref)
+            self._stored.pop(ref, None)
+            if owner == ref:
+                self.store.write_section(ref, POLL, None)
+            else:
+                self.store.write_pull_request_ledger(owner, ref, None)
+            return
+        self.clocks.put(ref, {key: data[key] for key in CLOCK_KEYS if data.get(key)})
+        body = {key: value for key, value in data.items() if key not in CLOCK_KEYS}
+        if ref in self._stored and self._stored[ref] == body:
+            return
         if owner == ref:
-            self.store.write_section(ref, POLL, data)
+            self.store.write_section(ref, POLL, body)
         else:
-            self.store.write_pull_request_ledger(owner, ref, data)
+            self.store.write_pull_request_ledger(owner, ref, body)
+        self._stored[ref] = dict(body)
 
     def _read(self, ref: str) -> dict:
-        """This item's ledger, loaded on first touch. Never marks it dirty."""
+        """This item's ledger, loaded on first touch. Never marks it dirty.
+
+        The ledger handed back is the stored body plus this machine's clocks
+        (issue-382). A clock the body still carries — written by a version from
+        before the split — is the **fallback**, used only where the local file
+        has none, so an upgrade neither re-dates every item nor makes one due
+        for a closure question it was not due for. The first write strips it.
+
+        A clock with no ledger beside it is **not** a ledger: an item whose
+        `poll` section was cleared is unknown, exactly as before, so it is
+        baselined on next sight rather than having its whole thread forwarded.
+        """
         if ref not in self._items:
             section = self._load(ref)
             if section is None:
-                return {}
-            self._items[ref] = dict(section)
+                return {}  # unknown is unknown: a stray clock is not a ledger
+            body = dict(section)
+            self._stored[ref] = {
+                key: value for key, value in body.items() if key not in CLOCK_KEYS
+            }
+            body.update(self.clocks.get(ref))
+            self._items[ref] = body
         return self._items[ref]
 
     def _item(self, ref: str) -> dict:

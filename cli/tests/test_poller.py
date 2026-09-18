@@ -12,6 +12,7 @@ Spec: docs/specs/issue-34/design.md.
 """
 
 import json
+import os
 import subprocess
 
 import tempfile
@@ -21,6 +22,7 @@ import pytest
 from the_loop import comments as comments_mod
 from the_loop.collaborators import CollaboratorStore
 from the_loop.control import ControlConfig, ControlStore
+from the_loop.pollclocks import PollClockStore
 from the_loop.webhook.dispatcher import RoutingConfig
 from the_loop.poller import (
     Closure,
@@ -903,6 +905,162 @@ def test_a_cycle_only_writes_the_items_it_touched(tmp_path):
     state.save()
     records = [p.name for p in sorted(root.glob("*.json")) if p.name != INDEX_FILE]
     assert records == ["github-octo-repo-1.json"]
+
+
+# -- the clocks are the machine's, not the repository's (issue-382) -----------
+
+
+def _clocks(tmp_path):
+    return PollClockStore.beside(tmp_path / "portable")
+
+
+def test_a_finalized_cycle_stamps_the_local_file_not_the_record(tmp_path):
+    """R1.1 — the tracked record carries no timestamp any more."""
+    root = tmp_path / "portable"
+    state = PollState(WorkItemStore(root))
+    state.baseline_comments(REF15, ["IC_1"], "2026-09-18T10:00:00Z")
+    state.finalize(REF15, ["IC_1"], "2026-09-18T10:01:00Z")
+    state.save()
+
+    section = WorkItemStore(root).section(REF15, POLL) or {}
+    assert section["seenComments"] == ["IC_1"]
+    assert "lastPolledAt" not in section and "closureCheckedAt" not in section
+    assert _clocks(tmp_path).get(REF15) == {"lastPolledAt": "2026-09-18T10:01:00Z"}
+
+
+def test_a_baseline_stamps_the_local_file(tmp_path):
+    """R1.2 — first sight dates the item where every other cycle does."""
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    state.baseline_comments(REF15, ["IC_1"], "2026-09-18T10:00:00Z")
+    state.save()
+    assert _clocks(tmp_path).get(REF15) == {"lastPolledAt": "2026-09-18T10:00:00Z"}
+    assert "lastPolledAt" not in (
+        WorkItemStore(tmp_path / "portable").section(REF15, POLL) or {}
+    )
+
+
+def test_a_closure_check_is_dated_in_the_local_file(tmp_path):
+    """R1.3 — the other clock moves with it; they answer one question."""
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    state.baseline_comments(REF15, [], "2026-09-18T10:00:00Z")
+    state.note_closure_check(REF15, "2026-09-18T11:00:00Z")
+    assert _clocks(tmp_path).get(REF15) == {
+        "lastPolledAt": "2026-09-18T10:00:00Z",
+        "closureCheckedAt": "2026-09-18T11:00:00Z",
+    }
+    assert "closureCheckedAt" not in (
+        WorkItemStore(tmp_path / "portable").section(REF15, POLL) or {}
+    )
+
+
+def test_a_pull_requests_clock_is_keyed_by_its_own_ref(tmp_path):
+    """R1.4 — one record per work item, one clock entry per ref."""
+    pr = "github:octo/lib#7"
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    state.own(pr, REF15)
+    state.baseline_comments(pr, ["IC_9"], "2026-09-18T10:00:00Z")
+    state.save()
+
+    ledger = WorkItemStore(tmp_path / "portable").pull_request_ledger(REF15, pr) or {}
+    assert ledger["seenComments"] == ["IC_9"] and "lastPolledAt" not in ledger
+    assert _clocks(tmp_path).get(pr) == {"lastPolledAt": "2026-09-18T10:00:00Z"}
+    assert _clocks(tmp_path).get(REF15) == {}
+
+
+def test_a_clock_survives_a_restart_and_the_schedule_reads_it(tmp_path):
+    """R2.1 — the closure window is measured on the local clocks."""
+    root = tmp_path / "portable"
+    state = PollState(WorkItemStore(root))
+    state.baseline_comments(REF15, [], "2026-09-18T10:00:00Z")
+    state.save()
+    reloaded = PollState(WorkItemStore(root))
+    assert reloaded.absent_since(REF15) == "2026-09-18T10:00:00Z"
+    reloaded.note_closure_check(REF15, "2026-09-18T11:00:00Z")
+    assert PollState(WorkItemStore(root)).absent_since(REF15) == "2026-09-18T11:00:00Z"
+
+
+def test_a_cycle_that_learns_nothing_rewrites_no_record(tmp_path):
+    """R1.6 — the churn itself: an unchanged ledger is not rewritten.
+
+    The record's mtime is the assertion because its *contents* would be
+    identical either way now — which is exactly what makes the write pointless.
+    """
+    root = tmp_path / "portable"
+    state = PollState(WorkItemStore(root))
+    state.baseline_comments(REF15, ["IC_1"], "2026-09-18T10:00:00Z")
+    state.save()
+    record = root / "github-octo-repo-15.json"
+
+    state.finalize(REF15, ["IC_1"], "2026-09-18T10:01:00Z")  # the first full cycle
+    state.save()
+    os.utime(record, (0, 0))
+
+    state.finalize(REF15, ["IC_1"], "2026-09-18T10:02:00Z")  # same thread, new clock
+    state.save()
+    assert record.stat().st_mtime == 0
+    assert _clocks(tmp_path).get(REF15) == {"lastPolledAt": "2026-09-18T10:02:00Z"}
+
+    state.resolve_comment(REF15, "IC_2")  # a comment was delivered: that is learning
+    state.finalize(REF15, ["IC_1", "IC_2"], "2026-09-18T10:03:00Z")
+    state.save()
+    assert record.stat().st_mtime > 0
+
+
+def test_a_forgotten_ledger_takes_its_clocks_with_it(tmp_path):
+    """R1.5 — an ended item leaves nothing behind on this machine either."""
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    state.baseline_comments(REF15, ["IC_1"], "2026-09-18T10:00:00Z")
+    state.save()
+    state.forget(REF15)
+    assert _clocks(tmp_path).get(REF15) == {}
+
+
+def test_an_upgraded_record_keeps_its_schedule_then_loses_the_keys(tmp_path):
+    """R2.2, R2.3 — the whole upgrade path, in one test.
+
+    A record written by an earlier version still carries both clocks. They are
+    read (so nothing becomes due for a closure question merely because the
+    deployment was upgraded), and stripped by the first write that touches the
+    ledger.
+    """
+    root = tmp_path / "portable"
+    store = WorkItemStore(root)
+    store.write_section(
+        REF15,
+        POLL,
+        {
+            "seenComments": ["IC_1"],
+            "commentAttempts": {},
+            "lastPolledAt": "2026-09-18T10:00:00Z",
+            "closureCheckedAt": "2026-09-18T11:00:00Z",
+        },
+    )
+    state = PollState(store)
+    assert state.absent_since(REF15) == "2026-09-18T11:00:00Z"
+
+    state.finalize(REF15, ["IC_1", "IC_2"], "2026-09-18T12:00:00Z")
+    state.save()
+    section = WorkItemStore(root).section(REF15, POLL) or {}
+    assert "lastPolledAt" not in section and "closureCheckedAt" not in section
+    assert _clocks(tmp_path).get(REF15)["lastPolledAt"] == "2026-09-18T12:00:00Z"
+
+
+def test_a_local_clock_wins_over_a_stale_one_in_the_record(tmp_path):
+    """R2.2 — the record's copy is a fallback, never an override."""
+    root = tmp_path / "portable"
+    store = WorkItemStore(root)
+    store.write_section(REF15, POLL, {"lastPolledAt": "2020-01-01T00:00:00Z"})
+    PollClockStore.beside(root).put(REF15, {"lastPolledAt": "2026-09-18T10:00:00Z"})
+    assert PollState(store).absent_since(REF15) == "2026-09-18T10:00:00Z"
+
+
+def test_a_missing_clock_file_reads_as_due_now(tmp_path):
+    """R2.5 — no clock is "ask now", which is what an unknown item already is."""
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    state.baseline_comments(REF15, ["IC_1"], "2026-09-18T10:00:00Z")
+    state.save()
+    PollClockStore.beside(tmp_path / "portable").path.unlink()
+    assert PollState(WorkItemStore(tmp_path / "portable")).absent_since(REF15) == ""
 
 
 def test_a_polled_item_is_identified_with_the_host_it_lives_on():
@@ -2371,7 +2529,18 @@ def _poll_only(state, ref=REF15, polled_at=OLD, checked_at=None):
 
 
 def _ledger(tmp_path, ref=REF15):
-    return WorkItemStore(tmp_path / "portable").section(ref, POLL)
+    """The ledger as the poller sees it: the stored body plus this machine's clocks.
+
+    The two halves live in two files since issue-382 — the record is tracked in
+    git, the clocks are not — and these tests are about the schedule, not about
+    the storage, so they read the join. That the clocks are *only* in the local
+    file is pinned separately, beside the split itself.
+    """
+    section = WorkItemStore(tmp_path / "portable").section(ref, POLL)
+    clocks = PollClockStore.beside(tmp_path / "portable").get(ref)
+    if section is None and not clocks:
+        return None
+    return {**(section or {}), **clocks}
 
 
 def test_poll_state_absent_since_is_the_later_timestamp(tmp_path):
@@ -2393,9 +2562,11 @@ def test_poll_state_note_closure_check_writes_through(tmp_path):
     state.baseline_comments(REF15, ["IC_1"], OLD)
     state.save()
     state.note_closure_check(REF15, "2026-09-09T10:00:00Z")
+    clocks = PollClockStore.beside(tmp_path / "portable")
+    assert clocks.get(REF15)["closureCheckedAt"] == "2026-09-09T10:00:00Z"
     section = store.section(REF15, POLL) or {}
-    assert section["closureCheckedAt"] == "2026-09-09T10:00:00Z"
     assert section["seenComments"] == ["IC_1"]  # the rest of the ledger is kept
+    assert "closureCheckedAt" not in section  # ...in the file that is not tracked
 
 
 def test_a_closed_ledger_only_item_is_forgotten_and_never_asked_again(tmp_path):
@@ -4178,6 +4349,21 @@ def test_an_owner_already_ledgered_keeps_the_pull_requests_ledger(tmp_path):
         "github:octo/repo#42"
     ) is not None
     assert not (portable / "github-octo-repo-42.json").exists()
+
+
+def test_a_stray_clock_does_not_make_a_cleared_item_known(tmp_path):
+    """issue-382 — the clocks are a ledger's dates, never a ledger of their own.
+
+    A reset drops both; if one were left behind (a concurrent poller rewrote it
+    from memory), the item must still read as first-sight, or its whole thread
+    would be forwarded to the new session instead of baselined.
+    """
+    root = tmp_path / "portable"
+    PollClockStore.beside(root).put(REF15, {"lastPolledAt": "2026-09-18T10:00:00Z"})
+    state = PollState(WorkItemStore(root))
+    assert state.is_known(REF15) is False
+    assert state.seen_comments(REF15) == set()
+    assert state.absent_since(REF15) == ""
 
 
 # -- a set of labels, every one required (issue-381) ---------------------------

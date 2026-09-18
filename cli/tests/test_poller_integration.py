@@ -33,6 +33,7 @@ from the_loop.poller import (
     PollState,
     parse_repos,
 )
+from the_loop.pollclocks import PollClockStore
 from the_loop.workitem import WorkItemStore
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
@@ -686,18 +687,19 @@ def test_a_closed_ledger_only_item_is_stamped_after_the_window(tmp_path):
     assert store.section(REF, "poll") is not None
 
     def age(stamp):
-        section = dict(store.section(REF, "poll") or {})
-        section["lastPolledAt"] = stamp
-        section.pop("closureCheckedAt", None)
-        store.write_section(REF, "poll", section)
-        poller.state._items.pop(REF, None)  # re-read the record next cycle
+        # The clocks are the machine's since issue-382, so ageing the ledger
+        # means ageing them — through the poller's own store, whose map is
+        # loaded once per process.
+        poller.state.clocks.put(REF, {"lastPolledAt": stamp})
+        poller.state._items.pop(REF, None)  # re-read the ledger next cycle
 
     gh.issues = []  # the label was removed, or the issue closed: it is unlisted
     age("2020-01-01T00:00:00Z")
     summary = poller.poll_once()
     assert summary.closures == 0 and summary.ledger_checks == 1
     assert gh.api_calls.count("repos/octo/repo/issues/15") == 1
-    assert (store.section(REF, "poll") or {}).get("closureCheckedAt")
+    assert poller.state.clocks.get(REF).get("closureCheckedAt")
+    assert "closureCheckedAt" not in (store.section(REF, "poll") or {})
     assert dispatcher.control_store.ended(REF) is None
 
     summary = poller.poll_once()
@@ -722,6 +724,36 @@ def test_a_closed_ledger_only_item_is_stamped_after_the_window(tmp_path):
     # section with contents is the stamp — the record is kept, not deleted.
     record = store.read(REF)
     assert {k for k, v in record.items() if isinstance(v, dict)} == {"ended"}
+
+
+def test_a_restarted_poller_does_not_re_ask_about_an_item_it_just_polled(tmp_path):
+    """
+    Feature: Poll GitHub and close finished work items
+    Scenario: A restarted poller does not re-ask about an item it polled a moment ago
+        Given a labelled issue by an unlisted author, listed once (a poll-only record, no session)
+        When the poller process is replaced by a new one over the same state root
+        And the issue has left the listing
+        Then the new process does not ask GitHub about it — the window has not passed
+        And the tracked record it reads carries no timestamp of its own
+    Requirement: docs/specs/issue-382/requirements.md#R1 (R1.1), #R2 (R2.1)
+    """
+    gh = GhState()
+    registry, tmux, dispatcher, poller = _make(tmp_path, gh, authorized=("nobody",))
+    poller.poll_once()
+    dispatcher.stop()
+
+    record = WorkItemStore(tmp_path / "portable").section(REF, "poll") or {}
+    assert "seenComments" in record and "lastPolledAt" not in record
+    assert PollClockStore.beside(tmp_path / "portable").get(REF)["lastPolledAt"]
+
+    # A second process, same state root: the clock is where the schedule looks.
+    gh.issues = []
+    _, _, dispatcher2, poller2 = _make(tmp_path, gh, authorized=("nobody",))
+    before = gh.api_calls.count("repos/octo/repo/issues/15")
+    summary = poller2.poll_once()
+    dispatcher2.stop()
+    assert summary.ledger_checks == 0
+    assert gh.api_calls.count("repos/octo/repo/issues/15") == before
 
 
 def test_a_polled_closure_by_an_authorized_closer_releases_the_item(tmp_path):

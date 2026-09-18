@@ -8,6 +8,8 @@ true on any machine::
       "url": "https://github.com/octo/repo/issues/15",
       "control": {"command": "start", "actor": "octocat", …},
       "poll":    {"seenComments": [...], "commentAttempts": {...}, …},
+                 # …but not when it was last polled: that clock is this
+                 # machine's (issue-382), in local/poll-clocks.json
       "collaborators": {"users": [{"login": "dana", "addedBy": "octocat", …}]},
       "collaborationChannels": {"channels": [{"ref": "slack@C0123ABCD", …}]},
       "ended":   {"state": "merged", "reason": "pr-merged", "at": "…", …}
@@ -102,7 +104,9 @@ GRAPH = "graph"
 CHANNELS = "channels"
 
 #: The poll ledgers of the pull requests delivering this work item (issue-368),
-#: keyed by the PR's ref: ``{seenComments, commentAttempts, lastPolledAt}``.
+#: keyed by the PR's ref: ``{seenComments, commentAttempts}``. Its clocks are
+#: this machine's, like the work item's own (issue-382) — see
+#: :mod:`the_loop.pollclocks`.
 #: The poller lists a labelled pull request as an item of its own, and used to
 #: baseline it under a portable record of its own — N+1 records and N+1 index
 #: entries for one work item, which is what the owner's review of issue-368

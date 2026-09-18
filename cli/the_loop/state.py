@@ -17,6 +17,7 @@ two negations to express one idea. This one groups them by **what they are**:
 ===================  =========================================  ==========
 portable state       ``<root>/portable/<slug>.json``            travels
 session handles      ``<root>/local/<slug>.json``               local
+poll clocks          ``<root>/local/poll-clocks.json``          local
 event log            ``<root>/logs/events.jsonl``               local
 poller log           ``<root>/logs/poller.out``                 local
 receiver pidfile     ``<root>/gh-webhook.pid``                  local
@@ -105,6 +106,16 @@ class StateLayout:
         construction — a verdict is a fact about this box's harness installation,
         so it never travels in a repository and is never agent-writable."""
         return str(self.root_path / "local" / "model-verdicts.json")
+
+    @property
+    def poll_clocks(self) -> str:
+        """When this machine's poller last looked at each work item (issue-382).
+
+        Machine-local by the same rule as :attr:`poll_status`: a clock reading
+        describes a cycle that ran on THIS box, and it used to sit in the
+        tracked record, where the poller rewrote it every minute. See
+        :mod:`the_loop.pollclocks`."""
+        return str(self.root_path / "local" / "poll-clocks.json")
 
     @property
     def event_log(self) -> str:
@@ -212,7 +223,8 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
         portable=True,
         holds=(
             "control (the last start|stop|pause|resume, its actor and time) and "
-            "poll (seenComments, commentAttempts, the spawn ledger, lastPolledAt)"
+            "poll (seenComments, commentAttempts, the spawn ledger, the cached "
+            "title — but not the clocks, which are this machine's: issue-382)"
         ),
         why=(
             "statements about the work item and about what GitHub already told "
@@ -254,6 +266,28 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
             "and it is re-measurable in a second, so there is nothing to carry. "
             "Machine-local also keeps it out of reach of an agent session, which "
             "matters because a verdict can only ever WITHHOLD a declared choice"
+        ),
+    ),
+    GeneratedPath(
+        name="poll clocks",
+        attr="poll_clocks",
+        default="<root>/local/poll-clocks.json",
+        portable=False,
+        holds=(
+            "per work-item ref (and per pull request delivering one): "
+            "lastPolledAt — the last cycle that listed it — and "
+            "closureCheckedAt, the last cycle that asked whether an unlisted "
+            "item had ended and was not told closed (issue-382)"
+        ),
+        why=(
+            "clock readings from one machine's poller, per item — the poller "
+            "heartbeat's verdict applied one level down. Carried elsewhere they "
+            "date cycles that machine never ran, and nothing upstream is lost "
+            "with them: a ref with no clock is simply due for its next closure "
+            "question, one provider call and capped per cycle. They were in the "
+            "tracked record until issue-382, where being rewritten every cycle "
+            "left every operator whose state.root is a repository with a "
+            "permanently dirty working tree."
         ),
     ),
     GeneratedPath(
@@ -550,15 +584,17 @@ ATTRIBUTES: Tuple[Attribute, ...] = (
         OPERATOR_FILE,
         "poll",
         "operator-ledger",
-        "seen comments, the retry ledgers, the spawn ledger, when it was last "
-        "listed, the cached title",
+        "seen comments, the retry ledgers, the spawn ledger, the cached title. "
+        "NOT when it was last listed: a clock reading is this machine's, and "
+        "lives in local/poll-clocks.json (issue-382)",
     ),
     Attribute(
         OPERATOR_FILE,
         "pullRequests",
         "operator-ledger",
         "the same poll ledger for each pull request delivering it, keyed by "
-        "ref — so one work item is one record (issue-368)",
+        "ref — so one work item is one record (issue-368); its clocks are "
+        "this machine's, like the work item's own (issue-382)",
     ),
     Attribute(
         OPERATOR_FILE,

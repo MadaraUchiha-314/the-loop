@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
 from . import eventlog
+from .pollclocks import PollClockStore
 from .sessions import Session, SessionRegistry, WorkItemRef
 from .workitem import (
     CHANNELS,
@@ -140,6 +141,7 @@ def reset_work_item(
     close: Optional[Closer] = None,
     dry_run: bool = False,
     actor: str = "",
+    clocks: Optional[PollClockStore] = None,
 ) -> ResetOutcome:
     """Remove this machine's state for ``work_item``.
 
@@ -148,6 +150,9 @@ def reset_work_item(
     live session is reported as :attr:`ResetOutcome.was_live` either way, because
     ending a running agent is the least reversible thing a reset does and must be
     visible in the rehearsal too.
+
+    ``clocks`` is this machine's poll clocks (issue-382); the default is the file
+    beside ``store``'s directory, which is where the poller keeps them.
     """
     ref = _as_ref(work_item)
     removed: List[str] = []
@@ -200,6 +205,15 @@ def reset_work_item(
             removed.append(section)
         except OSError as exc:
             errors.append(f"could not remove the {section} record: {exc}")
+
+    # The poll clocks go with the poll section (issue-382): they are the same
+    # ledger, split across a tracked file and a local one. Unconditional rather
+    # than "only when there was a section", because a clock for a record that is
+    # already gone is exactly the orphan this verb exists to remove — and it is
+    # never reported as a piece of its own, because it is part of what `poll`
+    # means, not something an operator has to learn about.
+    if not dry_run:
+        (clocks or PollClockStore.beside(store.root)).forget(ref.ref)
 
     outcome = ResetOutcome(
         ref=ref.ref,

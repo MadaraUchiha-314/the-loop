@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from the_loop.control import ControlStore
+from the_loop.pollclocks import PollClockStore
 from the_loop.poller.poller import PollState
 from the_loop.reset import (
     CONTROL,
@@ -174,6 +175,33 @@ def test_clearing_poll_makes_the_thread_first_sight_again(registry, store):
     reset_work_item(WorkItemRef.parse(REF), registry=registry, store=store)
     state = PollState(store)
     assert state.is_known(REF) is False and state.seen_comments(REF) == set()
+
+
+def test_clearing_poll_takes_the_machines_clocks_with_it(registry, store):
+    """issue-382, R1.5 — a reset is *forget everything this machine holds*.
+
+    The clocks moved out of the record in issue-382, so clearing the `poll`
+    section is no longer the whole of forgetting: a clock left behind would keep
+    deferring the closure question for a record that has gone.
+    """
+    baseline(store)
+    clocks = PollClockStore.beside(store.root)
+    assert clocks.get(REF)
+    clocks.put(OTHER, {"lastPolledAt": "2026-08-04T00:00:00Z"})
+
+    reset_work_item(WorkItemRef.parse(REF), registry=registry, store=store)
+
+    assert PollClockStore.beside(store.root).get(REF) == {}
+    assert PollClockStore.beside(store.root).get(OTHER)  # only the one ref
+    assert PollState(store).absent_since(REF) == ""
+
+
+def test_a_dry_run_leaves_the_clocks_alone(registry, store):
+    baseline(store)
+    reset_work_item(
+        WorkItemRef.parse(REF), registry=registry, store=store, dry_run=True
+    )
+    assert PollClockStore.beside(store.root).get(REF)
 
 
 def test_resetting_one_work_item_leaves_the_others_alone(registry, store):
