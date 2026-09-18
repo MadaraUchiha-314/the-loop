@@ -69,7 +69,7 @@ overrides: {}
   - _Requirements:_ R4.1–R4.3
   - _Test:_ T9
 
-- [ ] 6. Evidence and the gates
+- [x] 6. Evidence and the gates
   - `evidence/self-review.md`, `critic-review.md`, `security-review.md`,
     `final-validation.md`, `documentation.md`, `pull-requests.md`; `make check`
   - _Depends on:_ 4, 5
