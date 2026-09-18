@@ -94,7 +94,9 @@ class PollClockStore:
         clocks: Dict[str, Dict[str, str]] = {}
         for ref, entry in ((data or {}).get("clocks") or {}).items():
             if not isinstance(entry, dict):
-                logger.debug("skipping a poll-clock entry that is not a mapping: %s", ref)
+                logger.debug(
+                    "skipping a poll-clock entry that is not a mapping: %s", ref
+                )
                 continue
             kept = {
                 key: value

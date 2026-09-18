@@ -28,11 +28,11 @@ riskTier: 3
 | T6 | Contract (declaration ↔ docs ↔ `.gitignore`) | yes | the new path is classified local, documented as local, and ignored by the published recipe | `uv run --project cli python -m pytest -q cli/tests/test_state_portability.py` |
 | T7 | Security / abuse case | yes | a forged-future clock defers rather than acts; a malformed clock reads as *no clock*; a write failure never fails a cycle | `uv run --project cli python -m pytest -q cli/tests/test_pollclocks.py -k "future or malformed or unwritable"` |
 | T8 | Full suite + lint + types | yes | nothing else in the CLI depended on the moved keys | `make check` |
-| T9 | End-to-end (a live poller against GitHub) | n/a — the poll loop's provider is already faked at the boundary by the integration suite; a live run would prove the provider, which this change does not touch | |
-| T10 | UI / visual | n/a — the served record's shape is unchanged, so no rendered surface changes | |
-| T11 | Snapshot | n/a — no rendered output or generated file is snapshotted in this repo | |
-| T12 | Performance / load | n/a — the change strictly removes writes (one small file instead of *n* records + index per cycle); no latency-sensitive path is touched | |
-| T13 | Accessibility | n/a — no user interface | |
+| T9 | End-to-end (a live poller against GitHub) | n/a — the poll loop's provider is already faked at the boundary by the integration suite; a live run would prove the provider, which this change does not touch | | |
+| T10 | UI / visual | n/a — the served record's shape is unchanged, so no rendered surface changes | | |
+| T11 | Snapshot | n/a — no rendered output or generated file is snapshotted in this repo | | |
+| T12 | Performance / load | n/a — the change strictly removes writes (one small file instead of *n* records + index per cycle); no latency-sensitive path is touched | | |
+| T13 | Accessibility | n/a — no user interface | | |
 | T14 | Manual exploratory | yes | the dogfood: run `poll --once` against this repository's own `state.root` twice and confirm `git status` stays clean | manual, recorded under Verification results |
 
 ## Scenarios & requirement trace
@@ -72,23 +72,35 @@ riskTier: 3
 
 ## Verification activities
 
-- [ ] T1 — `uv run --project cli python -m pytest -q cli/tests/test_pollclocks.py`
-- [ ] T2 — `uv run --project cli python -m pytest -q cli/tests/test_poller.py`
-- [ ] T3 — `uv run --project cli python -m pytest -q cli/tests/test_reset.py cli/tests/test_core_workitems.py`
-- [ ] T4 — `uv run --project cli python -m pytest -q cli/tests/test_poller_integration.py`
-- [ ] T5 — `uv run --project cli python -m pytest -q cli/tests/test_poller.py -k upgrade`
-- [ ] T6 — `uv run --project cli python -m pytest -q cli/tests/test_state_portability.py`
-- [ ] T7 — `uv run --project cli python -m pytest -q cli/tests/test_pollclocks.py -k "future or malformed or unwritable"`
-- [ ] T8 — `make check`
-- [ ] T14 — two `poll --once` cycles against this checkout's own `state.root`, with `git status` before and after
+- [x] T1 — `uv run --project cli python -m pytest -q cli/tests/test_pollclocks.py`
+- [x] T2 — `uv run --project cli python -m pytest -q cli/tests/test_poller.py`
+- [x] T3 — `uv run --project cli python -m pytest -q cli/tests/test_reset.py cli/tests/test_core_workitems.py`
+- [x] T4 — `uv run --project cli python -m pytest -q cli/tests/test_poller_integration.py`
+- [x] T5 — `uv run --project cli python -m pytest -q cli/tests/test_poller.py -k upgrade`
+- [x] T6 — `uv run --project cli python -m pytest -q cli/tests/test_state_portability.py`
+- [x] T7 — `uv run --project cli python -m pytest -q cli/tests/test_pollclocks.py -k "future or malformed or unwritable"`
+- [x] T8 — `make check`
+- [x] T14 — five `PollState` cycles over this checkout's own `state.root`, with `git status` before and after (**replanned** — see below)
 
 ## Verification results
 
-_Not yet executed._
-
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1 | `pytest -q cli/tests/test_pollclocks.py` | 14 passed in 0.09s | [`evidence/unit.md`](evidence/unit.md) |
+| T2 | `pytest -q cli/tests/test_poller.py` | 237 passed in 0.95s | [`evidence/unit.md`](evidence/unit.md) |
+| T3 | `pytest -q cli/tests/test_reset.py cli/tests/test_core_workitems.py cli/tests/test_core_attention.py` | 30, 7 and 9 passed | [`evidence/unit.md`](evidence/unit.md) |
+| T4 | `pytest -q cli/tests/test_poller_integration.py` | 32 passed in 2.33s | [`evidence/integration.md`](evidence/integration.md) |
+| T5 | `pytest -q cli/tests/test_poller.py -k upgrade` | 3 passed, 234 deselected | [`evidence/unit.md`](evidence/unit.md) |
+| T6 | `pytest -q cli/tests/test_state_portability.py` | 12 passed in 0.05s | [`evidence/unit.md`](evidence/unit.md) |
+| T7 | `pytest -q cli/tests/test_pollclocks.py -k "future or malformed or unwritable"` | 4 passed, 10 deselected | [`evidence/unit.md`](evidence/unit.md) |
+| T8 | `make check` | lint, markdownlint, format, pyright, config validation and the full suite green — 3968 passed, 1 skipped | [`evidence/final-validation.md`](evidence/final-validation.md) |
+| T14 | five `PollState` cycles over `.the-loop/portable` in this checkout, `git status`/`git diff` before, after the first and after the fifth | cycle 1 wrote a clock-free `poll` section; cycles 2–5 left the tracked files byte-identical while the ignored clock file advanced | [`evidence/final-validation.md`](evidence/final-validation.md) |
+
+**Not executed as planned:** T14 was planned as two `the-loop poll --once` cycles. This
+container has no `gh` binary and this repository polls nothing (`polling.sources: []`), so
+it was **replanned** as the five-cycle `PollState` run above over the same directory and
+the same write path; the provider-driven path is covered by T4. Nothing else was left
+unexecuted.
 
 ## Review comments
 

@@ -223,7 +223,8 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
         portable=True,
         holds=(
             "control (the last start|stop|pause|resume, its actor and time) and "
-            "poll (seenComments, commentAttempts, the spawn ledger, lastPolledAt)"
+            "poll (seenComments, commentAttempts, the spawn ledger, the cached "
+            "title — but not the clocks, which are this machine's: issue-382)"
         ),
         why=(
             "statements about the work item and about what GitHub already told "
@@ -583,15 +584,17 @@ ATTRIBUTES: Tuple[Attribute, ...] = (
         OPERATOR_FILE,
         "poll",
         "operator-ledger",
-        "seen comments, the retry ledgers, the spawn ledger, when it was last "
-        "listed, the cached title",
+        "seen comments, the retry ledgers, the spawn ledger, the cached title. "
+        "NOT when it was last listed: a clock reading is this machine's, and "
+        "lives in local/poll-clocks.json (issue-382)",
     ),
     Attribute(
         OPERATOR_FILE,
         "pullRequests",
         "operator-ledger",
         "the same poll ledger for each pull request delivering it, keyed by "
-        "ref — so one work item is one record (issue-368)",
+        "ref — so one work item is one record (issue-368); its clocks are "
+        "this machine's, like the work item's own (issue-382)",
     ),
     Attribute(
         OPERATOR_FILE,

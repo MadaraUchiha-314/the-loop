@@ -17,50 +17,50 @@ riskTier: 3
 
 ## Task list
 
-- [ ] 1. The machine-local clock store
+- [x] 1. The machine-local clock store
   - `cli/the_loop/pollclocks.py`: `CLOCK_KEYS`, `PollClockStore` with `beside`, `get`,
     `put`, `forget`, `all`; atomic write, best-effort on every fault.
   - _Depends on:_ none
   - _Requirements:_ R1.1, R2.5, abuse 2–3
   - _Test:_ T1/T7 — `pytest cli/tests/test_pollclocks.py` (red→green)
-- [ ] 2. Declare the new path
+- [x] 2. Declare the new path
   - `StateLayout.poll_clocks` = `<root>/local/poll-clocks.json`, plus its
     `GENERATED_PATHS` entry (`portable=False`, `holds`, `why`); pin `beside()` against it.
   - _Depends on:_ 1
   - _Requirements:_ R3.1
   - _Test:_ T6 — `pytest cli/tests/test_state_portability.py` (red→green: S1 fails on an
     unclassified path)
-- [ ] 3. Split the poller's storage boundary
+- [x] 3. Split the poller's storage boundary
   - `PollState.__init__` takes the clock store; `_load` merges (local wins, the record's
     own value is the upgrade fallback); `_store_ledger` writes the clocks first, then the
     clock-free body — and only when that body changed.
   - _Depends on:_ 1
   - _Requirements:_ R1.1–R1.6, R2.1, R2.2, R2.3
   - _Test:_ T2/T5 — `pytest cli/tests/test_poller.py` (red→green)
-- [ ] 4. Feed the daemon the declared path
+- [x] 4. Feed the daemon the declared path
   - `PollerOptions.clock_file` from `StateLayout.poll_clocks`, passed into `PollState`.
   - _Depends on:_ 2, 3
   - _Requirements:_ R1.1
   - _Test:_ T2 — `pytest cli/tests/test_poller_daemon.py cli/tests/test_poller.py`
-- [ ] 5. The clocks go with a reset
+- [x] 5. The clocks go with a reset
   - `reset_work_item` drops the ref's clocks on a real run.
   - _Depends on:_ 1
   - _Requirements:_ R1.5
   - _Test:_ T3 — `pytest cli/tests/test_reset.py` (red→green)
-- [ ] 6. Re-join the halves for the control plane
+- [x] 6. Re-join the halves for the control plane
   - `core.workitems` merges this machine's clocks into the `poll` section and each
     `pullRequests` ledger it serves.
   - _Depends on:_ 1
   - _Requirements:_ R2.4
   - _Test:_ T3 — `pytest cli/tests/test_core_workitems.py cli/tests/test_core_attention.py`
     (red→green)
-- [ ] 7. The restart scenario
+- [x] 7. The restart scenario
   - A Gherkin-documented integration scenario: a poller restarted after a cycle does not
     re-ask about the item it just polled, and the record it left is clock-free.
   - _Depends on:_ 3, 4
   - _Requirements:_ R1.1, R2.1
   - _Test:_ T4 — `pytest cli/tests/test_poller_integration.py`
-- [ ] 8. Documentation and the durable record
+- [x] 8. Documentation and the durable record
   - `docs/cli/state.md` (the classification table, the `poll` section, the attribute
     table, the new file's own section), `docs/capabilities/webhook-triggers.md` and
     `docs/capabilities/control-plane.md`, `ui/src/api/types.ts`'s comment, and
@@ -68,7 +68,7 @@ riskTier: 3
   - _Depends on:_ 2, 3, 6
   - _Requirements:_ R3.1, R3.2, R3.3
   - _Test:_ T6/T8 — `pytest cli/tests/test_state_portability.py` then `make check`
-- [ ] 9. Verification
+- [x] 9. Verification
   - Execute `testing-plan.md`: run every activity, tick it, record command/outcome/evidence.
   - _Depends on:_ 1–8
   - _Requirements:_ all

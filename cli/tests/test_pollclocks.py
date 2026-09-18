@@ -154,5 +154,5 @@ def test_an_unwritable_file_never_raises(tmp_path):
 def test_an_unknown_key_in_a_refs_entry_is_dropped(tmp_path):
     """Only the two declared clocks live here — the file is not a second ledger."""
     store = _store(tmp_path)
-    store.put(REF, {"lastPolledAt": "10:00", "seenComments": ["c1"]})
+    store.put(REF, {"lastPolledAt": "10:00", "seenComments": "c1"})
     assert _store(tmp_path).get(REF) == {"lastPolledAt": "10:00"}

@@ -195,6 +195,12 @@ class PollState:
     - ``spawn`` — ``{attempts, gaveUp, deliveryId}`` for the presence/spawn
       retry (the presence delivery id is stored so the poller can tell an
       in-flight spawn from a failed one across cycles).
+    - ``lastPolledAt`` / ``closureCheckedAt`` — the clocks, held here in memory
+      like any other key but stored in ``<state.root>/local/poll-clocks.json``
+      rather than in the record (issue-382): a clock reading is a fact about a
+      cycle THIS machine ran, and rewriting it into a tracked file every cycle
+      left every operator whose ``state.root`` is a repository with a dirty
+      working tree. See :mod:`the_loop.pollclocks`.
     - ``gaveUp`` — ``{comments, version}``: comments **abandoned** after their
       retry budget was spent, and the CLI version that abandoned them. What makes
       an item stranded by a bug recoverable once the bug is fixed (issue-146);
@@ -318,17 +324,20 @@ class PollState:
         before the split — is the **fallback**, used only where the local file
         has none, so an upgrade neither re-dates every item nor makes one due
         for a closure question it was not due for. The first write strips it.
+
+        A clock with no ledger beside it is **not** a ledger: an item whose
+        `poll` section was cleared is unknown, exactly as before, so it is
+        baselined on next sight rather than having its whole thread forwarded.
         """
         if ref not in self._items:
             section = self._load(ref)
-            clocks = self.clocks.get(ref)
-            if section is None and not clocks:
-                return {}
-            body = dict(section or {})
+            if section is None:
+                return {}  # unknown is unknown: a stray clock is not a ledger
+            body = dict(section)
             self._stored[ref] = {
                 key: value for key, value in body.items() if key not in CLOCK_KEYS
             }
-            body.update(clocks)
+            body.update(self.clocks.get(ref))
             self._items[ref] = body
         return self._items[ref]
 

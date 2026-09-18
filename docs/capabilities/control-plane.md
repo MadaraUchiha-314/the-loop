@@ -375,7 +375,8 @@ package — there are no install extras (owner decision, PR #162).
   claimant is itself claimed. A PR **no** session claims — one linked to no
   issue — stays top-level: that is the standalone-PR path. Removing a row SHALL
   move what it carried, not delete it: the nested row takes the PR's portable
-  record (so its age falls back to `poll.lastPolledAt`), and the PR's attention
+  record (so its age falls back to `poll.lastPolledAt`, which the read surface
+  joins from this machine's poll clocks since issue-382), and the PR's attention
   and open question surface on the **owning item's** card and chip, named for
   the pull request. `GET /api/v1/work-items` is unchanged — it still serves
   every portable record, and the client is where the two sources meet.

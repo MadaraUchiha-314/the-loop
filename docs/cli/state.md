@@ -254,14 +254,12 @@ own record, because it *is* the work item.
     "seenComments": ["2451…", "2452…"],
     "commentAttempts": {"2453…": 1},
     "spawn": {"attempts": 0, "gaveUp": false, "deliveryId": ""},
-    "lastPolledAt": "2026-07-31T10:42:00Z",
     "title": "Rate-limit the poller's gh calls"
   },
   "pullRequests": {
     "github:octo/lib#7": {
       "seenComments": ["2460…"],
-      "commentAttempts": {},
-      "lastPolledAt": "2026-07-31T10:42:00Z"
+      "commentAttempts": {}
     }
   },
   "channels": {
@@ -358,9 +356,10 @@ can rebuild.
 ### `pullRequests` — what the poller has seen on each pull request
 
 One entry per pull request delivering this work item, keyed by its ref, holding exactly
-what `poll` holds for the work item itself: `seenComments`, `commentAttempts` and
-`lastPolledAt`. No `spawn` and no `title` — a pull request is never spawned as a work
-item from here, and its title is the repository's.
+what `poll` holds for the work item itself: `seenComments` and `commentAttempts`. No
+`spawn` and no `title` — a pull request is never spawned as a work item from here, and its
+title is the repository's. Its clocks are this machine's, in
+`<root>/local/poll-clocks.json` under its own ref — see **Poll clocks** below.
 
 Written by the poller, which resolves the owner **before** it writes anything: this
 machine's session records first, then the pull-request ledgers already in `portable/`,
@@ -512,9 +511,15 @@ provider call) and stamps it again.
 | `seenComments` | comment ids already baselined or delivered — capped, and pruned each cycle to what still exists upstream |
 | `commentAttempts` | in-flight delivery attempts per comment, against [`maxRetries`](/config/cli/polling-options#maxretries) — **only deliveries that may still be retried** |
 | `spawn` | the presence/spawn retry ledger: attempts, whether it gave up, the in-flight delivery id |
-| `lastPolledAt` | the last cycle that saw the item |
-| `closureCheckedAt` | the last cycle that asked GitHub whether this **unlisted** item had ended and was not told *closed* ([issue-332](https://github.com/MadaraUchiha-314/the-loop/issues/332)) — only ever on a record that carries nothing but `poll`; see below |
 | `title` | the ticket's title, cached each cycle so the control plane can serve it (issue-283) — refreshed, so a renamed ticket converges |
+
+**When the poller last looked is not here.** `lastPolledAt` and `closureCheckedAt` are
+clock readings from *this machine's* poller, so they live in
+`<root>/local/poll-clocks.json` — see **Poll clocks** below
+([issue-382](https://github.com/MadaraUchiha-314/the-loop/issues/382)) — they used to sit
+here, rewritten every cycle, which left every operator whose `state.root` is a repository
+with a permanently dirty working tree. The control plane still serves them inside `poll`:
+the split is about where they are stored, not about what a reader on this machine sees.
 
 An item is *baselined* on first sight — the whole existing thread is marked seen, because
 the spawned session reads it itself — and the section is dropped when the item ends, so a
@@ -531,8 +536,8 @@ the item's whole thread, which is where those comments still are.
 A record that carries **only** this section — the ledger of a thread the poller once
 listed, with no session, no arming, no frozen graph and no roster — is asked whether it
 ended **lazily** ([issue-332](https://github.com/MadaraUchiha-314/the-loop/issues/332),
-[decision-115](../decisions/decision-115.md)): once the later of `lastPolledAt` and
-`closureCheckedAt` is sixty cycles' worth of
+[decision-115](../decisions/decision-115.md)): once the later of this machine's
+`lastPolledAt` and `closureCheckedAt` for it is sixty cycles' worth of
 [`intervalSeconds`](/config/cli/polling-options#intervalseconds) old (one hour at the
 default), the next complete listing asks GitHub once — at most twenty such records per
 source per cycle, longest-absent first. Told *closed*, the item takes the same close path
@@ -543,8 +548,8 @@ it is absent, as before — nothing waits on a ledger-only row, so it can wait.
 
 **If you delete it:** every watched thread is first-sight again. Nothing breaks, but the
 poller re-baselines them, and an item that had been given up on gets a fresh spawn budget.
-Deleting only `closureCheckedAt` makes the record due again as soon as `lastPolledAt` is a
-window old: one more question, then a fresh date.
+Deleting the *clocks* instead costs one provider question per ledger-only record and then
+a fresh date — see below.
 
 ::: tip Why one file, two writers
 Control comes from a keyword a human typed; the poll section from what the poller saw. They
@@ -832,6 +837,50 @@ covers both (and the atomic writer's temporaries) with one `self-diagnosis.json*
 next scan, so already-filed issues can be filed a second time. Delete it only together
 with (or after) the event log it summarises.
 
+## Poll clocks — `<root>/local/poll-clocks.json`
+
+When this machine's poller last looked at each work item
+([issue-382](https://github.com/MadaraUchiha-314/the-loop/issues/382)). Two timestamps per
+ref, written by the poller as it finishes each item, and keyed by the ref itself — a work
+item's and a pull request's alike.
+
+```json
+{
+  "clocks": {
+    "github:octo/repo#15": {"lastPolledAt": "2026-07-31T10:42:00Z"},
+    "github:octo/lib#7": {"lastPolledAt": "2026-07-31T10:42:00Z"},
+    "github:octo/repo#9": {
+      "lastPolledAt": "2026-07-30T08:00:00Z",
+      "closureCheckedAt": "2026-07-31T09:00:00Z"
+    }
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `lastPolledAt` | the last cycle that listed this ref |
+| `closureCheckedAt` | the last cycle that asked the provider whether this **unlisted** item had ended and was not told *closed* ([issue-332](https://github.com/MadaraUchiha-314/the-loop/issues/332)) |
+
+They are what the lazy closure schedule measures absence with, and they are all it
+measures: the later of the two, against a window of sixty cycles' worth of
+[`intervalSeconds`](/config/cli/polling-options#intervalseconds).
+
+**Local**, for the reason `poll-status.json` is — a clock reading describes a cycle that
+ran on *this* box, and carried elsewhere it dates a process that is not there. They lived in the tracked `poll` section until issue-382,
+where the poller rewrote them every cycle: an operator whose `state.root` sits in a
+repository had a permanently dirty working tree and a diff nobody wrote before every
+commit. Nothing upstream is lost with them, which is what makes them safe to leave behind
+— the rest of the `poll` section is not, and stays portable.
+
+A record written before the split still carries its own copies. They are read while this
+file has none for that ref — so an upgrade changes no schedule — and the poller strips
+them from the record the first time it writes that ledger.
+
+**If you delete it:** every ledger-only record is due for one closure question, capped at
+twenty per source per cycle, and is then dated again. Nothing is re-forwarded and no
+session is respawned: that is the `poll` section's job, and it is in the other file.
+
 ## Availability verdicts — `<root>/local/model-verdicts.json`
 
 What this machine's harnesses will actually accept (issue-358). It is what lets
@@ -962,6 +1011,7 @@ flight is still holding a conversation the old code started.
 | `<root>/local/<slug>.json` | deleted (the session is closed through the normal close path first) |
 | `<root>/portable/<slug>.json` | `control`, `poll`, `collaborators`, `collaborationChannels` and `ended` cleared — the file is removed, or left `sealed` while a pre-issue-128 tree still holds something for that item |
 | `<root>/portable/index.json` | rewritten to match, on the same write |
+| `<root>/local/poll-clocks.json` | this item's entry dropped — the clocks are part of what `poll` means (issue-382) |
 | `<root>/logs/events.jsonl` | **appended to** — one `session.reset` line. Never rewritten: a command that could erase its own trail is not auditable |
 | `<root>/gh-webhook.pid` | untouched. Reset does not stop the daemon — it warns when one is running, because a daemon holds poll state in memory and can write it back |
 | the workspace checkout | removed unless [`workspace.keepCheckoutOnClose`](/config/cli/routing-options#workspace-keepcheckoutonclose) |
@@ -1036,7 +1086,9 @@ the-loop start
 
 The new machine knows which items are armed and which comments it has already seen, and
 spawns its own sessions as events arrive. `sessions list` being empty is the design
-working, not state that failed to arrive.
+working, not state that failed to arrive — and so is a poll-clock file that starts empty:
+the new machine asks the provider once per ledger-only record, capped per cycle, and dates
+them from its own clock.
 
 ### If `state.root` is outside a repository
 

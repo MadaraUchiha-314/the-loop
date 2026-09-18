@@ -4345,3 +4345,18 @@ def test_an_owner_already_ledgered_keeps_the_pull_requests_ledger(tmp_path):
         "github:octo/repo#42"
     ) is not None
     assert not (portable / "github-octo-repo-42.json").exists()
+
+
+def test_a_stray_clock_does_not_make_a_cleared_item_known(tmp_path):
+    """issue-382 — the clocks are a ledger's dates, never a ledger of their own.
+
+    A reset drops both; if one were left behind (a concurrent poller rewrote it
+    from memory), the item must still read as first-sight, or its whole thread
+    would be forwarded to the new session instead of baselined.
+    """
+    root = tmp_path / "portable"
+    PollClockStore.beside(root).put(REF15, {"lastPolledAt": "2026-09-18T10:00:00Z"})
+    state = PollState(WorkItemStore(root))
+    assert state.is_known(REF15) is False
+    assert state.seen_comments(REF15) == set()
+    assert state.absent_since(REF15) == ""

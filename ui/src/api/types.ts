@@ -63,7 +63,11 @@ export interface EndedRecord {
   actor?: string;
 }
 
-/** `GET /api/v1/work-items` — `<state.root>/portable/<slug>.json`, verbatim. */
+/**
+ * `GET /api/v1/work-items` — `<state.root>/portable/<slug>.json`, plus the serving
+ * machine's poll clocks (issue-382), which the read surface joins back onto each
+ * `poll` ledger it carries.
+ */
 export interface WorkItemRecord {
   ref: string;
   /** Absent for refs whose URL cannot be derived (a `jira:` ref, say). */
@@ -73,6 +77,12 @@ export interface WorkItemRecord {
     seenComments?: string[];
     commentAttempts?: Record<string, number>;
     spawn?: { attempts?: number; gaveUp?: boolean; deliveryId?: string };
+    /**
+     * When a cycle on the serving machine last listed this item. Stored in
+     * `<state.root>/local/poll-clocks.json`, not in the record (issue-382), and
+     * merged in by the API — so it is absent when that machine has never
+     * polled the item, where it used to be absent when nothing had.
+     */
     lastPolledAt?: string;
     /** The ticket's title, cached by the poller each cycle (issue-283 B1). */
     title?: string;

@@ -127,8 +127,11 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
 
     # Recent errors age out (issue-283 B5): only errors from the last
     # RECENT_ERROR_MAX_AGE_HOURS are "recent", and a ``poll.*`` error whose work
-    # item has since polled clean — its record's ``poll.lastPolledAt`` is newer
-    # than the error, and a cycle that failed the item skips that stamp — is
+    # item has since polled clean — ``poll.lastPolledAt`` on the served record is
+    # newer than the error (this machine's clock, joined onto the record by
+    # ``core.workitems`` since issue-382, and the event log it is compared
+    # against is this machine's too), and a cycle that failed the item skips that
+    # stamp — is
     # cleared rather than reported. Only the poller's own errors get the
     # clean-poll clear: other sources emit asynchronously, so a same-cycle stamp
     # could hide a live failure; those rely on the age-out alone. ``at`` carries
