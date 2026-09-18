@@ -1,3 +1,9 @@
+## v19.3.0 (2026-09-18)
+
+### Feat
+
+- **issue-378**: a work item's whole life is told to every channel, and Slack can begin one (#380)
+
 ## v19.2.1 (2026-09-18)
 
 ### Fix
