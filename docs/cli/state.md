@@ -29,7 +29,8 @@ you say otherwise, never relative to whatever directory a command was run from
 │   └── github-octo-repo-15.json   # one per work item: control, poll, collaborators, channels — tracked
 ├── local/
 │   ├── github-octo-repo-15.json   # that item's session handle(s) — never tracked
-│   └── model-verdicts.json        # which models this box's harnesses accept — never tracked
+│   ├── model-verdicts.json        # which models this box's harnesses accept — never tracked
+│   └── poll-clocks.json           # when this box's poller last looked at each item — never tracked
 ├── logs/
 │   ├── events.jsonl               # the decision trail
 │   └── poller.out                 # a daemonized poller's stdout/stderr
@@ -195,6 +196,7 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 | `<root>/portable/index.json` | the same store, derived | one entry per record: ref, url, file, sections | **portable** |
 | `<root>/local/<slug>.json` | the session registry | one entry per ref this machine holds a session for — the work item's own and one per pull request — each with its conversation id, `cwd`, tmux target and status; plus what this deployment has already mirrored of the item's channel threads | **local** |
 | `<root>/local/model-verdicts.json` | `the-loop models check` (issue-358) | one verdict per harness × model-or-effort name: `ok`, `refused` or `unknown`, the argv it was taken against, and when — re-measured every 24h | **local** |
+| `<root>/local/poll-clocks.json` | the poller, as it finishes each item (issue-382) | per work-item ref — and per pull request delivering one — `lastPolledAt` and `closureCheckedAt`: when a cycle on **this** machine last listed it, and last asked whether an unlisted item had ended | **local** |
 | `<root>/local/standing/<name>.json` | the standing-session registry (issue-277, opt-in) | per standing session: harness, conversation id, `cwd`, tmux target, status, the Slack channel/thread its chat runs in — and, for a session created through the API, its whole definition | **local** |
 | `<root>/logs/events.jsonl` | every ingress, and `sessions` | one JSON object per decision | **local** |
 | `<root>/logs/poller.out` | a daemonized poller | its stdout and stderr, appended | **local** |
