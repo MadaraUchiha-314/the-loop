@@ -93,6 +93,17 @@ item's harness decides which models it may be offered, so it cannot be ambiguous
 Extra CLI arguments every session on this harness is launched with. This is the new home of
 `routing.harnessArgs.<harness>`, which still works and warns.
 
+*Every* session means every one: a work item's first session, the one spawned when its
+`phase-selection` gate is answered, a respawn, a pull request's own session, a
+[standing session](/config/cli/standing-sessions-options) whose entry omits
+`harnessArgs`, and the argv `the-loop models check` probes with. One resolver produces
+the list and every adapter is built from it
+([issue-377](https://github.com/MadaraUchiha-314/the-loop/issues/377) — until 19.2.0
+only a session whose work item had frozen a model or an effort level read this key; every
+other session launched on `routing.harnessArgs` alone, which is empty in a config that
+followed the deprecation warning). A harness declared in **both** homes launches on this
+one — never on the union — and `the-loop models list|check` reports the conflict.
+
 A work item's own model and effort are **appended** to this list, never merged into it:
 
 ```text
@@ -103,7 +114,7 @@ harnesses[].args        →  --dangerously-skip-permissions
 
 the-loop does not remove, rewrite or reorder an argument you declared, and never adds a
 permission flag you did not. If your list already carries the same flag a choice would
-append, `the-loop diagnose` warns — whether the appended one wins is the harness's own
+append, `the-loop models list|check` warns — whether the appended one wins is the harness's own
 argument-parsing rule, not the-loop's to assert.
 
 ## The models

@@ -156,12 +156,20 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
     from .dispatcher import Dispatcher, RoutingConfig
     from .router import Router
 
+    from ..modelchoice import launch_args
+
     layout = _state_layout()
     config = RoutingConfig.from_mapping(routing_config or {}, layout)
+    whole = cli_config.load_cli_config(_config_path())
     dispatcher = Dispatcher(
         registry=SessionRegistry(config.registry_dir),
+        # The resolved launch arguments — `harnesses[].args`, else the deprecated
+        # `routing.harnessArgs` — through the one resolver every builder uses
+        # (issue-377); the poller composes its dispatcher the same way.
         adapters=build_adapters(
-            config.harness_args, config.harness_trust, config.harness_plugins
+            launch_args(whole, config.harness_args),
+            config.harness_trust,
+            config.harness_plugins,
         ),
         config=config,
         # The bus (issue-317): a start opens the work item's conversation on
@@ -171,7 +179,7 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
         # `effort`. Taken whole rather than through `RoutingConfig`, because they
         # are not routing policy — and refreshed on every reload below, so
         # declaring a model needs no daemon restart.
-        cli_config=cli_config.load_cli_config(_config_path()),
+        cli_config=whole,
     )
     # The repository bound (issue-348). Read from the whole document, not from
     # `routing`: it is the one declaration every ingress reads, and the poller reads

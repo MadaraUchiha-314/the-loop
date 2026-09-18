@@ -204,7 +204,8 @@ EVENT_TYPES: Dict[str, str] = {
     "session.pr_spawned": (
         "A recorded pull request got its own tmux session and harness "
         "conversation (work_item, pull_request, harness, harness_session_id, "
-        "tmux_target) — `routing.tmux.sessionPerPr`. The work item's own "
+        "tmux_target; harness_args, the argv it launched with, since issue-377) "
+        "— `routing.tmux.sessionPerPr`. The work item's own "
         "session is untouched; this is an additional endpoint. Which pull "
         "requests reach this is the operator's choice (issue-258): under the "
         "default `cross-repository` only one in ANOTHER repository does, "
@@ -249,7 +250,10 @@ EVENT_TYPES: Dict[str, str] = {
     "session.spawned": (
         "A new harness session was spawned for a work item — this is the "
         "'what triggered this session' record (work_item, harness, "
-        "harness_session_id, runner, gh_event, delivery_id)."
+        "harness_session_id, runner, gh_event, delivery_id; and, since "
+        "issue-377, the argv it was launched with: harness_args, model, effort, "
+        "each omitted when empty — so 'was it launched with the flag?' is "
+        "answerable from the log alone)."
     ),
     "session.spawn_failed": (
         "Spawning a session failed (work_item, harness, error; will_retry)."
@@ -280,7 +284,8 @@ EVENT_TYPES: Dict[str, str] = {
         "tmux session, and the pending event delivered as its boot prompt "
         "(work_item, harness, harness_session_id, runner, tmux_target, "
         "resumed: whether the previous conversation was resumed or a fresh one "
-        "started, gh_event, delivery_id)."
+        "started, gh_event, delivery_id; harness_args, model, effort as on "
+        "session.spawned)."
     ),
     "session.respawn_averted": (
         "A delivery reported its tmux session missing, but the session turned "

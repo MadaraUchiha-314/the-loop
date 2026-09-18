@@ -116,3 +116,31 @@ def test_nothing_declared_asks_nothing_and_succeeds(monkeypatch, tmp_path, capsy
     )
     assert _run(models_cmd.ModelsCommand()._list) == models_cmd._EXIT_OK
     assert json.loads(capsys.readouterr().out)["verdicts"] == []
+
+
+def test_check_probes_with_the_arguments_a_session_is_launched_with(
+    monkeypatch, tmp_path, capsys
+):
+    """issue-377 R3.1 — a verdict is about the argv that would actually launch:
+    the probe adapter carries `harnesses[].args`, as the daemons' adapters do."""
+    config = {
+        "harnesses": [
+            {
+                "name": "claude",
+                "default": True,
+                "args": ["--dangerously-skip-permissions"],
+            }
+        ],
+        "models": ["opus-5"],
+        "state": {"root": str(tmp_path)},
+    }
+    monkeypatch.setattr(models_cmd, "_cli_config", lambda: config)
+    probed = []
+
+    def fake_probe(kind, name, adapter, timeout=0.0):
+        probed.append(list(adapter.extra_args))
+        return Verdict("claude", kind, name, "", OK, time.time())
+
+    monkeypatch.setattr(models_cmd, "probe", fake_probe)
+    assert _run(models_cmd.ModelsCommand()._check, refresh=True) == models_cmd._EXIT_OK
+    assert probed == [["--dangerously-skip-permissions"]]

@@ -191,3 +191,239 @@ def test_a_mid_graph_work_item_still_respawns(tmp_path):
     # item that has not started, so nothing already under way can be withheld.
     assert tmux.spawns, "a dead session must be respawned, parked gate or not"
     assert link.armed == []
+
+
+# -- the released session carries what the operator declared (issue-377) ---------
+#
+# These compose the dispatcher the way the DAEMONS do — through
+# `poller.daemon._build_dispatcher` — because a hand-built dispatcher is exactly how
+# issue-377 stayed invisible to a green suite: the fixture above hands in an adapter
+# with no arguments, so nothing here ever asked whether the daemon's own adapters
+# carried the config.
+
+REF_377 = "github:octo/repo#377"
+
+
+class _GateLink(_Link):
+    """A parked gate that an authorized reply answers — freezing ``model`` into the
+    work item's own state file in the checkout, the way `phase-selection` does."""
+
+    def __init__(self, freeze_model=""):
+        super().__init__(parked=False)
+        self.freeze_model = freeze_model
+
+    def on_arm(self, work_item, cwd, routed=None):
+        from the_loop.graph.state import WorkItemState
+
+        self.armed.append((work_item.ref, routed))
+        if self.freeze_model:
+            spec = Path(cwd) / "docs" / "specs" / "issue-377"
+            spec.mkdir(parents=True, exist_ok=True)
+            state = WorkItemState(work_item=work_item.ref)
+            state.model = self.freeze_model
+            state.save(spec)
+        return False
+
+
+def _daemon_dispatcher(tmp_path, link, cli_config, events_path=None):
+    """The poller's own composition, with the runner and the harness binary stubbed."""
+    from the_loop import eventlog
+    from the_loop.harness.base import TrustResult
+    from the_loop.poller.daemon import _build_dispatcher
+    from the_loop.state import layout_from_config
+
+    checkout = tmp_path / "co"
+    checkout.mkdir(exist_ok=True)
+    routing = {
+        "spawnOnUnmatched": "always",
+        "authorizedUsers": ["octo"],
+        "control": {"requireStartCommand": False},
+        "registryDir": str(tmp_path / "local"),
+        "spawnWorkdir": str(checkout),
+        "reactions": {"enabled": False},
+    }
+    routing.update(cli_config.get("routing") or {})
+    cli_config = dict(cli_config, routing=routing)
+    cli_config.setdefault("state", {"root": str(tmp_path / "state")})
+    dispatcher, _ = _build_dispatcher(
+        routing, layout_from_config(cli_config), lambda: cli_config
+    )
+    tmux = FakeTmux()
+    dispatcher.tmux = tmux
+    for adapter in dispatcher.adapters.values():
+        adapter.is_available = lambda: True  # type: ignore[method-assign]
+        adapter.prepare_environment = (  # type: ignore[method-assign]
+            lambda cwd, root=None: TrustResult()
+        )
+    dispatcher.graphlink = link
+    if events_path is not None:
+        eventlog.configure("poll", path=events_path, enabled=True)
+    return dispatcher, tmux
+
+
+def _release(number=377, delivery="d-377", body="the-loop execute"):
+    payload = {
+        "action": "created",
+        "repository": {"full_name": "octo/repo"},
+        "issue": {"number": number},
+        "comment": {"body": body, "user": {"login": "octo"}},
+    }
+    return RoutedEvent(
+        event="issue_comment",
+        action="created",
+        delivery_id=delivery,
+        work_items=extract_work_items("issue_comment", payload),
+        payload=payload,
+    )
+
+
+def test_a_released_session_is_launched_with_every_configured_harness_argument(
+    tmp_path,
+):
+    """Feature: a released work item is launched with the arguments the operator declared (issue-377)
+
+    Scenario: a session released from the human-start gate is launched with every configured harness argument
+      Given a CLI config that declares `--dangerously-skip-permissions` under `harnesses[].args` only
+      And a dispatcher composed the way the poller daemon composes it
+      When an authorized issue_comment releases a parked work item
+      Then the session it spawns records every configured argument
+      And the session.spawned event names that argv
+
+    Requirement: docs/specs/issue-377/bugfix.md R1.1, R1.5, R4.1
+    """
+    from the_loop import eventlog
+
+    log = tmp_path / "events.jsonl"
+    dispatcher, tmux = _daemon_dispatcher(
+        tmp_path,
+        _GateLink(),
+        {
+            "harnesses": [
+                {
+                    "name": "claude",
+                    "default": True,
+                    "args": ["--dangerously-skip-permissions"],
+                }
+            ]
+        },
+        events_path=log,
+    )
+    try:
+        dispatcher.handle(_release())
+        assert _wait(lambda: tmux.spawns)
+        dispatcher.stop()
+        session = dispatcher.registry.find_by_work_item(REF_377)
+        assert session is not None
+        assert session.harness_args == ["--dangerously-skip-permissions"]
+        (spawned,) = eventlog.read_events(log, types=["session.spawned"])
+        assert spawned["gh_event"] == "issue_comment"
+        assert spawned["harness_args"] == ["--dangerously-skip-permissions"]
+    finally:
+        eventlog.reset()
+
+
+def test_the_deprecated_routing_harness_args_still_reach_a_released_session(
+    tmp_path,
+):
+    """Feature: a released work item is launched with the arguments the operator declared (issue-377)
+
+    Scenario: the deprecated routing.harnessArgs still reaches a released session
+      Given a CLI config that declares the flag under `routing.harnessArgs.claude` only
+      When an authorized issue_comment releases a parked work item
+      Then the session it spawns records that argument
+
+    Requirement: docs/specs/issue-377/bugfix.md R1.1
+    """
+    dispatcher, tmux = _daemon_dispatcher(
+        tmp_path,
+        _GateLink(),
+        {"routing": {"harnessArgs": {"claude": ["--permission-mode", "acceptEdits"]}}},
+    )
+    dispatcher.handle(_release())
+    assert _wait(lambda: tmux.spawns)
+    dispatcher.stop()
+    session = dispatcher.registry.find_by_work_item(REF_377)
+    assert session is not None
+    assert session.harness_args == ["--permission-mode", "acceptEdits"]
+
+
+def test_the_session_spawned_by_the_gate_answering_reply_runs_on_the_model_it_froze(
+    tmp_path,
+):
+    """Feature: a released work item is launched with the arguments the operator declared (issue-377)
+
+    Scenario: the session spawned by the gate-answering reply already runs on the model it froze
+      Given a CLI config that declares the flag under `harnesses[].args` and offers `opus-5`
+      And a gate whose answer freezes `opus-5` into the work item's own state file
+      When the reply that answers the gate arrives
+      Then the session it spawns is launched with the flag followed by `--model opus-5`
+      And its record carries the model
+      And the next event is delivered into it rather than re-launching it
+
+    Requirement: docs/specs/issue-377/bugfix.md R2.1, R2.2, R4.2
+    """
+    dispatcher, tmux = _daemon_dispatcher(
+        tmp_path,
+        _GateLink(freeze_model="opus-5"),
+        {
+            "harnesses": [
+                {
+                    "name": "claude",
+                    "default": True,
+                    "args": ["--dangerously-skip-permissions"],
+                }
+            ],
+            "models": ["opus-5"],
+        },
+    )
+    dispatcher.handle(_release())
+    assert _wait(lambda: tmux.spawns)
+    session = dispatcher.registry.find_by_work_item(REF_377)
+    assert session is not None
+    assert session.harness_args == [
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus-5",
+    ]
+    assert session.model == "opus-5"
+
+    dispatcher.handle(_release(delivery="d-378", body="and one more thing"))
+    assert _wait(lambda: tmux.delivers)
+    dispatcher.stop()
+    assert len(tmux.spawns) == 1, "a session on the right argv is delivered into"
+
+
+def test_abuse_a_forged_model_in_the_state_file_buys_nothing_on_the_post_gate_spawn(
+    tmp_path,
+):
+    """Feature: a released work item is launched with the arguments the operator declared (issue-377)
+
+    Scenario: a forged model in the state file buys nothing on the post-gate spawn
+      Given a gate whose answer writes an UNDECLARED model into the work item's state file
+      When the reply that answers the gate spawns the session
+      Then the argv carries the operator's arguments and nothing else
+      And the record carries no model
+
+    Requirement: docs/specs/issue-377/bugfix.md § Security considerations A1
+    """
+    dispatcher, tmux = _daemon_dispatcher(
+        tmp_path,
+        _GateLink(freeze_model="smuggled-9"),
+        {
+            "harnesses": [
+                {
+                    "name": "claude",
+                    "default": True,
+                    "args": ["--dangerously-skip-permissions"],
+                }
+            ],
+            "models": ["opus-5"],
+        },
+    )
+    dispatcher.handle(_release())
+    assert _wait(lambda: tmux.spawns)
+    dispatcher.stop()
+    session = dispatcher.registry.find_by_work_item(REF_377)
+    assert session is not None
+    assert session.harness_args == ["--dangerously-skip-permissions"]
+    assert session.model == ""

@@ -13,6 +13,7 @@ from the_loop.modelchoice import (
     EFFORT_LEVELS,
     config_findings,
     harness_args,
+    launch_args,
     candidate_harnesses,
     declared_effort,
     declared_models,
@@ -244,3 +245,66 @@ def test_the_deprecated_routing_args_are_still_read():
 def test_harnesses_args_wins_over_the_deprecated_key():
     config = {"harnesses": [{"name": "claude", "args": ["--new"]}]}
     assert harness_args(config, "claude", ["--old"]) == ["--new"]
+
+
+# -- launch_args: one resolver for every adapter builder (issue-377) --------------
+
+
+def test_launch_args_reads_the_new_home():
+    """R1.1 — `harnesses[].args` reaches the adapters, not just the choice path."""
+    config = {
+        "harnesses": [
+            {"name": "claude", "args": ["--dangerously-skip-permissions"]},
+            {"name": "cursor"},
+        ]
+    }
+    assert launch_args(config) == {
+        "claude": ["--dangerously-skip-permissions"],
+        "cursor": [],
+    }
+
+
+def test_launch_args_reads_the_deprecated_home_for_a_harness_named_nowhere_else():
+    config = {"routing": {"harnessArgs": {"cursor": ["--force"]}}}
+    assert launch_args(config) == {"cursor": ["--force"]}
+
+
+def test_launch_args_takes_the_routing_args_the_caller_already_parsed():
+    """The daemons hand over `RoutingConfig.harness_args`; it stands in for the
+    document's own `routing.harnessArgs`, which is then not read again."""
+    config = {"routing": {"harnessArgs": {"claude": ["--from-the-document"]}}}
+    assert launch_args(config, {"claude": ["--from-the-dataclass"]}) == {
+        "claude": ["--from-the-dataclass"]
+    }
+
+
+def test_launch_args_new_home_wins_and_the_conflict_is_reported(caplog):
+    """R1.3 — precedence, never union; and said once where the operator looks."""
+    import logging
+
+    config = {
+        "harnesses": [{"name": "claude", "args": ["--new"]}],
+        "routing": {"harnessArgs": {"claude": ["--old"]}},
+    }
+    with caplog.at_level(logging.WARNING, logger="the_loop.modelchoice"):
+        assert launch_args(config) == {"claude": ["--new"]}
+    assert any("wins over" in r.getMessage() for r in caplog.records)
+    findings = config_findings(config, _adapters())
+    assert any(
+        f.where == "harnesses[claude].args" and "wins over" in f.message
+        for f in findings
+    )
+
+
+def test_launch_args_is_empty_when_nothing_declares_any():
+    """R1.4 — an install that declares nothing launches bare, as before."""
+    assert launch_args({}) == {}
+    assert launch_args(None) == {}
+
+
+def test_launch_args_falls_back_when_the_new_home_is_not_a_list():
+    config = {
+        "harnesses": [{"name": "claude", "args": "--dangerously-skip-permissions"}],
+        "routing": {"harnessArgs": {"claude": ["--old"]}},
+    }
+    assert launch_args(config) == {"claude": ["--old"]}

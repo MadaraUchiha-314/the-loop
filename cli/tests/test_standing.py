@@ -306,3 +306,16 @@ def test_a_hand_edited_harness_args_that_is_not_a_list_is_ignored(tmp_path):
     )
     record = StandingRegistry(root).read("a")
     assert record is not None and record.harness_args == ()
+
+
+def test_an_entry_inherits_the_harnesses_args_declared_in_their_new_home():
+    """issue-377 R3.2 — a standing session is a session on this harness, so it
+    inherits what `harnesses[].args` declares, not only the deprecated key."""
+    config: dict = _config(enabled=True, sessions=[{"name": "supervisor"}])
+    config["harnesses"] = [
+        {"name": "claude", "default": True, "args": ["--dangerously-skip-permissions"]}
+    ]
+    config["routing"].pop("harnessArgs")
+    entry = StandingConfig.from_mapping(config).get("supervisor")
+    assert entry is not None
+    assert entry.harness_args == ("--dangerously-skip-permissions",)

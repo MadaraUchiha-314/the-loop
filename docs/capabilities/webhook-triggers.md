@@ -770,8 +770,8 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   default, covering every checkout under it) or not (`directory`). Writes are
   non-destructive (named keys only, merged, atomic, skipped when already
   correct, refused on an unparseable file), and permission-neutral: the bypass
-  disclaimer is accepted only when this harness's `harnessArgs` already ask for bypass
-  mode. Best-effort — a failure warns, emits `workspace.trust_failed` and still spawns.
+  disclaimer is accepted only when this harness's launch arguments (`harnesses[].args`,
+  else the deprecated `routing.harnessArgs`) already ask for bypass mode. Best-effort — a failure warns, emits `workspace.trust_failed` and still spawns.
   Audited as `workspace.trusted`; `harnessTrust.enabled: false` opts out. See
   [interactive-sessions](interactive-sessions.md).
 - **The authorized actor is whoever performed the action, and on the poll path the work

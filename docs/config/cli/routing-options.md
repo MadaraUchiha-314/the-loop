@@ -882,15 +882,28 @@ ttyd listen port.
 
 - **Type:** `string[]`
 - **Default:** `[]`
+- **Deprecated** since 16.0.0 — declare it as
+  [`harnesses[].args`](/config/cli/harnesses-options#harnesses-args) instead. Still
+  read, with a warning at start-up.
 
 Extra CLI args passed to Claude Code, e.g. `["--permission-mode", "acceptEdits"]`. The
 dispatcher never widens permissions itself — whatever you put here is exactly what is
 passed.
 
+Both homes are resolved through one resolver and reach **every** session the-loop
+launches on this harness — a work item's first session, the one spawned when its
+`phase-selection` gate is answered, a respawn, a pull request's own session, a standing
+session that inherits its arguments, and the argv `the-loop models check` probes with
+([issue-377](https://github.com/MadaraUchiha-314/the-loop/issues/377); until 19.2.0
+only the deprecated key reached the sessions, so a config that had moved to the new
+home launched them bare). When a harness is declared in both, `harnesses[].args` wins
+and `the-loop models list|check` says so; the two are never merged.
+
 ### `harnessArgs.cursor`
 
 - **Type:** `string[]`
 - **Default:** `[]`
+- **Deprecated** since 16.0.0 — see `harnessArgs.claude` above.
 
 Extra CLI args passed to `cursor-agent`, e.g. `["--force"]`.
 
@@ -1052,9 +1065,11 @@ Whether to also record the one-time bypass-permissions disclaimer acceptance
 older builds). Without it, a session configured for bypass mode is prompted, or silently
 downgraded to `default`.
 
-- `auto` records it **only** when this harness's `harnessArgs` already ask for bypass mode
-  (`--dangerously-skip-permissions` or `--permission-mode bypassPermissions`) — the-loop
-  never widens permissions you did not request.
+- `auto` records it **only** when this harness's launch arguments
+  ([`harnesses[].args`](/config/cli/harnesses-options#harnesses-args), or the deprecated
+  `harnessArgs` above) already ask for bypass mode (`--dangerously-skip-permissions` or
+  `--permission-mode bypassPermissions`) — the-loop never widens permissions you did not
+  request.
 - `always` records it regardless; `never` never does.
 
 ::: warning This one is user-global, and the asymmetry is worth a conscious decision
@@ -1064,8 +1079,9 @@ Claude Code session on that account — interactive ones you start by hand inclu
 the ones the-loop spawns.
 
 That is the only form the harness exposes. If you would rather keep the confirmation on
-your own sessions, set `never` and drop `--dangerously-skip-permissions` from
-`harnessArgs`; a narrower `--permission-mode acceptEdits` needs no acceptance at all.
+your own sessions, set `never` and drop `--dangerously-skip-permissions` from the
+harness's arguments; a narrower `--permission-mode acceptEdits` needs no acceptance at
+all.
 :::
 
 ### `harnessPlugins.enabled`
