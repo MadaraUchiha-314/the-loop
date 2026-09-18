@@ -25,7 +25,7 @@ No other capability doc names either clock.
 | Doc | What changed |
 |---|---|
 | [`docs/cli/state.md`](../../../cli/state.md) | the directory tree, the classification table (one new row) and a new **Poll clocks** section describing the file, its two fields, why it is local, what an upgraded record does, and what deleting it costs. The `poll` section's table loses both clocks and gains a paragraph saying where they went and that the control plane still serves them; the record's JSON example and the `pullRequests` prose drop them; the `sessions reset` table gains a row; the hand-off section says a new machine starting with no clocks is the design working |
-| [`docs/decisions/decision-131.md`](../../../decisions/decision-131.md) (new) + `decisions.md` | the durable record: a poll clock is a machine reading, both clocks move, the split is at the storage boundary, the upgrade is a read-fallback, the record is written only when it changed, the control plane still serves them, no config key |
+| [`docs/decisions/decision-132.md`](../../../decisions/decision-132.md) (new) + `decisions.md` | the durable record: a poll clock is a machine reading, both clocks move, the split is at the storage boundary, the upgrade is a read-fallback, the record is written only when it changed, the control plane still serves them, no config key |
 | [`ui/src/api/types.ts`](../../../../ui/src/api/types.ts) | `WorkItemRecord`'s doc comment says the served record is the portable file **plus** the serving machine's poll clocks, and `lastPolledAt`'s comment says where it is stored and when it is absent |
 
 **Not changed, and why:** `README.md` and the documentation site's landing pages describe

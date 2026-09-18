@@ -37,6 +37,10 @@ uv run --project cli python -m pytest -q cli
 Lint, format, types, config validation and the full suite, green. The skip is the suite's
 existing one, unrelated to this work item.
 
+**Re-run after merging `main`** (issue-381 landed in between, renumbering this work item's
+decision record to 132): `make check` green again, **3988 passed, 1 skipped in 193.69s** —
+the twenty new tests are issue-381's.
+
 ## T14 — the dogfood
 
 The ticket's complaint is about a working tree, so the proof is a working tree — this

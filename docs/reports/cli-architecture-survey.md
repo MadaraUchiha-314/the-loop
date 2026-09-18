@@ -197,7 +197,7 @@ sequenceDiagram
    about to command the daemon. `start` is then **consumed**: it is applied and never
    forwarded to a session.
 5. **Arming** (`dispatcher.py:_apply_control`, `_spawn_refusal`). `start` spawns only
-   if the item is armed — the auto-execute label, or `spawnOnUnmatched: always`. A
+   if the item is armed — every auto-execute label, or `spawnOnUnmatched: always`. A
    refused `start` records nothing, on purpose: a stray comment on a backlog item must
    not leave a standing request. An accepted one writes the `control` section of
    `<state.root>/portable/<item>.json` (`control.py:ControlStore.record`), which is

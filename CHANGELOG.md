@@ -1,3 +1,9 @@
+## v19.4.0 (2026-09-18)
+
+### Feat
+
+- **issue-381**: a work item is armed by a set of labels, every one of which must be present (#383)
+
 ## v19.3.0 (2026-09-18)
 
 ### Feat

@@ -33,7 +33,7 @@ def write_config(root: Path, critics_block: str) -> Path:
     """A minimal CLI config carrying just the critics list (issue-352)."""
     path = config_path(root)
     path.write_text(
-        'version: "0.9.0"\ncritics:\n'
+        'version: "0.10.0"\ncritics:\n'
         + textwrap.indent(textwrap.dedent(critics_block).strip(), "  ")
         + "\n"
     )
@@ -132,7 +132,7 @@ def test_no_config_means_the_default_review_policy(tmp_path: Path):
 
 def test_review_policy_reads_the_operators_block_and_defaults_the_rest(tmp_path: Path):
     config_path(tmp_path).write_text(
-        'version: "0.9.0"\nreviews:\n  criticReviewCount: 1\n  escalateOnRepeatFinding: false\n'
+        'version: "0.10.0"\nreviews:\n  criticReviewCount: 1\n  escalateOnRepeatFinding: false\n'
     )
     assert load_review_policy(config_path(tmp_path)) == {
         "selfReviewCount": 3,
@@ -153,7 +153,7 @@ def test_review_policy_reads_the_operators_block_and_defaults_the_rest(tmp_path:
     ],
 )
 def test_a_malformed_review_policy_is_refused(tmp_path: Path, block: str):
-    config_path(tmp_path).write_text('version: "0.9.0"\n' + block)
+    config_path(tmp_path).write_text('version: "0.10.0"\n' + block)
     with pytest.raises(CriticConfigError):
         load_review_policy(config_path(tmp_path))
 
@@ -486,7 +486,7 @@ def test_list_reports_availability(tmp_path: Path, capsys):
 
 def test_policy_prints_the_defaulted_block(tmp_path: Path, capsys):
     config_path(tmp_path).write_text(
-        'version: "0.9.0"\nreviews:\n  criticReviewCount: 2\n'
+        'version: "0.10.0"\nreviews:\n  criticReviewCount: 2\n'
     )
     assert (
         run_cli(["critic", "policy", "--root", str(tmp_path), "--format", "json"]) == 0

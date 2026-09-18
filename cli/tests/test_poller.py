@@ -103,7 +103,7 @@ def test_gh_list_labeled_issues_parses_and_builds_argv():
     )
     run = FakeRun(stdout=payload)
     client = GhClient(runner=run)
-    items = client.list_labeled_issues(OWNER, REPO, LABEL)
+    items = client.list_labeled_issues(OWNER, REPO, [LABEL])
     assert len(items) == 1
     item = items[0]
     assert (item.number, item.is_pr) == (15, False)
@@ -129,7 +129,7 @@ def test_gh_list_labeled_prs_carries_head_ref_and_body():
         ]
     )
     client = GhClient(runner=FakeRun(stdout=payload))
-    prs = client.list_labeled_prs(OWNER, REPO, LABEL)
+    prs = client.list_labeled_prs(OWNER, REPO, [LABEL])
     assert prs[0].is_pr is True
     assert prs[0].head_ref == "claude/github-issue-15-abc"
     assert prs[0].body == "Closes #15"
@@ -151,7 +151,7 @@ def test_gh_list_labeled_prs_requests_and_parses_linked_issues():
         ]
     )
     run = FakeRun(stdout=payload)
-    prs = GhClient(runner=run).list_labeled_prs(OWNER, REPO, LABEL)
+    prs = GhClient(runner=run).list_labeled_prs(OWNER, REPO, [LABEL])
     assert prs[0].linked_issues == [15]
     fields = run.calls[0][run.calls[0].index("--json") + 1]
     assert "closingIssuesReferences" in fields
@@ -177,10 +177,10 @@ def test_gh_list_labeled_prs_downgrades_once_on_unsupported_field(caplog):
 
     run = Downgrading()
     client = GhClient(runner=run)
-    assert client.list_labeled_prs(OWNER, REPO, LABEL) == []
+    assert client.list_labeled_prs(OWNER, REPO, [LABEL]) == []
     assert len(run.calls) == 2  # attempt + downgraded retry
     # The doomed attempt is not repeated on later cycles.
-    assert client.list_labeled_prs(OWNER, REPO, LABEL) == []
+    assert client.list_labeled_prs(OWNER, REPO, [LABEL]) == []
     assert len(run.calls) == 3
 
 
@@ -188,13 +188,15 @@ def test_gh_list_labeled_prs_propagates_unrelated_errors():
     """A real failure must surface, not be masked by the field downgrade."""
     run = FakeRun(returncode=1, stderr="HTTP 401: Bad credentials")
     with pytest.raises(ProviderError) as exc:
-        GhClient(runner=run).list_labeled_prs(OWNER, REPO, LABEL)
+        GhClient(runner=run).list_labeled_prs(OWNER, REPO, [LABEL])
     assert "Bad credentials" in str(exc.value)
     assert len(run.calls) == 1  # no retry
 
 
 def test_provider_refs_put_the_linked_issue_before_the_pr():
-    provider = GitHubPollProvider(repos=parse_repos([f"{OWNER}/{REPO}"]), label=LABEL)
+    provider = GitHubPollProvider(
+        repos=parse_repos([f"{OWNER}/{REPO}"]), labels=[LABEL]
+    )
     item = WorkItem(
         provider="github",
         owner=OWNER,
@@ -418,14 +420,14 @@ def test_gh_review_fetch_failure_is_not_swallowed_into_no_comments():
 def test_gh_error_on_nonzero_exit():
     client = GhClient(runner=FakeRun(returncode=1, stderr="not found"))
     with pytest.raises(ProviderError) as exc:  # GhError is a ProviderError
-        client.list_labeled_issues(OWNER, REPO, LABEL)
+        client.list_labeled_issues(OWNER, REPO, [LABEL])
     assert "not found" in str(exc.value)
 
 
 def test_gh_error_on_bad_json():
     client = GhClient(runner=FakeRun(stdout="{not json"))
     with pytest.raises(ProviderError):
-        client.list_labeled_issues(OWNER, REPO, LABEL)
+        client.list_labeled_issues(OWNER, REPO, [LABEL])
 
 
 def test_check_gh_dependency_reports_when_missing():
@@ -475,10 +477,10 @@ def test_provider_from_source_takes_its_repositories_from_the_caller():
     WHAT, and the daemon hands it in."""
     provider = GitHubPollProvider.from_source(
         {"provider": "github", "monitor": {"pullRequests": False}},
-        default_label=LABEL,
+        default_labels=[LABEL],
         repositories=["octo/repo"],
     )
-    assert provider.label == LABEL  # fell back to routing label
+    assert provider.labels == [LABEL]  # fell back to the routing list
     assert [s.full_name for s in provider.repos] == ["octo/repo"]
     assert provider.monitor_prs is False
 
@@ -487,7 +489,7 @@ def test_provider_from_source_with_no_repositories_is_empty_not_a_fallback():
     """No plugin-config (ticketing.github) fallback (issue-63 review): an
     unconfigured instance has zero repos, not whatever the repo happens to be."""
     provider = GitHubPollProvider.from_source(
-        {"provider": "github"}, default_label=LABEL
+        {"provider": "github"}, default_labels=[LABEL]
     )
     assert provider.repos == []
 
@@ -498,7 +500,7 @@ def test_a_source_still_declaring_repos_is_refused():
     with pytest.raises(ProviderError) as excinfo:
         GitHubPollProvider.from_source(
             {"provider": "github", "repos": ["octo/repo"]},
-            default_label=LABEL,
+            default_labels=[LABEL],
             repositories=["octo/other"],
         )
     assert "`repositories`" in str(excinfo.value)
@@ -507,7 +509,9 @@ def test_a_source_still_declaring_repos_is_refused():
 
 def test_a_provider_with_no_repositories_names_the_top_level_key():
     """R3.4 — the one whole-source failure left says where to fix it."""
-    provider = GitHubPollProvider.from_source({"provider": "github"}, default_label="x")
+    provider = GitHubPollProvider.from_source(
+        {"provider": "github"}, default_labels=["x"]
+    )
     with pytest.raises(ProviderError) as excinfo:
         provider.listing()
     assert "`repositories`" in str(excinfo.value)
@@ -527,7 +531,7 @@ def test_provider_lists_issues_and_prs_as_work_items():
             }
         ],
     )
-    provider = GitHubPollProvider(parse_repos(["octo/repo"]), LABEL, gh=gh)
+    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], gh=gh)
     items = provider.list_work_items()
     kinds = {(i.number, i.kind) for i in items}
     assert kinds == {(15, "issue"), (42, "pull-request")}
@@ -537,7 +541,7 @@ def test_provider_presence_event_is_labeled_and_maps_ref():
     gh = _gh_client(
         issues=[{"number": 15, "title": "i", "labels": [{"name": LABEL}], "url": "u"}]
     )
-    provider = GitHubPollProvider(parse_repos(["octo/repo"]), LABEL, gh=gh)
+    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], gh=gh)
     item = provider.list_work_items()[0]
     refs = provider.refs(item)
     ev = provider.presence_event(item, refs)
@@ -559,7 +563,7 @@ def test_provider_pr_refs_link_head_branch_issue():
             }
         ]
     )
-    provider = GitHubPollProvider(parse_repos(["octo/repo"]), LABEL, gh=gh)
+    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], gh=gh)
     item = provider.list_work_items()[0]
     refs = {r.ref for r in provider.refs(item)}
     assert "github:octo/repo#42" in refs and "github:octo/repo#15" in refs
@@ -569,7 +573,7 @@ def test_provider_comment_event_carries_body_and_is_unlabeled():
     gh = _gh_client(
         issues=[{"number": 15, "title": "i", "labels": [{"name": LABEL}], "url": "u"}]
     )
-    provider = GitHubPollProvider(parse_repos(["octo/repo"]), LABEL, gh=gh)
+    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], gh=gh)
     item = provider.list_work_items()[0]
     refs = provider.refs(item)
     ev = provider.comment_event(
@@ -594,7 +598,7 @@ def _pr_provider():
             }
         ]
     )
-    provider = GitHubPollProvider(parse_repos(["octo/repo"]), LABEL, gh=gh)
+    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], gh=gh)
     item = provider.list_work_items()[0]
     return provider, item, provider.refs(item)
 
@@ -670,7 +674,7 @@ def test_provider_passes_the_review_kind_through_to_the_event():
     gh, _ = _pr_surfaces_client(
         reviews=[_review("PRR_1", "rename it", submitted_at="2026-08-16T03:00:00Z")]
     )
-    provider = GitHubPollProvider(parse_repos(["octo/repo"]), LABEL, gh=gh)
+    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], gh=gh)
     item = WorkItem(
         provider="github",
         owner=OWNER,
@@ -693,7 +697,7 @@ def test_a_self_authored_review_never_leaves_the_poller():
     gh, _ = _pr_surfaces_client(
         reviews=[_review("PRR_own", mark_self_authored("looks good to me"))]
     )
-    provider = GitHubPollProvider(parse_repos(["octo/repo"]), LABEL, gh=gh)
+    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], gh=gh)
     item = WorkItem(
         provider="github",
         owner=OWNER,
@@ -719,7 +723,7 @@ def _state_client(payload):
 
 
 def _provider(gh):
-    return GitHubPollProvider(parse_repos(["octo/repo"]), LABEL, gh=gh)
+    return GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], gh=gh)
 
 
 @pytest.mark.parametrize(
@@ -812,7 +816,7 @@ def test_provider_closure_event_mirrors_the_webhook_shape():
 
 
 def test_provider_without_repos_raises_on_list():
-    provider = GitHubPollProvider([], LABEL, gh=_gh_client())
+    provider = GitHubPollProvider([], [LABEL], gh=_gh_client())
     with pytest.raises(ProviderError):
         provider.list_work_items()
 
@@ -826,14 +830,14 @@ def test_provider_registry_knows_github():
 
 def test_build_provider_rejects_missing_and_unknown_provider():
     with pytest.raises(ProviderError):
-        build_provider({}, default_label=LABEL)
+        build_provider({}, default_labels=[LABEL])
     with pytest.raises(ProviderError):
-        build_provider({"provider": "gitlab"}, default_label=LABEL)
+        build_provider({"provider": "gitlab"}, default_labels=[LABEL])
 
 
 def test_build_provider_constructs_github():
     provider = build_provider(
-        {"provider": "github"}, default_label=LABEL, repositories=["octo/repo"]
+        {"provider": "github"}, default_labels=[LABEL], repositories=["octo/repo"]
     )
     assert isinstance(provider, GitHubPollProvider)
     assert "github octo/repo" == provider.describe()
@@ -3630,8 +3634,8 @@ def test_parse_repos_tells_hosts_apart():
 def test_gh_listings_on_an_enterprise_host_name_it_in_repo():
     run = FakeRun(stdout="[]")
     client = GhClient(runner=run)
-    client.list_labeled_issues(OWNER, REPO, LABEL, host=GHE)
-    client.list_labeled_prs(OWNER, REPO, LABEL, host=GHE)
+    client.list_labeled_issues(OWNER, REPO, [LABEL], host=GHE)
+    client.list_labeled_prs(OWNER, REPO, [LABEL], host=GHE)
     for argv in run.calls:
         assert argv[3:5] == ["--repo", f"{GHE}/octo/repo"], argv
         assert "--hostname" not in argv  # `issue list` takes the host in --repo
@@ -3658,7 +3662,7 @@ def test_a_github_com_read_is_byte_identical():
     """A5 — nothing changes for a source that names no host."""
     run = FakeRun(stdout="[]")
     client = GhClient(runner=run)
-    client.list_labeled_issues(OWNER, REPO, LABEL)
+    client.list_labeled_issues(OWNER, REPO, [LABEL])
     client.list_comments(OWNER, REPO, 15, is_pr=False)
     run.stdout = '{"number": 15, "state": "open"}'
     client.fetch_item_state(OWNER, REPO, 15)
@@ -3668,10 +3672,10 @@ def test_a_github_com_read_is_byte_identical():
 
 def test_provider_owns_by_host_too():
     """R5.3 — an enterprise source does not claim the github.com twin."""
-    ghe_provider = GitHubPollProvider(parse_repos([f"{GHE}/octo/repo"]), LABEL)
+    ghe_provider = GitHubPollProvider(parse_repos([f"{GHE}/octo/repo"]), [LABEL])
     assert ghe_provider.owns(WorkItemRef.parse(f"github:{GHE}/octo/repo#1"))
     assert not ghe_provider.owns(WorkItemRef.parse("github:octo/repo#1"))
-    plain = GitHubPollProvider(parse_repos(["octo/repo"]), LABEL)
+    plain = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL])
     assert plain.owns(WorkItemRef.parse("github:octo/repo#1"))
     assert not plain.owns(WorkItemRef.parse(f"github:{GHE}/octo/repo#1"))
 
@@ -3691,7 +3695,7 @@ def test_provider_discovery_and_reads_go_to_the_sources_host():
     run = FakeRun(stdout=listing)
     provider = GitHubPollProvider(
         parse_repos([f"{GHE}/octo/repo"]),
-        LABEL,
+        [LABEL],
         monitor_prs=False,
         gh=GhClient(runner=run),
     )
@@ -3774,7 +3778,7 @@ def _two_repo_gh(issue_fail=None, pr_fail=None, healthy_items=True):
 
 def _two_repo_provider(runner):
     return GitHubPollProvider(
-        parse_repos(["octo/repo", "octo/repo-m"]), LABEL, gh=GhClient(runner=runner)
+        parse_repos(["octo/repo", "octo/repo-m"]), [LABEL], gh=GhClient(runner=runner)
     )
 
 
@@ -3888,7 +3892,7 @@ def test_the_strict_form_still_raises_on_any_failure():
 
 def test_listing_without_repos_is_still_a_whole_provider_failure():
     with pytest.raises(ProviderError):
-        GitHubPollProvider([], LABEL, gh=_gh_client()).listing()
+        GitHubPollProvider([], [LABEL], gh=_gh_client()).listing()
 
 
 @pytest.mark.parametrize(
@@ -4141,7 +4145,7 @@ def test_provider_from_source_binds_bare_repos_to_the_default_host():
     other = "other.corp.example"
     provider = GitHubPollProvider.from_source(
         {"provider": "github"},
-        default_label=LABEL,
+        default_labels=[LABEL],
         default_host=GHE,
         repositories=["octo/repo", f"{other}/a/b"],
     )
@@ -4151,7 +4155,7 @@ def test_provider_from_source_binds_bare_repos_to_the_default_host():
 def test_build_provider_carries_the_default_host():
     provider = build_provider(
         {"provider": "github"},
-        default_label=LABEL,
+        default_labels=[LABEL],
         default_host=GHE,
         repositories=["octo/repo"],
     )
@@ -4163,7 +4167,7 @@ def test_a_bare_repo_inherits_the_default_host_and_owns_its_refs():
     """R1.4, R2.1 — the ticket's assertion, inverted; A2 — the github.com twin is
     still refused (issue-311 R5.3 holds)."""
     provider = GitHubPollProvider(
-        repos=parse_repos(["octo/hello"], default_host="ghe.example.com"), label=""
+        repos=parse_repos(["octo/hello"], default_host="ghe.example.com"), labels=[]
     )
     assert provider.owns(WorkItemRef.parse("github:ghe.example.com/octo/hello#42"))
     assert not provider.owns(WorkItemRef.parse("github:octo/hello#42"))
@@ -4174,7 +4178,7 @@ def test_a_bare_repos_reads_go_to_the_inherited_host():
     run = FakeRun(stdout="[]")
     provider = GitHubPollProvider(
         parse_repos(["octo/repo"], default_host=GHE),
-        LABEL,
+        [LABEL],
         monitor_prs=False,
         gh=GhClient(runner=run),
     )
@@ -4224,7 +4228,7 @@ def test_the_daemon_binds_sources_to_the_resolved_host(
         monkeypatch.setenv("GH_HOST", env_host)
     else:
         monkeypatch.delenv("GH_HOST", raising=False)
-    providers = daemon._build_providers(data, default_label=LABEL)
+    providers = daemon._build_providers(data, default_labels=[LABEL])
     assert all(isinstance(p, GitHubPollProvider) for p in providers)
     assert [s.host for p in providers for s in getattr(p, "repos")] == [expected]
 
@@ -4360,3 +4364,80 @@ def test_a_stray_clock_does_not_make_a_cleared_item_known(tmp_path):
     assert state.is_known(REF15) is False
     assert state.seen_comments(REF15) == set()
     assert state.absent_since(REF15) == ""
+
+
+# -- a set of labels, every one required (issue-381) ---------------------------
+
+MINE = "mine: run"
+
+
+def _row(number, labels):
+    return {
+        "number": number,
+        "title": f"issue {number}",
+        "labels": [{"name": name} for name in labels],
+        "updatedAt": "2026-09-18T00:00:00Z",
+        "url": f"https://github.com/octo/repo/issues/{number}",
+        "author": {"login": "octocat"},
+    }
+
+
+def test_gh_listings_pass_one_label_flag_per_label():
+    """R2.1 — both listings carry every label, in order, as separate argv entries."""
+    run = FakeRun(stdout="[]")
+    client = GhClient(runner=run)
+    client.list_labeled_issues(OWNER, REPO, [LABEL, MINE])
+    client.list_labeled_prs(OWNER, REPO, [LABEL, MINE])
+    assert len(run.calls) == 2
+    for argv in run.calls:
+        flags = [argv[i + 1] for i, flag in enumerate(argv) if flag == "--label"]
+        assert flags == [LABEL, MINE], argv
+
+
+def test_provider_drops_a_listed_item_missing_one_label():
+    """R2.1, A1 — the gate holds whatever `gh` returns."""
+    run = FakeRun(stdout=json.dumps([_row(1, [LABEL, MINE, "bug"]), _row(2, [LABEL])]))
+    provider = GitHubPollProvider(
+        repos=parse_repos([f"{OWNER}/{REPO}"]),
+        labels=[LABEL, MINE],
+        monitor_prs=False,
+        gh=GhClient(runner=run),
+    )
+    assert [item.number for item in provider.list_work_items()] == [1]
+
+
+def test_provider_from_source_reads_labels_and_falls_back_to_routing():
+    """R2.2 — a source's own list replaces the routing list; an empty one reuses it."""
+    own = GitHubPollProvider.from_source(
+        {"provider": "github", "labels": ["x", "y"]},
+        default_labels=[LABEL],
+        repositories=["octo/repo"],
+    )
+    assert own.labels == ["x", "y"]
+    shared = GitHubPollProvider.from_source(
+        {"provider": "github", "labels": []},
+        default_labels=[LABEL, MINE],
+        repositories=["octo/repo"],
+    )
+    assert shared.labels == [LABEL, MINE]
+
+
+def test_a_presence_event_is_labeled_only_when_every_label_is_present():
+    """R2.3 — the poller's presence event and the dispatcher's gate agree."""
+    provider = GitHubPollProvider(
+        repos=parse_repos([f"{OWNER}/{REPO}"]), labels=[LABEL, MINE]
+    )
+
+    def presence(labels):
+        item = WorkItem(
+            provider="github",
+            owner=OWNER,
+            repo=REPO,
+            number=7,
+            kind="issue",
+            labels=labels,
+        )
+        return provider.presence_event(item, provider.refs(item)).labeled
+
+    assert presence([LABEL, MINE]) is True
+    assert presence([LABEL]) is False

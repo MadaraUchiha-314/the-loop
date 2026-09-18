@@ -238,7 +238,7 @@ The executable detail is `testing-plan.md`.
 | Write the record only when its body changed | keep writing every cycle (identical bytes leave git clean anyway) | git is not the only reader of an mtime, and a cycle over 50 items otherwise rewrites 51 files a minute forever. Once the clocks are out, "the record changed" and "the poller learned something" are the same statement |
 | Keep serving `poll.lastPolledAt` from the API | drop it and change the dashboard | the value is still true on the machine serving it, and the dashboard's *last activity* has no other fallback for an item with no session. The split is about storage, not about what a local reader may see |
 
-Durable record: [decision-131](../../decisions/decision-131.md).
+Durable record: [decision-132](../../decisions/decision-132.md).
 
 ## Open questions
 

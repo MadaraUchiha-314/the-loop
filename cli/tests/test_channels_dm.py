@@ -319,7 +319,7 @@ def test_catch_up_seconds_defaults_to_900(tmp_path):
 
 
 def test_a_config_without_catch_up_seconds_loads_and_gets_the_default(tmp_path):
-    """T7 / design D6: additive and optional — a 0.9.0 config needs no migration."""
+    """T7 / design D6: additive and optional — a 0.10.0 config needs no migration."""
     config = parsed(tmp_path)
     assert config.enabled and config.catch_up_seconds == 900
 

@@ -150,6 +150,7 @@ def _make(
     comment_runner=None,
     verifier=None,
     default_host="",
+    labels=None,
 ):
     registry = SessionRegistry(tmp_path / "sessions")
     tmux = FakeTmux()
@@ -167,7 +168,7 @@ def _make(
     )
     provider = GitHubPollProvider(
         parse_repos(["octo/repo"], default_host=default_host),
-        LABEL,
+        list(labels) if labels is not None else [LABEL],
         monitor_issues=monitor_issues,
         monitor_prs=monitor_prs,
         gh=GhClient(runner=gh_state.runner),
@@ -1409,7 +1410,7 @@ def test_one_repository_with_issues_disabled_does_not_blind_the_others(tmp_path)
     )
     provider = GitHubPollProvider(
         parse_repos(["octo/repo", "octo/repo-m"]),
-        LABEL,
+        [LABEL],
         monitor_prs=True,
         gh=GhClient(runner=gh.runner),
     )
@@ -1482,3 +1483,35 @@ def test_a_closed_item_on_a_bare_enterprise_source_is_reconciled(tmp_path):
     assert ended is not None and ended["source"] == "poll"
     # The closure question went to the enterprise host, like the listing did.
     assert any(c[1:4] == ["api", "--hostname", GHE] for c in gh.argv)
+
+
+# -- a set of labels, every one required (issue-381) ---------------------------
+
+
+def test_the_poller_drops_a_listed_item_missing_one_label(tmp_path):
+    """
+    Feature: Poll-based triggers
+    Scenario: the poller drops a listed item missing one label
+        Given a github source configured with two labels
+        And gh returns issue 15 carrying only the first of them
+        When a poll cycle runs
+        Then no session is spawned and nothing is tracked for the issue
+        When the second label is applied and another cycle runs
+        Then a session is spawned for it
+    Requirement: docs/specs/issue-381/requirements.md#R2
+    """
+    gh = GhState()
+    registry, tmux, dispatcher, poller = _make(
+        tmp_path, gh, labels=[LABEL, "mine: run"]
+    )
+
+    poller.poll_once()
+    time.sleep(0.2)
+    assert tmux.spawns == []
+    assert registry.find_by_work_item(REF) is None
+
+    gh.issues[0]["labels"].append({"name": "mine: run"})
+    poller.poll_once()
+    assert wait_until(lambda: len(tmux.spawns) == 1)
+    dispatcher.stop()
+    assert registry.find_by_work_item(REF) is not None

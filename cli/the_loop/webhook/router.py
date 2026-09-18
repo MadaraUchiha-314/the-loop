@@ -68,8 +68,8 @@ class RoutedEvent:
     delivery_id: str
     work_items: List[WorkItemRef]
     payload: dict = field(repr=False, default_factory=dict)
-    # True when the event's issue/PR carries the configured auto-execute label
-    # (or is the label being added right now). Gates label-driven spawning.
+    # True when the event's issue/PR carries EVERY configured auto-execute label
+    # (the one being added right now included). Gates label-driven spawning.
     labeled: bool = False
 
 
@@ -382,6 +382,46 @@ def event_carries_label(payload: dict, label: str) -> bool:
     return False
 
 
+def event_carries_labels(payload: dict, labels: Sequence[str]) -> bool:
+    """True if this event's issue/PR carries **every** label in ``labels``.
+
+    The arming gate since issue-381: an operator declares the common label plus
+    one of their own, and an item is theirs only when it carries all of them —
+    so adding a label can only narrow what an instance arms. An empty list
+    arms nothing: ``all([])`` would be ``True``, and that is the one direction
+    this predicate must never take.
+    """
+    if not labels:
+        return False
+    return all(event_carries_label(payload, label) for label in labels)
+
+
+def normalize_labels(value: object) -> List[str]:
+    """The label list a config value means, for every reader of it (issue-381).
+
+    ``None`` and ``""`` are no labels; a string is one label; a list keeps its
+    non-empty entries as strings, in order, without repeats. The schema only
+    admits a list, but ``RoutingConfig.from_mapping`` and a poll source are also
+    reached by hand-built mappings, and one helper is cheaper than four
+    defensive branches.
+    """
+    if value is None:
+        return []
+    raw = (
+        [value]
+        if isinstance(value, str)
+        else list(value)
+        if isinstance(value, (list, tuple))
+        else [value]
+    )
+    labels: List[str] = []
+    for entry in raw:
+        name = str(entry).strip() if entry is not None else ""
+        if name and name not in labels:
+            labels.append(name)
+    return labels
+
+
 def event_actor(event: str, payload: dict) -> Optional[str]:
     """The human GitHub login responsible for this event, or ``None``.
 
@@ -521,14 +561,16 @@ class Router:
         events: Sequence[str] = (),
         dedup_size: int = 1024,
         deduper: Optional[Deduper] = None,
-        auto_execute_label: str = "",
+        auto_execute_labels: Sequence[str] = (),
         authorized_users: Sequence[str] = (),
         collaborators: Optional["CollaboratorStore"] = None,
         publisher: Optional[Callable[[str, str, str, str, str], None]] = None,
         repositories: Optional[Set[str]] = None,
     ):
         self.events = list(events)
-        self.auto_execute_label = auto_execute_label
+        # Every one of these must be on the item for it to count as labelled
+        # (issue-381); an empty list flags nothing.
+        self.auto_execute_labels = normalize_labels(auto_execute_labels)
         # The repository bound (issue-348): the operator's top-level `repositories`,
         # as `host/owner/repo` keys — the same declaration the poller and the slash
         # command read. ``None`` is "the operator declared nothing", which bounds
@@ -719,7 +761,7 @@ class Router:
             )
         if actor and not is_lifecycle_close:
             self._publish("human", event, payload, work_items)
-        labeled = event_carries_label(payload, self.auto_execute_label)
+        labeled = event_carries_labels(payload, self.auto_execute_labels)
         eventlog.emit(
             "routing.routed",
             gh_event=event,

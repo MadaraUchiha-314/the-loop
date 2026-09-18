@@ -214,7 +214,7 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
     router = Router(
         events=events,
         deduper=dispatcher.deduper,
-        auto_execute_label=config.auto_execute_label,
+        auto_execute_labels=config.auto_execute_labels,
         authorized_users=authorized,
         # One roster, read by both halves: the router to let a granted login's
         # comment through, the dispatcher to write it (issue-307).
@@ -236,15 +236,15 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
         dispatcher.reload(new, cli_config=cfg)
         router.events = resolve_events(gh_cfg)
         warn_on_missing_lifecycle_events(router.events)
-        router.auto_execute_label = new.auto_execute_label
+        router.auto_execute_labels = list(new.auto_execute_labels)
         router.authorized_users = resolve_authorized_users(new.authorized_users)
         # The whole document, not `routing`: `repositories` is a top-level sibling.
         router.repositories = repository_bounds(cfg)
         logger.info(
             "hot-reloaded gh-webhook routing: spawnOnUnmatched=%s "
-            "label=%r events=%d authorizedUsers=%d repositories=%s",
+            "labels=%r events=%d authorizedUsers=%d repositories=%s",
             new.spawn_on_unmatched,
-            new.auto_execute_label,
+            new.auto_execute_labels,
             len(router.events),
             len(router.authorized_users),
             len(router.repositories) if router.repositories is not None else "any",

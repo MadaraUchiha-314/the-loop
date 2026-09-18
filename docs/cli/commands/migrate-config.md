@@ -27,7 +27,19 @@ A breaking change is only as good as its migration, so four properties hold:
 
 ## What it migrates today
 
-Current version: **`0.9.0`**.
+Current version: **`0.10.0`**.
+
+**`routing.autoExecuteLabel` → `routing.autoExecuteLabels`, and `polling.sources[].label`
+→ `polling.sources[].labels`** (issue-381,
+[decision-131](/decisions/decision-131)). The arming label is a **list** now, every entry
+of which an issue or PR must carry, so an instance sharing a repository with others can
+add a label of its own and stop arming everybody's items. The move is lossless — your one
+label becomes a one-entry list that arms exactly what it did — so it is done for you: the
+string is wrapped, an empty source `label` is dropped (absent already means *reuse the
+routing list*), and a list already declared beside the old key is kept with a note. An
+empty `autoExecuteLabel` becomes `[]`, which the schema refuses; the report says to declare
+at least one label. The old keys are refused rather than read, because reading the shared
+default in place of a label you set would arm *more* than you asked for.
 
 **`routing.graph.repoHooks` removed** (issue-352,
 [decision-123](/decisions/decision-123)). The CLI reads no repository's harness config any
@@ -106,10 +118,10 @@ migrated the CLI config:
   · notifications removed — nothing read it (issue-304); Slack is declared once under `channels.slack`
   · channels.slack.events → channels.slack.subscribe (a channel subscribes AND publishes now, issue-309)
   · channels.slack.authorizedUsers → routing.authorizedUsers (1 Slack member id(s), one `{slack: …}` entry each — identity is declared once, issue-309)
-  · version '0.1.0' → '0.9.0'
+  · version '0.1.0' → '0.10.0'
 
 --- /home/you/.the-loop/cli-config.yaml (preview, not written) ---
-version: 0.9.0
+version: 0.10.0
 …
 ```
 

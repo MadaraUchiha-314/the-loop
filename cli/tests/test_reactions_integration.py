@@ -249,7 +249,7 @@ def make_control_dispatcher(tmp_path, tmux, monkeypatch, **overrides):
     overrides.setdefault("control", ControlConfig())
     overrides.setdefault("authorized_users", ["octocat"])
     overrides.setdefault("spawn_on_unmatched", "labeled")
-    overrides.setdefault("auto_execute_label", LABEL)
+    overrides.setdefault("auto_execute_labels", [LABEL])
     overrides.setdefault("registry_dir", str(tmp_path / "sessions"))
     overrides.setdefault("portable_dir", str(tmp_path / "portable"))
     overrides.setdefault("spawn_workdir", str(tmp_path))

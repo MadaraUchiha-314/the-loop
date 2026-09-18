@@ -208,7 +208,7 @@ def pipeline_factory(tmp_path, stub_tmux):
         router = Router(
             events=["issues", "issue_comment", "pull_request"],
             deduper=dispatcher.deduper,
-            auto_execute_label=config.auto_execute_label,
+            auto_execute_labels=config.auto_execute_labels,
         )
 
         def deliver(event, payload, delivery_id):

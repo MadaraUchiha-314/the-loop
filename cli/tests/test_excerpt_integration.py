@@ -91,7 +91,7 @@ def webhook_comment_payload(body: str = INSTRUCTION, author: str = "reviewer") -
 
 def polled_comment_event(body: str = INSTRUCTION, author: str = "reviewer"):
     """The same comment, as the poller synthesises it from `gh` output."""
-    provider = GitHubPollProvider(repos=[], label="the-loop: auto-execute")
+    provider = GitHubPollProvider(repos=[], labels=["the-loop: auto-execute"])
     item = WorkItem(
         provider="github",
         owner="octo",
@@ -158,7 +158,7 @@ def test_a_polled_review_and_inline_comment_distil_like_their_webhook_twins():
       Then the review carries its state, body and address
       And the inline comment carries its file and line ahead of its body
     """
-    provider = GitHubPollProvider(repos=[], label="l")
+    provider = GitHubPollProvider(repos=[], labels=["l"])
     item = WorkItem(
         provider="github",
         owner="octo",

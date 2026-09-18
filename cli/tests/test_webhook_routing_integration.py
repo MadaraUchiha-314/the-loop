@@ -104,7 +104,7 @@ class ServerFactory:
         router = Router(
             events=ROUTED_EVENTS if events is None else events,
             deduper=dispatcher.deduper,
-            auto_execute_label=config.auto_execute_label,
+            auto_execute_labels=config.auto_execute_labels,
             authorized_users=["octocat"],  # the acting user in these fixtures
             # The rosters the daemon wires in (issue-307): one store, written by
             # the dispatcher and read by the router.
@@ -609,7 +609,9 @@ def test_auto_execute_label_spawns_a_session(server_factory):
     Requirement: docs/specs/issue-15/requirements.md#R6
     """
     port, registry, tmux = server_factory(
-        events=["issues"], spawn_on_unmatched="labeled", auto_execute_label=AUTO_LABEL
+        events=["issues"],
+        spawn_on_unmatched="labeled",
+        auto_execute_labels=[AUTO_LABEL],
     )
     assert post_webhook(port, "issues", labeled_issue_event(), "lbl-1") == 202
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
@@ -655,7 +657,7 @@ def test_pr_comment_reaches_the_linked_issues_work_item(server_factory, tmp_path
         docs/specs/issue-253/bugfix.md#R1
     """
     port, registry, tmux = server_factory(
-        spawn_on_unmatched="labeled", auto_execute_label=AUTO_LABEL
+        spawn_on_unmatched="labeled", auto_execute_labels=[AUTO_LABEL]
     )
     register(registry, tmp_path)
 
@@ -685,7 +687,9 @@ def test_new_issue_without_label_does_nothing(server_factory):
     Requirement: docs/specs/issue-15/requirements.md#R6
     """
     port, registry, tmux = server_factory(
-        events=["issues"], spawn_on_unmatched="labeled", auto_execute_label=AUTO_LABEL
+        events=["issues"],
+        spawn_on_unmatched="labeled",
+        auto_execute_labels=[AUTO_LABEL],
     )
     payload = {
         "action": "opened",
@@ -1207,7 +1211,7 @@ def test_a_review_comment_on_the_loops_own_spec_pr_is_lost_without_the_binding(
     port, registry, tmux = server_factory(
         events=["pull_request_review_comment"],
         spawn_on_unmatched="labeled",
-        auto_execute_label=AUTO_LABEL,
+        auto_execute_labels=[AUTO_LABEL],
         control=ControlConfig(require_start_command=True),
     )
     register(registry, tmp_path)
@@ -1249,7 +1253,7 @@ def test_a_review_comment_on_the_loops_own_spec_pr_reaches_the_session_once_reco
     port, registry, tmux = server_factory(
         events=["pull_request_review_comment"],
         spawn_on_unmatched="labeled",
-        auto_execute_label=AUTO_LABEL,
+        auto_execute_labels=[AUTO_LABEL],
         control=ControlConfig(require_start_command=True),
     )
     register(registry, tmp_path)
@@ -1553,3 +1557,61 @@ def test_the_wire_response_names_no_repository(server_factory, tmp_path):
     with urllib.request.urlopen(request, timeout=10) as response:
         text = response.read().decode()
     assert "octo" not in text and "stranger" not in text
+
+
+# -- a set of labels, every one required (issue-381) ---------------------------
+
+MINE_LABEL = "mine: run"
+
+
+def _issue_labeled_with(labels, added, number=15):
+    return {
+        "action": "labeled",
+        "repository": {"full_name": "octo/repo"},
+        "label": {"name": added},
+        "issue": {"number": number, "labels": [{"name": name} for name in labels]},
+        "sender": {"login": "octocat"},
+    }
+
+
+def test_an_item_carrying_only_some_of_the_labels_is_not_armed(server_factory):
+    """
+    Feature: Webhook event routing
+    Scenario: an item carrying only some of the labels is not armed
+        Given a receiver with spawnOnUnmatched: labeled and two auto-execute labels
+        When issue 15 is labelled with the common label only
+        Then the receiver acknowledges but no session is spawned
+    Requirement: docs/specs/issue-381/requirements.md#R1
+    """
+    port, registry, tmux = server_factory(
+        events=["issues"],
+        spawn_on_unmatched="labeled",
+        auto_execute_labels=[AUTO_LABEL, MINE_LABEL],
+    )
+    assert post_webhook(port, "issues", labeled_issue_event(), "some-1") == 202
+    time.sleep(0.3)
+    assert tmux.spawns == [] and tmux.delivers == []
+    assert registry.find_by_work_item(REF) is None
+
+
+def test_adding_the_last_missing_label_spawns_a_session(server_factory):
+    """
+    Feature: Webhook event routing
+    Scenario: adding the last missing label spawns a session
+        Given a receiver with spawnOnUnmatched: labeled and two auto-execute labels
+        And issue 15 already carries the common label
+        When the operator's own label is added to it
+        Then a fresh tmux session is spawned and registered for the issue
+    Requirement: docs/specs/issue-381/requirements.md#R1
+    """
+    port, registry, tmux = server_factory(
+        events=["issues"],
+        spawn_on_unmatched="labeled",
+        auto_execute_labels=[AUTO_LABEL, MINE_LABEL],
+    )
+    payload = _issue_labeled_with([AUTO_LABEL, MINE_LABEL], added=MINE_LABEL)
+    assert post_webhook(port, "issues", payload, "last-1") == 202
+    assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
+    ((ref, prompt, _, resume),) = tmux.spawns
+    assert ref == REF and resume is False
+    assert "/the-loop:work-on" in prompt

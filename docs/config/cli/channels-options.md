@@ -355,8 +355,9 @@ told the link.
 - **Default:** `[]`
 
 Labels applied to the created issue — **from here and only here**, never from the
-message. Add [`routing.autoExecuteLabel`](/config/cli/routing-options#autoexecutelabel)
-to arm the item for `the-loop start`, or leave it empty to file the issue and stop.
+message. Add every label in
+[`routing.autoExecuteLabels`](/config/cli/routing-options#autoexecutelabels) to arm the
+item for `the-loop start`, or leave it empty to file the issue and stop.
 
 ### `slack.read.mode`
 

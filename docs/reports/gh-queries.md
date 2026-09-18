@@ -57,7 +57,7 @@ only matching items ever cross the wire; nothing is fetched-then-filtered client
 
 | Filter | Value | Effect |
 |---|---|---|
-| `--label` | the source's `label`, defaulting to `routing.autoExecuteLabel` (`the-loop: auto-execute`) | Only items explicitly opted into orchestration are returned. This is the primary selectivity lever: on a typical repo it narrows thousands of items to a handful. |
+| `--label` (one per label) | the source's `labels`, defaulting to `routing.autoExecuteLabels` (`["the-loop: auto-execute"]`); every label must be on the item, and the provider re-checks the returned label set so tracking never rides on the filter's semantics (issue-381) | Only items explicitly opted into orchestration are returned. This is the primary selectivity lever: on a typical repo it narrows thousands of items to a handful. |
 | `--state open` | fixed | Closed/merged items never enter a cycle. |
 | `--limit 200` | `_LIST_LIMIT` constant | Hard cap per repo per kind. A labelled backlog larger than this is treated as pathological; the newest items still get through on later polls. |
 | `--json <fields>` | explicit field projection | `gh` shapes its underlying GraphQL query from the requested fields, so we pay only for the seven-to-eight fields we use. `body` is requested **only** on the PR listing (closing keywords live there, linking a PR to its issue); issue bodies are not fetched during discovery. |
@@ -143,5 +143,5 @@ label-gated backlog), but they are the known costs:
 - Cycle logic, state, cadence: [`cli/the_loop/poller/poller.py`](../../cli/the_loop/poller/poller.py)
 - Design: [`docs/specs/issue-34/design.md`](../specs/issue-34/design.md) ·
   [decision-022](../decisions/decision-022.md) · [decision-023](../decisions/decision-023.md)
-- Config knobs: `polling.*` and `routing.autoExecuteLabel` in
+- Config knobs: `polling.*` and `routing.autoExecuteLabels` in
   [`skills/the-loop/templates/config.yaml`](../../skills/the-loop/templates/config.yaml)

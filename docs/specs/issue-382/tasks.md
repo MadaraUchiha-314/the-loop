@@ -64,7 +64,7 @@ riskTier: 3
   - `docs/cli/state.md` (the classification table, the `poll` section, the attribute
     table, the new file's own section), `docs/capabilities/webhook-triggers.md` and
     `docs/capabilities/control-plane.md`, `ui/src/api/types.ts`'s comment, and
-    `docs/decisions/decision-131.md`.
+    `docs/decisions/decision-132.md`.
   - _Depends on:_ 2, 3, 6
   - _Requirements:_ R3.1, R3.2, R3.3
   - _Test:_ T6/T8 — `pytest cli/tests/test_state_portability.py` then `make check`

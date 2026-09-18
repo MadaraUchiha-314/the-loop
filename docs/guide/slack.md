@@ -185,7 +185,7 @@ channels:
               instance.command, standing.command]
     kickoff:
       repo: octocat/hello-world         # where a top-level message becomes an issue,
-      labels: ["the-loop: auto-execute"]  # and what /the-loop start #N resolves against
+      labels: ["the-loop: auto-execute"]  # every routing.autoExecuteLabels entry, so the item is armed
     read:
       mode: socket                      # buttons and the slash command need this
 ```
@@ -395,8 +395,8 @@ boxes) and the-loop's own `<!-- … -->` markers no longer show.
 
 Two gestures, depending on whether the work item exists.
 
-**It exists on GitHub and is labelled** (the auto-execute label,
-[`routing.autoExecuteLabel`](/config/cli/routing-options#autoexecutelabel)) **but has
+**It exists on GitHub and is labelled** (every auto-execute label,
+[`routing.autoExecuteLabels`](/config/cli/routing-options#autoexecutelabels)) **but has
 no thread yet.** Run `/the-loop start #123` — or `owner/repo#123`, `github:owner/repo#123`,
 or paste the issue's URL. the-loop records `the-loop start` on the issue under your own
 GitHub identity (the envelope names you) and the ledger's ingress executes it on its next
@@ -419,7 +419,7 @@ to hang a picker on, so the `<repo>:` prefix is the answer.
 
 **It does not exist yet, and you are in the channel.** Post a **top-level message** in the channel — the first line is
 the title, the rest the body. With the `work-item.create` grant, the-loop opens the issue
-(labelled from `kickoff.labels`, so add the auto-execute label there to arm it), binds
+(labelled from `kickoff.labels`, so list every auto-execute label there to arm it), binds
 the message's thread to it and replies with the link. Then type `the-loop start` **in
 that thread** (with `control.command`), or run `/the-loop start #<n>` — either records
 the start on the new issue.
