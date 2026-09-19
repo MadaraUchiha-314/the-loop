@@ -1,3 +1,9 @@
+## v19.6.1 (2026-09-19)
+
+### Fix
+
+- **issue-391**: shorten the two Slack shortcut names under the 24-character limit (#392)
+
 ## v19.6.0 (2026-09-19)
 
 ### Feat
