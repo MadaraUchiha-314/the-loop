@@ -157,6 +157,30 @@ EVENTS: Dict[str, EventSpec] = {
         publishable=True,
         recorded=True,
     ),
+    # The two acts a mention asks for (issue-389, decision-133 D4/D5): each is
+    # recorded on the ticket as a MARKED, enveloped comment — so no gate ever
+    # reads a decision as an approval — and delivered by the channel itself into
+    # the session with a preset frame. Grants, not subscriptions: what a message
+    # may BECOME; a channel that wants to hear one subscribes to `comment.agent`.
+    "context.added": EventSpec(
+        "A thread a member handed the loop as context (`@the-loop "
+        "record-context`) — snapshotted onto the ticket as a marked record and "
+        "delivered into the session, which appends it to context.md.",
+        origin="channel",
+        subscribable=False,
+        publishable=True,
+        recorded=True,
+    ),
+    "decision.recorded": EventSpec(
+        "A decision an authorized member recorded from a channel (`@the-loop "
+        "record-decision <text>`) — a marked record attributed to them by its "
+        "envelope, never a gate answer, delivered into the session, which "
+        "writes the decision record.",
+        origin="channel",
+        subscribable=False,
+        publishable=True,
+        recorded=True,
+    ),
     "standing.started": EventSpec(
         "A standing session (issue-277) came up and opened its thread — no "
         "ticket, so nothing to record.",

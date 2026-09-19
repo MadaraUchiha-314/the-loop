@@ -94,13 +94,13 @@ flowchart LR
   §1, §8). _Test:_ T2, T6.
 - [ ] **12. The operating model and the docs.** `templates/context.md`; the
   `workItemArtifacts` row; `interaction._ARTIFACT_RULE`; `SKILL.md`, `workflow.md`,
-  `collaboration.md`; `docs/guide/slack.md` (modes table, *Addressing the-loop*, the
+  `collaboration.md`; `docs/guide/slack.md` (modes table, _Addressing the-loop_, the
   room, upgrade table, limits, downtime); `docs/capabilities/channels.md` and
   `webhook-triggers.md` with history rows; `routing-options.md` for `--listen`;
   `evidence/documentation.md`. _Req:_ R4.7, R5.6, R8.2–R8.4 (design §7, §9). _Test:_ T10
   (`test_graph_parity.py`, `test_interaction.py`), T12.
 - [ ] **13. Verification, reviews, evidence.** Run the plan (T1, T2, T6, T8, T10, T12;
-  T11 recorded as not executable here, no workspace), fill *Verification results*, write
+  T11 recorded as not executable here, no workspace), fill _Verification results_, write
   `evidence/*.md`, the self-review and critic-review records, the security review, the PR
   briefing. _Req:_ all. _Test:_ the plan's activities.
 

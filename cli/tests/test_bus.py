@@ -118,6 +118,10 @@ def test_the_catalog_has_one_row_per_event_with_four_answers():
         # The slash command's two grants (issue-334, decision-116 D3).
         "instance.command",
         "standing.command",
+        # The two acts a mention asks for (issue-389, decision-133 D5): grants,
+        # not subscriptions — a channel hears them as `comment.agent`.
+        "context.added",
+        "decision.recorded",
     }
     # A publishable event is never subscribable, and every subscribable one is
     # in the view the config parser and `channels status` read.
