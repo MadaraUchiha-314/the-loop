@@ -98,21 +98,45 @@ hypothesis.
 
 ### Q1. When does a room reach the-loop?
 
+**Decided by the owner on PR #390
+([one](https://github.com/MadaraUchiha-314/the-loop/pull/390#discussion_r4054035903),
+[two](https://github.com/MadaraUchiha-314/the-loop/pull/390#discussion_r4054039499),
+2026-09-19): any message meant for the-loop, in a room, in a thread or in the
+operator's private channel, carries the `@the-loop` mention, and every other message
+is ignored. The mention arrives as Slack's `app_mention` event, never by matching
+text.** The options stay below as the record of what was weighed.
+
 - **Option 1A: every message** (today). *Struck by the ticket.*
-- **Option 1B: only when addressed.** A message enters the pipeline only if its text
-  mentions the bot (`<@U0BOT>`); everything else is dropped as `not-addressed`, silently
-  and with no reaction, because the message was not for the-loop. Works on both
-  transports with no new scope, since the mention is in the text either way.
-  *Cost:* a reply under one of the-loop's own room messages (an approval request, a
-  question) would also need the mention unless exempted. Lean: exempt it. A thread
-  the-loop started is addressed to it by construction, which is the same rule the
-  central channel already lives by.
-- **Option 1C: a per-room switch** (`the-loop add-channel slack@#room --listen
-  mentions|all`). *Deferred:* a knob for a case nobody has asked for yet. If a room ever
-  wants the firehose back, this is one flag on the existing declaration.
-- **Option 1D: the `app_mention` event instead of text matching.** *Struck:* Slack
-  delivers the same message twice (`message.*` and `app_mention`), costs a scope, and
-  buys nothing the text does not already say.
+- **Option 1B: only when addressed, with the room as the only gated shape.** The gate
+  survived; its scope did not. The owner widened it to every conversation shape, so a
+  reply under one of the-loop's own messages (an approval request, a question) needs
+  the mention too, and the exemption this option proposed is struck. Nothing is
+  addressed by construction any more; the mention is the address.
+- **Option 1C: a per-room switch.** *Struck:* a universal rule has no per-room
+  exception.
+- **Option 1D: the `app_mention` event.** *Chosen.* The first draft struck it for
+  delivering the same message twice and costing a scope; the owner ruled that matching
+  `<@U0BOT>` in message text is not the way, and that a manifest change is acceptable.
+  Three consequences follow:
+  - `app_mentions:read` and the `app_mention` bot event join the manifest, so an
+    existing install re-installs, as issue-375's scopes required.
+  - The listener acts on `app_mention` and treats the `message.*` copy of the same
+    message (same channel, same `ts`) as not input. That is the whole of the
+    deduplication, and it is also what turns every un-mentioned `message.*` event into
+    the silent `not-addressed` drop the decision asks for.
+  - Addressed messages are **socket-only**. `app_mention` is an event; the poll
+    transport reads history through an API whose only trace of a mention is the text
+    the owner ruled out. In `read.mode: poll` a room says nothing to the-loop, and
+    `channels status` says so, as it does for buttons and the slash command.
+
+Two things the rule reaches that the ticket did not name, for the owner to confirm:
+
+- A **typed** gate answer (`approved`) or control keyword in a thread now needs the
+  mention. A button press does not change: a press is addressed by construction and
+  carries no text to gate.
+- A **kickoff** (a top-level message that becomes an issue) is a message forwarded to
+  the-loop, so by the rule it becomes `@the-loop <repo>: <title>`. The `message.*`
+  events then serve nothing but the deduplication above.
 
 ### Q2. What can a mention ask for?
 
@@ -208,8 +232,8 @@ hypothesis.
 
 ## Sketches & notes
 
-The room's inbound path with the new gate and the two new acts, everything after the
-mention gate being the pipeline that exists:
+The room's inbound path with the mention as the address and the two new acts,
+everything after the deduplication being the pipeline that exists:
 
 ```mermaid
 sequenceDiagram
@@ -219,8 +243,8 @@ sequenceDiagram
   participant G as GitHub (ledger)
   participant S as session (if any)
   M->>L: "@the-loop context" in a thread
-  L->>P: message, room → work item (issue-375)
-  P->>P: addressed? (text mentions the bot) else drop not-addressed
+  L->>P: app_mention event, room → work item (issue-375)
+  P->>P: the message.* copy of the same ts is dropped (not-addressed)
   P->>P: authorize (tier per act) · classify: keyword → verb → gate → reply
   P->>P: grant: context.added in channels.slack.publish?
   P->>L: conversations.replies → snapshot, names resolved
@@ -233,31 +257,33 @@ The grammar, as it would read in `docs/guide/slack.md`:
 
 | In a room, type | It becomes | Grant | Needs |
 |---|---|---|---|
-| `@the-loop context` (in a thread) | `context.added`, the thread snapshotted onto the ticket | `context.added` | poll or socket |
-| `@the-loop decision <text>` | `decision.recorded`, unmarked, attributed to you | `decision.recorded` | poll or socket |
-| `@the-loop <keyword>` | `control.command`, as in a thread today | `control.command` | poll or socket |
-| `@the-loop <anything else>` | `work-item.reply`, delivered to the session | `work-item.reply` | poll or socket |
+| `@the-loop context` (in a thread) | `context.added`, the thread snapshotted onto the ticket | `context.added` | socket |
+| `@the-loop decision <text>` | `decision.recorded`, unmarked, attributed to you | `decision.recorded` | socket |
+| `@the-loop <keyword>` | `control.command`, as in a thread today | `control.command` | socket |
+| `@the-loop <anything else>` | `work-item.reply`, delivered to the session | `work-item.reply` | socket |
 | ⋯ → *Add as context* / *Record a decision* | exactly the typed mention above | the same | socket |
+| any message without the mention | nothing: `not-addressed`, no record, no reaction | — | — |
 
 What this touches, as a rough inventory: `channels/events.py` (two rows),
-`channels/inbound.py` (the mention gate on the room path, two verb handlers, the tier
-check), `channels/slack.py` (the shortcut and `view_submission` branches, the modal,
-the snapshot renderer, the confirmation reply), `channels/github.py` (two record
-shapes), the app manifest (`features.shortcuts`), the CLI config schema (`publish`
-grants), `channels status`, `docs/guide/slack.md`, `docs/capabilities/channels.md`, and
-the operating-model skill (the fold-in rule for context and decisions, the
-`decisions.md` file).
+`channels/inbound.py` (the `app_mention` entry, the `message.*` deduplication, two verb
+handlers, the tier check), `channels/slack.py` (the `app_mention`, shortcut and
+`view_submission` branches, the modal, the snapshot renderer, the confirmation reply),
+`channels/github.py` (two record shapes), the app manifest (`app_mentions:read`, the
+`app_mention` event, `features.shortcuts`), the CLI config schema (`publish` grants),
+`channels status`, `docs/guide/slack.md` (the upgrade table gains a row),
+`docs/capabilities/channels.md`, and the operating-model skill (the fold-in rule for
+context and decisions, the `decisions.md` file).
 
 ## Open questions
 
 Raised on the ticket for the paper trail; the owner's answers converge this brainstorm.
 
-1. **Does the mention gate exempt the-loop's own threads in a room?** A reply under
-   the-loop's approval request or question would otherwise need `@the-loop` to count.
-   Lean: exempt them; a thread the-loop opened is addressed to it.
-2. **Mode 1 stays as it is?** The central channel's threads and the operator's DM keep
-   listening to every reply, because there the thread is the-loop's own. The ticket
-   hints at retiring mode 1 later; this work item would leave it untouched.
+1. ~~Does the mention gate exempt the-loop's own threads in a room?~~ **Answered on
+   PR #390: no.** Every message meant for the-loop carries the mention, a reply under
+   its own message included.
+2. ~~Mode 1 stays as it is?~~ **Answered on PR #390: no.** The rule is universal: a
+   room, a thread and the operator's private channel alike. Mode 1 is not retired by
+   this work item, but it listens the same way.
 3. **Who may add context, and who may record a decision?** Lean: input (context,
    replies) for authorized users and the work item's collaborators once the roster
    carries Slack ids; decisions and keywords for authorized users only.
@@ -274,12 +300,18 @@ Raised on the ticket for the paper trail; the owner's answers converge this brai
    shortcut being exactly the typed mention.
 7. **Unrecognised or unauthorized mention: silence or an ephemeral nudge?** Silence is
    today's posture for strangers. A room member on no roster is a different case.
+8. **Does the rule reach kickoffs and typed gate answers?** Read literally it does:
+   `@the-loop <repo>: <title>` opens a work item, `@the-loop approved` answers a gate,
+   a button press is unchanged. Lean: yes, one rule with no exceptions; the `message.*`
+   events then exist only to be deduplicated against.
 
 ## Leaning / working hypothesis
 
-- **A room listens only when addressed.** The mention gate sits on the issue-375 room
-  path, before authorization; `not-addressed` is a silent drop. Threads the-loop
-  opened, the central channel and the DM are unchanged.
+- **Every conversation listens only when addressed, and the address is the
+  `app_mention` event** (the owner's decision on PR #390). A `message.*` event is
+  input nowhere; it is dropped as `not-addressed` once the mention copy of the same
+  `ts` is accounted for. Three ways in: a mention, a button press, a slash command.
+  Socket-only, with `channels status` naming the manifest step.
 - **Two new acts, two catalog rows.** `context.added` (marked, quoted snapshot of the
   thread, delivered) and `decision.recorded` (unmarked, attributed, enveloped). Both
   recorded on the ticket, both grantable in `publish`, both subscribable so every
@@ -297,10 +329,13 @@ Raised on the ticket for the paper trail; the owner's answers converge this brai
 
 If the owner confirms the lean, `requirements.md` asserts:
 
-- **R-gate:** in a declared room, a message reaches the pipeline only when it mentions
-  the bot or replies under a message the-loop posted; every other message is
-  `not-addressed`, dropped with no record and no reaction. Central channel and DM
-  behaviour unchanged, pinned by tests.
+- **R-gate:** a message reaches the pipeline only as an `app_mention` event, in every
+  conversation shape (room, thread, the operator's channel); every `message.*` event
+  is `not-addressed`, dropped with no record and no reaction, its mention copy having
+  carried the input. Pinned by tests for each shape, and for the deduplication.
+- **R-manifest:** `app_mentions:read` and the `app_mention` bot event in the shipped
+  manifest; the guide's upgrade table names them; `channels status` reports a `poll`
+  read mode as one where nothing addressed can arrive.
 - **R-context:** `@the-loop context` snapshots the thread onto the ticket as a marked,
   scrubbed, capped record naming the asker, with the permalink; idempotent per thread;
   delivered best-effort; refusals recorded and reacted ⚠️.
@@ -319,8 +354,9 @@ If the owner confirms the lean, `requirements.md` asserts:
   keyword; injection through snapshotted content (delivered as data, never as
   instructions, as the event prompt already says); the roster growing a second id.
 
-Left behind, as the record of what was considered: listening to every message, the
-`app_mention` event, reactions as decisions, the channel writing spec files, room
+Left behind, as the record of what was considered: listening to every message,
+matching the mention in message text, an exemption for the-loop's own threads, a
+per-room switch, reactions as decisions, the channel writing spec files, room
 membership as an allow-list, a model summarising a thread.
 
 ## Review comments
