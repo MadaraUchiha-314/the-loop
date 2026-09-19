@@ -500,8 +500,9 @@ def test_record_context_on_a_top_level_message_snapshots_that_message(tmp_path):
     assert "Nothing new" in client.ephemeral[-1][2]
     client.replies["1900.9"].extend(
         [
-            {"ts": "1900.10", "user": "UOTHER", "text": "the background is X"},
-            {"ts": "1900.11", "user": "UHUMAN", "text": "and Y"},
+            # Slack timestamps compare numerically: later replies sort above the root.
+            {"ts": "1900.91", "user": "UOTHER", "text": "the background is X"},
+            {"ts": "1900.92", "user": "UHUMAN", "text": "and Y"},
         ]
     )
     once.reset()
@@ -511,7 +512,7 @@ def test_record_context_on_a_top_level_message_snapshots_that_message(tmp_path):
         client,
         addressed=True,
         text=f"<@{BOT}> record-context",
-        ts="1900.12",
+        ts="1900.95",
         thread="1900.9",
     )
     assert threaded["outcome"] == "processed"
