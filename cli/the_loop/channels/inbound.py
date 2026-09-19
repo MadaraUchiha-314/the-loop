@@ -1454,7 +1454,7 @@ def handle_message_action(
     deliver: Optional[Callable] = None,
     client_factory: Optional[Callable] = None,
 ) -> Dict[str, Any]:
-    """A message shortcut (issue-389 R6): *Add to the-loop as context* is exactly
+    """A message shortcut (issue-389 R6): *Add as the-loop context* is exactly
     ``@the-loop record-context`` typed on that message; *Record a decision*
     opens the modal, whose submission is :func:`handle_view_submission`. The
     callback id is the only thing read from the payload's shape; the member is

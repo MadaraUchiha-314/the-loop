@@ -23,11 +23,11 @@ features:
   # thread, `@the-loop record-decision` through a modal — under the same
   # allow-list and the same grants. Delivered over Socket Mode like a button.
   shortcuts:
-    - name: Add to the-loop as context
+    - name: Add as the-loop context
       type: message
       callback_id: "the-loop:record-context"
       description: Snapshot this thread onto the work item as context
-    - name: Record a decision with the-loop
+    - name: Record the-loop decision
       type: message
       callback_id: "the-loop:record-decision"
       description: Record what this message decided, with a kind and a rationale

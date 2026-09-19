@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 
 import pytest
+import yaml
 
 from the_loop import eventlog
 from the_loop.authz import is_self_authored
@@ -719,6 +720,20 @@ def test_the_manifest_is_packaged_and_printed(tmp_path, monkeypatch, capsys):
     ChannelsCommand().add_arguments(parser)
     assert ChannelsCommand().run(parser.parse_args(["manifest"])) == 0
     assert capsys.readouterr().out.strip() == text.strip()
+
+
+def test_every_shortcut_name_fits_slacks_24_character_limit():
+    """issue-391: Slack's app-manifest validator rejects a `shortcuts[].name` of 25
+    characters or more ("Must be less than 25 characters"), so the packaged manifest
+    cannot regress past it."""
+    manifest = yaml.safe_load(commands.manifest_text())
+    shortcuts = manifest["features"]["shortcuts"]
+    assert shortcuts, "the packaged manifest declares no shortcuts to check"
+    too_long = {s["name"]: len(s["name"]) for s in shortcuts if len(s["name"]) > 24}
+    assert not too_long, (
+        f"{too_long} exceed Slack's 24-character shortcut name limit and will be "
+        "rejected by the app-manifest validator"
+    )
 
 
 def test_channels_status_says_which_command_families_are_granted(

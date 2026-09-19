@@ -123,7 +123,7 @@ def test_the_context_shortcut_is_the_typed_mention(tmp_path):
     """
     Scenario: the context shortcut is the typed mention
       Given a thread in #389's room
-      When an authorized member uses "Add to the-loop as context" on a message in it
+      When an authorized member uses "Add as the-loop context" on a message in it
       Then the outcome is byte for byte the typed `@the-loop record-context` on that thread
       And the member is answered ephemerally with the record's link
     """

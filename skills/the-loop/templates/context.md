@@ -16,7 +16,7 @@ overrides: {}                # per-work-item overrides of .the-loop/harness-conf
 > The auditable record of what the loop was **told** from a channel
 > ([issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389),
 > decision-133). Each time a person records a conversation as context (`@the-loop
-> record-context` in Slack, or the *Add to the-loop as context* shortcut) the channel
+> record-context` in Slack, or the *Add as the-loop context* shortcut) the channel
 > writes a marked `context.added` record on the ticket and the session appends **one
 > entry** here — who, when, from where, the record's link, and the snapshot verbatim
 > — then commits it with the work item. No gate reads this file; `/the-loop:work-on`

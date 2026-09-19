@@ -63,11 +63,11 @@ features:
   # thread, `@the-loop record-decision` through a modal — under the same
   # allow-list and the same grants. Delivered over Socket Mode like a button.
   shortcuts:
-    - name: Add to the-loop as context
+    - name: Add as the-loop context
       type: message
       callback_id: "the-loop:record-context"
       description: Snapshot this thread onto the work item as context
-    - name: Record a decision with the-loop
+    - name: Record the-loop decision
       type: message
       callback_id: "the-loop:record-decision"
       description: Record what this message decided, with a kind and a rationale
@@ -136,7 +136,7 @@ command, the private-channel scope and event (`groups:history`, `message.groups`
 the three **read-only name-resolution** scopes (`channels:read`, `groups:read`,
 `users:read` — [issue-375](https://github.com/MadaraUchiha-314/the-loop/issues/375)),
 the **mention** scope and event plus the two **message shortcuts** (`app_mentions:read`,
-`app_mention`, *Add to the-loop as context* / *Record a decision with the-loop* —
+`app_mention`, *Add as the-loop context* / *Record the-loop decision* —
 [issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389); the manifest above
 carries all of them, and **until an installed app has the scope and the event, nothing
 typed in a channel or thread reaches the-loop** — `channels status --probe` and the
@@ -159,7 +159,7 @@ itself. Two ways, pick one:
   | *Slash Commands → Create New Command* | command `/the-loop`, any description and usage hint; **no Request URL** is needed in Socket Mode |
   | *Event Subscriptions → Subscribe to bot events* | `message.groups`, `message.im`, `message.mpim` (beside the existing `message.channels`), and `app_mention` — the event every typed mention arrives as |
   | *Interactivity & Shortcuts* | on (it already is if the buttons worked) |
-  | *Interactivity & Shortcuts → Create New Shortcut* | two shortcuts *On messages*: **Add to the-loop as context**, callback id `the-loop:record-context`; **Record a decision with the-loop**, callback id `the-loop:record-decision`. The names are yours to change; the callback ids are not |
+  | *Interactivity & Shortcuts → Create New Shortcut* | two shortcuts *On messages*: **Add as the-loop context**, callback id `the-loop:record-context`; **Record the-loop decision**, callback id `the-loop:record-decision`. The names are yours to change (Slack allows at most 24 characters); the callback ids are not |
 
 After either path: the **bot token** stays the one you have unless Slack issues a new one
 on reinstall (it shows it on the install page — re-export if it changed); mint an
@@ -333,8 +333,8 @@ because Slack delivers both only to a connection that acknowledges within second
 | follow the work as it moves | subscribe `phase.started`, `phase.completed`, `work-item.closed` | — (`subscribe`) | every phase's start and end as the `loop:<phase>` label changes — a human gate's start says it is waiting on you — and the work item's end when its issue is closed or its pull request merged ([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378)) |
 | be heard at all, in a channel or a thread | **mention it**: `@the-loop …` — every message meant for the-loop carries the mention ([issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389)) | — (+ `read.mode: socket`) | the mention is what makes a message input; one without it is ignored (`not-addressed`) — no record, no reaction — except in a DM with the bot, or in a room an authorized user declared `--listen all` ([addressing the-loop](#addressing-the-loop)) |
 | answer the agent's question | reply `@the-loop <your answer>` in the work item's thread | `work-item.reply` (default) | mirrored onto the work item as the-loop's own marked comment, delivered into the waiting session |
-| hand the loop a conversation as context | `@the-loop record-context` in the thread, or ⋯ → *Add to the-loop as context* | `context.added` (+ socket) | the thread is snapshotted onto the work item as a marked `context.added` record naming you, and the session appends it to `docs/specs/<id>/context.md` with its provenance |
-| record a decision the room just made | `@the-loop record-decision <text>`, or ⋯ → *Record a decision with the-loop* (a form: text, kind, rationale) | `decision.recorded` (+ socket) | a marked `decision.recorded` record attributed to you; the session writes `docs/decisions/decision-<nnn>.md` from it. Authorized users only |
+| hand the loop a conversation as context | `@the-loop record-context` in the thread, or ⋯ → *Add as the-loop context* | `context.added` (+ socket) | the thread is snapshotted onto the work item as a marked `context.added` record naming you, and the session appends it to `docs/specs/<id>/context.md` with its provenance |
+| record a decision the room just made | `@the-loop record-decision <text>`, or ⋯ → *Record the-loop decision* (a form: text, kind, rationale) | `decision.recorded` (+ socket) | a marked `decision.recorded` record attributed to you; the session writes `docs/decisions/decision-<nnn>.md` from it. Authorized users only |
 | let a room's stakeholder feed the loop | `@the-loop add-collaborator @login` or `slack:U…` | `control.command` (+ socket) | the issue-307 keyword with a Slack member id: from then on their mentions are input on this work item (context, replies), never a decision or a keyword |
 | approve or reject a phase, a PR | reply `@the-loop approved` / `@the-loop changes requested`, or press the button | `gate.feedback` | recorded on the work item unmarked, as your answer; the gate reads it there |
 | start, stop, pause, resume, execute, cleanup… a work item **that has a thread** | type `@the-loop start` (the keyword's last word) in its thread | `control.command` | recorded on the work item unmarked, the configured keyword composed for you; the ledger's ingress executes it — exactly as if you had typed it on the ticket |
@@ -380,7 +380,7 @@ conversation carries a one-line hint naming the mention and `help`.
 | `@the-loop help` | an ephemeral answer only you see — the grammar and the grants this channel holds. Nothing recorded | — | socket |
 | `@the-loop <anything else>` | `work-item.reply`, mirrored and delivered to the session as today | `work-item.reply` | socket |
 | any message **without** the mention | nothing (`not-addressed`): no record, no reaction, no reply — unless the room is declared `--listen all` or it is a DM with the bot | — | — |
-| ⋯ → *Add to the-loop as context* / *Record a decision with the-loop* (the message's menu) | exactly the typed mention above, on that message; the decision one through a **modal** — the text pre-filled from the message, a kind (`product` / `design` / `tech`), an optional rationale. Answered ephemerally with the record's link or the refusal | the same | socket |
+| ⋯ → *Add as the-loop context* / *Record the-loop decision* (the message's menu) | exactly the typed mention above, on that message; the decision one through a **modal** — the text pre-filled from the message, a kind (`product` / `design` / `tech`), an optional rationale. Answered ephemerally with the record's link or the refusal | the same | socket |
 
 Every accepted mention gets the reactions above, and every act that writes a record is
 answered with one reply in the message's thread carrying the record's link. Every act

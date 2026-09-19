@@ -290,7 +290,7 @@ def test_status_prints_the_mention_and_shortcut_lines_in_socket_mode(
     )
     assert "mentions:     @the-loop is the address in every channel" in out
     assert MENTION.event in out and MENTION.scope in out
-    assert "shortcuts:    Add to the-loop as context" in out
+    assert "shortcuts:    Add as the-loop context" in out
     for callback in MENTION_SHORTCUTS:
         assert callback in out
     assert "rooms:        2 declared room(s); 1 hear(s) every message" in out

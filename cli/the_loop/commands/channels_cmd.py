@@ -238,7 +238,7 @@ def _mention_lines(slack: SlackChannelConfig, stores: ChannelStores) -> list:
             "also hear plain messages"
         )
         shortcuts = (
-            "Add to the-loop as context / Record a decision with the-loop "
+            "Add as the-loop context / Record the-loop decision "
             f"({', '.join(MENTION_SHORTCUTS)}) over Socket Mode — each exactly "
             "the typed mention"
         )
