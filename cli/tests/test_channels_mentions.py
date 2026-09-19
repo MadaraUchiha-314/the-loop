@@ -263,3 +263,76 @@ def test_reply_session_frames_by_kind(tmp_path, monkeypatch):
     )
     assert "context.md" in delivered[0] and "UNTRUSTED" in delivered[0]
     assert delivered[1].startswith("Reply from the operator")
+
+
+# -- task 11: the status lines and the threads column (R1.7, R2.4, R6.6; T6) --------
+
+
+def _declare(tmp_path, target, listen="mentions", work_item="github:o/r#389"):
+    from the_loop.workchannels import CollaborationChannelStore
+
+    CollaborationChannelStore(tmp_path / "state" / "portable").add(
+        work_item, f"slack@{target}", actor="octocat", source="cli", listen=listen
+    )
+
+
+def test_status_prints_the_mention_and_shortcut_lines_in_socket_mode(
+    tmp_path, monkeypatch, capsys
+):
+    """R1.7, R6.6: what a mention needs, what the shortcuts need, and how many
+    declared rooms hear every message — with no Slack call."""
+    from test_channels_dm import cli_config, run_status
+
+    _declare(tmp_path, "C0ROOM1")
+    _declare(tmp_path, "C0ROOM2", listen="all", work_item="github:o/r#390")
+    out = run_status(
+        tmp_path, monkeypatch, capsys, cli_config(tmp_path, read={"mode": "socket"})
+    )
+    assert "mentions:     @the-loop is the address in every channel" in out
+    assert MENTION.event in out and MENTION.scope in out
+    assert "shortcuts:    Add to the-loop as context" in out
+    for callback in MENTION_SHORTCUTS:
+        assert callback in out
+    assert "rooms:        2 declared room(s); 1 hear(s) every message" in out
+
+
+def test_status_says_nothing_addressed_can_arrive_in_poll_mode(
+    tmp_path, monkeypatch, capsys
+):
+    """R1.7: in poll mode the words are the design's — nothing addressed can arrive."""
+    from test_channels_dm import cli_config, run_status
+
+    out = run_status(
+        tmp_path, monkeypatch, capsys, cli_config(tmp_path, read={"mode": "poll"})
+    )
+    assert "mentions:     off (read.mode is poll — nothing addressed can arrive" in out
+    assert "shortcuts:    off (read.mode is poll" in out
+    assert "rooms:        0 declared room(s); 0 hear(s) every message" in out
+
+
+def test_threads_prints_what_each_conversation_hears(tmp_path, monkeypatch, capsys):
+    """R2.4: the `listen` column — `all` for a DM or an `all` room, else mentions."""
+    import json
+
+    from conftest import _state_with_stores
+    from test_channels import _threads_command
+
+    _declare(tmp_path, "C0ROOM", listen="all", work_item="github:o/r#7")
+    path = tmp_path / "state" / "channels" / "slack.json"
+    state = _state_with_stores(path)
+    state.bind("", "github:o/r#7", "C0ROOM", origin="start", mode="channel")
+    state.bind("1700.1", "github:o/r#8", "D123", origin="event")
+    state.bind("1700.2", "github:o/r#9", "C0OTHER", origin="event")
+    state.save(path)
+    assert _threads_command(tmp_path, monkeypatch, "threads", "--json") == 0
+    rows = {
+        row["workItem"]: row["listen"] for row in json.loads(capsys.readouterr().out)
+    }
+    assert rows == {
+        "github:o/r#7": "all",
+        "github:o/r#8": "all",
+        "github:o/r#9": "mentions",
+    }
+    assert _threads_command(tmp_path, monkeypatch, "threads") == 0
+    out = capsys.readouterr().out
+    assert "listen" in out.splitlines()[0]

@@ -26,6 +26,8 @@ from ..channels import inbound
 from ..channels.events import SUBSCRIBABLE_EVENTS
 from ..channels.records import RECORD_TYPES, records_from_comments, render
 from ..channels.slack import (
+    MENTION,
+    MENTION_SHORTCUTS,
     REACTION_STATES,
     SlackChannelConfig,
     kind_summary,
@@ -48,7 +50,8 @@ def _status(config: dict, probe: bool = False) -> int:
 
     slack = SlackChannelConfig.from_mapping(config)
     path = slack_state_path(config)
-    state = ChannelState.load(path, ChannelStores.beside(path))
+    stores = ChannelStores.beside(path)
+    state = ChannelState.load(path, stores)
     print(f"ledger:         {ledger_name(config)}")
     print("slack:")
     print(f"  enabled:      {str(slack.enabled).lower()}")
@@ -134,6 +137,12 @@ def _status(config: dict, probe: bool = False) -> int:
             f"  commands:     off (read.mode is {slack.read_mode} — slash commands "
             "need read.mode: socket)"
         )
+    # The address (issue-389): a mention is the one way a message in a room
+    # reaches the-loop, and it arrives only over Socket Mode — so `status`
+    # says what a mention needs, what the two shortcuts need, and how many
+    # declared rooms hear every message instead.
+    for line in _mention_lines(slack, stores):
+        print(line)
     reactions = slack.reactions
     print(
         "  reactions:    "
@@ -215,6 +224,46 @@ def _subscription_lines(slack: SlackChannelConfig, probe: bool) -> list:
     return lines
 
 
+def _mention_lines(slack: SlackChannelConfig, stores: ChannelStores) -> list:
+    """The three issue-389 lines: `mentions:`, `shortcuts:` and `rooms:`.
+
+    Read from the config and the portable declarations only — no Slack call;
+    `--probe` is what measures the scope (`mention_findings`).
+    """
+    if slack.read_mode == "socket":
+        mentions = (
+            f"@the-loop is the address in every channel — {MENTION.event} over "
+            f"Socket Mode; needs the bot scope {MENTION.scope} (`--probe` "
+            "measures it). A DM with the bot and a room declared --listen all "
+            "also hear plain messages"
+        )
+        shortcuts = (
+            "Add to the-loop as context / Record a decision with the-loop "
+            f"({', '.join(MENTION_SHORTCUTS)}) over Socket Mode — each exactly "
+            "the typed mention"
+        )
+    else:
+        mentions = (
+            f"off (read.mode is {slack.read_mode} — nothing addressed can "
+            f"arrive; {MENTION.event} needs read.mode: socket)"
+        )
+        shortcuts = (
+            f"off (read.mode is {slack.read_mode} — a message shortcut needs "
+            "read.mode: socket)"
+        )
+    targets = stores.declared_targets()
+    hearing_all = sum(1 for target in targets if stores.listen_mode(target) == "all")
+    rooms = (
+        f"{len(targets)} declared room(s); {hearing_all} hear(s) every message "
+        "(--listen all), the rest mentions only"
+    )
+    return [
+        f"  mentions:     {mentions}",
+        f"  shortcuts:    {shortcuts}",
+        f"  rooms:        {rooms}",
+    ]
+
+
 def _button_lines(slack: SlackChannelConfig) -> list:
     """The ``buttons:`` block (issue-337 R3): both button sets with whether each
     can be received, and — while either cannot — only the numbered steps that
@@ -269,10 +318,11 @@ def _threads(config: dict, work_item: str, as_json: bool) -> int:
     ids, timestamps and the permalink Slack returned; never a message's text.
     """
     path = slack_state_path(config)
-    state = ChannelState.load(path, ChannelStores.beside(path))
+    stores = ChannelStores.beside(path)
+    state = ChannelState.load(path, stores)
     wanted = canonical(work_item) if work_item else ""
     records = [
-        {"workItem": item, **record}
+        {"workItem": item, **record, "listen": _listen_of(record, stores)}
         for item, record in state.conversations.items()
         if not wanted or item == wanted
     ]
@@ -294,10 +344,11 @@ def _threads(config: dict, work_item: str, as_json: bool) -> int:
     }
     # A room conversation (issue-378) has no thread: the column says so.
     widths["thread"] = max(widths["thread"], len("(channel)"))
+    widths["listen"] = max(len("listen"), *(len(r["listen"]) for r in records))
     header = (
         f"{'work item':<{widths['workItem']}}  {'channel':<{widths['channel']}}  "
         f"{'thread':<{widths['thread']}}  {'opened':<{widths['opened']}}  "
-        f"{'origin':<{widths['origin']}}  link"
+        f"{'origin':<{widths['origin']}}  {'listen':<{widths['listen']}}  link"
     )
     print(header)
     for record in records:
@@ -307,9 +358,19 @@ def _threads(config: dict, work_item: str, as_json: bool) -> int:
             f"{record.get('thread') or '(channel)':<{widths['thread']}}  "
             f"{record.get('opened', ''):<{widths['opened']}}  "
             f"{record.get('origin', ''):<{widths['origin']}}  "
+            f"{record['listen']:<{widths['listen']}}  "
             f"{record.get('permalink') or '—'}"
         )
     return 0
+
+
+def _listen_of(record: dict, stores: ChannelStores) -> str:
+    """What the conversation hears (issue-389 R2.4): every message in a DM
+    with the bot or a room declared `--listen all`; otherwise mentions."""
+    channel = str(record.get("channel") or "")
+    if channel[:1].upper() == "D":
+        return "all"
+    return stores.listen_mode(channel) if channel else "mentions"
 
 
 def _ledger_comments(config: dict, work_item: str) -> list:

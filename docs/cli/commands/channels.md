@@ -50,7 +50,10 @@ the-loop channels manifest  # the Slack app manifest to import (scopes, events, 
   work item and that thread is its conversation; `legacy` — a binding from before
   [issue-312](https://github.com/MadaraUchiha-314/the-loop/issues/312), derived from the
   thread map) and the thread's permalink when Slack returned one. `--work-item <ref>`
-  shows one (exit 1 when it has none); `--json` prints the records. It reads the state
+  shows one (exit 1 when it has none); `--json` prints the records. Since
+  [issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389) a `listen` column
+  says what the conversation hears: `all` for a direct message with the bot or a room
+  declared `--listen all`, else `mentions`. It reads the state
   file only — no Slack call, no token — and prints ids, never a message's text.
 - **`records`** lists the **records** a channel wrote on a work item's ticket
   ([issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389)): every
@@ -96,6 +99,15 @@ the-loop channels manifest  # the Slack app manifest to import (scopes, events, 
   event subscriptions, interactivity, Socket Mode and the `/the-loop` command — for
   *Create New App → From a manifest*. No config, no token, no network. The
   [Slack integration guide](/guide/slack) walks the setup.
+- **`status`** also prints, since
+  [issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389), a **`mentions:`**
+  line — the mention is the address in every channel, delivered as `app_mention` over
+  Socket Mode and needing the `app_mentions:read` bot scope, or *nothing addressed can
+  arrive* when `read.mode` is not `socket` — a **`shortcuts:`** line naming the two
+  message shortcuts and their callback ids, and a **`rooms:`** line counting the declared
+  rooms and how many of them hear every message (`--listen all`). `--probe` measures
+  the mention scope beside the kind's and reports its absence as a `[!]` finding naming
+  the consequence.
 - **`status`** also prints a `commands:` line: which slash-command families this channel
   may run (`work-item` — `control.command`; `instance` — `instance.command`; `standing` —
   `standing.command`), or that none can arrive because `read.mode` is not `socket`.
