@@ -48,7 +48,8 @@ Three effects, in this order:
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| `@LOGIN …` | required | One or more GitHub logins, with or without the leading `@`. |
+| `@LOGIN …` | required unless `--slack` | One or more GitHub logins, with or without the leading `@`. |
+| `--slack` | — | A Slack member id (`U…`) or handle (`@dana`) for the same person, or for a collaborator with no GitHub login ([issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389)). A handle is resolved through the Slack directory and refused when it resolves to none or several. A Slack-id-only collaborator is input on Slack only. |
 | `--work-item` | required | The work item the grant is scoped to, e.g. `github:OWNER/REPO#307`. |
 | `--portable-dir` | `<state.root>/portable` | Where the rosters live. |
 | `--comment` / `--no-comment` | on | Post the keyword back to the work item. |
