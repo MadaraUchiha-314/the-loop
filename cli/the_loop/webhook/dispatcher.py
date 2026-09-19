@@ -88,7 +88,11 @@ from ..runner import SESSION_LIVE, TmuxRunner
 from ..graph.state import WorkItemState
 from ..sessions import Session, SessionRegistry, WorkItemRef
 from ..state import LegacyLayout, StateLayout, layout_from_config, legacy_layout
-from ..workchannels import ChannelTakenError, CollaborationChannelStore
+from ..workchannels import (
+    DEFAULT_LISTEN,
+    ChannelTakenError,
+    CollaborationChannelStore,
+)
 from ..workitem import SECTIONS
 from ..harness_plugins import PluginConfig
 from ..identity import github_logins, parse_authorized_users
@@ -2042,6 +2046,13 @@ class Dispatcher:
         target = self._target_work_item(routed)
         if target is None:  # unreachable: handle() drops an event with no items
             return
+        if control.refusal:
+            # `--listen` with a mode the-loop does not know (issue-389 A12).
+            # Refused whole rather than declared with a default the person did
+            # not ask for; the parser already emptied the subjects.
+            logger.warning("refusing the %s command: %s", command, control.refusal)
+            self._reject_control(command, routed, actor, "unknown-listen-mode")
+            return
         if not control.subjects:
             # The keyword with no channel named, or one that did not match the
             # grammar — a channel NAME rather than an id is the common case.
@@ -2049,6 +2060,7 @@ class Dispatcher:
             self._reject_control(command, routed, actor, "missing-channel")
             return
         note = str((routed.payload.get("comment") or {}).get("html_url") or "")
+        listen = control.listen or DEFAULT_LISTEN
         for ref in control.subjects:
             try:
                 # A person types the name they know; the record keeps the id the
@@ -2064,6 +2076,7 @@ class Dispatcher:
                         source="comment",
                         note=note,
                         name=name,
+                        listen=listen,
                     )
                     effect = "declared" if changed else "already-declared"
                 else:
@@ -2101,6 +2114,7 @@ class Dispatcher:
                 actor=actor or None,
                 channel=ref,
                 replaced=replaced.ref if replaced else None,
+                listen=listen if command == ADD_CHANNEL else None,
                 effect=effect,
                 delivery_id=routed.delivery_id or None,
             )

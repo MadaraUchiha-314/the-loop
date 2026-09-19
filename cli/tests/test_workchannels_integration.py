@@ -244,3 +244,113 @@ def test_declaring_neither_arms_nor_spawns(tmp_path, monkeypatch):
 
     assert tmux.spawns == [] and tmux.delivers == []
     assert dispatcher.control_store.get(REF) is None
+
+
+# -- the listen mode (issue-389 §2) -----------------------------------------------
+
+
+def test_a_room_is_switched_to_hear_everything_by_an_authorized_comment(
+    tmp_path, monkeypatch
+):
+    """
+    Feature: a room can be switched to hear everything, by an authorized user only
+      Scenario: add-channel --listen all is recorded with provenance
+        Given control is enabled and octocat is an authorized user
+        When octocat comments `the-loop add-channel slack@C0TMP375 --listen all`
+        Then the declaration carries `listen: all` with who, when and the URL
+        And the comment is acknowledged as executed
+        When octocat re-declares the room with `--listen mentions`
+        Then the mode is replaced and the comment is acknowledged again
+
+    Requirement: docs/specs/issue-389/requirements.md#R2
+    """
+    tmux = FakeTmux()
+    dispatcher, runner = make_control_dispatcher(tmp_path, tmux, monkeypatch)
+
+    dispatcher.handle(
+        routed_command(f"the-loop add-channel {ROOM} --listen all", delivery="l-1")
+    )
+    assert wait_until(lambda: len(runner.commands) == 1)
+    (record,) = dispatcher.channel_store.list(REF)
+    assert record.listen == "all"
+    assert record.added_by == "octocat" and record.note == "https://c/77"
+    assert dispatcher.delivery_outcome("l-1") == "control-executed"
+
+    dispatcher.handle(
+        routed_command(f"the-loop add-channel {ROOM} --listen mentions", delivery="l-2")
+    )
+    assert wait_until(lambda: len(runner.commands) == 2)
+    dispatcher.stop()
+
+    (record,) = dispatcher.channel_store.list(REF)
+    assert record.listen == "mentions"
+    assert contents(runner) == ["content=hooray", "content=hooray"]
+    assert tmux.delivers == [] and tmux.spawns == []
+
+
+def test_a_declaration_without_a_mode_listens_to_mentions(tmp_path, monkeypatch):
+    """R2.1: the default is `mentions`."""
+    tmux = FakeTmux()
+    dispatcher, runner = make_control_dispatcher(tmp_path, tmux, monkeypatch)
+
+    dispatcher.handle(routed_command(f"the-loop add-channel {ROOM}"))
+    assert wait_until(lambda: len(runner.commands) == 1)
+    dispatcher.stop()
+
+    (record,) = dispatcher.channel_store.list(REF)
+    assert record.listen == "mentions"
+
+
+def test_an_unknown_listen_mode_declares_nothing(tmp_path, monkeypatch):
+    """
+    Feature: a room can be switched to hear everything, by an authorized user only
+      Scenario: a mode the-loop does not know
+        Given control is enabled and octocat is an authorized user
+        When octocat comments `add-channel slack@C0TMP375 --listen everything`
+        Then nothing is declared and the comment is acknowledged as an error —
+             the command is refused whole rather than declared with a default
+
+    Requirement: docs/specs/issue-389/requirements.md#R2 (abuse case A12)
+    """
+    tmux = FakeTmux()
+    dispatcher, runner = make_control_dispatcher(tmp_path, tmux, monkeypatch)
+
+    dispatcher.handle(
+        routed_command(
+            f"the-loop add-channel {ROOM} --listen everything", delivery="l-3"
+        )
+    )
+    assert wait_until(lambda: len(runner.commands) == 1)
+    dispatcher.stop()
+
+    assert declarations(dispatcher) == []
+    assert contents(runner) == ["content=confused"]
+    assert dispatcher.delivery_outcome("l-3") == "control-rejected"
+
+
+def test_a_collaborator_cannot_switch_a_room(tmp_path, monkeypatch):
+    """
+    Feature: a room can be switched to hear everything, by an authorized user only
+      Scenario: a collaborator cannot switch a room
+        Given dana is a collaborator on the work item, and not an authorized user
+        When dana comments `the-loop add-channel slack@C0TMP375 --listen all`
+        Then nothing is declared and the attempt is recorded as a refusal —
+             the switch is a binding act, and binding acts read
+             routing.authorizedUsers alone
+
+    Requirement: docs/specs/issue-389/requirements.md#R2 (abuse case A2)
+    """
+    tmux = FakeTmux()
+    dispatcher, _ = make_control_dispatcher(tmp_path, tmux, monkeypatch)
+    dispatcher.collaborator_store.add(REF, login="dana", actor="octocat")
+
+    dispatcher.handle(
+        routed_command(
+            f"the-loop add-channel {ROOM} --listen all", delivery="l-4", author="dana"
+        )
+    )
+    assert wait_until(lambda: dispatcher.delivery_outcome("l-4") == "control-rejected")
+    dispatcher.stop()
+
+    assert declarations(dispatcher) == []
+    assert tmux.delivers == []
