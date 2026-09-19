@@ -2,7 +2,7 @@
 type: brainstorm
 phase: brainstorming
 workItem: issue-389
-status: draft                # no gate approves a brainstorm (issue-281); it converges on the thread
+status: in-review            # no gate approves a brainstorm (issue-281); converged on PR #390, 2026-09-19
 approvedBy: []
 collaborators: [product-manager, architect, engineer]
 overrides: {}
@@ -14,6 +14,12 @@ overrides: {}
 > [issue #389](https://github.com/MadaraUchiha-314/the-loop/issues/389): a multi-party
 > collaboration experience when a Slack channel is dedicated to a work item. Nothing here
 > is a commitment; the direction converges on the ticket.
+>
+> **Converged 2026-09-19.** The owner's review on
+> [PR #390](https://github.com/MadaraUchiha-314/the-loop/pull/390) decided Q1 to Q5
+> (each section opens with the decision) and said *go ahead with requirements keeping in
+> mind the review comments*. `requirements.md` is derived from this file as it stands;
+> the questions still open are carried there as recorded assumptions.
 
 ## Problem / opportunity
 
