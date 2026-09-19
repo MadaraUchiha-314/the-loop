@@ -39,9 +39,12 @@ flowchart LR
   (`work-item-complete` now fires from the `complete` node), the three lifecycle events
   (`phase.started`, `phase.completed`, `work-item.closed` — issue-378), `comment.agent`,
   `comment.human`, `standing.started`. Publishable: `work-item.reply`, `gate.feedback`,
-  `control.command`, `work-item.create`, and — since issue-334 — `instance.command`,
-  `standing.command`. Recorded: the ask and the four ticket-bound publishable ones; the
-  two command grants have no ticket and are not.
+  `control.command`, `work-item.create`, — since issue-334 — `instance.command`,
+  `standing.command`, and — since issue-389 — `context.added`, `decision.recorded`.
+  Recorded: the ask and the six ticket-bound publishable ones; the two command grants
+  have no ticket and are not. The two issue-389 rows are grants and **not**
+  subscriptions: what a message may become and what a channel hears stay disjoint sets
+  (decision-103), and `comment.agent` already carries every marked record.
 - **The bus is the only caller of a channel.** WHEN any component publishes an event THEN
   the bus SHALL record it on the ledger first (if recorded and not from the ledger), then
   post it to every enabled channel whose `subscribe` names its type and that is not its
@@ -70,7 +73,8 @@ flowchart LR
 - **Grants.** WHEN a message arrives on a channel THEN the pipeline SHALL run map →
   drop-own → authorize → classify → grant → record → (deliver): a message outside a bound
   thread is `unmapped` (unless it is a top-level kickoff candidate); a bot's is dropped;
-  an unlisted member's is dropped, not recorded; classification is control keyword →
+  an unlisted member's is dropped, not recorded; classification is verb
+  (`record-context`, `record-decision`, `help` — issue-389) → control keyword →
   open human gate → reply, and a type not in `publish` is dropped as
   `unpublishable-event`, never downgraded. The default grant is `[work-item.reply]`.
   `gate.feedback` and `control.command` stop at the record — the ledger's ingress does the
@@ -122,9 +126,10 @@ flowchart LR
   with no adapter is refused rather than stored and ignored. One channel per type per work item (a second declaration moves the
   conversation) and **one work item per channel**: a held channel is refused, and a channel
   two records somehow claim attributes messages to neither. A declared room is **baselined
-  on first sight**, so declaring one never delivers its backlog; in `poll` mode its
-  top-level messages and its bound threads' replies are read, and in `socket` mode every
-  message in it is. Declarations are cleared when the work item ends, which is what frees
+  on first sight**, so declaring one never delivers its backlog; since issue-389 a room
+  hears only **mentions** unless declared `--listen all`, in which case `poll` mode reads
+  its top-level messages and its bound threads' replies and `socket` mode every message
+  in it, as before. Declarations are cleared when the work item ends, which is what frees
   the room for the next one.
 - **A person names the room and the person; the-loop routes on ids** (issue-375, PR #376
   review). Everywhere the-loop asked for a Slack id it now accepts the name too:
@@ -449,10 +454,156 @@ flowchart LR
   enabled channel or nothing, fail-closed as before, and one that raises hides no other.
   The lifecycle publishers speak `Event` and `bus.publish` only, and a test drives a
   provider the-loop does not ship through a runtime walk with no Slack configured.
+- **A conversation reaches the-loop only when it is addressed** (issue-389,
+  [decision-133](../decisions/decision-133.md)). The address is the `@the-loop` mention,
+  delivered as Slack's `app_mention` event; message text is never matched for it. WHEN
+  Slack delivers an `app_mention` in a conversation the-loop attributes to a work item —
+  a bound thread, a declared room, the central channel — THEN the listener SHALL hand it
+  to the inbound pipeline as that member's message on that work item, the `<@bot>` token
+  removed wherever it sits, and SHALL process it once (a redelivery is `duplicate`
+  through the shared cursor). The decision is made right after attribution and before
+  the kickoff branch, authorization and any reaction, by one table:
+
+  | Conversation | `message.*` event | `app_mention` event |
+  |---|---|---|
+  | a direct message with the bot (`D…`) | input, as before (Slack sends no `app_mention` there) | never delivered |
+  | a room declared `listen: all` | input, as before | dropped `duplicate` — the message copy is the input |
+  | everything else — a `mentions` room, the central channel, a bound thread | dropped `not-addressed`: no record, no reaction, no reply, **no cursor advance** | input |
+
+  The rule reaches every shape: a reply under the-loop's own question without the
+  mention is ignored; a typed gate answer or a control keyword with the mention
+  classifies exactly as the same text typed in a thread did; a top-level `app_mention`
+  in the central channel is the kickoff candidate, with the `<repo>:` grammar unchanged;
+  a mention in a channel the-loop cannot attribute is `unmapped`. A button press and a
+  slash command are unchanged, because neither is a message. WHEN `read.mode` is `poll`
+  THEN the poll transport SHALL read no mention-gated conversation (a DM's and an `all`
+  room's messages excepted) and SHALL move no cursor for one, so a mention the listener
+  later processes is never behind a cursor the reconcile moved; `catch_up` inherits the
+  rule. The consequence — a mention posted while no listener was connected is lost
+  after Slack's own retries — is documented, not hidden.
+- **A room's listen mode is an authorized user's switch** (issue-389). `the-loop
+  add-channel <type>@<target> [--listen mentions|all]` — on the ticket, from the
+  terminal, by mention — records the mode in the work item's collaboration-channel
+  declaration with the declaration's own provenance; the default is `mentions`, a
+  re-declaration replaces it, a value outside the two reads as `mentions`, and a
+  declaration invalid under issue-375's rules is refused whole, mode included. WHEN the
+  mode is `all` THEN the room's `message.*` events SHALL be input exactly as before this
+  work item. Only `routing.authorizedUsers` may set it, as only they may declare; a
+  collaborator's attempt is `control.rejected`. `channels threads` prints the mode and
+  `channels status` counts the `all` rooms.
+- **A fixed grammar after the mention, no model** (issue-389). The pipeline SHALL read
+  the **first token** after the mention and classify the message as exactly one of:
+  `record-context`, `record-decision`, `help`, the **last word** of a configured control
+  keyword (`start`, `execute`, `add-collaborator`, `add-channel`, …) — composed into the
+  configured keyword plus the validated remainder exactly as the slash command composes
+  it, then recorded unmarked as `control.command` for the ledger's ingress to execute —
+  or, for any other first token or none, a `work-item.reply` delivered as before. WHEN
+  the token is `help` THEN the channel SHALL answer the member ephemerally
+  (`chat.postEphemeral`) with the grammar and this channel's grants and record nothing.
+  Every message that opens a room conversation carries a one-line hint naming the
+  mention and `help`. `add-collaborator` / `remove-collaborator` after the mention
+  accept a Slack member mention, a GitHub `@login`, or both; the roster entry carries
+  whichever ids were given, the Slack one written as `slack:U…` in the composed line.
+- **`record-context`: a thread becomes an auditable record** (issue-389). WHEN an
+  authorized user or a collaborator of the work item mentions `record-context` in a
+  thread THEN the channel SHALL read the thread (`conversations.replies`, the root and
+  every reply so far, ascending), render each message as `**@name** (HH:MM UTC, link):
+  text` — the name from the directory's reverse lookup, an unknown id left as `U…`, the
+  per-message permalink composed from the workspace URL with no per-message API call,
+  the-loop's own and other bots' messages included — and cap the snapshot at the first
+  **150 messages or 40,000 characters**, whichever comes first, with a closing line
+  counting the rest. A top-level mention with no thread snapshots that message alone.
+  The text SHALL pass `strip_comments` → `neutralise` → `scrub` → `defang`, in that
+  order, so a snapshot can carry no HTML comment, no broadcast, no token and no marker,
+  envelope or keyword; a snapshot still over GitHub's comment limit after scrubbing is
+  refused (`snapshot-too-large`), never truncated silently; a model never summarises it.
+  The record is a **marked**, quoted, enveloped `context.added` comment on the ticket
+  whose visible line names the act and the person and which carries the thread's
+  permalink and the count. Idempotent per thread: a `snapshots` map in the channel
+  state, keyed `<channel>:<thread_ts>` and written under the state lock beside
+  `pending`, remembers the last `ts` recorded, so a second `record-context` records only
+  what is newer and an empty delta is an ephemeral *nothing new* with no record
+  (`channel.snapshot_empty`). The record is then **delivered by the channel** — not the
+  ingress, which drops marked comments — into the work item's session with a preset
+  `context` frame naming the person, the count, the permalink, the record's URL and
+  `docs/specs/<id>/context.md` as the file to append to, the snapshot inside it named
+  untrusted data; the session appends one entry with that provenance from the bundled
+  `context` template and commits it with the work item. A refused delivery is
+  `channel.dropped` / `undeliverable` and ⚠️; the record stands.
+- **`record-decision`: a human's decision is a decision record** (issue-389). WHEN an
+  authorized user mentions `record-decision <text>` THEN the channel SHALL record a
+  **marked**, quoted, scrubbed, enveloped `decision.recorded` comment carrying the text,
+  the person, the time, the message's permalink and — when the modal gave them — a kind
+  (`product` | `design` | `tech`) and a rationale; its visible line says *decision from
+  `name`*, and the envelope, never the marker, is what attributes it. The marker is the
+  guarantee behind the rule that a decision is **never a gate answer**: an unmarked
+  comment under the operator's credential is an authorized human's comment to every
+  gate, so a decision recorded at an open gate would have answered it. WHEN the text is
+  empty THEN the mention SHALL be refused ephemerally with the grammar and nothing
+  recorded (`empty-decision`). The record is delivered with the preset `decision` frame
+  (person, kind, record URL, permalink); the session writes
+  `docs/decisions/decision-<nnn>.md` from the decision template with the person as
+  decider and the two links as provenance, plus its row in `docs/decisions/decisions.md`,
+  committed with the work item.
+- **A message shortcut is exactly the typed mention** (issue-389, decision-117's rule
+  applied to the next interactive surface). The shipped manifest declares two message
+  shortcuts with fixed callback ids — `the-loop:record-context` (*Add to the-loop as
+  context*) and `the-loop:record-decision` (*Record a decision with the-loop*) — and the
+  listener routes the `message_action` and `view_submission` payloads over Socket Mode,
+  acknowledging each before any work. WHEN the context shortcut is used on a message
+  THEN it SHALL be processed as `record-context` typed by that member on that message,
+  through the same pipeline, authorization and grant. WHEN the decision shortcut is used
+  THEN the channel SHALL open a modal on the payload's `trigger_id` — the decision text
+  pre-filled from the message, a kind select, an optional rationale, the message's
+  `channel`, `ts` and `thread_ts` in `private_metadata` — and WHEN it is submitted THEN
+  process it as `record-decision <kind>: <text> — why: <rationale>` typed by the
+  submitting member. The payload's own `user.id` is what is authorized, never the
+  callback's or the metadata's contents; the metadata is validated as a channel id and
+  two timestamps (`bad-metadata` otherwise); a shortcut acts once per `trigger_id` /
+  `view.id` through the one ring the slash command uses (`channels/once.py`). The member
+  is answered ephemerally with the record's link or the refusal, and the thread gets the
+  one-line reply every recording act gets. Shortcuts exist only with `read.mode: socket`,
+  and `channels status` names them and the manifest step an installation still needs.
+- **Two tiers of speaker, per act** (issue-389, refining decision-102). The pipeline
+  asks one object two questions — `authorized` (`routing.authorizedUsers[].slack`) and
+  `collaborator` (the roster of the work item the message was attributed to, and only
+  that one) — and the act decides which counts: **input** (`work-item.reply`,
+  `context.added`, `help`) needs either; **binding** (`decision.recorded`,
+  `control.command`, `gate.feedback`, `work-item.create`, `--listen`) needs `authorized`.
+  A member with neither is dropped `unauthorized-actor` in silence before any reaction,
+  as a stranger always was; a collaborator attempting a binding act is dropped
+  `unauthorized-act` with ⚠️ and an ephemeral line — the one refusal that speaks,
+  because the person is on the roster and learns nothing new. A collaborator entry may
+  carry a Slack member id beside, or instead of, the GitHub login (at least one of the
+  two; an entry with neither, or a `slack` that is not a member id, authorizes nobody),
+  added by `add-collaborator slack:U…` from the room or `--slack <id|@handle>` from the
+  CLI, a handle resolved through the directory and refused when it resolves to none or
+  to several. A collaborator's record names them by the ids the roster holds, never by
+  the message.
+- **Every recording act ends in the session, and a session can read what it missed**
+  (issue-389). `context.added` and `decision.recorded` join `work-item.reply` in the set
+  the channel delivers directly; a read-only `the-loop channels records <ref> [--type
+  context.added|decision.recorded] [--format json|markdown]` lists a work item's
+  enveloped records of those types with URL, actor, timestamp and quoted body, so a
+  session spawned after a record was made — or one whose delivery was refused — folds
+  it in without parsing envelopes by hand. Every accepted mention gets the issue-325
+  reactions, and every act that writes a record is answered with one reply in the
+  message's thread carrying the record's link.
+- **The app manifest and the status lines** (issue-389). The shipped manifest carries
+  the `app_mentions:read` bot scope, the `app_mention` bot event and the two shortcuts;
+  `channels status --probe` and the listener's connect-time probe measure
+  `app_mentions:read` beside the history scopes and report its absence as a `[!]` /
+  `warning` finding naming the consequence — nothing typed in a channel or thread
+  reaches the-loop. `channels status` prints `mentions:` (the scope, the event, Socket
+  Mode required; under `poll`, *nothing addressed can arrive*), `shortcuts:` and the
+  count of `all` rooms. No config version bump: two grant names join `publish`, nothing
+  is renamed; a declaration without a listen mode is `mentions`, a roster entry without
+  a Slack id is unchanged.
 - Reads, tokens, state: as before — `poll` or `socket` (`listen` now also handles
-  `block_actions`, top-level messages and `slash_commands`), env-named tokens read at
-  call time, bindings and cursors in `<state.root>/channels/slack.json` (plus a
-  `channel:<id>` cursor).
+  `block_actions`, top-level messages, `slash_commands`, `app_mention`,
+  `message_action` and `view_submission`), env-named tokens read at call time, bindings
+  and cursors in `<state.root>/channels/slack.json` (plus a `channel:<id>` cursor and,
+  since issue-389, the `snapshots` map).
 - Every step is observable: `bus.published`, `bus.recorded`, `bus.record_failed`, the
   `channel.*` types, `channel.dropped` with `unpublishable-event` /
   `kickoff-unknown-repo` / `kickoff-ambiguous-repo` / `kickoff-no-target` /
@@ -462,12 +613,27 @@ flowchart LR
   `kickoff` | `start` | `declared`; `mode: channel` for a room, issue-378), `channel.open_failed`, `channel.reaction_added`,
   `channel.reaction_failed`, and the slash command's `channel.command_received`,
   `channel.command_completed`, `channel.command_answer_failed`, `channel.caught_up`,
-  the drop reasons `unknown-command` / `unknown-target` / `duplicate`, and the press
-  outcome's `channel.press_reported` / `channel.press_report_failed` (issue-337).
-  Payloads carry ids and event types, never text.
+  the drop reasons `unknown-command` / `unknown-target` / `duplicate`, the press
+  outcome's `channel.press_reported` / `channel.press_report_failed` (issue-337), and —
+  issue-389 — the drop reasons `not-addressed` / `unauthorized-act` / `snapshot-failed`
+  / `snapshot-too-large` / `empty-decision` / `bad-metadata`, and
+  `channel.context_recorded`, `channel.decision_recorded`, `channel.snapshot_empty`,
+  `channel.shortcut_received`, `channel.shortcut_failed`, `channel.view_submitted`.
+  Payloads carry ids, event types and counts, never text.
 
 ## Design
 
+- [`docs/specs/issue-389/design.md`](../specs/issue-389/design.md) — the `app_mention`
+  branch and §1's input table in `handle_socket_event`; the room's `listen` field;
+  `channels/verbs.py` (`parse_verb`, `compose_keyword`, `help_text`); the two marked
+  record shapes and the `context` / `decision` frames of `reply_session`; `speaker_for`
+  and the act table; the shortcuts, the modal and the shared `once.py` ring; the
+  `context` template, the manifest row and `channels records`; the status lines.
+- [`decision-133`](../decisions/decision-133.md) — the mention is the address in every
+  shape and text is never matched for it; a fixed grammar with the reply as fallthrough;
+  both records marked and delivered by the channel; grants, not subscriptions; the
+  session keeps `context.md` and the decision log; two tiers of speaker; a shortcut is
+  the typed mention.
 - [`docs/specs/issue-378/design.md`](../specs/issue-378/design.md) — the three lifecycle
   rows and `publish_lifecycle` / `lifecycle_publisher`; the runtime's `phase_of` and
   `_lifecycle` on `start` / `advance` / `cleanup` with the phase pointer in the state
@@ -532,6 +698,7 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-389 | A Slack conversation reaches the-loop **only when it addresses it**, and can hand it context, decisions and collaborators (2026-09-19). Since issue-375 a declared room was a firehose: every authorized member's message a `work-item.reply`, the ticket filling with talk meant for other people and the agent interrupted by all of it, while the stakeholders the room existed for could not address the-loop at all. Now the `@the-loop` mention — Slack's `app_mention` event, never a text match — is the address in every shape (a room, a thread the-loop opened, its own question, a kickoff), and a `message.*` event is input only in a DM with the bot or a room an authorized user declared `--listen all`; everything else is `not-addressed`, with no record, no reaction and no cursor moved. After the mention a fixed grammar and no model: `record-context` snapshots the thread (capped at 150 messages / 40,000 characters, names resolved, scrubbed in a fixed order, idempotent per thread) onto the ticket as a **marked** `context.added` record and into `docs/specs/<id>/context.md`, a fifth, living artifact with provenance per entry; `record-decision <text>` is a marked `decision.recorded` record attributed by its envelope — marked because an unmarked comment is a gate answer on this ledger — that becomes `docs/decisions/decision-<nnn>.md`; `add-collaborator` takes a Slack member id, so a collaborator may exist with no GitHub login; any keyword's last word composes the configured keyword; `help` is ephemeral; anything else is a reply. Both records are delivered by the channel with a preset frame, and `the-loop channels records` lets a later session find what it has not folded. Two message shortcuts are exactly the typed mention, the decision one through a modal. Two tiers of speaker: input from authorized users and the work item's collaborators, binding acts from authorized users only. Costs taken knowingly: an existing app must be re-imported for `app_mentions:read`, `app_mention` and the shortcuts (the probes say so); poll mode hears no channel or thread message; a mention during listener downtime is lost; a typed gate answer and a kickoff need the mention too | [spec](../specs/issue-389/), [decision-133](../decisions/decision-133.md), [guide](../guide/slack.md#addressing-the-loop), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/389) |
 | issue-378 | A work item's **whole life reaches every channel**, and Slack can begin one (2026-09-18). Three catalog rows — `phase.started`, `phase.completed`, `work-item.closed` — published by the runtime on every transition of every graph and by the dispatcher on a closure, following the `loop:<phase>` label (two nodes under one phase are silent, a phase-less gate inherits, a force publishes nothing) and never recorded; the closure is announced **before** the item's room is forgotten. Before this a channel heard from the loop only where a graph author had written a `notify` hook — four nodes of the outer loop — and a work item closed on GitHub reached no channel, which is the *hit or miss* the ticket names. A **declared room is now the conversation**: the-loop's updates there are top-level messages and the record carries `mode: channel` with no thread, while the central channel keeps one thread per work item; a thread already bound inside a room keeps its shape. `/the-loop new [<repo>:] <title>` opens a work item through the kickoff's own grammar and grant, then opens its thread and answers with the link. `load_channels` walks a **provider table**, so the next channel type is a row and a module. No config key, grant, scope or version change; one optional key on a conversation record and one `phase` pointer in the state file | [spec](../specs/issue-378/), [decision-130](../decisions/decision-130.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/378) |
 | issue-375 | A work item can name the **room it is worked in** (2026-09-17). `the-loop add-channel slack@C…`, from an authorized user on the ticket or from the terminal, records a collaboration channel in that work item's portable record; its thread root is then opened there instead of in `channels.slack.channel`, and every message in that room that no binding already claims is a message on that work item — a top-level one included, so the room never opens a second issue. A declaration made after the conversation started **moves** it, leaving a pointer in the thread it left. The grammar is `<type>@<target>` (with `<type>://<target>` as an alias), which is the extension point: a future Jira or WhatsApp channel is a type row plus an adapter. From the author's review of PR #376, **a person names the room and the person rather than looking up ids**: `the-loop add-channel`, `channels.slack.channel` and `routing.authorizedUsers[].slack` each take a name or an id, resolved through a `name → id` directory cached on the machine and stored as an **id**, so no message ever costs a lookup and a rename changes nothing. An id short-circuits before any lookup, so a pre-existing configuration is untouched; every failure to resolve fails closed, naming the scope likely missing; a display name resolves to nobody; and a handle names whoever holds it, which the allow-list's documentation says plainly because only a member id names one person for good. Three read-only scopes (`channels:read`, `groups:read`, `users:read`) join the shipped manifest, so an existing install must be re-installed. One channel per type per work item and one work item per channel, enforced on write and again on read, because attributing a room's messages must never be a guess. The declaration moves a conversation and grants nobody anything: who may speak stays `channels.slack`'s allow-list and who may direct the loop stays `routing.authorizedUsers` | [spec](../specs/issue-375/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/375) |
 | issue-368 | A work item's thread binding moved out of `channels/<channel>.json` and into that work item's **portable record** (2026-09-15): the thread is a remote entity the-loop created, so a second machine continues the conversation instead of opening a second root and dropping replies in the first as `unmapped`. It stays in the operator's record rather than the repository because a channel id, a thread ts and a workspace permalink are the operator's workspace's. The read cursor went the other way, into this machine's session record beside the handles, because it states what this deployment has already mirrored — with the channel file keeping the cursor for a work item that has no session record here, which would otherwise re-process every reply. What remains in the file belongs to no work item: the per-channel kickoff cursor, the pending questions, and a standing session's binding. A binding written before the change is honoured and moved on the next write | [spec](../specs/issue-368/), [decision-128](../decisions/decision-128.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/368) |

@@ -141,6 +141,9 @@ workItemArtifacts:
     role: spec-evidence
     phase: verification
     optional: true            # committed verification evidence — test output, screenshots, recordings; only when the work item captured any. Textual evidence is markdown (.md), never .txt (PR #168); binary captures keep their own formats.
+  - pathPattern: docs/specs/<id>/context.md
+    role: context
+    optional: true            # the auditable record of what a channel told the loop (issue-389, decision-133): one entry per `context.added` record, with provenance. Living, no gate, no phase — the session appends to it whenever a record arrives, so no node produces it and the graph-parity suite leaves it alone.
 
 # The record each GATE leaves behind, one file per gating node (issue-365,
 # decision-126, which retired docs/specs/<id>/execution-log.md). They carry no

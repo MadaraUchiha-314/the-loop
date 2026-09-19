@@ -129,13 +129,19 @@ Builder workflow; [why](#why-not-slack-workflow-builder).)
 ### Upgrading the app you already have (1b)
 
 An app created for an earlier the-loop (issue-245 / issue-309 — thread replies and
-buttons, no command) needs five things added: the `commands` scope and the `/the-loop`
+buttons, no command) needs six things added: the `commands` scope and the `/the-loop`
 command, the private-channel scope and event (`groups:history`, `message.groups`), the
 **direct-message** scopes and events (`im:history` / `mpim:history`, `message.im` /
 `message.mpim` — [issue-362](https://github.com/MadaraUchiha-314/the-loop/issues/362)),
 the three **read-only name-resolution** scopes (`channels:read`, `groups:read`,
 `users:read` — [issue-375](https://github.com/MadaraUchiha-314/the-loop/issues/375)),
-and — if it never used Socket Mode — Socket Mode itself. Two ways, pick one:
+the **mention** scope and event plus the two **message shortcuts** (`app_mentions:read`,
+`app_mention`, *Add to the-loop as context* / *Record a decision with the-loop* —
+[issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389); the manifest above
+carries all of them, and **until an installed app has the scope and the event, nothing
+typed in a channel or thread reaches the-loop** — `channels status --probe` and the
+listener's connect-time probe say so), and — if it never used Socket Mode — Socket Mode
+itself. Two ways, pick one:
 
 - **Replace the manifest** (recommended, one step). At
   [api.slack.com/apps](https://api.slack.com/apps) open the app → *App Manifest* → paste
@@ -148,11 +154,12 @@ and — if it never used Socket Mode — Socket Mode itself. Two ways, pick one:
 
   | Page | Add |
   |------|-----|
-  | *OAuth & Permissions → Bot Token Scopes* | `commands`, `groups:history`, `im:history`, `mpim:history`, `channels:read`, `groups:read`, `users:read` (and `reactions:write` if the app predates issue-325) |
+  | *OAuth & Permissions → Bot Token Scopes* | `commands`, `groups:history`, `im:history`, `mpim:history`, `channels:read`, `groups:read`, `users:read`, `app_mentions:read` (and `reactions:write` if the app predates issue-325) |
   | *Socket Mode* | *Enable Socket Mode* (if not already) |
   | *Slash Commands → Create New Command* | command `/the-loop`, any description and usage hint; **no Request URL** is needed in Socket Mode |
-  | *Event Subscriptions → Subscribe to bot events* | `message.groups`, `message.im`, `message.mpim` (beside the existing `message.channels`) |
+  | *Event Subscriptions → Subscribe to bot events* | `message.groups`, `message.im`, `message.mpim` (beside the existing `message.channels`), and `app_mention` — the event every typed mention arrives as |
   | *Interactivity & Shortcuts* | on (it already is if the buttons worked) |
+  | *Interactivity & Shortcuts → Create New Shortcut* | two shortcuts *On messages*: **Add to the-loop as context**, callback id `the-loop:record-context`; **Record a decision with the-loop**, callback id `the-loop:record-decision`. The names are yours to change; the callback ids are not |
 
 After either path: the **bot token** stays the one you have unless Slack issues a new one
 on reinstall (it shows it on the install page — re-export if it changed); mint an
@@ -160,7 +167,10 @@ on reinstall (it shows it on the install page — re-export if it changed); mint
 the app has none; then set `read.mode: socket` and the grants you want in
 `channels.slack.publish`, restart `the-loop channels listen`, and check
 `the-loop channels status` — its `commands:` line should read *`/the-loop` over Socket
-Mode* with the families you granted. `/the-loop help` in Slack is the end-to-end test.
+Mode* with the families you granted, its `mentions:` line should name the scope and the
+event as present, and its `shortcuts:` line the two shortcuts. `/the-loop help` in Slack
+is the end-to-end test for the command; `@the-loop help` in a channel the bot is in, for
+the mention.
 If your channel is a **direct message**, run `the-loop channels status --probe` too — it
 asks Slack what the channel is and which scopes the app was granted, and says so when the
 two do not match (see [Which events your channel needs](#which-events-your-channel-needs)).
@@ -225,8 +235,13 @@ ones your app subscribed to. The kind is in the channel id's first character:
 | private channel | `C…` or `G…` | `groups:history` | `message.groups` |
 | direct message with the bot | `D…` | `im:history` | `message.im` |
 | group direct message | `G…` | `mpim:history` | `message.mpim` |
+| **a mention** (`@the-loop …`) in any channel kind | any | `app_mentions:read` | `app_mention` |
 
-**The manifest above carries all four**, so an app imported from it works in any of them.
+**The manifest above carries all five**, so an app imported from it works in any of them.
+The last row is the one every typed message in a channel or a thread now arrives as
+([issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389)): without it a
+room, a thread and the central channel hear nothing typed, while a DM (`message.im`) and
+an `all` room still do.
 An app created before
 [issue-362](https://github.com/MadaraUchiha-314/the-loop/issues/362) carries only the
 first two — and a DM configured on such an app fails in the quietest way the-loop has:
@@ -316,14 +331,18 @@ because Slack delivers both only to a connection that acknowledges within second
 |--------------|------------------|--------------------|--------------|
 | see what the loop needs from you | nothing — subscribe the events | — (`subscribe`) | one thread per work item, opened when it starts; every event a reply into it (in a [room the work item declared](#a-room-for-one-work-item), a message in the room) |
 | follow the work as it moves | subscribe `phase.started`, `phase.completed`, `work-item.closed` | — (`subscribe`) | every phase's start and end as the `loop:<phase>` label changes — a human gate's start says it is waiting on you — and the work item's end when its issue is closed or its pull request merged ([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378)) |
-| answer the agent's question | reply in the work item's thread | `work-item.reply` (default) | mirrored onto the work item as the-loop's own marked comment, delivered into the waiting session |
-| approve or reject a phase, a PR | reply `approved` / `changes requested`, or press the button | `gate.feedback` | recorded on the work item unmarked, as your answer; the gate reads it there |
-| start, stop, pause, resume, execute, cleanup… a work item **that has a thread** | type the control keyword in its thread (`the-loop start`) | `control.command` | recorded on the work item unmarked, keyword intact; the ledger's ingress executes it — exactly as if you had typed it on the ticket |
+| be heard at all, in a channel or a thread | **mention it**: `@the-loop …` — every message meant for the-loop carries the mention ([issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389)) | — (+ `read.mode: socket`) | the mention is what makes a message input; one without it is ignored (`not-addressed`) — no record, no reaction — except in a DM with the bot, or in a room an authorized user declared `--listen all` ([addressing the-loop](#addressing-the-loop)) |
+| answer the agent's question | reply `@the-loop <your answer>` in the work item's thread | `work-item.reply` (default) | mirrored onto the work item as the-loop's own marked comment, delivered into the waiting session |
+| hand the loop a conversation as context | `@the-loop record-context` in the thread, or ⋯ → *Add to the-loop as context* | `context.added` (+ socket) | the thread is snapshotted onto the work item as a marked `context.added` record naming you, and the session appends it to `docs/specs/<id>/context.md` with its provenance |
+| record a decision the room just made | `@the-loop record-decision <text>`, or ⋯ → *Record a decision with the-loop* (a form: text, kind, rationale) | `decision.recorded` (+ socket) | a marked `decision.recorded` record attributed to you; the session writes `docs/decisions/decision-<nnn>.md` from it. Authorized users only |
+| let a room's stakeholder feed the loop | `@the-loop add-collaborator @login` or `slack:U…` | `control.command` (+ socket) | the issue-307 keyword with a Slack member id: from then on their mentions are input on this work item (context, replies), never a decision or a keyword |
+| approve or reject a phase, a PR | reply `@the-loop approved` / `@the-loop changes requested`, or press the button | `gate.feedback` | recorded on the work item unmarked, as your answer; the gate reads it there |
+| start, stop, pause, resume, execute, cleanup… a work item **that has a thread** | type `@the-loop start` (the keyword's last word) in its thread | `control.command` | recorded on the work item unmarked, the configured keyword composed for you; the ledger's ingress executes it — exactly as if you had typed it on the ticket |
 | sign the phase-selection checklist | press **Execute** on the checklist message (or type `the-loop execute`) | `control.command` (+ `read.mode: socket`) | the same unmarked `the-loop execute` record; the message is edited to say so ([buttons](#the-buttons)) |
 | start a work item you just filed from Slack | press **Start** on the-loop's "opened …" reply (or type `the-loop start`) | `control.command` (+ socket) | the same unmarked `the-loop start` record; the message is edited to say so |
 | start a work item **that has no thread yet** | `/the-loop start #123` | `control.command` (+ `read.mode: socket`) | the same record on the ticket; the start opens the thread |
 | file a new work item from anywhere | `/the-loop new <repo>: <title>` | `work-item.create` (+ socket) | the same issue a top-level message opens; its thread is opened in the home channel and you are answered with the link ([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378)) |
-| file a new work item | post a top-level message in the channel, optionally starting `<repo>:` | `work-item.create` | an issue is created in the repository the message named (or `kickoff.repo`) with `kickoff.labels`, the thread is bound to it and told the link. Named none it knows? the-loop asks, with your declared repositories as options (`read.mode: socket`) |
+| file a new work item | post `@the-loop <repo>: <title>` as a top-level message in the channel (the prefix optional) | `work-item.create` | an issue is created in the repository the message named (or `kickoff.repo`) with `kickoff.labels`, the thread is bound to it and told the link. Named none it knows? the-loop asks, with your declared repositories as options (`read.mode: socket`) |
 | talk to a standing session | reply in its thread | `work-item.reply` | delivered into its pane (no ticket, so no mirror — the event log is the trail) |
 | start, stop or restart a standing session | `/the-loop standing start <name>` | `standing.command` (+ socket) | the same verb `the-loop standing start` runs |
 | ask the instance how it is, restart it, upgrade it | `/the-loop status` · `/the-loop restart` · `/the-loop upgrade` | `instance.command` (+ socket) | what `the-loop status` / `the-loop restart [--with-upgrade]` do |
@@ -335,6 +354,54 @@ allow-list and the grant, ✅ when the action landed, ⚠️ when it did not
 message that was dropped — a stranger's, a bot's, a kind the channel is not granted —
 gets nothing: a refusal leaves no mark. A slash command has no message of yours to react
 on; its receipt is the ephemeral answer only you see.
+
+## Addressing the-loop
+
+**A conversation reaches the-loop only when it names it**
+([issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389),
+[decision-133](https://github.com/MadaraUchiha-314/the-loop/blob/main/docs/decisions/decision-133.md)).
+Every message meant for the-loop carries `@the-loop`, which Slack delivers as the
+`app_mention` event; the same message's `message.*` copy is not input. The rule holds in
+every shape — a declared room, a thread the-loop opened in the central channel, a reply
+under its own question, a kickoff at the top of the channel — with two exceptions: a
+**direct message with the bot**, where Slack sends no `app_mention` and the DM is addressed
+by construction, and a room an authorized user declared with
+[`--listen all`](#a-room-for-one-work-item). Nothing matches text for the mention, which is
+why it needs `read.mode: socket` ([limits](#limits)). The first word after the mention is
+read as a fixed grammar; anything else is a reply. Every message that opens a room
+conversation carries a one-line hint naming the mention and `help`.
+
+| In a room, thread or channel, type | It becomes | Grant | Needs |
+|---|---|---|---|
+| `@the-loop record-context` (in a thread) | `context.added`: the thread — root and every reply so far, each with the author's name, time and permalink — snapshotted onto the ticket as a marked record naming you, and appended by the session to `docs/specs/<id>/context.md` with its provenance. Capped at 150 messages / 40,000 characters with the thread's link for the rest; never summarised. A second `record-context` on the same thread records only what is new, and says so when nothing is. At the top of a channel, the message alone | `context.added` | socket |
+| `@the-loop record-decision <text>` | `decision.recorded`: a marked record attributed to you carrying the text, the time and the message's permalink (a kind — `product`, `design`, `tech` — and a rationale when the form gave them); then the session writes `docs/decisions/decision-<nnn>.md` with you as decider. Never read as a gate answer, whatever the text says; empty text is refused with the grammar | `decision.recorded` | socket |
+| `@the-loop add-collaborator @login` / `slack:U…` (`remove-collaborator` likewise) | `control.command`: the issue-307 keyword composed for you, the roster entry carrying whichever ids you gave — a Slack member id is enough | `control.command` | socket |
+| `@the-loop <keyword>` — `start`, `execute`, `add-channel slack@#room --listen all`, … the **last word** of any configured keyword | `control.command`, as the keyword typed in a thread today; the configured keyword is composed exactly as the slash command composes it | `control.command` | socket |
+| `@the-loop help` | an ephemeral answer only you see — the grammar and the grants this channel holds. Nothing recorded | — | socket |
+| `@the-loop <anything else>` | `work-item.reply`, mirrored and delivered to the session as today | `work-item.reply` | socket |
+| any message **without** the mention | nothing (`not-addressed`): no record, no reaction, no reply — unless the room is declared `--listen all` or it is a DM with the bot | — | — |
+| ⋯ → *Add to the-loop as context* / *Record a decision with the-loop* (the message's menu) | exactly the typed mention above, on that message; the decision one through a **modal** — the text pre-filled from the message, a kind (`product` / `design` / `tech`), an optional rationale. Answered ephemerally with the record's link or the refusal | the same | socket |
+
+Every accepted mention gets the reactions above, and every act that writes a record is
+answered with one reply in the message's thread carrying the record's link. Every act
+**ends in the session**: the record is delivered with a preset prompt naming what was
+recorded, by whom, the record's URL and the file the session is to update; when no
+session is running the record stands on the ticket and the next session finds it with
+`the-loop channels records <ref>`.
+
+**Who may do what** — two tiers, per act:
+
+| Tier | Who | Acts |
+|---|---|---|
+| **input** | [`routing.authorizedUsers`](/config/cli/routing-options#authorizedusers) **and** this work item's collaborators (issue-307 — now addable by Slack id, so a room's stakeholder needs no GitHub login) | `record-context`, a reply, `help` |
+| **binding** | `routing.authorizedUsers` only | `record-decision`, every control keyword (`add-collaborator` included), `add-channel --listen` |
+
+A collaborator who tries a binding act is told so, ephemerally, and nothing is recorded;
+a member on neither list is dropped in silence, as a stranger's message always was. A
+collaborator's record names them by the ids the roster holds, never by what the message
+says. A snapshot copies other people's words — scrubbed of tokens, broadcasts, markers
+and the-loop's own envelopes — onto a ticket and into a repository that may be public;
+recording context is an act of the person who asked for it.
 
 ## A room for one work item
 
@@ -351,12 +418,26 @@ From then on the room **is** the conversation
 ([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378)): the-loop posts one
 message saying so, and every update — a question, an approval request, a phase starting
 or ending, a comment mirrored from the ticket, the close — is a **message in the channel**,
-not a reply inside a thread nobody opens. Anything an authorized member types in the room,
-top-level or under one of the-loop's messages, is a message on that work item; nothing
-posted there ever opens a new issue. Subscribe the room's events like any other:
-`phase.started` and `phase.completed` give the room a timeline, `work-item.closed` gives
-it an ending. A conversation that already lived in a thread moves to the room when the
-room is declared, and the thread it left is told where it went.
+not a reply inside a thread nobody opens. Anything a member types in the room **with the
+mention** — `@the-loop …`, top-level or under one of the-loop's messages — is a message on
+that work item; nothing posted there ever opens a new issue. **A declared room hears only
+mentions by default** ([issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389)):
+the rest of the room's talk is the room's, and never reaches the ticket. A small, focused
+room can be switched back to hearing everything:
+
+```text
+the-loop add-channel slack@#tmp-issue-378 --listen all
+```
+
+`--listen mentions` is the default; `all` makes every message an authorized member or
+collaborator types there input, as a room was before issue-389, and a mention there is
+simply a message. Only an authorized user may declare a room and only an authorized user
+may set its mode (a collaborator's attempt is refused); re-declaring replaces the mode,
+and `the-loop channels threads` and `channels status` show it. Subscribe the room's
+events like any other: `phase.started` and `phase.completed` give the room a timeline,
+`work-item.closed` gives it an ending. A conversation that already lived in a thread
+moves to the room when the room is declared, and the thread it left is told where it
+went.
 
 ## Reading it on a phone
 
@@ -629,12 +710,17 @@ an audit never needs Slack. This is also why a relayed keyword acts on the ledge
 
 ## Limits
 
+- **A mention needs `read.mode: socket`.** `app_mention` is an event, and nothing matches
+  message text for `<@the-loop>`; so in `poll` mode the-loop hears **no channel or thread
+  message** — a DM's, and an `all` room's, excepted — and `channels status` says that
+  the mention rule needs Socket Mode. The shortcuts and the modal are socket-only by
+  construction, as every interactive payload is.
 - **Socket Mode is required** for buttons and the slash command (`read.mode: socket`),
   and so is the app-level token it connects with — Slack delivers a press or a command
   only to an acknowledging connection or a public Request URL, and the-loop exposes none
-  ([the buttons](#the-buttons)); in `poll` mode replies still work, on the daemons'
-  interval, and no button is rendered. `the-loop channels status` lists the steps that
-  remain.
+  ([the buttons](#the-buttons)); in `poll` mode a DM's and an `all` room's replies still
+  work, on the daemons' interval, and no button is rendered. `the-loop channels status`
+  lists the steps that remain.
 - **The listener needs the service's environment to carry both tokens.** `the-loop start`
   hosts it only with `read.mode: socket` and both tokens set; `the-loop status` shows the
   row, and `start` reports `failed` naming the missing variable. With
@@ -650,9 +736,10 @@ an audit never needs Slack. This is also why a relayed keyword acts on the ledge
   ([upgrading an existing app](#upgrading-the-app-you-already-have-1b)).
 - **No completion receipt for a relayed keyword** beyond the ✅ on the record: the thread
   that opens when a start is accepted, and the events you subscribe to, are the feedback.
-- **A command or a button press issued while no listener was connected is lost** — visibly,
-  to the member, who issues it again. Replies and kickoffs are caught up; see
-  [Downtime](#downtime).
+- **A command, a button press, a shortcut or a mention issued while no listener was
+  connected is lost** — the first three visibly, to the member; a mention silently, once
+  Slack's own retries run out. The member issues it again. A DM's and an `all` room's
+  replies and kickoffs are caught up; see [Downtime](#downtime).
 - **The digest is structural, not a summary.** It leads with the *first* question the
   text asks, so a comment whose decision sits after a rhetorical question early on
   leads with the wrong one; the closing link is the remedy, and conclusion-first
@@ -667,8 +754,9 @@ What happens to what members did while the-loop was stopped, restarting or upgra
 | What | While the-loop is down | When it is back |
 |------|------------------------|-----------------|
 | a keyword or gate answer **already recorded on the ledger** | it is a GitHub comment; nothing is lost | the ledger's ingress executes it on its next cycle — the GitHub side reconciles with its own cursors |
-| a thread reply or kickoff message, `read.mode: poll` | stays on Slack | the next poll cycle reads every bound thread from its saved cursor and processes what accumulated, once |
-| a thread reply or kickoff message, `read.mode: socket` | Slack retries the undelivered event a few times over a few minutes; beyond that it stays on Slack | the listener runs a **catch-up read** over every bound thread and the kickoff cursor the moment it connects (`channel.caught_up`), and again every [`read.catchUpSeconds`](/config/cli/channels-options#slack-read-catchupseconds) (default 900) while it runs, so what accumulated is processed once; a retry Slack then delivers of a message the catch-up already handled is dropped as `duplicate` |
+| a reply or kickoff message in a DM or an `all` room, `read.mode: poll` | stays on Slack | the next poll cycle reads every bound thread from its saved cursor and processes what accumulated, once (a mention-gated conversation is skipped, its cursor untouched) |
+| a reply or kickoff message in a DM or an `all` room, `read.mode: socket` | Slack retries the undelivered event a few times over a few minutes; beyond that it stays on Slack | the listener runs a **catch-up read** over every bound thread and the kickoff cursor the moment it connects (`channel.caught_up`), and again every [`read.catchUpSeconds`](/config/cli/channels-options#slack-read-catchupseconds) (default 900) while it runs, so what accumulated is processed once; a retry Slack then delivers of a message the catch-up already handled is dropped as `duplicate` |
+| a **mention** (`@the-loop …`) in a room, a thread or the central channel | Slack retries the `app_mention` event a few times over a few minutes; beyond that it is **lost** | **not caught up** — the catch-up read skips mention-gated conversations and moves no cursor, because catching a mention up would mean matching text for it, which [issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389) rules out. The member mentions again; a record already written (a `context.added`, a `decision.recorded`) is on the ticket and survives |
 | a `/the-loop` command or a button press | fails **visibly** to the member in Slack — no listener was connected to take it | the member issues it again; nothing was half-done |
 
 **There is no dead-letter queue, on purpose.** A message the-loop *read but could not act

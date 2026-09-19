@@ -123,7 +123,14 @@ def test_every_mode_carries_the_artifact_rule(mode):
     """The artifact rule is an invariant, not a per-mode behaviour (decision-051)."""
     text = flat(directive_for(mode))
     assert "pull-request review" in text
-    for artifact in ("brainstorm.md", "requirements.md", "design.md", "tasks.md"):
+    for artifact in (
+        "brainstorm.md",
+        "requirements.md",
+        "design.md",
+        "testing-plan.md",
+        "tasks.md",
+        "context.md",  # the fifth artifact, appended per `context.added` record (issue-389)
+    ):
         assert artifact in text
 
 

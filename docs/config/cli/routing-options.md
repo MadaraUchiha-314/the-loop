@@ -456,13 +456,28 @@ Declare a **collaboration channel** on this work item
 the-loop add-channel slack@#tmp-issue-375   — the name people know it by
 the-loop add-channel slack@C0TMP375         — or its conversation id
 the-loop add-channel slack://C0TMP375       — same thing, stored canonically
+the-loop add-channel slack@#tmp-issue-375 --listen all   — hear every message, not only mentions
 ```
 
 From then on this work item's updates are posted in that channel instead of
 [`channels.slack.channel`](/config/cli/channels-options#slack-channel), and messages there
-from that channel's own authorized users reach this work item as input rather than opening
-a new one. A top-level message in a declared room is a reply on the work item, never a
-kickoff — a dedicated room has one subject.
+that **address the-loop** (`@the-loop …`,
+[issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389)) from that channel's
+authorized users and this work item's collaborators reach this work item as input rather
+than opening a new one. A top-level message in a declared room is a reply on the work
+item, never a kickoff — a dedicated room has one subject.
+
+**`--listen mentions|all`** (default `mentions`) is the room's one switch. A declared
+room hears only messages carrying the mention; `all` makes every message an authorized
+member or collaborator types there input, as a room was before issue-389, and the
+mention there is simply a message. The mode is recorded on the declaration with the
+declaration's own provenance, a re-declaration replaces it, a value outside the two reads
+as `mentions`, and — because switching a room is an act on the work item — only a named
+login in `authorizedUsers` may set it, on the ticket, from the CLI
+([`the-loop add-channel --listen`](/cli/commands/add-channel)) or by mention; a
+collaborator's attempt is refused (`control.rejected`). `the-loop channels threads`
+prints the mode. The mention rule itself, the grammar after it and who may say what are
+in the [Slack guide](/guide/slack#addressing-the-loop).
 
 **It grants nobody anything.** Who may speak is still `channels.slack`'s principals; who
 may direct the loop is still [`authorizedUsers`](#authorizedusers); who may be input on one

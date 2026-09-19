@@ -91,10 +91,37 @@ channel carried the conversation, the ticket carries the record — and a channe
 the loop *through the ledger, never around it*. The operator's map of every mode is
 `docs/guide/slack.md`.
 
+**A Slack conversation reaches the loop only when it addresses it** (issue-389,
+decision-133). Every message meant for the-loop carries the `@the-loop` mention,
+delivered as Slack's `app_mention` event — in a room, in a thread the-loop opened, under
+its own question, in the central channel; a message without it is dropped as
+`not-addressed` with no record, no reaction and no reply. Two exceptions: a direct
+message with the bot (Slack sends no `app_mention` there, so `message.im` stays the
+input), and a room an **authorized user** declared with `--listen all`, which hears every
+message as before. After the mention, a fixed grammar and no model: `record-context`
+(this thread, snapshotted onto the ticket as a marked `context.added` record and into
+`context.md`), `record-decision <text>` (a marked `decision.recorded` record attributed
+to the person, which becomes `docs/decisions/decision-<nnn>.md`), `add-collaborator
+@login` or `slack:U…` (the issue-307 keyword, a collaborator now known by Slack id), any
+control keyword's **last word** (`start`, `execute`, … composed into the configured
+keyword), `help` (an ephemeral answer, nothing recorded) — and anything else is a
+`work-item.reply` delivered to you as today. Two message shortcuts (*Add to the-loop as
+context*, *Record a decision with the-loop*) are exactly the typed mention. **Two tiers
+of speaker:** input — `record-context`, a reply, `help` — from `routing.authorizedUsers`
+and that work item's collaborators (who may be on the roster by Slack id alone); binding
+acts — `record-decision`, every keyword, `--listen` — from authorized users only. **The
+fold-in is yours:** a session that receives a `context.added` record appends one entry
+with provenance to `docs/specs/<id>/context.md`; a `decision.recorded` record becomes a
+decision record plus its index row; both are committed with the work item, and at the
+start of every phase `the-loop channels records <ref>` lists the records not yet
+folded — a record whose delivery found no session stands on the ledger and waits for
+you (`reference/workflow.md` § The artifact chain).
+
 ### 2. RULE: a generated artifact is iterated on a durable, reviewable surface
 
 Once an artifact of the chain exists — `brainstorm.md`, `requirements.md`/`bugfix.md`,
-`design.md`, `testing-plan.md`, `tasks.md` — iteration on it happens **only** through
+`design.md`, `testing-plan.md`, `tasks.md`, and the living `context.md` beside them —
+iteration on it happens **only** through
 comments on a surface that outlives the session: the **pull request** that carries it, or
 the **ticket**. In both interaction modes. What is never permitted is iterating on it
 interactively, where the reasoning vanishes with the scrollback — that is the invariant,
