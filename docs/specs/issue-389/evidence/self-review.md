@@ -20,7 +20,8 @@ workItem: "github:MadaraUchiha-314/the-loop#389"
 | Round | Reviewer | Outcome | Findings → disposition | Link |
 |-------|----------|---------|------------------------|------|
 | 1 | a fresh reviewing agent, same harness, reading the whole diff | **new findings (9)** | see the table below; all nine fixed in `d233de8`, `5f8479e`, `6f71041`, each with a red→green test | [PR #390](https://github.com/MadaraUchiha-314/the-loop/pull/390) |
-| 2 | a fresh reviewing agent, reading the three fix commits and the touched functions again | **in progress** | the round is running as this record is committed; its outcome and dispositions are appended when it reports | [PR #390](https://github.com/MadaraUchiha-314/the-loop/pull/390) |
+| 2 | a fresh reviewing agent, reading the three fix commits and the touched functions again | **new findings (4)** | one medium, three low — see the second table; all four fixed in `28088c6` with red→green tests | [PR #390](https://github.com/MadaraUchiha-314/the-loop/pull/390) |
+| 3 | a fresh reviewing agent, reading the round-2 fix commit and the touched functions again | **in progress** | the round is running as this record is committed; its outcome is appended when it reports | [PR #390](https://github.com/MadaraUchiha-314/the-loop/pull/390) |
 
 ## Round 1 — what was found, and what was done
 
@@ -35,6 +36,20 @@ workItem: "github:MadaraUchiha-314/the-loop#389"
 | 7 | low (security) | A shortcut on an unbound channel answered "Nothing recorded (unmapped)" to whoever tapped (a stranger learns the bot listens — A1, A8); "Recorded." was said when the ledger refused; the decision modal opened without the `decision.recorded` grant. | Fixed (`6f71041`): `unmapped` is silent, a failed record says "Could not record: …", the grant is checked before the form. Three tests |
 | 8 | low | The snapshot carried the `@the-loop record-context` message itself, left inline `<@U…>` as ids (R4.3), and mis-counted a paged thread's remainder. | Fixed (`6f71041`): a typed in-thread trigger is left out (a top-level mention and a shortcut's message are content); inline mentions drawn as `@name` / `@the-loop` / the id; `has_more` says "more" without a count. Test added |
 | 9 | low | `post_ephemeral` never passed `thread_ts`, so `help`, a refusal and "nothing new" appeared at channel level. | Fixed (`6f71041`): `_tell` posts in the reply's thread. Test added |
+
+## Round 2 — what was found, and what was done
+
+| # | Severity | Finding | Disposition |
+|---|---|---|---|
+| 1 | medium | Leaving the `record-context` mention out of a snapshot (round 1, finding 8) stopped the noted cursor at the message before it, so the next `record-context` in the same thread read the previous mention back as context. | Fixed (`28088c6`): the cursor passes the trigger when the snapshot reached the end of the thread, and a mention that found nothing new passes it too; a capped snapshot keeps the last included message as its mark. The test's fake thread now holds the mentions Slack really keeps |
+| 2 | low | `viewer_login` spelled `--hostname github.com` for every bare ref while every other `gh api` line omits the default host; on a `GH_HOST` GHE deployment the listing went to GHE and the login to github.com, so every record was filtered out. | Fixed (`28088c6`): the host goes through `comments.gh_host_args`. Test pins the three spellings |
+| 3 | low | A shortcut refused `no-ticket` or `snapshot-failed` was told twice; the decision modal opened on a standing session's thread only for the submission to be refused. | Fixed (`28088c6`): told once; the form is refused before it opens. Two tests |
+| 4 | low (security) | When `auth.test` failed the bot's id was unknown, the token could not be told from a member's mention, and `<@U…> help` was recorded on the ticket as prose. | Fixed (`28088c6`): an addressed message with a mention and no bot id is dropped `no-bot-id`; the member is asked to try again. Test added |
+
+Round 2 also confirmed, on question: the grammar in a plain DM message is reached through
+the bot's token in the text (the `app_mention` copy is dropped as `duplicate` there), which
+is R1.6's intent; a collaborator's keyword is still classified `control.command` and
+refused before the gate short-circuit; nothing in the fixes can raise inside the listener.
 
 ## Checked in round 1 and found sound
 

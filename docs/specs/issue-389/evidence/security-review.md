@@ -15,8 +15,8 @@ workItem: "github:MadaraUchiha-314/the-loop#389"
 
 - **Mechanism:** the-loop checklist (`reference/security.md` § The checklist), run over
   the diff by the session, with the round-1 self-review as the adversarial read.
-- **Outcome:** findings fixed — two security-relevant findings of the self-review
-  (rows 6 and 7 below), both closed with tests; no residual finding.
+- **Outcome:** findings fixed — three security-relevant findings of the self-review
+  (rows 6, 7 and 2-4 below), all closed with tests; no residual finding.
 - **Findings:** the table below.
 - **Human sign-off:** **required — risk tier 4** (`riskTier: 4` in `requirements.md`;
   the change touches the two schema copies and `.the-loop/`, and widens who may speak
@@ -61,6 +61,7 @@ workItem: "github:MadaraUchiha-314/the-loop#389"
 |---|---|---|---|
 | 6 | `channels records` trusted the marker alone: a ticket commenter could paste an authorized user's "decision" | medium | fixed in `5f8479e` — only the ledger login's comments are records; the author is printed on every row; tests |
 | 7 | A shortcut on an unbound channel told a stranger "Nothing recorded (unmapped)"; the decision modal opened without the grant | low | fixed in `6f71041` — silence for `unmapped`, the grant checked before the form; tests |
+| 2-4 | An addressed message whose bot id could not be read (`auth.test` failed) was recorded on the ticket as prose carrying the raw mention | low | fixed in `28088c6` — dropped `no-bot-id`, the member asked to retry; test |
 
 No residual finding. Nothing was accepted as a risk, no guard weakened, no allow-list
 entry added.

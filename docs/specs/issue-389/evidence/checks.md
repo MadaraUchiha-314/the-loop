@@ -24,4 +24,6 @@ uv run python -m pytest -q
 4127 passed, 1 skipped in 158.82s (0:02:38)
 ```
 
-The one skipped test is the suite's standing skip, unrelated to this change.
+The one skipped test is the suite's standing skip, unrelated to this change. After the
+self-review rounds the whole suite is 4144 passed, 1 skipped (`uv run python -m pytest -q`
+from `cli/`, 2026-09-19); the round-2 fix commit's message says 4145, which is off by one.
