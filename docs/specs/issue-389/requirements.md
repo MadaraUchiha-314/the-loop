@@ -2,8 +2,8 @@
 type: requirements
 phase: requirements-definition
 workItem: "github:MadaraUchiha-314/the-loop#389"
-status: in-review            # draft | in-review | approved
-approvedBy: []
+status: approved             # draft | in-review | approved
+approvedBy: ["MadaraUchiha-314"]  # the owner's review on PR #390 (review 5257062686, 2026-09-19): "approved. go ahead with design and implementation"
 collaborators: [product-manager, architect, engineer]
 overrides: {}
 riskTier: 4                  # two publish grants in the cli-config schema (`**/*schema*`), a new Slack scope, a control keyword reached by mention, and a wider set of speakers
@@ -377,3 +377,9 @@ requirements"; each is taken as an **assumption**, recorded in
 
 > Appended by the-loop's `record-feedback` hook when a human gate approves with
 > comments (issue-109).
+
+- **2026-09-19 · MadaraUchiha-314 (owner) · approved** —
+  [review on PR #390](https://github.com/MadaraUchiha-314/the-loop/pull/390#pullrequestreview-5257062686):
+  *"approved. go ahead with design and implementation"*. Recorded by the session because
+  no daemon runs the `requirements-approval` gate for this repository's cloud sessions;
+  the five assumptions under *Open questions* stand as approved.
