@@ -46,6 +46,9 @@ def _run_script(cwd: Path, *args: str, **extra_env: str) -> subprocess.Completed
         **_IDENTITY,
         "GIT_CONFIG_GLOBAL": "/dev/null",
         "GRAPHIFY_PUSH_BACKOFF": "0",  # no sleeping between retries in tests
+        # On a GitHub runner GITHUB_SHA names the run's commit; the script would put it
+        # in the message instead of the clone's HEAD. Empty reads as unset to the script.
+        "GITHUB_SHA": "",
         **extra_env,
     }
     return subprocess.run(
