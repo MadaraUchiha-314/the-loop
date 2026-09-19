@@ -528,8 +528,13 @@ def test_a_second_record_context_records_only_what_is_new(tmp_path):
     )
     assert again == {"outcome": "nothing-new", "event": "context.added"}
     assert len(sink.recorded) == 1 and "Nothing new" in client.ephemeral[-1][2]
-    client.replies["1800.1"].append(
-        {"ts": "1800.6", "user": "UHUMAN", "text": "one more"}
+    # Slack keeps the two mentions in the thread; neither is context.
+    client.replies["1800.1"].extend(
+        [
+            {"ts": "1800.4", "user": "UHUMAN", "text": f"<@{BOT}> record-context"},
+            {"ts": "1800.5", "user": "UHUMAN", "text": f"<@{BOT}> record-context"},
+            {"ts": "1800.6", "user": "UHUMAN", "text": "one more"},
+        ]
     )
     third = send(
         config,
@@ -546,6 +551,24 @@ def test_a_second_record_context_records_only_what_is_new(tmp_path):
         "one more" in sink.recorded[-1][1]
         and "keep poll mode" not in sink.recorded[-1][1]
     )
+    assert "record-context" not in sink.recorded[-1][1].split("📎")[1].split("<!--")[0]
+
+
+def test_an_addressed_message_is_not_recorded_when_the_bot_id_is_unknown(tmp_path):
+    """Round 2, finding 4: without the bot's id the token cannot be told from a
+    member's mention — the member is told to retry, nothing is recorded."""
+    config = config_for(tmp_path)
+    declare(config)
+
+    class NoAuth(Client):
+        def auth_test(self):
+            raise RuntimeError("ratelimited")
+
+    sink, client = Sink(), NoAuth()
+    outcome = send(config, sink, client, addressed=True, text=f"<@{BOT}> help")
+    assert outcome["outcome"] == "no-bot-id"
+    assert "try again" in client.ephemeral[-1][2]
+    assert sink.recorded == [] and sink.delivered == []
 
 
 def test_record_context_without_the_grant_is_dropped_as_unpublishable(tmp_path):

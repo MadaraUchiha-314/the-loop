@@ -412,7 +412,19 @@ def process_reply(
     # token comes off the text wherever it sits, a leading verb is the act, and
     # a leading control verb is composed into the CONFIGURED keyword exactly as
     # the slash command composes it — so `parse_command` reads a real keyword.
-    text, found = strip_mention(reply.text, bot.own_user_id())
+    own = bot.own_user_id()
+    if reply.addressed and not own and "<@" in (reply.text or ""):
+        # The token cannot be told from another member's mention without the
+        # bot's id (auth.test failed): rather than record `<@U…> help` on the
+        # ticket as prose, say so and let the member try again.
+        _tell(
+            bot,
+            reply,
+            "Could not verify the mention just now (auth.test failed); please "
+            "try again in a moment. Nothing was recorded.",
+        )
+        return _drop(reply, "no-bot-id", level="warning", actor=reply.author)
+    text, found = strip_mention(reply.text, own)
     addressed = found or reply.addressed
     verb = parse_verb(text) if addressed else None
     if addressed and verb is None:
@@ -528,6 +540,17 @@ def process_reply(
             _tell(bot, reply, f"Could not read the thread: {exc}")
             return _drop(reply, "snapshot-failed", level="warning", error=str(exc))
         if snapshot.count == 0:
+            if skip and noted:
+                # The mention that found nothing is not context either: the
+                # cursor passes it, so the next snapshot does not read it back.
+                with ChannelState.locked(bot.state_path, bot.stores) as state:
+                    state.note_snapshot(
+                        snapshot_key,
+                        reply.work_item,
+                        reply.ts,
+                        int((noted or {}).get("count") or 0),
+                    )
+                    state.save(bot.state_path)
             bot.react(reply, "completed")
             _tell(
                 bot,
@@ -551,7 +574,17 @@ def process_reply(
             )
             return _drop(reply, "snapshot-too-large", level="warning")
         text = snapshot.text
+        # The cursor passes the trigger that was left out (finding 8), or the
+        # next snapshot would read the `record-context` mention back as
+        # context — unless the cap stopped before it, when the last included
+        # message is the honest mark.
         snapshot_newest = snapshot.newest
+        if (
+            skip
+            and not snapshot.truncated
+            and _ts_key(reply.ts) > _ts_key(snapshot.newest or "0")
+        ):
+            snapshot_newest = reply.ts
         detail.update(
             {
                 "thread": snapshot.permalink or reply.thread,
@@ -1377,7 +1410,14 @@ def _shortcut_outcome(
             said += " The session could not take it; the record stands."
     elif what == "nothing-new":
         said = "Nothing new in that thread since it was last recorded."
-    elif what in ("empty-decision", "unauthorized-act", "snapshot-too-large"):
+    elif what in (
+        "empty-decision",
+        "unauthorized-act",
+        "snapshot-too-large",
+        "snapshot-failed",
+        "no-ticket",
+        "no-bot-id",
+    ):
         return  # already told, on the same channel, by the pipeline
     else:
         said = f"Nothing recorded ({what})."
@@ -1440,6 +1480,14 @@ def handle_message_action(
                 "collaborator you may add context and reply.",
             )
             return _drop(reply, "unauthorized-act", level="warning", actor=member)
+        if parse_standing_ref(reply.work_item):
+            _tell(
+                bot,
+                reply,
+                "This thread belongs to a standing session, which has no ticket "
+                "to record a decision on.",
+            )
+            return _drop(reply, "no-ticket", actor=member, kind="decision.recorded")
         if "decision.recorded" not in config.publish:
             # Known before the form opens (R2.3): a modal whose submission
             # would be dropped is not offered.

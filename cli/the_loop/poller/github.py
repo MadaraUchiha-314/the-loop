@@ -322,9 +322,9 @@ class GhClient:
         name, which is the author of every comment the-loop wrote. ``""`` when
         it cannot be read (not logged in, no network); callers fail closed on
         that, or say so."""
-        argv = ["api", "user"]
-        if host:
-            argv += ["--hostname", host]
+        from ..comments import gh_host_args
+
+        argv = ["api", *gh_host_args(host), "user"]
         try:
             data = self._run_json(argv)
         except GhError as exc:

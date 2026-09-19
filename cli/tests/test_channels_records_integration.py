@@ -246,3 +246,25 @@ def test_without_the_login_the_verb_lists_by_marker_and_warns(
     rows = json.loads(captured.out)
     assert [r["author"] for r in rows] == ["the-loop-bot", "the-loop-bot", "mallory"]
     assert "could not read the gh login" in captured.err
+
+
+def test_viewer_login_spells_the_host_as_every_gh_api_call_does(monkeypatch):
+    """Round 2, finding 2: no `--hostname` for github.com, the flag for GHE."""
+    from the_loop.poller.github import GhClient
+
+    seen = []
+
+    def run_json(self, argv):
+        seen.append(list(argv))
+        return {"login": "the-loop-bot"}
+
+    monkeypatch.setattr(GhClient, "_run_json", run_json)
+    gh = GhClient()
+    assert gh.viewer_login("github.com") == "the-loop-bot"
+    assert gh.viewer_login("") == "the-loop-bot"
+    assert gh.viewer_login("ghe.corp.example") == "the-loop-bot"
+    assert seen == [
+        ["api", "user"],
+        ["api", "user"],
+        ["api", "--hostname", "ghe.corp.example", "user"],
+    ]

@@ -301,7 +301,7 @@ def test_a_snapshot_is_scrubbed_and_a_huge_one_refused(tmp_path, monkeypatch):
     monkeypatch.setattr(inbound, "GITHUB_COMMENT_LIMIT", 10)
     client.replies["1800.1"].append(
         {
-            "ts": "1800.2",
+            "ts": "1800.6",  # after the first record: a thread's ts only grow
             "user": "UHUMAN",
             "text": "a longer message than ten characters",
         }

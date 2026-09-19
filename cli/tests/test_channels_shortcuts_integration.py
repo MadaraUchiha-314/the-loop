@@ -458,3 +458,31 @@ def test_the_decision_modal_is_not_offered_without_the_grant(tmp_path):
     assert outcome["outcome"] == "unpublishable-event"
     assert client.views == []
     assert "decision.recorded" in client.ephemeral[-1][2]
+
+
+def test_a_decision_shortcut_on_a_standing_thread_is_refused_before_the_form(tmp_path):
+    """Round 2, finding 3: no modal whose submission would be `no-ticket`."""
+    from test_channels_mentions_integration import DM, bot_for
+
+    config = config_for(tmp_path, channel=DM)
+    sink, client = Sink(), ModalClient()
+    bot_for(config, client).bind("1800.1", "standing:review", DM, origin="start")
+    outcome = shortcut(
+        config, sink, client, action("the-loop:record-decision", channel=DM)
+    )
+    assert outcome["outcome"] == "no-ticket" and client.views == []
+    assert len(client.ephemeral) == 1 and "standing session" in client.ephemeral[0][2]
+
+
+def test_a_refused_shortcut_is_told_once(tmp_path):
+    """Round 2, finding 3: the pipeline's ephemeral is the only one."""
+    from test_channels_mentions_integration import DM, bot_for
+
+    config = config_for(tmp_path, channel=DM)
+    sink, client = Sink(), _thread_client()
+    bot_for(config, client).bind("1800.1", "standing:review", DM, origin="start")
+    outcome = shortcut(
+        config, sink, client, action("the-loop:record-context", channel=DM)
+    )
+    assert outcome["outcome"] == "no-ticket"
+    assert len(client.ephemeral) == 1
