@@ -547,8 +547,8 @@ flowchart LR
   committed with the work item.
 - **A message shortcut is exactly the typed mention** (issue-389, decision-117's rule
   applied to the next interactive surface). The shipped manifest declares two message
-  shortcuts with fixed callback ids — `the-loop:record-context` (*Add to the-loop as
-  context*) and `the-loop:record-decision` (*Record a decision with the-loop*) — and the
+  shortcuts with fixed callback ids — `the-loop:record-context` (*Add as the-loop
+  context*) and `the-loop:record-decision` (*Record the-loop decision*) — and the
   listener routes the `message_action` and `view_submission` payloads over Socket Mode,
   acknowledging each before any work. WHEN the context shortcut is used on a message
   THEN it SHALL be processed as `record-context` typed by that member on that message,

@@ -105,8 +105,8 @@ to the person, which becomes `docs/decisions/decision-<nnn>.md`), `add-collabora
 @login` or `slack:U…` (the issue-307 keyword, a collaborator now known by Slack id), any
 control keyword's **last word** (`start`, `execute`, … composed into the configured
 keyword), `help` (an ephemeral answer, nothing recorded) — and anything else is a
-`work-item.reply` delivered to you as today. Two message shortcuts (*Add to the-loop as
-context*, *Record a decision with the-loop*) are exactly the typed mention. **Two tiers
+`work-item.reply` delivered to you as today. Two message shortcuts (*Add as the-loop
+context*, *Record the-loop decision*) are exactly the typed mention. **Two tiers
 of speaker:** input — `record-context`, a reply, `help` — from `routing.authorizedUsers`
 and that work item's collaborators (who may be on the roster by Slack id alone); binding
 acts — `record-decision`, every keyword, `--listen` — from authorized users only. **The
