@@ -56,6 +56,9 @@ logger = logging.getLogger("the-loop.channels")
 
 __all__ = [
     "ACTION_PREFIX",
+    "MENTION",
+    "MENTION_SHORTCUTS",
+    "mention_findings",
     "APPROVE_VALUE",
     "BUTTON_CHOICE_LIMIT",
     "KICKOFF_REFUSALS",
@@ -143,6 +146,24 @@ CONVERSATION_KINDS: Dict[str, ConversationKind] = {
     "private": ConversationKind("private channel", "groups:history", "message.groups"),
     "im": ConversationKind("direct message", "im:history", "message.im"),
     "mpim": ConversationKind("group direct message", "mpim:history", "message.mpim"),
+}
+
+#: The mention (issue-389, decision-133 D1): not a conversation kind but the one
+#: event the address arrives as, in every kind the bot is a member of — except a
+#: direct message, where Slack does not dispatch it and ``message.im`` stays the
+#: input. Measured by the same probe the kinds are, so a missing scope is a
+#: finding rather than a silent channel.
+MENTION = ConversationKind(
+    "a mention in any channel", "app_mentions:read", "app_mention"
+)
+
+#: The two message shortcuts the manifest declares (issue-389 R6.1), keyed by
+#: ``callback_id`` → the verb each stands for. A shortcut is exactly the typed
+#: mention (decision-133 D8): the listener composes that verb and hands it to
+#: the pipeline, so the id is the only thing read from the payload's shape.
+MENTION_SHORTCUTS: Dict[str, str] = {
+    "the-loop:record-context": "record-context",
+    "the-loop:record-decision": "record-decision",
 }
 
 #: What a conversation id's FIRST CHARACTER can mean (issue-362, decision D2).
@@ -247,6 +268,27 @@ def subscription_findings(
     )
 
 
+def mention_findings(scopes: Optional[Sequence[str]]) -> Tuple[str, ...]:
+    """What is **measured** to be wrong with hearing a mention (issue-389 R1.8).
+
+    ``None`` — the scopes could not be read — yields no finding rather than a
+    wrong one, exactly as :func:`subscription_findings`. Pure, so the sentence
+    is the same in ``channels status --probe`` and the listener's log.
+    """
+    if scopes is None:
+        return ()
+    granted = {str(scope).strip() for scope in scopes}
+    if MENTION.scope in granted:
+        return ()
+    return (
+        f"the app lacks the bot scope {MENTION.scope} — Slack never delivers "
+        f"{MENTION.event}, and since the mention is the address (issue-389) "
+        "nothing typed reaches the-loop until it is added: re-import the manifest "
+        "(`the-loop channels manifest`), then Reinstall. A direct message with "
+        "the bot and a room declared `--listen all` still work.",
+    )
+
+
 def _granted_scopes(response: Any) -> Optional[Tuple[str, ...]]:
     """The bot token's scopes off a Web API response's ``x-oauth-scopes`` header.
 
@@ -317,7 +359,10 @@ def probe_subscription(
     return {
         "kind": kind,
         "scopes": scopes,
-        "findings": subscription_findings(channel_id, (kind,), scopes),
+        # The kind's finding first, then the mention's (issue-389 R1.8): two
+        # different absences, each named on its own line.
+        "findings": subscription_findings(channel_id, (kind,), scopes)
+        + mention_findings(scopes),
     }
 
 

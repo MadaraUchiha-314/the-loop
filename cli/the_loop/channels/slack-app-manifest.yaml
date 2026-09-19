@@ -18,6 +18,19 @@ features:
       description: "Drive the-loop: start a work item, check the instance, standing sessions"
       usage_hint: "help | start #123 | status | upgrade | standing start <name>"
       should_escape: false
+  # The two acts a room asks for, from a message's ⋯ menu (issue-389): each is
+  # exactly the typed mention — `@the-loop record-context` on that message's
+  # thread, `@the-loop record-decision` through a modal — under the same
+  # allow-list and the same grants. Delivered over Socket Mode like a button.
+  shortcuts:
+    - name: Add to the-loop as context
+      type: message
+      callback_id: "the-loop:record-context"
+      description: Snapshot this thread onto the work item as context
+    - name: Record a decision with the-loop
+      type: message
+      callback_id: "the-loop:record-decision"
+      description: Record what this message decided, with a kind and a rationale
 oauth_config:
   scopes:
     bot:
@@ -36,6 +49,11 @@ oauth_config:
       - channels:read       # resolve a PUBLIC channel name to its id
       - groups:read         # the same for a private channel the bot is in
       - users:read          # resolve @handle to a member id
+      # The mention is the address (issue-389): a message meant for the-loop
+      # carries @the-loop and arrives as the app_mention event; a message.*
+      # event is input only in a DM with the bot or in a room an authorized
+      # user switched to `--listen all`.
+      - app_mentions:read   # hear @the-loop in any channel the bot is in
 settings:
   event_subscriptions:
     bot_events:
@@ -43,6 +61,7 @@ settings:
       - message.groups      # a private channel
       - message.im          # a direct message with the bot (issue-362)
       - message.mpim        # a group direct message (issue-362)
+      - app_mention         # @the-loop, in any of them (issue-389)
   interactivity:
     is_enabled: true        # Approve / Request changes, Execute / Start buttons (read.mode: socket)
   org_deploy_enabled: false

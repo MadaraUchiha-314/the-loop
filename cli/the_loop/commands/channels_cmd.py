@@ -31,7 +31,6 @@ from ..channels.slack import (
     probe_subscription,
     run_socket_listener,
     slack_state_path,
-    subscription_findings,
     unchecked_advice,
 )
 from ..repos import declared_repositories
@@ -209,10 +208,9 @@ def _subscription_lines(slack: SlackChannelConfig, probe: bool) -> list:
         f"  probe:        conversations.info says {kind}; granted bot scopes: "
         + (", ".join(scopes) if scopes else "(the response carried no x-oauth-scopes)")
     )
-    lines += [
-        f"  [!] {finding}"
-        for finding in subscription_findings(slack.channel, (kind,), scopes)
-    ]
+    # The probe's own findings: the kind's absence first, then the mention's
+    # (issue-389 R1.8) — composed in `probe_subscription`, printed here verbatim.
+    lines += [f"  [!] {finding}" for finding in result.get("findings") or ()]
     return lines
 
 
