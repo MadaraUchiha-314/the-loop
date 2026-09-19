@@ -832,6 +832,76 @@ def test_a_grant_that_names_nobody_is_refused(setup):
     assert tmux.delivers == []
 
 
+def test_an_authorized_user_grants_and_revokes_by_slack_id(setup):
+    """
+    Feature: a collaborator is known by a login, a Slack id, or both
+      Scenario: add-collaborator by mention writes a Slack id
+        Given a work item with a live session and octocat authorized
+        When octocat comments the add-collaborator keyword naming slack:U0456GHIJ
+        Then the work item's roster carries that Slack id, with no login
+        And the comment is consumed rather than delivered to the session
+        When octocat comments the remove-collaborator keyword for the same id
+        Then the roster is empty again
+    Requirement: docs/specs/issue-389/requirements.md#R7
+    """
+    dispatcher, registry, tmux, control = setup
+    register(registry)
+
+    dispatcher.handle(
+        comment_event("the-loop add-collaborator slack:U0456GHIJ", delivery="s-1")
+    )
+    assert _wait(lambda: _rosters(dispatcher).slack_ids(REF) == ["U0456GHIJ"])
+    (record,) = _rosters(dispatcher).list(REF)
+    assert record.login == "" and record.added_by == "octocat"
+    assert record.note == "https://c/1"
+    assert _rosters(dispatcher).is_collaborator_slack("U0456GHIJ", REF)
+    assert _rosters(dispatcher).logins(REF) == []
+    assert tmux.delivers == [] and tmux.spawns == []
+    assert control.get(REF) is None
+    assert dispatcher.delivery_outcome("s-1") == "control-executed"
+
+    dispatcher.handle(
+        comment_event("the-loop remove-collaborator slack:U0456GHIJ", delivery="s-2")
+    )
+    assert _wait(lambda: _rosters(dispatcher).slack_ids(REF) == [])
+    assert tmux.delivers == []
+
+
+def test_a_login_and_a_slack_id_in_one_comment_are_two_grants(setup):
+    """R3.5: either or both — each token is a subject in its own right."""
+    dispatcher, registry, tmux, _ = setup
+    register(registry)
+
+    dispatcher.handle(
+        comment_event("the-loop add-collaborator @dana slack:U0456GHIJ", delivery="s-3")
+    )
+    assert _wait(lambda: dispatcher.delivery_outcome("s-3") == "control-executed")
+    assert _rosters(dispatcher).logins(REF) == ["dana"]
+    assert _rosters(dispatcher).slack_ids(REF) == ["U0456GHIJ"]
+
+
+def test_a_grant_that_names_only_an_unresolvable_slack_token_is_refused(setup):
+    """
+    Feature: a collaborator is known by a login, a Slack id, or both
+      Scenario: the keyword with a handle where an id is required
+        Given a work item with a live session
+        When an authorized user comments `add-collaborator slack:@dana`
+        Then the roster is unchanged — a handle is resolved by the CLI, never
+             guessed at by the ticket path — and the delivery is settled as a
+             refusal
+    Requirement: docs/specs/issue-389/requirements.md#R7 (abuse case A11)
+    """
+    dispatcher, registry, tmux, _ = setup
+    register(registry)
+
+    dispatcher.handle(
+        comment_event("the-loop add-collaborator slack:@dana", delivery="s-4")
+    )
+    assert _wait(lambda: dispatcher.delivery_outcome("s-4") == "control-rejected")
+    assert _rosters(dispatcher).list(REF) == []
+    assert tmux.delivers == []
+
+
 def test_a_collaborators_own_grant_attempt_is_refused(setup):
     """
     Feature: work-item collaborators

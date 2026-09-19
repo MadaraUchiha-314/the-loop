@@ -1976,21 +1976,26 @@ class Dispatcher:
         target = self._target_work_item(routed)
         if target is None:  # unreachable: handle() drops an event with no items
             return
-        if not control.subjects:
+        # Each token is one grant (issue-389 R3.5): a login and a Slack id in one
+        # comment are two people unless the roster already knows them as one.
+        grants = [{"login": login} for login in control.subjects] + [
+            {"slack": member} for member in control.slack
+        ]
+        if not grants:
             # The keyword with nobody named. Refused rather than guessed at: the only
             # text this command may act on is a token that matched GitHub's login
-            # grammar, and there was none.
+            # grammar or the `slack:<member id>` one, and there was none.
             self._reject_control(command, routed, actor, "missing-collaborator")
             return
         note = str((routed.payload.get("comment") or {}).get("html_url") or "")
-        for login in control.subjects:
+        for ids in grants:
             if command == ADD_COLLABORATOR:
                 changed = self.collaborator_store.add(
-                    target, login, actor=actor, source="comment", note=note
+                    target, actor=actor, source="comment", note=note, **ids
                 )
                 effect = "granted" if changed else "already-granted"
             else:
-                changed = self.collaborator_store.remove(target, login)
+                changed = self.collaborator_store.remove(target, **ids)
                 effect = "revoked" if changed else "not-a-collaborator"
             logger.info(
                 "control command %s from %s on %s: %s %s",
@@ -1998,7 +2003,7 @@ class Dispatcher:
                 actor or "(unknown)",
                 target.ref,
                 effect,
-                login,
+                ids.get("login") or f"slack:{ids.get('slack', '')}",
             )
             eventlog.emit(
                 "control.command",
@@ -2006,7 +2011,8 @@ class Dispatcher:
                 command=command,
                 source="comment",
                 actor=actor or None,
-                collaborator=login,
+                collaborator=ids.get("login") or None,
+                slack=ids.get("slack") or None,
                 effect=effect,
                 delivery_id=routed.delivery_id or None,
             )

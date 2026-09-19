@@ -76,7 +76,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from .authz import mark_self_authored
-from .collaborators import parse_logins
+from .collaborators import SLACK_TOKEN_PREFIX, parse_subjects
 from .sessions import WorkItemRef
 from .state import LegacyLayout
 from .workitem import CONTROL, ENDED, GRAPH, WorkItemStore
@@ -286,18 +286,23 @@ class ControlResult:
     ``subjects`` carries the command's argument for the two classes of command that
     have one (:data:`ARGUMENT_COMMANDS`): the ``@login`` tokens that followed a
     collaborator keyword (issue-307), canonicalised by
-    :func:`the_loop.collaborators.parse_logins`, or the ``<type>@<target>`` tokens
+    :func:`the_loop.collaborators.parse_subjects`, or the ``<type>@<target>`` tokens
     that followed a channel keyword (issue-375), canonicalised by
     :func:`the_loop.workchannels.parse_channel_refs`. Either way each entry is a
     token that matched a fixed grammar, never body text. Empty for every other
     command, and empty for an argument command whose body named nothing — which
     the caller refuses rather than guessing at.
+
+    ``slack`` is the collaborator commands' second argument list (issue-389): the
+    member ids the ``slack:U…`` tokens named, canonicalised by the same parser. A
+    collaborator command with both lists empty named nobody.
     """
 
     command: Optional[str] = None
     ambiguous: bool = False
     matched: List[str] = field(default_factory=list)
     subjects: List[str] = field(default_factory=list)
+    slack: List[str] = field(default_factory=list)
 
     def __bool__(self) -> bool:
         return self.command is not None or self.ambiguous
@@ -339,19 +344,27 @@ def parse_command(body: Optional[str], config: ControlConfig) -> ControlResult:
         return ControlResult(ambiguous=True, matched=found)
     command = found[0]
     subjects: List[str] = []
+    slack: List[str] = []
     if command in ARGUMENT_COMMANDS:
         # Every occurrence, not just the first: two lines each naming one subject is
         # the natural way to write this, and honouring only the first would silently
         # drop the second. What each contributes is the argument parser's output — a
         # run of valid tokens, ending at the first that is not one — so the prose
-        # around them reaches nothing. Which parser is the command's: a login for the
-        # collaborator pair, a channel ref for the channel pair (issue-375).
-        parse = parse_logins if command in COLLABORATOR_COMMANDS else _parse_channels
+        # around them reaches nothing. Which parser is the command's: a login or a
+        # Slack id for the collaborator pair (issue-307, issue-389), a channel ref
+        # for the channel pair (issue-375).
         for match in re.finditer(patterns[command], body, re.IGNORECASE):
-            for subject in parse(body[match.end() :]):
+            rest = body[match.end() :]
+            if command in COLLABORATOR_COMMANDS:
+                parsed = parse_subjects(rest)
+                found_subjects = parsed.logins
+                slack.extend(member for member in parsed.slack if member not in slack)
+            else:
+                found_subjects = _parse_channels(rest)
+            for subject in found_subjects:
                 if subject not in subjects:
                     subjects.append(subject)
-    return ControlResult(command=command, matched=found, subjects=subjects)
+    return ControlResult(command=command, matched=found, subjects=subjects, slack=slack)
 
 
 def command_comment(
@@ -373,8 +386,9 @@ def command_comment(
 
     Built only from the configured keyword, the local ``actor`` name and — for the
     two classes of command that take an argument — a ``subject`` the caller has
-    already validated: a GitHub login (issue-307) or a channel ref (issue-375). No
-    payload-derived text reaches it.
+    already validated: a GitHub login (``dana`` or ``@dana``), a Slack member id
+    spelled as the keyword reads it (``slack:U0456GHIJ``, issue-389) or a channel
+    ref (issue-375). No payload-derived text reaches it.
 
     ``invocation`` names the CLI form to quote; it defaults to
     ``the-loop sessions <command>``, which is right for the session verbs and
@@ -389,14 +403,14 @@ def command_comment(
     """
     keyword = config.keyword(command) or command
     # How the argument is spelled is the COMMAND's, never the caller's: a login
-    # is `@dana` and a channel ref is `slack@C0123ABCD`, and a second parameter
-    # saying which would be a way for the two to disagree (issue-375).
+    # is `@dana`, a Slack id is `slack:U…` and a channel ref is `slack@C0123ABCD`,
+    # and a second parameter saying which would be a way for the two to disagree
+    # (issue-375).
     if subject:
-        line = (
-            f"{keyword} {subject}"
-            if command in CHANNEL_COMMANDS
-            else (f"{keyword} @{subject}")
-        )
+        if command in CHANNEL_COMMANDS or subject.startswith(SLACK_TOKEN_PREFIX):
+            line = f"{keyword} {subject}"
+        else:
+            line = f"{keyword} @{subject.lstrip('@')}"
     else:
         line = keyword
     if address:

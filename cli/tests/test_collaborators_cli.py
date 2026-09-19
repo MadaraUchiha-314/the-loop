@@ -19,6 +19,37 @@ from the_loop.control import ADD_COLLABORATOR, ControlConfig, parse_command
 from the_loop.core import collaborators as core_collaborators
 
 REF = "github:octo/repo#15"
+DANA = "U0456GHIJ"
+
+
+class FakeDirectory:
+    """A workspace with two members, standing in for ``SlackDirectory``.
+
+    Only ``user_id`` is consulted: an id is itself, a known handle is its id, and
+    everything else is ``""`` — exactly the real directory's contract, so what
+    the tests exercise is the command's handling of that answer.
+    """
+
+    members = {"dana": DANA, "ann": "W0789KLMN"}
+    built = []
+
+    def __init__(self, cli_config=None, *args, **kwargs):
+        type(self).built.append(cli_config)
+
+    def user_id(self, value):
+        from the_loop.channels.directory import is_member_id, normalize_name
+
+        text = str(value or "").strip()
+        if is_member_id(text):
+            return text
+        return self.members.get(normalize_name(text), "")
+
+
+@pytest.fixture
+def directory(monkeypatch):
+    FakeDirectory.built = []
+    monkeypatch.setattr(core_collaborators, "SlackDirectory", FakeDirectory)
+    return FakeDirectory
 
 
 @pytest.fixture
@@ -129,3 +160,115 @@ def test_a_failing_gh_does_not_fail_the_grant(tmp_path, monkeypatch, capsys):
 def test_no_comment_applies_the_grant_silently(tmp_path, posted):
     assert run("add-collaborator", tmp_path, "@dana", extra=("--no-comment",)) == 0
     assert rosters(tmp_path).logins(REF) == ["dana"] and posted == []
+
+
+# -- a collaborator by Slack id (issue-389, R7.1) ---------------------------------
+
+
+def test_slack_grants_by_member_id_and_records_it_on_the_ticket(
+    tmp_path, posted, directory, capsys
+):
+    """
+    Feature: a collaborator is known by a login, a Slack id, or both
+      Scenario: the CLI grants by member id
+        Given a work item with an empty roster
+        When `the-loop add-collaborator --slack U0456GHIJ --work-item …` is run
+        Then the roster carries that Slack id and no login
+        And the SAME keyword is posted back naming `slack:U0456GHIJ`, marked as
+             the-loop's own so the daemon never re-applies it
+    Requirement: docs/specs/issue-389/requirements.md#R7
+    """
+    assert run("add-collaborator", tmp_path, extra=("--slack", DANA)) == 0
+    assert rosters(tmp_path).slack_ids(REF) == [DANA]
+    assert rosters(tmp_path).logins(REF) == []
+
+    ((ref, body, _),) = posted
+    assert ref == REF
+    assert body.startswith(f"the-loop add-collaborator slack:{DANA}")
+    result = parse_command(body, ControlConfig())
+    assert result.command == ADD_COLLABORATOR
+    assert result.subjects == [] and result.slack == [DANA]
+    assert is_self_authored(body)
+    assert f"slack:{DANA} is now a collaborator" in capsys.readouterr().out
+    assert directory.built == []  # an id costs no lookup
+
+
+def test_slack_resolves_a_handle_through_the_directory(tmp_path, posted, directory):
+    """
+    Feature: a collaborator is known by a login, a Slack id, or both
+      Scenario: the CLI grants by handle
+        Given a workspace where @dana is U0456GHIJ
+        When `the-loop add-collaborator --slack @dana` is run
+        Then the roster stores the member ID, never the handle
+    Requirement: docs/specs/issue-389/requirements.md#R7
+    """
+    assert run("add-collaborator", tmp_path, extra=("--slack", "@dana")) == 0
+    assert rosters(tmp_path).slack_ids(REF) == [DANA]
+    assert posted[0][1].startswith(f"the-loop add-collaborator slack:{DANA}")
+    assert len(directory.built) == 1
+
+
+def test_an_unresolvable_handle_refuses_the_whole_call(
+    tmp_path, posted, directory, capsys
+):
+    """
+    Feature: a collaborator is known by a login, a Slack id, or both
+      Scenario: a handle nobody in the workspace holds
+        Given a workspace with no @ghost
+        When `the-loop add-collaborator @ann --slack @ghost` is run
+        Then the command exits 2, explains the refusal, and NOTHING is written
+             or posted — not even @ann (validate all, then apply)
+    Requirement: docs/specs/issue-389/requirements.md#R7 (abuse case A11)
+    """
+    assert run("add-collaborator", tmp_path, "@ann", extra=("--slack", "@ghost")) == 2
+    assert "ghost" in capsys.readouterr().err
+    assert rosters(tmp_path).list(REF) == [] and posted == []
+
+
+def test_a_login_and_a_slack_id_are_two_grants_with_two_comments(
+    tmp_path, posted, directory
+):
+    assert run("add-collaborator", tmp_path, "@dana", extra=("--slack", DANA)) == 0
+    assert rosters(tmp_path).logins(REF) == ["dana"]
+    assert rosters(tmp_path).slack_ids(REF) == [DANA]
+    assert [body.split("\n", 1)[0] for _, body, _ in posted] == [
+        "the-loop add-collaborator @dana",
+        f"the-loop add-collaborator slack:{DANA}",
+    ]
+
+
+def test_slack_may_be_repeated_and_is_deduped(tmp_path, posted, directory):
+    assert (
+        run(
+            "add-collaborator",
+            tmp_path,
+            extra=("--slack", "@dana", "--slack", DANA, "--slack", "ann"),
+        )
+        == 0
+    )
+    assert rosters(tmp_path).slack_ids(REF) == [DANA, "W0789KLMN"]
+    assert len(posted) == 2
+
+
+def test_remove_revokes_by_slack_id(tmp_path, posted, directory):
+    run("add-collaborator", tmp_path, extra=("--slack", DANA))
+    assert run("remove-collaborator", tmp_path, extra=("--slack", "@dana")) == 0
+    assert rosters(tmp_path).list(REF) == []
+    assert run("remove-collaborator", tmp_path, extra=("--slack", DANA)) == 1
+
+
+def test_naming_nobody_at_all_is_exit_2(tmp_path, posted, directory, capsys):
+    assert run("add-collaborator", tmp_path) == 2
+    assert "name at least one collaborator" in capsys.readouterr().err
+    assert posted == []
+
+
+def test_list_shows_the_slack_id(tmp_path, posted, directory):
+    run("add-collaborator", tmp_path, "@dana", extra=("--slack", DANA))
+    listed = core_collaborators.list_collaborators(
+        REF, portable_dir=str(tmp_path / "portable")
+    )
+    assert [(c["login"], c.get("slack", "")) for c in listed["collaborators"]] == [
+        ("dana", ""),
+        ("", DANA),
+    ]

@@ -398,6 +398,48 @@ def test_a_malformed_ended_reads_as_not_ended(tmp_path):
 # -- the two commands that carry a CHANNEL (issue-375) --------------------------
 
 
+def test_a_collaborator_command_carries_slack_ids_beside_logins():
+    """R7.1: `slack:U…` tokens ride beside `@login` ones, each in its own list."""
+    result = parse_command(
+        "the-loop add-collaborator @Dana slack:U0456GHIJ @ann", ControlConfig()
+    )
+    assert result.command == ADD_COLLABORATOR
+    assert result.subjects == ["dana", "ann"]
+    assert result.slack == ["U0456GHIJ"]
+
+    only = parse_command(
+        "the-loop remove-collaborator slack:U0456GHIJ", ControlConfig()
+    )
+    assert only.command == REMOVE_COLLABORATOR
+    assert only.subjects == [] and only.slack == ["U0456GHIJ"]
+
+
+def test_a_slack_token_that_is_not_a_member_id_names_nobody():
+    """A11: a handle or a lowercase id after the keyword is not a subject."""
+    for body in (
+        "the-loop add-collaborator slack:@dana",
+        "the-loop add-collaborator slack:dana",
+        "the-loop add-collaborator slack:u0456ghij",
+    ):
+        result = parse_command(body, ControlConfig())
+        assert result.command == ADD_COLLABORATOR
+        assert result.subjects == [] and result.slack == []
+
+
+def test_the_paper_trail_comment_spells_a_slack_id_as_the_keyword_reads_it():
+    body = command_comment(
+        ADD_COLLABORATOR,
+        ControlConfig(),
+        actor="octocat",
+        subject="slack:U0456GHIJ",
+        invocation="the-loop add-collaborator",
+    )
+    assert body.startswith("the-loop add-collaborator slack:U0456GHIJ")
+    assert "@slack:" not in body
+    assert parse_command(body, ControlConfig()).slack == ["U0456GHIJ"]
+    assert is_self_authored(body)
+
+
 def test_the_channel_keywords_are_declared_like_every_other():
     config = ControlConfig()
     assert config.keyword(ADD_CHANNEL) == "the-loop add-channel"

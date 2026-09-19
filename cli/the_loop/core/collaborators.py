@@ -15,16 +15,24 @@ exactly as it is for ``the-loop sessions start|stop|pause|resume|cleanup``. The
 comment path's stricter test — a named login in ``routing.authorizedUsers`` — is the
 webhook dispatcher's, because that is where an untrusted author can reach.
 
-Spec: docs/specs/issue-307/design.md §5.
+A collaborator may also be named by Slack (issue-389): ``--slack <id|@handle>``. A
+handle is resolved to a member id through :class:`the_loop.channels.directory.
+SlackDirectory` **before anything is written**, exactly as ``add-channel`` resolves
+a channel name, and one that does not resolve refuses the whole call — the roster
+stores ids only, so an unresolvable entry can never authorize whoever holds a
+handle tomorrow (abuse case A11).
+
+Spec: docs/specs/issue-307/design.md §5; docs/specs/issue-389/design.md §5.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .. import eventlog
-from ..collaborators import CollaboratorStore, normalize_login
+from ..channels.directory import SlackDirectory, is_member_id
+from ..collaborators import CollaboratorStore, normalize_login, slack_token
 from ..comments import post_issue_comment
 from ..control import ADD_COLLABORATOR, REMOVE_COLLABORATOR, command_comment
 from ..sessions import WorkItemRef
@@ -67,19 +75,24 @@ def manage_collaborators(
     comment: bool = True,
     config: Optional[dict] = None,
     portable_dir: str = "",
+    slack: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """Apply ``verb`` to each of ``logins`` on one work item, end to end.
+    """Apply ``verb`` to each of ``logins`` and ``slack`` on one work item, end to end.
 
-    Every login is validated before **anything** is written, so a typo in the third
-    name does not leave the first two half-applied: the call either refuses (exit 2,
-    nothing changed, nothing posted) or applies all of them.
+    Every login is validated, and every Slack handle resolved, before **anything**
+    is written, so a typo in the third name does not leave the first two
+    half-applied: the call either refuses (exit 2, nothing changed, nothing posted)
+    or applies all of them. Each entry of either list is one grant; the CLI does
+    not know that ``@dana`` and ``--slack @dana`` are one person, and says so by
+    posting one comment per grant.
     """
     if verb not in COLLABORATOR_VERBS:
         raise ValueError(
             f"unknown collaborator verb {verb!r} (one of {COLLABORATOR_VERBS})"
         )
     work_item = WorkItemRef.parse(ref)  # ValueError on a malformed ref
-    canonical: List[str] = []
+    # Each subject is `(login, slack)` with exactly one of the two set.
+    canonical: List[Tuple[str, str]] = []
     for raw in logins:
         login = normalize_login(raw)
         if not login:
@@ -87,10 +100,33 @@ def manage_collaborators(
                 f"not a GitHub login: {raw!r} (expected @login — letters, digits and "
                 "single interior hyphens, at most 39 characters)"
             )
-        if login not in canonical:
-            canonical.append(login)
+        if (login, "") not in canonical:
+            canonical.append((login, ""))
+    directory = None
+    for raw in slack or []:
+        text = str(raw or "").strip()
+        if is_member_id(text):
+            member = text  # an id costs no lookup — and no token
+        else:
+            # A handle becomes an id here, before anything is written, through
+            # the same directory `add-channel` resolves a channel name with. A
+            # miss refuses the call: the roster stores ids only (A11).
+            if directory is None:
+                directory = SlackDirectory(config)
+            member = directory.user_id(text)
+            if not member:
+                raise ValueError(
+                    f"no Slack member with the handle {text!r} that this bot can "
+                    "see — check the spelling and make sure the app carries the "
+                    "`users:read` scope. Their member id (U…, under 'Copy member "
+                    "ID' in their profile) always works"
+                )
+        if ("", member) not in canonical:
+            canonical.append(("", member))
     if not canonical:
-        raise ValueError("name at least one collaborator, e.g. @octocat")
+        raise ValueError(
+            "name at least one collaborator, e.g. @octocat or --slack U0123ABCD"
+        )
 
     store = _store(config, portable_dir)
     actor = _local_actor()
@@ -98,18 +134,21 @@ def manage_collaborators(
     applied: List[str] = []
     unchanged: List[str] = []
 
-    for login in canonical:
+    for login, member in canonical:
+        label = f"@{login}" if login else slack_token(member)
         if verb == ADD_COLLABORATOR:
-            changed = store.add(work_item, login, actor=actor, source="cli")
+            changed = store.add(
+                work_item, login=login, slack=member, actor=actor, source="cli"
+            )
             effect = "granted" if changed else "already-granted"
         else:
-            changed = store.remove(work_item, login)
+            changed = store.remove(work_item, login=login, slack=member)
             effect = "revoked" if changed else "not-a-collaborator"
-        (applied if changed else unchanged).append(login)
+        (applied if changed else unchanged).append(label)
         messages.append(
             {
                 "stream": "out" if changed else "err",
-                "text": _line(effect, login, work_item),
+                "text": _line(effect, label, work_item),
             }
         )
         eventlog.emit(
@@ -118,7 +157,8 @@ def manage_collaborators(
             command=verb,
             source="cli",
             actor=actor or None,
-            collaborator=login,
+            collaborator=login or None,
+            slack=member or None,
             effect=effect,
         )
 
@@ -128,12 +168,14 @@ def manage_collaborators(
         # that never happened.
         _announce(work_item, verb, actor, applied, messages, config)
 
+    roster = store.list(work_item)
     return {
         "verb": verb,
         "workItem": work_item.ref,
         "applied": applied,
         "unchanged": unchanged,
-        "collaborators": [record.login for record in store.list(work_item)],
+        "collaborators": [record.login for record in roster if record.login],
+        "slackIds": [record.slack for record in roster if record.slack],
         # Nothing to do is not a failure of the machine, but it is not what the
         # operator asked for either — the same exit-1 "noop" the control verbs use.
         "exitCode": 0 if applied else 1,
@@ -142,35 +184,40 @@ def manage_collaborators(
     }
 
 
-def _line(effect: str, login: str, work_item: WorkItemRef) -> str:
+def _line(effect: str, label: str, work_item: WorkItemRef) -> str:
+    """``label`` is the subject as a person reads it: ``@dana`` or ``slack:U…``."""
     if effect == "granted":
         return (
-            f"@{login} is now a collaborator on {work_item.ref}: their comments on it "
+            f"{label} is now a collaborator on {work_item.ref}: their comments on it "
             "reach the session as input (they cannot start, stop or approve anything)"
         )
     if effect == "revoked":
-        return f"@{login} is no longer a collaborator on {work_item.ref}"
+        return f"{label} is no longer a collaborator on {work_item.ref}"
     if effect == "already-granted":
-        return f"@{login} is already a collaborator on {work_item.ref}; nothing changed"
-    return f"@{login} is not a collaborator on {work_item.ref}; nothing changed"
+        return f"{label} is already a collaborator on {work_item.ref}; nothing changed"
+    return f"{label} is not a collaborator on {work_item.ref}; nothing changed"
 
 
 def _announce(
     work_item: WorkItemRef,
     verb: str,
     actor: str,
-    logins: List[str],
+    labels: List[str],
     messages: List[Dict[str, str]],
     cli_conf: Optional[dict] = None,
 ) -> None:
-    """Record the grant on the ticket (best-effort — never fails the grant)."""
+    """Record the grant on the ticket (best-effort — never fails the grant).
+
+    ``labels`` are the subjects as the keyword spells them (``@dana``,
+    ``slack:U…``), which is what :func:`command_comment` takes.
+    """
     config = _control_config(cli_conf)
-    for login in logins:
+    for label in labels:
         body = command_comment(
             verb,
             config,
             actor=actor,
-            subject=login,
+            subject=label,
             invocation=f"the-loop {verb}",
         )
         ok, error = post_issue_comment(work_item, body, gh_binary=config.gh_binary)
@@ -179,8 +226,7 @@ def _announce(
                 {
                     "stream": "out",
                     "text": (
-                        f"commented {config.keyword(verb)!r} @{login} on "
-                        f"{work_item.ref}"
+                        f"commented {config.keyword(verb)!r} {label} on {work_item.ref}"
                     ),
                 }
             )
@@ -188,7 +234,7 @@ def _announce(
                 "control.announced",
                 work_item=work_item.ref,
                 command=verb,
-                collaborator=login,
+                collaborator=label,
             )
             continue
         messages.append(
@@ -205,6 +251,6 @@ def _announce(
             level="warning",
             work_item=work_item.ref,
             command=verb,
-            collaborator=login,
+            collaborator=label,
             error=error,
         )
