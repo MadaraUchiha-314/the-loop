@@ -486,3 +486,19 @@ def test_a_refused_shortcut_is_told_once(tmp_path):
     )
     assert outcome["outcome"] == "no-ticket"
     assert len(client.ephemeral) == 1
+
+
+def test_a_shortcut_with_nothing_new_is_told_once(tmp_path):
+    """Round 3, finding 2."""
+    config = config_for(tmp_path)
+    declare(config)
+    sink, client = Sink(), _thread_client()
+    first = shortcut(config, sink, client, action("the-loop:record-context"))
+    assert first["outcome"] == "processed"
+    told = len(client.ephemeral)
+    again = shortcut(
+        config, sink, client, action("the-loop:record-context", trigger="t-2")
+    )
+    assert again["outcome"] == "nothing-new"
+    assert len(client.ephemeral) == told + 1
+    assert "Nothing new" in client.ephemeral[-1][2]

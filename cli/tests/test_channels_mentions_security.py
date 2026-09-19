@@ -366,3 +366,20 @@ def test_a_bad_listen_value_reads_as_mentions():
         }
     )
     assert good is not None and good.listen == "all"
+
+
+def test_a_strangers_mention_is_silent_even_when_the_bot_id_is_unknown(tmp_path):
+    """A1, round 3: the allow-list is consulted before anything is said back."""
+    config = config_for(tmp_path)
+    declare(config)
+
+    class NoAuth(Client):
+        def auth_test(self):
+            raise RuntimeError("ratelimited")
+
+    sink, client = Sink(), NoAuth()
+    outcome = send(
+        config, sink, client, addressed=True, text=f"<@{BOT}> help", user="UEVIL"
+    )
+    assert outcome == {"outcome": "unauthorized-actor"}
+    assert client.ephemeral == [] and sink.recorded == []

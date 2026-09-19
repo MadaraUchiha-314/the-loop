@@ -60,7 +60,14 @@ from .slack import (
     slack_state_path,
 )
 from .state import ChannelState, ChannelStores
-from .verbs import KINDS, compose_keyword, help_text, parse_verb, strip_mention
+from .verbs import (
+    KINDS,
+    addresses_a_verb,
+    compose_keyword,
+    help_text,
+    parse_verb,
+    strip_mention,
+)
 
 logger = logging.getLogger("the-loop.channels")
 
@@ -412,11 +419,25 @@ def process_reply(
     # token comes off the text wherever it sits, a leading verb is the act, and
     # a leading control verb is composed into the CONFIGURED keyword exactly as
     # the slash command composes it — so `parse_command` reads a real keyword.
+    # Two lists, consulted by act (R7.2): input from the allow-list and the
+    # roster, a binding act from the allow-list alone. A stranger is dropped
+    # in silence BEFORE anything is read from the text or said back (A1;
+    # issue-321 A2: a stranger's "approved" reads no graph) — R5.1: an empty
+    # list denies everyone. A collaborator attempting a binding act is told
+    # so, because they are on the roster and learn nothing they did not know
+    # (R5.3).
+    speaker = speaker_for(reply.author, reply.work_item, config, cli_config, bot)
+    if not speaker.authorized and not speaker.collaborator:
+        return _drop(reply, "unauthorized-actor", level="warning", actor=reply.author)
     own = bot.own_user_id()
-    if reply.addressed and not own and "<@" in (reply.text or ""):
+    if not own and (
+        (reply.addressed and "<@" in (reply.text or "")) or addresses_a_verb(reply.text)
+    ):
         # The token cannot be told from another member's mention without the
         # bot's id (auth.test failed): rather than record `<@U…> help` on the
-        # ticket as prose, say so and let the member try again.
+        # ticket as prose — from an `app_mention`, or a mention followed by a
+        # verb in a DM, an `all` room or a poll read — say so and let the
+        # member try again. A colleague mentioned in prose is still a reply.
         _tell(
             bot,
             reply,
@@ -431,15 +452,6 @@ def process_reply(
         text = compose_keyword(text, _control_config(cli_config))
     if text != reply.text or addressed != reply.addressed:
         reply = replace(reply, text=text, addressed=addressed)
-    # Two lists, consulted by act (R7.2): input from the allow-list and the
-    # roster, a binding act from the allow-list alone. A stranger is dropped
-    # in silence BEFORE anything is classified (A1; issue-321 A2: a stranger's
-    # "approved" reads no graph) — R5.1: an empty list denies everyone. A
-    # collaborator attempting a binding act is told so, because they are on
-    # the roster and learn nothing they did not know (R5.3).
-    speaker = speaker_for(reply.author, reply.work_item, config, cli_config, bot)
-    if not speaker.authorized and not speaker.collaborator:
-        return _drop(reply, "unauthorized-actor", level="warning", actor=reply.author)
     event_type, gate = _classify(
         reply, cli_config, config.publish, collaborator_only=not speaker.authorized
     )
@@ -539,6 +551,17 @@ def process_reply(
             bot.react(reply, "error")
             _tell(bot, reply, f"Could not read the thread: {exc}")
             return _drop(reply, "snapshot-failed", level="warning", error=str(exc))
+        if snapshot.count == 0 and snapshot.truncated:
+            # The first new message alone is over the cap: not "nothing new",
+            # and the cursor must not pass what was never recorded.
+            bot.react(reply, "error")
+            _tell(
+                bot,
+                reply,
+                "The next message in this thread is too large to record in one "
+                "comment; record from after it, or link it instead.",
+            )
+            return _drop(reply, "snapshot-too-large", level="warning")
         if snapshot.count == 0:
             if skip and noted:
                 # The mention that found nothing is not context either: the
@@ -1408,8 +1431,6 @@ def _shortcut_outcome(
         said = "Recorded" + (f" — {url}" if url else "") + "."
         if outcome.get("delivered") is False:
             said += " The session could not take it; the record stands."
-    elif what == "nothing-new":
-        said = "Nothing new in that thread since it was last recorded."
     elif what in (
         "empty-decision",
         "unauthorized-act",
@@ -1417,6 +1438,7 @@ def _shortcut_outcome(
         "snapshot-failed",
         "no-ticket",
         "no-bot-id",
+        "nothing-new",
     ):
         return  # already told, on the same channel, by the pipeline
     else:

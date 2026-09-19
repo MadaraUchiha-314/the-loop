@@ -1944,10 +1944,22 @@ class SlackBotChannel:
             messages = [m for m in messages if _ts_key(str(m["ts"])) > _ts_key(since)]
         if skip:
             messages = [m for m in messages if str(m["ts"]) != skip]
+        own = self._own_user_id(client)
+        if own:
+            # An earlier `@the-loop record-context` in the thread is the act
+            # that recorded it, never context — whichever cursor arithmetic
+            # brought it back (a capped or failed record before this one).
+            from .verbs import parse_verb, strip_mention
+
+            def is_trigger(message: Mapping[str, Any]) -> bool:
+                text, found = strip_mention(str(message.get("text") or ""), own)
+                verb = parse_verb(text) if found else None
+                return verb is not None and verb.name == "record-context"
+
+            messages = [m for m in messages if not is_trigger(m)]
         # Slack pages a long thread; what this page did not carry is "more",
         # uncounted, rather than a wrong count.
         more = bool(response.get("has_more"))
-        own = self._own_user_id(client)
         workspace = ""
         try:
             workspace = str(client.auth_test().get("url") or "").rstrip("/")

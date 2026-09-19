@@ -26,6 +26,7 @@ __all__ = [
     "KINDS",
     "VERBS",
     "Verb",
+    "addresses_a_verb",
     "compose_keyword",
     "help_text",
     "parse_verb",
@@ -84,6 +85,16 @@ def strip_mention(text: str, bot_id: str) -> Tuple[str, bool]:
     # multi-line decision read the text by its lines (R1.5).
     lines = [" ".join(line.split()) for line in stripped.split("\n")]
     return "\n".join(lines).strip(), True
+
+
+def addresses_a_verb(text: str) -> bool:
+    """Whether ``text`` reads as a mention followed by one of the-loop's verbs
+    once EVERY ``<@…>`` token is removed — the shape of an address when the
+    bot's own id is unknown, as opposed to a colleague mentioned in prose."""
+    if "<@" not in (text or ""):
+        return False
+    bare = " ".join(_MENTION_RE.sub(" ", text).split())
+    return parse_verb(bare) is not None
 
 
 def parse_verb(text: str) -> Optional[Verb]:

@@ -472,7 +472,11 @@ def test_record_context_snapshots_a_thread_onto_the_ticket_and_into_the_session(
 
 def test_record_context_on_a_top_level_message_snapshots_that_message(tmp_path):
     """
-    Scenario: record-context on a top-level message snapshots that message
+    Scenario: record-context on a top-level message records its thread, never the mention
+      Given a top-level "<@UBOT> record-context" with no replies
+      Then there is nothing to record and the member is told so
+      Given the same message with two replies under it
+      Then the two replies are the context and the mention itself is not
     """
     config = config_for(tmp_path)
     declare(config)
@@ -484,7 +488,7 @@ def test_record_context_on_a_top_level_message_snapshots_that_message(tmp_path):
         }
     )
     sink = Sink()
-    outcome = send(
+    alone = send(
         config,
         sink,
         client,
@@ -492,8 +496,28 @@ def test_record_context_on_a_top_level_message_snapshots_that_message(tmp_path):
         text=f"<@{BOT}> record-context",
         ts="1900.9",
     )
-    assert outcome["outcome"] == "processed"
-    assert sink.delivered[0]["detail"]["count"] == "1"
+    assert alone["outcome"] == "nothing-new" and sink.recorded == []
+    assert "Nothing new" in client.ephemeral[-1][2]
+    client.replies["1900.9"].extend(
+        [
+            {"ts": "1900.10", "user": "UOTHER", "text": "the background is X"},
+            {"ts": "1900.11", "user": "UHUMAN", "text": "and Y"},
+        ]
+    )
+    once.reset()
+    threaded = send(
+        config,
+        sink,
+        client,
+        addressed=True,
+        text=f"<@{BOT}> record-context",
+        ts="1900.12",
+        thread="1900.9",
+    )
+    assert threaded["outcome"] == "processed"
+    assert sink.delivered[0]["detail"]["count"] == "2"
+    body = sink.recorded[0][1].split("📎")[1].split("<!--")[0]
+    assert "the background is X" in body and "record-context" not in body
 
 
 def test_a_second_record_context_records_only_what_is_new(tmp_path):
@@ -912,3 +936,112 @@ def test_an_ephemeral_lands_in_the_members_thread(tmp_path):
     assert client.ephemeral[-1][3] == "1800.1"
     send(config, sink, client, addressed=True, text=f"<@{BOT}> help", ts="1900.9")
     assert client.ephemeral[-1][3] == "1900.9"  # a top-level message is its own thread
+
+
+# -- self-review round 3 ----------------------------------------------------------------
+
+
+def test_an_unverifiable_mention_in_a_dm_is_not_recorded_but_a_colleague_mention_is(
+    tmp_path,
+):
+    """Round 3, finding 5: the guard covers the plain-message form too, and only
+    when the mention is followed by one of the-loop's verbs."""
+    config = config_for(tmp_path, channel=DM)
+
+    class NoAuth(Client):
+        def auth_test(self):
+            raise RuntimeError("ratelimited")
+
+    sink, client = Sink(), NoAuth()
+    bot_for(config, client).bind("1800.1", REF, DM, origin="start")
+    refused = send(
+        config,
+        sink,
+        client,
+        addressed=False,
+        channel=DM,
+        text=f"<@{BOT}> record-decision ship it",
+        thread="1800.1",
+        ts="1800.2",
+    )
+    assert refused["outcome"] == "no-bot-id" and sink.recorded == []
+    prose = send(
+        config,
+        sink,
+        client,
+        addressed=False,
+        channel=DM,
+        text="ask <@UOTHER> about it",
+        thread="1800.1",
+        ts="1800.3",
+    )
+    assert prose["outcome"] == "processed" and prose["event"] == "work-item.reply"
+
+
+def test_a_first_new_message_over_the_cap_is_refused_and_moves_no_cursor(
+    tmp_path, monkeypatch
+):
+    """Round 3, finding 3."""
+    from the_loop.channels import slack as slack_mod
+
+    monkeypatch.setattr(slack_mod, "SNAPSHOT_CHAR_CAP", 600)  # three lines fit
+    config = config_for(tmp_path)
+    declare(config)
+    sink, client = Sink(), _thread_client()
+    first = send(
+        config,
+        sink,
+        client,
+        addressed=True,
+        text=f"<@{BOT}> record-context",
+        thread="1800.1",
+        ts="1800.4",
+    )
+    assert first["outcome"] == "processed"
+    state_path = Path(config["state"]["root"]) / "channels" / "slack.json"
+    before = _state_with_stores(state_path).snapshot_for(f"{ROOM}:1800.1")
+    client.replies["1800.1"].append(
+        {"ts": "1800.6", "user": "UHUMAN", "text": "x" * 1000}
+    )
+    second = send(
+        config,
+        sink,
+        client,
+        addressed=True,
+        text=f"<@{BOT}> record-context",
+        thread="1800.1",
+        ts="1800.7",
+    )
+    assert second["outcome"] == "snapshot-too-large"
+    assert "too large" in client.ephemeral[-1][2]
+    after = _state_with_stores(state_path).snapshot_for(f"{ROOM}:1800.1")
+    assert before is not None and after == before
+
+
+def test_an_earlier_trigger_in_the_thread_is_never_context(tmp_path):
+    """Round 3, finding 4: a `record-context` mention from before — a failed
+    or capped record — is left out whatever the cursor says."""
+    config = config_for(tmp_path)
+    declare(config)
+    client = Client(
+        replies={
+            "1800.1": [
+                {"ts": "1800.1", "user": "UHUMAN", "text": "root"},
+                {"ts": "1800.2", "user": "UHUMAN", "text": f"<@{BOT}> record-context"},
+                {"ts": "1800.3", "user": "UOTHER", "text": "one more"},
+            ]
+        }
+    )
+    sink = Sink()
+    outcome = send(
+        config,
+        sink,
+        client,
+        addressed=True,
+        text=f"<@{BOT}> record-context",
+        thread="1800.1",
+        ts="1800.4",
+    )
+    assert outcome["outcome"] == "processed"
+    assert sink.delivered[0]["detail"]["count"] == "2"
+    assert "record-context" not in sink.recorded[0][1].split("📎")[1].split("<!--")[0]
