@@ -154,8 +154,8 @@ vocabulary is taught rather than hidden. Reactions as verbs (Option 2D) are stru
 open question 6.**
 
 - **Option 2A: a small fixed grammar after the mention, with a fallthrough.** *Chosen.*
-  `@the-loop context` (in a thread: this thread; top-level: this message);
-  `@the-loop decision <text>`; `@the-loop <control keyword>` (`start`, `execute`, …,
+  `@the-loop record-context` (in a thread: this thread; top-level: this message);
+  `@the-loop record-decision <text>`; `@the-loop <control keyword>` (`start`, `execute`, …,
   the keywords a thread already accepts); and **anything else is a reply** to the
   session, exactly today's `work-item.reply`, so `@the-loop what is blocking you?`
   still reaches the agent. No model, no manifest change beyond 1D's.
@@ -187,9 +187,14 @@ open question 6.**
 
 ### Q3. What is "context", and where does it live?
 
+**Decided by the owner on PR #390 ([review](https://github.com/MadaraUchiha-314/the-loop/pull/390#discussion_r4054071681), 2026-09-19): every work item gets
+a `context.md` beside `requirements.md` and `design.md`, holding each piece of context
+with its provenance (who added it, when, and the link to the channel, message or
+thread). The principle is auditability.**
+
 - **What is captured.** The thread the mention sits in, as a **snapshot**: every
   message so far, author resolved through the directory (`<@U…>` drawn as a name),
-  time, the permalink, and who asked. A second `context` on the same thread appends
+  time, the permalink, and who asked. A second `record-context` on the same thread appends
   only what is new. Following a thread after the snapshot ("subscribe") is a different
   act and is not proposed.
 - **Option 3A: a ledger record only.** A `context.added` row in the catalog, recorded
@@ -198,11 +203,13 @@ open question 6.**
   is running. *Cost:* a session spawned later must read the ticket to find it. The
   skill already says the ticket is read at the start of a work item, and the gates
   re-read the thread.
-- **Option 3B: the record plus a file the session keeps.** Same record; the
-  operating-model rule then says a session that receives or reads a `context.added`
-  record references it from the current phase's artifact (a `## Context` list of
-  permalinks and one-line gists, not a copy), the same delta/state split capability
-  docs use. *Lean.* The ticket comment is the copy; the artifact is the organised view.
+- **Option 3B: the record plus a file the session keeps.** *Chosen, with the file
+  named.* Same record; the session that receives or reads a `context.added` record
+  appends it to `docs/specs/<id>/context.md`, a fifth artifact of the chain from a
+  bundled template: one entry per record with the asker, the time, the permalink and
+  the snapshot itself, so a reader audits what the loop was told without leaving the
+  repository. The first draft proposed a list of links inside the phase artifact; the
+  owner wants the content, with provenance, in a file of its own.
 - **Option 3C: the channel writes the file itself.** *Struck:* the daemon never writes
   into a repository's spec tree on a channel's behalf; that is the session's job and
   keeps the "through the ledger" rule literal.
@@ -220,20 +227,26 @@ open question 6.**
   that later reads the thread sees a human's decision rather than the bot's echo.
   *Cost:* the envelope must carry the type, and a gate's classifier must read that
   type before it reads the words, so decision text never passes for an approval.
-- **Where it lands in the repository.** The session folds every `decision.recorded`
-  it receives or reads into `docs/specs/<id>/decisions.md` (a per-work-item log, one
-  row each: kind, decision, who, link), and promotes one to
-  `docs/decisions/decision-<nnn>.md` only when it is a durable project decision, which
-  is the judgement the design phase already makes. The conflict log stays what it is
-  (the agent's own assumptions).
+- **Where it lands in the repository.** *Decided by the owner
+  ([review](https://github.com/MadaraUchiha-314/the-loop/pull/390#discussion_r4054074775)): reuse the decision log the loop already keeps.* The session
+  records every `decision.recorded` it receives or reads as
+  `docs/decisions/decision-<nnn>.md` from the bundled template, with the person as
+  decider, the work item, and the Slack permalink as provenance, plus a row in
+  `docs/decisions/decisions.md`. The first draft proposed a per-work-item
+  `decisions.md` with promotion left to the design phase; that second file is struck.
+  The conflict log stays what it is (the agent's own assumptions).
 - **Who may record one.** Lean: the same people who may answer a gate, since a decision
   binds the work the way an approval does. A later refinement could map kinds to roles
   (`product` → `product-manager`, …) from `collaborators.yaml`, but nothing today
   reads roles at the channel, and that is YAGNI until a room disputes a decision.
-- **Text is required.** With no model to summarise a thread, `@the-loop decision` with
-  nothing after it is refused with the grammar shown, ephemerally.
+- **Text is required.** With no model to summarise a thread, `@the-loop record-decision`
+  with nothing after it is refused with the grammar shown, ephemerally.
 
 ### Q5. Who may address the-loop in a room?
+
+**Decided by the owner on PR #390 ([review](https://github.com/MadaraUchiha-314/the-loop/pull/390#discussion_r4054082699), 2026-09-19): two tiers (Option
+5B), and a collaborator is added from the room itself with
+`@the-loop add-collaborator @member`.**
 
 - **Option 5A: `routing.authorizedUsers` only** (today). *Cost:* the room's stakeholders
   mention the-loop and get silence, which reads as broken, not as safe.
@@ -241,7 +254,12 @@ open question 6.**
   collaborator is already defined to give; decisions and control keywords need an
   authorized user. To make 5B real, the collaborator roster (issue-307) has to carry a
   Slack id beside the GitHub login, as `routing.authorizedUsers` entries do since
-  issue-309. *Lean.*
+  issue-309. *Chosen.* The owner adds the gesture: `@the-loop add-collaborator
+  @member` in the room (and `remove-collaborator`), which is the issue-307 control
+  keyword addressed by mention, so it stays an authorized user's act and lands on the
+  ledger as every keyword does. Two consequences: the roster entry is written with the
+  Slack member id the mention carries, and a collaborator may therefore be known by
+  Slack id alone, with no GitHub login, which is enough for input and nothing else.
 - **Option 5C: anyone in the room.** The room is the work item's by declaration, so
   membership is the allow-list. *Struck:* Slack membership is not an identity the-loop
   can name on the ledger, and a record must name a person (decision-103).
@@ -261,7 +279,7 @@ sequenceDiagram
   participant P as inbound pipeline
   participant G as GitHub (ledger)
   participant S as session (if any)
-  M->>L: "@the-loop context" in a thread
+  M->>L: "@the-loop record-context" in a thread
   L->>P: app_mention event, room → work item (issue-375)
   P->>P: the message.* copy of the same ts is dropped (not-addressed)
   P->>P: authorize (tier per act) · classify: keyword → verb → gate → reply
@@ -276,8 +294,9 @@ The grammar, as it would read in `docs/guide/slack.md`:
 
 | In a room, type | It becomes | Grant | Needs |
 |---|---|---|---|
-| `@the-loop context` (in a thread) | `context.added`, the thread snapshotted onto the ticket | `context.added` | socket |
-| `@the-loop decision <text>` | `decision.recorded`, unmarked, attributed to you | `decision.recorded` | socket |
+| `@the-loop record-context` (in a thread) | `context.added`, the thread snapshotted onto the ticket and into `context.md` | `context.added` | socket |
+| `@the-loop record-decision <text>` | `decision.recorded`, unmarked, attributed to you; a `decision-<nnn>.md` follows | `decision.recorded` | socket |
+| `@the-loop add-collaborator @member` | `control.command`, the issue-307 keyword with a Slack member; `remove-collaborator` likewise | `control.command` | socket |
 | `@the-loop <keyword>` | `control.command`, as in a thread today | `control.command` | socket |
 | `@the-loop <anything else>` | `work-item.reply`, delivered to the session | `work-item.reply` | socket |
 | ⋯ → *Add as context* / *Record a decision* | exactly the typed mention above | the same | socket |
@@ -290,8 +309,10 @@ handlers, the tier check), `channels/slack.py` (the `app_mention`, shortcut and
 `channels/github.py` (two record shapes), the app manifest (`app_mentions:read`, the
 `app_mention` event, `features.shortcuts`), the CLI config schema (`publish` grants),
 `channels status`, `docs/guide/slack.md` (the upgrade table gains a row),
-`docs/capabilities/channels.md`, and the operating-model skill (the fold-in rule for
-context and decisions, the `decisions.md` file).
+`docs/capabilities/channels.md`, a `templates/context.md`, the collaborator roster
+(a Slack id per entry, `add-collaborator` accepting a member mention), and the
+operating-model skill (the fifth artifact, and the fold-in rule for a Slack-born
+decision record).
 
 ## Open questions
 
@@ -303,16 +324,17 @@ Raised on the ticket for the paper trail; the owner's answers converge this brai
 2. ~~Mode 1 stays as it is?~~ **Answered on PR #390: no.** The rule is universal: a
    room, a thread and the operator's private channel alike. Mode 1 is not retired by
    this work item, but it listens the same way.
-3. **Who may add context, and who may record a decision?** Lean: input (context,
-   replies) for authorized users and the work item's collaborators once the roster
-   carries Slack ids; decisions and keywords for authorized users only.
-4. **Is a verbatim thread snapshot on the ticket acceptable?** It copies other people's
-   words, some from people on no roster, onto a ticket that may be public. The
-   alternative is a record of permalink plus the asker's own words only, which makes
-   the context useless to a session that cannot read Slack.
-5. **Where does a decision live in the repository?** Lean: `docs/specs/<id>/decisions.md`
-   folded in by the session, with promotion to `docs/decisions/decision-<nnn>.md` left
-   to the design phase's judgement.
+3. ~~Who may add context, and who may record a decision?~~ **Answered on PR #390:
+   two tiers.** Context and replies for authorized users and the work item's
+   collaborators, who gain a Slack id and can be added from the room; decisions and
+   keywords for authorized users only.
+4. **Is a verbatim thread snapshot acceptable?** It copies other people's words, some
+   from people on no roster, onto a ticket that may be public and, since Q3's
+   decision, into `context.md` in the repository. The alternative is a record of
+   permalink plus the asker's own words only, which makes the context useless to a
+   session that cannot read Slack.
+5. ~~Where does a decision live in the repository?~~ **Answered on PR #390:** the
+   existing decision log, `docs/decisions/decision-<nnn>.md` plus its index row.
 6. **Grammar first and shortcuts second, or both in this work item?** The grammar is the
    floor (works in poll mode, no manifest change); the shortcuts and modal are the
    "user friendly" bar the ticket sets. Lean: both, sequenced within one work item, the
@@ -333,8 +355,8 @@ Raised on the ticket for the paper trail; the owner's answers converge this brai
   Socket-only, with `channels status` naming the manifest step. One switch, for an
   authorized user only: a room declared with `--listen all` hears everything, as today.
 - **A fixed grammar, taught, with natural language as the fallthrough** (the owner's
-  decision on PR #390). `context`, `decision <text>`, a control keyword, `help`;
-  anything else is a reply. Every verb ends in the session with a preset prompt
+  decision on PR #390). `record-context`, `record-decision <text>`,
+  `add-collaborator @member`, a control keyword, `help`; anything else is a reply. Every verb ends in the session with a preset prompt
   naming the act and linking its record.
 - **Two new acts, two catalog rows.** `context.added` (marked, quoted snapshot of the
   thread, delivered) and `decision.recorded` (unmarked, attributed, enveloped). Both
@@ -343,11 +365,13 @@ Raised on the ticket for the paper trail; the owner's answers converge this brai
   as today.
 - **A shortcut is exactly the typed mention.** Decision-117's pattern, socket-only,
   with a modal for the decision's fields and `channels status` naming the steps.
-- **The session keeps the organised view.** `docs/specs/<id>/decisions.md` for
-  decisions; a `## Context` list in the phase artifact for context. The ledger record
-  is the copy; the file is the view.
-- **Two tiers of speaker.** Input for collaborators and authorized users, acts that bind
-  for authorized users only. Collaborators gain a Slack id.
+- **The session keeps the auditable view** (the owner's decisions on PR #390):
+  `docs/specs/<id>/context.md`, a fifth artifact with every piece of context and its
+  provenance, and the existing `docs/decisions/` log for every decision. The ledger
+  record is the copy; the files are what a reader audits.
+- **Two tiers of speaker** (the owner's decision on PR #390). Input for collaborators
+  and authorized users, acts that bind for authorized users only. Collaborators gain a
+  Slack id and are added from the room with `@the-loop add-collaborator @member`.
 
 ## Hand-off → requirements
 
@@ -362,22 +386,28 @@ If the owner confirms the lean, `requirements.md` asserts:
 - **R-manifest:** `app_mentions:read` and the `app_mention` bot event in the shipped
   manifest; the guide's upgrade table names them; `channels status` reports a `poll`
   read mode as one where nothing addressed can arrive.
-- **R-context:** `@the-loop context` snapshots the thread onto the ticket as a marked,
-  scrubbed, capped record naming the asker, with the permalink; idempotent per thread;
-  delivered best-effort; refusals recorded and reacted ⚠️.
-- **R-decision:** `@the-loop decision <text>` records an unmarked, enveloped, attributed
-  comment typed `decision.recorded`, with kind and rationale when given; refused with
-  the grammar when the text is empty; never classified as a gate answer.
+- **R-context:** `@the-loop record-context` snapshots the thread onto the ticket as a
+  marked, scrubbed, capped record naming the asker, with the permalink; idempotent per
+  thread; delivered best-effort; refusals recorded and reacted ⚠️. The session keeps
+  `docs/specs/<id>/context.md` (a bundled template; one entry per record with who
+  added it, when, the link and the snapshot), an artifact the loop's gates can read.
+- **R-decision:** `@the-loop record-decision <text>` records an unmarked, enveloped,
+  attributed comment typed `decision.recorded`, with kind and rationale when given;
+  refused with the grammar when the text is empty; never classified as a gate answer.
+  The session records it as `docs/decisions/decision-<nnn>.md` plus its index row,
+  the person as decider and the Slack permalink as provenance.
 - **R-shortcuts:** *Add as context* and *Record a decision* message shortcuts, socket
   only, each entering the pipeline as the equivalent typed mention; a modal for the
   decision; the outcome written back to the member ephemerally.
-- **R-speakers:** the tier per act; collaborators carry an optional Slack id; every
-  refusal below the allow-list.
-- **R-verbs:** the grammar (`context`, `decision <text>`, a control keyword, `help`,
-  else a reply); every verb's delivery into the session carries a preset prompt naming
+- **R-speakers:** the tier per act; collaborators carry an optional Slack id and are
+  added or removed from the room by mention; every refusal below the allow-list.
+- **R-verbs:** the grammar (`record-context`, `record-decision <text>`,
+  `add-collaborator @member` / `remove-collaborator @member`, a control keyword,
+  `help`, else a reply; the verb names are the owner's, PR #390); every verb's delivery into the session carries a preset prompt naming
   the act and its record; `help` answers ephemerally, and so does an unrecognised verb.
-- **R-fold-in:** the operating-model rule for `decisions.md` and the context list, and
-  the guide's table of gestures.
+- **R-fold-in:** the operating-model rule for `context.md` (template, gate, the skill's
+  artifact list) and for a Slack-born decision record, and the guide's table of
+  gestures.
 - **Security considerations:** a mention from a stranger; a crafted `message_action`
   payload; a thread carrying secrets or a broadcast; decision text carrying an approval
   keyword; injection through snapshotted content (delivered as data, never as
@@ -385,7 +415,8 @@ If the owner confirms the lean, `requirements.md` asserts:
 
 Left behind, as the record of what was considered: listening to every message by
 default, matching the mention in message text, an exemption for the-loop's own
-threads, reactions as verbs, the channel writing spec files, room membership as an
+threads, reactions as verbs, the channel writing spec files, a list of context links
+inside the phase artifact, a per-work-item decisions log, room membership as an
 allow-list, a model summarising a thread.
 
 ## Review comments
