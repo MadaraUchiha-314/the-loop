@@ -1,11 +1,12 @@
 """``the-loop add-collaborator`` / ``the-loop remove-collaborator`` (issue-307).
 
-The terminal form of the two control keywords. Grants a GitHub login **work-item
-collaborator** status on one work item: from then on that login's comments on it —
-and on the pull requests routed to its session — reach the session as agent input.
-That is the whole grant. A collaborator cannot issue a control command, cannot arm
-or spawn a session, and cannot satisfy a human gate; all three keep reading
-``routing.authorizedUsers`` alone.
+The terminal form of the two control keywords. Grants a GitHub login — or, since
+issue-389, a Slack member (``--slack <id|@handle>``) — **work-item collaborator**
+status on one work item: from then on that person's comments on it — and on the pull
+requests routed to its session, and their addressed messages in its Slack room —
+reach the session as agent input. That is the whole grant. A collaborator cannot
+issue a control command, cannot arm or spawn a session, and cannot satisfy a human
+gate; all three keep reading ``routing.authorizedUsers`` alone.
 
 Two top-level commands rather than one with a verb argument, because the issue asks
 for exactly the words an authorized user types on the ticket — the CLI and the
@@ -41,9 +42,21 @@ class _CollaboratorCommand(Command):
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
             "logins",
-            nargs="+",
+            nargs="*",
             metavar="@LOGIN",
             help="GitHub login(s) to act on, with or without the leading @.",
+        )
+        parser.add_argument(
+            "--slack",
+            action="append",
+            default=[],
+            metavar="ID|@HANDLE",
+            help=(
+                "A Slack member to act on, by member id (U…) or by handle (@dana). "
+                "A handle is resolved to its id through the workspace directory "
+                "before anything is written, and one that does not resolve refuses "
+                "the whole command. Repeatable."
+            ),
         )
         parser.add_argument(
             "--work-item",
@@ -73,10 +86,12 @@ class _CollaboratorCommand(Command):
                 comment=args.comment,
                 config=_cli_config(),
                 portable_dir=args.portable_dir,
+                slack=list(args.slack),
             )
         except ValueError as exc:
-            # A malformed login or work-item ref: the caller's mistake, so exit 2
-            # (argparse's own code) and change nothing at all.
+            # A malformed login, an unresolvable handle, nobody named at all, or a
+            # bad work-item ref: the caller's mistake, so exit 2 (argparse's own
+            # code) and change nothing at all.
             print(f"error: {exc}", file=sys.stderr)
             return 2
         return _render(result)
@@ -87,8 +102,9 @@ class AddCollaboratorCommand(_CollaboratorCommand):
     name = "add-collaborator"
     verb = ADD_COLLABORATOR
     help = (
-        "Grant a GitHub login work-item collaborator status on one work item "
-        "(their comments become input for its session — nothing more)"
+        "Grant a GitHub login or a Slack member (--slack) work-item collaborator "
+        "status on one work item (their comments become input for its session — "
+        "nothing more)"
     )
 
 

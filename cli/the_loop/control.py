@@ -73,10 +73,10 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from .authz import mark_self_authored
-from .collaborators import parse_logins
+from .collaborators import SLACK_TOKEN_PREFIX, parse_subjects
 from .sessions import WorkItemRef
 from .state import LegacyLayout
 from .workitem import CONTROL, ENDED, GRAPH, WorkItemStore
@@ -286,32 +286,82 @@ class ControlResult:
     ``subjects`` carries the command's argument for the two classes of command that
     have one (:data:`ARGUMENT_COMMANDS`): the ``@login`` tokens that followed a
     collaborator keyword (issue-307), canonicalised by
-    :func:`the_loop.collaborators.parse_logins`, or the ``<type>@<target>`` tokens
+    :func:`the_loop.collaborators.parse_subjects`, or the ``<type>@<target>`` tokens
     that followed a channel keyword (issue-375), canonicalised by
     :func:`the_loop.workchannels.parse_channel_refs`. Either way each entry is a
     token that matched a fixed grammar, never body text. Empty for every other
     command, and empty for an argument command whose body named nothing — which
     the caller refuses rather than guessing at.
+
+    ``slack`` is the collaborator commands' second argument list (issue-389): the
+    member ids the ``slack:U…`` tokens named, canonicalised by the same parser. A
+    collaborator command with both lists empty named nobody.
+
+    ``listen`` is the channel commands' option (issue-389 R2.1): the mode one
+    ``--listen <mode>`` token on the keyword's line named, or ``""`` when there was
+    none — the caller's default applies. ``refusal`` is set, and ``subjects``
+    emptied, when that token named a mode that is not one: the whole command is
+    refused rather than declared with a default the person did not ask for, and
+    the text names the two modes for the person who typed it.
     """
 
     command: Optional[str] = None
     ambiguous: bool = False
     matched: List[str] = field(default_factory=list)
     subjects: List[str] = field(default_factory=list)
+    slack: List[str] = field(default_factory=list)
+    listen: str = ""
+    refusal: str = ""
 
     def __bool__(self) -> bool:
         return self.command is not None or self.ambiguous
 
 
-def _parse_channels(text: str) -> List[str]:
-    """:func:`the_loop.workchannels.parse_channel_refs`, as canonical strings.
+#: The channel commands' one option (issue-389): ``--listen <mode>``.
+LISTEN_FLAG = "--listen"
 
-    Imported lazily and adapted here so :data:`ARGUMENT_COMMANDS` needs one calling
-    convention — ``str -> List[str]`` — rather than a branch at the call site.
+#: Trailing characters the mode's token may collect from prose ("…--listen all.").
+_TRAILING_PUNCTUATION = ".,;:!?)]}>\"'`"
+
+
+def _parse_channels(text: str) -> Tuple[List[str], str, str]:
+    """``(refs, listen, refusal)`` for the text after a channel keyword.
+
+    ``refs`` is :func:`the_loop.workchannels.parse_channel_refs`'s run, as
+    canonical strings. ``listen`` is the mode one ``--listen <mode>`` token names
+    — read anywhere on the **keyword's line**, either side of the refs, and
+    removed before the refs are scanned so the order does not matter — or ``""``.
+    A ``--listen`` whose mode is not one of the two refuses the whole command:
+    ``refs`` is empty and ``refusal`` says why, naming both modes (A12).
     """
-    from .workchannels import parse_channel_refs
+    from .workchannels import LISTEN_MODES, parse_channel_refs
 
-    return [channel.ref for channel in parse_channel_refs(text)]
+    line, _, rest = str(text or "").partition("\n")
+    tokens = [token for token in re.split(r"[\s,]+", line.strip()) if token]
+    listen = ""
+    flag = next(
+        (index for index, token in enumerate(tokens) if token.lower() == LISTEN_FLAG),
+        None,
+    )
+    if flag is not None:
+        mode = (
+            tokens[flag + 1].rstrip(_TRAILING_PUNCTUATION).lower()
+            if flag + 1 < len(tokens)
+            else ""
+        )
+        if mode not in LISTEN_MODES:
+            return (
+                [],
+                "",
+                f"`{LISTEN_FLAG}` takes one of {' | '.join(LISTEN_MODES)}"
+                + (f", not {mode!r}" if mode else ""),
+            )
+        listen = mode
+        del tokens[flag : flag + 2]
+    refs = [
+        channel.ref for channel in parse_channel_refs(" ".join(tokens) + "\n" + rest)
+    ]
+    return refs, listen, ""
 
 
 def parse_command(body: Optional[str], config: ControlConfig) -> ControlResult:
@@ -339,19 +389,38 @@ def parse_command(body: Optional[str], config: ControlConfig) -> ControlResult:
         return ControlResult(ambiguous=True, matched=found)
     command = found[0]
     subjects: List[str] = []
+    slack: List[str] = []
+    listen = ""
     if command in ARGUMENT_COMMANDS:
         # Every occurrence, not just the first: two lines each naming one subject is
         # the natural way to write this, and honouring only the first would silently
         # drop the second. What each contributes is the argument parser's output — a
         # run of valid tokens, ending at the first that is not one — so the prose
-        # around them reaches nothing. Which parser is the command's: a login for the
-        # collaborator pair, a channel ref for the channel pair (issue-375).
-        parse = parse_logins if command in COLLABORATOR_COMMANDS else _parse_channels
+        # around them reaches nothing. Which parser is the command's: a login or a
+        # Slack id for the collaborator pair (issue-307, issue-389), a channel ref
+        # for the channel pair (issue-375).
         for match in re.finditer(patterns[command], body, re.IGNORECASE):
-            for subject in parse(body[match.end() :]):
+            rest = body[match.end() :]
+            if command in COLLABORATOR_COMMANDS:
+                parsed = parse_subjects(rest)
+                found_subjects = parsed.logins
+                slack.extend(member for member in parsed.slack if member not in slack)
+            else:
+                found_subjects, mode, refusal = _parse_channels(rest)
+                if refusal:
+                    # One bad option refuses every occurrence: a body that says
+                    # `--listen everything` on one line and names a room on the
+                    # next did not ask for that room with the default.
+                    return ControlResult(
+                        command=command, matched=found, refusal=refusal
+                    )
+                listen = mode or listen
+            for subject in found_subjects:
                 if subject not in subjects:
                     subjects.append(subject)
-    return ControlResult(command=command, matched=found, subjects=subjects)
+    return ControlResult(
+        command=command, matched=found, subjects=subjects, slack=slack, listen=listen
+    )
 
 
 def command_comment(
@@ -361,6 +430,7 @@ def command_comment(
     subject: str = "",
     invocation: str = "",
     address: str = "",
+    listen: str = "",
 ) -> str:
     """The comment body the CLI posts for a control action (issue-106 R4.2).
 
@@ -373,8 +443,9 @@ def command_comment(
 
     Built only from the configured keyword, the local ``actor`` name and — for the
     two classes of command that take an argument — a ``subject`` the caller has
-    already validated: a GitHub login (issue-307) or a channel ref (issue-375). No
-    payload-derived text reaches it.
+    already validated: a GitHub login (``dana`` or ``@dana``), a Slack member id
+    spelled as the keyword reads it (``slack:U0456GHIJ``, issue-389) or a channel
+    ref (issue-375). No payload-derived text reaches it.
 
     ``invocation`` names the CLI form to quote; it defaults to
     ``the-loop sessions <command>``, which is right for the session verbs and
@@ -386,19 +457,25 @@ def command_comment(
     through the self-authored marker; the token is for the humans and for a
     future manager reading the thread. Like ``subject``, it is a value the
     caller validated (``instance.NAME_RE``), never text from an event.
+
+    ``listen`` is a channel command's mode (issue-389): when given, the line
+    carries ``--listen <mode>`` so the thread says how the room listens and
+    :func:`parse_command` reads the same command back.
     """
     keyword = config.keyword(command) or command
     # How the argument is spelled is the COMMAND's, never the caller's: a login
-    # is `@dana` and a channel ref is `slack@C0123ABCD`, and a second parameter
-    # saying which would be a way for the two to disagree (issue-375).
+    # is `@dana`, a Slack id is `slack:U…` and a channel ref is `slack@C0123ABCD`,
+    # and a second parameter saying which would be a way for the two to disagree
+    # (issue-375).
     if subject:
-        line = (
-            f"{keyword} {subject}"
-            if command in CHANNEL_COMMANDS
-            else (f"{keyword} @{subject}")
-        )
+        if command in CHANNEL_COMMANDS or subject.startswith(SLACK_TOKEN_PREFIX):
+            line = f"{keyword} {subject}"
+        else:
+            line = f"{keyword} @{subject.lstrip('@')}"
     else:
         line = keyword
+    if listen and command in CHANNEL_COMMANDS:
+        line = f"{line} {LISTEN_FLAG} {listen}"
     if address:
         line = f"{line} instance:{address}"
     who = f" by `{actor}`" if actor else ""

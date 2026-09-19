@@ -398,6 +398,48 @@ def test_a_malformed_ended_reads_as_not_ended(tmp_path):
 # -- the two commands that carry a CHANNEL (issue-375) --------------------------
 
 
+def test_a_collaborator_command_carries_slack_ids_beside_logins():
+    """R7.1: `slack:U…` tokens ride beside `@login` ones, each in its own list."""
+    result = parse_command(
+        "the-loop add-collaborator @Dana slack:U0456GHIJ @ann", ControlConfig()
+    )
+    assert result.command == ADD_COLLABORATOR
+    assert result.subjects == ["dana", "ann"]
+    assert result.slack == ["U0456GHIJ"]
+
+    only = parse_command(
+        "the-loop remove-collaborator slack:U0456GHIJ", ControlConfig()
+    )
+    assert only.command == REMOVE_COLLABORATOR
+    assert only.subjects == [] and only.slack == ["U0456GHIJ"]
+
+
+def test_a_slack_token_that_is_not_a_member_id_names_nobody():
+    """A11: a handle or a lowercase id after the keyword is not a subject."""
+    for body in (
+        "the-loop add-collaborator slack:@dana",
+        "the-loop add-collaborator slack:dana",
+        "the-loop add-collaborator slack:u0456ghij",
+    ):
+        result = parse_command(body, ControlConfig())
+        assert result.command == ADD_COLLABORATOR
+        assert result.subjects == [] and result.slack == []
+
+
+def test_the_paper_trail_comment_spells_a_slack_id_as_the_keyword_reads_it():
+    body = command_comment(
+        ADD_COLLABORATOR,
+        ControlConfig(),
+        actor="octocat",
+        subject="slack:U0456GHIJ",
+        invocation="the-loop add-collaborator",
+    )
+    assert body.startswith("the-loop add-collaborator slack:U0456GHIJ")
+    assert "@slack:" not in body
+    assert parse_command(body, ControlConfig()).slack == ["U0456GHIJ"]
+    assert is_self_authored(body)
+
+
 def test_the_channel_keywords_are_declared_like_every_other():
     config = ControlConfig()
     assert config.keyword(ADD_CHANNEL) == "the-loop add-channel"
@@ -432,6 +474,56 @@ def test_a_channel_keyword_matches_as_a_whole_token():
     assert parse_command("THE-LOOP ADD-CHANNEL slack@C0TMP375", config).subjects == [
         "slack@C0TMP375"
     ]
+
+
+def test_a_channel_command_carries_its_listen_mode():
+    """R2.1: one `--listen <mode>` after the keyword, on that line, either side of
+    the refs; absent means the caller's default."""
+    config = ControlConfig()
+    result = parse_command("the-loop add-channel slack@C0TMP375 --listen all", config)
+    assert result.command == ADD_CHANNEL
+    assert result.subjects == ["slack@C0TMP375"] and result.listen == "all"
+    assert not result.refusal
+    result = parse_command("the-loop add-channel --listen ALL slack@C0TMP375", config)
+    assert result.subjects == ["slack@C0TMP375"] and result.listen == "all"
+    result = parse_command(
+        "the-loop add-channel slack@C0TMP375 --listen mentions.", config
+    )
+    assert result.subjects == ["slack@C0TMP375"] and result.listen == "mentions"
+    result = parse_command("the-loop add-channel slack@C0TMP375", config)
+    assert result.subjects == ["slack@C0TMP375"] and result.listen == ""
+    # ...and only on the keyword's line: the next line is prose to this parser
+    result = parse_command("the-loop add-channel slack@C0TMP375\n--listen all", config)
+    assert result.subjects == ["slack@C0TMP375"] and result.listen == ""
+
+
+def test_an_unknown_listen_mode_refuses_the_whole_command():
+    """A12 / R2.1: a mode that is not one of the two is refused as a bad channel
+    ref is — nothing is declared, and the refusal names the two modes."""
+    config = ControlConfig()
+    for body in (
+        "the-loop add-channel slack@C0TMP375 --listen everything",
+        "the-loop add-channel slack@C0TMP375 --listen",
+        "the-loop add-channel --listen slack@C0TMP375",
+    ):
+        result = parse_command(body, config)
+        assert result.command == ADD_CHANNEL
+        assert result.subjects == [] and result.listen == ""
+        assert "mentions" in result.refusal and "all" in result.refusal
+
+
+def test_the_paper_trail_comment_spells_the_listen_mode_back():
+    body = command_comment(
+        ADD_CHANNEL,
+        ControlConfig(),
+        actor="octocat",
+        subject="slack@C0TMP375",
+        invocation="the-loop add-channel",
+        listen="all",
+    )
+    assert body.startswith("the-loop add-channel slack@C0TMP375 --listen all")
+    assert parse_command(body, ControlConfig()).listen == "all"
+    assert is_self_authored(body)
 
 
 def test_the_paper_trail_comment_spells_a_channel_without_an_at_prefix():

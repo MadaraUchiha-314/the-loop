@@ -88,7 +88,11 @@ from ..runner import SESSION_LIVE, TmuxRunner
 from ..graph.state import WorkItemState
 from ..sessions import Session, SessionRegistry, WorkItemRef
 from ..state import LegacyLayout, StateLayout, layout_from_config, legacy_layout
-from ..workchannels import ChannelTakenError, CollaborationChannelStore
+from ..workchannels import (
+    DEFAULT_LISTEN,
+    ChannelTakenError,
+    CollaborationChannelStore,
+)
 from ..workitem import SECTIONS
 from ..harness_plugins import PluginConfig
 from ..identity import github_logins, parse_authorized_users
@@ -1976,21 +1980,26 @@ class Dispatcher:
         target = self._target_work_item(routed)
         if target is None:  # unreachable: handle() drops an event with no items
             return
-        if not control.subjects:
+        # Each token is one grant (issue-389 R3.5): a login and a Slack id in one
+        # comment are two people unless the roster already knows them as one.
+        grants = [{"login": login} for login in control.subjects] + [
+            {"slack": member} for member in control.slack
+        ]
+        if not grants:
             # The keyword with nobody named. Refused rather than guessed at: the only
             # text this command may act on is a token that matched GitHub's login
-            # grammar, and there was none.
+            # grammar or the `slack:<member id>` one, and there was none.
             self._reject_control(command, routed, actor, "missing-collaborator")
             return
         note = str((routed.payload.get("comment") or {}).get("html_url") or "")
-        for login in control.subjects:
+        for ids in grants:
             if command == ADD_COLLABORATOR:
                 changed = self.collaborator_store.add(
-                    target, login, actor=actor, source="comment", note=note
+                    target, actor=actor, source="comment", note=note, **ids
                 )
                 effect = "granted" if changed else "already-granted"
             else:
-                changed = self.collaborator_store.remove(target, login)
+                changed = self.collaborator_store.remove(target, **ids)
                 effect = "revoked" if changed else "not-a-collaborator"
             logger.info(
                 "control command %s from %s on %s: %s %s",
@@ -1998,7 +2007,7 @@ class Dispatcher:
                 actor or "(unknown)",
                 target.ref,
                 effect,
-                login,
+                ids.get("login") or f"slack:{ids.get('slack', '')}",
             )
             eventlog.emit(
                 "control.command",
@@ -2006,7 +2015,8 @@ class Dispatcher:
                 command=command,
                 source="comment",
                 actor=actor or None,
-                collaborator=login,
+                collaborator=ids.get("login") or None,
+                slack=ids.get("slack") or None,
                 effect=effect,
                 delivery_id=routed.delivery_id or None,
             )
@@ -2036,6 +2046,13 @@ class Dispatcher:
         target = self._target_work_item(routed)
         if target is None:  # unreachable: handle() drops an event with no items
             return
+        if control.refusal:
+            # `--listen` with a mode the-loop does not know (issue-389 A12).
+            # Refused whole rather than declared with a default the person did
+            # not ask for; the parser already emptied the subjects.
+            logger.warning("refusing the %s command: %s", command, control.refusal)
+            self._reject_control(command, routed, actor, "unknown-listen-mode")
+            return
         if not control.subjects:
             # The keyword with no channel named, or one that did not match the
             # grammar — a channel NAME rather than an id is the common case.
@@ -2043,6 +2060,7 @@ class Dispatcher:
             self._reject_control(command, routed, actor, "missing-channel")
             return
         note = str((routed.payload.get("comment") or {}).get("html_url") or "")
+        listen = control.listen or DEFAULT_LISTEN
         for ref in control.subjects:
             try:
                 # A person types the name they know; the record keeps the id the
@@ -2058,6 +2076,7 @@ class Dispatcher:
                         source="comment",
                         note=note,
                         name=name,
+                        listen=listen,
                     )
                     effect = "declared" if changed else "already-declared"
                 else:
@@ -2095,6 +2114,7 @@ class Dispatcher:
                 actor=actor or None,
                 channel=ref,
                 replaced=replaced.ref if replaced else None,
+                listen=listen if command == ADD_CHANNEL else None,
                 effect=effect,
                 delivery_id=routed.delivery_id or None,
             )

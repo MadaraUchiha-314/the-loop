@@ -69,7 +69,18 @@ by the next thread bind.
 A declaration is cleared when the work item ends, exactly as the collaborator
 roster is — the room outlives the item, the-loop's claim on it does not.
 
-Spec: docs/specs/issue-375/design.md §1.
+## How a room listens (issue-389)
+
+A declaration carries a **listen mode**: ``mentions`` (the default — the-loop hears
+a message in the room only when it is addressed, by mention) or ``all`` (every
+message there is input, as every room was before issue-389). The mode is read
+through a two-value guard, and anything else — absent, forged, hand-edited — reads
+as ``mentions``, the quieter mode (abuse case A12). Switching a room is a binding
+act: it rides on the same keyword as the declaration, so the same
+``routing.authorizedUsers`` check guards it, and a re-declaration replaces the mode.
+:func:`listen_mode_for` is the ingress's question, answered by channel id.
+
+Spec: docs/specs/issue-375/design.md §1; docs/specs/issue-389/design.md §2.
 """
 
 from __future__ import annotations
@@ -90,16 +101,29 @@ logger = logging.getLogger("the-loop.workchannels")
 __all__ = [
     "CHANNEL_TYPES",
     "ChannelRef",
+    "DEFAULT_LISTEN",
+    "LISTEN_ALL",
+    "LISTEN_MENTIONS",
+    "LISTEN_MODES",
     "resolve_channel_ref",
     "CollaborationChannel",
     "CollaborationChannelStore",
     "SLACK",
+    "listen_mode_for",
     "parse_channel_ref",
     "parse_channel_refs",
 ]
 
 #: The one channel type the-loop can actually carry a conversation on today.
 SLACK = "slack"
+
+#: The two ways a room listens (issue-389 R2.1): ``mentions`` — the-loop hears a
+#: message there only when it is addressed — and ``all`` — every message there is
+#: input. The default is the quieter one, and so is every fallback.
+LISTEN_MENTIONS = "mentions"
+LISTEN_ALL = "all"
+LISTEN_MODES = (LISTEN_MENTIONS, LISTEN_ALL)
+DEFAULT_LISTEN = LISTEN_MENTIONS
 
 #: What a Slack target may be: a conversation id (``C`` public, ``G`` private,
 #: ``D`` a direct message) **or** a channel name, with or without its ``#``.
@@ -293,6 +317,7 @@ class CollaborationChannel:
     source: str = "comment"  # comment | cli
     note: str = ""  # the declaring comment's url, when there is one
     name: str = ""  # what the declarer typed, when it was a name
+    listen: str = DEFAULT_LISTEN  # mentions | all (issue-389)
 
     @property
     def ref(self) -> str:
@@ -313,6 +338,7 @@ class CollaborationChannel:
             "addedAt": self.added_at,
             "source": self.source,
             "note": self.note,
+            "listen": self.listen,
         }
 
     @classmethod
@@ -323,6 +349,11 @@ class CollaborationChannel:
         stored ``ref`` rather than trusting ``type``/``target`` beside it: what
         the ingress routes on is the parsed value, so an entry that would not be
         accepted today is not honoured today.
+
+        ``listen`` is read through a two-value guard **after** the declaration
+        itself is found valid (issue-389 A12): one of :data:`LISTEN_MODES`, exactly
+        spelled, or ``mentions`` — an absent value (a record written before the
+        field existed) and a forged one both fall to the quieter mode.
         """
         if not isinstance(data, dict):
             return None
@@ -337,6 +368,14 @@ class CollaborationChannel:
                 channel.ref,
             )
             return None
+        listen = data.get("listen")
+        if listen is not None and listen not in LISTEN_MODES:
+            logger.warning(
+                "%s declares an unknown listen mode %r; reading it as %r",
+                channel.ref,
+                listen,
+                DEFAULT_LISTEN,
+            )
         return cls(
             type=channel.type,
             target=channel.target,
@@ -345,6 +384,7 @@ class CollaborationChannel:
             source=str(data.get("source") or "comment"),
             note=str(data.get("note") or ""),
             name=str(data.get("name") or ""),
+            listen=listen if listen in LISTEN_MODES else DEFAULT_LISTEN,
         )
 
 
@@ -501,17 +541,25 @@ class CollaborationChannelStore:
         source: str = "comment",
         note: str = "",
         name: str = "",
+        listen: str = DEFAULT_LISTEN,
     ) -> Tuple[bool, Optional[CollaborationChannel]]:
-        """Declare ``channel`` on ``work_item``.
+        """Declare ``channel`` on ``work_item``, listening as ``listen`` says.
 
         Returns ``(changed, replaced)``: ``changed`` is false when this exact
-        channel was already declared, and ``replaced`` is the declaration of the
-        same *type* this one displaced — one channel per type, so declaring a
-        second Slack channel moves the room rather than adding one (R1.7).
+        channel was already declared **with this mode**, and ``replaced`` is the
+        declaration of the same *type* this one displaced — one channel per type,
+        so declaring a second Slack channel moves the room rather than adding one
+        (R1.7). Re-declaring the same channel with another mode replaces the mode
+        (issue-389 R2.1): a change, with fresh provenance and no ``replaced``.
 
-        Raises :class:`ValueError` for anything that is not a channel ref, and
-        :class:`ChannelTakenError` when another work item already declares it.
+        Raises :class:`ValueError` for anything that is not a channel ref or not a
+        listen mode, and :class:`ChannelTakenError` when another work item already
+        declares it.
         """
+        if listen not in LISTEN_MODES:
+            raise ValueError(
+                f"unknown listen mode {listen!r}: one of {', '.join(LISTEN_MODES)}"
+            )
         target = (
             channel if isinstance(channel, ChannelRef) else parse_channel_ref(channel)
         )
@@ -530,13 +578,24 @@ class CollaborationChannelStore:
         if holder and holder != item.ref:
             raise ChannelTakenError(target, holder)
         current = self.list(item)
-        if any(
-            record.type == target.type and record.target == target.target
-            for record in current
-        ):
+        existing = next(
+            (
+                record
+                for record in current
+                if record.type == target.type and record.target == target.target
+            ),
+            None,
+        )
+        if existing is not None and existing.listen == listen:
             return False, None
-        replaced = next(
-            (record for record in current if record.type == target.type), None
+        # One channel per type: either this channel is already the room (and only
+        # its mode changes) or another of the same type is displaced by it.
+        replaced = (
+            None
+            if existing is not None
+            else next(
+                (record for record in current if record.type == target.type), None
+            )
         )
         remaining = [record for record in current if record.type != target.type]
         remaining.append(
@@ -548,16 +607,21 @@ class CollaborationChannelStore:
                 source=source,
                 note=note,
                 name=name,
+                listen=listen,
             )
         )
         self._write(item, remaining)
         logger.info(
-            "declared %s as %s's collaboration channel (source=%s, by=%s%s)",
+            "declared %s as %s's collaboration channel, listening to %s "
+            "(source=%s, by=%s%s)",
             target.ref,
             item.ref,
+            listen,
             source,
             actor or "(unknown)",
-            f", replacing {replaced.ref}" if replaced else "",
+            f", replacing {replaced.ref}"
+            if replaced
+            else (f", was listening to {existing.listen}" if existing else ""),
         )
         return True, replaced
 
@@ -597,3 +661,31 @@ class CollaborationChannelStore:
             {"channels": [record.to_dict() for record in records]} if records else None
         )
         self.store.write_section(item, COLLABORATION_CHANNELS, payload)
+
+
+def listen_mode_for(
+    store: CollaborationChannelStore, channel_id: str, channel_type: str = SLACK
+) -> str:
+    """How the room ``channel_id`` listens — one of :data:`LISTEN_MODES`.
+
+    The Slack ingress's question for §1's input table (issue-389): ``all`` only
+    when exactly one work item declares this channel **and** its declaration says
+    so. An undeclared channel, a contested one (:meth:`CollaborationChannelStore.
+    declared_by` answers ``""``), an unreadable store and a malformed id all answer
+    ``mentions`` — the quieter mode is every fallback, so no failure can make a
+    room hear more than it was declared to.
+    """
+    channel = parse_channel_ref(f"{channel_type}@{channel_id}") if channel_id else None
+    if channel is None or not channel.is_id:
+        return DEFAULT_LISTEN
+    try:
+        holder = store.declared_by(channel)
+        if not holder:
+            return DEFAULT_LISTEN
+        record = store.for_type(holder, channel_type)
+    except (OSError, ValueError) as exc:
+        logger.debug("could not read %s's listen mode: %s", channel.ref, exc)
+        return DEFAULT_LISTEN
+    if record is None or record.target != channel.target:
+        return DEFAULT_LISTEN
+    return record.listen if record.listen in LISTEN_MODES else DEFAULT_LISTEN
