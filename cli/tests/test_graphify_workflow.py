@@ -67,11 +67,20 @@ def test_the_graph_is_rebuilt_on_main_and_never_from_a_pull_request() -> None:
     }
 
 
-def test_rebuilds_queue_rather_than_cancel_each_other() -> None:
-    """R1.4: a rebuild in flight is never cancelled by the next merge — the queued run
-    picks up the newer tree, and the tokens already spent are not thrown away."""
+def test_rebuilds_are_never_cancelled_and_never_share_a_group_with_a_pull_request() -> (
+    None
+):
+    """R1.4: a rebuild in flight is never cancelled by the next merge — the tokens already
+    spent are not thrown away — and the group is per event, so a pull-request rehearsal can
+    never take a pending main rebuild's one queue slot (graphify-labs review, PR #386)."""
     wf = _workflow()
-    assert wf["concurrency"] == {"group": "graphify", "cancel-in-progress": False}
+    conc = wf["concurrency"]
+    assert conc["cancel-in-progress"] is False
+    group = conc["group"]
+    assert group.startswith("graphify-${{")
+    assert "github.event_name == 'pull_request'" in group
+    assert "github.event.pull_request.number" in group
+    assert group.rstrip("}").rstrip().endswith("'main'")
 
 
 # ---------------------------------------------------------------------- the secret
@@ -105,6 +114,30 @@ def test_write_access_is_confined_to_the_rebuild_job() -> None:
     jobs = wf["jobs"]
     assert jobs["rebuild"]["permissions"] == {"contents": "write"}
     assert "permissions" not in jobs["dry-run"]
+
+
+def test_the_write_token_reaches_git_only_after_graphify_has_run() -> None:
+    """R3.3 (graphify-labs review, PR #386): neither checkout persists credentials, so no
+    third-party tool runs with a write-scoped token on disk; the rebuild job hands the
+    token to git in the commit step alone, through the remote URL."""
+    wf = _workflow()
+    for name, job in wf["jobs"].items():
+        checkout = next(
+            s for s in job["steps"] if s.get("uses", "").startswith("actions/checkout@")
+        )
+        assert checkout["with"]["persist-credentials"] is False, name
+        assert "token" not in checkout["with"], name
+    steps = wf["jobs"]["rebuild"]["steps"]
+    commit = next(s for s in steps if "graphify-commit.sh" in s.get("run", ""))
+    assert commit["env"] == {"GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}"}
+    assert "git remote set-url origin" in commit["run"]
+    assert (
+        "x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+        in commit["run"]
+    )
+    # No earlier step in the job names the token.
+    earlier = steps[: steps.index(commit)]
+    assert "GITHUB_TOKEN" not in json.dumps(earlier)
 
 
 # ---------------------------------------------------------------------- the build

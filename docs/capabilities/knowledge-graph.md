@@ -46,7 +46,11 @@ flowchart LR
   (`--code-only`, `--no-label`) with no secret and no write access, and upload
   `GRAPH_REPORT.md` as a workflow artifact. Any other pull request runs nothing.
 - A push made by the pipeline SHALL start no workflow (it uses `GITHUB_TOKEN`), so the
-  graph commit triggers neither CI, the release, nor another rebuild.
+  graph commit triggers neither CI, the release, nor another rebuild. The token SHALL
+  reach git in the commit step only — the checkout persists no credential, so graphify
+  never runs with a token that could push. Runs are never cancelled; a newer `main`
+  rebuild replaces a pending one, and pull-request rehearsals live in their own
+  concurrency group.
 - The tracked files SHALL be `graph.json`, `GRAPH_REPORT.md`, `graph.html`,
   `manifest.json`, `.graphify_labels.json` and its `.sig`; `graphify-out/cache/`, the
   other `.graphify_*` sidecars and dated backup directories are git-ignored; the

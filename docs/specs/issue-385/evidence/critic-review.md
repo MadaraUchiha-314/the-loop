@@ -15,6 +15,7 @@ workItem: "github:MadaraUchiha-314/the-loop#385"
 | Round | Critic | Outcome | Findings → disposition |
 |-------|--------|---------|------------------------|
 | 1 | — | `unavailable` | This repository declares `critics: []` in `.the-loop/cli-config.yaml`, and this session has no `the-loop critic` runtime attached — a round that cannot run is recorded `unavailable` and does **not** count toward `criticReviewCount` |
+| 2 | `graphify-labs[bot]` (an external review app on the repository, not a configured critic) | 2 findings, both **will-fix** → fixed | (a) the shared concurrency group let a pull-request rehearsal displace a pending `main` rebuild — group made per event; (b) the checkout persisted the write-scoped token before graphify ran — both checkouts now persist nothing and the token reaches git in the commit step only. Replied first on the PR, then fixed, each with a test |
 
 ## Compensating coverage
 

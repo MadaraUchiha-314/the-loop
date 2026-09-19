@@ -46,6 +46,8 @@ JSON under `graphify-out/`, executed by nothing.
 | 4 | The bot commit re-triggers a rebuild (a token-spending loop) | a `GITHUB_TOKEN` push starts no workflow — the platform rule release.yml already relies on | design; no test can observe GitHub's scheduler |
 | 5 | A bad model answer replaces the committed graph with a smaller one | graphify's shrink guard is left armed (`--allow-partial` is not passed) and the job fails; nothing is committed | `test_graphify_workflow.py::test_the_rebuild_extracts_with_claude_then_names_the_communities` (pins the exact command line) |
 | 6 | A maintainer dispatches the workflow on a branch other than `main` with the environment's secret | the `graphify` environment's deployment-branch restriction — **an owner action**, not in this diff | requested below |
+| 7 | A compromised graphify release (or a dependency of it) uses the job's write token to push to `main` — raised by the graphify-labs review on PR #386 | both checkouts persist no credentials; the write token reaches git in the commit step only, after the tool has finished, through the remote URL | `test_graphify_workflow.py::test_the_write_token_reaches_git_only_after_graphify_has_run` |
+| 8 | A pull-request rehearsal takes the one pending slot of a `main` rebuild in the shared concurrency group — raised by the same review | the group is per event (`graphify-main`, `graphify-pr-<n>`) | `test_graphify_workflow.py::test_rebuilds_are_never_cancelled_and_never_share_a_group_with_a_pull_request` |
 
 ## What the change removes
 
@@ -63,7 +65,8 @@ full re-extraction.
 
 `ANTHROPIC_API_KEY` is read from `secrets` into one step's environment. It is not echoed:
 the step does not `set -x`, graphify logs token counts and a cost estimate, not headers.
-The `GITHUB_TOKEN` is the checkout's persisted credential, as in release.yml. The
+The `GITHUB_TOKEN` is **not** the checkout's persisted credential (unlike release.yml):
+it is handed to git in the commit step only, once graphify has exited. The
 `.graphify_root` sidecar, which records the runner's absolute path, is ignored.
 
 ## Human actions requested (paper trail on the PR)

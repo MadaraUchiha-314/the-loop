@@ -80,22 +80,29 @@ Nothing in `cli/the_loop/` changes. This is a repository capability, not a CLI o
 - **Triggers.** `push: branches: [main]`; `workflow_dispatch` with a boolean `force`
   input; `pull_request` filtered to `paths: [.github/workflows/graphify.yml,
   scripts/graphify-commit.sh]`. Nothing else starts it.
-- **Concurrency.** `group: graphify, cancel-in-progress: false` — runs queue. A cancelled
-  run would throw away the tokens it had spent; a queued one extracts only what the
-  newer tree changed.
+- **Concurrency.** `cancel-in-progress: false`, and a group **per event** —
+  `graphify-main` for pushes and dispatches, `graphify-pr-<n>` for a pull request. A
+  cancelled run would throw away the tokens it had spent. GitHub keeps at most one
+  *pending* run per group and replaces it with a newer arrival: on `main` that is right
+  (the newest tree covers every merge in between); across events it would let a
+  pull-request rehearsal take a pending rebuild's slot, which the per-event group
+  prevents (graphify-labs review on PR #386).
 - **Permissions.** Top level `contents: read`. The `rebuild` job alone declares
   `contents: write`.
 - **Environment variables** (workflow level): `GRAPHIFY_VERSION` (`0.9.64`),
   `GRAPHIFY_MODEL` (`claude-opus-5`), `GRAPHIFY_NO_BACKUP=1` (no dated copy of a 30 MB
   file per run), `GRAPHIFY_NO_TIPS=1`.
 - **`rebuild`** (`if: github.event_name != 'pull_request'`, `environment: graphify`,
-  `timeout-minutes: 90`): checkout with `GITHUB_TOKEN`; `setup-uv`; install graphify and
+  `timeout-minutes: 90`): checkout with `persist-credentials: false`; `setup-uv`; install graphify and
   put `uv tool dir --bin` on `GITHUB_PATH`; restore `graphify-out/cache` from the Actions
   cache (`key: graphify-cache-<sha>`, `restore-keys: graphify-cache-`); the extract step
   with `ANTHROPIC_API_KEY` from `secrets` and `GRAPHIFY_FORCE` from the `force` input,
-  failing first with a named error if the key is empty; then the commit script.
+  failing first with a named error if the key is empty; then the commit step, the only
+  one that holds `GITHUB_TOKEN` — it writes the token into the remote URL
+  (`x-access-token:…@github.com/<repo>`) and runs the script, so no third-party tool
+  ever runs with a write-scoped token on disk (graphify-labs review on PR #386).
 - **`dry-run`** (`if: github.event_name == 'pull_request'`, `timeout-minutes: 20`):
-  checkout; same install; `graphify extract . --code-only` and `graphify cluster-only .
+  checkout with `persist-credentials: false`; same install; `graphify extract . --code-only` and `graphify cluster-only .
   --no-label`; upload `GRAPH_REPORT.md` as a 7-day artifact. No `environment`, no
   `permissions`, no `secrets.` anywhere in it.
 
@@ -209,7 +216,9 @@ None in the CLI. The workflow's contract with the script is the argument (`main`
   honoured by graphify and files that look like credentials are skipped by name before
   they can be sent. The sidecar with the runner's absolute path is ignored.
 - **Least privilege:** `contents: read` at the top; `write` on one job; no `id-token`, no
-  `pull-requests`, no `issues`.
+  `pull-requests`, no `issues`. Within that job the token is on disk for the commit step
+  only: both checkouts persist no credentials, so graphify — a third-party tool with the
+  repository's own key in its environment — runs with nothing that could push.
 - **Fail-closed behaviour:** missing key → fail before extraction; partial extraction →
   graphify refuses to shrink the graph, job red; push rejected → bounded retries then
   red; rebase conflict → red; in every case `main` is untouched and the next merge
@@ -246,7 +255,8 @@ executable detail is `testing-plan.md`.
 | headless CLI in the job | install Claude Code and run `claude -p "/graphify ."` | same library, one process, one credential, exit codes; the agent path is recorded in decision-133 with its install/auth recipe |
 | the asset on `main` | an orphan branch, Pages, an artifact | what the ticket asked; the graph in every checkout is what `graphify query` and the skill's fast path expect; ~0.4 MB of pack per rebuild is the accepted cost, the orphan branch the fallback |
 | a script, not inline `run:` steps | inline git in the workflow | a script can be driven by a test against a bare repo; the workflow cannot |
-| queue runs | cancel in progress | spent tokens are not thrown away |
+| never cancel; one group per event | cancel in progress; one group | spent tokens are not thrown away; a pull-request rehearsal cannot displace a pending `main` rebuild |
+| the write token in the commit step only | `actions/checkout`'s persisted credential | a third-party tool never runs with a token that could push to `main` |
 | rehearse on pull requests that touch the pipeline only | rehearse on every pull request | forty seconds per PR to prove nothing new |
 | Actions cache for the semantic cache | commit it / drop it | 4 MB of model answers per run is not a commit; measured: the manifest alone is sufficient, the cache is a saving |
 | explicit `claude-opus-5` | graphify's default | a reviewed one-line pin; Sonnet 5 is the same edit at a third of the cost — the owner's call, asked in the requirements |
