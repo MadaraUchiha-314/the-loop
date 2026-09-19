@@ -1,0 +1,19 @@
+{
+  "type": "events_api",
+  "payload": {
+    "team_id": "T0EXAMPLE",
+    "api_app_id": "A0EXAMPLE",
+    "event": {
+      "type": "app_mention",
+      "user": "UHUMAN",
+      "text": "<@UBOT> record-context",
+      "ts": "1800.4",
+      "channel": "C0TMP389",
+      "thread_ts": "1800.1",
+      "event_ts": "1800.4"
+    },
+    "type": "event_callback",
+    "event_id": "Ev0EXAMPLE",
+    "event_time": 1758300000
+  }
+}

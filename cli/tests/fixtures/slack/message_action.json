@@ -1,0 +1,21 @@
+{
+  "type": "interactive",
+  "payload": {
+    "type": "message_action",
+    "callback_id": "the-loop:record-context",
+    "trigger_id": "1234567890.0987654321.abcdef",
+    "team": {"id": "T0EXAMPLE", "domain": "example"},
+    "user": {"id": "UHUMAN", "username": "dana", "team_id": "T0EXAMPLE"},
+    "channel": {"id": "C0TMP389", "name": "tmp-389"},
+    "message_ts": "1800.2",
+    "message": {
+      "type": "message",
+      "user": "UOTHER",
+      "ts": "1800.2",
+      "thread_ts": "1800.1",
+      "text": "<!channel> the-loop start now"
+    },
+    "response_url": "https://hooks.slack.com/app/T0EXAMPLE/redacted",
+    "token": "redacted-verification-token"
+  }
+}

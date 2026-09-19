@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -324,4 +325,98 @@ def test_the_listener_routes_mentions_shortcuts_and_submissions(
         ("event", "message", False),
         ("shortcut", "the-loop:record-context"),
         ("view", "the-loop:record-decision"),
+    ]
+
+
+# -- the recorded payload shapes (testing plan § Verification environment) ----------
+
+FIXTURES = Path(__file__).parent / "fixtures" / "slack"
+
+
+def _fixture(name):
+    return json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
+
+
+def test_the_recorded_payload_shapes_are_handled_as_the_typed_mention(tmp_path):
+    """
+    Scenario: Slack's own payload shapes drive the three handlers
+      Given the app_mention, message_action and view_submission payloads as Slack sends them
+      When each is handed to its handler with the room declared
+      Then the mention records the thread as context, the shortcut does the same
+      And the submission records the decision with its kind and rationale
+    """
+    config = config_for(tmp_path)
+    declare(config)
+    mention_sink, mention_client = Sink(), _thread_client()
+    mentioned = inbound.handle_socket_event(
+        _fixture("app_mention")["payload"]["event"],
+        config,
+        post_comment=mention_sink.post_comment,
+        deliver=mention_sink.deliver,
+        client_factory=lambda token: mention_client,
+        addressed=True,
+    )
+    assert mentioned["outcome"] == "processed" and mentioned["event"] == "context.added"
+
+    tapped_config = config_for(tmp_path / "tapped")
+    declare(tapped_config)
+    tapped_sink, tapped_client = Sink(), _thread_client()
+    tapped = shortcut(
+        tapped_config, tapped_sink, tapped_client, _fixture("message_action")["payload"]
+    )
+    assert tapped["outcome"] == "processed" and tapped["event"] == "context.added"
+    assert tapped_sink.recorded[0][1] == mention_sink.recorded[0][1]
+
+    submitted_sink, submitted_client = Sink(), _thread_client()
+    submitted = inbound.handle_view_submission(
+        _fixture("view_submission")["payload"],
+        config,
+        post_comment=submitted_sink.post_comment,
+        deliver=submitted_sink.deliver,
+        client_factory=lambda token: submitted_client,
+    )
+    assert submitted["outcome"] == "processed"
+    assert submitted["event"] == "decision.recorded"
+    body = submitted_sink.recorded[0][1]
+    assert "> keep poll mode" in body and "kind: tech" in body and "it is cheap" in body
+    assert envelope_of(body).actor["slack"] == "UHUMAN"
+
+
+def test_the_listener_routes_the_recorded_payload_shapes(
+    listener_env,  # noqa: F811 — the fixture, imported above
+    monkeypatch,
+):
+    seen = []
+    monkeypatch.setattr(
+        inbound,
+        "handle_socket_event",
+        lambda event, cfg, addressed=False: seen.append((event["type"], addressed)),
+    )
+    monkeypatch.setattr(
+        inbound,
+        "handle_message_action",
+        lambda payload, cfg: seen.append((payload["type"], payload["callback_id"])),
+    )
+    monkeypatch.setattr(
+        inbound,
+        "handle_view_submission",
+        lambda payload, cfg: seen.append(
+            (payload["type"], payload["view"]["callback_id"])
+        ),
+    )
+    monkeypatch.setattr(slack_mod, "catch_up", lambda cfg: {})
+    stop = threading.Event()
+    thread, client, _ = run_listener(listener_env, stop)
+    try:
+        for name in ("app_mention", "message_action", "view_submission"):
+            envelope = _fixture(name)
+            client.deliver(envelope["type"], envelope["payload"])
+    finally:
+        stop.set()
+        thread.join(timeout=5)
+    assert len(client.acks) == 3
+    assert seen == [
+        ("app_mention", True),
+        ("message_action", "the-loop:record-context"),
+        ("view_submission", "the-loop:record-decision"),
     ]
