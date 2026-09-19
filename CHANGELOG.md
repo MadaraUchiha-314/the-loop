@@ -1,3 +1,9 @@
+## v19.6.0 (2026-09-19)
+
+### Feat
+
+- **issue-389**: a Slack room reaches the-loop only when addressed, and can hand it context, decisions and collaborators (#390)
+
 ## v19.5.0 (2026-09-18)
 
 ### Feat
