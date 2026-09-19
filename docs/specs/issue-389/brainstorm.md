@@ -220,12 +220,12 @@ sequenceDiagram
   participant S as session (if any)
   M->>L: "@the-loop context" in a thread
   L->>P: message, room → work item (issue-375)
-  P->>P: addressed? (text carries <@bot>) else drop not-addressed
+  P->>P: addressed? (text mentions the bot) else drop not-addressed
   P->>P: authorize (tier per act) · classify: keyword → verb → gate → reply
   P->>P: grant: context.added in channels.slack.publish?
   P->>L: conversations.replies → snapshot, names resolved
   P->>G: record: marked, quoted, scrubbed comment + envelope
-  P->>S: deliver (best-effort; refusal recorded)
+  P->>S: deliver (best-effort, a refusal is recorded)
   P->>M: 👀 → ✅ and a one-line reply with the record's link
 ```
 
