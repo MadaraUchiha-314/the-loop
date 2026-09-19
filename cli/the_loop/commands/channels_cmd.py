@@ -24,6 +24,7 @@ from .sessions_cmd import _cli_config
 from .. import eventlog
 from ..channels import inbound
 from ..channels.events import SUBSCRIBABLE_EVENTS
+from ..channels.records import RECORD_TYPES, records_from_comments, render
 from ..channels.slack import (
     REACTION_STATES,
     SlackChannelConfig,
@@ -311,6 +312,62 @@ def _threads(config: dict, work_item: str, as_json: bool) -> int:
     return 0
 
 
+def _ledger_comments(config: dict, work_item: str) -> list:
+    """The ticket's comments as ``records_from_comments`` reads them — one
+    ``gh`` listing through the poller's read-only client, tried as an issue
+    and, when the ledger says the number is a pull request, as one."""
+    from ..channels.github import gh_binary
+    from ..poller.github import GhClient, GhError
+    from ..sessions import WorkItemRef
+
+    ref = WorkItemRef.parse(work_item)
+    gh = GhClient(binary=gh_binary(config))
+    try:
+        comments = gh.list_comments(
+            ref.owner, ref.repo, ref.number, is_pr=False, host=ref.host
+        )
+    except GhError as first:
+        # `gh issue view` rejects a pull request's number; the ref does not
+        # say which it is, so the PR read is the second try, and the first
+        # error is the one reported when both fail.
+        try:
+            comments = gh.list_comments(
+                ref.owner, ref.repo, ref.number, is_pr=True, host=ref.host
+            )
+        except GhError:
+            raise first from None
+    return [
+        {
+            "id": c.id,
+            "body": c.body,
+            "author": c.author,
+            "created_at": c.created_at,
+            "url": c.url,
+        }
+        for c in comments
+    ]
+
+
+def _records(config: dict, work_item: str, types: list, fmt: str) -> int:
+    """A work item's channel records (issue-389 R4.7, R5.6): every marked,
+    enveloped ``context.added`` / ``decision.recorded`` comment on its ticket,
+    as JSON rows or as markdown. Read-only; exit 1 when the ledger cannot be
+    read or the ref is not one."""
+    from ..poller.github import GhError
+
+    try:
+        comments = _ledger_comments(config, work_item)
+    except (ValueError, GhError) as exc:
+        print(f"could not read the records of {work_item}: {exc}", file=sys.stderr)
+        return 1
+    records = records_from_comments(comments, types or None)
+    if fmt == "json":
+        print(json.dumps([r.to_dict() for r in records], indent=2))
+        return 0
+    print(render(records, canonical(work_item)), end="")
+    return 0
+
+
 def _publish_meaning(name: str) -> str:
     from ..channels.events import EVENTS
 
@@ -357,6 +414,27 @@ class ChannelsCommand(Command):
         threads.add_argument(
             "--json", action="store_true", help="Print the records as JSON"
         )
+        records = sub.add_parser(
+            "records",
+            help=(
+                "The context and decision records a channel wrote on a work "
+                "item's ticket (one gh read; no Slack call, no secrets)"
+            ),
+        )
+        records.add_argument("work_item", metavar="REF", help="The work item ref")
+        records.add_argument(
+            "--type",
+            action="append",
+            choices=list(RECORD_TYPES),
+            default=[],
+            help="Only records of this type (repeatable; default: both)",
+        )
+        records.add_argument(
+            "--format",
+            choices=["json", "markdown"],
+            default="markdown",
+            help="JSON rows, or markdown with the text quoted back (default)",
+        )
         sub.add_parser(
             "poll",
             help=(
@@ -387,6 +465,8 @@ class ChannelsCommand(Command):
             return _status(config, probe=args.probe)
         if args.channels_command == "threads":
             return _threads(config, args.work_item, args.json)
+        if args.channels_command == "records":
+            return _records(config, args.work_item, args.type, args.format)
         if args.channels_command == "manifest":
             from ..channels.commands import manifest_text
 

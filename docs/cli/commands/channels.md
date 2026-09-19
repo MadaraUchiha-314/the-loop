@@ -8,6 +8,7 @@ the-loop's event bus, starting with the Slack bot
 ```bash
 the-loop channels status    # ledger, subscribe/publish grants, catalog with ticks — no secrets
 the-loop channels threads   # which Slack thread carries which work item's conversation
+the-loop channels records REF  # the context and decision records a channel wrote on a ticket
 the-loop channels poll      # one read cycle: bound threads, and top-level messages when granted
 the-loop channels listen    # Socket Mode, foreground — replies, button presses (Approve, Execute, Start), kickoffs, /the-loop
 the-loop channels manifest  # the Slack app manifest to import (scopes, events, the command)
@@ -51,6 +52,19 @@ the-loop channels manifest  # the Slack app manifest to import (scopes, events, 
   thread map) and the thread's permalink when Slack returned one. `--work-item <ref>`
   shows one (exit 1 when it has none); `--json` prints the records. It reads the state
   file only — no Slack call, no token — and prints ids, never a message's text.
+- **`records`** lists the **records** a channel wrote on a work item's ticket
+  ([issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389)): every
+  marked, enveloped `context.added` (an `@the-loop record-context` snapshot) and
+  `decision.recorded` (an `@the-loop record-decision`) comment, each with the ledger's
+  URL, the envelope's actor and time, the visible line naming the act, the quoted text
+  and — for a decision — the rationale and the thread it was made in. The default is
+  **markdown** with the text quoted back, pasteable into `context.md` or a decision
+  record; `--format json` prints the rows; `--type` (repeatable) keeps one kind. A
+  session run `the-loop channels records <ref>` at the start of every phase to find
+  what it has not folded (see [collaboration](/guide/slack#addressing-the-loop)). One
+  `gh` read of the ticket's comments — tried as an issue, then as a pull request — no
+  Slack call, no token printed; exit 1 when the ref is not one or the ledger cannot
+  be read, with the reason on stderr.
 - **`poll`** runs one synchronous read cycle: every bound Slack thread is checked for
   new replies and — with the `work-item.create` grant and a `kickoff.repo` — the
   channel for new top-level messages. Each message is classified into one event type,
@@ -110,10 +124,13 @@ on a message that was dropped.
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| *(action)* | required | One of `status`, `threads`, `poll`, `listen`, `manifest`. |
+| *(action)* | required | One of `status`, `threads`, `records`, `poll`, `listen`, `manifest`. |
 | `--probe` | off | `status` only: ask Slack what the configured channel is and which bot scopes the app was granted, and report what it cannot receive. Two calls, no token printed, exit 0 whatever happens. |
 | `--work-item REF` | *(all)* | `threads` only: show one work item's conversation. |
 | `--json` | off | `threads` only: print the records as JSON. |
+| `REF` | required | `records` only: the work item whose ticket to read. |
+| `--type TYPE` | *(both)* | `records` only: `context.added` or `decision.recorded`; repeatable. |
+| `--format FMT` | `markdown` | `records` only: `markdown` (the text quoted back) or `json` (the rows). |
 
 ## One thread per work item
 
