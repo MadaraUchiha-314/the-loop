@@ -104,7 +104,9 @@ hypothesis.
 2026-09-19): any message meant for the-loop, in a room, in a thread or in the
 operator's private channel, carries the `@the-loop` mention, and every other message
 is ignored. The mention arrives as Slack's `app_mention` event, never by matching
-text.** The options stay below as the record of what was weighed.
+text. One exception exists as an option ([three](https://github.com/MadaraUchiha-314/the-loop/pull/390#discussion_r4054041788)): an authorized user, never a
+collaborator, may switch a single room to hear every message.** The options stay
+below as the record of what was weighed.
 
 - **Option 1A: every message** (today). *Struck by the ticket.*
 - **Option 1B: only when addressed, with the room as the only gated shape.** The gate
@@ -112,8 +114,13 @@ text.** The options stay below as the record of what was weighed.
   reply under one of the-loop's own messages (an approval request, a question) needs
   the mention too, and the exemption this option proposed is struck. Nothing is
   addressed by construction any more; the mention is the address.
-- **Option 1C: a per-room switch.** *Struck:* a universal rule has no per-room
-  exception.
+- **Option 1C: a per-room switch.** *Kept as an option, by the owner
+  ([review](https://github.com/MadaraUchiha-314/the-loop/pull/390#discussion_r4054041788)).* Mention-only is the default for every shape; an authorized user
+  may switch one room to hear every message (`the-loop add-channel slack@#room
+  --listen all`, the declaration being authorized-only already, issue-375 R1.1). A
+  collaborator cannot exercise it. In `all` mode the room's `message.*` events are
+  input as they are today and the `app_mention` copy is the one deduplicated; it is
+  also the one place the poll transport still hears a room.
 - **Option 1D: the `app_mention` event.** *Chosen.* The first draft struck it for
   delivering the same message twice and costing a scope; the owner ruled that matching
   `<@U0BOT>` in message text is not the way, and that a manifest change is acceptable.
@@ -140,14 +147,27 @@ Two things the rule reaches that the ticket did not name, for the owner to confi
 
 ### Q2. What can a mention ask for?
 
-- **Option 2A: a small fixed grammar after the mention, with a fallthrough.**
+**Decided by the owner on PR #390 ([one](https://github.com/MadaraUchiha-314/the-loop/pull/390#discussion_r4054051665), [two](https://github.com/MadaraUchiha-314/the-loop/pull/390#discussion_r4054063430), 2026-09-19): the
+fixed grammar (Option 2A), with natural language as the fallthrough, and the
+vocabulary is taught rather than hidden. Reactions as verbs (Option 2D) are struck
+([three](https://github.com/MadaraUchiha-314/the-loop/pull/390#discussion_r4054060539)). Whether the shortcuts (Option 2B) ride in this work item is still
+open question 6.**
+
+- **Option 2A: a small fixed grammar after the mention, with a fallthrough.** *Chosen.*
   `@the-loop context` (in a thread: this thread; top-level: this message);
   `@the-loop decision <text>`; `@the-loop <control keyword>` (`start`, `execute`, …,
   the keywords a thread already accepts); and **anything else is a reply** to the
   session, exactly today's `work-item.reply`, so `@the-loop what is blocking you?`
-  still reaches the agent. No model, works in poll mode, no manifest change.
-  *Cost:* a vocabulary to learn, mitigated by an ephemeral `help` reply on an
-  unrecognised verb.
+  still reaches the agent. No model, no manifest change beyond 1D's.
+  *Cost:* a vocabulary to learn, which the owner wants taught: `@the-loop help` in any
+  conversation, the same help ephemerally on an unrecognised verb, the gesture table
+  in the guide, and a one-line hint in the message that opens a room.
+  **Every verb ends in the session** (the owner's question, answered): the channel
+  does the durable part first, the thread fetched and the record written on the
+  ledger, then delivers into the session with a **preset prompt per verb** naming
+  the act and linking the record, so the session folds it in (Q3, Q4). The
+  fallthrough delivers the member's text itself. A verb with no session running
+  still leaves its record; the next session reads it from the ticket.
 - **Option 2B: message shortcuts and a modal.** *Add as context* and *Record a decision*
   in the ⋯ menu of any message. The context shortcut acts at once; the decision shortcut
   opens a modal (kind: product / design / tech; a one-line summary pre-filled from the
@@ -161,10 +181,9 @@ Two things the rule reaches that the ticket did not name, for the owner to confi
   the only path:* the record then depends on an agent that may not be running, and the
   no-model rule in the channel was chosen deliberately. It survives as 2A's
   fallthrough.
-- **Option 2D: reactions as verbs** (📌 for context). *Deferred for context, struck for
-  decisions:* a reaction carries the member's id, so it can be authorized, but a
-  decision recorded by emoji has no text and no rationale, and a pin nobody sees is a
-  weak act. Revisit for context only if the grammar proves too much typing.
+- **Option 2D: reactions as verbs** (📌 for context). *Struck by the owner
+  ([review](https://github.com/MadaraUchiha-314/the-loop/pull/390#discussion_r4054060539)):* harder to learn than a word, and it depends on which emoji the
+  workspace has installed. The first draft had kept it in reserve for context.
 
 ### Q3. What is "context", and where does it live?
 
@@ -262,7 +281,7 @@ The grammar, as it would read in `docs/guide/slack.md`:
 | `@the-loop <keyword>` | `control.command`, as in a thread today | `control.command` | socket |
 | `@the-loop <anything else>` | `work-item.reply`, delivered to the session | `work-item.reply` | socket |
 | ⋯ → *Add as context* / *Record a decision* | exactly the typed mention above | the same | socket |
-| any message without the mention | nothing: `not-addressed`, no record, no reaction | — | — |
+| any message without the mention | nothing: `not-addressed`, no record, no reaction (unless an authorized user switched this room to `all`) | — | — |
 
 What this touches, as a rough inventory: `channels/events.py` (two rows),
 `channels/inbound.py` (the `app_mention` entry, the `message.*` deduplication, two verb
@@ -311,7 +330,12 @@ Raised on the ticket for the paper trail; the owner's answers converge this brai
   `app_mention` event** (the owner's decision on PR #390). A `message.*` event is
   input nowhere; it is dropped as `not-addressed` once the mention copy of the same
   `ts` is accounted for. Three ways in: a mention, a button press, a slash command.
-  Socket-only, with `channels status` naming the manifest step.
+  Socket-only, with `channels status` naming the manifest step. One switch, for an
+  authorized user only: a room declared with `--listen all` hears everything, as today.
+- **A fixed grammar, taught, with natural language as the fallthrough** (the owner's
+  decision on PR #390). `context`, `decision <text>`, a control keyword, `help`;
+  anything else is a reply. Every verb ends in the session with a preset prompt
+  naming the act and linking its record.
 - **Two new acts, two catalog rows.** `context.added` (marked, quoted snapshot of the
   thread, delivered) and `decision.recorded` (unmarked, attributed, enveloped). Both
   recorded on the ticket, both grantable in `publish`, both subscribable so every
@@ -332,7 +356,9 @@ If the owner confirms the lean, `requirements.md` asserts:
 - **R-gate:** a message reaches the pipeline only as an `app_mention` event, in every
   conversation shape (room, thread, the operator's channel); every `message.*` event
   is `not-addressed`, dropped with no record and no reaction, its mention copy having
-  carried the input. Pinned by tests for each shape, and for the deduplication.
+  carried the input. Pinned by tests for each shape, and for the deduplication. A
+  room declared with `--listen all` by an authorized user hears every message as
+  today; a collaborator's attempt is refused.
 - **R-manifest:** `app_mentions:read` and the `app_mention` bot event in the shipped
   manifest; the guide's upgrade table names them; `channels status` reports a `poll`
   read mode as one where nothing addressed can arrive.
@@ -347,6 +373,9 @@ If the owner confirms the lean, `requirements.md` asserts:
   decision; the outcome written back to the member ephemerally.
 - **R-speakers:** the tier per act; collaborators carry an optional Slack id; every
   refusal below the allow-list.
+- **R-verbs:** the grammar (`context`, `decision <text>`, a control keyword, `help`,
+  else a reply); every verb's delivery into the session carries a preset prompt naming
+  the act and its record; `help` answers ephemerally, and so does an unrecognised verb.
 - **R-fold-in:** the operating-model rule for `decisions.md` and the context list, and
   the guide's table of gestures.
 - **Security considerations:** a mention from a stranger; a crafted `message_action`
@@ -354,10 +383,10 @@ If the owner confirms the lean, `requirements.md` asserts:
   keyword; injection through snapshotted content (delivered as data, never as
   instructions, as the event prompt already says); the roster growing a second id.
 
-Left behind, as the record of what was considered: listening to every message,
-matching the mention in message text, an exemption for the-loop's own threads, a
-per-room switch, reactions as decisions, the channel writing spec files, room
-membership as an allow-list, a model summarising a thread.
+Left behind, as the record of what was considered: listening to every message by
+default, matching the mention in message text, an exemption for the-loop's own
+threads, reactions as verbs, the channel writing spec files, room membership as an
+allow-list, a model summarising a thread.
 
 ## Review comments
 
