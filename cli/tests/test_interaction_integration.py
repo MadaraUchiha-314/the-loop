@@ -111,7 +111,9 @@ def test_the_artifact_rule_travels_with_every_prompt(tmp_path):
         )
         dispatcher.stop()
         assert "requirements.md" in prompt and "design.md" in prompt
-        assert "context.md" in prompt  # issue-389: the record of what a channel told the loop
+        assert (
+            "context.md" in prompt
+        )  # issue-389: the record of what a channel told the loop
         assert "pull-request review" in flat(prompt)
 
 

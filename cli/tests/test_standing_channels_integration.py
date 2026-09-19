@@ -10,6 +10,10 @@ GitHub comment writer, and tmux.
 
 from __future__ import annotations
 
+# issue-389: the mention is the address in every channel, so the operator's
+# central channel in these tests is the DIRECT MESSAGE with the bot (D123) —
+# the one conversation that still hears every plain message (R1.6).
+
 import pytest
 
 from the_loop.channels import inbound
@@ -109,7 +113,7 @@ def tmux(monkeypatch):
     return server
 
 
-def _config(tmp_path, *, channel="", slack_channel="C123", authorized=("UHUMAN",)):
+def _config(tmp_path, *, channel="", slack_channel="D123", authorized=("UHUMAN",)):
     return {
         "state": {"root": str(tmp_path / "state")},
         "routing": {
@@ -244,7 +248,7 @@ def test_a_session_can_name_its_own_channel(tmp_path, tmux, slack):
     core_standing.start_standing(config=config)
     assert slack.posted[0]["channel"] == "C-OPS"
     # …while every other Slack setting stays centrally declared.
-    assert SlackChannelConfig.from_mapping(config).channel == "C123"
+    assert SlackChannelConfig.from_mapping(config).channel == "D123"
 
 
 def test_a_restart_keeps_talking_in_the_same_thread(tmp_path, tmux, slack):

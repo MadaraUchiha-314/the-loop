@@ -33,7 +33,12 @@ import logging
 from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 
 from ..authz import mark_self_authored
-from ..redact import defang_control_keywords, scrub
+from ..redact import (
+    defang_control_keywords,
+    neutralise_broadcasts,
+    scrub,
+    strip_html_comments,
+)
 from ..sessions import WorkItemRef
 from .base import Event, PostResult
 from .envelope import Envelope, stamp
@@ -131,7 +136,15 @@ def mirror_body(event: Event, cli_config: Optional[Mapping]) -> str:
     into the very session the pipeline already delivered it to, and an unmarked
     decision would be read by a gate as an approval (decision-133 D4).
     """
-    safe = defang_control_keywords(scrub(event.text), control_keywords(cli_config))
+    # The quote is another author's words (issue-389 A5): every `<!-- … -->`
+    # inside it goes — a pasted marker would make `mark_self_authored` treat
+    # the body as already stamped, a pasted envelope would be parsed as the
+    # record's own — and a Slack broadcast is neutralised so a snapshot never
+    # pages a room when it is read back.
+    safe = defang_control_keywords(
+        neutralise_broadcasts(strip_html_comments(scrub(event.text))),
+        control_keywords(cli_config),
+    )
     detail = event.detail or {}
     thread = str(detail.get("thread") or "")
     kind = str(detail.get("kind") or "")

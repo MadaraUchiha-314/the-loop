@@ -30,7 +30,7 @@ from test_channels import FakeSlackClient, cli_config
 
 REF = "github:octo/repo#375"
 OTHER = "github:octo/repo#376"
-CENTRAL = "C123"
+CENTRAL = "D123"
 ROOM = "C0TMP375"
 
 
@@ -43,8 +43,10 @@ def _portable(config):
     return CollaborationChannelStore(Path(config["state"]["root"]) / "portable")
 
 
-def declare(config, work_item=REF, target=ROOM):
-    _portable(config).add(work_item, f"slack@{target}", actor="octocat", source="cli")
+def declare(config, work_item=REF, target=ROOM, listen="mentions"):
+    _portable(config).add(
+        work_item, f"slack@{target}", actor="octocat", source="cli", listen=listen
+    )
 
 
 def channel_for(config, client):
@@ -97,7 +99,10 @@ class Sink:
         return [ref for ref, _ in self.delivered]
 
 
-def socket(config, event, sink, client=None):
+def socket(config, event, sink, client=None, addressed=True):
+    """A room is mention-gated (issue-389 R1.1): every event these tests send
+    is a member addressing the-loop, delivered as `app_mention`, unless a test
+    says otherwise."""
     return inbound.handle_socket_event(
         event,
         config,
@@ -105,6 +110,7 @@ def socket(config, event, sink, client=None):
         deliver=sink.deliver,
         create_issue=sink.create_issue,
         client_factory=lambda token: client or FakeSlackClient(),
+        addressed=addressed,
     )
 
 
@@ -247,7 +253,13 @@ def test_the_central_channel_still_opens_work_items(tmp_path):
     declare(config)
     sink = Sink()
 
-    socket(config, _message("look at the retry budget", channel=CENTRAL), sink)
+    # A plain message in the bot's DM: the DM keeps `message.im` as input.
+    socket(
+        config,
+        _message("look at the retry budget", channel=CENTRAL),
+        sink,
+        addressed=False,
+    )
 
     assert sink.created  # the kickoff path, untouched
 
@@ -267,7 +279,7 @@ def test_declaring_the_central_channel_stops_it_opening_work_items(tmp_path):
     declare(config, target=CENTRAL)
     sink = Sink()
 
-    socket(config, _message("still about 375", channel=CENTRAL), sink)
+    socket(config, _message("still about 375", channel=CENTRAL), sink, addressed=False)
 
     assert sink.created == []
     assert sink.refs == [REF]
@@ -353,7 +365,7 @@ def test_the_poll_read_baselines_a_room_before_delivering_anything(tmp_path):
     Requirement: docs/specs/issue-375/requirements.md R3.6
     """
     config = cli_config(tmp_path)
-    declare(config)
+    declare(config, listen="all")  # a poll read hears only an `all` room (issue-389)
     client = FakeSlackClient()
     client.history = [
         {"ts": "1600.000001", "user": "UHUMAN", "text": "old"},
@@ -372,7 +384,7 @@ def test_the_poll_read_baselines_a_room_before_delivering_anything(tmp_path):
 def test_the_poll_read_processes_a_room_message_once(tmp_path):
     """R3.6: the room's cursor advances, so a second cycle re-reads nothing."""
     config = cli_config(tmp_path)
-    declare(config)
+    declare(config, listen="all")  # a poll read hears only an `all` room (issue-389)
     client = FakeSlackClient()
     client.history = [{"ts": "1600.000001", "user": "UHUMAN", "text": "baseline"}]
     sink = Sink()

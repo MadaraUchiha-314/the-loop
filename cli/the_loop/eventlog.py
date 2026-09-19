@@ -468,6 +468,37 @@ EVENT_TYPES: Dict[str, str] = {
         "unaffected. A message the bot did not post (`cant_update_message`) is "
         "the usual cause."
     ),
+    # -- mention-gated rooms, records and shortcuts (issue-389) ---------------
+    "channel.context_recorded": (
+        "A `record-context` act landed: the thread's snapshot was written to "
+        "the ticket as a marked context record (channel, work_item, actor, "
+        "thread, count: messages in the snapshot) — issue-389 R3."
+    ),
+    "channel.decision_recorded": (
+        "A `record-decision` act landed: the decision text was written to the "
+        "ticket as a marked decision record (channel, work_item, actor, "
+        "thread, kind: the keyword when one closed the act) — issue-389 R4."
+    ),
+    "channel.snapshot_empty": (
+        "A `record-context` act found nothing new since the thread's last "
+        "snapshot, so no record was written (channel, work_item, thread) — "
+        "issue-389 R3. The member is told in the thread."
+    ),
+    "channel.shortcut_received": (
+        "A message shortcut arrived over Socket Mode (channel, work_item, "
+        "actor: Slack member id, shortcut: the callback id) — issue-389 R6. "
+        "It is handled exactly as the typed mention would be."
+    ),
+    "channel.shortcut_failed": (
+        "The Slack channel could not open the decision modal or answer the "
+        "shortcut's member (channel, error) — issue-389 R6. Best-effort by "
+        "contract: the member sees nothing and can type the mention instead."
+    ),
+    "channel.view_submitted": (
+        "The decision modal was submitted (channel, work_item, actor: Slack "
+        "member id, kind: the keyword chosen, if any) — issue-389 R6. The "
+        "text then goes through the same `record-decision` path."
+    ),
     # -- the bus (issue-309, decision-103) --------------------------------------
     "bus.published": (
         "An event went through the bus (event_type, work_item, source, recorded: "

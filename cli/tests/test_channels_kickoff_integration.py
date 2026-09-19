@@ -12,6 +12,10 @@ Spec: docs/specs/issue-349/{requirements,design,testing-plan}.md — row T8.
 
 from __future__ import annotations
 
+# issue-389: the mention is the address in every channel, so the operator's
+# central channel in these tests is the DIRECT MESSAGE with the bot (D123) —
+# the one conversation that still hears every plain message (R1.6).
+
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -87,7 +91,7 @@ def env(tmp_path, monkeypatch):
                 "channels": {
                     "slack": {
                         "enabled": True,
-                        "channel": "C123",
+                        "channel": "D123",
                         "publish": ["work-item.reply", "work-item.create"],
                         "read": {"mode": self.mode},
                         "kickoff": {"repo": "", "labels": []},
@@ -125,7 +129,7 @@ def env(tmp_path, monkeypatch):
         def message(self, text, ts="1900.1", user="UHUMAN"):
             """A top-level message, through the Socket Mode event handler."""
             return inbound.handle_socket_event(
-                {"ts": ts, "channel": "C123", "user": user, "text": text},
+                {"ts": ts, "channel": "D123", "user": user, "text": text},
                 self.config,
                 post_comment=self.post_comment,
                 create_issue=self.create_issue,
@@ -138,7 +142,7 @@ def env(tmp_path, monkeypatch):
                 {
                     "type": "block_actions",
                     "user": {"id": user},
-                    "channel": {"id": "C123"},
+                    "channel": {"id": "D123"},
                     "message": {
                         "ts": message_ts,
                         "thread_ts": thread,
@@ -161,7 +165,7 @@ def env(tmp_path, monkeypatch):
                 {
                     "ts": ts,
                     "thread_ts": thread,
-                    "channel": "C123",
+                    "channel": "D123",
                     "user": "UHUMAN",
                     "text": text,
                 },
@@ -280,7 +284,7 @@ def test_the_same_message_in_poll_mode_is_refused_instead(env):
     # Baseline the kickoff cursor the way a first read does, then let the poll
     # cycle see one new top-level message.
     state = ChannelState()
-    state.advance(kickoff_cursor_key("C123"), "1800.0")
+    state.advance(kickoff_cursor_key("D123"), "1800.0")
     state.save(env.state_path)
     env.client.history = [{"ts": "1900.1", "user": "UHUMAN", "text": "flaky teardown"}]
 

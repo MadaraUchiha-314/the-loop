@@ -1,0 +1,327 @@
+"""The two message shortcuts and the decision modal, end to end (issue-389 R6).
+Spec: docs/specs/issue-389/testing-plan.md T2.
+
+Feature: a message shortcut is exactly the typed mention
+Requirement: docs/specs/issue-389/requirements.md#R6
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+
+import pytest
+
+from the_loop.channels import inbound, once
+from the_loop.channels import slack as slack_mod
+from test_channels_dm_integration import (  # noqa: F401
+    listener_env,
+    run_listener,
+)
+from test_channels_mentions_integration import (  # noqa: F401
+    BOT,
+    ROOM,
+    Client,
+    Sink,
+    _thread_client,
+    _token,
+    config_for,
+    declare,
+    envelope_of,
+    send,
+)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_ring():
+    once.reset()
+    yield
+    once.reset()
+
+
+class ModalClient(Client):
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.views = []  # (trigger_id, view)
+
+    def views_open(self, *, trigger_id, view):
+        self.views.append((trigger_id, view))
+        return {"ok": True, "view": {"id": "V1"}}
+
+
+def action(
+    callback,
+    *,
+    user="UHUMAN",
+    channel=ROOM,
+    ts="1800.2",
+    thread="1800.1",
+    text="the message",
+    trigger="t-1",
+):
+    payload = {
+        "type": "message_action",
+        "callback_id": callback,
+        "trigger_id": trigger,
+        "user": {"id": user},
+        "channel": {"id": channel},
+        "message": {"ts": ts, "text": text},
+    }
+    if thread:
+        payload["message"]["thread_ts"] = thread
+    return payload
+
+
+def shortcut(config, sink, client, payload):
+    return inbound.handle_message_action(
+        payload,
+        config,
+        post_comment=sink.post_comment,
+        deliver=sink.deliver,
+        client_factory=lambda token: client,
+    )
+
+
+def submission(
+    config,
+    sink,
+    client,
+    *,
+    metadata,
+    text="we ship",
+    kind="tech",
+    rationale="",
+    user="UHUMAN",
+    view_id="V1",
+):
+    values: dict = {"decision": {"text": {"value": text}}}
+    if kind:
+        values["kind"] = {"select": {"selected_option": {"value": kind}}}
+    if rationale:
+        values["rationale"] = {"text": {"value": rationale}}
+    payload = {
+        "type": "view_submission",
+        "user": {"id": user},
+        "view": {
+            "id": view_id,
+            "callback_id": "the-loop:record-decision",
+            "private_metadata": metadata,
+            "state": {"values": values},
+        },
+    }
+    return inbound.handle_view_submission(
+        payload,
+        config,
+        post_comment=sink.post_comment,
+        deliver=sink.deliver,
+        client_factory=lambda token: client,
+    )
+
+
+def test_the_context_shortcut_is_the_typed_mention(tmp_path):
+    """
+    Scenario: the context shortcut is the typed mention
+      Given a thread in #389's room
+      When an authorized member uses "Add to the-loop as context" on a message in it
+      Then the outcome is byte for byte the typed `@the-loop record-context` on that thread
+      And the member is answered ephemerally with the record's link
+    """
+    # Two installs with the same thread: a snapshot notes what it recorded, so
+    # the second act on ONE install would rightly find nothing new.
+    typed_config = config_for(tmp_path / "typed")
+    declare(typed_config)
+    typed_sink, typed_client = Sink(), _thread_client()
+    typed = send(
+        typed_config,
+        typed_sink,
+        typed_client,
+        addressed=True,
+        text=f"<@{BOT}> record-context",
+        thread="1800.1",
+        ts="1800.4",
+    )
+    tapped_config = config_for(tmp_path / "tapped")
+    declare(tapped_config)
+    tapped_sink, tapped_client = Sink(), _thread_client()
+    tapped = shortcut(
+        tapped_config, tapped_sink, tapped_client, action("the-loop:record-context")
+    )
+    assert typed["outcome"] == tapped["outcome"] == "processed"
+    assert typed_sink.recorded[0][1] == tapped_sink.recorded[0][1]
+    assert typed_sink.delivered[0]["text"] == tapped_sink.delivered[0]["text"]
+    assert (
+        tapped_client.ephemeral[-1][1] == "UHUMAN"
+        and "issuecomment-1" in tapped_client.ephemeral[-1][2]
+    )
+
+
+def test_the_decision_shortcut_opens_the_modal_and_the_submission_is_the_typed_mention(
+    tmp_path,
+):
+    """
+    Scenario: the decision shortcut opens the modal and the submission is the typed mention
+      When an authorized member uses "Record a decision" on a message
+      Then a modal opens on the payload's trigger, pre-filled from the message, carrying the message's coordinates
+      When they submit it with a kind and a rationale
+      Then the outcome is the typed `@the-loop record-decision tech: … — why: …` on that message
+    """
+    config = config_for(tmp_path)
+    declare(config)
+    sink, client = Sink(), ModalClient()
+    opened = shortcut(
+        config,
+        sink,
+        client,
+        action("the-loop:record-decision", text="keep poll mode", thread=""),
+    )
+    assert opened == {"outcome": "modal-opened"}
+    trigger, view = client.views[0]
+    assert (
+        trigger == "t-1"
+        and view["blocks"][0]["element"]["initial_value"] == "keep poll mode"
+    )
+    metadata = json.loads(view["private_metadata"])
+    assert metadata == {"channel": ROOM, "ts": "1800.2", "thread_ts": "1800.2"}
+    submitted = submission(
+        config,
+        sink,
+        client,
+        metadata=view["private_metadata"],
+        text="keep poll mode",
+        kind="tech",
+        rationale="cheap",
+    )
+    assert (
+        submitted["outcome"] == "processed"
+        and submitted["event"] == "decision.recorded"
+    )
+    body = sink.recorded[0][1]
+    assert "kind: tech" in body and "cheap" in body and "> keep poll mode" in body
+    assert envelope_of(body).actor["slack"] == "UHUMAN"
+    typed_sink, typed_client = Sink(), Client()
+    send(
+        config,
+        typed_sink,
+        typed_client,
+        addressed=True,
+        text=f"<@{BOT}> record-decision tech: keep poll mode — why: cheap",
+        ts="1800.2",
+    )
+    assert typed_sink.delivered[0]["text"] == sink.delivered[0]["text"]
+    assert (
+        typed_sink.delivered[0]["detail"]["kind"] == sink.delivered[0]["detail"]["kind"]
+    )
+
+
+def test_a_shortcut_acts_once_per_trigger(tmp_path):
+    """
+    Scenario: a shortcut acts once per trigger
+    """
+    config = config_for(tmp_path)
+    declare(config)
+    sink, client = Sink(), _thread_client()
+    first = shortcut(
+        config, sink, client, action("the-loop:record-context", trigger="t-9")
+    )
+    again = shortcut(
+        config, sink, client, action("the-loop:record-context", trigger="t-9")
+    )
+    assert first["outcome"] == "processed" and again == {"outcome": "duplicate"}
+    assert len(sink.recorded) == 1
+    sink2, client2 = Sink(), ModalClient()
+    shortcut(config, sink2, client2, action("the-loop:record-decision", trigger="t-10"))
+    metadata = client2.views[0][1]["private_metadata"]
+    once_ = submission(config, sink2, client2, metadata=metadata, view_id="V7")
+    twice = submission(config, sink2, client2, metadata=metadata, view_id="V7")
+    assert once_["outcome"] == "processed" and twice == {"outcome": "duplicate"}
+
+
+def test_a_collaborator_gets_the_context_shortcut_but_not_the_decision_modal(tmp_path):
+    from test_channels_mentions_integration import _collaborator
+
+    config = config_for(tmp_path)
+    declare(config)
+    _collaborator(config)
+    sink, client = Sink(), ModalClient()
+    refused = shortcut(
+        config, sink, client, action("the-loop:record-decision", user="UCOLLAB")
+    )
+    assert refused == {"outcome": "unauthorized-act"} and client.views == []
+    assert "authorized user" in client.ephemeral[-1][2]
+    client.replies = _thread_client().replies
+    ok = shortcut(
+        config,
+        sink,
+        client,
+        action("the-loop:record-context", user="UCOLLAB", trigger="t-2"),
+    )
+    assert ok["outcome"] == "processed"
+
+
+def test_a_failed_modal_open_tells_the_member(tmp_path):
+    config = config_for(tmp_path)
+    declare(config)
+    sink, client = Sink(), Client()  # no views_open on this fake
+
+    outcome = shortcut(config, sink, client, action("the-loop:record-decision"))
+    assert outcome == {"outcome": "modal-failed"}
+    assert "record-decision" in client.ephemeral[-1][2]
+
+
+def test_the_listener_routes_mentions_shortcuts_and_submissions(
+    listener_env,  # noqa: F811 — the fixture, imported above
+    monkeypatch,
+):
+    """
+    Scenario: the listener routes app_mention, message_action and view_submission
+      Given a connected Socket Mode listener
+      When Slack delivers an app_mention, a message, a message_action and a view_submission
+      Then each is acknowledged first and handed to its handler, the mention as addressed
+    """
+    seen = []
+    monkeypatch.setattr(
+        inbound,
+        "handle_socket_event",
+        lambda event, cfg, addressed=False: seen.append(
+            ("event", event["type"], addressed)
+        ),
+    )
+    monkeypatch.setattr(
+        inbound,
+        "handle_message_action",
+        lambda payload, cfg: seen.append(("shortcut", payload["callback_id"])),
+    )
+    monkeypatch.setattr(
+        inbound,
+        "handle_view_submission",
+        lambda payload, cfg: seen.append(("view", payload["view"]["callback_id"])),
+    )
+    monkeypatch.setattr(slack_mod, "catch_up", lambda cfg: {})
+    stop = threading.Event()
+    thread, client, _ = run_listener(listener_env, stop)
+    try:
+        client.deliver(
+            "events_api", {"event": {"type": "app_mention", "text": "<@UBOT> hi"}}
+        )
+        client.deliver("events_api", {"event": {"type": "message", "text": "hi"}})
+        client.deliver(
+            "interactive",
+            {"type": "message_action", "callback_id": "the-loop:record-context"},
+        )
+        client.deliver(
+            "interactive",
+            {
+                "type": "view_submission",
+                "view": {"callback_id": "the-loop:record-decision"},
+            },
+        )
+    finally:
+        stop.set()
+        thread.join(timeout=5)
+    assert len(client.acks) == 4
+    assert seen == [
+        ("event", "app_mention", True),
+        ("event", "message", False),
+        ("shortcut", "the-loop:record-context"),
+        ("view", "the-loop:record-decision"),
+    ]

@@ -5,6 +5,10 @@ GitHub writers and session delivery faked at their injection points."""
 
 from __future__ import annotations
 
+# issue-389: the mention is the address in every channel, so the operator's
+# central channel in these tests is the DIRECT MESSAGE with the bot (D123) —
+# the one conversation that still hears every plain message (R1.6).
+
 import pytest
 
 from the_loop.authz import is_self_authored
@@ -54,7 +58,7 @@ class FakeSlackClient:
 
 
 def cli_config(tmp_path, **slack):
-    section = {"enabled": True, "channel": "C123", **slack}
+    section = {"enabled": True, "channel": "D123", **slack}
     return {
         "state": {"root": str(tmp_path / "state")},
         "routing": {
@@ -515,7 +519,7 @@ def test_an_approve_button_press_enters_the_pipeline_as_that_members_reply(
             {
                 "type": "block_actions",
                 "user": {"id": user},
-                "channel": {"id": "C123"},
+                "channel": {"id": "D123"},
                 "message": {"ts": thread},
                 "actions": [{"action_id": action_id, "value": value}],
                 "action_ts": "1900.1",

@@ -56,8 +56,14 @@ logger = logging.getLogger("the-loop.channels")
 
 __all__ = [
     "ACTION_PREFIX",
+    "DECISION_VIEW_CALLBACK",
+    "GITHUB_COMMENT_LIMIT",
     "MENTION",
+    "decision_view",
     "MENTION_SHORTCUTS",
+    "SNAPSHOT_CHAR_CAP",
+    "SNAPSHOT_MESSAGE_CAP",
+    "Snapshot",
     "mention_findings",
     "APPROVE_VALUE",
     "BUTTON_CHOICE_LIMIT",
@@ -147,6 +153,29 @@ CONVERSATION_KINDS: Dict[str, ConversationKind] = {
     "im": ConversationKind("direct message", "im:history", "message.im"),
     "mpim": ConversationKind("group direct message", "mpim:history", "message.mpim"),
 }
+
+#: The snapshot `record-context` takes of a thread (issue-389 R4.5): the first
+#: `SNAPSHOT_MESSAGE_CAP` messages or `SNAPSHOT_CHAR_CAP` characters, whichever
+#: comes first, with the thread's link for the rest. No model summarises.
+SNAPSHOT_MESSAGE_CAP = 150
+SNAPSHOT_CHAR_CAP = 40_000
+#: GitHub's own ceiling on a comment body; a scrubbed snapshot still over it is
+#: refused rather than cut in silence (A9).
+GITHUB_COMMENT_LIMIT = 65_000
+
+
+@dataclass(frozen=True)
+class Snapshot:
+    """A thread as `record-context` records it: the rendered lines, how many
+    messages they cover, the newest ts covered, the thread's permalink, and
+    whether the cap cut anything."""
+
+    text: str
+    count: int
+    newest: str
+    permalink: str = ""
+    truncated: bool = False
+
 
 #: The mention (issue-389, decision-133 D1): not a conversation kind but the one
 #: event the address arrives as, in every kind the bot is a member of — except a
@@ -997,6 +1026,73 @@ def render_reply_blocks(
     return blocks
 
 
+#: The decision modal's callback id — the shortcut's, so one id names the act
+#: from the ⋯ menu to the submission (issue-389 R6.3).
+DECISION_VIEW_CALLBACK = "the-loop:record-decision"
+#: Slack's ceiling on a plain-text input's initial value.
+_INPUT_LIMIT = 3000
+
+
+def decision_view(text: str, private_metadata: str) -> Dict[str, Any]:
+    """The *Record a decision* modal (issue-389 R6.3): the decision pre-filled
+    from the message, a kind select over :data:`~.verbs.KINDS`, an optional
+    rationale. ``private_metadata`` is the JSON the submission hands back —
+    the channel, the message ts and its thread — composed by the-loop, never
+    from the member's text, and validated again on the way back (A3)."""
+    from .verbs import KINDS
+
+    return {
+        "type": "modal",
+        "callback_id": DECISION_VIEW_CALLBACK,
+        "private_metadata": private_metadata,
+        "title": {"type": "plain_text", "text": "Record a decision"},
+        "submit": {"type": "plain_text", "text": "Record"},
+        "close": {"type": "plain_text", "text": "Cancel"},
+        "blocks": [
+            {
+                "type": "input",
+                "block_id": "decision",
+                "label": {"type": "plain_text", "text": "What was decided"},
+                "element": {
+                    "type": "plain_text_input",
+                    "action_id": "text",
+                    "multiline": True,
+                    "initial_value": " ".join((text or "").split())[:_INPUT_LIMIT],
+                },
+            },
+            {
+                "type": "input",
+                "block_id": "kind",
+                "optional": True,
+                "label": {"type": "plain_text", "text": "Kind"},
+                "element": {
+                    "type": "static_select",
+                    "action_id": "select",
+                    "placeholder": {
+                        "type": "plain_text",
+                        "text": "product, design or tech",
+                    },
+                    "options": [
+                        {"text": {"type": "plain_text", "text": kind}, "value": kind}
+                        for kind in KINDS
+                    ],
+                },
+            },
+            {
+                "type": "input",
+                "block_id": "rationale",
+                "optional": True,
+                "label": {"type": "plain_text", "text": "Why"},
+                "element": {
+                    "type": "plain_text_input",
+                    "action_id": "text",
+                    "multiline": True,
+                },
+            },
+        ],
+    }
+
+
 def render_kickoff_question(text: str, options: Sequence[str]) -> List[Dict[str, Any]]:
     """The "which repository?" question as Block Kit (issue-349, R2.1–R2.4).
 
@@ -1756,6 +1852,139 @@ class SlackBotChannel:
                 self._own_user = ""
         return self._own_user
 
+    def own_user_id(self) -> str:
+        """The bot's own member id, or ``""`` when it cannot be learned — what
+        the inbound pipeline strips a mention's ``<@…>`` token by (issue-389)."""
+        try:
+            return self._own_user_id(self._client())
+        except ChannelError:
+            return ""
+
+    def hears_messages(self, channel_id: str) -> bool:
+        """Whether a plain ``message.*`` event in ``channel_id`` is input
+        (issue-389 R1.2, R1.6, R2.2): in a direct message with the bot, and in
+        a room an authorized user declared ``--listen all``. Everywhere else the
+        mention is the address and a plain message is ``not-addressed``."""
+        if (channel_id or "")[:1].upper() == "D":
+            return True
+        if self.stores is None:
+            return False
+        return self.stores.listen_mode(channel_id) == "all"
+
+    def open_view(self, trigger_id: str, view: Mapping[str, Any]) -> bool:
+        """Open ``view`` on ``trigger_id`` — the decision modal (issue-389 R6.3).
+        Never raises: an expired trigger, a missing token or a refused open is
+        ``channel.shortcut_failed`` and ``False``."""
+        if not trigger_id:
+            return False
+        try:
+            self._client().views_open(trigger_id=trigger_id, view=dict(view))
+        except Exception as exc:  # noqa: BLE001 — the member is told, the listener lives
+            logger.warning("slack: could not open the decision modal: %s", exc)
+            eventlog.emit(
+                "channel.shortcut_failed",
+                level="warning",
+                channel=self.name,
+                error=str(exc),
+            )
+            return False
+        return True
+
+    def post_ephemeral(self, channel_id: str, user: str, text: str) -> bool:
+        """A message only ``user`` sees, in ``channel_id`` — the `help` answer,
+        a refusal's reason, a shortcut's outcome (issue-389 R3.2, R5.2, R6.5).
+        Never raises; a refused post is a debug line and ``False``."""
+        if not channel_id or not user or not text:
+            return False
+        try:
+            self._client().chat_postEphemeral(
+                channel=channel_id, user=user, text=text[: _SECTION_LIMIT * 10]
+            )
+        except Exception as exc:  # noqa: BLE001 — an answer is a nicety
+            logger.debug("slack: could not post ephemerally in %s: %s", channel_id, exc)
+            return False
+        return True
+
+    def snapshot_thread(
+        self, channel_id: str, thread: str, since: str = ""
+    ) -> Snapshot:
+        """The thread ``thread`` in ``channel_id`` as `record-context` records it
+        (issue-389 R4.1, R4.4, R4.5): every message after ``since`` (the root
+        included when ``since`` is empty), ascending, each drawn as
+        ``**@name** (HH:MM UTC, link): text`` with the name from the cached
+        directory and the link composed from the workspace URL ``auth.test``
+        returns — no call per message — capped by :data:`SNAPSHOT_MESSAGE_CAP`
+        and :data:`SNAPSHOT_CHAR_CAP`, the thread's permalink for the rest.
+        The-loop's own messages are included, attributed to the bot: they are
+        part of the discussion. Raises :class:`ChannelError` when the thread
+        cannot be read.
+        """
+        client = self._client()
+        try:
+            response = client.conversations_replies(
+                channel=channel_id, ts=thread, oldest=since or None, limit=200
+            )
+        except Exception as exc:  # SlackApiError and transport errors alike
+            raise ChannelError(f"slack: could not read the thread: {exc}") from None
+        messages = sorted(
+            (m for m in (response.get("messages") or []) if m.get("ts")),
+            key=lambda m: _ts_key(str(m["ts"])),
+        )
+        if since:
+            messages = [m for m in messages if _ts_key(str(m["ts"])) > _ts_key(since)]
+        own = self._own_user_id(client)
+        workspace = ""
+        try:
+            workspace = str(client.auth_test().get("url") or "").rstrip("/")
+        except Exception:  # noqa: BLE001 — the link is a nicety
+            workspace = ""
+        directory = self.directory()
+        lines: List[str] = []
+        count = 0
+        size = 0
+        newest = since
+        truncated = False
+        for message in messages:
+            ts = str(message["ts"])
+            author = str(message.get("user") or "")
+            if author and author == own:
+                name = "the-loop"
+            elif author:
+                name = directory.user_name(author) or author
+            else:
+                name = str(message.get("username") or message.get("bot_id") or "bot")
+            when = _clock(ts)
+            link = ""
+            if workspace:
+                link = f"{workspace}/archives/{channel_id}/p{ts.replace('.', '')}"
+                if ts != thread:
+                    link += f"?thread_ts={thread}&cid={channel_id}"
+            body = " ".join(str(message.get("text") or "").split())
+            line = f"**@{name}** ({when}" + (f", {link}" if link else "") + f"): {body}"
+            if count >= SNAPSHOT_MESSAGE_CAP or size + len(line) > SNAPSHOT_CHAR_CAP:
+                truncated = True
+                break
+            lines.append(line)
+            count += 1
+            size += len(line) + 1
+            newest = ts
+        permalink = ""
+        if workspace:
+            permalink = f"{workspace}/archives/{channel_id}/p{thread.replace('.', '')}"
+        if truncated:
+            left = len(messages) - count
+            lines.append(
+                f"_+{left} more in the thread_"
+                + (f": {permalink}" if permalink else "")
+            )
+        return Snapshot(
+            text="\n".join(lines),
+            count=count,
+            newest=newest,
+            permalink=permalink,
+            truncated=truncated,
+        )
+
     def fetch_replies(self) -> List[InboundReply]:
         """Every not-yet-processed reply in every bound thread (R4.4, R4.6).
 
@@ -1773,6 +2002,12 @@ class SlackBotChannel:
         for thread, info in state.threads.items():
             cursor = state.cursor(thread)
             channel_id = info.get("channel") or self.central_channel()
+            if not self.hears_messages(channel_id):
+                # The mention is the address (issue-389 R1.7): a plain message
+                # here is not input, and this read has no mention event — so
+                # nothing is read and the cursor stays where the listener left
+                # it, never ahead of a mention it has yet to process.
+                continue
             try:
                 response = client.conversations_replies(
                     channel=channel_id,
@@ -1816,6 +2051,10 @@ class SlackBotChannel:
         own first-sight rule (issue-80), applied here.
         """
         if not self.config.kickoff_enabled:
+            return []
+        if not self.hears_messages(self.central_channel()):
+            # A kickoff by mention arrives as `app_mention` on the listener
+            # (issue-389 R1.5); the poll read has no mention to go on.
             return []
         if self.stores is not None and self.stores.declared_work_item(
             self.central_channel()
@@ -1906,6 +2145,8 @@ class SlackBotChannel:
         own_user = self._own_user_id(client)
         found: List[InboundReply] = []
         for target, work_item in sorted(targets.items()):
+            if not self.hears_messages(target):
+                continue  # a `mentions` room: the listener hears it (issue-389)
             key = kickoff_cursor_key(target)
             cursor = state.cursors.get(key, "")
             try:
@@ -2106,6 +2347,16 @@ def _press_blocks(
     return blocks
 
 
+def _clock(ts: str) -> str:
+    """``HH:MM UTC`` from a Slack ts, or the ts itself when it is not one."""
+    try:
+        from datetime import datetime, timezone
+
+        return datetime.fromtimestamp(float(ts), tz=timezone.utc).strftime("%H:%M UTC")
+    except (TypeError, ValueError, OverflowError, OSError):
+        return ts
+
+
 def _ts_key(ts: str) -> Tuple[int, Any]:
     """Slack ts ordering that survives a non-numeric value."""
     try:
@@ -2235,13 +2486,24 @@ def run_socket_listener(
                 commands.handle_slash_command(payload, frozen_config)
                 return
             if request.type == "interactive":
-                if payload.get("type") == "block_actions":
+                kind = payload.get("type")
+                if kind == "block_actions":
                     inbound.handle_socket_action(payload, frozen_config)
+                elif kind == "message_action":
+                    # A shortcut is exactly the typed mention (issue-389 R6.2).
+                    inbound.handle_message_action(payload, frozen_config)
+                elif kind == "view_submission":
+                    # The ack above already closed the modal (R6.1).
+                    inbound.handle_view_submission(payload, frozen_config)
                 return
             event = payload.get("event") or {}
+            if event.get("type") == "app_mention":
+                # The mention is the address (issue-389 R1.1).
+                inbound.handle_socket_event(event, frozen_config, addressed=True)
+                return
             if event.get("type") != "message":
                 return
-            inbound.handle_socket_event(event, frozen_config)
+            inbound.handle_socket_event(event, frozen_config, addressed=False)
         except Exception:  # one bad message never ends the listener
             logger.exception("slack: socket event handling raised; continuing")
 
@@ -2249,8 +2511,8 @@ def run_socket_listener(
     client.socket_mode_request_listeners.append(handle)
     client.connect()
     logger.info(
-        "slack: Socket Mode connected — listening for thread replies, button "
-        "presses and /the-loop commands"
+        "slack: Socket Mode connected — listening for mentions, button presses, "
+        "shortcuts and /the-loop commands"
     )
     report_subscription(config)
     catch_up(frozen_config)

@@ -61,9 +61,11 @@ logger = logging.getLogger("the-loop.channels")
 
 __all__ = [
     "CONVERSATION_ORIGINS",
+    "LISTEN_MODES",
     "PENDING_CAP",
     "PENDING_TTL_SECONDS",
     "ROOM_MODE",
+    "SNAPSHOT_CAP",
     "THREAD_CAP",
     "ChannelState",
     "ChannelStores",
@@ -105,6 +107,18 @@ PENDING_TTL_SECONDS = 24 * 60 * 60
 #: :data:`THREAD_CAP` on purpose — a question is transient, a binding is not — and
 #: past it the OLDEST goes, so a burst of new questions can never bury a fresh one.
 PENDING_CAP = 50
+
+#: How many thread snapshots one channel file remembers (issue-389 R4.4): the
+#: newest ts `record-context` recorded per thread, so a second one appends
+#: only what is new. Past the cap the OLDEST goes — forgetting one only means
+#: the next `record-context` on that thread records it whole again.
+SNAPSHOT_CAP = 200
+
+#: What a declared room hears (issue-389, decision-133 D1): only a message that
+#: mentions the bot (``mentions``, the default), or every message (``all``, an
+#: authorized user's switch). Read off the declaration; anything else is
+#: ``mentions``, the quieter mode.
+LISTEN_MODES: Tuple[str, ...] = ("mentions", "all")
 
 _LOCK_WARNED = False
 
@@ -284,6 +298,21 @@ class ChannelStores:
             logger.debug("could not read the declaration for %s: %s", target, exc)
             return ""
 
+    def listen_mode(self, target: str) -> str:
+        """What the room ``target`` hears (issue-389 R2): ``all`` when its
+        declaration says so, else ``mentions`` — for an undeclared channel too,
+        since the mention rule is the default everywhere."""
+        work_item = self.declared_work_item(target)
+        if not work_item:
+            return "mentions"
+        try:
+            record = self._declarations().for_type(work_item, self.channel)
+        except (OSError, ValueError) as exc:
+            logger.debug("could not read %s's listen mode: %s", target, exc)
+            return "mentions"
+        mode = str(getattr(record, "listen", "") or "") if record else ""
+        return mode if mode in LISTEN_MODES else "mentions"
+
     def declared_targets(self) -> Dict[str, str]:
         """``{target: work item}`` for every declared channel of this type."""
         try:
@@ -332,6 +361,10 @@ class ChannelState:
     #: Unanswered kickoff questions (issue-349): message ts → ``{channel, author,
     #: text, options, asked}``. Insertion-ordered, so the cap drops the oldest.
     pending: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    #: Thread snapshots `record-context` recorded (issue-389): ``<channel>:<thread
+    #: ts>`` → ``{workItem, last, count, at}``. Insertion-ordered; the cap drops
+    #: the oldest. Local like the cursors — what THIS deployment recorded.
+    snapshots: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     #: True when :meth:`load` derived a conversation from a pre-issue-312 file —
     #: the next writer saves so the file converges on the keyed shape (R3.4).
     backfilled: bool = field(default=False, repr=False, compare=False)
@@ -377,6 +410,7 @@ class ChannelState:
         # empty map and is written back with the key by the next writer. No
         # migration, no version — a question nobody asked is simply not pending.
         pending = raw.get("pending")
+        snapshots = raw.get("snapshots")
         state = cls(
             threads={
                 str(ts): {str(k): str(v) for k, v in info.items()}
@@ -393,6 +427,13 @@ class ChannelState:
                 str(ts): _pending_record(info)
                 for ts, info in (pending or {}).items()
                 if isinstance(info, dict) and info.get("asked")
+            },
+            # A file written before issue-389 has no `snapshots` key: it loads
+            # as an empty map, exactly as `pending` did before issue-349.
+            snapshots={
+                str(key): _snapshot_record(info)
+                for key, info in (snapshots or {}).items()
+                if isinstance(info, dict) and info.get("last")
             },
             stores=stores,
         )
@@ -481,6 +522,7 @@ class ChannelState:
                 "cursors": self.cursors,
                 "conversations": self.conversations,
                 "pending": self.pending,
+                "snapshots": self.snapshots,
             }
         kept = {
             item: record
@@ -494,6 +536,7 @@ class ChannelState:
                 if key.startswith("channel:") or key in self._file_cursors
             },
             "pending": self.pending,
+            "snapshots": self.snapshots,
         }
         if kept:
             # A standing session's conversation is nobody's work item, so it
@@ -734,6 +777,28 @@ class ChannelState:
         for ts in [ts for ts, rec in self.pending.items() if _expired(rec)]:
             self.pending.pop(ts, None)
 
+    # -- thread snapshots (issue-389 R4.4) ------------------------------------------
+
+    def snapshot_for(self, key: str) -> Optional[Dict[str, Any]]:
+        """What `record-context` last recorded of the thread ``key``
+        (``<channel>:<thread ts>``), or ``None``."""
+        record = self.snapshots.get(key)
+        return dict(record) if record else None
+
+    def note_snapshot(self, key: str, work_item: str, last: str, count: int) -> None:
+        """Record that ``key`` is snapshotted up to ``last`` — under the caller's
+        lock. A re-recorded thread moves to newest; past :data:`SNAPSHOT_CAP` the
+        oldest goes."""
+        self.snapshots.pop(key, None)
+        self.snapshots[key] = {
+            "workItem": canonical(work_item) if work_item else "",
+            "last": last,
+            "count": int(count),
+            "at": _now(),
+        }
+        while len(self.snapshots) > SNAPSHOT_CAP:
+            self.snapshots.pop(next(iter(self.snapshots)), None)
+
 
 def _pending_record(info: Dict[str, Any]) -> Dict[str, Any]:
     """One question as it is held in memory — every field coerced, ``options``
@@ -750,6 +815,20 @@ def _pending_record(info: Dict[str, Any]) -> Dict[str, Any]:
         "text": str(info.get("text") or ""),
         "options": options,
         "asked": str(info.get("asked") or ""),
+    }
+
+
+def _snapshot_record(info: Dict[str, Any]) -> Dict[str, Any]:
+    """One snapshot note as it is held in memory — every field coerced."""
+    try:
+        count = int(info.get("count") or 0)
+    except (TypeError, ValueError):
+        count = 0
+    return {
+        "workItem": str(info.get("workItem") or ""),
+        "last": str(info.get("last") or ""),
+        "count": count,
+        "at": str(info.get("at") or ""),
     }
 
 

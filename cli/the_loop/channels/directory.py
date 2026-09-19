@@ -228,6 +228,19 @@ class SlackDirectory:
             )
         return resolved
 
+    def user_name(self, user_id: str) -> str:
+        """The handle behind ``user_id``, from the cached member map — ``""``
+        when this machine has never resolved that member (issue-389 R4.1: a
+        snapshot draws ``<@U…>`` as a name where it can, and leaves the id
+        where it cannot; it never costs a call per message)."""
+        ident = str(user_id or "").strip()
+        if not ident:
+            return ""
+        for handle, cached in self._cached(USERS).items():
+            if cached == ident:
+                return handle
+        return ""
+
     # -- the map ------------------------------------------------------------------
 
     def _lookup(self, kind: str, name: str, follow: bool = False) -> str:

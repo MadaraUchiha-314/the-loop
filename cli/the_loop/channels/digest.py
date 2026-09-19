@@ -30,6 +30,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Tuple
 
+from ..redact import neutralise_broadcasts, strip_html_comments
+
 __all__ = [
     "DEFAULT_DIGEST_MODE",
     "DIGEST_MODES",
@@ -57,27 +59,10 @@ _TASK_OPEN = re.compile(r"^(\s*)[-*+]\s+\[ \]\s*", re.MULTILINE)
 _BULLET = re.compile(r"^(\s*)[-*+]\s+(?=\S)", re.MULTILINE)
 #: `<!channel>`, `<!here>`, `<!everyone>`, `<!subteam^…>` — the one thing in a
 #: comment's text that ACTS on Slack (A2). Rewritten after the comment scan, so
-#: the-loop's own `<!-- … -->` markers are already gone.
-_BROADCAST = re.compile(r"<!(?!--)")
-
-
-def strip_comments(text: str) -> str:
-    """Every ``<!-- … -->`` removed — the-loop's markers and envelopes, and any
-    other (A5). A forward scan: an unterminated opener is kept as text."""
-    out: List[str] = []
-    pos = 0
-    while True:
-        start = text.find("<!--", pos)
-        if start < 0:
-            out.append(text[pos:])
-            break
-        end = text.find("-->", start + 4)
-        if end < 0:
-            out.append(text[pos:])
-            break
-        out.append(text[pos:start])
-        pos = end + 3
-    return "".join(out)
+#: the-loop's own `<!-- … -->` markers are already gone. Both rules live in
+#: :mod:`the_loop.redact` since issue-389, because the ledger applies them to a
+#: quoted snapshot too; this module keeps its names for its own callers.
+strip_comments = strip_html_comments
 
 
 _CODE_SPAN = re.compile(r"`[^`\n]+`")
@@ -140,7 +125,7 @@ def _inline(text: str) -> str:
 
 
 def _neutralise(text: str) -> str:
-    return _BROADCAST.sub("&lt;!", text)
+    return neutralise_broadcasts(text)
 
 
 def _line_rules(text: str) -> str:

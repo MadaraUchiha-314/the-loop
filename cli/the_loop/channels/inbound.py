@@ -28,7 +28,10 @@ grant it stays the marked mirror it always was.
 
 from __future__ import annotations
 
+import json
 import logging
+import re
+from dataclasses import replace
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 
 from .. import eventlog
@@ -39,8 +42,13 @@ from .base import ChannelError, Event, InboundReply, PostResult
 from .bus import publish
 from .github import GitHubLedger
 from .kickoff import question_text, refusal_text, resolve_target
+from .once import first_sight
 from .slack import (
     ACTION_PREFIX,
+    DECISION_VIEW_CALLBACK,
+    GITHUB_COMMENT_LIMIT,
+    MENTION_SHORTCUTS,
+    decision_view,
     SlackBotChannel,
     SlackChannelConfig,
     _ts_key,
@@ -52,18 +60,47 @@ from .slack import (
     slack_state_path,
 )
 from .state import ChannelState, ChannelStores
+from .verbs import KINDS, compose_keyword, help_text, parse_verb, strip_mention
 
 logger = logging.getLogger("the-loop.channels")
 
 __all__ = [
+    "BINDING_ACTS",
+    "DELIVERED",
+    "INPUT_ACTS",
+    "Speaker",
     "classify",
+    "handle_message_action",
     "handle_socket_action",
     "handle_socket_event",
+    "handle_view_submission",
+    "input_decision",
     "poll_once",
     "process_kickoff",
     "process_kickoff_answer",
     "process_reply",
+    "speaker_for",
 ]
+
+#: The acts a work item's collaborator may perform beside an authorized user
+#: (issue-389 R7.2, decision-133 D7): they are *input*, which is what a
+#: collaborator was defined to give (issue-307). Everything else binds the work
+#: item and is an authorized user's alone.
+INPUT_ACTS = frozenset({"work-item.reply", "context.added", "help"})
+BINDING_ACTS = frozenset(
+    {"decision.recorded", "control.command", "gate.feedback", "work-item.create"}
+)
+
+#: The event types the channel delivers into the session itself, after the
+#: ledger record (issue-389 R3.7): the two acts join the reply. A gate answer and
+#: a control keyword stop at their unmarked record, as before.
+DELIVERED = frozenset({"work-item.reply", "context.added", "decision.recorded"})
+
+#: The verbs' event types.
+_VERB_EVENTS = {
+    "record-context": "context.added",
+    "record-decision": "decision.recorded",
+}
 
 
 def _control_config(cli_config: Optional[Mapping]):
@@ -154,6 +191,92 @@ def _at_human_gate(work_item: str, cli_config: Optional[Mapping]) -> Optional[bo
 GATE_OPEN, GATE_NONE, GATE_UNKNOWN = "open", "none", "unknown"
 
 
+def input_decision(addressed: bool, hears_messages: bool) -> str:
+    """The one table of issue-389 §1: whether a message is input.
+
+    ``addressed`` — it arrived as an ``app_mention``; ``hears_messages`` — its
+    conversation takes plain messages (a DM with the bot, an ``all`` room).
+    Returns ``"input"``, or the drop reason: ``not-addressed`` for a plain
+    message where the mention is the address, ``duplicate`` for a mention's
+    copy where the plain message is already the input.
+    """
+    if addressed:
+        return "duplicate" if hears_messages else "input"
+    return "input" if hears_messages else "not-addressed"
+
+
+class Speaker:
+    """Who a member is to this work item (issue-389 R7): on the allow-list, on
+    the work item's roster, both, or neither."""
+
+    __slots__ = ("authorized", "collaborator", "login")
+
+    def __init__(self, authorized: bool, collaborator: bool, login: str = ""):
+        self.authorized = authorized
+        self.collaborator = collaborator
+        self.login = login
+
+    def may(self, event_type: str) -> bool:
+        if self.authorized:
+            return True
+        return self.collaborator and event_type in INPUT_ACTS
+
+
+def _roster(cli_config: Optional[Mapping], bot: Optional[SlackBotChannel]):
+    """The collaborator roster beside the channel's own stores, or ``None``."""
+    if bot is None or bot.stores is None:
+        return None
+    from ..collaborators import CollaboratorStore
+
+    return CollaboratorStore(bot.stores.portable_dir)
+
+
+def speaker_for(
+    author: str,
+    work_item: str,
+    config: SlackChannelConfig,
+    cli_config: Optional[Mapping],
+    bot: Optional[SlackBotChannel] = None,
+) -> Speaker:
+    """``author`` (a member id) against the two lists, in that order: the
+    allow-list (:func:`_authorized`) and — only for the work item the message
+    was attributed to (R7.5) — that item's roster by Slack id. A roster that
+    cannot be read, a store with no such method, or a standing session's
+    thread read as *not a collaborator*: fail closed."""
+    authorized = _authorized(author, config, cli_config)
+    collaborator = False
+    login = ""
+    if not authorized and author and work_item and not parse_standing_ref(work_item):
+        roster = _roster(cli_config, bot)
+        try:
+            if roster is not None and roster.is_collaborator_slack(author, work_item):
+                collaborator = True
+                for record in roster.list(work_item):
+                    if getattr(record, "slack", "") == author:
+                        login = str(getattr(record, "login", "") or "")
+                        break
+        except (AttributeError, OSError, ValueError) as exc:  # fail closed
+            logger.debug("could not read %s's roster: %s", work_item, exc)
+            collaborator = False
+    return Speaker(authorized, collaborator, login)
+
+
+def _principal(reply: InboundReply, config: SlackChannelConfig, speaker: Speaker):
+    """The person a record names: the allow-list's entry, else the roster's ids
+    (R7.4) — resolved from config or the roster, never from the message."""
+    from ..identity import Principal
+
+    named = principal_for(config.principals, reply.channel, reply.author)
+    if named is not None:
+        return named
+    if speaker.collaborator:
+        ids = {reply.channel: reply.author}
+        if speaker.login:
+            ids["github"] = speaker.login
+        return Principal(ids=ids, name=speaker.login or "")
+    return None
+
+
 def _classify(
     reply: InboundReply, cli_config: Optional[Mapping], grants: Sequence[str]
 ) -> Tuple[str, str]:
@@ -176,6 +299,9 @@ def _classify(
     """
     if reply.top_level:
         return "work-item.create", "n/a"
+    verb = parse_verb(reply.text)
+    if verb is not None:
+        return _VERB_EVENTS.get(verb.name, verb.name), "n/a"
     from ..control import parse_command
 
     if parse_command(reply.text, _control_config(cli_config)).command:
@@ -270,13 +396,48 @@ def process_reply(
         # The Slack-side half of loop prevention (R4.5): a bot — the-loop's own
         # bot included — never speaks *to* the loop.
         return _drop(reply, "self-authored")
-    if not _authorized(reply.author, config, cli_config):
-        # Fail closed (R5.1): an empty allow-list denies everyone, and an
-        # unauthorized reply is neither delivered nor recorded — the record
-        # would be a ticket write on an attacker's behalf.
+    bot = channel or SlackBotChannel(config, slack_state_path(cli_config))
+    # The grammar after the mention (issue-389 R3.1): the bot's own `<@…>`
+    # token comes off the text wherever it sits, a leading verb is the act, and
+    # a leading control verb is composed into the CONFIGURED keyword exactly as
+    # the slash command composes it — so `parse_command` reads a real keyword.
+    text, _ = strip_mention(reply.text, bot.own_user_id())
+    verb = parse_verb(text)
+    if verb is None:
+        text = compose_keyword(text, _control_config(cli_config))
+    if text != reply.text:
+        reply = replace(reply, text=text)
+    # Two lists, consulted by act (R7.2): input from the allow-list and the
+    # roster, a binding act from the allow-list alone. A stranger is dropped
+    # in silence BEFORE anything is classified (A1; issue-321 A2: a stranger's
+    # "approved" reads no graph) — R5.1: an empty list denies everyone. A
+    # collaborator attempting a binding act is told so, because they are on
+    # the roster and learn nothing they did not know (R5.3).
+    speaker = speaker_for(reply.author, reply.work_item, config, cli_config, bot)
+    if not speaker.authorized and not speaker.collaborator:
         return _drop(reply, "unauthorized-actor", level="warning", actor=reply.author)
-
     event_type, gate = _classify(reply, cli_config, config.publish)
+    if not speaker.may(event_type):
+        bot.react(reply, "error")
+        bot.post_ephemeral(
+            reply.channel_id,
+            reply.author,
+            f"`{verb.name if verb else event_type}` needs an authorized user of "
+            "the-loop; as a collaborator on this work item you may add context "
+            "(`record-context`) and reply.",
+        )
+        return _drop(
+            reply,
+            "unauthorized-act",
+            level="warning",
+            actor=reply.author,
+            kind=event_type,
+        )
+    if event_type == "help":
+        # Taught, not recorded (R3.2): the grammar and this channel's grants,
+        # only to the member who asked.
+        answered = bot.post_ephemeral(reply.channel_id, reply.author, help_text(config))
+        return {"outcome": "answered", "event": "help", "answered": answered}
     if event_type not in config.publish:
         # Dropped, never downgraded (R2.3): a keyword the channel may not run is
         # not handed to the agent as prose either.
@@ -287,6 +448,17 @@ def process_reply(
             actor=reply.author,
             kind=event_type,
         )
+    if verb is not None and verb.name == "record-decision" and not verb.rest.strip():
+        # No model summarises a thread (R5.2): a decision is the text typed.
+        bot.react(reply, "error")
+        bot.post_ephemeral(
+            reply.channel_id,
+            reply.author,
+            "`record-decision` needs the decision itself: "
+            "`@the-loop record-decision [product|design|tech:] <what was decided> "
+            "[— why: <rationale>]`. Nothing was recorded.",
+        )
+        return _drop(reply, "empty-decision", actor=reply.author)
     eventlog.emit(
         "channel.reply_received",
         channel=reply.channel,
@@ -297,23 +469,102 @@ def process_reply(
     )
     # The acknowledgment (issue-325): after the last refusal, before the record,
     # on the message itself. Best-effort — `react` never raises.
-    bot = channel or SlackBotChannel(config, slack_state_path(cli_config))
     bot.react(reply, "received")
-    actor = principal_for(config.principals, reply.channel, reply.author)
+    actor = _principal(reply, config, speaker)
     detail: Dict[str, Any] = {"thread": reply.thread}
     if gate == GATE_UNKNOWN and event_type == "gate.feedback":
         # The record must not claim an answer to a gate the pipeline never saw
         # (R2.2): the ledger phrases a deferred reply as a reply.
         detail["gate"] = GATE_UNKNOWN
+    text = reply.text
+    snapshot_key = ""
+    snapshot_newest = ""
+    if event_type == "context.added":
+        # The thread, snapshotted (R4.1–R4.5): what is new since the last
+        # `record-context` on it, capped, scrubbed by the ledger on the way in.
+        snapshot_key = f"{reply.channel_id}:{reply.thread}"
+        with ChannelState.locked(bot.state_path, bot.stores) as state:
+            noted = state.snapshot_for(snapshot_key)
+        since = str((noted or {}).get("last") or "")
+        try:
+            snapshot = bot.snapshot_thread(reply.channel_id, reply.thread, since)
+        except ChannelError as exc:
+            bot.react(reply, "error")
+            bot.post_ephemeral(
+                reply.channel_id, reply.author, f"Could not read the thread: {exc}"
+            )
+            return _drop(reply, "snapshot-failed", level="warning", error=str(exc))
+        if snapshot.count == 0:
+            bot.react(reply, "completed")
+            bot.post_ephemeral(
+                reply.channel_id,
+                reply.author,
+                "Nothing new in this thread since it was last recorded as context.",
+            )
+            eventlog.emit(
+                "channel.snapshot_empty",
+                channel=reply.channel,
+                work_item=reply.work_item,
+                thread=reply.thread,
+            )
+            return {"outcome": "nothing-new", "event": event_type}
+        if len(snapshot.text) > GITHUB_COMMENT_LIMIT:
+            bot.react(reply, "error")
+            bot.post_ephemeral(
+                reply.channel_id,
+                reply.author,
+                "This thread is too large to record in one comment even after the "
+                "cap; record it in parts, or link it instead.",
+            )
+            return _drop(reply, "snapshot-too-large", level="warning")
+        text = snapshot.text
+        snapshot_newest = snapshot.newest
+        detail.update(
+            {
+                "thread": snapshot.permalink or reply.thread,
+                "count": str(snapshot.count),
+                "truncated": "yes" if snapshot.truncated else "",
+            }
+        )
+    elif event_type == "decision.recorded" and verb is not None:
+        text = verb.rest
+        if verb.kind in KINDS:
+            detail["kind"] = verb.kind
+        if verb.rationale:
+            detail["rationale"] = verb.rationale
+        detail["thread"] = _thread_permalink(bot, reply) or reply.thread
     event = Event(
         event_type=event_type,
         work_item=reply.work_item,
-        text=reply.text,
+        text=text,
         source=reply.channel,
         actor=actor,
         detail=detail,
     )
     record = _record(event, reply, cli_config, post_comment)
+    if snapshot_key and record and record.ok:
+        with ChannelState.locked(bot.state_path, bot.stores) as state:
+            noted = state.snapshot_for(snapshot_key)
+            total = int((noted or {}).get("count") or 0) + int(detail.get("count") or 0)
+            state.note_snapshot(snapshot_key, reply.work_item, snapshot_newest, total)
+            state.save(bot.state_path)
+        eventlog.emit(
+            "channel.context_recorded",
+            channel=reply.channel,
+            work_item=reply.work_item,
+            actor=reply.author,
+            thread=reply.thread,
+            count=int(detail.get("count") or 0),
+        )
+    elif event_type == "decision.recorded" and record and record.ok:
+        eventlog.emit(
+            "channel.decision_recorded",
+            channel=reply.channel,
+            work_item=reply.work_item,
+            actor=reply.author,
+            thread=reply.thread,
+            kind=detail.get("kind") or None,
+        )
     recorded = bool(record and record.ok)
     # A standing session has no ticket: a reply's skipped mirror is not a
     # failure, so what "lands" for it is the delivery alone (decision-111 D4). A
@@ -333,18 +584,52 @@ def process_reply(
         outcome["url"] = record.url
     if record is not None and not record.ok and record.error:
         outcome["error"] = record.error
-    if event_type != "work-item.reply":
+    if event_type not in DELIVERED:
         # The record IS the request: the ledger's ingress classifies a gate
         # answer and executes a control keyword. Delivering here too would hand
         # the session the text twice and bypass the dispatcher's control seam.
         bot.react(reply, "completed" if landed else "error")
         return outcome
-    delivered, error = _deliver(reply, cli_config, deliver)
+    kind = {"context.added": "context", "decision.recorded": "decision"}.get(
+        event_type, "reply"
+    )
+    frame_detail = {
+        **{k: str(v) for k, v in detail.items() if v},
+        "url": (record.url if record else "") or "",
+        "person": (actor.label if actor else "") or f"{reply.channel}:{reply.author}",
+    }
+    delivered, error = _deliver(
+        replace(reply, text=text), cli_config, deliver, kind=kind, detail=frame_detail
+    )
     bot.react(reply, "completed" if landed and delivered else "error")
     outcome["delivered"] = delivered
     if error and "error" not in outcome:
         outcome["error"] = error
+    if kind != "reply" and recorded and record is not None:
+        # The one visible receipt in the thread (R3.6): what landed, and where.
+        what = (
+            f"📎 recorded {detail.get('count')} message(s) as context"
+            if kind == "context"
+            else "📌 recorded the decision"
+        )
+        link = f" — {record.url}" if record.url else ""
+        bot.say(reply.thread, f"{what} on `{reply.work_item}`{link}", reply.channel_id)
     return outcome
+
+
+def _thread_permalink(bot: SlackBotChannel, reply: InboundReply) -> str:
+    """The permalink of the message a decision was recorded on, best-effort."""
+    if not reply.channel_id or not reply.ts:
+        return ""
+    try:
+        return str(
+            bot._client()  # noqa: SLF001 — the channel's own client
+            .chat_getPermalink(channel=reply.channel_id, message_ts=reply.ts)
+            .get("permalink")
+            or ""
+        )
+    except Exception:  # noqa: BLE001 — a link is a nicety
+        return ""
 
 
 def _record(
@@ -412,8 +697,15 @@ def _deliver(
     reply: InboundReply,
     cli_config: Optional[Mapping],
     deliver: Optional[Callable],
+    *,
+    kind: str = "reply",
+    detail: Optional[Mapping[str, str]] = None,
 ) -> Tuple[bool, str]:
-    """``(delivered, error)`` — the error is the refusal's text when it was not."""
+    """``(delivered, error)`` — the error is the refusal's text when it was not.
+
+    ``kind`` and ``detail`` select the frame a recorded act is typed under
+    (issue-389 R3.7); a plain reply passes neither, so every existing deliverer
+    — the tests' seams included — is called exactly as before."""
     if deliver is None and parse_standing_ref(reply.work_item):
         # The other namespace's delivery (issue-277). Bound late for the same
         # reason the work-item one is: a test or embedder patching
@@ -425,6 +717,9 @@ def _deliver(
         from ..core import sessions as core_sessions
 
         deliver = core_sessions.reply_session
+    extra: Dict[str, Any] = {}
+    if kind != "reply":
+        extra = {"kind": kind, "detail": dict(detail or {})}
     try:
         result = deliver(
             reply.work_item,
@@ -432,6 +727,7 @@ def _deliver(
             actor=f"{reply.channel}:{reply.author}",
             comment=False,  # the ledger record is the ticket's copy (D6)
             config=dict(cli_config or {}),
+            **extra,
         )
     except (LookupError, ValueError) as exc:
         # reply_session's refusals: no session, paused, dead pane. The record
@@ -846,6 +1142,7 @@ def handle_socket_event(
     deliver: Optional[Callable] = None,
     create_issue: Optional[Callable] = None,
     client_factory: Optional[Callable] = None,
+    addressed: bool = False,
 ) -> Dict[str, Any]:
     """One Socket Mode ``message`` event through the same pipeline (R4.2).
 
@@ -857,6 +1154,13 @@ def handle_socket_event(
     message on that work item wherever in the channel it was typed.
     ``client_factory`` is the same injection point ``poll_once`` has (issue-325):
     the channel built here is what acknowledges the message.
+
+    ``addressed`` says the event is an ``app_mention`` (issue-389 R1.1): the
+    mention is the address, so a plain ``message`` is input only where the
+    conversation hears plain messages — a direct message with the bot, a room
+    declared ``--listen all`` — and is otherwise dropped ``not-addressed``
+    before the kickoff branch, authorization or any reaction, with no cursor
+    moved; a mention's copy in such a conversation is the ``duplicate``.
     """
     config = SlackChannelConfig.from_mapping(cli_config)
     state_path = slack_state_path(cli_config)
@@ -875,17 +1179,38 @@ def handle_socket_event(
     room_work_item = (
         bot.stores.declared_work_item(channel_id) if bot.stores is not None else ""
     )
+    decision = input_decision(addressed, bot.hears_messages(channel_id))
+    if decision != "input":
+        return _drop(
+            InboundReply(
+                channel="slack",
+                work_item=room_work_item
+                or (state.work_item_for(thread) or "" if thread else ""),
+                author=str(event.get("user") or ""),
+                text="",
+                thread=thread,
+                ts=ts,
+                channel_id=channel_id,
+            ),
+            decision,
+            level="debug",
+        )
     if (not thread or thread == ts) and channel_id == config.channel:
         if (
             config.kickoff_enabled
             and not room_work_item
             and not state.work_item_for(ts)
         ):
+            # The mention is the address, not the ask (issue-389 R1.5): the
+            # issue is opened from the words after it.
+            said = str(event.get("text") or "")
+            if addressed:
+                said, _ = strip_mention(said, bot.own_user_id())
             reply = InboundReply(
                 channel="slack",
                 work_item="",
                 author=str(event.get("user") or ""),
-                text=str(event.get("text") or ""),
+                text=said,
                 thread=ts,
                 ts=ts,
                 is_bot=is_bot,
@@ -951,6 +1276,233 @@ def handle_socket_event(
         with ChannelState.locked(state_path, ChannelStores.beside(state_path)) as fresh:
             fresh.advance(cursor_key, reply.ts)
             fresh.save(state_path)
+    return outcome
+
+
+#: What a shortcut's or a modal's `private_metadata` may name: a conversation
+#: id and Slack timestamps, nothing else (A3).
+_CHANNEL_ID_RE = re.compile(r"^[CGD][A-Z0-9_-]{1,20}$")
+_TS_RE = re.compile(r"^\d+\.\d+$")
+
+
+def _shortcut_reply(
+    payload: Mapping[str, Any], text: str, state: ChannelState, bot: SlackBotChannel
+) -> Optional[InboundReply]:
+    """The typed-mention equivalent of a shortcut payload (R6.2, R6.4): the
+    payload's own ``user.id`` as the author, the message's channel and ts, its
+    thread when it is in one, ``text`` as what the member "typed". ``None``
+    when the payload names no message worth attributing."""
+    user = str((payload.get("user") or {}).get("id") or "")
+    channel_id = str((payload.get("channel") or {}).get("id") or "")
+    message = payload.get("message") or {}
+    ts = str(message.get("ts") or "")
+    thread = str(message.get("thread_ts") or "") or ts
+    if not (user and _CHANNEL_ID_RE.match(channel_id) and _TS_RE.match(ts)):
+        return None
+    if thread != ts and not _TS_RE.match(thread):
+        return None
+    room = bot.stores.declared_work_item(channel_id) if bot.stores is not None else ""
+    work_item = (state.work_item_for(thread) if thread != ts else "") or room or ""
+    if not work_item and thread == ts:
+        work_item = state.work_item_for(ts) or room or ""
+    return InboundReply(
+        channel="slack",
+        work_item=work_item,
+        author=user,
+        text=text,
+        thread=thread,
+        ts=ts,
+        channel_id=channel_id,
+    )
+
+
+def _shortcut_outcome(
+    bot: SlackBotChannel, reply: InboundReply, outcome: Mapping
+) -> None:
+    """Tell the member what their shortcut did — ephemerally, since a shortcut
+    has no message of their own to react on (R6.5). Silence for a refusal below
+    the allow-list (A1)."""
+    what = str(outcome.get("outcome") or "")
+    if what == "unauthorized-actor":
+        return
+    if what == "processed":
+        url = str(outcome.get("url") or "")
+        said = "Recorded" + (f" — {url}" if url else "") + "."
+        if outcome.get("delivered") is False:
+            said += " The session could not take it; the record stands."
+    elif what == "nothing-new":
+        said = "Nothing new in that thread since it was last recorded."
+    elif what in ("empty-decision", "unauthorized-act", "snapshot-too-large"):
+        return  # already told, on the same channel, by the pipeline
+    else:
+        said = f"Nothing recorded ({what})."
+    bot.post_ephemeral(reply.channel_id, reply.author, said)
+
+
+def handle_message_action(
+    payload: Mapping[str, Any],
+    cli_config: Optional[Mapping],
+    *,
+    post_comment: Optional[Callable] = None,
+    deliver: Optional[Callable] = None,
+    client_factory: Optional[Callable] = None,
+) -> Dict[str, Any]:
+    """A message shortcut (issue-389 R6): *Add to the-loop as context* is exactly
+    ``@the-loop record-context`` typed on that message; *Record a decision*
+    opens the modal, whose submission is :func:`handle_view_submission`. The
+    callback id is the only thing read from the payload's shape; the member is
+    the payload's ``user.id``; a trigger acts once. Never raises.
+    """
+    callback = str(payload.get("callback_id") or "")
+    verb = MENTION_SHORTCUTS.get(callback)
+    if not verb:
+        return {"outcome": "ignored"}
+    config = SlackChannelConfig.from_mapping(cli_config)
+    state_path = slack_state_path(cli_config)
+    bot = SlackBotChannel(config, state_path, client_factory=client_factory)
+    state = ChannelState.load(state_path, bot.stores)
+    reply = _shortcut_reply(payload, verb, state, bot)
+    trigger = str(payload.get("trigger_id") or "")
+    member = str((payload.get("user") or {}).get("id") or "")
+    if reply is None:
+        return _drop(
+            InboundReply("slack", "", member, "", "", "", channel_id=""),
+            "bad-metadata",
+        )
+    if not first_sight(trigger):
+        return _drop(reply, "duplicate")
+    eventlog.emit(
+        "channel.shortcut_received",
+        channel="slack",
+        work_item=reply.work_item or None,
+        actor=member,
+        shortcut=callback,
+    )
+    if verb == "record-decision":
+        # The modal, only for a member who may record a decision (R7.2, A1, A3):
+        # the same speaker check the typed form meets, so an unlisted member
+        # sees nothing and a collaborator is told the act is not theirs.
+        if not reply.work_item:
+            return _drop(reply, "unmapped")
+        speaker = speaker_for(member, reply.work_item, config, cli_config, bot)
+        if not speaker.authorized and not speaker.collaborator:
+            return _drop(reply, "unauthorized-actor", level="warning", actor=member)
+        if not speaker.may("decision.recorded"):
+            bot.post_ephemeral(
+                reply.channel_id,
+                member,
+                "Recording a decision needs an authorized user of the-loop; as a "
+                "collaborator you may add context and reply.",
+            )
+            return _drop(reply, "unauthorized-act", level="warning", actor=member)
+        metadata = json.dumps(
+            {"channel": reply.channel_id, "ts": reply.ts, "thread_ts": reply.thread},
+            separators=(",", ":"),
+        )
+        text = str((payload.get("message") or {}).get("text") or "")
+        opened = bot.open_view(trigger, decision_view(text, metadata))
+        if not opened:
+            bot.post_ephemeral(
+                reply.channel_id,
+                member,
+                "Could not open the decision form — try the shortcut again, or type "
+                "`@the-loop record-decision <what was decided>`.",
+            )
+        return {"outcome": "modal-opened" if opened else "modal-failed"}
+    outcome = process_reply(
+        reply,
+        config,
+        cli_config,
+        post_comment=post_comment,
+        deliver=deliver,
+        channel=bot,
+    )
+    _shortcut_outcome(bot, reply, outcome)
+    return outcome
+
+
+def handle_view_submission(
+    payload: Mapping[str, Any],
+    cli_config: Optional[Mapping],
+    *,
+    post_comment: Optional[Callable] = None,
+    deliver: Optional[Callable] = None,
+    client_factory: Optional[Callable] = None,
+) -> Dict[str, Any]:
+    """The decision modal's submission (issue-389 R6.3): composed into exactly
+    ``record-decision <kind>: <text> — why: <rationale>`` typed by the
+    submitting member on the message the shortcut was used on, and handed to
+    the pipeline. The metadata is validated as a channel id and timestamps
+    before use (A3); a view acts once. Never raises.
+    """
+    view = payload.get("view") or {}
+    if str(view.get("callback_id") or "") != DECISION_VIEW_CALLBACK:
+        return {"outcome": "ignored"}
+    member = str((payload.get("user") or {}).get("id") or "")
+    try:
+        metadata = json.loads(str(view.get("private_metadata") or ""))
+    except ValueError:
+        metadata = None
+    if not isinstance(metadata, dict):
+        return _drop(InboundReply("slack", "", member, "", "", ""), "bad-metadata")
+    channel_id = str(metadata.get("channel") or "")
+    ts = str(metadata.get("ts") or "")
+    thread = str(metadata.get("thread_ts") or "") or ts
+    if not (member and _CHANNEL_ID_RE.match(channel_id) and _TS_RE.match(ts)):
+        return _drop(InboundReply("slack", "", member, "", "", ""), "bad-metadata")
+    if not _TS_RE.match(thread):
+        return _drop(InboundReply("slack", "", member, "", "", ""), "bad-metadata")
+    values = (view.get("state") or {}).get("values") or {}
+
+    def field(block: str, action: str, key: str = "value") -> str:
+        element = (values.get(block) or {}).get(action) or {}
+        if key == "selected":
+            return str(((element.get("selected_option") or {}).get("value")) or "")
+        return str(element.get("value") or "")
+
+    text = " ".join(field("decision", "text").split())
+    kind = field("kind", "select", "selected")
+    rationale = " ".join(field("rationale", "text").split())
+    composed = "record-decision "
+    if kind:
+        composed += f"{kind}: "
+    composed += text
+    if rationale:
+        composed += f" — why: {rationale}"
+    config = SlackChannelConfig.from_mapping(cli_config)
+    state_path = slack_state_path(cli_config)
+    bot = SlackBotChannel(config, state_path, client_factory=client_factory)
+    state = ChannelState.load(state_path, bot.stores)
+    reply = _shortcut_reply(
+        {
+            "user": {"id": member},
+            "channel": {"id": channel_id},
+            "message": {"ts": ts, "thread_ts": thread if thread != ts else ""},
+        },
+        composed,
+        state,
+        bot,
+    )
+    if reply is None:
+        return _drop(InboundReply("slack", "", member, "", "", ""), "bad-metadata")
+    if not first_sight(str(view.get("id") or "")):
+        return _drop(reply, "duplicate")
+    eventlog.emit(
+        "channel.view_submitted",
+        channel="slack",
+        work_item=reply.work_item or None,
+        actor=member,
+        kind=kind or None,
+    )
+    outcome = process_reply(
+        reply,
+        config,
+        cli_config,
+        post_comment=post_comment,
+        deliver=deliver,
+        channel=bot,
+    )
+    _shortcut_outcome(bot, reply, outcome)
     return outcome
 
 
