@@ -373,7 +373,7 @@ def _listen_of(record: dict, stores: ChannelStores) -> str:
     return stores.listen_mode(channel) if channel else "mentions"
 
 
-def _ledger_comments(config: dict, work_item: str) -> list:
+def _ledger_comments(config: dict, work_item: str) -> tuple:
     """The ticket's comments as ``records_from_comments`` reads them — one
     ``gh`` listing through the poller's read-only client, tried as an issue
     and, when the ledger says the number is a pull request, as one."""
@@ -383,6 +383,7 @@ def _ledger_comments(config: dict, work_item: str) -> list:
 
     ref = WorkItemRef.parse(work_item)
     gh = GhClient(binary=gh_binary(config))
+    login = gh.viewer_login(ref.host)
     try:
         comments = gh.list_comments(
             ref.owner, ref.repo, ref.number, is_pr=False, host=ref.host
@@ -397,7 +398,7 @@ def _ledger_comments(config: dict, work_item: str) -> list:
             )
         except GhError:
             raise first from None
-    return [
+    return login, [
         {
             "id": c.id,
             "body": c.body,
@@ -411,17 +412,23 @@ def _ledger_comments(config: dict, work_item: str) -> list:
 
 def _records(config: dict, work_item: str, types: list, fmt: str) -> int:
     """A work item's channel records (issue-389 R4.7, R5.6): every marked,
-    enveloped ``context.added`` / ``decision.recorded`` comment on its ticket,
-    as JSON rows or as markdown. Read-only; exit 1 when the ledger cannot be
-    read or the ref is not one."""
+    enveloped ``context.added`` / ``decision.recorded`` comment the ledger
+    credential itself posted on its ticket, as JSON rows or as markdown.
+    Read-only; exit 1 when the ledger cannot be read or the ref is not one."""
     from ..poller.github import GhError
 
     try:
-        comments = _ledger_comments(config, work_item)
+        login, comments = _ledger_comments(config, work_item)
     except (ValueError, GhError) as exc:
         print(f"could not read the records of {work_item}: {exc}", file=sys.stderr)
         return 1
-    records = records_from_comments(comments, types or None)
+    if not login:
+        print(
+            "warning: could not read the gh login, so the records are listed by "
+            "their marker alone — check each row's author before trusting it",
+            file=sys.stderr,
+        )
+    records = records_from_comments(comments, types or None, login or None)
     if fmt == "json":
         print(json.dumps([r.to_dict() for r in records], indent=2))
         return 0

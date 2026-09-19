@@ -764,3 +764,63 @@ def test_a_mentioned_kickoff_keeps_its_body(tmp_path):
     )
     assert created["outcome"] == "created"
     assert sink.created == [("octo/repo", "fix the flaky teardown")]
+
+
+# -- self-review round 1 (findings 4 and 5) --------------------------------------------
+
+
+def test_a_collaborators_plain_reply_is_input_whatever_the_gate(tmp_path):
+    """
+    Scenario: a collaborator's reply is input even while the item waits at a gate
+      Given the channel holds gate.feedback and the graph cannot be read here
+      When a collaborator mentions "I think option B"
+      Then it is a work-item.reply, delivered — a collaborator cannot answer a gate
+      And the same words from an authorized user are left to the ledger as gate.feedback
+    """
+    config = config_for(tmp_path, publish=[*GRANTS, "gate.feedback"])
+    declare(config)
+    _collaborator(config)
+    sink, client = Sink(), Client()
+    theirs = send(
+        config,
+        sink,
+        client,
+        addressed=True,
+        text=f"<@{BOT}> I think option B",
+        user="UCOLLAB",
+        ts="1900.1",
+    )
+    assert theirs["outcome"] == "processed" and theirs["event"] == "work-item.reply"
+    assert sink.delivered[-1]["text"] == "I think option B"
+    ours = send(
+        config,
+        sink,
+        client,
+        addressed=True,
+        text=f"<@{BOT}> I think option B",
+        ts="1900.2",
+    )
+    assert ours["outcome"] == "processed" and ours["event"] == "gate.feedback"
+
+
+def test_a_recording_act_in_a_standing_sessions_thread_is_refused_and_said(tmp_path):
+    """A standing session has no ticket: `record-context` there is `no-ticket`
+    with the reason, never a swallowed delivery error."""
+    config = config_for(tmp_path, channel=DM)
+    sink, client = Sink(), _thread_client()
+    bot = bot_for(config, client)
+    bot.bind("1800.1", "standing:review", DM, origin="start")
+    # In a DM the plain copy is the input and carries the mention token (R1.6).
+    outcome = send(
+        config,
+        sink,
+        client,
+        addressed=False,
+        channel=DM,
+        text=f"<@{BOT}> record-context",
+        thread="1800.1",
+        ts="1800.4",
+    )
+    assert outcome["outcome"] == "no-ticket"
+    assert "standing session" in client.ephemeral[-1][2]
+    assert sink.recorded == [] and sink.delivered == []

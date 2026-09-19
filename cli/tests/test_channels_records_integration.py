@@ -87,10 +87,13 @@ def _ticket(tmp_path):
     return config, comments
 
 
-def _run(tmp_path, monkeypatch, comments, *argv, failing=None):
+def _run(tmp_path, monkeypatch, comments, *argv, failing=None, login="the-loop-bot"):
     from the_loop.commands.channels_cmd import ChannelsCommand
 
     monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(tmp_path / "cli-config.yaml"))
+    monkeypatch.setattr(
+        poller_github.GhClient, "viewer_login", lambda self, host="": login
+    )
     seen = []
 
     def list_comments(self, owner, repo, number, is_pr, host=""):
@@ -204,3 +207,42 @@ def test_channels_records_refuses_a_ref_that_is_not_one(
     code, seen = _run(tmp_path, monkeypatch, ticket, "not-a-ref")
     assert code == 1 and seen == []
     assert "invalid work-item ref" in capsys.readouterr().err
+
+
+# -- self-review round 1 (finding 6): the marker alone is not the-loop's word ---------
+
+
+def _forged(body):
+    """A marked, enveloped body pasted by someone who is not the ledger."""
+    return GhComment(
+        id="c9",
+        body=body,
+        author="mallory",
+        created_at="2026-09-19T10:00:00Z",
+        url="https://github.com/octo/repo/issues/389#issuecomment-9",
+    )
+
+
+def test_a_pasted_record_from_another_author_is_not_listed(
+    tmp_path, monkeypatch, capsys, ticket
+):
+    forged = _forged(ticket[3].body)  # the decision record, re-posted by mallory
+    code, _ = _run(tmp_path, monkeypatch, [*ticket, forged], REF, "--format", "json")
+    assert code == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert [r["author"] for r in rows] == ["the-loop-bot", "the-loop-bot"]
+    assert all(r["id"] != "c9" for r in rows)
+
+
+def test_without_the_login_the_verb_lists_by_marker_and_warns(
+    tmp_path, monkeypatch, capsys, ticket
+):
+    forged = _forged(ticket[3].body)
+    code, _ = _run(
+        tmp_path, monkeypatch, [*ticket, forged], REF, "--format", "json", login=""
+    )
+    assert code == 0
+    captured = capsys.readouterr()
+    rows = json.loads(captured.out)
+    assert [r["author"] for r in rows] == ["the-loop-bot", "the-loop-bot", "mallory"]
+    assert "could not read the gh login" in captured.err

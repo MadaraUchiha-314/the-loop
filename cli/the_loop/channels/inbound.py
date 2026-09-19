@@ -278,7 +278,11 @@ def _principal(reply: InboundReply, config: SlackChannelConfig, speaker: Speaker
 
 
 def _classify(
-    reply: InboundReply, cli_config: Optional[Mapping], grants: Sequence[str]
+    reply: InboundReply,
+    cli_config: Optional[Mapping],
+    grants: Sequence[str],
+    *,
+    collaborator_only: bool = False,
 ) -> Tuple[str, str]:
     """The one event type this message is (R2.3) and what the gate read returned,
     in a fixed order:
@@ -308,6 +312,11 @@ def _classify(
 
     if parse_command(reply.text, _control_config(cli_config)).command:
         return "control.command", "n/a"
+    if collaborator_only:
+        # A collaborator cannot answer a gate (issue-307: input only), so their
+        # words are a reply by construction — whatever the graph is waiting on,
+        # and even when it cannot be read (R7.2).
+        return "work-item.reply", GATE_NONE
     gate = _at_human_gate(reply.work_item, cli_config)
     if gate:
         return "gate.feedback", GATE_OPEN
@@ -419,7 +428,9 @@ def process_reply(
     speaker = speaker_for(reply.author, reply.work_item, config, cli_config, bot)
     if not speaker.authorized and not speaker.collaborator:
         return _drop(reply, "unauthorized-actor", level="warning", actor=reply.author)
-    event_type, gate = _classify(reply, cli_config, config.publish)
+    event_type, gate = _classify(
+        reply, cli_config, config.publish, collaborator_only=not speaker.authorized
+    )
     if not speaker.may(event_type):
         bot.react(reply, "error")
         bot.post_ephemeral(
@@ -436,6 +447,20 @@ def process_reply(
             actor=reply.author,
             kind=event_type,
         )
+    if event_type in ("context.added", "decision.recorded") and parse_standing_ref(
+        reply.work_item
+    ):
+        # A standing session has no ticket (decision-111): there is nothing to
+        # record on, and the standing deliverer takes no frame. Said, not
+        # swallowed as `undeliverable`.
+        bot.react(reply, "error")
+        bot.post_ephemeral(
+            reply.channel_id,
+            reply.author,
+            "This thread belongs to a standing session, which has no ticket to "
+            "record on. Nothing was recorded; a plain reply still reaches it.",
+        )
+        return _drop(reply, "no-ticket", actor=reply.author, kind=event_type)
     if event_type == "help":
         # Taught, not recorded (R3.2): the grammar and this channel's grants,
         # only to the member who asked.

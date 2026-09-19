@@ -92,15 +92,26 @@ def _record_from_body(body: str) -> Optional[Record]:
 
 
 def records_from_comments(
-    comments: Iterable[Mapping[str, object]], types: Optional[Iterable[str]] = None
+    comments: Iterable[Mapping[str, object]],
+    types: Optional[Iterable[str]] = None,
+    author: Optional[str] = None,
 ) -> List[Record]:
     """Every record among ``comments`` — each a mapping with ``body`` and, when
     the ledger gives them, ``url``, ``author``, ``created_at`` and ``id`` — of
-    the wanted ``types`` (both when ``None``), in the order given."""
+    the wanted ``types`` (both when ``None``), in the order given.
+
+    ``author`` is the ledger credential's login: given, only comments it posted
+    count, because the marker and the envelope are text anyone with write
+    access to the ticket can paste, and a pasted "decision" must not read as
+    an authorized user's (A5, A6). ``None`` lists by the marker alone; the
+    verb says so when it could not learn the login.
+    """
     wanted = set(types or RECORD_TYPES)
     out: List[Record] = []
     for comment in comments:
         body = str(comment.get("body") or "")
+        if author is not None and str(comment.get("author") or "") != author:
+            continue
         record = _record_from_body(body)
         if record is None or record.type not in wanted:
             continue
