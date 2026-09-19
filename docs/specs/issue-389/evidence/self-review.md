@@ -21,7 +21,7 @@ workItem: "github:MadaraUchiha-314/the-loop#389"
 |-------|----------|---------|------------------------|------|
 | 1 | a fresh reviewing agent, same harness, reading the whole diff | **new findings (9)** | see the table below; all nine fixed in `d233de8`, `5f8479e`, `6f71041`, each with a red→green test | [PR #390](https://github.com/MadaraUchiha-314/the-loop/pull/390) |
 | 2 | a fresh reviewing agent, reading the three fix commits and the touched functions again | **new findings (4)** | one medium, three low — see the second table; all four fixed in `28088c6` with red→green tests | [PR #390](https://github.com/MadaraUchiha-314/the-loop/pull/390) |
-| 3 | a fresh reviewing agent, reading the round-2 fix commit and the touched functions again | **in progress** | the round is running as this record is committed; its outcome is appended when it reports | [PR #390](https://github.com/MadaraUchiha-314/the-loop/pull/390) |
+| 3 | a fresh reviewing agent, reading the round-2 fix commit and the touched functions again | **new findings (5)** — cap reached | one medium, four low — see the third table; all five fixed in `eb39c62` (+ `test` follow-up) with red→green tests. `reviews.selfReviewCount: 3` is the cap: the round stops here and what remains goes to the human reviewer on the PR, as the policy says | [PR #390](https://github.com/MadaraUchiha-314/the-loop/pull/390) |
 
 ## Round 1 — what was found, and what was done
 
@@ -50,6 +50,20 @@ Round 2 also confirmed, on question: the grammar in a plain DM message is reache
 the bot's token in the text (the `app_mention` copy is dropped as `duplicate` there), which
 is R1.6's intent; a collaborator's keyword is still classified `control.command` and
 refused before the gate short-circuit; nothing in the fixes can raise inside the listener.
+
+## Round 3 — what was found, and what was done
+
+| # | Severity | Finding | Disposition |
+|---|---|---|---|
+| 1 | medium (security) | The round-2 `no-bot-id` guard answered before the allow-list was read: with `auth.test` failing, a stranger's mention got an ephemeral — a reaction that says the-loop listens there (A1). | Fixed (`eb39c62`): the speaker is read first; a stranger is `unauthorized-actor` in silence whatever the text. Test in `test_channels_mentions_security.py` |
+| 2 | low | A shortcut on a thread with nothing new was told twice. | Fixed (`eb39c62`): once. Test |
+| 3 | low | When the first new message alone was over the cap the snapshot was empty and the round-2 noting moved the cursor past it: content never recorded, the member told "nothing new". | Fixed (`eb39c62`): `snapshot-too-large` with the reason; the cursor stays. Test |
+| 4 | low | An earlier `@the-loop record-context` in the thread still came back as a line of context after a capped or failed record. | Fixed (`eb39c62`): `snapshot_thread` leaves out every message that strips to the `record-context` verb when the bot's id is known; `skip` and the cursor arithmetic stay as belt and braces. A top-level bare mention therefore has nothing to record and says so; its replies are the context (scenario 12 reworded). Test |
+| 5 | low (security) | The guard keyed on `app_mention` alone; the same unverifiable mention in a DM, an `all` room or a poll read was still recorded as prose. | Fixed (`eb39c62`): `verbs.addresses_a_verb` — a mention followed by one of the-loop's verbs is the address whatever the input form; a colleague mentioned in prose stays a reply. Test |
+
+The follow-up `test` commit fixes the reworded scenario's fake timestamps, which sorted
+below their root and made the mention read as `duplicate`; `eb39c62`'s message reported
+the suite green by mistake — the whole suite is green at the follow-up.
 
 ## Checked in round 1 and found sound
 

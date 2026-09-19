@@ -39,7 +39,7 @@ module docstring names its requirement for the rest):
 | 9 | a Slack conversation reaches the-loop only when addressed | poll mode reads no mention-gated conversation and moves no cursor | R1 | `…mentions_integration.py:363` |
 | 10 | a Slack conversation reaches the-loop only when addressed | help answers ephemerally and records nothing | R3 | `…mentions_integration.py:397` |
 | 11 | a Slack conversation reaches the-loop only when addressed | record-context snapshots a thread onto the ticket and into the session | R4 | `…mentions_integration.py:434` |
-| 12 | a Slack conversation reaches the-loop only when addressed | record-context on a top-level message snapshots that message | R4 | `…mentions_integration.py:475` |
+| 12 | a Slack conversation reaches the-loop only when addressed | record-context on a top-level message records its thread, never the mention | R4 | `…mentions_integration.py:475` |
 | 13 | a Slack conversation reaches the-loop only when addressed | a second record-context records only what is new | R4 | `…mentions_integration.py:501` |
 | 14 | a Slack conversation reaches the-loop only when addressed | record-decision lands as a marked record and a decision frame | R5 | `…mentions_integration.py:573` |
 | 15 | a Slack conversation reaches the-loop only when addressed | a collaborator may add context but not a decision | R7 | `…mentions_integration.py:627` |

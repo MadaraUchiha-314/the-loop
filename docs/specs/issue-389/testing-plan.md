@@ -118,12 +118,12 @@ Executed 2026-09-19 at the PR's head, in a cloud checkout of this repository (`c
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
 | T1 | `cd cli && uv run python -m pytest -q tests/test_channels_mentions.py tests/test_channels_verbs.py tests/test_collaborators.py tests/test_workchannels.py tests/test_channels.py` | pass — 234 passed | [`evidence/unit.md`](evidence/unit.md) |
-| T2 | `cd cli && uv run python -m pytest -q tests/test_channels_mentions_integration.py tests/test_channels_shortcuts_integration.py tests/test_collaborators_cli.py tests/test_workchannels_cli.py tests/test_channels_records_integration.py` | pass — 69 passed before the self-review round, 83 after its tests were added; 22 Gherkin scenarios | [`evidence/integration.md`](evidence/integration.md) |
+| T2 | `cd cli && uv run python -m pytest -q tests/test_channels_mentions_integration.py tests/test_channels_shortcuts_integration.py tests/test_collaborators_cli.py tests/test_workchannels_cli.py tests/test_channels_records_integration.py` | pass — 69 passed before the self-review rounds, 88 after their tests were added; 22 Gherkin scenarios | [`evidence/integration.md`](evidence/integration.md) |
 | T6 | `cd cli && uv run python -m pytest -q tests/test_channels_commands.py tests/test_channels_dm.py tests/test_channels_shortcuts.py` | pass — 101 passed; the modal view committed | [`evidence/snapshot.md`](evidence/snapshot.md) |
 | T8 | `cd cli && uv run python -m pytest -q tests/test_channels_mentions_security.py` | pass — 12 passed, one per abuse case | [`evidence/security.md`](evidence/security.md) |
 | T10 | `cd cli && uv run python -m pytest -q tests/test_channels_upgrade.py tests/test_config_schema_parity.py tests/test_docs_parity.py tests/test_graph_parity.py tests/test_bus.py` | pass — 64 passed | [`evidence/upgrade.md`](evidence/upgrade.md) |
 | T11 | the procedure in `evidence/manual.md` | **not executed** — no workspace, no credentials in this environment | [`evidence/manual.md`](evidence/manual.md) |
-| T12 | `make check` | pass — ruff, format, pyright, markdownlint 0 errors; 4127 passed, 1 skipped (4140 after the self-review round) | [`evidence/checks.md`](evidence/checks.md) |
+| T12 | `make check` | pass — ruff, format, pyright, markdownlint 0 errors; 4127 passed, 1 skipped (4149 after the three self-review rounds) | [`evidence/checks.md`](evidence/checks.md) |
 
 **Not executed:** T11 — the manual walk-through against a real workspace; the
 procedure is written for the owner to run, and its captures are not committed.
