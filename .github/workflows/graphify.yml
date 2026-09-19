@@ -1,0 +1,148 @@
+# Knowledge graph — graphify over this repository, rebuilt on every merge to main and
+# committed back (issue-385, decision-133).
+#
+# graphify (https://github.com/Graphify-Labs/graphify) turns the tree into a knowledge
+# graph under graphify-out/: tree-sitter AST extraction for code (no LLM), Claude for the
+# docs and images (the `claude` backend calls the Messages API directly with
+# ANTHROPIC_API_KEY — no Claude Code CLI is installed here), then community detection,
+# a plain-language GRAPH_REPORT.md and an interactive graph.html.
+#
+# Two jobs, never both:
+#   rebuild  — push to main / manual dispatch. Holds the secret, has `contents: write`,
+#              and pushes the result through scripts/graphify-commit.sh.
+#   dry-run  — pull requests that change this pipeline. No secret, no write access:
+#              proves the tool installs and the AST-only half runs on a runner.
+#
+# The rebuild is incremental: the committed graph.json + manifest.json are the baseline,
+# so a merge that changed three docs sends three docs to the model. The first run (or
+# `workflow_dispatch` with `force`) extracts everything.
+#
+# Loop safety: the push uses GITHUB_TOKEN, and pushes made with GITHUB_TOKEN start no
+# workflow — so the `chore(graphify):` commit triggers neither this workflow nor CI, and
+# the release workflow's `bump:` commit (same token) does not trigger this one.
+name: Knowledge graph
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - .github/workflows/graphify.yml
+      - scripts/graphify-commit.sh
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Rebuild from scratch (ignore the committed baseline and caches)"
+        type: boolean
+        default: false
+
+# Queue, never cancel: a run in flight has already spent tokens on this tree, and the
+# queued run picks up whatever merged meanwhile.
+concurrency:
+  group: graphify
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  GRAPHIFY_VERSION: "0.9.64"      # PyPI `graphifyy`; bump deliberately, the output format is committed
+  GRAPHIFY_MODEL: claude-opus-5   # the model for doc/image extraction and community naming
+  GRAPHIFY_NO_BACKUP: "1"         # no dated backup copies under graphify-out/
+  GRAPHIFY_NO_TIPS: "1"
+
+jobs:
+  # ------------------------------------------------------------------ pull requests
+  dry-run:
+    name: Rehearse (AST only, nothing pushed)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install graphify
+        run: |
+          uv tool install --with anthropic "graphifyy==${GRAPHIFY_VERSION}"
+          echo "$(uv tool dir --bin)" >> "$GITHUB_PATH"
+
+      - name: Build the code graph (no LLM)
+        run: |
+          graphify extract . --code-only
+          graphify cluster-only . --no-label
+          ls -la graphify-out
+
+      - name: Keep the report for the reviewer
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphify-report
+          path: graphify-out/GRAPH_REPORT.md
+          retention-days: 7
+
+  # ------------------------------------------------------------------ main
+  rebuild:
+    name: Rebuild and commit
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    # The secret lives on this environment (Settings → Environments → graphify):
+    # restrict its deployment branches to `main` and the key is unreachable from anywhere
+    # else in this repository.
+    environment: graphify
+    permissions:
+      contents: write        # push the graph commit back to main
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install graphify
+        run: |
+          uv tool install --with anthropic "graphifyy==${GRAPHIFY_VERSION}"
+          echo "$(uv tool dir --bin)" >> "$GITHUB_PATH"
+
+      # graphify's semantic cache (the model's answers, keyed by content hash) rides the
+      # Actions cache between runs rather than git. The committed graph.json+manifest.json
+      # are the real incremental baseline; this saves re-asking for a file the last run
+      # extracted but never got to commit — which is why it is saved even when a later
+      # step fails (restore/save split, `if: always()`), under a new key every run.
+      - name: Restore graphify's semantic cache
+        uses: actions/cache/restore@v4
+        with:
+          path: graphify-out/cache
+          key: graphify-cache-${{ github.sha }}
+          restore-keys: |
+            graphify-cache-
+
+      - name: Extract (AST for code, Claude for docs and images) and name the communities
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GRAPHIFY_FORCE: ${{ inputs.force == true && '1' || '' }}
+        run: |
+          if [ -z "${ANTHROPIC_API_KEY}" ]; then
+            echo "::error::ANTHROPIC_API_KEY is not set — add it as a secret on the 'graphify' environment (Settings → Environments → graphify → Environment secrets)"
+            exit 1
+          fi
+          graphify extract . --backend claude --model "$GRAPHIFY_MODEL"
+          graphify cluster-only . --backend claude --model "$GRAPHIFY_MODEL"
+          ls -la graphify-out
+
+      - name: Save graphify's semantic cache (even if a step failed)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: graphify-out/cache
+          key: graphify-cache-${{ github.sha }}
+
+      - name: Commit and push graphify-out/ to main
+        run: scripts/graphify-commit.sh main

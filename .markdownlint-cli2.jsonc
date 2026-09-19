@@ -26,6 +26,9 @@
     "docs/operating-model/reference/**",
     // signed-off UI design exports checked in verbatim (design.uiArtifacts) —
     // the artifact is the contract; lint the app, not the export
-    "docs/specs/*/design/**"
+    "docs/specs/*/design/**",
+    // graphify's generated report (issue-385) — the graph is rebuilt by CI on every
+    // merge; lint what people write, not what the tool emits
+    "graphify-out/**"
   ]
 }

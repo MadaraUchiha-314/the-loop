@@ -29,6 +29,7 @@ PR** as the work item that changes behaviour (a ready-to-ship gate item).
 | [release-publishing](release-publishing.md) | Automatic semantic releases and PyPI publishing of the CLI. |
 | [documentation](documentation.md) | The docs site: its information architecture, the authored-not-generated rule, and the docs↔code parity test. |
 | [token-economy](token-economy.md) | Token/cost-reduction guidance (thinking effort and verbosity by stage, disclosure, sub-agents, compaction, telemetry); advisory, never configured, never at the expense of rigor. |
+| [knowledge-graph](knowledge-graph.md) | A graphify knowledge graph of the repository (`graphify-out/`), rebuilt by CI on every merge to `main` and committed back; code by AST, documents by Claude. |
 | [writing-style](writing-style.md) | How the artifacts a human reads are written: the `the-loop:writing` skill, the document spine, the diagram-first rule and the formal-language carve-out. No length limits. |
 
 Related views: [`docs/architecture/architecture.md`](../architecture/architecture.md)

@@ -83,6 +83,7 @@ const capabilitiesItems = [
   { text: "Documentation", link: "/capabilities/documentation" },
   { text: "Token economy", link: "/capabilities/token-economy" },
   { text: "Writing style", link: "/capabilities/writing-style" },
+  { text: "Knowledge graph", link: "/capabilities/knowledge-graph" },
 ];
 
 // The CLI is documented as a product in its own right (issue-117): an onboarding path,

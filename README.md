@@ -231,6 +231,12 @@ pre-commit run --all-files   # exactly what CI runs
 See [contributing](https://madarauchiha-314.github.io/the-loop/contributing) and
 [`CLAUDE.md`](CLAUDE.md) — working in this repository means running the loop on it.
 
+`graphify-out/` is a [graphify](https://github.com/Graphify-Labs/graphify) knowledge
+graph of the repository, rebuilt by CI on every merge to `main` and committed back —
+generated, never edited. `graphify query "<question>"` works from a fresh checkout;
+`make graph` refreshes the code half locally without a model. See
+[knowledge-graph](https://madarauchiha-314.github.io/the-loop/capabilities/knowledge-graph).
+
 ## Feedback
 
 All feedback goes through GitHub issues on this repository. And — fittingly — the-loop uses

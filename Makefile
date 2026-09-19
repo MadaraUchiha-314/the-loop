@@ -3,10 +3,10 @@
 # configured tooling so local == CI. the-loop declares `uv` as its Python package
 # manager, so it uses `uv` here (uv workspace; deps pinned in uv.lock).
 
-.PHONY: help install-dev check lint format format-check typecheck test validate pre-commit
+.PHONY: help install-dev check lint format format-check typecheck test validate pre-commit graph
 
 help:
-	@echo "targets: install-dev, check, lint, format, typecheck, test, validate, pre-commit"
+	@echo "targets: install-dev, check, lint, format, typecheck, test, validate, pre-commit, graph"
 
 install-dev:
 	uv sync
@@ -36,3 +36,11 @@ pre-commit:
 	uv run pre-commit run --all-files --show-diff-on-failure
 
 check: lint format-check typecheck validate test
+
+# The knowledge graph's no-LLM half, the way .github/workflows/graphify.yml rehearses it
+# on a pull request (issue-385): AST extraction for code, no doc extraction, no community
+# naming. `uv tool install --with anthropic graphifyy` first. The committed graph.json and
+# manifest.json are the baseline, so this re-extracts only what changed.
+graph:
+	GRAPHIFY_NO_BACKUP=1 graphify extract . --code-only
+	GRAPHIFY_NO_BACKUP=1 graphify cluster-only . --no-label

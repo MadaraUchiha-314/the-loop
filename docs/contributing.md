@@ -86,6 +86,25 @@ It deploys to GitHub Pages via
 [`.github/workflows/docs.yml`](https://github.com/MadaraUchiha-314/the-loop/blob/main/.github/workflows/docs.yml)
 on every push to `main`.
 
+## The knowledge graph
+
+`graphify-out/` is a [graphify](https://github.com/Graphify-Labs/graphify) knowledge graph
+of this repository — `graph.json` for tooling, `GRAPH_REPORT.md` to read, `graph.html` to
+browse. It is **generated, not edited**: `.github/workflows/graphify.yml` rebuilds it on
+every merge to `main` (code by AST, documents and images by Claude) and commits it back,
+so a fresh checkout already has the current graph and `graphify query "<question>"`
+works from the root. Do not commit it from a branch; the rebuild on `main` supersedes it.
+
+To refresh the code half locally without a model:
+
+```bash
+uv tool install --with anthropic graphifyy
+make graph      # graphify extract . --code-only && graphify cluster-only . --no-label
+```
+
+See [knowledge-graph](/capabilities/knowledge-graph) for what is tracked, what a rebuild
+costs, and where the API key lives.
+
 ## Feedback
 
 All feedback for the-loop is provided through
