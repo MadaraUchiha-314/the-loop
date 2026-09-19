@@ -65,6 +65,14 @@ pipeline files. The job installs the pinned `graphifyy` with the Anthropic SDK o
 *Knowledge graph / Rehearse (AST only, nothing pushed)* check on the pull request; it is
 recorded here once it completes.
 
+**Result:** passed on the pull request's first head (run
+[35455212839](https://github.com/MadaraUchiha-314/the-loop/actions/runs/35455212839),
+job *Rehearse (AST only, nothing pushed)*, 16:31:41 → 16:32:20 UTC, 39 s), while the
+`rebuild` job for the same event reported *skipped* — the `pull_request` condition
+holding on a real runner. The `checks` job on that head was red for two reasons recorded
+in `evidence/unit.md` (the runner's `GITHUB_SHA` reaching the scenarios; `main`'s stale
+`uv.lock`), both fixed in the next push.
+
 ## T7 — the first real rebuild on `main`
 
 **Not executed here.** The job runs on `main` only, by design (requirement 3.1), with a

@@ -81,7 +81,7 @@ riskTier: 4
 - [x] T3 — `git check-ignore -v` on the design's table; `yaml.safe_load` on the workflow; the script's mode
 - [x] T4 — the abuse-case subset of T1/T2
 - [x] T5 — three runs against the fake endpoint on a clone
-- [ ] T6 — the `dry-run` job on this pull request (runs when the PR opens; result recorded when it lands)
+- [x] T6 — the `dry-run` job on this pull request (runs when the PR opens; result recorded when it lands)
 - [ ] T7 — the first real rebuild on `main` (owner: add the secret, dispatch the workflow)
 - [x] T8 — `make check`
 
@@ -94,7 +94,7 @@ riskTier: 4
 | T3 | `git check-ignore -v …`, YAML parse, file mode | every row of the tracked-set table agrees; YAML parses; mode `0755` | [`evidence/pipeline.md`](evidence/pipeline.md) |
 | T4 | `pytest … -k "api_key or write_access or rebased or conflict or keeps_failing or names_the_communities"` | 6 passed | [`evidence/unit.md`](evidence/unit.md) |
 | T5 | three `graphify extract` + `cluster-only` runs against the fake endpoint | run 1: 54 calls, 113 s, full tree; runs 2 and 3: 10 calls, 26 s, the one changed doc — with and without the cache | [`evidence/pipeline.md`](evidence/pipeline.md) |
-| T6 | the `dry-run` job on this PR | pending — the PR's checks | [`evidence/final-validation.md`](evidence/final-validation.md) |
+| T6 | the `dry-run` job on this PR | passed on the first head (`Rehearse (AST only, nothing pushed)`, 39 s) — graphify installs and the AST-only pipeline runs on `ubuntu-latest` | [`evidence/final-validation.md`](evidence/final-validation.md) |
 | T7 | `workflow_dispatch` on `main` with the secret set | **not executed**: no `ANTHROPIC_API_KEY` in this container, and the job runs on `main` only by design | [`evidence/final-validation.md`](evidence/final-validation.md) |
 | T8 | `make check` | see final validation | [`evidence/final-validation.md`](evidence/final-validation.md) |
 
