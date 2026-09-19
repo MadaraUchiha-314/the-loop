@@ -157,6 +157,9 @@ CONVERSATION_KINDS: Dict[str, ConversationKind] = {
 #: The snapshot `record-context` takes of a thread (issue-389 R4.5): the first
 #: `SNAPSHOT_MESSAGE_CAP` messages or `SNAPSHOT_CHAR_CAP` characters, whichever
 #: comes first, with the thread's link for the rest. No model summarises.
+#: A member mention inside a message's text, drawn by name in a snapshot.
+_MENTION_IN_TEXT_RE = re.compile(r"<@([UW][A-Z0-9]+)(?:\|[^>]*)?>")
+
 SNAPSHOT_MESSAGE_CAP = 150
 SNAPSHOT_CHAR_CAP = 40_000
 #: GitHub's own ceiling on a comment body; a scrubbed snapshot still over it is
@@ -1890,15 +1893,20 @@ class SlackBotChannel:
             return False
         return True
 
-    def post_ephemeral(self, channel_id: str, user: str, text: str) -> bool:
+    def post_ephemeral(
+        self, channel_id: str, user: str, text: str, thread: str = ""
+    ) -> bool:
         """A message only ``user`` sees, in ``channel_id`` — the `help` answer,
-        a refusal's reason, a shortcut's outcome (issue-389 R3.2, R5.2, R6.5).
-        Never raises; a refused post is a debug line and ``False``."""
+        a refusal's reason, a shortcut's outcome (issue-389 R3.2, R5.2, R6.5) —
+        inside ``thread`` when the member is in one, so the answer appears where
+        they are looking. Never raises; a refused post is a debug line and
+        ``False``."""
         if not channel_id or not user or not text:
             return False
+        extra: Dict[str, Any] = {"thread_ts": thread} if thread else {}
         try:
             self._client().chat_postEphemeral(
-                channel=channel_id, user=user, text=text[: _SECTION_LIMIT * 10]
+                channel=channel_id, user=user, text=text[: _SECTION_LIMIT * 10], **extra
             )
         except Exception as exc:  # noqa: BLE001 — an answer is a nicety
             logger.debug("slack: could not post ephemerally in %s: %s", channel_id, exc)
@@ -1906,7 +1914,7 @@ class SlackBotChannel:
         return True
 
     def snapshot_thread(
-        self, channel_id: str, thread: str, since: str = ""
+        self, channel_id: str, thread: str, since: str = "", skip: str = ""
     ) -> Snapshot:
         """The thread ``thread`` in ``channel_id`` as `record-context` records it
         (issue-389 R4.1, R4.4, R4.5): every message after ``since`` (the root
@@ -1916,8 +1924,10 @@ class SlackBotChannel:
         returns — no call per message — capped by :data:`SNAPSHOT_MESSAGE_CAP`
         and :data:`SNAPSHOT_CHAR_CAP`, the thread's permalink for the rest.
         The-loop's own messages are included, attributed to the bot: they are
-        part of the discussion. Raises :class:`ChannelError` when the thread
-        cannot be read.
+        part of the discussion; the message whose ts is ``skip`` — the
+        ``record-context`` mention itself — is not. A member mentioned inside
+        a message is drawn by name where the directory knows them. Raises
+        :class:`ChannelError` when the thread cannot be read.
         """
         client = self._client()
         try:
@@ -1932,6 +1942,11 @@ class SlackBotChannel:
         )
         if since:
             messages = [m for m in messages if _ts_key(str(m["ts"])) > _ts_key(since)]
+        if skip:
+            messages = [m for m in messages if str(m["ts"]) != skip]
+        # Slack pages a long thread; what this page did not carry is "more",
+        # uncounted, rather than a wrong count.
+        more = bool(response.get("has_more"))
         own = self._own_user_id(client)
         workspace = ""
         try:
@@ -1960,6 +1975,17 @@ class SlackBotChannel:
                 if ts != thread:
                     link += f"?thread_ts={thread}&cid={channel_id}"
             body = " ".join(str(message.get("text") or "").split())
+            body = _MENTION_IN_TEXT_RE.sub(
+                lambda m: (
+                    "@"
+                    + (
+                        "the-loop"
+                        if m.group(1) == own
+                        else directory.user_name(m.group(1)) or m.group(1)
+                    )
+                ),
+                body,
+            )
             line = f"**@{name}** ({when}" + (f", {link}" if link else "") + f"): {body}"
             if count >= SNAPSHOT_MESSAGE_CAP or size + len(line) > SNAPSHOT_CHAR_CAP:
                 truncated = True
@@ -1971,18 +1997,18 @@ class SlackBotChannel:
         permalink = ""
         if workspace:
             permalink = f"{workspace}/archives/{channel_id}/p{thread.replace('.', '')}"
-        if truncated:
+        if truncated or more:
             left = len(messages) - count
-            lines.append(
-                f"_+{left} more in the thread_"
-                + (f": {permalink}" if permalink else "")
+            rest = (
+                f"_+{left} more in the thread_" if not more else "_more in the thread_"
             )
+            lines.append(rest + (f": {permalink}" if permalink else ""))
         return Snapshot(
             text="\n".join(lines),
             count=count,
             newest=newest,
             permalink=permalink,
-            truncated=truncated,
+            truncated=truncated or more,
         )
 
     def fetch_replies(self) -> List[InboundReply]:

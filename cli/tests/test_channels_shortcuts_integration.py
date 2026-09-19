@@ -420,3 +420,41 @@ def test_the_listener_routes_the_recorded_payload_shapes(
         ("message_action", "the-loop:record-context"),
         ("view_submission", "the-loop:record-decision"),
     ]
+
+
+# -- self-review round 1 (finding 7): what a shortcut says back ---------------------
+
+
+class RefusingSink(Sink):
+    def post_comment(self, item, body, **kwargs) -> tuple:
+        return False, "boom: the ledger refused", ""
+
+
+def test_a_shortcut_where_nothing_is_bound_says_nothing(tmp_path):
+    """A8: no room, no binding → silence, whoever tapped."""
+    config = config_for(tmp_path)  # nothing declared
+    sink, client = Sink(), _thread_client()
+    outcome = shortcut(
+        config, sink, client, action("the-loop:record-context", channel="C0NOBODY")
+    )
+    assert outcome["outcome"] == "unmapped"
+    assert client.ephemeral == [] and sink.recorded == []
+
+
+def test_a_shortcut_whose_record_failed_says_so(tmp_path):
+    config = config_for(tmp_path)
+    declare(config)
+    sink, client = RefusingSink(), _thread_client()
+    outcome = shortcut(config, sink, client, action("the-loop:record-context"))
+    assert outcome["outcome"] == "processed" and outcome["mirrored"] is False
+    assert client.ephemeral[-1][2].startswith("Could not record: boom")
+
+
+def test_the_decision_modal_is_not_offered_without_the_grant(tmp_path):
+    config = config_for(tmp_path, publish=["work-item.reply", "context.added"])
+    declare(config)
+    sink, client = Sink(), ModalClient()
+    outcome = shortcut(config, sink, client, action("the-loop:record-decision"))
+    assert outcome["outcome"] == "unpublishable-event"
+    assert client.views == []
+    assert "decision.recorded" in client.ephemeral[-1][2]

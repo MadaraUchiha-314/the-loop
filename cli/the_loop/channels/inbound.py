@@ -433,9 +433,9 @@ def process_reply(
     )
     if not speaker.may(event_type):
         bot.react(reply, "error")
-        bot.post_ephemeral(
-            reply.channel_id,
-            reply.author,
+        _tell(
+            bot,
+            reply,
             f"`{verb.name if verb else event_type}` needs an authorized user of "
             "the-loop; as a collaborator on this work item you may add context "
             "(`record-context`) and reply.",
@@ -454,9 +454,9 @@ def process_reply(
         # record on, and the standing deliverer takes no frame. Said, not
         # swallowed as `undeliverable`.
         bot.react(reply, "error")
-        bot.post_ephemeral(
-            reply.channel_id,
-            reply.author,
+        _tell(
+            bot,
+            reply,
             "This thread belongs to a standing session, which has no ticket to "
             "record on. Nothing was recorded; a plain reply still reaches it.",
         )
@@ -464,7 +464,7 @@ def process_reply(
     if event_type == "help":
         # Taught, not recorded (R3.2): the grammar and this channel's grants,
         # only to the member who asked.
-        answered = bot.post_ephemeral(reply.channel_id, reply.author, help_text(config))
+        answered = _tell(bot, reply, help_text(config))
         return {"outcome": "answered", "event": "help", "answered": answered}
     if event_type not in config.publish:
         # Dropped, never downgraded (R2.3): a keyword the channel may not run is
@@ -479,9 +479,9 @@ def process_reply(
     if verb is not None and verb.name == "record-decision" and not verb.rest.strip():
         # No model summarises a thread (R5.2): a decision is the text typed.
         bot.react(reply, "error")
-        bot.post_ephemeral(
-            reply.channel_id,
-            reply.author,
+        _tell(
+            bot,
+            reply,
             "`record-decision` needs the decision itself: "
             "`@the-loop record-decision [product|design|tech:] <what was decided> "
             "[— why: <rationale>]`. Nothing was recorded.",
@@ -515,18 +515,23 @@ def process_reply(
             noted = state.snapshot_for(snapshot_key)
         since = str((noted or {}).get("last") or "")
         try:
-            snapshot = bot.snapshot_thread(reply.channel_id, reply.thread, since)
+            # The typed mention is the act, not the context: left out when it
+            # is a reply inside the thread. A top-level mention is the message
+            # being recorded, and a shortcut's message is content the member
+            # chose — both stay (finding 8).
+            skip = reply.ts if found and reply.ts != reply.thread else ""
+            snapshot = bot.snapshot_thread(
+                reply.channel_id, reply.thread, since, skip=skip
+            )
         except ChannelError as exc:
             bot.react(reply, "error")
-            bot.post_ephemeral(
-                reply.channel_id, reply.author, f"Could not read the thread: {exc}"
-            )
+            _tell(bot, reply, f"Could not read the thread: {exc}")
             return _drop(reply, "snapshot-failed", level="warning", error=str(exc))
         if snapshot.count == 0:
             bot.react(reply, "completed")
-            bot.post_ephemeral(
-                reply.channel_id,
-                reply.author,
+            _tell(
+                bot,
+                reply,
                 "Nothing new in this thread since it was last recorded as context.",
             )
             eventlog.emit(
@@ -538,9 +543,9 @@ def process_reply(
             return {"outcome": "nothing-new", "event": event_type}
         if len(snapshot.text) > GITHUB_COMMENT_LIMIT:
             bot.react(reply, "error")
-            bot.post_ephemeral(
-                reply.channel_id,
-                reply.author,
+            _tell(
+                bot,
+                reply,
                 "This thread is too large to record in one comment even after the "
                 "cap; record it in parts, or link it instead.",
             )
@@ -1315,6 +1320,11 @@ _CHANNEL_ID_RE = re.compile(r"^[CGD][A-Z0-9_-]{1,20}$")
 _TS_RE = re.compile(r"^\d+\.\d+$")
 
 
+def _tell(bot: SlackBotChannel, reply: InboundReply, text: str) -> bool:
+    """An ephemeral to the member, in the thread they are in (finding 9)."""
+    return bot.post_ephemeral(reply.channel_id, reply.author, text, reply.thread)
+
+
 def _shortcut_reply(
     payload: Mapping[str, Any], text: str, state: ChannelState, bot: SlackBotChannel
 ) -> Optional[InboundReply]:
@@ -1354,9 +1364,13 @@ def _shortcut_outcome(
     has no message of their own to react on (R6.5). Silence for a refusal below
     the allow-list (A1)."""
     what = str(outcome.get("outcome") or "")
-    if what == "unauthorized-actor":
+    if what in ("unauthorized-actor", "unmapped"):
+        # Nothing for a member the-loop does not know, and nothing that says
+        # the-loop is listening where nothing is bound (A1, A8).
         return
-    if what == "processed":
+    if what == "processed" and not outcome.get("mirrored"):
+        said = "Could not record: " + str(outcome.get("error") or "the ledger refused")
+    elif what == "processed":
         url = str(outcome.get("url") or "")
         said = "Recorded" + (f" — {url}" if url else "") + "."
         if outcome.get("delivered") is False:
@@ -1367,7 +1381,7 @@ def _shortcut_outcome(
         return  # already told, on the same channel, by the pipeline
     else:
         said = f"Nothing recorded ({what})."
-    bot.post_ephemeral(reply.channel_id, reply.author, said)
+    _tell(bot, reply, said)
 
 
 def handle_message_action(
@@ -1419,13 +1433,25 @@ def handle_message_action(
         if not speaker.authorized and not speaker.collaborator:
             return _drop(reply, "unauthorized-actor", level="warning", actor=member)
         if not speaker.may("decision.recorded"):
-            bot.post_ephemeral(
-                reply.channel_id,
-                member,
+            _tell(
+                bot,
+                reply,
                 "Recording a decision needs an authorized user of the-loop; as a "
                 "collaborator you may add context and reply.",
             )
             return _drop(reply, "unauthorized-act", level="warning", actor=member)
+        if "decision.recorded" not in config.publish:
+            # Known before the form opens (R2.3): a modal whose submission
+            # would be dropped is not offered.
+            _tell(
+                bot,
+                reply,
+                "This channel may not record decisions: `decision.recorded` is "
+                "not in its publish grants.",
+            )
+            return _drop(
+                reply, "unpublishable-event", actor=member, kind="decision.recorded"
+            )
         metadata = json.dumps(
             {"channel": reply.channel_id, "ts": reply.ts, "thread_ts": reply.thread},
             separators=(",", ":"),
@@ -1433,9 +1459,9 @@ def handle_message_action(
         text = str((payload.get("message") or {}).get("text") or "")
         opened = bot.open_view(trigger, decision_view(text, metadata))
         if not opened:
-            bot.post_ephemeral(
-                reply.channel_id,
-                member,
+            _tell(
+                bot,
+                reply,
                 "Could not open the decision form — try the shortcut again, or type "
                 "`@the-loop record-decision <what was decided>`.",
             )

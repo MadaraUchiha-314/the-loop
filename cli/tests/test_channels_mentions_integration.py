@@ -60,8 +60,8 @@ class Client(FakeSlackClient):
         super().__init__(*a, **k)
         self.ephemeral = []  # (channel, user, text)
 
-    def chat_postEphemeral(self, *, channel, user, text):
-        self.ephemeral.append((channel, user, text))
+    def chat_postEphemeral(self, *, channel, user, text, thread_ts=None):
+        self.ephemeral.append((channel, user, text, thread_ts))
         return {"ok": True}
 
     def chat_getPermalink(self, *, channel, message_ts):
@@ -80,7 +80,7 @@ class Sink:
         self.delivered: list = []
         self.created: list = []
 
-    def post_comment(self, item, body, **kwargs):
+    def post_comment(self, item, body, **kwargs) -> tuple:
         self.recorded.append((getattr(item, "ref", str(item)), body))
         n = len(self.recorded)
         return True, "", f"https://github.com/octo/repo/issues/389#issuecomment-{n}"
@@ -824,3 +824,68 @@ def test_a_recording_act_in_a_standing_sessions_thread_is_refused_and_said(tmp_p
     assert outcome["outcome"] == "no-ticket"
     assert "standing session" in client.ephemeral[-1][2]
     assert sink.recorded == [] and sink.delivered == []
+
+
+# -- self-review round 1 (findings 8 and 9) --------------------------------------------
+
+
+def test_a_snapshot_leaves_out_its_own_trigger_and_names_inline_mentions(tmp_path):
+    """The `record-context` mention is not part of the context; a member
+    mentioned inside a message is drawn as a name when known, the id when not;
+    a paged thread says "more" without a count."""
+    config = config_for(tmp_path)
+    declare(config)
+    client = Client(
+        replies={
+            "1800.1": [
+                {"ts": "1800.1", "user": "UHUMAN", "text": "should we keep poll mode?"},
+                {"ts": "1800.2", "user": "UOTHER", "text": f"ask <@{BOT}> and <@UZZZ>"},
+                {"ts": "1800.4", "user": "UHUMAN", "text": f"<@{BOT}> record-context"},
+            ]
+        }
+    )
+    original = client.conversations_replies
+
+    def paged(**kwargs):
+        response = original(**kwargs)
+        response["has_more"] = True
+        return response
+
+    client.conversations_replies = paged
+    sink = Sink()
+    outcome = send(
+        config,
+        sink,
+        client,
+        addressed=True,
+        text=f"<@{BOT}> record-context",
+        thread="1800.1",
+        ts="1800.4",
+    )
+    assert outcome["outcome"] == "processed"
+    body = sink.recorded[0][1]
+    assert "record-context" not in body.split("<!--")[0].split("📎")[1]
+    assert "ask @the-loop and @UZZZ" in body
+    assert (
+        "_more in the thread_" in body
+        and "+" not in body.split("more in the thread")[0][-4:]
+    )
+    assert sink.delivered[0]["detail"]["count"] == "2"
+
+
+def test_an_ephemeral_lands_in_the_members_thread(tmp_path):
+    config = config_for(tmp_path)
+    declare(config)
+    sink, client = Sink(), Client()
+    send(
+        config,
+        sink,
+        client,
+        addressed=True,
+        text=f"<@{BOT}> help",
+        thread="1800.1",
+        ts="1800.4",
+    )
+    assert client.ephemeral[-1][3] == "1800.1"
+    send(config, sink, client, addressed=True, text=f"<@{BOT}> help", ts="1900.9")
+    assert client.ephemeral[-1][3] == "1900.9"  # a top-level message is its own thread
