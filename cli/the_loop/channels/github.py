@@ -11,7 +11,9 @@ Four record shapes, chosen by event type — and the choice is the security desi
 event                   body                                     marker  envelope
 ======================  =======================================  ======  ========
 session.awaiting_input  the question (the record IS the ask)     yes     yes
-work-item.reply         quoted, scrubbed, keywords defanged      yes     yes
+work-item.reply,        quoted, scrubbed, keywords defanged      yes     yes
+context.added,          (issue-389: the act named on the line)
+decision.recorded
 gate.feedback,          quoted, scrubbed, keywords **kept**      **no**  yes
 control.command
 work-item.create        a new issue: title + body                no      yes
@@ -31,7 +33,12 @@ import logging
 from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 
 from ..authz import mark_self_authored
-from ..redact import defang_control_keywords, scrub
+from ..redact import (
+    defang_control_keywords,
+    neutralise_broadcasts,
+    scrub,
+    strip_html_comments,
+)
 from ..sessions import WorkItemRef
 from .base import Event, PostResult
 from .envelope import Envelope, stamp
@@ -53,6 +60,23 @@ TITLE_MAX_CHARS = 80
 #: The events whose record must reach the ledger's ingress as a HUMAN comment —
 #: unmarked, keywords intact — because ingress is what acts on them.
 _RELAYED = ("gate.feedback", "control.command")
+
+#: The events whose record is the-loop's OWN marked comment — quoted, scrubbed,
+#: keywords defanged — because the channel already delivered them into the
+#: session and no gate may ever read them as a person's words (issue-389,
+#: decision-133 D4): a reply, a thread handed over as context, a decision.
+_MIRRORED = ("work-item.reply", "context.added", "decision.recorded")
+
+#: What the visible line of each mirrored record says it is.
+_MIRROR_LINES = {
+    "work-item.reply": "reply from {who} on the **{source}** channel, recorded "
+    "here as the answer of record",
+    "context.added": "📎 context from {who} on the **{source}** channel — "
+    "{count} message(s) from {thread}, recorded here and appended to "
+    "`context.md` by the session",
+    "decision.recorded": "📌 decision from {who} on the **{source}** channel"
+    "{kind} — recorded here and written up as a decision record by the session",
+}
 
 
 def control_keywords(cli_config: Optional[Mapping]) -> Tuple[str, ...]:
@@ -99,19 +123,46 @@ def _envelope(event: Event) -> Envelope:
 
 
 def mirror_body(event: Event, cli_config: Optional[Mapping]) -> str:
-    """The record of a ``work-item.reply`` — quoted, scrubbed, defanged, marked.
+    """The record of a mirrored event — quoted, scrubbed, defanged, marked.
+
+    A ``work-item.reply``, and since issue-389 a ``context.added`` snapshot and
+    a ``decision.recorded`` decision: the visible line names the act, the
+    person and — from ``event.detail`` — the thread, the count, the kind and
+    the rationale, all composed from fixed words and the event's own fields.
 
     The marker is licensed here because the-loop composed this comment (a report
     quoting the channel user, the ``_reply_report`` precedent) — and it is
     load-bearing: an unmarked copy of the answer would be forwarded by the poller
-    into the very session the pipeline already delivered it to.
+    into the very session the pipeline already delivered it to, and an unmarked
+    decision would be read by a gate as an approval (decision-133 D4).
     """
-    safe = defang_control_keywords(scrub(event.text), control_keywords(cli_config))
-    body = mark_self_authored(
-        f"🗣️ **the-loop** — reply from {_who(event)} on the **{event.source}** "
-        "channel, recorded here as the answer of record:\n\n" + _quoted(safe)
+    # The quote is another author's words (issue-389 A5): every `<!-- … -->`
+    # inside it goes — a pasted marker would make `mark_self_authored` treat
+    # the body as already stamped, a pasted envelope would be parsed as the
+    # record's own — and a Slack broadcast is neutralised so a snapshot never
+    # pages a room when it is read back.
+    safe = defang_control_keywords(
+        neutralise_broadcasts(strip_html_comments(scrub(event.text))),
+        control_keywords(cli_config),
     )
-    return stamp(body, _envelope(event))
+    detail = event.detail or {}
+    thread = str(detail.get("thread") or "")
+    kind = str(detail.get("kind") or "")
+    line = _MIRROR_LINES.get(event.event_type, _MIRROR_LINES["work-item.reply"])
+    line = line.format(
+        who=_who(event),
+        source=event.source,
+        count=str(detail.get("count") or "?"),
+        thread=f"<{thread}>" if thread else "a thread",
+        kind=f" (kind: {kind})" if kind else "",
+    )
+    body = f"🗣️ **the-loop** — {line}:\n\n" + _quoted(safe)
+    rationale = str(detail.get("rationale") or "").strip()
+    if rationale:
+        body += "\n\n_why:_ " + scrub(rationale).replace("\n", " ")
+    if event.event_type == "decision.recorded" and thread:
+        body += f"\n\n_discussed at:_ <{thread}>"
+    return stamp(mark_self_authored(body), _envelope(event))
 
 
 def relay_body(event: Event) -> str:
@@ -203,7 +254,7 @@ class GitHubLedger:
             body = ask_body(event)
         elif event.event_type in _RELAYED:
             body = relay_body(event)
-        elif event.event_type == "work-item.reply":
+        elif event.event_type in _MIRRORED:
             body = mirror_body(event, self.cli_config)
         else:
             body = stamp(mark_self_authored(event.text), _envelope(event))

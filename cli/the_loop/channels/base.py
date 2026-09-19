@@ -141,6 +141,11 @@ class InboundReply:
     is_bot: bool = False
     top_level: bool = False
     channel_id: str = ""
+    #: Whether the member addressed the-loop (issue-389 R3.1): the event was an
+    #: ``app_mention``, a message shortcut or the modal. The grammar after the
+    #: mention is read only then; a plain message in a DM or an ``all`` room is
+    #: the reply it always was, whatever its first word.
+    addressed: bool = False
 
 
 class Channel(Protocol):

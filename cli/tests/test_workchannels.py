@@ -17,11 +17,13 @@ Spec: docs/specs/issue-375/testing-plan.md T1, T2, T3.
 import pytest
 
 from the_loop.workchannels import (
+    LISTEN_MODES,
     ChannelRef,
     ChannelTakenError,
     CollaborationChannel,
     CollaborationChannelStore,
     describe_refusal,
+    listen_mode_for,
     parse_channel_ref,
     parse_channel_refs,
 )
@@ -279,3 +281,126 @@ def test_an_absent_store_declares_nothing(tmp_path):
     assert empty.list(REF) == []
     assert empty.declared_by(ROOM) == ""
     assert empty.targets() == {}
+
+
+# -- the listen mode (issue-389 §2, R2.1 / T1 / T10 / A12) -------------------------
+
+
+def test_the_two_listen_modes_are_named_and_mentions_is_the_default():
+    assert LISTEN_MODES == ("mentions", "all")
+    record = CollaborationChannel("slack", "C0TMP375")
+    assert record.listen == "mentions"
+    assert record.to_dict()["listen"] == "mentions"
+
+
+def test_a_listen_mode_round_trips():
+    record = CollaborationChannel("slack", "C0TMP375", listen="all")
+    assert record.to_dict()["listen"] == "all"
+    read = CollaborationChannel.from_dict(record.to_dict())
+    assert read is not None and read.listen == "all"
+
+
+def test_a_declaration_without_listen_reads_as_mentions():
+    """T10: a declaration written before the field existed is a `mentions` room —
+    the quieter mode, which is also what every room was before issue-389."""
+    read = CollaborationChannel.from_dict(
+        {"ref": ROOM, "type": "slack", "target": "C0TMP375", "addedBy": "octocat"}
+    )
+    assert read is not None and read.listen == "mentions"
+
+
+@pytest.mark.parametrize(
+    "value", ["everything", "ALL", "All", "", None, 1, True, ["all"], {"all": 1}]
+)
+def test_a_bad_listen_value_reads_as_mentions(value):
+    """A12: a forged or hand-edited `listen` is honoured only when it is one of the
+    two modes, exactly spelled; anything else falls to `mentions`, never to `all`.
+
+    Requirement: docs/specs/issue-389/requirements.md#R2 (abuse case A12)
+    """
+    read = CollaborationChannel.from_dict({"ref": ROOM, "listen": value})
+    assert read is not None and read.listen == "mentions"
+
+
+def test_a_listen_mode_on_an_invalid_declaration_buys_nothing():
+    """A12: declaration validity comes first — `listen: all` on an entry that stores
+    a name rather than an id, or no channel at all, is not a declaration at all."""
+    assert (
+        CollaborationChannel.from_dict({"ref": "slack@#room", "listen": "all"}) is None
+    )
+    assert CollaborationChannel.from_dict({"listen": "all"}) is None
+
+
+def test_the_store_writes_the_listen_mode_and_a_redeclaration_replaces_it(
+    store, tmp_path
+):
+    """
+    Feature: a room can be switched to hear everything
+      Scenario: the mode is declared, then re-declared
+        Given slack@C0TMP375 declared with `--listen all`
+        Then the record carries `listen: all` with the declaration's provenance
+        When the same channel is declared again with `mentions`
+        Then the call reports a change and the record now says `mentions`
+        And declaring it again with `mentions` changes nothing
+
+    Requirement: docs/specs/issue-389/requirements.md#R2
+    """
+    changed, replaced = store.add(REF, ROOM, actor="octocat", listen="all")
+    assert changed and replaced is None
+    section = WorkItemStore(tmp_path / "portable").section(REF, COLLABORATION_CHANNELS)
+    assert section is not None
+    (entry,) = section["channels"]
+    assert entry["listen"] == "all" and entry["addedBy"] == "octocat"
+    assert store.for_type(REF).listen == "all"
+
+    changed, replaced = store.add(REF, ROOM, actor="ann", listen="mentions")
+    assert changed and replaced is None
+    (record,) = store.list(REF)
+    assert record.listen == "mentions" and record.added_by == "ann"
+    assert store.add(REF, ROOM, listen="mentions") == (False, None)
+    assert store.add(REF, ROOM) == (False, None)  # the default IS mentions
+
+
+def test_a_listen_mode_the_store_does_not_know_is_refused_not_written(store):
+    with pytest.raises(ValueError, match="mentions"):
+        store.add(REF, ROOM, listen="everything")
+    with pytest.raises(ValueError):
+        store.add(REF, ROOM, listen="ALL")
+    assert store.list(REF) == []
+
+
+def test_the_listen_mode_of_a_room_is_read_by_its_channel_id(store):
+    """
+    Feature: a room can be switched to hear everything
+      Scenario: the ingress asks how a room listens
+        Given no declaration
+        Then the answer is `mentions` — the mode of every room that is not a room
+        When slack@C0TMP375 is declared with `all`
+        Then the answer for C0TMP375 is `all`, and for any other id `mentions`
+
+    Requirement: docs/specs/issue-389/requirements.md#R2
+    """
+    assert listen_mode_for(store, "C0TMP375") == "mentions"
+    store.add(REF, ROOM, listen="all")
+    assert listen_mode_for(store, "C0TMP375") == "all"
+    assert listen_mode_for(store, "GABC123") == "mentions"
+    assert listen_mode_for(store, "") == "mentions"
+    assert listen_mode_for(store, "not an id") == "mentions"
+
+
+def test_a_contested_room_listens_to_mentions_only(store, tmp_path):
+    """A room two records claim is attributed to nobody, and so hears nothing but
+    the mention — the same fail-closed answer `declared_by` gives."""
+    raw = WorkItemStore(tmp_path / "portable")
+    payload = {
+        "channels": [CollaborationChannel("slack", "C0TMP375", listen="all").to_dict()]
+    }
+    raw.write_section(REF, COLLABORATION_CHANNELS, payload)
+    raw.write_section(OTHER, COLLABORATION_CHANNELS, payload)
+    assert listen_mode_for(store, "C0TMP375") == "mentions"
+
+
+def test_an_absent_store_listens_to_mentions_only(tmp_path):
+    assert listen_mode_for(CollaborationChannelStore(tmp_path / "nowhere"), "C0A") == (
+        "mentions"
+    )

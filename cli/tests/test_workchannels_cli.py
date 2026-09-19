@@ -163,3 +163,58 @@ def test_a_failed_comment_keeps_the_declaration(tmp_path, monkeypatch, capsys):
     assert run("add-channel", tmp_path, ROOM) == 0
     assert [record.ref for record in store(tmp_path).list(REF)] == [ROOM]
     assert "could not comment" in capsys.readouterr().err
+
+
+# -- the listen mode (issue-389 §2, R2.1) -----------------------------------------
+
+
+def test_add_channel_listen_all_is_recorded_and_spelled_back(tmp_path, posted):
+    """
+    Feature: an operator switches a room to hear everything from the terminal
+      Scenario: add-channel --listen all is recorded with provenance
+        Given a work item with no declared channel
+        When `the-loop add-channel slack@C0TMP375 --listen all --work-item …` is run
+        Then the declaration carries `listen: all` from the CLI
+        And the SAME keyword is posted back with `--listen all`, so the thread
+             says how the room listens and the daemon can read it back
+
+    Requirement: docs/specs/issue-389/requirements.md#R2
+    """
+    assert run("add-channel", tmp_path, ROOM, extra=("--listen", "all")) == 0
+    (record,) = store(tmp_path).list(REF)
+    assert record.listen == "all" and record.source == "cli"
+
+    ((ref, body, _),) = posted
+    assert ref == REF
+    assert body.startswith("the-loop add-channel slack@C0TMP375 --listen all")
+    result = parse_command(body, ControlConfig())
+    assert result.subjects == [ROOM] and result.listen == "all"
+    assert is_self_authored(body)
+
+
+def test_the_default_listen_mode_is_mentions_and_is_not_spelled(tmp_path, posted):
+    assert run("add-channel", tmp_path, ROOM) == 0
+    (record,) = store(tmp_path).list(REF)
+    assert record.listen == "mentions"
+    assert "--listen" not in posted[0][1]
+
+
+def test_redeclaring_with_another_mode_is_a_change(tmp_path, posted):
+    run("add-channel", tmp_path, ROOM)
+    posted.clear()
+    assert run("add-channel", tmp_path, ROOM, extra=("--listen", "all")) == 0
+    declared = store(tmp_path).for_type(REF)
+    assert declared is not None and declared.listen == "all"
+    assert len(posted) == 1 and "--listen all" in posted[0][1]
+    assert run("add-channel", tmp_path, ROOM, extra=("--listen", "all")) == 1
+    assert run("add-channel", tmp_path, ROOM, extra=("--listen", "mentions")) == 0
+    declared = store(tmp_path).for_type(REF)
+    assert declared is not None and declared.listen == "mentions"
+
+
+def test_an_unknown_listen_mode_is_refused_by_the_parser(tmp_path, posted):
+    """A12: the two modes are the flag's choices; a third never reaches core."""
+    with pytest.raises(SystemExit) as excinfo:
+        run("add-channel", tmp_path, ROOM, extra=("--listen", "everything"))
+    assert excinfo.value.code == 2
+    assert store(tmp_path).list(REF) == [] and posted == []

@@ -1,0 +1,23 @@
+{
+  "type": "interactive",
+  "payload": {
+    "type": "view_submission",
+    "team": {"id": "T0EXAMPLE", "domain": "example"},
+    "user": {"id": "UHUMAN", "username": "dana", "team_id": "T0EXAMPLE"},
+    "trigger_id": "1234567890.0987654321.fedcba",
+    "view": {
+      "id": "V0EXAMPLE",
+      "type": "modal",
+      "callback_id": "the-loop:record-decision",
+      "private_metadata": "{\"channel\": \"C0TMP389\", \"ts\": \"1800.2\", \"thread_ts\": \"1800.1\"}",
+      "state": {
+        "values": {
+          "decision": {"text": {"type": "plain_text_input", "value": "keep poll mode"}},
+          "kind": {"select": {"type": "static_select", "selected_option": {"text": {"type": "plain_text", "text": "tech"}, "value": "tech"}}},
+          "rationale": {"text": {"type": "plain_text_input", "value": "it is cheap"}}
+        }
+      }
+    },
+    "response_urls": []
+  }
+}

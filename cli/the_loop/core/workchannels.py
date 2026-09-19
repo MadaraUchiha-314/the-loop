@@ -28,6 +28,8 @@ from ..control import ADD_CHANNEL, REMOVE_CHANNEL, command_comment
 from ..sessions import WorkItemRef
 from ..state import legacy_layout
 from ..workchannels import (
+    DEFAULT_LISTEN,
+    LISTEN_MODES,
     ChannelRef,
     ChannelTakenError,
     CollaborationChannelStore,
@@ -73,15 +75,22 @@ def manage_channels(
     comment: bool = True,
     config: Optional[dict] = None,
     portable_dir: str = "",
+    listen: str = DEFAULT_LISTEN,
 ) -> Dict[str, Any]:
     """Apply ``verb`` to each of ``channels`` on one work item, end to end.
 
     Every ref is validated before **anything** is written, so a typo in the second
     channel does not leave the first half-applied: the call either refuses (exit 2,
-    nothing changed, nothing posted) or applies all of them.
+    nothing changed, nothing posted) or applies all of them. ``listen`` is the mode
+    a declaration is written with (issue-389 R2.1); re-declaring a room with another
+    mode replaces it.
     """
     if verb not in CHANNEL_VERBS:
         raise ValueError(f"unknown channel verb {verb!r} (one of {CHANNEL_VERBS})")
+    if listen not in LISTEN_MODES:
+        raise ValueError(
+            f"unknown listen mode {listen!r} (one of {', '.join(LISTEN_MODES)})"
+        )
     work_item = WorkItemRef.parse(ref)  # ValueError on a malformed ref
     canonical: List[Tuple[ChannelRef, str]] = []
     for raw in channels:
@@ -108,7 +117,12 @@ def manage_channels(
         if verb == ADD_CHANNEL:
             try:
                 changed, replaced = store.add(
-                    work_item, channel, actor=actor, source="cli", name=name
+                    work_item,
+                    channel,
+                    actor=actor,
+                    source="cli",
+                    name=name,
+                    listen=listen,
                 )
             except ChannelTakenError as exc:
                 # Not the caller's typo but not a state change either: reported as
@@ -122,7 +136,7 @@ def manage_channels(
         messages.append(
             {
                 "stream": "out" if changed else "err",
-                "text": _line(effect, channel, work_item, replaced),
+                "text": _line(effect, channel, work_item, replaced, listen),
             }
         )
         eventlog.emit(
@@ -133,11 +147,12 @@ def manage_channels(
             actor=actor or None,
             channel=channel.ref,
             replaced=replaced.ref if replaced else None,
+            listen=listen if verb == ADD_CHANNEL else None,
             effect=effect,
         )
 
     if comment and applied:
-        _announce(work_item, verb, actor, applied, messages, config)
+        _announce(work_item, verb, actor, applied, messages, config, listen)
 
     return {
         "verb": verb,
@@ -153,13 +168,23 @@ def manage_channels(
     }
 
 
-def _line(effect: str, channel: ChannelRef, work_item: WorkItemRef, replaced) -> str:
+def _line(
+    effect: str,
+    channel: ChannelRef,
+    work_item: WorkItemRef,
+    replaced,
+    listen: str = DEFAULT_LISTEN,
+) -> str:
     if effect == "declared":
         moved = f" (it was {replaced.ref})" if replaced else ""
+        hears = (
+            "every message there reaches the work item"
+            if listen == "all"
+            else "messages there reach the work item when the-loop is mentioned"
+        )
         return (
-            f"{channel.ref} is now {work_item.ref}'s collaboration channel{moved}: its "
-            "updates are posted there, and messages there from authorized users reach "
-            "the work item"
+            f"{channel.ref} is now {work_item.ref}'s collaboration channel{moved}, "
+            f"listening to {listen}: its updates are posted there, and {hears}"
         )
     if effect == "undeclared":
         return (
@@ -181,12 +206,23 @@ def _announce(
     channels: List[str],
     messages: List[Dict[str, str]],
     cli_conf: Optional[dict] = None,
+    listen: str = DEFAULT_LISTEN,
 ) -> None:
-    """Record the declaration on the ticket (best-effort — never fails the write)."""
+    """Record the declaration on the ticket (best-effort — never fails the write).
+
+    The mode is spelled back only when it is not the default: the thread then
+    reads exactly as the person would have typed it, and a room declared without
+    a mode reads as one.
+    """
     config = _control_config(cli_conf)
     for ref in channels:
         body = command_comment(
-            verb, config, actor=actor, subject=ref, invocation=f"the-loop {verb}"
+            verb,
+            config,
+            actor=actor,
+            subject=ref,
+            invocation=f"the-loop {verb}",
+            listen=listen if (verb == ADD_CHANNEL and listen != DEFAULT_LISTEN) else "",
         )
         ok, error = post_issue_comment(work_item, body, gh_binary=config.gh_binary)
         if ok:

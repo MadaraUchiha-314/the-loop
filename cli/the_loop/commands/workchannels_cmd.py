@@ -28,6 +28,7 @@ from .sessions_cmd import _cli_config, _default_portable_dir, _render
 from .. import eventlog
 from ..control import ADD_CHANNEL, REMOVE_CHANNEL
 from ..core import workchannels as core_workchannels
+from ..workchannels import DEFAULT_LISTEN, LISTEN_MODES
 
 
 class _ChannelCommand(Command):
@@ -72,6 +73,7 @@ class _ChannelCommand(Command):
                 comment=args.comment,
                 config=_cli_config(),
                 portable_dir=args.portable_dir,
+                listen=getattr(args, "listen", DEFAULT_LISTEN),
             )
         except ValueError as exc:
             # A malformed channel ref, an unknown type, a work-item ref that will
@@ -88,8 +90,23 @@ class AddChannelCommand(_ChannelCommand):
     verb = ADD_CHANNEL
     help = (
         "Declare a collaboration channel on one work item (its updates go there, "
-        "and messages there reach it)"
+        "and messages there reach it — when the-loop is mentioned, or all of them "
+        "with --listen all)"
     )
+
+    def add_arguments(self, parser: argparse.ArgumentParser) -> None:
+        super().add_arguments(parser)
+        parser.add_argument(
+            "--listen",
+            choices=LISTEN_MODES,
+            default=DEFAULT_LISTEN,
+            help=(
+                "How the room listens (issue-389): 'mentions' — the-loop hears a "
+                "message there only when it is addressed (default) — or 'all' — "
+                "every message there is input. Re-declaring the room replaces the "
+                "mode."
+            ),
+        )
 
 
 @register

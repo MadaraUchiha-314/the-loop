@@ -67,6 +67,7 @@ plus an adapter, not a new grammar.
 |------|---------|---------|
 | `TYPE@TARGET …` | required | One or more channels, e.g. `slack@C0TMP375`. |
 | `--work-item` | required | The work item the channel is declared on, e.g. `github:OWNER/REPO#375`. |
+| `--listen` | `mentions` | What the room hears: `mentions` (only messages carrying `@the-loop`) or `all` (every message, as a room did before [issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389)). Recorded on the declaration; a re-declaration replaces it. |
 | `--portable-dir` | `<state.root>/portable` | Where the declarations live. |
 | `--comment` / `--no-comment` | on | Post the keyword back to the work item. |
 

@@ -8,6 +8,10 @@ boundary is the injected client factory (design D7).
 
 from __future__ import annotations
 
+# issue-389: the mention is the address in every channel, so the operator's
+# central channel in these tests is the DIRECT MESSAGE with the bot (D123) —
+# the one conversation that still hears every plain message (R1.6).
+
 import json
 import shutil
 
@@ -70,7 +74,7 @@ class FakeSlackClient:
 
 def cli_config(tmp_path, authorized=("UHUMAN",), **slack):
     """A CLI config mapping with a channels.slack section and a temp state root."""
-    section = {"enabled": True, "channel": "C123", **slack}
+    section = {"enabled": True, "channel": "D123", **slack}
     return {
         "state": {"root": str(tmp_path / "state")},
         # Identity in one place (issue-309): the Slack member id sits on a
@@ -236,7 +240,7 @@ def test_token_never_lands_in_the_state_file(tmp_path, monkeypatch):
 def test_state_round_trips_and_survives_restart(tmp_path):
     path = tmp_path / "slack.json"
     state = ChannelState.load(path)
-    state.bind("1700.1", "github:o/r#7", "C123")
+    state.bind("1700.1", "github:o/r#7", "D123")
     state.advance("1700.1", "1700.5")
     state.save(path)
     reloaded = ChannelState.load(path)
@@ -247,7 +251,7 @@ def test_state_round_trips_and_survives_restart(tmp_path):
 def test_state_caps_threads_dropping_the_oldest(tmp_path):
     state = ChannelState.load(tmp_path / "slack.json")
     for n in range(THREAD_CAP + 5):
-        state.bind(f"1700.{n}", f"github:o/r#{n}", "C123")
+        state.bind(f"1700.{n}", f"github:o/r#{n}", "D123")
     assert state.work_item_for("1700.0") is None
     assert (
         state.work_item_for(f"1700.{THREAD_CAP + 4}") == f"github:o/r#{THREAD_CAP + 4}"
@@ -668,14 +672,14 @@ def test_bind_records_the_conversation_per_work_item(tmp_path):
     path = tmp_path / "slack.json"
     state = ChannelState.load(path)
     state.bind(
-        "1700.1", "github:o/r#7", "C123", origin="kickoff", permalink="https://s/p1"
+        "1700.1", "github:o/r#7", "D123", origin="kickoff", permalink="https://s/p1"
     )
     state.save(path)
     reloaded = ChannelState.load(path)
-    assert reloaded.thread_for("github:o/r#7") == ("C123", "1700.1")
+    assert reloaded.thread_for("github:o/r#7") == ("D123", "1700.1")
     record = reloaded.conversation("github:o/r#7")
     assert record is not None
-    assert record["channel"] == "C123" and record["thread"] == "1700.1"
+    assert record["channel"] == "D123" and record["thread"] == "1700.1"
     assert record["origin"] == "kickoff" and record["permalink"] == "https://s/p1"
     assert record["opened"].endswith("Z")
     assert reloaded.work_item_for("1700.1") == "github:o/r#7"
@@ -689,8 +693,8 @@ def test_a_pre_issue_312_state_file_backfills_its_conversations(tmp_path):
         json.dumps(
             {
                 "threads": {
-                    "1700.1": {"workItem": "github:o/r#7", "channel": "C123"},
-                    "1700.2": {"workItem": "github:o/r#7", "channel": "C123"},
+                    "1700.1": {"workItem": "github:o/r#7", "channel": "D123"},
+                    "1700.2": {"workItem": "github:o/r#7", "channel": "D123"},
                 },
                 "cursors": {"1700.1": "1700.5"},
             }
@@ -698,7 +702,7 @@ def test_a_pre_issue_312_state_file_backfills_its_conversations(tmp_path):
         encoding="utf-8",
     )
     state = ChannelState.load(path)
-    assert state.thread_for("github:o/r#7") == ("C123", "1700.2")  # newest binding
+    assert state.thread_for("github:o/r#7") == ("D123", "1700.2")  # newest binding
     assert _conversation(state, "github:o/r#7")["origin"] == "legacy"
     state.save(path)
     raw = json.loads(path.read_text(encoding="utf-8"))
@@ -709,10 +713,10 @@ def test_a_pre_issue_312_state_file_backfills_its_conversations(tmp_path):
 def test_a_ref_spelled_with_the_default_host_shares_the_thread(tmp_path):
     """R1.3: one work item, two spellings of its ref, one conversation."""
     state = ChannelState.load(tmp_path / "slack.json")
-    state.bind("1700.1", "github:o/r#7", "C123")
-    assert state.thread_for("github:github.com/o/r#7") == ("C123", "1700.1")
+    state.bind("1700.1", "github:o/r#7", "D123")
+    assert state.thread_for("github:github.com/o/r#7") == ("D123", "1700.1")
     assert _conversation(state, "github:github.com/o/r#7")["thread"] == "1700.1"
-    state.bind("1700.2", "github:github.com/o/r#7", "C123")
+    state.bind("1700.2", "github:github.com/o/r#7", "D123")
     assert state.work_item_for("1700.2") == "github:o/r#7"
     assert len(state.conversations) == 1
     assert state.thread_for("standing:supervisor") is None
@@ -721,7 +725,7 @@ def test_a_ref_spelled_with_the_default_host_shares_the_thread(tmp_path):
 def test_eviction_drops_the_conversation_with_the_thread(tmp_path):
     state = ChannelState.load(tmp_path / "slack.json")
     for n in range(THREAD_CAP + 1):
-        state.bind(f"1700.{n}", f"github:o/r#{n}", "C123")
+        state.bind(f"1700.{n}", f"github:o/r#{n}", "D123")
     assert state.work_item_for("1700.0") is None
     assert state.conversation("github:o/r#0") is None
     assert state.thread_for("github:o/r#0") is None
@@ -740,7 +744,7 @@ def test_locked_sections_on_one_path_serialize(tmp_path):
         with ChannelState.locked(path) as state:
             order.append("first-in")
             time.sleep(0.2)
-            state.bind("1700.1", "github:o/r#7", "C123")
+            state.bind("1700.1", "github:o/r#7", "D123")
             state.save(path)
             order.append("first-out")
 
@@ -748,7 +752,7 @@ def test_locked_sections_on_one_path_serialize(tmp_path):
         time.sleep(0.05)
         with ChannelState.locked(path) as state:
             order.append("second-in")
-            assert state.thread_for("github:o/r#7") == ("C123", "1700.1")
+            assert state.thread_for("github:o/r#7") == ("D123", "1700.1")
 
     a, b = threading.Thread(target=first), threading.Thread(target=second)
     a.start()
@@ -767,9 +771,9 @@ def test_without_flock_the_lock_degrades_to_today(tmp_path, monkeypatch, caplog)
     path = tmp_path / "slack.json"
     with caplog.at_level("DEBUG", logger="the-loop.channels"):
         with ChannelState.locked(path) as state:
-            state.bind("1700.1", "github:o/r#7", "C123")
+            state.bind("1700.1", "github:o/r#7", "D123")
             state.save(path)
-    assert ChannelState.load(path).thread_for("github:o/r#7") == ("C123", "1700.1")
+    assert ChannelState.load(path).thread_for("github:o/r#7") == ("D123", "1700.1")
     assert any("flock" in rec.message for rec in caplog.records)
 
 
@@ -781,7 +785,7 @@ def test_the_first_post_opens_a_root_and_replies_into_it(tmp_path, monkeypatch):
     result = channel.post(event())
     assert len(client.posted) == 2
     root, reply = client.posted
-    assert root["thread_ts"] is None and root["channel"] == "C123"
+    assert root["thread_ts"] is None and root["channel"] == "D123"
     assert root["blocks"][0]["type"] == "header"
     assert "github:o/r#7" in root["blocks"][0]["text"]["text"]
     assert "https://github.com/o/r/issues/7" in root["blocks"][1]["text"]["text"]
@@ -793,7 +797,7 @@ def test_the_first_post_opens_a_root_and_replies_into_it(tmp_path, monkeypatch):
     assert "approach A or B" in reply["text"]
     record = _conversation(_state_with_stores(_state_path(tmp_path)), "github:o/r#7")
     assert record == {
-        "channel": "C123",
+        "channel": "D123",
         "thread": "1700.000001",
         "opened": record["opened"],
         "origin": "event",
@@ -863,7 +867,7 @@ def test_a_failed_reply_opens_no_second_thread(tmp_path, monkeypatch):
         channel.post(event(text="again"))
     assert [p["thread_ts"] for p in client.posted].count(None) == 1
     state = _state_with_stores(_state_path(tmp_path))
-    assert state.thread_for("github:o/r#7") == ("C123", first.thread)
+    assert state.thread_for("github:o/r#7") == ("D123", first.thread)
 
 
 def test_a_failed_root_binds_nothing_and_the_next_event_retries(tmp_path, monkeypatch):
@@ -909,7 +913,7 @@ def test_thread_opened_is_emitted_with_ids_only(tmp_path, monkeypatch):
     opened = [f for name, f in events if name == "channel.thread_opened"]
     assert len(opened) == 1
     assert opened[0]["channel"] == "slack" and opened[0]["work_item"] == "github:o/r#7"
-    assert opened[0]["thread"] == "1700.000001" and opened[0]["channel_id"] == "C123"
+    assert opened[0]["thread"] == "1700.000001" and opened[0]["channel_id"] == "D123"
     assert opened[0]["origin"] == "event"
     assert "secret question text" not in json.dumps(opened[0])
 
@@ -927,7 +931,7 @@ def test_the_permalink_is_recorded_when_slack_returns_one(tmp_path, monkeypatch)
     channel = make_channel(tmp_path, WithPermalink())
     channel.post(event())
     record = _conversation(_state_with_stores(_state_path(tmp_path)), "github:o/r#7")
-    assert record["permalink"] == "https://x.slack.com/C123/p1700.000001"
+    assert record["permalink"] == "https://x.slack.com/D123/p1700.000001"
 
 
 def test_a_failed_permalink_still_binds_the_thread(tmp_path, monkeypatch):
@@ -970,7 +974,7 @@ def test_a_corrupt_state_file_opens_a_fresh_thread(tmp_path, monkeypatch):
     result = make_channel(tmp_path, client).post(event())
     assert result.ok and client.posted[0]["thread_ts"] is None
     assert _state_with_stores(path).thread_for("github:o/r#7") == (
-        "C123",
+        "D123",
         result.thread,
     )
 
@@ -1018,7 +1022,7 @@ def test_channels_threads_lists_and_filters_conversations(
     monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
     channel = make_channel(tmp_path, FakeSlackClient())
     channel.post(event())
-    channel.bind("1600.2", "github:o/r#42", "C123", origin="kickoff")
+    channel.bind("1600.2", "github:o/r#42", "D123", origin="kickoff")
 
     assert _threads_command(tmp_path, monkeypatch, "threads") == 0
     out = capsys.readouterr().out
@@ -1090,7 +1094,7 @@ def test_open_posts_the_root_alone_and_binds_with_origin_start(tmp_path, monkeyp
     assert result.ok and result.channel == "slack" and result.thread == "1700.000001"
     assert len(client.posted) == 1
     root = client.posted[0]
-    assert root["thread_ts"] is None and root["channel"] == "C123"
+    assert root["thread_ts"] is None and root["channel"] == "D123"
     assert root["blocks"][0]["type"] == "header"
     assert "github:o/r#7" in root["blocks"][0]["text"]["text"]
     assert root["blocks"][-1]["elements"][0]["url"] == "https://github.com/o/r/issues/7"
@@ -1102,7 +1106,7 @@ def test_open_posts_the_root_alone_and_binds_with_origin_start(tmp_path, monkeyp
             "channel": "slack",
             "work_item": "github:o/r#7",
             "thread": "1700.000001",
-            "channel_id": "C123",
+            "channel_id": "D123",
             "origin": "start",
         }
     ]
@@ -1178,7 +1182,7 @@ def test_a_corrupt_state_file_still_opens_on_start(tmp_path, monkeypatch):
     result = make_channel(tmp_path, client).open("github:o/r#7")
     assert result.ok and len(client.posted) == 1
     assert _state_with_stores(path).thread_for("github:o/r#7") == (
-        "C123",
+        "D123",
         result.thread,
     )
 
@@ -1187,8 +1191,8 @@ def test_an_unknown_origin_is_coerced_to_event(tmp_path):
     """R2.1 / T10: `start` is a known origin; anything else reads as `event`, so
     a record written by a newer version is still a valid one to an older reader."""
     state = ChannelState()
-    state.bind("1.1", "github:o/r#7", "C123", origin="start")
-    state.bind("1.2", "github:o/r#8", "C123", origin="bogus")
+    state.bind("1.1", "github:o/r#7", "D123", origin="start")
+    state.bind("1.2", "github:o/r#8", "D123", origin="bogus")
     assert _conversation(state, "github:o/r#7")["origin"] == "start"
     assert _conversation(state, "github:o/r#8")["origin"] == "event"
     state.save(_state_path(tmp_path))
@@ -1484,7 +1488,7 @@ def test_a_config_without_the_block_reacts_with_the_defaults(tmp_path):
     """R2.5: a 13.4.0 config is additive-by-default — nothing to migrate."""
     config = SlackChannelConfig.from_mapping(cli_config(tmp_path))
     assert config.reactions == SlackReactionConfig()
-    assert config.enabled and config.channel == "C123"  # the rest is untouched
+    assert config.enabled and config.channel == "D123"  # the rest is untouched
 
 
 def test_reactions_can_be_disabled_or_skipped_per_state(tmp_path):
@@ -1551,8 +1555,8 @@ def test_react_adds_the_named_reaction_on_the_message(tmp_path, monkeypatch):
     finally:
         eventlog.reset()
     assert client.reactions == [
-        ("C123", "1800.7", "eyes"),
-        ("C123", "1800.7", "white_check_mark"),
+        ("D123", "1800.7", "eyes"),
+        ("D123", "1800.7", "white_check_mark"),
     ]
     events = [json.loads(line) for line in log.read_text().splitlines() if line.strip()]
     added = [e for e in events if e["event"] == "channel.reaction_added"]
@@ -1632,8 +1636,8 @@ def test_an_accepted_reply_is_acknowledged_received_then_completed(
     outcome, posts, deliveries, client = acked_pipeline(tmp_path, a_reply())
     assert outcome["outcome"] == "processed" and outcome["delivered"]
     assert client.reactions == [
-        ("C123", "1800.1", RECEIVED),
-        ("C123", "1800.1", COMPLETED),
+        ("D123", "1800.1", RECEIVED),
+        ("D123", "1800.1", COMPLETED),
     ]
 
 
@@ -1674,7 +1678,7 @@ def test_an_undeliverable_reply_is_acknowledged_with_error(tmp_path, monkeypatch
         tmp_path, a_reply(), deliver_raises=LookupError("no session")
     )
     assert outcome["delivered"] is False and outcome["mirrored"] is True
-    assert client.reactions == [("C123", "1800.1", RECEIVED), ("C123", "1800.1", ERROR)]
+    assert client.reactions == [("D123", "1800.1", RECEIVED), ("D123", "1800.1", ERROR)]
 
 
 def test_a_failed_mirror_is_acknowledged_with_error(tmp_path, monkeypatch):
@@ -1684,7 +1688,7 @@ def test_a_failed_mirror_is_acknowledged_with_error(tmp_path, monkeypatch):
         tmp_path, a_reply(), post_ok=False
     )
     assert outcome["mirrored"] is False and outcome["delivered"] is True
-    assert client.reactions == [("C123", "1800.1", RECEIVED), ("C123", "1800.1", ERROR)]
+    assert client.reactions == [("D123", "1800.1", RECEIVED), ("D123", "1800.1", ERROR)]
 
 
 def test_a_relayed_gate_answer_completes_on_its_record(tmp_path, monkeypatch):
@@ -1705,8 +1709,8 @@ def test_a_relayed_gate_answer_completes_on_its_record(tmp_path, monkeypatch):
     }
     assert deliveries == []
     assert client.reactions == [
-        ("C123", "1800.1", RECEIVED),
-        ("C123", "1800.1", COMPLETED),
+        ("D123", "1800.1", RECEIVED),
+        ("D123", "1800.1", COMPLETED),
     ]
 
     client.reactions.clear()
@@ -1718,7 +1722,7 @@ def test_a_relayed_gate_answer_completes_on_its_record(tmp_path, monkeypatch):
         client=client,
     )
     assert outcome["event"] == "control.command" and outcome["mirrored"] is False
-    assert client.reactions == [("C123", "1800.1", RECEIVED), ("C123", "1800.1", ERROR)]
+    assert client.reactions == [("D123", "1800.1", RECEIVED), ("D123", "1800.1", ERROR)]
 
 
 def test_a_standing_sessions_reply_completes_on_delivery(tmp_path, monkeypatch):
@@ -1731,8 +1735,8 @@ def test_a_standing_sessions_reply_completes_on_delivery(tmp_path, monkeypatch):
     assert outcome["mirrored"] is False and outcome["delivered"] is True
     assert posts == [] and deliveries[0]["ref"] == "standing:supervisor"
     assert client.reactions == [
-        ("C123", "1800.1", RECEIVED),
-        ("C123", "1800.1", COMPLETED),
+        ("D123", "1800.1", RECEIVED),
+        ("D123", "1800.1", COMPLETED),
     ]
 
     # A relayed keyword there has no ledger to reach: nothing landed, and the
@@ -1745,7 +1749,7 @@ def test_a_standing_sessions_reply_completes_on_delivery(tmp_path, monkeypatch):
         client=client,
     )
     assert outcome["event"] == "control.command" and outcome["mirrored"] is False
-    assert client.reactions == [("C123", "1800.1", RECEIVED), ("C123", "1800.1", ERROR)]
+    assert client.reactions == [("D123", "1800.1", RECEIVED), ("D123", "1800.1", ERROR)]
 
 
 def _kickoff(tmp_path, client, *, create_ok=True, authorized=("UHUMAN",)):
@@ -1763,7 +1767,7 @@ def _kickoff(tmp_path, client, *, create_ok=True, authorized=("UHUMAN",)):
         thread="1900.1",
         ts="1900.1",
         top_level=True,
-        channel_id="C123",
+        channel_id="D123",
     )
 
     def create_issue(repo, title, body, labels, gh_binary="gh"):
@@ -1794,8 +1798,8 @@ def test_a_kickoff_is_acknowledged_received_then_completed(tmp_path, monkeypatch
     outcome = _kickoff(tmp_path, client)
     assert outcome["outcome"] == "created"
     assert client.reactions == [
-        ("C123", "1900.1", RECEIVED),
-        ("C123", "1900.1", COMPLETED),
+        ("D123", "1900.1", RECEIVED),
+        ("D123", "1900.1", COMPLETED),
     ]
     assert (
         client.posted[-1]["thread_ts"] == "1900.1"
@@ -1807,7 +1811,7 @@ def test_a_failed_kickoff_is_acknowledged_with_error(tmp_path, monkeypatch):
     client = FakeSlackClient()
     outcome = _kickoff(tmp_path, client, create_ok=False)
     assert outcome["outcome"] == "create-failed"
-    assert client.reactions == [("C123", "1900.1", RECEIVED), ("C123", "1900.1", ERROR)]
+    assert client.reactions == [("D123", "1900.1", RECEIVED), ("D123", "1900.1", ERROR)]
 
 
 @pytest.mark.parametrize(
@@ -1910,7 +1914,7 @@ def test_the_binding_is_recorded_in_the_work_items_portable_record(
         )
     )
     binding = record["channels"]["slack"]
-    assert binding["thread"] == result.thread and binding["channel"] == "C123"
+    assert binding["thread"] == result.thread and binding["channel"] == "D123"
     # …and nothing about the conversation is left in the channel file.
     raw = json.loads(_state_path(tmp_path).read_text(encoding="utf-8"))
     assert "conversations" not in raw and "threads" not in raw
@@ -2002,7 +2006,7 @@ def test_a_standing_sessions_binding_stays_in_the_channel_file(tmp_path, monkeyp
 
     monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
     channel = make_channel(tmp_path, FakeSlackClient())
-    channel.bind("1900.1", "standing:supervisor", "C123")
+    channel.bind("1900.1", "standing:supervisor", "D123")
     channel.advance("1900.1", "1900.5")
 
     raw = json.loads(_state_path(tmp_path).read_text(encoding="utf-8"))
@@ -2025,7 +2029,7 @@ def test_a_room_conversation_round_trips_and_is_never_a_thread(tmp_path):
     path = tmp_path / "state" / "channels" / "slack.json"
     state = _state_with_stores(path)
     state.bind("", "github:o/r#7", "C0ROOM", origin="start", mode="channel")
-    state.bind("1700.1", "github:o/r#8", "C123", origin="event")
+    state.bind("1700.1", "github:o/r#8", "D123", origin="event")
     state.save(path)
 
     again = _state_with_stores(path)
@@ -2034,8 +2038,8 @@ def test_a_room_conversation_round_trips_and_is_never_a_thread(tmp_path):
     room_record = again.conversation("github:o/r#7")
     assert room_record is not None and room_record["mode"] == "channel"
     assert "" not in again.threads
-    assert again.conversation_for("github:o/r#8") == ("C123", "1700.1")
-    assert again.thread_for("github:o/r#8") == ("C123", "1700.1")
+    assert again.conversation_for("github:o/r#8") == ("D123", "1700.1")
+    assert again.thread_for("github:o/r#8") == ("D123", "1700.1")
     thread_record = again.conversation("github:o/r#8")
     assert thread_record is not None and "mode" not in thread_record
 

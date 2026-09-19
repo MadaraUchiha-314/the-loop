@@ -24,14 +24,16 @@ from .sessions_cmd import _cli_config
 from .. import eventlog
 from ..channels import inbound
 from ..channels.events import SUBSCRIBABLE_EVENTS
+from ..channels.records import RECORD_TYPES, records_from_comments, render
 from ..channels.slack import (
+    MENTION,
+    MENTION_SHORTCUTS,
     REACTION_STATES,
     SlackChannelConfig,
     kind_summary,
     probe_subscription,
     run_socket_listener,
     slack_state_path,
-    subscription_findings,
     unchecked_advice,
 )
 from ..repos import declared_repositories
@@ -48,7 +50,8 @@ def _status(config: dict, probe: bool = False) -> int:
 
     slack = SlackChannelConfig.from_mapping(config)
     path = slack_state_path(config)
-    state = ChannelState.load(path, ChannelStores.beside(path))
+    stores = ChannelStores.beside(path)
+    state = ChannelState.load(path, stores)
     print(f"ledger:         {ledger_name(config)}")
     print("slack:")
     print(f"  enabled:      {str(slack.enabled).lower()}")
@@ -134,6 +137,12 @@ def _status(config: dict, probe: bool = False) -> int:
             f"  commands:     off (read.mode is {slack.read_mode} — slash commands "
             "need read.mode: socket)"
         )
+    # The address (issue-389): a mention is the one way a message in a room
+    # reaches the-loop, and it arrives only over Socket Mode — so `status`
+    # says what a mention needs, what the two shortcuts need, and how many
+    # declared rooms hear every message instead.
+    for line in _mention_lines(slack, stores):
+        print(line)
     reactions = slack.reactions
     print(
         "  reactions:    "
@@ -209,11 +218,50 @@ def _subscription_lines(slack: SlackChannelConfig, probe: bool) -> list:
         f"  probe:        conversations.info says {kind}; granted bot scopes: "
         + (", ".join(scopes) if scopes else "(the response carried no x-oauth-scopes)")
     )
-    lines += [
-        f"  [!] {finding}"
-        for finding in subscription_findings(slack.channel, (kind,), scopes)
-    ]
+    # The probe's own findings: the kind's absence first, then the mention's
+    # (issue-389 R1.8) — composed in `probe_subscription`, printed here verbatim.
+    lines += [f"  [!] {finding}" for finding in result.get("findings") or ()]
     return lines
+
+
+def _mention_lines(slack: SlackChannelConfig, stores: ChannelStores) -> list:
+    """The three issue-389 lines: `mentions:`, `shortcuts:` and `rooms:`.
+
+    Read from the config and the portable declarations only — no Slack call;
+    `--probe` is what measures the scope (`mention_findings`).
+    """
+    if slack.read_mode == "socket":
+        mentions = (
+            f"@the-loop is the address in every channel — {MENTION.event} over "
+            f"Socket Mode; needs the bot scope {MENTION.scope} (`--probe` "
+            "measures it). A DM with the bot and a room declared --listen all "
+            "also hear plain messages"
+        )
+        shortcuts = (
+            "Add to the-loop as context / Record a decision with the-loop "
+            f"({', '.join(MENTION_SHORTCUTS)}) over Socket Mode — each exactly "
+            "the typed mention"
+        )
+    else:
+        mentions = (
+            f"off (read.mode is {slack.read_mode} — nothing addressed can "
+            f"arrive; {MENTION.event} needs read.mode: socket)"
+        )
+        shortcuts = (
+            f"off (read.mode is {slack.read_mode} — a message shortcut needs "
+            "read.mode: socket)"
+        )
+    targets = stores.declared_targets()
+    hearing_all = sum(1 for target in targets if stores.listen_mode(target) == "all")
+    rooms = (
+        f"{len(targets)} declared room(s); {hearing_all} hear(s) every message "
+        "(--listen all), the rest mentions only"
+    )
+    return [
+        f"  mentions:     {mentions}",
+        f"  shortcuts:    {shortcuts}",
+        f"  rooms:        {rooms}",
+    ]
 
 
 def _button_lines(slack: SlackChannelConfig) -> list:
@@ -270,10 +318,11 @@ def _threads(config: dict, work_item: str, as_json: bool) -> int:
     ids, timestamps and the permalink Slack returned; never a message's text.
     """
     path = slack_state_path(config)
-    state = ChannelState.load(path, ChannelStores.beside(path))
+    stores = ChannelStores.beside(path)
+    state = ChannelState.load(path, stores)
     wanted = canonical(work_item) if work_item else ""
     records = [
-        {"workItem": item, **record}
+        {"workItem": item, **record, "listen": _listen_of(record, stores)}
         for item, record in state.conversations.items()
         if not wanted or item == wanted
     ]
@@ -295,10 +344,11 @@ def _threads(config: dict, work_item: str, as_json: bool) -> int:
     }
     # A room conversation (issue-378) has no thread: the column says so.
     widths["thread"] = max(widths["thread"], len("(channel)"))
+    widths["listen"] = max(len("listen"), *(len(r["listen"]) for r in records))
     header = (
         f"{'work item':<{widths['workItem']}}  {'channel':<{widths['channel']}}  "
         f"{'thread':<{widths['thread']}}  {'opened':<{widths['opened']}}  "
-        f"{'origin':<{widths['origin']}}  link"
+        f"{'origin':<{widths['origin']}}  {'listen':<{widths['listen']}}  link"
     )
     print(header)
     for record in records:
@@ -308,8 +358,81 @@ def _threads(config: dict, work_item: str, as_json: bool) -> int:
             f"{record.get('thread') or '(channel)':<{widths['thread']}}  "
             f"{record.get('opened', ''):<{widths['opened']}}  "
             f"{record.get('origin', ''):<{widths['origin']}}  "
+            f"{record['listen']:<{widths['listen']}}  "
             f"{record.get('permalink') or '—'}"
         )
+    return 0
+
+
+def _listen_of(record: dict, stores: ChannelStores) -> str:
+    """What the conversation hears (issue-389 R2.4): every message in a DM
+    with the bot or a room declared `--listen all`; otherwise mentions."""
+    channel = str(record.get("channel") or "")
+    if channel[:1].upper() == "D":
+        return "all"
+    return stores.listen_mode(channel) if channel else "mentions"
+
+
+def _ledger_comments(config: dict, work_item: str) -> tuple:
+    """The ticket's comments as ``records_from_comments`` reads them — one
+    ``gh`` listing through the poller's read-only client, tried as an issue
+    and, when the ledger says the number is a pull request, as one."""
+    from ..channels.github import gh_binary
+    from ..poller.github import GhClient, GhError
+    from ..sessions import WorkItemRef
+
+    ref = WorkItemRef.parse(work_item)
+    gh = GhClient(binary=gh_binary(config))
+    login = gh.viewer_login(ref.host)
+    try:
+        comments = gh.list_comments(
+            ref.owner, ref.repo, ref.number, is_pr=False, host=ref.host
+        )
+    except GhError as first:
+        # `gh issue view` rejects a pull request's number; the ref does not
+        # say which it is, so the PR read is the second try, and the first
+        # error is the one reported when both fail.
+        try:
+            comments = gh.list_comments(
+                ref.owner, ref.repo, ref.number, is_pr=True, host=ref.host
+            )
+        except GhError:
+            raise first from None
+    return login, [
+        {
+            "id": c.id,
+            "body": c.body,
+            "author": c.author,
+            "created_at": c.created_at,
+            "url": c.url,
+        }
+        for c in comments
+    ]
+
+
+def _records(config: dict, work_item: str, types: list, fmt: str) -> int:
+    """A work item's channel records (issue-389 R4.7, R5.6): every marked,
+    enveloped ``context.added`` / ``decision.recorded`` comment the ledger
+    credential itself posted on its ticket, as JSON rows or as markdown.
+    Read-only; exit 1 when the ledger cannot be read or the ref is not one."""
+    from ..poller.github import GhError
+
+    try:
+        login, comments = _ledger_comments(config, work_item)
+    except (ValueError, GhError) as exc:
+        print(f"could not read the records of {work_item}: {exc}", file=sys.stderr)
+        return 1
+    if not login:
+        print(
+            "warning: could not read the gh login, so the records are listed by "
+            "their marker alone — check each row's author before trusting it",
+            file=sys.stderr,
+        )
+    records = records_from_comments(comments, types or None, login or None)
+    if fmt == "json":
+        print(json.dumps([r.to_dict() for r in records], indent=2))
+        return 0
+    print(render(records, canonical(work_item)), end="")
     return 0
 
 
@@ -359,6 +482,27 @@ class ChannelsCommand(Command):
         threads.add_argument(
             "--json", action="store_true", help="Print the records as JSON"
         )
+        records = sub.add_parser(
+            "records",
+            help=(
+                "The context and decision records a channel wrote on a work "
+                "item's ticket (one gh read; no Slack call, no secrets)"
+            ),
+        )
+        records.add_argument("work_item", metavar="REF", help="The work item ref")
+        records.add_argument(
+            "--type",
+            action="append",
+            choices=list(RECORD_TYPES),
+            default=[],
+            help="Only records of this type (repeatable; default: both)",
+        )
+        records.add_argument(
+            "--format",
+            choices=["json", "markdown"],
+            default="markdown",
+            help="JSON rows, or markdown with the text quoted back (default)",
+        )
         sub.add_parser(
             "poll",
             help=(
@@ -389,6 +533,8 @@ class ChannelsCommand(Command):
             return _status(config, probe=args.probe)
         if args.channels_command == "threads":
             return _threads(config, args.work_item, args.json)
+        if args.channels_command == "records":
+            return _records(config, args.work_item, args.type, args.format)
         if args.channels_command == "manifest":
             from ..channels.commands import manifest_text
 

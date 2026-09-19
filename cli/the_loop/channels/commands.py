@@ -38,10 +38,9 @@ from __future__ import annotations
 
 import logging
 import re
-from collections import deque
 from dataclasses import dataclass
 from importlib import resources
-from typing import Any, Callable, Deque, Dict, List, Mapping, Optional, Sequence, Set
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 from .. import eventlog
 from ..collaborators import parse_logins
@@ -52,6 +51,7 @@ from ..instance import NAME_RE as INSTANCE_NAME_RE
 from ..sessions import WorkItemRef
 from ..sessions.registry import is_github_host, is_github_name
 from ..standing import NAME_RE as STANDING_NAME_RE
+from . import once
 from .base import Event
 from .github import GitHubLedger
 from ..repos import parse_repo_path, repository_keys
@@ -359,28 +359,16 @@ def webhook_responder(url: str, text: str) -> bool:
 
 # -- duplicates (A9) ----------------------------------------------------------------
 
-_SEEN: Deque[str] = deque()
-_SEEN_SET: Set[str] = set()
-_SEEN_MAX = 256
-
 
 def _first_sight(trigger: str) -> bool:
-    """Whether ``trigger`` is new to this process; remembers it in a bounded ring."""
-    if not trigger:
-        return True
-    if trigger in _SEEN_SET:
-        return False
-    _SEEN.append(trigger)
-    _SEEN_SET.add(trigger)
-    while len(_SEEN) > _SEEN_MAX:
-        _SEEN_SET.discard(_SEEN.popleft())
-    return True
+    """Whether ``trigger`` is new to this process — the ring every interactive
+    surface shares since issue-389 (:mod:`.once`)."""
+    return once.first_sight(trigger)
 
 
 def reset_seen() -> None:
     """Forget every trigger (tests)."""
-    _SEEN.clear()
-    _SEEN_SET.clear()
+    once.reset()
 
 
 # -- rendering ----------------------------------------------------------------------

@@ -8,6 +8,10 @@ faked: the Slack SDK client (injected factory), the GitHub comment writer
 
 from __future__ import annotations
 
+# issue-389: the mention is the address in every channel, so the operator's
+# central channel in these tests is the DIRECT MESSAGE with the bot (D123) —
+# the one conversation that still hears every plain message (R1.6).
+
 import json
 import threading
 import time
@@ -50,7 +54,7 @@ class FakeSlackClient:
 
 
 def cli_config(tmp_path, authorized=("UHUMAN",), **slack):
-    section = {"enabled": True, "channel": "C123", **slack}
+    section = {"enabled": True, "channel": "D123", **slack}
     return {
         "state": {"root": str(tmp_path / "state")},
         # Identity in one place (issue-309): the Slack member id sits on a
@@ -293,7 +297,7 @@ def test_socket_event_reaches_the_same_pipeline(tmp_path, monkeypatch):
     outcome = inbound.handle_socket_event(
         {
             "type": "message",
-            "channel": "C123",
+            "channel": "D123",
             "thread_ts": thread,
             "ts": "1800.9",
             "user": "UHUMAN",
@@ -307,7 +311,7 @@ def test_socket_event_reaches_the_same_pipeline(tmp_path, monkeypatch):
     stray = inbound.handle_socket_event(
         {
             "type": "message",
-            "channel": "C123",
+            "channel": "D123",
             "thread_ts": "9999.9",
             "ts": "1801.0",
             "user": "UHUMAN",
@@ -587,7 +591,7 @@ def test_a_pre_issue_312_state_file_keeps_its_threads(tmp_path, monkeypatch):
     path.write_text(
         json.dumps(
             {
-                "threads": {"1500.1": {"workItem": "github:o/r#7", "channel": "C123"}},
+                "threads": {"1500.1": {"workItem": "github:o/r#7", "channel": "D123"}},
                 "cursors": {"1500.1": "1500.3"},
             }
         ),
@@ -644,7 +648,7 @@ def test_channels_threads_lists_the_conversation(tmp_path, monkeypatch, capsys):
     ChannelsCommand().add_arguments(parser)
     assert ChannelsCommand().run(parser.parse_args(["threads"])) == 0
     out = capsys.readouterr().out
-    assert "github:o/r#7" in out and "C123" in out and "1700.000001" in out
+    assert "github:o/r#7" in out and "D123" in out and "1700.000001" in out
     assert "event" in out and "xoxb-test" not in out
 
 
@@ -929,8 +933,8 @@ def test_an_accepted_reply_is_acknowledged_on_the_reply_itself(tmp_path, monkeyp
     assert summary["processed"] == 1 and summary["delivered"] == 1
     assert len(mirrors) == 1 and deliveries == ["slack:UHUMAN"]
     assert client.reactions == [
-        ("C123", "1800.1", "eyes"),
-        ("C123", "1800.1", "white_check_mark"),
+        ("D123", "1800.1", "eyes"),
+        ("D123", "1800.1", "white_check_mark"),
     ]
     # Cursor semantics are untouched: a second cycle sees nothing, reacts to nothing.
     inbound.poll_once(config, client_factory=lambda token: client)
@@ -969,7 +973,7 @@ def test_a_socket_message_and_a_button_press_are_acknowledged(tmp_path, monkeypa
     outcome = inbound.handle_socket_event(
         {
             "type": "message",
-            "channel": "C123",
+            "channel": "D123",
             "thread_ts": thread,
             "ts": "1800.9",
             "user": "UHUMAN",
@@ -980,8 +984,8 @@ def test_a_socket_message_and_a_button_press_are_acknowledged(tmp_path, monkeypa
     )
     assert outcome["outcome"] == "processed"
     assert client.reactions == [
-        ("C123", "1800.9", "eyes"),
-        ("C123", "1800.9", "white_check_mark"),
+        ("D123", "1800.9", "eyes"),
+        ("D123", "1800.9", "white_check_mark"),
     ]
 
     client.reactions.clear()
@@ -990,7 +994,7 @@ def test_a_socket_message_and_a_button_press_are_acknowledged(tmp_path, monkeypa
         {
             "type": "block_actions",
             "user": {"id": "UHUMAN"},
-            "channel": {"id": "C123"},
+            "channel": {"id": "D123"},
             "message": {"ts": "1750.5", "thread_ts": thread},
             "container": {"message_ts": "1750.5", "thread_ts": thread},
             "actions": [{"action_id": "the-loop:approve", "value": "approved"}],
@@ -1001,8 +1005,8 @@ def test_a_socket_message_and_a_button_press_are_acknowledged(tmp_path, monkeypa
     )
     assert outcome["outcome"] == "processed" and outcome["event"] == "gate.feedback"
     assert client.reactions == [
-        ("C123", "1750.5", "eyes"),
-        ("C123", "1750.5", "white_check_mark"),
+        ("D123", "1750.5", "eyes"),
+        ("D123", "1750.5", "white_check_mark"),
     ]
 
 
@@ -1063,7 +1067,7 @@ def _slash(text, user="UHUMAN", trigger="t-1"):
         "command": "/the-loop",
         "text": text,
         "user_id": user,
-        "channel_id": "C123",
+        "channel_id": "D123",
         "trigger_id": trigger,
         "response_url": "https://hooks.slack.com/commands/T/1/x",
     }
@@ -1132,7 +1136,7 @@ def test_a_slash_command_start_records_what_a_thread_keyword_records(
     typed = inbound.handle_socket_event(
         {
             "type": "message",
-            "channel": "C123",
+            "channel": "D123",
             "thread_ts": thread,
             "ts": "1800.1",
             "user": "UHUMAN",
@@ -1299,7 +1303,7 @@ def test_a_socket_listener_catches_up_after_downtime(tmp_path, monkeypatch):
     retried = inbound.handle_socket_event(
         {
             "type": "message",
-            "channel": "C123",
+            "channel": "D123",
             "thread_ts": thread,
             "ts": "1800.1",
             "user": "UHUMAN",
@@ -1452,7 +1456,7 @@ def test_an_execute_press_records_what_a_typed_execute_records(tmp_path, monkeyp
 
     assert len(client.updates) == 1
     edit = client.updates[0]
-    assert edit["ts"] == message["ts"] and edit["channel"] == "C123"
+    assert edit["ts"] == message["ts"] and edit["channel"] == "D123"
     assert _button_ids(edit["blocks"]) == ["the-loop:open"]
     line = edit["blocks"][-1]["elements"][0]["text"]
     assert line.startswith("✅ *Execute*") and "<@UHUMAN>" in line
@@ -1509,7 +1513,7 @@ def test_a_kickoff_reply_carries_start_and_its_press_records_the_keyword(
     outcome = inbound.handle_socket_event(
         {
             "type": "message",
-            "channel": "C123",
+            "channel": "D123",
             "ts": "1600.2",
             "user": "UHUMAN",
             "text": "Ship it",
@@ -1832,7 +1836,7 @@ def test_an_ambiguous_kickoff_prefix_is_refused_in_the_thread(tmp_path, monkeypa
 
     assert summary["created"] == 0 and summary["dropped"] == 1
     assert calls == []
-    assert ("C123", "1600.2", "warning") in client.reactions
+    assert ("D123", "1600.2", "warning") in client.reactions
     said = [p for p in client.posted if p["thread_ts"] == "1600.2"][-1]["text"]
     assert "`expertise-help/slim-gym`" in said and "`other-org/slim-gym`" in said
     state = _state_with_stores(tmp_path / "state" / "channels" / "slack.json")

@@ -31,7 +31,7 @@ import getpass
 import os
 import re
 import socket
-from typing import Iterable, Mapping, Optional
+from typing import List, Iterable, Mapping, Optional
 
 __all__ = ["defang_control_keywords", "scrub"]
 
@@ -127,3 +127,40 @@ def defang_control_keywords(text: str, keywords: Iterable[str]) -> str:
         )
         text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
     return text
+
+
+def strip_html_comments(text: str) -> str:
+    """Every ``<!-- … -->`` removed — the-loop's markers and envelopes, and any
+    other. A forward scan: an unterminated opener is kept as text.
+
+    Applied to another author's words before the-loop quotes them (issue-389
+    A5): a pasted marker would make :func:`the_loop.authz.mark_self_authored`
+    treat the composed body as already stamped, and a pasted envelope would be
+    parsed as the record's own.
+    """
+    out: List[str] = []
+    pos = 0
+    while True:
+        start = text.find("<!--", pos)
+        if start < 0:
+            out.append(text[pos:])
+            break
+        end = text.find("-->", start + 4)
+        if end < 0:
+            out.append(text[pos:])
+            break
+        out.append(text[pos:start])
+        pos = end + 3
+    return "".join(out)
+
+
+#: `<!channel>`, `<!here>`, `<!everyone>`, `<!subteam^…>` — the one thing in a
+#: message's text that ACTS on Slack. The lookahead spares an HTML comment's
+#: opener, so the two rules compose in either order.
+_BROADCAST_RE = re.compile(r"<!(?!--)")
+
+
+def neutralise_broadcasts(text: str) -> str:
+    """``text`` with every Slack broadcast sequence rewritten (``<!`` →
+    ``&lt;!``) so it no longer pages anyone, wherever the text lands next."""
+    return _BROADCAST_RE.sub("&lt;!", text)

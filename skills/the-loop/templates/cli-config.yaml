@@ -609,6 +609,10 @@ channels:
     #                                        #   message or `/the-loop new` — needs a declared repo),
     #                                        # + instance.command (/the-loop status|restart|upgrade),
     #                                        # + standing.command (/the-loop standing …) — issue-334;
+    #                                        # + context.added (`@the-loop record-context` snapshots a
+    #                                        #   thread onto the work item and into context.md),
+    #                                        # + decision.recorded (`@the-loop record-decision <text>`
+    #                                        #   becomes a decision record) — issue-389, socket only;
     #                                        # the slash command's work-item verbs ride on control.command.
     #                                        # A ticket-bound one is recorded on the ledger first and
     #                                        # judged there; the two instance-side ones log to the event log.

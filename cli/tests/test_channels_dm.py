@@ -235,8 +235,11 @@ def test_probe_reads_the_kind_from_conversations_info_and_the_scopes_from_auth_t
     result = probe_subscription(parsed(tmp_path), client_factory=lambda token: client)
     assert result["kind"] == "im"
     assert result["scopes"] == ("chat:write", "channels:history")
-    assert len(result["findings"]) == 1
+    # Two absences, two findings (issue-389): the DM's history scope, then the
+    # mention scope the address needs.
+    assert len(result["findings"]) == 2
     assert "im:history" in result["findings"][0]
+    assert "app_mentions:read" in result["findings"][1]
 
 
 def test_probe_calls_only_conversations_info_and_auth_test(tmp_path, monkeypatch):
@@ -256,10 +259,10 @@ def test_probe_reads_a_header_delivered_as_a_list(tmp_path, monkeypatch):
     monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
     client = FakeProbeClient()
     client.auth_test = lambda: FakeResponse(  # type: ignore[method-assign]
-        {"ok": True}, ["chat:write, im:history"]
+        {"ok": True}, ["chat:write, im:history, app_mentions:read"]
     )
     result = probe_subscription(parsed(tmp_path), client_factory=lambda token: client)
-    assert result["scopes"] == ("chat:write", "im:history")
+    assert result["scopes"] == ("chat:write", "im:history", "app_mentions:read")
     assert result["findings"] == ()
 
 

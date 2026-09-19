@@ -134,7 +134,7 @@ def test_a_message_im_envelope_reaches_the_inbound_pipeline(
     seen = []
     monkeypatch.setattr(
         "the_loop.channels.inbound.handle_socket_event",
-        lambda event, config: seen.append(event) or {"outcome": "processed"},
+        lambda event, config, **_kw: seen.append(event) or {"outcome": "processed"},
     )
     monkeypatch.setattr(slack_mod, "catch_up", lambda config: {"replies": 0})
     stop = threading.Event()

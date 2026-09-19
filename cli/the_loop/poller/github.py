@@ -317,6 +317,21 @@ class GhClient:
             ]
         )
 
+    def viewer_login(self, host: str = "") -> str:
+        """The login ``gh`` is authenticated as — the ledger credential's own
+        name, which is the author of every comment the-loop wrote. ``""`` when
+        it cannot be read (not logged in, no network); callers fail closed on
+        that, or say so."""
+        from ..comments import gh_host_args
+
+        argv = ["api", *gh_host_args(host), "user"]
+        try:
+            data = self._run_json(argv)
+        except GhError as exc:
+            logger.debug("could not read the gh login: %s", exc)
+            return ""
+        return str((data or {}).get("login") or "") if isinstance(data, dict) else ""
+
     def list_comments(
         self, owner: str, repo: str, number: int, is_pr: bool, host: str = ""
     ) -> List[GhComment]:
