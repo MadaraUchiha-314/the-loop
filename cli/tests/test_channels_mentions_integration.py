@@ -711,3 +711,56 @@ def test_a_roster_on_one_work_item_widens_nothing_on_another(tmp_path):
     )
     assert outcome == {"outcome": "unauthorized-actor"}
     assert client.reactions == [] and client.ephemeral == []
+
+
+# -- self-review round 1 (finding 1): the grammar is read only after an address ------
+
+
+def test_a_plain_dm_that_starts_with_a_verb_is_a_reply(tmp_path):
+    """
+    Scenario: a plain message in a DM is the reply it always was
+      Given the-loop asked a question in its DM with the operator
+      When the operator answers "Do the second option" without the mention
+      Then it is delivered as a reply — never composed into `the-loop do …`
+    """
+    config = config_for(tmp_path, channel=DM)
+    sink, client = Sink(), Client()
+    bot = bot_for(config, client)
+    bot.bind("1800.1", REF, DM, origin="start")
+    for i, text in enumerate(("Do the second option", "record-context", "help me")):
+        outcome = send(
+            config,
+            sink,
+            client,
+            addressed=False,
+            channel=DM,
+            text=text,
+            thread="1800.1",
+            ts=f"1800.{i + 2}",
+        )
+        assert outcome["outcome"] == "processed", text
+        assert outcome["event"] == "work-item.reply", text
+    assert [d["text"] for d in sink.delivered] == [
+        "Do the second option",
+        "record-context",
+        "help me",
+    ]
+    assert client.ephemeral == []
+
+
+def test_a_mentioned_kickoff_keeps_its_body(tmp_path):
+    """The title is the first line after the mention; the body keeps its lines."""
+    config = config_for(tmp_path, kickoff={"repo": "octo/repo"})
+    config["repositories"] = ["octo/repo"]
+    sink, client = Sink(), Client()
+    created = send(
+        config,
+        sink,
+        client,
+        addressed=True,
+        channel=CENTRAL,
+        text=f"<@{BOT}> fix the flaky teardown\n\nSteps to reproduce: run it twice",
+        ts="1900.1",
+    )
+    assert created["outcome"] == "created"
+    assert sink.created == [("octo/repo", "fix the flaky teardown")]

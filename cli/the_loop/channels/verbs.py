@@ -20,7 +20,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
-from ..control import ControlConfig
+from ..control import COLLABORATOR_COMMANDS, ControlConfig
 
 __all__ = [
     "KINDS",
@@ -80,7 +80,10 @@ def strip_mention(text: str, bot_id: str) -> Tuple[str, bool]:
     stripped = _MENTION_RE.sub(drop, text or "")
     if not found:
         return text, False
-    return " ".join(stripped.split()), True
+    # Only horizontal whitespace collapses: the kickoff's title/body split and a
+    # multi-line decision read the text by its lines (R1.5).
+    lines = [" ".join(line.split()) for line in stripped.split("\n")]
+    return "\n".join(lines).strip(), True
 
 
 def parse_verb(text: str) -> Optional[Verb]:
@@ -134,6 +137,10 @@ def compose_keyword(text: str, control: ControlConfig) -> str:
     if not keyword:
         return text
     rest = parts[1].strip() if len(parts) > 1 else ""
+    if command in COLLABORATOR_COMMANDS:
+        # A member typed as Slack types them (R3.5): `<@U0456>` or
+        # `<@U0456|dana>` is the roster's `slack:U0456` token.
+        rest = _MENTION_RE.sub(r"slack:\1", rest)
     return f"{keyword} {rest}".strip()
 
 

@@ -103,3 +103,32 @@ def test_help_text_teaches_the_grammar_and_names_this_channels_grants(tmp_path):
     assert "add-collaborator" in text and "anything else" in text.lower()
     assert "context.added: granted" in text
     assert "decision.recorded: not granted" in text
+
+
+# -- self-review round 1 (findings 2 and 3) ------------------------------------------
+
+
+def test_strip_mention_keeps_the_lines():
+    """A mentioned kickoff keeps its title/body split, a decision its lines."""
+    assert strip_mention("<@UBOT> octo/repo: Fix teardown\n\nSteps: x  y", "UBOT") == (
+        "octo/repo: Fix teardown\n\nSteps: x y",
+        True,
+    )
+    assert strip_mention("  <@UBOT>  hi\n", "UBOT") == ("hi", True)
+
+
+def test_compose_keyword_reads_a_member_mention_as_the_roster_token():
+    """R3.5: `<@U…>` and `<@U…|handle>` after `add-collaborator` become
+    `slack:U…`; another verb's mentions are left as typed."""
+    control = ControlConfig.from_mapping({})
+    assert (
+        compose_keyword("add-collaborator <@U0456GHIJ|dana> @octocat", control)
+        == "the-loop add-collaborator slack:U0456GHIJ @octocat"
+    )
+    assert (
+        compose_keyword("remove-collaborator <@U0456GHIJ>", control)
+        == "the-loop remove-collaborator slack:U0456GHIJ"
+    )
+    assert (
+        compose_keyword("start <@U0456GHIJ>", control) == "the-loop start <@U0456GHIJ>"
+    )

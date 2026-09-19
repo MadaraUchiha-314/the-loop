@@ -299,7 +299,9 @@ def _classify(
     """
     if reply.top_level:
         return "work-item.create", "n/a"
-    verb = parse_verb(reply.text)
+    # The grammar is read after the mention alone (R3.1): a plain message in a
+    # DM or an `all` room that happens to start with a verb is a reply.
+    verb = parse_verb(reply.text) if reply.addressed else None
     if verb is not None:
         return _VERB_EVENTS.get(verb.name, verb.name), "n/a"
     from ..control import parse_command
@@ -401,12 +403,13 @@ def process_reply(
     # token comes off the text wherever it sits, a leading verb is the act, and
     # a leading control verb is composed into the CONFIGURED keyword exactly as
     # the slash command composes it — so `parse_command` reads a real keyword.
-    text, _ = strip_mention(reply.text, bot.own_user_id())
-    verb = parse_verb(text)
-    if verb is None:
+    text, found = strip_mention(reply.text, bot.own_user_id())
+    addressed = found or reply.addressed
+    verb = parse_verb(text) if addressed else None
+    if addressed and verb is None:
         text = compose_keyword(text, _control_config(cli_config))
-    if text != reply.text:
-        reply = replace(reply, text=text)
+    if text != reply.text or addressed != reply.addressed:
+        reply = replace(reply, text=text, addressed=addressed)
     # Two lists, consulted by act (R7.2): input from the allow-list and the
     # roster, a binding act from the allow-list alone. A stranger is dropped
     # in silence BEFORE anything is classified (A1; issue-321 A2: a stranger's
@@ -1216,6 +1219,7 @@ def handle_socket_event(
                 is_bot=is_bot,
                 top_level=True,
                 channel_id=channel_id,
+                addressed=addressed,
             )
             return process_kickoff(
                 reply,
@@ -1254,6 +1258,7 @@ def handle_socket_event(
         ts=ts,
         is_bot=is_bot,
         channel_id=channel_id,
+        addressed=addressed,
     )
     if work_item and ts and seen and _ts_key(ts) <= _ts_key(seen):
         # Already processed — by the catch-up read after a reconnect, or by a
@@ -1313,6 +1318,7 @@ def _shortcut_reply(
         thread=thread,
         ts=ts,
         channel_id=channel_id,
+        addressed=True,  # a shortcut is the typed mention (R6.2)
     )
 
 
