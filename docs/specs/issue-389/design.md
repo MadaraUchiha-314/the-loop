@@ -2,8 +2,8 @@
 type: design
 phase: design
 workItem: "github:MadaraUchiha-314/the-loop#389"
-status: in-review            # draft | in-review | approved
-approvedBy: []
+status: approved             # draft | in-review | approved
+approvedBy: ["MadaraUchiha-314"]  # PR #390 review 5257062686 ("go ahead with design and implementation") and the owner's instruction to implement, 2026-09-19
 overrides: {}
 ---
 
@@ -517,3 +517,11 @@ subscribable) are called out here and on the ticket for the `design-approval` ga
 
 > Appended by the-loop's `record-feedback` hook when a human gate approves with
 > comments (issue-109).
+
+- **2026-09-19 · MadaraUchiha-314 (owner) · approved** — the
+  [review on PR #390](https://github.com/MadaraUchiha-314/the-loop/pull/390#pullrequestreview-5257062686)
+  that approved the requirements said *"go ahead with design and implementation"*, and
+  the owner repeated the instruction to implement in the session. Recorded by the session
+  because no daemon runs the `design-approval` gate here; the two refinements called out
+  under *Open questions* / the PR body (a marked decision record; grants, not
+  subscriptions) stand unless the owner objects on the PR.
