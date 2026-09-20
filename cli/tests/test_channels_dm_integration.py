@@ -160,6 +160,45 @@ def test_a_message_im_envelope_reaches_the_inbound_pipeline(
     assert [event["channel_type"] for event in seen] == ["im"]
 
 
+def test_an_ignored_envelope_is_logged_not_dropped_in_silence(
+    listener_env, monkeypatch, caplog
+):
+    """Scenario: an events_api event the listener does not handle leaves a trace
+
+    Given a socket-mode listener
+    When Slack delivers an events_api event of a type the listener ignores
+      (here `reaction_added`, neither app_mention nor message)
+    Then the listener logs the ignored envelope's type and channel at debug
+      rather than discarding it without a word — the one thread an operator can
+      pull when two listeners share one app and half of everything vanishes
+
+    Requirement: docs/specs/issue-393/requirements.md R2.4 (B3)
+    """
+    monkeypatch.setattr(slack_mod, "catch_up", lambda config: {"replies": 0})
+    monkeypatch.setattr(
+        "the_loop.channels.inbound.handle_socket_event",
+        lambda *a, **k: {"outcome": "processed"},
+    )
+    stop = threading.Event()
+    with caplog.at_level(logging.DEBUG, logger="the-loop.channels"):
+        thread, client, _ = run_listener(listener_env, stop)
+        try:
+            client.deliver(
+                "events_api",
+                {"event": {"type": "reaction_added", "channel": "D0AU0SGP30T"}},
+            )
+        finally:
+            stop.set()
+            thread.join(timeout=5)
+    ignored = [
+        r.getMessage()
+        for r in caplog.records
+        if "ignoring an events_api event" in r.getMessage()
+    ]
+    assert ignored, "an ignored envelope must leave a debug trace"
+    assert "reaction_added" in ignored[0]
+
+
 def test_the_listener_warns_once_about_the_dm_subscription(
     listener_env, monkeypatch, caplog
 ):

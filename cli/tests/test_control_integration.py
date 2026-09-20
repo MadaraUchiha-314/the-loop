@@ -832,6 +832,79 @@ def test_a_grant_that_names_nobody_is_refused(setup):
     assert tmux.delivers == []
 
 
+def test_a_refused_keyword_explains_itself_on_the_ticket(setup, monkeypatch):
+    """
+    Feature: a refused control keyword says why
+      Scenario: an add-collaborator naming nobody is refused
+        Given a work item with a live session
+        When an authorized user comments the keyword with no valid login
+        Then besides the 😕 reaction, a marked reply is posted naming the reason
+             and the remedy — so the person on the ticket or a phone is not left
+             to read the daemon log
+
+    Requirement: docs/specs/issue-393/requirements.md R2.5 (B2)
+    """
+    dispatcher, registry, tmux, _ = setup
+    register(registry)
+
+    posted = []
+    from the_loop.webhook import dispatcher as dispatcher_mod
+
+    monkeypatch.setattr(
+        dispatcher_mod,
+        "post_issue_comment",
+        lambda item, body, gh_binary="gh": posted.append((item.ref, body)) or (True, ""),
+    )
+
+    dispatcher.handle(
+        comment_event("the-loop add-collaborator someone please", delivery="expl-1")
+    )
+    assert _wait(lambda: dispatcher.delivery_outcome("expl-1") == "control-rejected")
+    assert _wait(lambda: len(posted) == 1)
+    ref, body = posted[0]
+    assert ref == REF
+    assert "couldn't resolve that collaborator" in body
+    # The loop-prevention marker is stamped, so the-loop's own explanation never
+    # resumes its own session.
+    from the_loop.authz import SELF_COMMENT_MARKER
+
+    assert SELF_COMMENT_MARKER in body
+
+
+def test_an_out_of_scope_refusal_stays_silent(setup, monkeypatch):
+    """The counter-case: a refusal another instance owns (acknowledge=False)
+    posts no explanation — a mark from a non-owner is noise (issue-322 R2.6)."""
+    dispatcher, registry, tmux, _ = setup
+    register(registry)
+
+    posted = []
+    from the_loop.webhook import dispatcher as dispatcher_mod
+
+    monkeypatch.setattr(
+        dispatcher_mod,
+        "post_issue_comment",
+        lambda *a, **k: posted.append(a) or (True, ""),
+    )
+    # _refuse_scope is the acknowledge=False path; call the seam directly with a
+    # remedy-bearing reason to prove acknowledge gates the explanation too.
+    from the_loop.webhook.router import RoutedEvent, extract_work_items
+
+    payload = comment_event("x").payload
+    routed = RoutedEvent(
+        event="issue_comment",
+        action="created",
+        delivery_id="oos-1",
+        work_items=extract_work_items("issue_comment", payload),
+        payload=payload,
+        labeled=False,
+    )
+    dispatcher._reject_control(
+        "add-collaborator", routed, "octocat", "missing-collaborator",
+        acknowledge=False,
+    )
+    assert posted == []
+
+
 def test_an_authorized_user_grants_and_revokes_by_slack_id(setup):
     """
     Feature: a collaborator is known by a login, a Slack id, or both

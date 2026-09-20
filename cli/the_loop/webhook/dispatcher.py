@@ -29,7 +29,8 @@ from ..instance import (
     decide as decide_scope,
     parse_address,
 )
-from ..authz import is_authorized
+from ..authz import is_authorized, mark_self_authored
+from ..comments import post_issue_comment
 from ..cleanup import CleanupOutcome, cleanup_work_item
 from ..collaborators import CollaboratorStore
 from ..control import (
@@ -175,6 +176,36 @@ ACK_STATES = {
     SETTLED_CONTROL_REJECTED: STATE_ERROR,
     SETTLED_CONTROL_AMBIGUOUS: STATE_ERROR,
     **{outcome: STATE_STARTED for outcome in SETTLED_SUPPRESSED},
+}
+
+# The human-readable reason and remedy for each refusable control reason
+# (issue-393 B2/R2.5). Before this, a refusal was a 😕 reaction and a line in
+# the daemon log — invisible to the person on the ticket or on a phone, who was
+# left to guess why the keyword did nothing. Each entry is one short sentence
+# posted as a marked reply where the command was typed; a reason not listed here
+# (or `spawn-policy`, whose text `_reject_control` already composes) posts no
+# extra comment, so the reaction remains the whole acknowledgement.
+CONTROL_REFUSAL_REMEDIES = {
+    "missing-channel": (
+        "I couldn't find that Slack channel. Check the spelling, invite me to "
+        "the channel (once I'm a member its name resolves), or use its "
+        "conversation id — that always works."
+    ),
+    "channel-taken": (
+        "That Slack channel already backs another work item. One room backs one "
+        "work item, so declare a different channel or free the current one first."
+    ),
+    "missing-collaborator": (
+        "I couldn't resolve that collaborator. Use a GitHub login (or a Slack id "
+        "the roster already knows), and check the spelling."
+    ),
+    "unknown-listen-mode": (
+        "I don't know that `--listen` mode. Use `all` or `mentions`."
+    ),
+    "nothing-to-resume": (
+        "There's nothing paused to resume here — the work item is not in a paused "
+        "state."
+    ),
 }
 
 # Fallback when routing.promptTemplate does not exist. Templates are internal to
@@ -2093,9 +2124,13 @@ class Dispatcher:
                 # A ref that parsed but names no channel this bot can see, or a
                 # name that could not be resolved at all. Refused rather than
                 # stored: a declaration that fails at the first post is worse
-                # than one that never happened.
+                # than one that never happened. The resolver's own text (which
+                # since issue-393 B1 distinguishes a truncated listing from a
+                # true miss) rides along as the refusal's detail (R2.5).
                 logger.warning("refusing the %s command: %s", command, exc)
-                self._reject_control(command, routed, actor, "missing-channel")
+                self._reject_control(
+                    command, routed, actor, "missing-channel", detail=str(exc)
+                )
                 return
             logger.info(
                 "control command %s from %s on %s: %s %s%s",
@@ -2261,6 +2296,7 @@ class Dispatcher:
         reason: str,
         *,
         acknowledge: bool = True,
+        detail: str = "",
     ) -> None:
         """Record a recognised command that could not be honoured (nothing runs).
 
@@ -2269,6 +2305,15 @@ class Dispatcher:
         already, so a 😕 discloses nothing that executing the command would not.
         ``acknowledge=False`` is :meth:`_refuse_scope`'s: a command this
         instance refuses as *out of its scope* leaves no mark at all.
+
+        Since issue-393 (B2/R2.5) the reaction is not the whole story: for a
+        reason with a known remedy (:data:`CONTROL_REFUSAL_REMEDIES`), one
+        marked reply is posted on the work item saying *why* and *what to do*,
+        so the person on the ticket or on a phone is not left to read the daemon
+        log. ``detail`` carries a resolver's own specific text (e.g. the
+        channel-resolver's ``ValueError``) to append; it is never posted for an
+        out-of-scope refusal (``acknowledge=False``), whose owner is another
+        instance.
         """
         refs = [item.ref for item in routed.work_items]
         logger.warning(
@@ -2293,9 +2338,41 @@ class Dispatcher:
             reason=reason,
             delivery_id=routed.delivery_id or None,
         )
+        if acknowledge:
+            self._explain_refusal(routed, reason, detail)
         # A decision about the command, not a failed delivery: retrying it would
         # reach the same answer, so the delivery is settled (issue-270).
         self._settle(routed, SETTLED_CONTROL_REJECTED, acknowledge=acknowledge)
+
+    def _explain_refusal(self, routed: RoutedEvent, reason: str, detail: str) -> None:
+        """Post one marked reply saying why a control keyword was refused (R2.5).
+
+        Best-effort and never raises: a refusal that cannot also be explained is
+        still a refusal (the reaction and the log stand). Only reasons with a
+        known remedy are explained; an unknown one leaves the reaction as the
+        whole acknowledgement, exactly as before.
+        """
+        remedy = CONTROL_REFUSAL_REMEDIES.get(reason)
+        if not remedy:
+            return
+        body = remedy if not detail else f"{remedy}\n\n> {detail}"
+        marked = mark_self_authored(f"⚠️ {body}")
+        gh_binary = self.config.control.gh_binary or "gh"
+        for item in routed.work_items:
+            try:
+                ok, error = post_issue_comment(item, marked, gh_binary=gh_binary)
+                if not ok:
+                    logger.debug(
+                        "slack: could not post the refusal explanation on %s (%s)",
+                        item.ref,
+                        error,
+                    )
+            except Exception:  # noqa: BLE001 — explaining a refusal never fails one
+                logger.debug(
+                    "slack: posting the refusal explanation on %s raised; "
+                    "the reaction and log stand",
+                    item.ref,
+                )
 
     def close_session(
         self,

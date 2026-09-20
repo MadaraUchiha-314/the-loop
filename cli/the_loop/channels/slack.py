@@ -2514,6 +2514,16 @@ def run_socket_listener(
 
     def handle(client, request) -> None:
         if request.type not in ("events_api", "interactive", "slash_commands"):
+            # issue-393 B3/R2.4: an ignored envelope is logged, never dropped in
+            # silence. When two listeners share one app Slack splits events
+            # across the connections, and half of everything lands on the
+            # instance that does not own the room — a debug line per ignored
+            # envelope is the one thread an operator can pull to see it.
+            logger.debug(
+                "slack: ignoring a Socket Mode envelope of type %r (handled: "
+                "events_api, interactive, slash_commands)",
+                request.type,
+            )
             return
         client.send_socket_mode_response(
             SocketModeResponse(envelope_id=request.envelope_id)
@@ -2533,13 +2543,26 @@ def run_socket_listener(
                 elif kind == "view_submission":
                     # The ack above already closed the modal (R6.1).
                     inbound.handle_view_submission(payload, frozen_config)
+                else:
+                    logger.debug(
+                        "slack: ignoring an interactive payload of kind %r "
+                        "(handled: block_actions, message_action, view_submission)",
+                        kind,
+                    )
                 return
             event = payload.get("event") or {}
-            if event.get("type") == "app_mention":
+            event_type = event.get("type")
+            if event_type == "app_mention":
                 # The mention is the address (issue-389 R1.1).
                 inbound.handle_socket_event(event, frozen_config, addressed=True)
                 return
-            if event.get("type") != "message":
+            if event_type != "message":
+                logger.debug(
+                    "slack: ignoring an events_api event of type %r in channel %r "
+                    "(handled: app_mention, message)",
+                    event_type,
+                    event.get("channel") or event.get("channel_id") or "",
+                )
                 return
             inbound.handle_socket_event(event, frozen_config, addressed=False)
         except Exception:  # one bad message never ends the listener

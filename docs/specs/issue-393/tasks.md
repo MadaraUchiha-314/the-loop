@@ -37,7 +37,7 @@ overrides: {}
       R5.1's core is already satisfied and proven, and the error now points at the
       real cause; detach is a separable follow-up, not built here. _Req:_ R5.1–R5.4
       (detach as R5.1's *spirit* deferred) · _Test:_ T1 rows.
-- [ ] **A5 — listener & refusal observability (B3 part).** Socket listener logs every
+- [x] **A5 — listener & refusal observability (B3 part).** Socket listener logs every
       ignored envelope (type, channel, reason) at debug; `control.rejected` posts a
       marked reply with reason + remedy at the attempt site. _Req:_ R2.4, R2.5 ·
       _Test:_ T2 two Scenarios.
