@@ -1,3 +1,9 @@
+## v19.7.0 (2026-09-20)
+
+### Feat
+
+- implement fixes and feature updates for better slack integration (#394)
+
 ## v19.6.1 (2026-09-19)
 
 ### Fix
