@@ -56,7 +56,7 @@ overrides: {}
 - [x] **B2 — `ChannelState` delivery memory.** `last_delivered`, `progress_ts{phase}`,
       `gate_ts{node}`, `phase_selection_ts`; absent keys ⇒ classic; corrupt file ⇒
       classic + one warn. _Req:_ R6 NFR, error handling · _Test:_ T10 degradation row.
-- [ ] **B3 — `room_policy.py`.** Pure `decide(event, state)`: dedupe, gate-collapse,
+- [x] **B3 — `room_policy.py`.** Pure `decide(event, state)`: dedupe, gate-collapse,
       transition-collapse, progress-edit, ack-thread, session-wins, operator-docs;
       every drop/edit logs its rule. _Deps:_ B2. _Req:_ R6, R10, R11.3, R12.3 ·
       _Test:_ T1 one test per rule row.
