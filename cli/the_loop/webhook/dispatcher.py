@@ -2069,9 +2069,13 @@ class Dispatcher:
         the work item's control state would make an item look started because
         somebody said where it would be discussed.
 
-        Nothing here re-opens a thread. The declaration is a fact; the channel acts
-        on it when it next posts, which is what makes the order of "declare" and
-        "start" immaterial (R1.8).
+        The declaration is a fact; the channel acts on it when it next posts,
+        which is what makes the order of "declare" and "start" immaterial (R1.8).
+        Since issue-397 (O1) a *new* declaration also opens the work item's
+        conversation right away through the injected opener — the same
+        idempotent open the spawn path makes — so the room hears that it is now
+        the conversation the moment a person declares it, not only when the
+        item starts. Best-effort: nothing about the declaration depends on it.
         """
         command = control.command or ""
         target = self._target_work_item(routed)
@@ -2110,6 +2114,8 @@ class Dispatcher:
                         listen=listen,
                     )
                     effect = "declared" if changed else "already-declared"
+                    if changed:
+                        self._confirm_room(target.ref)
                 else:
                     changed = self.channel_store.remove(target, channel)
                     replaced = None
@@ -2156,6 +2162,26 @@ class Dispatcher:
         # The comment WAS the instruction — executed here, never forwarded — so the
         # delivery it arrived on is finished with (issue-270).
         self._settle(routed, SETTLED_CONTROL_EXECUTED)
+
+    def _confirm_room(self, work_item: str) -> None:
+        """Open ``work_item``'s conversation now that a room was declared for it
+        (issue-397 O1), so the room gets its "every update about … is posted
+        here" message at the declaration rather than at the first update.
+
+        The opener is the spawn path's (issue-317): idempotent by the channel's
+        contract, so a conversation already in that room posts nothing, and one
+        bound elsewhere moves the way the next event would have moved it. None
+        (tests, embedders that opted out) confirms nothing, and a failure is the
+        bus's own result: the declaration stands either way.
+        """
+        if self.opener is None:
+            return
+        try:
+            self.opener(work_item)
+        except Exception:  # noqa: BLE001 — a confirmation never undoes a declaration
+            logger.exception(
+                "could not confirm %s's room after declaring it", work_item
+            )
 
     def _resolve_channel(self, ref: str):
         """``(ChannelRef, name)`` for ``ref`` — its id, plus the name if given.

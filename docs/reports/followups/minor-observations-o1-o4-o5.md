@@ -1,6 +1,8 @@
 # Minor Slack polish: room-declaration confirmation, ephemeral help, connector signature
 
 **Kind:** polish · **Source:** e2e Slack test 2026-09-19 (O1, O4, O5) · **Not fixed in issue-393**
+· **Filed:** [issue-397](https://github.com/MadaraUchiha-314/the-loop/issues/397), spec
+[`docs/specs/issue-397/`](../../specs/issue-397/)
 
 Three small observations from the e2e test, grouped because each is a few lines of
 work. Split into separate issues if any is picked up on its own.

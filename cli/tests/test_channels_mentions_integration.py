@@ -408,6 +408,60 @@ def test_help_answers_ephemerally_and_records_nothing(tmp_path):
     assert sink.recorded == [] and sink.delivered == []
 
 
+def test_help_public_answers_as_a_reply_everyone_can_see(tmp_path):
+    """
+    Scenario: help public answers in the open and records nothing
+      When a member mentions "help public" in a thread
+      Then the grammar is posted as an ordinary reply in that thread — not an
+           ephemeral — so an integration reading the thread on their behalf sees it
+      And nothing is recorded or delivered
+
+    Requirement: issue-397 O4 (the ephemeral `help` is invisible to a connector).
+    """
+    config = config_for(tmp_path)
+    declare(config)
+    sink, client = Sink(), Client()
+    outcome = send(
+        config,
+        sink,
+        client,
+        addressed=True,
+        text=f"<@{BOT}> help public",
+        thread="1800.1",
+    )
+    assert outcome["outcome"] == "answered" and outcome["answered"]
+    assert outcome["public"] is True
+    assert client.ephemeral == []
+    (post,) = client.posted
+    assert post["channel"] == ROOM and post["thread_ts"] == "1800.1"
+    assert "record-context" in post["text"] and "help public" in post["text"]
+    assert sink.recorded == [] and sink.delivered == []
+
+
+def test_a_connectors_signature_line_does_not_change_help(tmp_path):
+    """
+    Scenario: a message signed on a second line still reads as plain help
+      When a connector posts "help" and appends "*Sent using* @Claude" on a new line
+      Then the answer is the ephemeral `help`, and the signature is not read as a word
+
+    Requirement: issue-397 O5 (recorded; no action while the parser reads the
+    first line only).
+    """
+    config = config_for(tmp_path)
+    declare(config)
+    sink, client = Sink(), Client()
+    outcome = send(
+        config,
+        sink,
+        client,
+        addressed=True,
+        text=f"<@{BOT}> help\n*Sent using* @Claude",
+    )
+    assert outcome["outcome"] == "answered" and "public" not in outcome
+    assert client.ephemeral and client.posted == []
+    assert sink.recorded == [] and sink.delivered == []
+
+
 # -- R4: record-context ------------------------------------------------------------------
 
 

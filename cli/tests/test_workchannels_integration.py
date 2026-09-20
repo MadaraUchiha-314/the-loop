@@ -354,3 +354,60 @@ def test_a_collaborator_cannot_switch_a_room(tmp_path, monkeypatch):
 
     assert declarations(dispatcher) == []
     assert tmux.delivers == []
+
+
+def test_a_new_declaration_confirms_the_room_through_the_opener(tmp_path, monkeypatch):
+    """
+    Feature: the room hears about its declaration (issue-397 O1)
+      Scenario: an authorized user declares a room from the ticket
+        Given the dispatcher was handed a conversation opener
+        When octocat comments `the-loop add-channel slack@C0TMP375`
+        Then the opener is called once with the work item — the same idempotent
+             open the spawn path makes — so the room gets its "every update …
+             is posted here" message now, not at the item's first update
+        And declaring the same room again opens nothing (already declared)
+        And undeclaring it opens nothing
+
+    Requirement: docs/specs/issue-397/requirements.md R1
+    """
+    tmux = FakeTmux()
+    opened = []
+    dispatcher, runner = make_control_dispatcher(tmp_path, tmux, monkeypatch)
+    dispatcher.opener = opened.append
+
+    dispatcher.handle(routed_command(f"the-loop add-channel {ROOM}"))
+    assert wait_until(lambda: len(runner.commands) == 1)
+    assert opened == [REF]
+
+    dispatcher.handle(routed_command(f"the-loop add-channel {ROOM}", delivery="k-2"))
+    assert wait_until(lambda: len(runner.commands) == 2)
+    assert opened == [REF]
+
+    dispatcher.handle(routed_command(f"the-loop remove-channel {ROOM}", delivery="k-3"))
+    assert wait_until(lambda: len(runner.commands) == 3)
+    dispatcher.stop()
+    assert opened == [REF]
+    assert declarations(dispatcher) == []
+
+
+def test_a_failing_confirmation_never_undoes_the_declaration(tmp_path, monkeypatch):
+    """
+    Scenario: the room cannot be confirmed
+      Given the opener raises (a channel bug, a workspace that is down)
+      When octocat declares a room
+      Then the declaration is recorded and acknowledged exactly as before
+
+    Requirement: docs/specs/issue-397/requirements.md R1.3
+    """
+    tmux = FakeTmux()
+
+    def broken(_ref):
+        raise RuntimeError("workspace down")
+
+    dispatcher, runner = make_control_dispatcher(tmp_path, tmux, monkeypatch)
+    dispatcher.opener = broken
+    dispatcher.handle(routed_command(f"the-loop add-channel {ROOM}"))
+    assert wait_until(lambda: len(runner.commands) == 1)
+    dispatcher.stop()
+    assert declarations(dispatcher) == [ROOM]
+    assert contents(runner) == ["content=hooray"]

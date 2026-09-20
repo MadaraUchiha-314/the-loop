@@ -153,6 +153,8 @@ def manage_channels(
 
     if comment and applied:
         _announce(work_item, verb, actor, applied, messages, config, listen)
+    if verb == ADD_CHANNEL and applied:
+        _confirm_room(work_item, config, messages)
 
     return {
         "verb": verb,
@@ -197,6 +199,45 @@ def _line(
             "nothing changed"
         )
     return f"{channel.ref} is not declared on {work_item.ref}; nothing changed"
+
+
+def _confirm_room(
+    work_item: WorkItemRef, cli_conf: Optional[dict], messages: List[Dict[str, str]]
+) -> None:
+    """Open the work item's conversation in the room just declared (issue-397 O1),
+    so the room hears that it is now the conversation at the declaration rather
+    than at the item's first update. Best-effort, exactly as the dispatcher's
+    :meth:`_confirm_room`: a config with no ``channels`` section opens nothing,
+    the bus's open is idempotent, and a failure is reported, never raised — the
+    declaration stands either way.
+    """
+    if not cli_conf or not cli_conf.get("channels"):
+        return
+    from ..channels.bus import open_conversation
+
+    try:
+        results = open_conversation(work_item.ref, cli_conf)
+    except Exception as exc:  # noqa: BLE001 — a confirmation never undoes a declaration
+        logger.warning("could not confirm %s's room: %s", work_item.ref, exc)
+        return
+    for result in results:
+        if result.ok:
+            messages.append(
+                {
+                    "stream": "out",
+                    "text": f"confirmed the room on {result.channel}: {work_item.ref}'s "
+                    "conversation is open there",
+                }
+            )
+        else:
+            messages.append(
+                {
+                    "stream": "err",
+                    "text": f"could not confirm the room on {result.channel}: "
+                    f"{result.error} (the declaration stands; the room hears "
+                    "about it at the next update)",
+                }
+            )
 
 
 def _announce(

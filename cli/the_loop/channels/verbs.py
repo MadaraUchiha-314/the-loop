@@ -24,6 +24,7 @@ from ..control import COLLABORATOR_COMMANDS, EXECUTE, ControlConfig
 
 __all__ = [
     "KINDS",
+    "PUBLIC_HELP",
     "SKIP",
     "VERBS",
     "Verb",
@@ -32,6 +33,7 @@ __all__ = [
     "help_text",
     "parse_verb",
     "strip_mention",
+    "wants_public_help",
 ]
 
 #: The-loop's own verbs, matched as the whole first token, case-insensitively.
@@ -168,6 +170,25 @@ def compose_keyword(text: str, control: ControlConfig) -> str:
     return f"{keyword} {rest}".strip()
 
 
+#: The one word after `help` that asks for the answer as an ordinary reply
+#: rather than an ephemeral (issue-397 O4). Read from the FIRST line of the rest
+#: only: a connector that signs its messages on a second line ("*Sent using*
+#: @Claude", O5) never reaches it.
+PUBLIC_HELP = "public"
+
+
+def wants_public_help(verb: Verb) -> bool:
+    """Whether ``verb`` is `help public` — the grammar taught as a reply everyone
+    in the thread (and any integration reading it) can see, instead of the
+    ephemeral only the member sees (issue-397 O4). Only the first token of the
+    first line after `help` is read."""
+    if verb.name != "help":
+        return False
+    first_line = (verb.rest or "").splitlines()[:1]
+    tokens = first_line[0].split() if first_line else []
+    return bool(tokens) and tokens[0].lower() == PUBLIC_HELP
+
+
 def help_text(config) -> str:
     """The grammar, taught (R3.2): every verb, the keyword rule, the fallthrough,
     and which of the two act grants this channel holds. ``config`` is the parsed
@@ -188,7 +209,8 @@ def help_text(config) -> str:
         "(authorized users only)\n"
         "• `execute without 1, 3` or `skip <phase>` — execute with those phases "
         "of the checklist unticked (authorized users only)\n"
-        "• `help` — this text\n"
+        "• `help` — this text, shown only to you; `help public` — the same as "
+        "a reply everyone here can see\n"
         "• anything else — a reply, delivered to the session as input\n"
         f"What this channel may do here:\n{grants}"
     )

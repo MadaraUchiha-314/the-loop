@@ -74,6 +74,7 @@ from .verbs import (
     help_text,
     parse_verb,
     strip_mention,
+    wants_public_help,
 )
 
 logger = logging.getLogger("the-loop.channels")
@@ -494,7 +495,17 @@ def process_reply(
         return _drop(reply, "no-ticket", actor=reply.author, kind=event_type)
     if event_type == "help":
         # Taught, not recorded (R3.2): the grammar and this channel's grants,
-        # only to the member who asked.
+        # only to the member who asked — or, on `help public` (issue-397 O4),
+        # as an ordinary reply where they asked, so an integration acting on a
+        # person's behalf (which never sees an ephemeral) can read it too.
+        if verb is not None and wants_public_help(verb):
+            answered = bot.say(reply.thread, help_text(config), reply.channel_id)
+            return {
+                "outcome": "answered",
+                "event": "help",
+                "answered": answered,
+                "public": True,
+            }
         answered = _tell(bot, reply, help_text(config))
         return {"outcome": "answered", "event": "help", "answered": answered}
     if event_type not in config.publish:
