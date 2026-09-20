@@ -1,3 +1,9 @@
+## v19.8.3 (2026-09-20)
+
+### Fix
+
+- **slack**: resolve the 2026-09-20 e2e Slack findings (N1-N3, O7, O9) (#402)
+
 ## v19.8.2 (2026-09-20)
 
 ### Fix
