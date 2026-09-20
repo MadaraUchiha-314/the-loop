@@ -761,7 +761,7 @@ def gallery(options: list[Option]) -> str:
         )
         meaning = "".join(f"<li>{m}</li>" for m in opt.meaning)
         cards.append(
-            f'<section class="option" id="{opt.slug}">\n'
+            f'<section class="option" id="{opt.slug}-card">\n'
             f'<header><span class="n">option {i} · <code>{opt.slug}.svg</code></span><h2>{opt.name}</h2><span class="c">{opt.character}</span></header>\n'
             f'<p class="concept">{opt.concept}</p>\n'
             f'<div class="boards">\n'
@@ -807,10 +807,57 @@ def render() -> dict[str, str]:
     return files
 
 
-FORBIDDEN = ("<script", "<foreignObject", "<image", "<iframe", "@import", "src=")
-EXTERNAL_REF = re.compile(
-    r'href="(?!#)|url\((?!#)'
-)  # a fragment is the file's own <use> or <mask>
+SVG_NS = "{http://www.w3.org/2000/svg}"
+# What a generated SVG may contain — parsed and compared, never grepped. Anything else
+# (a script, an image, an event handler, an animation, a link) fails the check.
+SVG_ELEMENTS = {"svg", "title", "desc", "style", "path", "mask", "rect"}
+SVG_ATTRIBUTES = {
+    "viewBox",
+    "color",
+    "role",
+    "aria-labelledby",
+    "id",
+    "d",
+    "fill",
+    "opacity",
+    "mask",
+    "maskUnits",
+    "x",
+    "y",
+    "width",
+    "height",
+}
+# The gallery is HTML, so it is scanned: the same absences, and only fragment references.
+FORBIDDEN = (
+    "<script",
+    "<foreignObject",
+    "<image",
+    "<iframe",
+    "@import",
+    "src=",
+    "javascript:",
+)
+EXTERNAL_REF = re.compile(r"""(?i)(href|url)\s*[=(]\s*(?!["']?#)""")
+
+
+def svg_problems(name: str, root: ET.Element) -> list[str]:
+    """Everything a standalone SVG may not carry, from its parsed tree."""
+    out: list[str] = []
+    for el in root.iter():
+        tag = el.tag.removeprefix(SVG_NS)
+        if tag not in SVG_ELEMENTS:
+            out.append(f"{name}: element <{tag}> is not in the allowlist")
+        for attr, value in el.attrib.items():
+            if attr not in SVG_ATTRIBUTES:
+                out.append(
+                    f"{name}: attribute {attr!r} on <{tag}> is not in the allowlist"
+                )
+            elif attr == "mask" and not value.startswith("url(#"):
+                out.append(f"{name}: mask reference {value!r} is not a fragment")
+    for style in root.iter(f"{SVG_NS}style"):
+        if EXTERNAL_REF.search(style.text or "") or "@import" in (style.text or ""):
+            out.append(f"{name}: the stylesheet references something outside the file")
+    return out
 
 
 def check(files: dict[str, str]) -> list[str]:
@@ -830,16 +877,20 @@ def check(files: dict[str, str]) -> list[str]:
             except ET.ParseError as e:
                 problems.append(f"{name}: not well-formed XML ({e})")
                 continue
-            ns = "{http://www.w3.org/2000/svg}"
-            if root.find(f"{ns}title") is None or root.find(f"{ns}desc") is None:
+            if (
+                root.find(f"{SVG_NS}title") is None
+                or root.find(f"{SVG_NS}desc") is None
+            ):
                 problems.append(f"{name}: missing <title> or <desc>")
             if len(content.encode()) > 64_000:
                 problems.append(f"{name}: over 64 kB")
-        for token in FORBIDDEN:
-            if token in content:
-                problems.append(f"{name}: contains {token!r}")
-        if EXTERNAL_REF.search(content):
-            problems.append(f"{name}: has an href or url() that is not a fragment")
+            problems += svg_problems(name, root)
+        else:
+            for token in FORBIDDEN:
+                if token.lower() in content.lower():
+                    problems.append(f"{name}: contains {token!r}")
+            if EXTERNAL_REF.search(content):
+                problems.append(f"{name}: has an href or url() that is not a fragment")
     if render() != files:
         problems.append("generate.py is not deterministic")
     return problems

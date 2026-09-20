@@ -25,7 +25,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const out = resolve(process.argv[2] ?? join(here, "screenshots"));
 mkdirSync(out, { recursive: true });
 
-const launch = { args: process.env.CHROMIUM_NO_SANDBOX ? ["--no-sandbox"] : [] };
+const launch = { args: process.env.CHROMIUM_NO_SANDBOX === "1" ? ["--no-sandbox"] : [] };
 if (process.env.CHROMIUM_PATH) launch.executablePath = process.env.CHROMIUM_PATH;
 const browser = await chromium.launch(launch);
 

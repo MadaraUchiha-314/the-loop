@@ -92,6 +92,38 @@ under an emulated dark scheme and show the light ink, so each standalone file's 
 `prefers-color-scheme` rule is what is proved; the knot's mask-carved weave renders on
 both grounds. Files: [`../design/screenshots/`](../design/screenshots/).
 
+## T8 — the abuse case, probed
+
+The checker validates each standalone SVG from its **parsed tree against an allowlist**
+(elements `svg, title, desc, style, path, mask, rect`; a fixed attribute set; a `mask`
+must reference a fragment; a stylesheet may not `@import` or reference anything
+outside the file) and scans the HTML gallery case-insensitively for the same absences
+with a fragment-only rule for `href`/`url`. A planted script, handler, image and import
+each fail; fragments pass:
+
+```
+$ python3 - <<'PY'
+import sys; sys.path.insert(0, "docs/specs/issue-398/design")
+import generate as g, xml.etree.ElementTree as ET
+bad = g.render()["option-1-loop.svg"].replace(
+    "</svg>",
+    '<script>alert(1)</script><path d="M0 0" fill="url(http://x/y)" onclick="x()"/>'
+    '<image href="http://x/y.png"/><style>@import url(http://x/a.css)</style></svg>')
+print("\n".join(g.svg_problems("probe.svg", ET.fromstring(bad))))
+for html in ("<a HREF='http://x'>", '<use href="#ok"/>', "url(#mask)", "url( http://x )"):
+    print(f"{html!r:28} -> {'flagged' if g.EXTERNAL_REF.search(html) else 'ok'}")
+PY
+probe.svg: element <script> is not in the allowlist
+probe.svg: attribute 'onclick' on <path> is not in the allowlist
+probe.svg: element <image> is not in the allowlist
+probe.svg: attribute 'href' on <image> is not in the allowlist
+probe.svg: the stylesheet references something outside the file
+"<a HREF='http://x'>"        -> flagged
+'<use href="#ok"/>'          -> ok
+'url(#mask)'                 -> ok
+'url( http://x )'            -> flagged
+```
+
 ## T9 — titles and contrast
 
 `<title>`/`<desc>` presence is T1's assertion. Contrast (WCAG relative luminance), from

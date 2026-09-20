@@ -126,8 +126,9 @@ drawn, and its shapes.
 
 **Output and checker:** `svg_file(opt)` (standalone, `currentColor` ink, one dark-scheme
 rule, `<title>`/`<desc>` with ids unique per option); `svg_symbol`/`svg_use` for the
-gallery's one-definition-many-instances; `gallery(options)`; `check(files)` — see *Error
-handling*.
+gallery's one-definition-many-instances (the sections carry `-card` ids so no id is
+shared); `gallery(options)`; `check(files)` with `svg_problems()` — the parsed-tree
+allowlist the security review asked for — see *Error handling*.
 
 ## UI/UX design
 
@@ -187,7 +188,8 @@ All on a 256×256 viewBox.
 |---|---|
 | a generated file is missing or differs from a fresh render | `FAIL <file>: differs … (re-run it)`, exit 1 |
 | an SVG is not well-formed XML, or lacks `<title>` or `<desc>` | `FAIL`, exit 1 |
-| any file contains `<script`, `<foreignObject`, `<image`, `<iframe`, `@import`, `src=`, or an `href`/`url(` that is not a `#fragment` | `FAIL`, exit 1 |
+| an SVG's parsed tree holds an element or attribute outside the allowlist (`svg, title, desc, style, path, mask, rect`; `viewBox, color, role, aria-labelledby, id, d, fill, opacity, mask, maskUnits, x, y, width, height`), a `mask` that is not a fragment, or a stylesheet that imports or references anything | `FAIL`, exit 1 |
+| the gallery contains `<script`, `<foreignObject`, `<image`, `<iframe`, `@import`, `src=`, `javascript:` (case-insensitively), or an `href`/`url(` that is not a `#fragment` | `FAIL`, exit 1 |
 | an SVG exceeds 64 000 bytes | `FAIL`, exit 1 |
 | two renders in one process differ (non-determinism) | `FAIL generate.py is not deterministic`, exit 1 |
 
@@ -201,7 +203,9 @@ mechanism is the checker above, which pins the requirements' abuse case — an S
 embedded by a consumer executes and loads nothing — as a repeatable command rather
 than a reading of the files. Round 2 adds one construct, the knot's `<mask>` referenced
 by `mask="url(#…)"`: an internal fragment reference, which is what the checker's
-external-reference rule admits and everything else it refuses. `screenshots.mjs` renders
+allowlist admits (a `mask` attribute must start `url(#`) and everything else it refuses.
+The checker reads each SVG's parsed tree, not its text, so a construct it does not know
+fails whatever its spelling. `screenshots.mjs` renders
 local files only (`file://` and `data:` URIs built from them) and is run by a person,
 never by CI or the daemon; Chromium's sandbox is disabled only when
 `CHROMIUM_NO_SANDBOX=1` is set. No secret, hostname or personal datum can appear in the

@@ -21,14 +21,14 @@ overrides: {}
 
 | # | Type | Applies? | Scope / what it proves | Where it runs |
 |---|------|----------|------------------------|---------------|
-| T1 | Unit | yes — as the generator's own checker | `generate.py --check`: every SVG and the gallery on disk are byte-identical to a fresh render (R3.3), well-formed XML with `<title>` and `<desc>` (R3.4), self-contained — no script, foreignObject, image, iframe, `@import`, `src=`, non-fragment `href` or `url(` (R3.1, abuse case 1) — under 64 000 bytes (NFR, raised from 40 000 for round 2), and the render is deterministic within one process (R3.3) | `python3 docs/specs/issue-398/design/generate.py --check` |
+| T1 | Unit | yes — as the generator's own checker | `generate.py --check`: every SVG and the gallery on disk are byte-identical to a fresh render (R3.3), well-formed XML with `<title>` and `<desc>` (R3.4), self-contained — for the HTML gallery: no script, foreignObject, image, iframe, `@import`, `src=`, `javascript:`, non-fragment `href` or `url(`, case-insensitively (R3.1, abuse case 1) — from the parsed tree: only allowlisted elements and attributes, fragment-only `mask`/`href`/`url` references, no `@import` — under 64 000 bytes (NFR, raised from 40 000 for round 2), and the render is deterministic within one process (R3.3) | `python3 docs/specs/issue-398/design/generate.py --check` |
 | T2 | Integration (scenario) | n/a — no components interact; there is no runtime | | |
 | T3 | Contract (OpenAPI) | n/a — no API | | |
 | T4 | End-to-end | n/a — nothing is deployed or embedded yet; embedding is the adoption follow-up | | |
 | T5 | UI / visual | yes | the gallery renders in light and dark schemes; each standalone SVG, embedded as an `<img>` (the README/docs-site embedding), renders on paper under the light scheme and on slate under the dark scheme, so the file's own `prefers-color-scheme` rule is proved (R3.4, R2.2); the gallery shows each mark at 96/48/24/16 px and in the lockup (R3.2, R4.1) | `node docs/specs/issue-398/design/screenshots.mjs docs/specs/issue-398/design/screenshots` |
 | T6 | Snapshot | yes — the byte-for-byte case of T1 | a regeneration leaves the working tree clean: the committed SVGs and gallery are the generator's exact output, so a hand edit or a drifting parameter shows as a diff | `python3 docs/specs/issue-398/design/generate.py && git diff --exit-code -- docs/specs/issue-398/design/` |
 | T7 | Performance / load | n/a — static files; size is a T1 assertion | | |
-| T8 | Security / abuse case | yes — abuse case 1 is T1's self-containment assertion | an SVG embedded by a consumer executes and loads nothing | with T1 |
+| T8 | Security / abuse case | yes | an SVG embedded by a consumer executes and loads nothing: T1's allowlist check (parsed elements and attributes, fragment-only references), plus a negative probe that plants a `<script>`, an `onclick`, an external `<image>` and an `@import` and shows each refused | with T1; the probe in `evidence/automated-tests.md` § T8 |
 | T9 | Accessibility | yes | every SVG has `<title>`/`<desc>` and `role="img"` (T1 checks the first two); the contrast of the ink on each ground is computed and recorded (9.9:1 on paper, 12.0:1 on slate) | with T1; contrast by the snippet recorded in `evidence/automated-tests.md` |
 | T10 | Migration / upgrade | n/a — nothing existing changes | | |
 | T11 | Manual exploratory | yes — the designer's review of the rendering | the owner looks at the gallery / screenshots and picks, or asks for changes, on the ticket (R4.3) | the ticket; outside this PR's verification |
@@ -38,7 +38,8 @@ overrides: {}
 
 | Row | Requirement(s) | Scenario / case |
 |-----|----------------|-----------------|
-| T1 | R3.1, R3.3, R3.4, NFR size, abuse case 1 | the six generated files match, parse, are titled, carry none of the forbidden tokens, are under budget; a second render in the same process is identical |
+| T1 | R3.1, R3.3, R3.4, NFR size, abuse case 1 | the six generated files match, parse, are titled, contain only allowlisted elements and attributes with fragment-only references, are under budget; a second render in the same process is identical |
+| T8 | abuse case 1 | a planted `<script>`, `onclick`, `<image href="http…">` and `@import` each fail the allowlist; `href="#…"` and `url(#…)` pass |
 | T1 (red first) | R3.3 | `--check` against an empty folder fails with one `missing` per file; after `generate.py` it passes — the red→green of the checker (recorded in the first commit) |
 | T5 | R2.1, R2.2, R3.2, R3.4, R4.1, R4.2 | `gallery-light.png`, `gallery-dark.png`; `option-N-*-paper.png` (light scheme) and `option-N-*-slate.png` (dark scheme) for each of the five |
 | T6 | R3.3, R4.3 | regenerate → no diff |
@@ -73,6 +74,7 @@ overrides: {}
 - [x] T1 — `python3 docs/specs/issue-398/design/generate.py --check`
 - [x] T5 — `node docs/specs/issue-398/design/screenshots.mjs docs/specs/issue-398/design/screenshots`
 - [x] T6 — `python3 docs/specs/issue-398/design/generate.py && git diff --exit-code -- docs/specs/issue-398/design/`
+- [x] T8 — the negative probe against `svg_problems` / `EXTERNAL_REF`
 - [x] T9 — title/desc (in T1) and the contrast snippet
 - [x] T12 — markdownlint on the spec; ruff format and check on the generator
 - [ ] T11 — the owner's review of the rendering, on the ticket (not this PR's to tick)
@@ -88,6 +90,7 @@ the owner's review of round 1; raw output in
 | T1 | `python3 docs/specs/issue-398/design/generate.py --check` | pass — `ok — 6 files match, well-formed, self-contained, titled` (round 1: red first, six `missing` before the first render; round 2: red first on the 40 kB budget, five `over 40 KB`, then green at the 64 kB budget the review-driven brush needs) | `evidence/automated-tests.md` |
 | T5 | `node docs/specs/issue-398/design/screenshots.mjs docs/specs/issue-398/design/screenshots` | pass — 12 round-2 captures; the dark-scheme `<img>` captures show the light ink, so the standalone files' own media rule holds; the knot's mask weave renders on both grounds | `design/screenshots/` |
 | T6 | regenerate, then `git diff --exit-code -- docs/specs/issue-398/design/` | pass — clean tree (round 2 files: 39–51 kB) | `evidence/automated-tests.md` |
+| T8 | the probe snippet in `evidence/automated-tests.md` § T8 | pass — five refusals for the planted constructs, two passes for fragments | `evidence/automated-tests.md` |
 | T9 | T1's title/desc assertion; contrast snippet | pass — ink 9.9:1 on paper, 12.0:1 on slate; accents 2.0–2.8:1 / 4.8–6.8:1 (decorative) | `evidence/automated-tests.md` |
 | T12 | markdownlint; ruff format --check; ruff check | pass | `evidence/automated-tests.md` |
 
