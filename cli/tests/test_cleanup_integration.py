@@ -297,6 +297,42 @@ def test_a_closure_by_an_authorized_user_cleans_up(harness, target):
     assert harness.reasons("session.cleaned")
 
 
+def test_a_closures_cleanup_keeps_the_tmux_session_when_retention_is_set(
+    harness, target
+):
+    """
+    Scenario: keepSessionOnClose survives the automatic cleanup (B11)
+      Given routing.tmux.keepSessionOnClose is true (the default)
+      When the issue is closed by an authorized user
+      Then the checkout and the session record still go
+      But the tmux pane is RETAINED — the closure does not undo the retention the
+        graph-complete path just applied, so the transcript stays readable
+      And it is the AUTOMATIC path only: the explicit `the-loop cleanup` verb
+        still kills the pane (test_cleanup_ignores_the_retention_settings)
+
+    Requirement: docs/specs/issue-393 B11
+    """
+    assert harness.dispatcher.config.tmux.keep_session_on_close is True
+    checkout = prepared(harness, target)
+
+    harness.dispatcher.handle(closed(sender="octocat"))
+
+    # the record and the checkout are released…
+    assert not checkout.exists()
+    assert harness.registry.find_by_work_item(REF, include_closed=True) is None
+    # …but the tmux panes are kept, not killed — the harness is ended (retained
+    # session is a record), and a session.retained event is emitted.
+    assert harness.tmux.kills == []
+    assert set(harness.tmux.terminated) == {
+        "loop-github-octo-repo-15",
+        "loop-github-octo-repo-16",
+    }
+    assert harness.reasons("session.retained")
+    # the cleanup outcome does not claim it removed tmux
+    cleaned = harness.reasons("session.cleaned")
+    assert cleaned and TMUX not in cleaned[0]["removed"]
+
+
 def test_abuse_a_closure_naming_no_actor_defers_the_cleanup(harness, target):
     """
     Scenario: the ticket's own concern — a close action with no identity

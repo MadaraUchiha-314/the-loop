@@ -347,6 +347,26 @@ marker every dashboard reads — is never silently absent.
    > differed (the API `set-labels` PUTs/replaces, `gh` `--add-label` adds), so B10 is
    > fixed by removing only the stale `loop:*` set and adding the new one.
 
+### R14 — a retained session survives the closure that follows (B11)
+
+**User story:** As an operator who set `keepSessionOnClose`, I want the tmux
+transcript to still be there after the work item closes, so that I can read *why* a
+long phase took as long as it did — which is exactly when the transcript is most
+wanted.
+
+#### Acceptance criteria (EARS)
+
+1. WHEN a work item closes AND `routing.tmux.keepSessionOnClose` is true THEN the
+   **automatic** cleanup the closure triggers SHALL retain the tmux session (ending
+   the harness, keeping the pane) rather than removing it — so it does not undo the
+   retention the graph-complete path just applied.
+2. WHEN the automatic cleanup retains the session THEN it SHALL still remove the
+   checkout and the session record, and SHALL NOT report having removed the tmux
+   session.
+3. WHEN an operator runs the **explicit** `the-loop cleanup` verb THEN it SHALL
+   remove everything including the tmux session, regardless of `keepSessionOnClose`
+   — the verb means "release all of it", and its behaviour is unchanged.
+
 ## Non-functional requirements
 
 - **Message budget.** No numeric contract (owner decision, 2026-09-19: no hard
@@ -402,12 +422,12 @@ marker every dashboard reads — is never silently absent.
 
 ## Out of scope
 
-- **B5, B7, B11** as standalone fixes — hot-reload of `read.mode`, stale
-  `graph status`, tmux retention on close — are real but separable and stay on
-  issue-393 for follow-up items. (**B2**'s essence — a refusal explains itself — is
-  delivered by R2.5, and **B10** — the phase label never removing the previous one —
-  was folded in alongside R13 since it is the same `set-phase-label` hook; see the note
-  under R13.)
+- **B5, B7** as standalone fixes — hot-reload of `read.mode`, stale `graph status` —
+  are real but separable and stay on issue-393 for follow-up items
+  (`docs/reports/followups/`). (**B2**'s essence — a refusal explains itself — is
+  delivered by R2.5; **B10** — the phase label never removing the previous one — was
+  folded in alongside R13, same `set-phase-label` hook; and **B11** — tmux removed
+  despite `keepSessionOnClose` — was folded in too, see R14 below.)
 - **O1, O4, O5, O7, O9** — observations without a requested change (room-declaration
   confirmation, ephemeral help, connector signature line, phantom prompt text, the
   merge-on-approval knob). O7 deserves its own investigation ticket.

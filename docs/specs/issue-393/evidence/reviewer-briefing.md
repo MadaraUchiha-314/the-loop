@@ -105,10 +105,18 @@ and — because they landed in hooks this PR already touches — **B2** and **B1
   `loop:<phase>` now removes any other `loop:*` label, leaving non-`loop:` labels
   alone (a surgical `remove-label`, not a PUT-replace that would wipe `bug` etc.).
   Same hook as C1's R13 change, so folded in.
+- **B11** (the tmux session was removed on close despite `keepSessionOnClose`,
+  because the automatic cleanup a closure triggers ignored the flag) — **fixed**:
+  the auto-cleanup path now retains the tmux pane when `keepSessionOnClose` is set
+  (ending the harness, keeping the record), so the closure no longer undoes the
+  retention the graph-complete path just applied. The **explicit** `the-loop
+  cleanup` verb still kills everything, as it must.
 
 The report's remaining bugs are **not** in this PR and stay open on issue-393:
-**B5** (`read.mode` hot-reload), **B7** (stale `graph status`), **B11** (tmux
-retention on close). Separable, none in a hook this PR touches.
+**B5** (`read.mode` hot-reload) and **B7** (stale `graph status`). Both need work
+outside a hook this PR touches — B5 spans the daemon reload lifecycle, B7 needs an
+investigation into which state file `graph status` resolves. Follow-up tickets are
+under `docs/reports/followups/`.
 
 ## Open questions for the reviewer
 
