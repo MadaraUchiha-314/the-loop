@@ -33,6 +33,8 @@ channels:
     verbosity: normal
     maxChars: 1500                           # and the threshold for longMessages
     longMessages: digest                     # digest | truncate — above maxChars
+    room:
+      style: agentic                         # agentic | classic — a work item's own room
     kickoff:
       repo: octocat/hello-world
       labels: ["the-loop: auto-execute"]
@@ -284,6 +286,25 @@ Slack mrkdwn (`**bold**` → `*bold*`, headings, links, task boxes, bullets) and
 comment — the-loop's own markers included — is removed: that changes how the words are
 drawn, never which words are there. The [Slack guide](/guide/slack#reading-it-on-a-phone)
 shows a checklist before and after.
+
+### `slack.room.style`
+
+- **Type:** `'agentic' | 'classic'`
+- **Default:** `agentic`
+
+How a work item's **own room** reads
+([issue-393](https://github.com/MadaraUchiha-314/the-loop/issues/393)) — a room being a
+channel a single work item was declared into (`add-channel`). This does not affect a
+shared or central channel, which keeps the header rendering.
+
+`agentic` — one message per meaningful moment, in the-loop's first-person voice with one
+state emoji and no machine header. Consecutive lifecycle events collapse into one
+transition, a human gate is announced **once** (the message carrying its buttons), a
+phase's progress edits a single message in place, and an acknowledgement threads under
+the message it answers. This is the room a person can follow on a phone.
+
+`classic` — the pre-issue-393 rendering, byte-for-byte: every event a top-level message
+with the event-type/ref header. The escape hatch, and the compatibility baseline.
 
 ### `slack.kickoff.repo`
 
