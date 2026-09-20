@@ -431,6 +431,13 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         cleaned it up, not caller error (issue-238). The field is **absent** on
         every other response. `4xx` stays reserved for a malformed request; the
         mutating graph verbs still refuse a repository that is not there.
+
+        `workItem` is a spec-directory id (`issue-7`) or a work-item ref
+        (`github:OWNER/REPO#7`), which names the same directory the daemon
+        writes. Every resolving answer carries `statePath` — the
+        `work-item-state.json` it was read from, or the path looked for — and
+        `stateFound` (issue-396), so a report that fell back to the graph's
+        start node is distinguishable from a work item that sits there.
         """
         return core_graphs.check(
             body.repo,

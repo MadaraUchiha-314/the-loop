@@ -88,7 +88,12 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         A `repo` that is not a directory on this machine comes back as
         `{"repoResolved": false, "nodes": [], "currentNode": ""}` rather than an
         error. That is "this checkout is not here", NOT "this work item has no
-        phases" — do not report progress from it; check the path instead."""
+        phases" — do not report progress from it; check the path instead.
+
+        `work_item` is an id (`issue-7`) or a ref (`github:OWNER/REPO#7`). The
+        report's `statePath`/`stateFound` say which `work-item-state.json` it
+        was read from; `stateFound: false` means the position is the graph's
+        start node by default, not a recorded one — check the path."""
         return core_graphs.check(repo, work_item, recompute=recompute)
 
     def graph_show(repo: str) -> Dict[str, Any]:

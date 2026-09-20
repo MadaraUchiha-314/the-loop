@@ -877,6 +877,20 @@ reader.
   met one.
 - Every transition, every non-`pass` hook and every edge taken SHALL be recorded in the
   structured event log (`graph.*` event types; see [observability](observability.md)).
+- **A read names the state file it read** (issue-396). Every `check` report — the CLI's
+  `graph status`/`check`, `POST /graph/check`, the `check_work_item` MCP tool — SHALL
+  carry `statePath` (the `work-item-state.json` it was read from, else the path looked
+  for) and `stateFound`, and the CLI SHALL print them as one `state:` line, found or not:
+  a report that fell back to the graph's start node is otherwise indistinguishable from a
+  work item that sits there. The position-unknown answer of issue-238 keeps its six keys
+  and names no path. Every graph verb SHALL accept the work item's **ref**
+  (`github:OWNER/REPO#n`) as well as its id, translated to the same `issue-<n>` directory
+  the daemon writes (`graphlink.spec_id_for`). WHEN `graph status` or `check` is run
+  without `--repo` from a directory that does not hold the work item, AND the session
+  registry records a session for that ref whose `cwd` is a directory, THEN the CLI SHALL
+  report on that checkout — where the daemon's runtime wrote the state — and SHALL print
+  `repo: <checkout> (from the session registry)`; a given `--repo` SHALL be used verbatim,
+  and the mutating verbs SHALL keep the working directory.
 - **A gate that evaluated nothing SHALL NOT pass** (issue-238). Since the control-plane
   API answers a `repo` that does not resolve with a position-unknown report rather than an
   error — a checkout somebody cleaned up is expected state on that machine, see
@@ -898,6 +912,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-396 | `graph status` reads the state file the runtime wrote, and says which (2026-09-20, B7/O6 of the e2e run): every graph verb accepts a work-item **ref** and translates it to the daemon's `issue-<n>` directory (`core.graphs.work_item_id`, on `graphlink.spec_id_for`); the check report carries `statePath`/`stateFound` and the CLI prints a `state:` line, found or not; `graph status`/`check` with no `--repo` and a ref the working directory does not hold resolve the session's checkout through the session registry and say so (`repo: … (from the session registry)`). Before, `graph status github:…#1` addressed `docs/specs/github:…#1/` — never there — and reported the graph's start node in silence | [spec](../specs/issue-396/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/396) |
 | issue-378 | The runtime publishes `phase.started` / `phase.completed` on the channel bus at every transition of every graph (2026-09-18), following the label rather than the node: `WorkItemState.phase` records the phase the walk is in, an approval node inherits its author node's phase, a force publishes nothing, `cleanup` starts its phase and completes none. Nothing about the graphs' YAML, the verdicts or the pointer changed | [spec](../specs/issue-378/), [decision-130](../decisions/decision-130.md), [channels](channels.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/378) |
 | issue-370 (owner ruling) | A pull request armed as its **own** work item is recorded in its `pullRequests[]` too (2026-09-16), marked `self: true` and carrying no `stateDir` — the work item's own directory is the loop, so the derived inner-loop path would nest it inside itself. `the-loop review` and `the-loop contribute` are armed on a pull request, and the entity the-loop manages is a work item whatever represents it, so both relations a pull request can have to a work item live in one list and the marker says which | [spec](../specs/issue-370/), [PR #372](https://github.com/MadaraUchiha-314/the-loop/pull/372), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/370) |
 | issue-370 | `pullRequests[]` got one writer (2026-09-16): `the-loop sessions link-pr`, run by the session that opened the pull request. The first event that routed for a pull request used to write there too, as `linkedBy: "event"` — so an `issue-<n>` branch in a fork, or a `fixes #<n>` in a body, added a row to a committed file for a pull request nobody on the work item had heard of. A row from before the change keeps its `"event"` provenance, read and never rewritten. The `linked-pulls` integration op went with it: a work-item review's scope is pre-filled from what the-loop recorded, then its `pr-loops/` state, and GitHub is not asked | [spec](../specs/issue-370/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/370) |

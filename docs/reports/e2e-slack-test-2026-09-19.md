@@ -297,6 +297,9 @@ Concrete rules that fall out of this:
 - **Suggested fix:** find out which state file `graph status` resolves (the portable
   record? the daemon's `state.root`?) and make it read the same `work-item-state.json` the
   runtime writes, or print the path it read from.
+- **Filed as** [#396](https://github.com/MadaraUchiha-314/the-loop/issues/396) (with O6)
+  and fixed there: the ref is translated to the spec id, the session's checkout is
+  resolved through the session registry, and the state path is printed.
 
 ### B8 — an approval typed in a declared room is not read as a gate answer
 
@@ -433,4 +436,5 @@ Concrete rules that fall out of this:
   "at phase-selection" after the event log had already advanced the item to
   brainstorming.** Probably read from a different checkout than the session's; worth a
   look at which `work-item-state.json` the CLI resolves when run outside the work item's
-  checkout.
+  checkout. Filed with B7 as
+  [#396](https://github.com/MadaraUchiha-314/the-loop/issues/396) and fixed there.

@@ -43,6 +43,35 @@ def resolve_repo(repo: str) -> Path:
     return Path(repo).expanduser().resolve()
 
 
+def work_item_id(work_item: str) -> str:
+    """``github:octo/repo#396`` → ``issue-396``; anything else unchanged (issue-396).
+
+    The graph names a work item by its spec-directory id and the ingress by a
+    provider-qualified ref, and the daemon translates one into the other with
+    :func:`the_loop.graphlink.spec_id_for` before it writes a single byte of state.
+    Until issue-396 the CLI's verbs took the positional as an id verbatim, so
+    ``graph status github:…#1`` addressed ``docs/specs/github:…#1/`` — a
+    directory that never exists — and reported the graph's start node in silence.
+
+    Applied first in every verb here, so the API and the MCP tool accept a ref
+    too. Total and narrow: only a parsable GitHub ref is translated, through the
+    same parser and the same convention the daemon uses (``issue-<int>``), so no
+    argument can name a path shape it could not name before; a bare id, another
+    provider's ref or anything unparsable comes back exactly as it went in.
+    """
+    text = work_item.strip()
+    if ":" not in text or "#" not in text:
+        return text
+    from ..graphlink import spec_id_for
+    from ..sessions import WorkItemRef
+
+    try:
+        ref = WorkItemRef.parse(text)
+    except ValueError:
+        return text
+    return spec_id_for(ref) or text
+
+
 def _recorded_loop(path: Path, work_item: str, spec_root: str) -> str:
     """The outer-path loop this work item's state records (issue-185).
 
@@ -125,6 +154,7 @@ def check(
     rejected. The body names nothing the caller did not already send: no path, no
     error text, so the 200 tells them strictly less than the 400 did.
     """
+    work_item = work_item_id(work_item)
     if not repo_resolves(repo):
         return {
             "workItem": work_item,
@@ -152,6 +182,7 @@ def complete(
     spec_dir: str = "",
 ) -> Dict[str, Any]:
     """A completion claim for the current (or named) node — issue-148 semantics."""
+    work_item = work_item_id(work_item)
     return _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir).complete(
         work_item, ref=ref, node=node, actor=actor
     )
@@ -166,6 +197,7 @@ def advance(
     spec_dir: str = "",
 ) -> Dict[str, Any]:
     """Evaluate the current node's exit chain and take the matching edge."""
+    work_item = work_item_id(work_item)
     return (
         _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir)
         .advance(work_item, ref=ref)
@@ -186,6 +218,7 @@ def force(
 ) -> Dict[str, Any]:
     """The authorized-operator escape hatch. Requires a reason; never forges a
     verdict. Not exposed over MCP (design §Security)."""
+    work_item = work_item_id(work_item)
     runtime = _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir)
     result = graph_runtime.force(
         runtime, work_item, to_node, reason, actor=actor, ref=ref
@@ -217,6 +250,7 @@ def skip(
     graph's skip vocabulary, or naming nodes the pointer already reached, come
     back in ``rejected`` rather than taking effect.
     """
+    work_item = work_item_id(work_item)
     runtime = _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir)
     result = graph_runtime.declare_skips(
         runtime,
@@ -255,6 +289,7 @@ def repos(
     the task DAG, so it is stated once those exist rather than guessed at the
     work item's first gate. Passing nothing reads the current declaration back.
     """
+    work_item = work_item_id(work_item)
     runtime = _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir)
     if repositories is None and not clear:
         from ..graph.state import WorkItemState
