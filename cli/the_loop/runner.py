@@ -70,6 +70,18 @@ _SUBMIT_BUFFER = "the-loop-submit"
 # separator. A `\n` is a line feed, which many TUIs bind to "insert a newline".
 # A module constant, never caller data — nothing about the prompt reaches it.
 _SUBMIT_BYTES = "\r"
+# Clear whatever is on the input line BEFORE pasting an event (issue O7). A
+# leftover unsent line at the `❯` prompt — seen in the e2e run, from a source
+# outside the-loop's delivery path — would otherwise be prepended to the pasted
+# reply and submitted with it, corrupting the message the daemon actually sent.
+# `\x01\x15` is Ctrl-A (move to line start) then Ctrl-U (kill to start of line):
+# together they clear the whole line whether the leftover cursor sat at its end
+# (Ctrl-U alone suffices) or somewhere within it. Sent as an UNBRACKETED paste,
+# the same client-free path as the submit — a bracketed paste would deliver the
+# control bytes as literal text instead of acting on them. Harmless on an empty
+# line. A separate buffer so its delete never races the event load.
+_CLEAR_BYTES = "\x01\x15"
+_CLEAR_BUFFER = "the-loop-clear"
 # Shared hub session the web terminal (ttyd) drops browser clients into; the
 # loop-* sessions are one `switch-client`/`choose-tree` away from it.
 HUB_SESSION = "the-loop-hub"
@@ -820,12 +832,18 @@ class TmuxRunner:
         # second one cannot be created.
         paths: List[str] = []
         try:
+            paths.append(self._buffer_file(_CLEAR_BYTES))
             paths.append(self._buffer_file(prompt))
             paths.append(self._buffer_file(_SUBMIT_BYTES))
             for argv in (
-                ["load-buffer", "-b", _EVENT_BUFFER, paths[0]],
+                # Clear any leftover line first (issue O7) — unbracketed, so the
+                # control bytes act rather than paste as text — THEN the event
+                # (bracketed, one message) and the submit.
+                ["load-buffer", "-b", _CLEAR_BUFFER, paths[0]],
+                ["paste-buffer", "-d", "-b", _CLEAR_BUFFER, "-t", target],
+                ["load-buffer", "-b", _EVENT_BUFFER, paths[1]],
                 ["paste-buffer", "-p", "-d", "-b", _EVENT_BUFFER, "-t", target],
-                ["load-buffer", "-b", _SUBMIT_BUFFER, paths[1]],
+                ["load-buffer", "-b", _SUBMIT_BUFFER, paths[2]],
                 ["paste-buffer", "-d", "-b", _SUBMIT_BUFFER, "-t", target],
             ):
                 result = self._run(argv, timeout)

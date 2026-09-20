@@ -301,6 +301,18 @@ def _linked_pr(ctx: HookContext):
     return prs[-1] if prs else None
 
 
+def _merge_on_approval(ctx: HookContext) -> bool:
+    """Whether an approval at `human-approval` merges the PR (issue O9).
+
+    ``routing.mergeOnApproval``, default ``True`` — the pre-O9 behaviour, where
+    the session merges and closes once the gate is satisfied. Set ``false`` and
+    the-loop stops at approved and leaves the merge to a person; the session
+    reads the same knob to decide whether to run the merge, and the PR-review
+    message states which is in effect so the reviewer is not surprised."""
+    routing = (dict(ctx.config or {}).get("routing") or {}) if ctx.config else {}
+    return bool(routing.get("mergeOnApproval", True))
+
+
 @hook("notify")
 def notify(ctx: HookContext) -> HookResult:
     """Publish the node's notification event. Never wedges the graph if a
@@ -330,9 +342,20 @@ def notify(ctx: HookContext) -> HookResult:
     # reviewer on a phone had to find the PR themselves.
     pr = _linked_pr(ctx) if event == "pr-review-pending" else None
     if pr is not None:
+        # issue O9: say plainly what approving does, so a reviewer knows before
+        # the tap whether "approved" merges now or only marks it approved. The
+        # knob is `routing.mergeOnApproval` (default true, the pre-O9 behaviour):
+        # true = the-loop merges and closes on approval; false = it stops at
+        # approved and leaves the merge to a person / branch protection.
+        consequence = (
+            "Approving will merge this PR and close the work item."
+            if _merge_on_approval(ctx)
+            else "Approving marks it approved; a person merges it (branch "
+            "protection and required reviews still apply)."
+        )
         text = (
             f"👀 PR #{pr.number} is ready for review. "
-            f"Start there, then approve or request changes."
+            f"Start there, then approve or request changes. {consequence}"
         )
         if pr.url:
             url = pr.url

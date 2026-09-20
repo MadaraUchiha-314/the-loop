@@ -9,11 +9,22 @@ that PR.
 
 | File | Item(s) | Kind |
 |------|---------|------|
-| [`b5-read-mode-hot-reload.md`](b5-read-mode-hot-reload.md) | B5 | bug — filed as [#395](https://github.com/MadaraUchiha-314/the-loop/issues/395) |
-| [`b7-graph-status-stale-node.md`](b7-graph-status-stale-node.md) | B7, O6 | bug — filed as [#396](https://github.com/MadaraUchiha-314/the-loop/issues/396) |
-| [`o7-phantom-prompt-text.md`](o7-phantom-prompt-text.md) | O7 | investigation |
-| [`o9-merge-on-approval-knob.md`](o9-merge-on-approval-knob.md) | O9 | enhancement |
+| [`b5-read-mode-hot-reload.md`](b5-read-mode-hot-reload.md) | B5 | bug — filed as [#395](https://github.com/MadaraUchiha-314/the-loop/issues/395), fixed |
+| [`b7-graph-status-stale-node.md`](b7-graph-status-stale-node.md) | B7, O6 | bug — filed as [#396](https://github.com/MadaraUchiha-314/the-loop/issues/396), fixed |
+| [`o7-phantom-prompt-text.md`](o7-phantom-prompt-text.md) | O7 | investigation — **hazard fixed** (clear input line before delivery) |
+| [`o9-merge-on-approval-knob.md`](o9-merge-on-approval-knob.md) | O9 | enhancement — **fixed** (`routing.mergeOnApproval` + stated consequence) |
 | [`minor-observations-o1-o4-o5.md`](minor-observations-o1-o4-o5.md) | O1, O4, O5 | polish — filed as [#397](https://github.com/MadaraUchiha-314/the-loop/issues/397) |
+
+The 2026-09-20 re-run
+([`docs/reports/e2e-slack-test-2026-09-20.md`](../e2e-slack-test-2026-09-20.md))
+validated the issue-393 fixes live and added its own findings — **all fixed on
+branch `fix/n1-selection-grammar-refusal-reason`:**
+
+| File | Item(s) | Kind | Status |
+|------|---------|------|--------|
+| [`n1-execute-without-refused-live.md`](n1-execute-without-refused-live.md) | N1 (F1 regression) | bug | **fixed** — distinct drop reasons + refusal mirrored to the ticket |
+| [`n2-room-policy-rules-not-suppressing.md`](n2-room-policy-rules-not-suppressing.md) | N2 | bug | **fixed** — gate-collapse for progress + nodeless mirror, operator-docs by text, endgame-collapse |
+| [`n3-critic-and-summary-and-docs.md`](n3-critic-and-summary-and-docs.md) | B9 remainder, `--summary`/`--default` adoption, mention-less connectors | bug / enhancement / docs | **fixed** — timeout surfacing, skill guidance, channels doc |
 
 Each file's first `#` heading is the suggested issue title; the rest is the body.
 Quotes are drawn verbatim from the report, with the internal deployment kept in

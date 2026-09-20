@@ -462,11 +462,14 @@ class TestTmuxRunner:
         session = make_session(tmux_target="loop-github-octo-repo-15")
         result = TmuxRunner().deliver(session, "event prompt")
         assert result.ok, result.error
-        # liveness (has-session + list-panes), then the prompt buffer and its
-        # bracketed paste, then the submit buffer and its unbracketed paste.
+        # liveness (has-session + list-panes), then the clear buffer and its
+        # unbracketed paste (issue O7), then the prompt buffer and its bracketed
+        # paste, then the submit buffer and its unbracketed paste.
         assert fake.verbs == [
             "has-session",
             "list-panes",
+            "load-buffer",
+            "paste-buffer",
             "load-buffer",
             "paste-buffer",
             "load-buffer",
@@ -476,22 +479,63 @@ class TestTmuxRunner:
         # runs a tmux without the guard, so only the argv itself can fail here
         # when a client-resolved command comes back.
         assert "send-keys" not in fake.verbs
-        prompt_paste, submit_paste = fake.calls[3], fake.calls[5]
+        clear_paste, prompt_paste, submit_paste = (
+            fake.calls[3],
+            fake.calls[5],
+            fake.calls[7],
+        )
+        assert "-p" not in clear_paste, "the clear is control bytes, never bracketed"
         assert "-p" in prompt_paste, "the prompt is one message, so it stays bracketed"
         assert "-p" not in submit_paste, "a bracketed submit would be literal text"
-        for paste in (prompt_paste, submit_paste):
-            assert "-d" in paste, "both buffers are deleted after use"
+        for paste in (clear_paste, prompt_paste, submit_paste):
+            assert "-d" in paste, "every buffer is deleted after use"
             assert paste[paste.index("-t") + 1] == "loop-github-octo-repo-15"
-        # Two distinct buffers, so nothing depends on the order of a delete and
+        # Three distinct buffers, so nothing depends on the order of a delete and
         # the next load.
-        assert (
-            prompt_paste[prompt_paste.index("-b") + 1]
-            != submit_paste[submit_paste.index("-b") + 1]
+        buffers = {
+            paste[paste.index("-b") + 1]
+            for paste in (clear_paste, prompt_paste, submit_paste)
+        }
+        assert len(buffers) == 3
+
+    def test_deliver_clears_the_input_line_before_pasting_the_event(self, monkeypatch):
+        # issue O7: a leftover unsent line at the `❯` prompt must not be prepended
+        # to the pasted reply and submitted with it. The clear (Ctrl-A Ctrl-U,
+        # unbracketed so it acts) is loaded and pasted BEFORE the event buffer.
+        fake = FakeRun()
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        writes = []
+        real = runner_mod.TmuxRunner._buffer_file
+
+        def spy(content):
+            writes.append(content)
+            return real(content)
+
+        monkeypatch.setattr(runner_mod.TmuxRunner, "_buffer_file", staticmethod(spy))
+        assert TmuxRunner().deliver(make_session(tmux_target="loop-a"), "hi").ok
+        # The first buffer written is the clear bytes, before the prompt.
+        assert writes[0] == runner_mod._CLEAR_BYTES
+        assert writes[1] == "hi"
+        # And the clear's paste precedes the event's load in the tmux call order.
+        pastes = [c for c in fake.calls if c[1] in ("load-buffer", "paste-buffer")]
+        clear_paste_i = next(
+            i
+            for i, c in enumerate(pastes)
+            if c[1] == "paste-buffer" and runner_mod._CLEAR_BUFFER in c
         )
+        event_load_i = next(
+            i
+            for i, c in enumerate(pastes)
+            if c[1] == "load-buffer" and runner_mod._EVENT_BUFFER in c
+        )
+        assert clear_paste_i < event_load_i
 
     def test_deliver_removes_both_temporary_files(self, monkeypatch):
         # R3.3: the prompt file was always unlinked; the submit file must be too,
-        # including when the delivery fails between the two pastes.
+        # including when the delivery fails between the two pastes. Since issue O7
+        # there is also a clear-line file — three in all — and every one is
+        # unlinked in the `finally`.
         made = []
         real_mkstemp = runner_mod.tempfile.mkstemp
 
@@ -504,7 +548,7 @@ class TestTmuxRunner:
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
         monkeypatch.setattr(runner_mod.subprocess, "run", FakeRun())
         assert TmuxRunner().deliver(make_session(tmux_target="loop-a"), "p").ok
-        assert len(made) == 2
+        assert len(made) == 3
         assert not any(os.path.exists(path) for path in made)
 
         made.clear()

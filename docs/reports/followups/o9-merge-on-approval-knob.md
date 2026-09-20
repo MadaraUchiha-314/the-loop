@@ -33,3 +33,15 @@ will do:
 
 Lower priority than the bugs — current behaviour is *correct per the tier rules*,
 this is about making the consequence explicit and configurable.
+
+## Fixed (branch `fix/n1-selection-grammar-refusal-reason`)
+
+A `routing.mergeOnApproval` config knob (default `true`, the pre-O9 behaviour)
+now governs what a `human-approval` approval does: `true` merges and closes,
+`false` stops at approved and leaves the merge to a person / branch protection.
+The `pr-review-pending` message states which behaviour is in effect **before** the
+tap ("Approving will merge this PR and close the work item." vs "Approving marks
+it approved; a person merges it (branch protection and required reviews still
+apply)."). The schema documents the knob, and the-loop skill (SKILL.md) tells the
+session to honour it and never merge when it is `false`. Tests in
+`test_bus_integration.py` cover both messages.

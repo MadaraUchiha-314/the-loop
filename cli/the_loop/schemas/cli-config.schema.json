@@ -383,6 +383,11 @@
           ],
           "description": "Issue/PR labels that opt a work item into autonomous execution (spawnOnUnmatched: labeled) — EVERY one of them must be on the item (issue-381). Keep the shared `the-loop: auto-execute` (the commands and the Slack kickoff apply it) and add a label of your own when other instances watch the same repository, so only the items carrying both are yours. Read from the webhook payload and the poll listing, no extra API call. Replaces the single-string `autoExecuteLabel`, which `the-loop migrate-config` wraps."
         },
+        "mergeOnApproval": {
+          "type": "boolean",
+          "default": true,
+          "description": "What an approval at the `human-approval` gate does (issue O9). `true` (default, the pre-O9 behaviour): once the gate is satisfied the session merges the pull request and closes the work item. `false`: the-loop stops at approved and leaves the merge to a person — right for a repository with branch protection or required reviews, where an auto-merge would be refused or unwanted. Either way the `pr-review-pending` message states which behaviour is in effect, so a reviewer knows before approving whether the tap merges now or only marks it approved. The session reads this same knob to decide whether to run the merge."
+        },
         "control": {
           "type": "object",
           "description": "Execution control: the keywords an AUTHORIZED user steers the-loop with, in a comment on the work item or its PR (issue-106). Before this, `authorizedUsers` said WHO may be an input and `autoExecuteLabel` (now `autoExecuteLabels`) said WHICH items may run — nothing said WHEN, so labelling an issue was itself an irreversible trigger. A comment carrying a declared keyword is interpreted by the-loop and NOT forwarded to the harness; the five session commands are also available as `the-loop sessions start|pause|resume|stop|cleanup`, which post the same keyword back to the ticket (marked as the-loop's own so it is never read back). Control parsing runs strictly AFTER the existing guards — the self-comment marker and authorizedUsers — so it never becomes a second, weaker way in; the parser recognises the fixed vocabulary only and yields one of the declared commands, never text from the comment.",

@@ -526,11 +526,17 @@ def process_reply(
         # row with the named phases unticked. A name the checklist does not
         # offer refuses the whole reply with the reason (abuse case 4), so an
         # execute that meant one selection can never freeze another.
-        composed, refusal = _selection_grammar(reply, cli_config)
+        composed, refusal, reason = _selection_grammar(reply, cli_config)
         if refusal:
             bot.react(reply, "error")
             _tell(bot, reply, refusal)
-            return _drop(reply, "unskippable-phase", actor=reply.author)
+            # issue N1: the ephemeral above is invisible to a connector or a
+            # phone reading the ticket — the very surfaces the typed grammar
+            # exists for — so the refusal is also mirrored as one marked comment
+            # on the work item, the way the B2 fix explains a refused control
+            # keyword. Best-effort: the ephemeral and reaction stand regardless.
+            _say_on_ticket(reply, f"⚠️ {refusal}", cli_config)
+            return _drop(reply, reason, actor=reply.author)
         if composed != reply.text:
             reply = replace(reply, text=composed)
     if verb is not None and verb.name == "record-decision" and not verb.rest.strip():
@@ -769,32 +775,41 @@ def _selection_checklist(work_item: str, cli_config: Optional[Mapping]) -> str:
 
 def _selection_grammar(
     reply: InboundReply, cli_config: Optional[Mapping]
-) -> Tuple[str, str]:
-    """``(text, refusal)`` for a control reply: the text as it is unless it is
-    ``<execute keyword> without <n, …>``, which becomes the checklist reply the
-    gate reads (:func:`the_loop.channels.slack.apply_without`) — or a refusal
-    saying why it could not (an unknown or unskippable phase, a checklist that
-    could not be read). A refusal records nothing: the fail-closed direction is
-    the reply not landing, never a selection the person did not make.
+) -> Tuple[str, str, str]:
+    """``(text, refusal, reason)`` for a control reply: the text as it is unless
+    it is ``<execute keyword> without <n, …>``, which becomes the checklist reply
+    the gate reads (:func:`the_loop.channels.slack.apply_without`) — or a refusal
+    saying why it could not. ``reason`` is the drop label the caller records and
+    distinguishes the two refusal families the report (N1) found were reported
+    identically: a name the checklist does not offer is ``unskippable-phase`` (a
+    permanent user error), while a checklist that could not be read is
+    ``checklist-unreadable`` (transient and retriable — the phases named may be
+    perfectly valid). A refusal records nothing either way: the fail-closed
+    direction is the reply not landing, never a selection the person did not make.
     """
     from ..control import EXECUTE, parse_command
 
     control = _control_config(cli_config)
     if parse_command(reply.text, control).command != EXECUTE:
-        return reply.text, ""
+        return reply.text, "", ""
     keyword = control.keyword(EXECUTE)
     items = without_clause(reply.text, keyword)
     if items is None:
-        return reply.text, ""
+        return reply.text, "", ""
     rows = selection_rows(_selection_checklist(reply.work_item, cli_config))
     if rows is None or not rows.phases:
-        return "", (
-            "Could not read the phase checklist on this work item just now, so "
-            f"`{WITHOUT}` cannot tell which phases you mean; nothing was recorded. "
-            "Try again in a moment, or tick the boxes on GitHub and reply "
-            f"`{keyword}` there."
+        return (
+            "",
+            (
+                "Could not read the phase checklist on this work item just now, so "
+                f"`{WITHOUT}` cannot tell which phases you mean; nothing was recorded. "
+                "Try again in a moment, or tick the boxes on GitHub and reply "
+                f"`{keyword}` there."
+            ),
+            "checklist-unreadable",
         )
-    return apply_without(rows, items, keyword)
+    composed, refusal = apply_without(rows, items, keyword)
+    return composed, refusal, ("unskippable-phase" if refusal else "")
 
 
 def _thread_permalink(bot: SlackBotChannel, reply: InboundReply) -> str:
@@ -1470,6 +1485,44 @@ _TS_RE = re.compile(r"^\d+\.\d+$")
 def _tell(bot: SlackBotChannel, reply: InboundReply, text: str) -> bool:
     """An ephemeral to the member, in the thread they are in (finding 9)."""
     return bot.post_ephemeral(reply.channel_id, reply.author, text, reply.thread)
+
+
+def _say_on_ticket(
+    reply: InboundReply, text: str, cli_config: Optional[Mapping]
+) -> None:
+    """Post ``text`` as one marked comment on the work item (issue N1).
+
+    An ephemeral (:func:`_tell`) is invisible to any integration acting for the
+    person — a connector that cannot see ephemerals, a phone reading the ticket —
+    so a refusal that matters is also written where they can read it, marked as
+    the-loop's own (:func:`mark_self_authored`, so the poller never re-ingests it).
+    Best-effort and never raises: the ephemeral and the reaction still stand if
+    the ticket cannot be reached, and a non-GitHub or standing work item simply
+    gets nothing here."""
+    if not reply.work_item or parse_standing_ref(reply.work_item):
+        return
+    try:
+        from ..authz import mark_self_authored
+        from ..comments import post_issue_comment_with_url
+        from ..sessions import WorkItemRef
+
+        item = WorkItemRef.parse(reply.work_item)
+        gh_binary = _control_config(cli_config).gh_binary or "gh"
+        ok, error, _ = post_issue_comment_with_url(
+            item, mark_self_authored(text), gh_binary=gh_binary
+        )
+        if not ok:
+            logger.debug(
+                "slack: could not mirror the refusal on %s (%s)",
+                reply.work_item,
+                error,
+            )
+    except Exception as exc:  # noqa: BLE001 — mirroring a refusal never fails one
+        logger.debug(
+            "slack: mirroring the refusal on %s raised; the ephemeral stands (%s)",
+            reply.work_item,
+            exc,
+        )
 
 
 def _shortcut_reply(

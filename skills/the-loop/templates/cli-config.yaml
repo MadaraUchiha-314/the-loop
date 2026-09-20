@@ -171,6 +171,10 @@ routing:
   autoExecuteLabels:            # labels that ARM an issue/PR — EVERY one must be present (issue-381)
     - "the-loop: auto-execute"  # the shared convention the commands and the Slack kickoff apply
     # - "the-loop: <your-name>"  # add one of your own when other instances watch the same repos
+  # mergeOnApproval: true       # (issue O9) what a human-approval approval does. true (default):
+                                # the session merges the PR and closes the item. false: it stops at
+                                # approved and a PERSON merges — right for branch protection / required
+                                # reviews. The pr-review-pending message states which is in effect.
   # Execution control (issue-106): the label is necessary, NOT sufficient.
   # An authorized user starts/stops/pauses/resumes a work item by commenting
   # one of these keywords (or with `the-loop sessions start|stop|pause|

@@ -513,6 +513,53 @@ def test_the_pr_review_gate_names_the_pull_request_and_links_to_it(
     assert link == "https://github.com/o/r/pull/42"
 
 
+def _pr_review_text(tmp_path, config, slack, monkeypatch):
+    """Fire a pr-review-pending notify for a work item with a linked PR and return
+    the rendered Slack message text."""
+    from the_loop.graph.contract import HookContext, WorkItem
+    from the_loop.graph.hooks.sideeffects import notify
+    from the_loop.graph.state import WorkItemState
+
+    spec = tmp_path / "specs" / "issue-7"
+    spec.mkdir(parents=True, exist_ok=True)
+    state = WorkItemState(work_item="issue-7", current_node="human-approval")
+    state.link_pr("github:o/r#42", repository="o/r", number=42, url="https://x/pull/42")
+    state.save(spec)
+    ctx = HookContext(
+        work_item=WorkItem(id="issue-7", ref="github:o/r#7", spec_dir=spec),
+        node={"id": "human-approval"},
+        boundary="entry",
+        repo=tmp_path,
+        config=config,
+        params={"event": "pr-review-pending"},
+    )
+    assert notify(ctx).status == "pass"
+    post = slack.posted[-1]
+    return " ".join(b["text"]["text"] for b in post["blocks"] if "text" in b)
+
+
+def test_the_pr_review_message_says_approval_merges_by_default(
+    tmp_path, monkeypatch, slack
+):
+    """O9: absent the knob, approving merges — and the message says so, so the
+    reviewer knows the tap merges and closes."""
+    config = cli_config(tmp_path, subscribe=["pr-review-pending"])
+    text = _pr_review_text(tmp_path, config, slack, monkeypatch)
+    assert "merge this PR and close" in text.lower() or "merge this pr" in text.lower()
+
+
+def test_the_pr_review_message_says_a_person_merges_when_the_knob_is_off(
+    tmp_path, monkeypatch, slack
+):
+    """O9: with routing.mergeOnApproval false, approving does NOT merge — the
+    message says a person merges, and branch protection still applies."""
+    config = cli_config(tmp_path, subscribe=["pr-review-pending"])
+    config["routing"]["mergeOnApproval"] = False
+    text = _pr_review_text(tmp_path, config, slack, monkeypatch)
+    assert "a person merges" in text.lower()
+    assert "branch protection" in text.lower()
+
+
 def test_an_approve_button_press_enters_the_pipeline_as_that_members_reply(
     tmp_path, monkeypatch, slack
 ):

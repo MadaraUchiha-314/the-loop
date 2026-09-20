@@ -737,10 +737,15 @@ def test_abuse_an_unknown_phase_typed_is_refused_with_the_reason_and_records_not
     channel, thread, _ = _post_control(tmp_path, monkeypatch, client, config)
     outcome = _typed(config, channel, f"{KEYWORD} without desgin", thread=thread)
     assert outcome == {"outcome": "unskippable-phase"}
-    assert records == []
     assert client.ephemeral[-1][1] == "UHUMAN"
     assert "`desgin` is not a phase" in client.ephemeral[-1][2]
     assert ("C123", "1800.1", "warning") in client.reactions, "the error reaction"
+    # issue N1: no SELECTION is frozen, but the refusal IS mirrored to the ticket
+    # as one marked comment, so a connector/phone that cannot see the ephemeral
+    # still learns why. The comment carries the reason and the self-authored mark.
+    assert len(records) == 1
+    assert "`desgin` is not a phase" in records[0][1]
+    assert "the-loop" in records[0][1].lower(), "marked as the-loop's own"
 
 
 def test_an_unreadable_checklist_refuses_rather_than_guessing(tmp_path, monkeypatch):
@@ -751,8 +756,41 @@ def test_an_unreadable_checklist_refuses_rather_than_guessing(tmp_path, monkeypa
     client = EphemeralClient()
     channel, thread, _ = _post_control(tmp_path, monkeypatch, client, config)
     outcome = _typed(config, channel, f"{KEYWORD} without 2", thread=thread)
-    assert outcome == {"outcome": "unskippable-phase"} and records == []
+    # A checklist that could not be read is a TRANSIENT, retriable failure — the
+    # named phases may be perfectly valid — so it is dropped as
+    # `checklist-unreadable`, not `unskippable-phase` (issue N1): the operator's
+    # phase name was never rejected, and the drop label must not say it was.
+    assert outcome == {"outcome": "checklist-unreadable"}
     assert "Could not read the phase checklist" in client.ephemeral[-1][2]
+    # N1: the refusal is also mirrored to the ticket (one marked comment), but no
+    # selection is frozen there.
+    assert len(records) == 1
+    assert "Could not read the phase checklist" in records[0][1]
+
+
+def test_the_two_selection_refusals_carry_distinct_drop_reasons(tmp_path, monkeypatch):
+    """N1: a rejected phase name and an unreadable checklist looked identical
+    (both `unskippable-phase`) — the first is a permanent user error, the second
+    transient. They now carry distinct drop labels."""
+    records = []
+    _wire(monkeypatch, records)
+    config = interactive_config(tmp_path)
+    client = EphemeralClient()
+    channel, thread, _ = _post_control(tmp_path, monkeypatch, client, config)
+
+    monkeypatch.setattr(
+        inbound, "_selection_checklist", lambda work_item, cfg: CHECKLIST
+    )
+    rejected = _typed(config, channel, f"{KEYWORD} without desgin", thread=thread)
+
+    monkeypatch.setattr(inbound, "_selection_checklist", lambda work_item, cfg: "")
+    unreadable = _typed(config, channel, f"{KEYWORD} without 2", thread=thread)
+
+    assert rejected == {"outcome": "unskippable-phase"}
+    assert unreadable == {"outcome": "checklist-unreadable"}
+    # Each refusal mirrors its own explanation to the ticket (N1); neither
+    # freezes a selection.
+    assert len(records) == 2
 
 
 def test_a_bare_execute_reads_no_checklist_and_records_the_keyword_alone(
