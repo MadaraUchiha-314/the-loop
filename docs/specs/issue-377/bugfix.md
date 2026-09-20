@@ -25,7 +25,7 @@ launched with none of them.** [Issue-377](https://github.com/MadaraUchiha-314/th
 reports the consequence on a devbox running v16.0.1: every work item started the normal
 way — label, then a `the-loop execute` reply — gets a Claude session without
 `--dangerously-skip-permissions`, which stops on its first file edit with an interactive
-prompt in a tmux pane nobody is watching. `agent-sims#123` sat there for 2 days 16 hours
+prompt in a tmux pane nobody is watching. `<work-repo>#123` sat there for 2 days 16 hours
 while the status surface reported it as running.
 
 The report splits the sessions by the event that spawned them — 13 with the flag off
@@ -84,7 +84,7 @@ flag **but not the model** — the second defect below.
   carries `harnessArgs: []`):
 
   ```json
-  {"event": "session.spawned", "work_item": "github:github.intuit.com/expertise-help/agent-sims#123", "harness": "claude", "runner": "tmux", "interaction": "work-item", "gh_event": "issue_comment", "action": "created"}
+  {"event": "session.spawned", "work_item": "github:<ghe-host>/<owner>/<work-repo>#123", "harness": "claude", "runner": "tmux", "interaction": "work-item", "gh_event": "issue_comment", "action": "created"}
   ```
 
 ## Root cause (confirmed)

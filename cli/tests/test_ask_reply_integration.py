@@ -466,6 +466,113 @@ def test_the_ask_verb_reads_a_question_file(tmp_path, monkeypatch):
     assert posted["body"].startswith("## Two options")
 
 
+def test_the_ask_verb_warns_when_the_bus_names_no_channel(
+    tmp_path, monkeypatch, capsys
+):
+    """
+    Feature: agents ask through a verb
+      Scenario: ask warns when the resolved bus subscribes no channel to the wait
+        Given a session whose resolved config names no channel for
+          session.awaiting_input (the B6 mis-wiring: the daemon's --config was
+          not inherited, so ask fell back to the empty default bus)
+        When the agent runs `the-loop ask`
+        Then the question still lands on the ticket
+          And the output warns that no room was told the loop is waiting
+          And it points at THE_LOOP_CLI_CONFIG / --config
+
+    Requirement: docs/specs/issue-393/requirements.md R3.2 (B6)
+    """
+    monkeypatch.setattr(
+        core_sessions,
+        "post_issue_comment_with_url",
+        lambda item, body, gh_binary="gh": (True, "", "https://x/#c1"),
+    )
+    # The default config in this test env carries no `channels` section, which
+    # is exactly the silent bus B6 recorded.
+    exit_code = main(["ask", "--work-item", REF, "--question", "Which auth mode?"])
+
+    assert exit_code == 0
+    err = capsys.readouterr().err
+    assert "reached GitHub only" in err
+    assert "THE_LOOP_CLI_CONFIG" in err
+
+
+def test_the_ask_verb_is_quiet_when_a_channel_subscribes(tmp_path, monkeypatch, capsys):
+    """The counter-case: when a channel DOES subscribe to session.awaiting_input,
+    the R3.2 warning must not fire — a correctly wired bus says nothing about
+    being silent.
+
+    Requirement: docs/specs/issue-393/requirements.md R3.2 (B6)
+    """
+    monkeypatch.setattr(
+        core_sessions,
+        "post_issue_comment_with_url",
+        lambda item, body, gh_binary="gh": (True, "", "https://x/#c1"),
+    )
+
+    from the_loop.channels import base as channels_base
+
+    class _SubscribingChannel:
+        name = "slack"
+
+        def subscribes(self, _event_type):
+            return True
+
+        def post(self, _event):
+            return channels_base.PostResult(channel="slack", ok=True)
+
+    # The silent-bus check calls load_channels directly; return a subscriber so
+    # the warning's precondition is false. The actual fan-out (bus.publish) also
+    # calls load_channels, so keep the stub side-effect-free (no real post).
+    monkeypatch.setattr(
+        channels_base, "load_channels", lambda *a, **k: [_SubscribingChannel()]
+    )
+
+    exit_code = main(["ask", "--work-item", REF, "--question", "Which auth mode?"])
+
+    assert exit_code == 0
+    err = capsys.readouterr().err
+    assert "reached GitHub only" not in err
+
+
+def test_the_ask_verb_carries_a_stated_default(tmp_path, monkeypatch):
+    """
+    Scenario: `ask --default` states the affirmative the room can one-tap
+
+    Requirement: docs/specs/issue-393/requirements.md R12.1 (B9). The default
+    rides on the event's detail, where the renderer turns it into the "Defaults
+    are fine" button.
+    """
+    captured = {}
+
+    def fake_publish(event, config, **kwargs):
+        captured["default"] = (event.detail or {}).get("default")
+        from the_loop.channels.base import PostResult, PublishResult
+
+        return PublishResult(
+            record=PostResult(channel="github", ok=True, url="https://x/#c1")
+        )
+
+    monkeypatch.setattr("the_loop.channels.bus.publish", fake_publish)
+    monkeypatch.setattr(
+        core_sessions,
+        "post_issue_comment_with_url",
+        lambda *a, **k: (True, "", "https://x/#c1"),
+    )
+    main(
+        [
+            "ask",
+            "--work-item",
+            REF,
+            "--question",
+            "per-line or per-file?",
+            "--default",
+            "Defaults are fine",
+        ]
+    )
+    assert captured["default"] == "Defaults are fine"
+
+
 def test_the_ask_verb_refuses_an_empty_question(tmp_path, monkeypatch, capsys):
     """
     Feature: agents ask through a verb

@@ -60,6 +60,21 @@ class AskCommand(Command):
             help="Read the question from this file ('-' = stdin) — where "
             "multi-line markdown goes to survive shell quoting.",
         )
+        parser.add_argument(
+            "--summary",
+            default="",
+            help="A 2-3 sentence summary (what you decided, what you are least "
+            "sure of) that leads the room's message instead of an excerpt "
+            "(issue-393 R8). Optional; the question text is still recorded in full.",
+        )
+        parser.add_argument(
+            "--default",
+            default="",
+            dest="default_answer",
+            help="The affirmative answer to take if the human does not object "
+            "(issue-393 R12.1) — e.g. 'Defaults are fine'. When set, the room's "
+            "message offers a one-tap button that replies with this text.",
+        )
 
     def run(self, args: argparse.Namespace) -> int:
         eventlog.configure_from_file("ask")
@@ -77,7 +92,11 @@ class AskCommand(Command):
             question = args.question
         try:
             result = core_sessions.ask_session(
-                args.work_item, question, config=_cli_config()
+                args.work_item,
+                question,
+                config=_cli_config(),
+                summary=args.summary,
+                default_answer=args.default_answer,
             )
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)

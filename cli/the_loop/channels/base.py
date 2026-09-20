@@ -77,6 +77,13 @@ class Event:
     the ledger; ``detail`` context a verbose channel may render; ``source`` the
     channel (or ``loop``/``cli``) it came from — the bus never posts an event back
     to its source; ``actor`` the person who caused it, resolved from config.
+
+    ``summary`` (issue-393 B1/R8) is the agent's own 2–3 sentence account of what
+    it decided and what it is least sure of — what a reviewer on a phone actually
+    wants from a gate, in place of the document's first 1,500 characters. It is
+    optional and untrusted-adjacent (the session writes it): a renderer treats it
+    as text, capped and with mentions neutralised, and falls back to the digest
+    excerpt when it is absent. No consumer requires it.
     """
 
     event_type: str
@@ -86,6 +93,7 @@ class Event:
     detail: Mapping[str, str] = field(default_factory=dict)
     source: str = "loop"
     actor: Optional[Principal] = None
+    summary: str = ""
 
 
 #: The pre-issue-309 name, kept so embedders and the standing-session module read on.

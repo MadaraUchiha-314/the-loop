@@ -319,8 +319,16 @@ class TestTmuxRunner:
         def shape(calls):
             # The buffer file names are per-call temporaries; everything else —
             # the verb, the buffer name, the flags, the target — must match.
+            # Drop the temp path by its basename prefix, not a hardcoded /tmp:
+            # tempfile honours $TMPDIR (macOS puts it under /var/folders/…), so
+            # a /tmp-anchored match let the per-call filenames leak into the
+            # comparison and fail spuriously off-Linux.
             return [
-                [part for part in c if not part.startswith("/tmp/the-loop-")]
+                [
+                    part
+                    for part in c
+                    if not os.path.basename(part).startswith("the-loop-")
+                ]
                 for c in calls
                 if c[1] != "list-panes"
             ]
@@ -374,6 +382,59 @@ class TestTmuxRunner:
             "new-session",
             "set-option",  # remain-on-exit (issue-86)
         ]
+
+    def test_spawn_exports_the_daemon_cli_config_path(self, monkeypatch, tmp_path):
+        """Scenario: a spawned session inherits the daemon's CLI-config path
+
+        Requirement: issue-393 R3 (B6). Before this, a session spawned by a
+        daemon run with --config resolved the DEFAULT config inside its own
+        checkout — a state root and event bus nobody subscribed to — so every
+        event it published (its `ask` wait above all) vanished. The spawn now
+        exports THE_LOOP_CLI_CONFIG = the daemon's own resolved, absolute path.
+        """
+        cfg = tmp_path / "cli-config.yaml"
+        cfg.write_text("version: '0.10.0'\n")
+        monkeypatch.setattr(
+            runner_mod, "_cli_config_export", lambda: str(cfg.resolve())
+        )
+        # A modern tmux so `new-session -e` is used (the export needs 3.2+).
+        fake = FakeRun(per_verb={"has-session": 1}, stdout_per_verb={"-V": "tmux 3.4"})
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        result = TmuxRunner(instance="inst").spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=ClaudeCodeAdapter(),
+            prompt="start work",
+            cwd="/work",
+            session_id="uuid-1",
+        )
+        assert result.ok, result.error
+        cmd = next(c for c in fake.calls if c[1] == "new-session")
+        env_pairs = [cmd[i + 1] for i, part in enumerate(cmd) if part == "-e"]
+        assert f"{runner_mod.CLI_CONFIG_ENV}={cfg.resolve()}" in env_pairs
+        assert (
+            f"{runner_mod.WORK_ITEM_ENV_VAR}={WorkItemRef.parse(REF).ref}" in env_pairs
+        )
+
+    def test_spawn_omits_the_cli_config_export_when_there_is_none(self, monkeypatch):
+        """R3.4 / fail-safe: an empty resolved path is not exported — the session
+        falls back to its own resolution exactly as before, never to an empty
+        THE_LOOP_CLI_CONFIG that would pin it to a non-existent file."""
+        monkeypatch.setattr(runner_mod, "_cli_config_export", lambda: "")
+        fake = FakeRun(per_verb={"has-session": 1}, stdout_per_verb={"-V": "tmux 3.4"})
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        result = TmuxRunner(instance="inst").spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=ClaudeCodeAdapter(),
+            prompt="start work",
+            cwd="/work",
+            session_id="uuid-1",
+        )
+        assert result.ok, result.error
+        cmd = next(c for c in fake.calls if c[1] == "new-session")
+        env_pairs = [cmd[i + 1] for i, part in enumerate(cmd) if part == "-e"]
+        assert not any(p.startswith(f"{runner_mod.CLI_CONFIG_ENV}=") for p in env_pairs)
 
     def test_spawn_fails_without_tmux(self, monkeypatch):
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: None)

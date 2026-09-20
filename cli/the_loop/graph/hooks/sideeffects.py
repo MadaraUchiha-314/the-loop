@@ -60,14 +60,94 @@ def set_phase_label(ctx: HookContext) -> HookResult:
     if not phase:
         return HookResult.skipped(name, "node declares no phase label")
     label = f"{PHASE_LABEL_PREFIX}{phase}"
+    github = _integration(ctx, "github")
+    # issue-393 B10: the phase label is documented as THE position marker, and
+    # every dashboard query assumes one `loop:*` label per item — but the add was
+    # add-only, so the labels piled up and a board showed the item in every
+    # column. Remove any other `loop:*` label first (best-effort: a failure to
+    # tidy an old label must never block setting the new one, which is the fact
+    # a reader actually needs).
+    removed = _remove_stale_phase_labels(github, ctx.work_item.ref, label)
     try:
-        _integration(ctx, "github").call(
-            "set-labels", ref=ctx.work_item.ref, labels=[label]
-        )
+        github.call("set-labels", ref=ctx.work_item.ref, labels=[label])
     except IntegrationError as exc:
-        logger.warning("could not sync %s: %s", label, exc)
-        return HookResult.ok(name, label=label, applied=False, error=str(exc))
-    return HookResult.ok(name, label=label, applied=True)
+        # issue-393 F3/R13.2: a repository the daemon works may never have been
+        # `/the-loop:init`-ed, so the `loop:*` label does not exist and the edit
+        # fails ("not found"). Rather than degrade silently — the phase label is
+        # the one thing a ticket reader and the dashboards use — create the label
+        # and retry once. Any other failure (permissions, outage) still degrades.
+        if not _is_missing_label(exc):
+            logger.warning("could not sync %s: %s", label, exc)
+            return HookResult.ok(
+                name, label=label, applied=False, error=str(exc), removed=removed
+            )
+        try:
+            github.call("create-label", ref=ctx.work_item.ref, name=label)
+            github.call("set-labels", ref=ctx.work_item.ref, labels=[label])
+        except IntegrationError as retry_exc:
+            logger.warning("could not create/sync %s: %s", label, retry_exc)
+            return HookResult.ok(
+                name,
+                label=label,
+                applied=False,
+                error=str(retry_exc),
+                created=False,
+                removed=removed,
+            )
+        return HookResult.ok(
+            name, label=label, applied=True, created=True, removed=removed
+        )
+    return HookResult.ok(name, label=label, applied=True, removed=removed)
+
+
+def _remove_stale_phase_labels(github, ref: str, keep: str) -> List[str]:
+    """Remove every ``loop:*`` label on ``ref`` except ``keep`` — the B10 fix.
+
+    Best-effort and never raises: reading the current labels or removing a stale
+    one can fail (permissions, outage, an API that cannot list), and none of that
+    should stop the new label being set — the position marker a reader needs is
+    the new one being present, not the old ones being gone. Returns the labels it
+    removed, for the hook's result. When the labels cannot even be read, it does
+    nothing rather than guess.
+    """
+    try:
+        current = github.call("get-labels", ref=ref).get("labels") or []
+    except Exception as exc:  # noqa: BLE001 — an unreadable label set tidies nothing
+        logger.debug("could not read labels on %s to tidy stale ones: %s", ref, exc)
+        return []
+    stale = [
+        str(name_)
+        for name_ in current
+        if str(name_).startswith(PHASE_LABEL_PREFIX) and str(name_) != keep
+    ]
+    removed: List[str] = []
+    for name_ in stale:
+        try:
+            github.call("remove-label", ref=ref, label=name_)
+            removed.append(name_)
+        except Exception as exc:  # noqa: BLE001 — one stale label left is not fatal
+            logger.debug(
+                "could not remove the stale label %s on %s: %s", name_, ref, exc
+            )
+    return removed
+
+
+def _is_missing_label(exc: Exception) -> bool:
+    """Whether an integration error is a 'label does not exist' (issue-393 R13.2).
+
+    Both transports surface it differently — the API as a 422/'not found' on the
+    label name, `gh` as its own 'not found' text — so match on the shared words
+    rather than a status. Conservative: an unrecognised error is NOT treated as a
+    missing label, so a permissions failure degrades rather than looping on
+    create.
+    """
+    text = str(exc).lower()
+    return (
+        "not found" in text
+        or "does not exist" in text
+        or "label" in text
+        and "422" in text
+    )
 
 
 @hook("request-review")
@@ -204,6 +284,23 @@ def _work_item_url(ref: str) -> str:
         return ""
 
 
+def _linked_pr(ctx: HookContext):
+    """The work item's newest open pull request, from its state — or ``None``
+    (issue-393 B7/O8). Read best-effort: a state that will not load just means
+    the PR-review message falls back to the work item, exactly as before.
+    """
+    try:
+        from ..state import WorkItemState
+
+        state = WorkItemState.load(ctx.work_item.spec_dir, ctx.work_item.id)
+    except Exception:  # noqa: BLE001 — a missing/corrupt state names no PR
+        return None
+    prs = [pr for pr in getattr(state, "pull_requests", []) if pr.state == "open"]
+    if not prs:
+        prs = list(getattr(state, "pull_requests", []))
+    return prs[-1] if prs else None
+
+
 @hook("notify")
 def notify(ctx: HookContext) -> HookResult:
     """Publish the node's notification event. Never wedges the graph if a
@@ -225,10 +322,25 @@ def notify(ctx: HookContext) -> HookResult:
     name = "notify"
     event = str(ctx.params.get("event") or "phase-approval-pending")
     roles = _recipients(ctx, event)
-    text = f"the-loop: {ctx.work_item.id} is at *{ctx.node_id}* ({event})."
+    detail = {"node": ctx.node_id}
+    url = _work_item_url(ctx.work_item.ref)
+    # issue-393 B7/O8: the PR-review gate names the pull request — number, link —
+    # and points at IT, not the issue. Before this the message read "…is at
+    # *human-approval*" with an Open button that went to the issue, and a
+    # reviewer on a phone had to find the PR themselves.
+    pr = _linked_pr(ctx) if event == "pr-review-pending" else None
+    if pr is not None:
+        text = (
+            f"👀 PR #{pr.number} is ready for review. "
+            f"Start there, then approve or request changes."
+        )
+        if pr.url:
+            url = pr.url
+        detail["pullRequest"] = str(pr.number)
+    else:
+        text = f"the-loop: {ctx.work_item.id} is at *{ctx.node_id}* ({event})."
     if roles:
         text += f" Roles: {', '.join(roles)}"
-    detail = {"node": ctx.node_id}
     if roles:
         detail["roles"] = ", ".join(roles)
     excerpt = _excerpt(ctx)
@@ -245,7 +357,7 @@ def notify(ctx: HookContext) -> HookResult:
             event_type=event,
             work_item=ctx.work_item.ref,
             text=text,
-            url=_work_item_url(ctx.work_item.ref),
+            url=url,
             detail=detail,
             source="loop",
         ),

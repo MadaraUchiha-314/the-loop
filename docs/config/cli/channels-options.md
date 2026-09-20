@@ -33,6 +33,8 @@ channels:
     verbosity: normal
     maxChars: 1500                           # and the threshold for longMessages
     longMessages: digest                     # digest | truncate — above maxChars
+    room:
+      style: agentic                         # agentic | classic — a work item's own room
     kickoff:
       repo: octocat/hello-world
       labels: ["the-loop: auto-execute"]
@@ -176,6 +178,7 @@ from **one catalog** (printed with subscription ticks by
 | `work-item-complete` | the work item reached `complete` (fired since issue-309 — a channel that had subscribed starts receiving it) |
 | `phase.started` | a phase of the work item's loop began — the node carrying the next `loop:<phase>` label was entered; published by the runtime on every walk of every graph, so it needs no `notify` hook, and a human node's message says it is waiting on a person ([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378)) |
 | `phase.completed` | a phase ended — the loop left its last node on a satisfied outcome, or finished at a terminal node; carries the outcome and the node entered next (issue-378) |
+| `phase.progress` | the loop stepped to a new node **within** the current phase — the review chain walking self-review → critic-review → security-review is the loud case; published by the runtime, not recorded on the ledger, and in an agentic room it edits that phase's one message in place so a long phase shows where it is instead of going silent ([issue-393](https://github.com/MadaraUchiha-314/the-loop/issues/393)) |
 | `work-item.closed` | the work item ended on the ledger — its issue was closed, or the pull request that *is* the work item merged or closed; published before the item's collaboration channel is forgotten, so a room hears its own ending (issue-378). A delivering pull request's end fires nothing |
 | `comment.agent` | the agent's own comment landed on the work item (marker-stamped): the requirements summary, the phase checklist, a review note |
 | `comment.human` | a human comment the ledger accepted — an authorized user's or a work-item collaborator's. A stranger's comment is relayed nowhere |
@@ -284,6 +287,25 @@ Slack mrkdwn (`**bold**` → `*bold*`, headings, links, task boxes, bullets) and
 comment — the-loop's own markers included — is removed: that changes how the words are
 drawn, never which words are there. The [Slack guide](/guide/slack#reading-it-on-a-phone)
 shows a checklist before and after.
+
+### `slack.room.style`
+
+- **Type:** `'agentic' | 'classic'`
+- **Default:** `agentic`
+
+How a work item's **own room** reads
+([issue-393](https://github.com/MadaraUchiha-314/the-loop/issues/393)) — a room being a
+channel a single work item was declared into (`add-channel`). This does not affect a
+shared or central channel, which keeps the header rendering.
+
+`agentic` — one message per meaningful moment, in the-loop's first-person voice with one
+state emoji and no machine header. Consecutive lifecycle events collapse into one
+transition, a human gate is announced **once** (the message carrying its buttons), a
+phase's progress edits a single message in place, and an acknowledgement threads under
+the message it answers. This is the room a person can follow on a phone.
+
+`classic` — the pre-issue-393 rendering, byte-for-byte: every event a top-level message
+with the event-type/ref header. The escape hatch, and the compatibility baseline.
 
 ### `slack.kickoff.repo`
 

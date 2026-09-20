@@ -197,6 +197,60 @@ flowchart LR
   each carrying the **configured keyword** as its value (a disabled keyword renders no
   button). A press enters the pipeline as that member's reply carrying the button's
   text; an unrecognised value is plain text.
+- **A work item's own room reads like a conversation** (issue-393,
+  [decision-134](/decisions/decision-134)). WHEN `channels.slack.room.style` is
+  `agentic` (the default) AND an event is bound to a work item's **room** (a channel the
+  item was declared into) THEN the channel SHALL render it in the-loop's first-person
+  voice — one state emoji, the event's own sentence, **no** event-type/ref header — and
+  a RoomPolicy delivery decision SHALL apply: an event identical to the last one
+  delivered for the node is dropped; a `phase.completed` immediately followed by its
+  successor's `phase.started` is collapsed to the one transition; a node's
+  `phase.started` line and its mirrored "ready for review" comment are suppressed once a
+  `*-pending` approval message has been posted for it (the gate is announced **once**,
+  with its buttons); a within-phase progress event edits that phase's one message in
+  place (`chat.update`, falling back to a fresh post if the ts is stale); an
+  acknowledgement of a consumed gate answer threads under the gate's message; and a
+  runtime template for a moment the session already spoke for is dropped. Every drop or
+  edit SHALL log the rule that decided it, so a "missing" message is diagnosable from
+  the daemon log alone. The GitHub ledger is **unchanged** — collapse and suppression
+  are a room-delivery policy, not a change to what happened, and the whole run remains
+  reconstructable from the ticket. WHEN `room.style` is `classic` THEN rendering is the
+  pre-issue-393 header form, byte-for-byte. A shared or central channel keeps the header
+  rendering whichever style is set, identifying the item by a short `#<n> <title>` link
+  rather than the full ref. The delivery memory backing these decisions is local and
+  transient: a pre-issue-393 state file loads it empty and a lost record degrades that
+  item's room to classic delivery, never to silence.
+- **A gate message can lead with the agent's own summary** (issue-393). WHEN a session
+  attaches a summary (`the-loop ask --summary`, or the approval-submission path) THEN
+  the room's message for that gate SHALL lead with that 2–3 sentence summary — what the
+  agent decided and what it is least sure of — in place of the document excerpt, drawn
+  as text with mentions and broadcasts neutralised and a length cap so it can page no
+  one; WHEN no summary is attached THEN the digest excerpt is the fallback, as before.
+  WHEN the PR-review gate publishes THEN its message SHALL name the pull request and its
+  link SHALL open the **pull request**, not the issue.
+- **Phase selection is a real control on Slack** (issue-393, F1/R9). WHEN the
+  phase-selection checklist mirror reaches an interactive room (`read.mode: socket` and
+  the `control.command` grant) THEN the channel SHALL render the phases as Block Kit
+  **checkboxes** — pre-ticked to match the checklist, the outer-loop question its own
+  element — beside the Execute button; WHEN Execute is pressed THEN the-loop SHALL read
+  the checkbox state from the payload and compose the signed execute as a reconstructed
+  checklist body, so the gate's existing freeze parses it unchanged. Without the grant
+  the message keeps its text and Execute button and says to edit the checklist on
+  GitHub. A typed reply serves any connector: `execute without 1, 3`, `execute without
+  <phase>`, `skip <phase>` — the numbers index the live checklist's phase rows, and an
+  unknown or protected name refuses the whole reply with the offered list rather than
+  freezing a different selection. An unauthorized submit is refused (silent to a
+  stranger, explained to a collaborator) and freezes nothing. Slack Execute records
+  phases and the outer-loop surface; sessions/model/effort fall to their defaults and the
+  message says so.
+- **The session's own voice is the room's content** (issue-393, R12). WHEN a spawned
+  session publishes (its `the-loop ask` question, its summary) THEN — the session having
+  inherited the daemon's config so its events reach the bus — that message SHALL reach
+  the room in the-loop's voice; WHEN the ask states a default (`the-loop ask --default`)
+  AND the channel is interactive THEN the message SHALL carry a **Defaults are fine**
+  button whose press delivers that default as the member's reply; and WHEN the session
+  has spoken for a node THEN a later runtime template for that same node SHALL be
+  suppressed, so the agent's words win over the boilerplate.
 - **Long text is digested, never cut mid-sentence** (issue-338, decision-118). WHEN a
   text section — an event's text, a notification's artifact excerpt — is longer than
   `channels.slack.maxChars` AND `channels.slack.longMessages` is `digest` (the default)
@@ -376,6 +430,31 @@ flowchart LR
   configuration is one people learn to route around. The probe is two fixed calls, prints
   token presence only, and never fails its caller — a probe that cannot run says why and
   `status` still exits 0.
+- **The probe names the expected events, and says it cannot verify them** (issue-393
+  R2.1). WHEN the subscription probe runs THEN it SHALL also print the bot event
+  subscriptions the app **manifest** is expected to carry, next to the scope probe, with
+  the fixed caveat that Slack exposes no API to verify event subscriptions and that the
+  way to test them is to send the bot a mention. This is what would have caught the
+  report's B3: a scope probe that said `app_mentions:read` was granted while the event
+  itself never arrived.
+- **A deployment-wide `the-loop doctor slack`** (issue-393, F2/R2.2–R2.3). WHEN the
+  doctor runs THEN it SHALL (1) detect a **second live Socket Mode consumer** on the same
+  app token — by posting a nonce heartbeat to the bot's own channel and reading it back
+  through the listener's `channel.heartbeat` receipt within a window; a missing echo is
+  reported as "another consumer may hold this app's connection; Slack splits events
+  across connections, halving inbound for both" — as **evidence, not proof**, because
+  Slack lists no connections; and (2) verify the daemon's own **declared channels**
+  resolve in its directory, reporting each `absent` miss (the B1 failure class). Every
+  check is fail-closed: an unverifiable result is `[?] unverifiable`, never `[ok]`, and
+  only ids and channel names are printed, never tokens.
+- **An ignored Socket Mode envelope is logged, and a refused keyword explains itself**
+  (issue-393, R2.4/R2.5). WHEN the listener ignores an envelope — an unhandled
+  `events_api` type, an unknown interactive kind, a non-message/non-mention event — THEN
+  it SHALL log the type and channel at debug rather than dropping it silently (the one
+  thread to pull when two listeners split one app's events). WHEN a control keyword or
+  binding act is refused THEN besides the reaction the-loop SHALL post one marked reply
+  naming the reason and the remedy where the act was attempted, so a person on the ticket
+  or a phone is not left reading the daemon log.
 - **Downtime is reconciled from the shared cursors** (issue-334, the owner's review of
   PR #336). WHEN the Socket Mode listener connects THEN it SHALL run one read cycle
   (`poll_once`) over every bound thread and the kickoff cursor before it starts waiting

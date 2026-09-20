@@ -131,18 +131,27 @@ def test_an_edge_into_another_phase_completes_one_and_starts_the_next(repo, reco
     assert "waiting on a person" not in started.text
 
 
-def test_two_nodes_sharing_a_phase_publish_nothing_between_them(repo, recorder):
-    """R1.3: `author` → `approve` (no phase of its own) is one label; the approval
-    node inherits it, and leaving it completes the inherited phase."""
+def test_two_nodes_sharing_a_phase_emit_progress_between_them(repo, recorder):
+    """R1.3 + issue-393 R6.3: `author` → `approve` (no phase of its own) is one
+    label; the approval node inherits it. The label does not change, so no
+    completed/started pair fires — but a `phase.progress` now does, so a long
+    phase is not silent between its nodes (the review chain's case). Leaving the
+    phase still completes it and starts the next."""
     rt = runtime_for(repo)
     rt.start("issue-378", ref=REF)
     rt.advance("issue-378", ref=REF)  # select → author
     recorder.posted.clear()
 
-    rt.advance("issue-378", ref=REF)  # author → approve
-    assert kinds(recorder) == []
+    rt.advance("issue-378", ref=REF)  # author → approve (within the phase)
+    assert kinds(recorder) == [
+        ("phase.progress", "requirements-definition", "approve"),
+    ]
+    # the progress event is NOT recorded on the ledger — room-only
+    (progress,) = recorder.posted
+    assert "reached approve" in progress.text
+    recorder.posted.clear()
 
-    rt.advance("issue-378", ref=REF)  # approve → design
+    rt.advance("issue-378", ref=REF)  # approve → design (phase changes)
     assert kinds(recorder) == [
         ("phase.completed", "requirements-definition", "approve"),
         ("phase.started", "design", "design"),

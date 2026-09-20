@@ -91,12 +91,37 @@ def test_review_policy_is_the_cli_configs_defaulted_block(tmp_path, monkeypatch)
         "reviews:\n  selfReviewCount: 9\n"
     )
     _cli_config(tmp_path, monkeypatch, "reviews:\n  selfReviewCount: 1\n")
-    assert core_repo.review_policy(str(tmp_path)) == {
-        "selfReviewCount": 1,
-        "criticReviewCount": 3,
-        "stopOnNoNewFindings": True,
-        "escalateOnRepeatFinding": True,
-    }
+    policy = core_repo.review_policy(str(tmp_path))
+    # issue-393 R5.3 adds per-critic effective timeouts; with no critics
+    # configured it is present and empty. The counts are unchanged.
+    assert policy["selfReviewCount"] == 1
+    assert policy["criticReviewCount"] == 3
+    assert policy["stopOnNoNewFindings"] is True
+    assert policy["escalateOnRepeatFinding"] is True
+    assert policy["criticTimeouts"] == {}
+
+
+def test_review_policy_surfaces_each_critics_effective_timeout(tmp_path, monkeypatch):
+    """
+    Scenario: `critic policy` shows the timeout a round will actually use
+
+    Requirement: issue-393 R5.3 (B9). An operator must be able to see, without
+    reading the source, that a round is not capped at a hidden 120 s — so the
+    policy carries each configured critic's effective timeout (its own
+    timeoutSeconds, or the generous default).
+    """
+    _cli_config(
+        tmp_path,
+        monkeypatch,
+        "critics:\n"
+        "  - name: fast\n    harness: claude\n    timeoutSeconds: 300\n"
+        "  - name: default\n    harness: claude\n",
+    )
+    timeouts = core_repo.review_policy(str(tmp_path))["criticTimeouts"]
+    assert timeouts["fast"] == 300
+    from the_loop import critics as critics_mod
+
+    assert timeouts["default"] == critics_mod.DEFAULT_TIMEOUT_SECONDS
 
 
 def test_critic_run_unknown_name_is_config_error(tmp_path, monkeypatch):

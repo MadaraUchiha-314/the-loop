@@ -582,6 +582,16 @@ included, however empty the log was.
   run of blank ones. The reviewer's body SHALL NOT be rewritten to that end: it is recorded
   verbatim, so a body that fails lint on its own merits is a human's edit to make, never
   the recorder's ([decision-089](../decisions/decision-089.md)).
+- `set-phase-label` SHALL keep the ticket's `loop:<phase>` label as the item's single
+  position marker ([issue-393](https://github.com/MadaraUchiha-314/the-loop/issues/393)).
+  Setting the new label it SHALL **remove any other `loop:*` label** the item carries,
+  leaving every non-`loop:` label alone, so the item is in exactly one column of a board
+  (B10 — before this the labels piled up); the removal is surgical, never a wholesale
+  replace that would wipe `bug` or the arming labels. WHEN the target label does not
+  exist (a repository never `/the-loop:init`-ed) it SHALL create it and retry once (F3);
+  the tidy and the create are both **best-effort** — a failure to remove a stale label
+  or a non-missing-label error degrades (records and continues) rather than wedging the
+  graph, because the marker a reader needs is the new label present.
 
 ### A repository's own hooks (issue-248)
 

@@ -665,7 +665,11 @@ def close_session(
 
 
 def ask_session(
-    ref: str, question: str, config: Optional[dict] = None
+    ref: str,
+    question: str,
+    config: Optional[dict] = None,
+    summary: str = "",
+    default_answer: str = "",
 ) -> Dict[str, Any]:
     """Post an agent's question on its work item and record the wait.
 
@@ -690,9 +694,26 @@ def ask_session(
     # channel gets it, best-effort by contract (R1.2): the result computed below
     # never depends on what any channel did. The ledger is built over this
     # verb's own writer so a `gh` binary chosen here is the one used.
-    from ..channels.base import Event
+    from ..channels.base import Event, load_channels
     from ..channels.bus import publish as bus_publish
     from ..channels.github import GitHubLedger
+
+    # issue-393 (B6/R3.2): a session whose resolved config names no channel that
+    # takes this event reaches GitHub only — the room is never told the loop is
+    # waiting. That is exactly the silent failure the e2e run hit (the daemon's
+    # `--config` was not inherited into the session, so `ask` resolved the empty
+    # default bus). Detect it here and say so, rather than leaving the operator
+    # to discover the missing question on GitHub. A channel that IS configured
+    # but declines/fails is reported separately below, per-channel.
+    try:
+        _subscribers = [
+            ch
+            for ch in load_channels(dict(config or {}))
+            if ch.name != "cli" and ch.subscribes("session.awaiting_input")
+        ]
+    except Exception:  # noqa: BLE001 — a channel-load fault never fails the ask
+        _subscribers = []
+    _bus_is_silent = not _subscribers
 
     ledger = GitHubLedger(
         dict(config or {}),
@@ -703,13 +724,17 @@ def ask_session(
     channel_results = []
     ok, error, url = False, "", ""
     try:
+        detail = {"actor": actor}
+        if default_answer:
+            detail["default"] = default_answer
         published = bus_publish(
             Event(
                 event_type="session.awaiting_input",
                 work_item=work_item.ref,
                 text=question,
-                detail={"actor": actor},
+                detail=detail,
                 source="cli",
+                summary=summary or "",
             ),
             dict(config or {}),
             ledger=ledger,
@@ -749,6 +774,19 @@ def ask_session(
                             f"note: the {posted.channel} channel did not take the "
                             f"question ({posted.error}); the work item has it"
                         )
+                    ),
+                }
+            )
+        if _bus_is_silent:
+            messages.append(
+                {
+                    "stream": "err",
+                    "text": (
+                        "note: this question reached GitHub only — the resolved "
+                        "config subscribes no channel to session.awaiting_input, "
+                        "so no room was told the loop is waiting. Check "
+                        "$THE_LOOP_CLI_CONFIG / --config points at the daemon's "
+                        "config, and that its channels subscribe the event"
                     ),
                 }
             )

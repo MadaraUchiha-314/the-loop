@@ -26,10 +26,12 @@ from ..channels import inbound
 from ..channels.events import SUBSCRIBABLE_EVENTS
 from ..channels.records import RECORD_TYPES, records_from_comments, render
 from ..channels.slack import (
+    EVENTS_UNVERIFIABLE_CAVEAT,
     MENTION,
     MENTION_SHORTCUTS,
     REACTION_STATES,
     SlackChannelConfig,
+    expected_bot_events,
     kind_summary,
     probe_subscription,
     run_socket_listener,
@@ -201,7 +203,9 @@ def _subscription_lines(slack: SlackChannelConfig, probe: bool) -> list:
 
     The first line costs **nothing**: the id's own prefix says the kind, which
     keeps `status`'s contract that it reads the state file and calls nothing.
-    `--probe` adds the measured answer from `conversations.info` + `auth.test`.
+    `--probe` adds the measured answer from `conversations.info` + `auth.test`
+    — and, beside it, the events the manifest is expected to carry with the
+    fixed caveat that no API call can confirm them (issue-393 R2.1).
     """
     if not slack.channel:
         return []
@@ -211,17 +215,31 @@ def _subscription_lines(slack: SlackChannelConfig, probe: bool) -> list:
         return lines
     result = probe_subscription(slack)
     if result.get("skipped"):
-        return lines + [f"  probe:        not probed — {result['skipped']}"]
+        # The manifest is local, so the expected events are printable even when
+        # Slack could not be asked — labelled unverifiable either way.
+        return lines + [
+            f"  probe:        not probed — {result['skipped']}",
+            events_line(expected_bot_events()),
+        ]
     kind = result["kind"]
     scopes = result["scopes"]
     lines.append(
         f"  probe:        conversations.info says {kind}; granted bot scopes: "
         + (", ".join(scopes) if scopes else "(the response carried no x-oauth-scopes)")
     )
+    lines.append(events_line(result.get("events") or ()))
     # The probe's own findings: the kind's absence first, then the mention's
     # (issue-389 R1.8) — composed in `probe_subscription`, printed here verbatim.
     lines += [f"  [!] {finding}" for finding in result.get("findings") or ()]
     return lines
+
+
+def events_line(events) -> str:
+    """The `events:` line (issue-393 R2.1): what the manifest subscribes the bot
+    to, and the one caveat — the same sentence in `channels status --probe` and
+    `doctor slack`, so an operator reads it once and recognises it."""
+    named = ", ".join(events) if events else "(the packaged manifest could not be read)"
+    return f"  events:       the manifest subscribes the bot to {named} — {EVENTS_UNVERIFIABLE_CAVEAT}"
 
 
 def _mention_lines(slack: SlackChannelConfig, stores: ChannelStores) -> list:

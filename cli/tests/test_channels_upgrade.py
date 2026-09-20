@@ -101,6 +101,55 @@ def test_a_state_file_without_snapshots_loads_with_none(tmp_path):
     assert noted is not None and noted["last"] == "1700.9"
 
 
+def test_a_state_file_without_delivery_loads_empty_and_degrades_to_classic(tmp_path):
+    """
+    Scenario: a pre-B2 channel file has no room-delivery memory
+
+    Requirement: docs/specs/issue-393/requirements.md R6 NFR / error handling
+    (B2). A file written before the delivery map existed loads it as empty — no
+    crash, no migration — and RoomPolicy then has no memory for the item and
+    falls back to classic delivery. New memory is written and reloads.
+    """
+    path = tmp_path / "state" / "channels" / "slack.json"
+    path.parent.mkdir(parents=True)
+    fresh = ChannelState()
+    fresh.bind("1700.1", REF, "D123", origin="event")
+    fresh.save(path)
+    payload = _strip(json.loads(path.read_text(encoding="utf-8")), "delivery")
+    assert "delivery" not in payload
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = ChannelState.load(path)
+    assert loaded.delivery == {}
+    # An item with no memory reads an empty record, not a KeyError.
+    empty = loaded.delivery_for(REF)
+    assert empty["lastNode"] == "" and empty["progressTs"] == {}
+
+    loaded.remember_delivery(REF, lastNode="design", lastEvent="phase.started")
+    loaded.remember_delivery(REF, progressTs={"design": "1700.5"})
+    loaded.remember_delivery(REF, progressTs={"test-planning": "1700.7"})
+    loaded.save(path)
+
+    back = ChannelState.load(path).delivery_for(REF)
+    assert back["lastNode"] == "design"
+    # nested maps merge key-by-key rather than replacing
+    assert back["progressTs"] == {"design": "1700.5", "test-planning": "1700.7"}
+
+
+def test_delivery_memory_is_capped(tmp_path):
+    """Past DELIVERY_CAP the oldest item's memory is dropped — its room degrades
+    to classic, never to silence."""
+    from the_loop.channels.state import DELIVERY_CAP
+
+    state = ChannelState()
+    for n in range(DELIVERY_CAP + 5):
+        state.remember_delivery(f"github:octo/repo#{n}", lastNode="x")
+    assert len(state.delivery) == DELIVERY_CAP
+    # the oldest (#0) is gone; a recent one remains
+    assert state.delivery_for("github:octo/repo#0")["lastNode"] == ""
+    assert state.delivery_for(f"github:octo/repo#{DELIVERY_CAP + 4}")["lastNode"] == "x"
+
+
 def test_an_app_without_the_mention_scope_is_reported_by_name(tmp_path, monkeypatch):
     from test_channels_dm import FakeProbeClient, parsed
 

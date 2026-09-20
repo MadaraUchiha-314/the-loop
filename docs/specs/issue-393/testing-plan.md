@@ -1,0 +1,156 @@
+---
+type: testing-plan
+phase: test-planning
+workItem: "github:MadaraUchiha-314/the-loop#393"
+status: approved             # draft | in-review | approved
+approvedBy: ["MadaraUchiha-314"]  # locked with design.md at the design-approval gate, in-session on 2026-09-19
+overrides: {}
+---
+
+<!-- Authored per the the-loop:writing skill. -->
+
+# Testing plan: the Slack room becomes a colleague — five e2e bugs, the message rework, and deployment self-service
+
+> Derived from the approved [`requirements.md`](requirements.md) and
+> [`design.md`](design.md), before `tasks.md`. Authored at `test-planning`, completed at
+> `verification` — plan and record in one diff.
+>
+> **This file is executable content.** Credentials appear **by reference only**. The
+> live-run environment is named **by placeholder only** (the redaction convention of
+> [the e2e report](../../reports/e2e-slack-test-2026-09-19.md)): this repository is
+> public, and the operator's deployment is not.
+
+## Test matrix
+
+| # | Type | Applies? | Scope / what it proves | Where it runs |
+|---|------|----------|------------------------|---------------|
+| T1 | Unit | yes | RoomPolicy rule table (one test per rule); voice rendering (emoji, first-person, no header in rooms, single signature); directory membership-first resolution + truncated refusal wording; critic `--timeout` threading regression; `Event.summary` escape/cap/mention-stripping; skip-grammar parsing; `ensure_labels` idempotence + declared-repo guard | `cd cli && uv run pytest tests/ -k 'not integration'` |
+| T2 | Integration (scenario) | yes | routing behaviour end-to-end in-process, Gherkin-docstringed per `testing.gherkinDocstrings: required` | `cd cli && uv run pytest tests/ -k integration` |
+| T3 | Contract (OpenAPI) | n/a — no control-plane API surface changes; `docs/api-specs/openapi` untouched | | |
+| T4 | End-to-end (live) | yes | the report's timeline re-run against a real daemon + Slack workspace: all five bug fixes observed live, the room's message shape recorded (count as trend evidence, no numeric gate — owner decision) | operator deployment, by placeholder (below) |
+| T5 | UI / visual | yes | the locked design mockup renders at phone (~400 px) and desktop widths; screenshots per `design.uiArtifacts.screenshotEvidence`; live-run screenshots of the redesigned room states | local browser + the live run |
+| T6 | Snapshot | n/a — the voice table's exact strings are asserted directly in T1; a snapshot layer would duplicate it | | |
+| T7 | Performance / load | n/a — no hot path changes; RoomPolicy is one in-memory decision per event on an already-serialized per-item path | | |
+| T8 | Security / abuse case | yes | one negative test per abuse case in `requirements.md` §Security (unauthorized gate answer; unauthorized checkbox submit; hostile summary; hostile skip-grammar; undeclared-repo labels) | `cd cli && uv run pytest tests/ -k 'abuse or unauthorized'` (markers set in tasks) |
+| T9 | Accessibility | n/a — the surface is Slack's own client; our obligation (typed-grammar parity with every button, R9.3) is proven functionally in T2 | | |
+| T10 | Migration / upgrade | yes (small) | `channels.slack.room.style` schema addition validates; absent key ⇒ `agentic` default; a pre-change `ChannelState` file loads and degrades to classic delivery, never crashes | `cd cli && uv run pytest tests/ -k 'config or state'` |
+| T11 | Manual exploratory | yes | the operator drives the live run from a phone-shaped mindset: are the room's messages readable as a conversation (the report's core complaint) | the T4 run, operator judgment recorded |
+
+## Scenarios & requirement trace
+
+| Row | Requirement(s) | Scenario / case |
+|-----|----------------|-----------------|
+| T1 | R1 | membership listing resolves a private channel a 20-page workspace listing misses; truncated listing refuses with "truncated", not "no such name" |
+| T1 | R5 | `--timeout 300` reaches `subprocess.run` verbatim; default is 900; timeout error names the flag |
+| T1 | R6, R7, R11 | each RoomPolicy rule row; voice table: one emoji, first person, no header in rooms, one signature |
+| T1 | R8 | summary present ⇒ leads the message; absent ⇒ digest fallback; oversized/markup summary ⇒ escaped/capped |
+| T1 | R9 | `execute without 1,3` / `skip brainstorming` parse; unknown phase refused with reason |
+| T1 | R13 | `ensure_labels` creates only missing labels; undeclared repo untouched |
+| T2 | R4 (B8) | `Scenario: the first authorized answer after a gate publishes advances the gate` — reproduces the e2e sequence (`graph complete` into a human node, one inbound answer, no prior evaluation) |
+| T2 | R3 (B6) | `Scenario: a spawned session publishes to the daemon's bus` — spawn env carries the config path; `Scenario: ask warns when the bus names no channels` |
+| T2 | R6.2 | `Scenario: a gate's mirror and lifecycle lines are suppressed after its pending message` |
+| T2 | R6.3/R10 | `Scenario: progress edits in place within a phase`; `Scenario: an approval acknowledgement threads under the approval request` |
+| T2 | R9 | `Scenario: checkbox submission composes the signed execute`; `Scenario: without an interactivity grant the message points at the GitHub checklist` |
+| T2 | R12 | `Scenario: the session's question reaches the room with its default as a button`; `Scenario: a session-authored summary suppresses the template announcement` |
+| T2 | R2 | `Scenario: an ignored envelope logs its type and reason`; `Scenario: a refused keyword posts its reason as a marked reply` |
+| T8 | §Security 1–5 | the five negative scenarios, one per abuse case |
+| T10 | NFR config compat | schema round-trip; legacy `ChannelState` degradation |
+| T4 | all bug fixes + rework | live re-run of the report's timeline (below) |
+| T5 | R6–R12 | mockup screenshots (2 widths); live room screenshots per redesigned state |
+
+## Verification environment
+
+- **Repositories:** this repo (fixes under test, installed as the CLI from the working
+  tree: `cd cli && uv pip install -e .`); a **throwaway test repository**
+  `<ghe-host>/<owner>/<test-repo-2>` on the operator's GitHub host, created for this
+  run with one seeded work item mirroring the report's issue #1 ("add a repository
+  health check").
+- **Services / containers:** the operator's the-loop daemon (poller + Slack Socket Mode
+  listener) restarted on the patched build; one Slack workspace with the `the-loop`
+  app installed and a private test room `#<test-room-2>`; a second instance is
+  **deliberately started on the same app token** for the T4 step that proves the F2
+  doctor's second-consumer probe, then stopped.
+- **Fixtures & data:** the ops-repo config declaring `<test-repo-2>` under
+  `repositories` and the room under `channels`; the test repo starts with **no**
+  `loop:*` labels (that is R13's fixture, not an omission).
+- **Credentials:** by reference only — the daemon host's existing `SLACK_BOT_TOKEN` /
+  `SLACK_APP_TOKEN` environment and the operator's `gh` login on `<ghe-host>`. Nothing
+  is copied into this repository.
+- **Bring-up:** operator-side: install the patched CLI, `the-loop restart`, confirm
+  `the-loop status` and `the-loop doctor slack` are green, seed the test issue.
+  **Tear-down:** `the-loop stop` the second instance, close the test issue, archive the
+  room.
+- **Deployment dependency (2026-09-19).** The live re-run (T4, the T5 live-room
+  screenshots, T11) requires the **patched the-loop deployed to the operator's cloud
+  workspace daemon** — the daemon runs the version installed there, not this working
+  tree, so the room rework cannot be exercised live until that deploy happens. This is
+  outside the agent's reach from the build environment. Until then T4/T5-live/T11 are
+  **blocked on deployment**, recorded as such under Verification results (not ticked,
+  not failed); the automated rows below (T1/T2/T8/T10) fully exercise the logic headless
+  and are the gate that can pass now.
+- **If bring-up fails:** record under Verification results, leave T4/T5-live/T11
+  unticked, escalate — the gate does not pass on an environment that never came up.
+- **Redaction rule (hard):** every capture from this environment — logs, transcripts,
+  screenshots, message text — is rewritten to the report's placeholder convention
+  (`<ghe-host>`, `<owner>`, `<test-repo-2>`, `<test-room-2>`, `<operator-login>`,
+  `<bot-user-id>`, `<operator-slack-id>`) **before** it is written under `evidence/`.
+  Raw captures never enter the working tree; screenshots are cropped/masked of
+  workspace names, avatars and real ids. A capture that cannot be redacted is not
+  committed — the results row says so instead.
+
+## Evidence plan
+
+| Row | Evidence | Path under `evidence/` |
+|-----|----------|------------------------|
+| T1 | test summary (counts, duration) | `unit.md` |
+| T2 | scenario table + run output | `integration.md` |
+| T8 | abuse-case table + run output | `security-tests.md` |
+| T10 | config/state compat output | `compat.md` |
+| T4 | redacted timeline of the live run: per-bug before/after observation (B1 name resolution, B3 doctor detection, B6 question in the room, B8 first answer counts, B9 detached critic), the room's full message list with count | `live-run.md` |
+| T5 | mockup screenshots (phone + desktop); redacted live-room screenshots: kickoff checkboxes, question w/ default button, gate w/ summary + threaded ack, edited progress message, PR-ready, done | `ui/mockup-{phone,desktop}.png`, `ui/live-{state}.png` |
+| T11 | the operator's verdict, verbatim, beside the report's original verdict | `live-run.md` §verdict |
+
+## Verification activities
+
+- [ ] T1 — `cd cli && uv run pytest tests/ -k 'not integration'`
+- [x] T1 — unit rows (RoomPolicy, voice, digest/summary, checkboxes, directory,
+      critic timeout, label-ensure, doctor)
+- [x] T2 — integration rows (B8 first-answer, B6 spawn env, gate collapse, progress,
+      checkbox execute, session voice, doctor)
+- [x] T8 — abuse-case rows (unauthorized gate answer / checkbox submit, hostile
+      summary, hostile skip-grammar, undeclared-repo labels)
+- [x] T10 — config/state compat (room.style schema round-trip; pre-393 state loads
+      empty and degrades to classic)
+- [ ] T4 — live re-run of the report's timeline — **BLOCKED ON DEPLOYMENT** (the
+      patched build must be deployed to the operator's cloud-workspace daemon; not
+      reachable from the build environment)
+- [x] T5a — mockup renders at ~400 px and desktop widths (self-contained HTML at
+      `design/slack-room-redesign.html`; visual check)
+- [ ] T5b — redacted live-room screenshots — **BLOCKED ON DEPLOYMENT** (needs T4)
+- [ ] T11 — operator's readability verdict — **BLOCKED ON DEPLOYMENT** (needs T4)
+
+## Verification results
+
+The automated rows (T1, T2, T8, T10 — the logic gate) pass; the live rows
+(T4/T5b/T11) are blocked on deploying the patched build to the operator's daemon and
+are recorded, not ticked. Full detail: [`evidence/automated-tests.md`](evidence/automated-tests.md).
+
+| Activity | Command / procedure | Outcome | Evidence |
+|----------|--------------------|---------|----------|
+| T1 | `pytest` on the unit rows (room_policy, voice, digest, buttons, selection_control, directory, upgrade, critics, doctor, graph_hooks, graph_drive) | **pass** — 386 passed, 1 pre-existing env failure (`test_list_reports_availability`, cursor-agent installed locally, unrelated) | [automated-tests.md](evidence/automated-tests.md) |
+| T2 | `pytest` on the integration rows (channels_integration, channels_declared_integration, bus_integration, ask_reply_integration, graph_drive, graph_refs_integration, control_integration) | **pass** — 169 passed | [automated-tests.md](evidence/automated-tests.md) |
+| T8 | abuse-case scenarios within the above (unauthorized gate/checkbox, hostile summary escape/cap, skip-grammar refusal, undeclared-repo label guard) | **pass** | [automated-tests.md](evidence/automated-tests.md) |
+| T10 | `room.style` schema round-trip + legacy `ChannelState`/delivery degradation | **pass** | [automated-tests.md](evidence/automated-tests.md) |
+| T5a | render the mockup at phone and desktop widths | **pass** — self-contained, both widths | `design/slack-room-redesign.html` |
+| T4, T5b, T11 | live re-run + live screenshots + operator verdict | **blocked** — needs the patched build deployed to the operator's daemon (out of the build environment's reach) | — |
+
+**Not executed:** T4 (live e2e re-run), T5b (live-room screenshots), T11 (operator
+readability verdict) — all blocked on deploying this branch to the operator's cloud
+workspace. They are the last confirmation that the room *reads* right to a person; the
+automated rows prove every bug fix and every rework rule at the logic level. Run them
+once the branch is deployed (bring-up in "Verification environment" above).
+
+## Review comments
+
+> Appended by the-loop's `record-feedback` hook when a human gate approves with
+> comments (issue-109).

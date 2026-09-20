@@ -166,6 +166,105 @@ def test_a_private_channel_resolves_too(directory):
     assert directory.index.conversation_id("#private-room") == "GPRIV1"
 
 
+# -- membership-first resolution and truncation (issue-393 B1) -------------------
+
+
+class _MembershipClient:
+    """A workspace whose ``conversations.list`` never reaches the bot's own
+    private room, but whose ``users.conversations`` does — the B1 shape. Also
+    models a hard page cap on the workspace listing."""
+
+    def __init__(self, workspace, memberships, cap_pages=None):
+        self._workspace = workspace  # list of {id,name}
+        self._memberships = memberships
+        self._cap_pages = cap_pages  # None ⇒ exhausts; N ⇒ still has a cursor at N
+        self.calls = {"conversations": 0, "users": 0, "memberships": 0}
+
+    def conversations_list(self, *, types, exclude_archived, limit, cursor=None):
+        page = int(cursor or 0)
+        if cursor is None:
+            self.calls["conversations"] += 1
+        # A workspace that always hands back another cursor: never exhausts,
+        # so the reader stops only at the page cap (truncation).
+        if self._cap_pages is not None:
+            return {
+                "channels": list(self._workspace),
+                "response_metadata": {"next_cursor": str(page + 1)},
+            }
+        if page == 0:
+            return {
+                "channels": list(self._workspace),
+                "response_metadata": {"next_cursor": ""},
+            }
+        return {"channels": [], "response_metadata": {"next_cursor": ""}}
+
+    def users_conversations(self, *, types, exclude_archived, limit, cursor=None):
+        if cursor is None:
+            self.calls["memberships"] += 1
+        return {"channels": list(self._memberships), "response_metadata": {}}
+
+
+def _index(tmp_path, client):
+    return SlackDirectory(
+        path=tmp_path / "local" / "slack-directory.json",
+        token_env="THE_LOOP_SLACK_BOT_TOKEN",
+        client_factory=lambda token: client,
+    )
+
+
+def test_membership_resolves_a_room_the_workspace_listing_misses(tmp_path, monkeypatch):
+    """
+    Feature: a channel name resolves wherever the bot can already speak
+      Scenario: a private room absent from conversations.list is found via membership
+        Given a large workspace whose conversations.list omits the bot's private room
+          And the bot is a member of that room
+        When the room's name is resolved
+        Then it resolves to the room's id from the membership listing
+
+    Requirement: docs/specs/issue-393/requirements.md R1.1, R1.2 (B1)
+    """
+    monkeypatch.setenv("THE_LOOP_SLACK_BOT_TOKEN", "xoxb-test")
+    client = _MembershipClient(
+        workspace=[{"id": "CPUB", "name": "general"}],  # no private room here
+        memberships=[{"id": "GTEST", "name": "test-room"}],
+    )
+    index = _index(tmp_path, client)
+    assert index.conversation_id("#test-room") == "GTEST"
+
+
+def test_a_truncated_listing_miss_is_reported_as_truncated(tmp_path, monkeypatch):
+    """
+    Feature: a channel name resolves wherever the bot can already speak
+      Scenario: a name missing from a capped listing is not a definitive miss
+        Given a workspace listing that never exhausts within the page cap
+        When a name that is not present is resolved
+        Then the miss records that the listing was truncated (so a caller can
+             refuse with "may exist beyond the cap" rather than "no such name")
+
+    Requirement: docs/specs/issue-393/requirements.md R1.4 (B1)
+    """
+    monkeypatch.setenv("THE_LOOP_SLACK_BOT_TOKEN", "xoxb-test")
+    client = _MembershipClient(
+        workspace=[{"id": "CPUB", "name": "general"}],
+        memberships=[],
+        cap_pages=1,  # always another cursor ⇒ the reader stops at the cap
+    )
+    index = _index(tmp_path, client)
+    assert index.conversation_id("#nowhere") == ""
+    assert index.listing_was_truncated() is True
+
+
+def test_an_exhausted_listing_miss_is_not_truncated(tmp_path, monkeypatch):
+    """The counter-case: a listing that ran to its end is a trustworthy miss."""
+    monkeypatch.setenv("THE_LOOP_SLACK_BOT_TOKEN", "xoxb-test")
+    client = _MembershipClient(
+        workspace=[{"id": "CPUB", "name": "general"}], memberships=[]
+    )
+    index = _index(tmp_path, client)
+    assert index.conversation_id("#nowhere") == ""
+    assert index.listing_was_truncated() is False
+
+
 def test_only_the_handle_resolves_never_the_display_name(directory):
     """
     Feature: an operator names the person, not their member id

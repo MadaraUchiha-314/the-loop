@@ -22,8 +22,10 @@ import subprocess
 import tempfile
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Callable, List, Optional, Sequence
 
+from .cli_config import CLI_CONFIG_ENV
 from .harness.base import UnsupportedRunnerError
 from .sessions import Session, WorkItemRef, tmux_session_name
 
@@ -121,6 +123,31 @@ INSTANCE_ENV_VAR = "THE_LOOP_INSTANCE"
 #: nothing set it, so both were a no-op in every session the daemon spawned. Not
 #: a name the-loop invents: it is the ref the tmux target is derived from.
 WORK_ITEM_ENV_VAR = "THE_LOOP_WORK_ITEM"
+
+
+def _cli_config_export() -> str:
+    """The spawner's resolved CLI-config path, for export into spawned sessions.
+
+    issue-393 (B6/R3): a daemon run with `--config`/`$THE_LOOP_CLI_CONFIG` used
+    to spawn sessions that resolved the *default* config inside the work-item
+    checkout — a state root and event bus nobody subscribes to — so every
+    session-published event (`the-loop ask`'s wait above all) vanished.
+    `default_cli_config_path()` already honours this process's own override and
+    environment first (R3.4: an explicit value is preserved, never overridden),
+    so its answer is exactly what the session must inherit. Absolute, because
+    the daemon may resolve a cwd-relative path the session's checkout would
+    re-resolve elsewhere; empty (⇒ not exported) when no config file exists.
+    """
+    from .cli_config import default_cli_config_path
+
+    try:
+        path = Path(default_cli_config_path()).expanduser()
+        if path.is_file():
+            return str(path.resolve())
+    except OSError:
+        pass
+    return ""
+
 
 _INSTALL_HINTS = {
     "tmux": (
@@ -380,6 +407,7 @@ class TmuxRunner:
         env = [
             (INSTANCE_ENV_VAR, self.instance),
             (WORK_ITEM_ENV_VAR, work_item),
+            (CLI_CONFIG_ENV, _cli_config_export()),
         ]
         if any(value for _, value in env) and self._supports_env(timeout):
             argv += [

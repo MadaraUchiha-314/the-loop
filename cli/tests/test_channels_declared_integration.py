@@ -551,8 +551,13 @@ def test_a_declared_room_is_the_conversation_and_events_are_top_level(tmp_path):
 
 
 def test_a_room_conversation_is_opened_once_and_every_event_is_top_level(tmp_path):
-    """R5.2, R5.7: `open` is idempotent; the second event opens nothing."""
-    config = cli_config(tmp_path)
+    """R5.2, R5.7: `open` is idempotent; the second event opens nothing.
+
+    Pinned to the classic room style: this asserts the room *plumbing* invariant
+    (top-level, never threaded), which the issue-393 rework's collapse rules
+    (agentic default) deliberately change — those have their own tests below.
+    """
+    config = cli_config(tmp_path, room={"style": "classic"})
     declare(config)
     client = FakeSlackClient()
     bot = channel_for(config, client)
@@ -568,6 +573,115 @@ def test_a_room_conversation_is_opened_once_and_every_event_is_top_level(tmp_pat
         (ROOM, None),
     ]
     assert conversation(config)["origin"] == "start"
+
+
+def test_an_agentic_room_collapses_an_intermediate_transition(tmp_path):
+    """issue-393 B5/R6.1: in the default agentic room, an intermediate
+    `phase.completed` is collapsed — RoomPolicy drops it — so it is not a third
+    top-level message. The `phase.started` still posts."""
+    config = cli_config(tmp_path)  # agentic is the default
+    declare(config)
+    client = FakeSlackClient()
+    bot = channel_for(config, client)
+
+    assert bot.open(REF).ok
+    bot.post(
+        Event(
+            event_type="phase.started",
+            work_item=REF,
+            text="🔨 Starting design.",
+            detail={"node": "design"},
+        )
+    )
+    bot.post(
+        Event(
+            event_type="phase.completed",
+            work_item=REF,
+            text="done",
+            detail={"node": "design"},
+        )
+    )
+    # The started message posted; the completed one was collapsed (not a
+    # separate post). Exactly one posted message mentions the phase, and none
+    # carries the collapsed "done".
+    import json
+
+    with_phase = [p for p in client.posted if "Starting design." in json.dumps(p)]
+    assert len(with_phase) == 1
+    assert "done" not in [p.get("text") for p in client.posted]
+
+
+def test_an_agentic_room_edits_a_phase_in_place_on_progress(tmp_path):
+    """issue-393 R6.3: a `phase.progress` within a phase edits that phase's one
+    room message in place (chat.update) rather than posting a new one — so a long
+    phase (the review chain) shows where it is instead of going silent."""
+    config = cli_config(tmp_path)  # agentic
+    declare(config)
+    client = FakeSlackClient()
+    bot = channel_for(config, client)
+    assert bot.open(REF).ok
+
+    # The phase's first progress posts and is remembered…
+    bot.post(
+        Event(
+            event_type="phase.progress",
+            work_item=REF,
+            text="🔨 needs-review reached self-review.",
+            detail={"phase": "needs-review", "node": "self-review"},
+        )
+    )
+    # …a later progress in the same phase edits it, not a second message.
+    bot.post(
+        Event(
+            event_type="phase.progress",
+            work_item=REF,
+            text="🔨 needs-review reached critic-review.",
+            detail={"phase": "needs-review", "node": "critic-review"},
+        )
+    )
+    assert len(client.updates) == 1  # the second progress was an edit
+    channel, ts, text, _blocks = client.updates[0]
+    assert "critic-review" in text
+
+
+def test_the_session_voice_wins_over_a_later_template_for_the_same_node(tmp_path):
+    """issue-393 B9/R12.3: when the session speaks for a node (its question, a
+    source=cli event), a later runtime template (phase.started) for that same
+    node is dropped — the agent's own words win over the boilerplate."""
+    config = cli_config(tmp_path)  # agentic
+    declare(config)
+    client = FakeSlackClient()
+    bot = channel_for(config, client)
+    assert bot.open(REF).ok
+
+    # The session asks — its own words, source=cli, recorded as spoken-for.
+    bot.post(
+        Event(
+            event_type="session.awaiting_input",
+            work_item=REF,
+            text="🤔 Two small calls — per-line or per-file?",
+            detail={"node": "requirements-definition"},
+            source="cli",
+        )
+    )
+    # A runtime template for the same node now — it should be suppressed.
+    bot.post(
+        Event(
+            event_type="phase.started",
+            work_item=REF,
+            text="the-loop: started requirements-definition",
+            detail={"node": "requirements-definition"},
+        )
+    )
+    import json
+
+    posts = json.dumps(client.posted)
+    assert "per-line or per-file" in posts  # the session's message landed
+    # the template did not add a second message for that node
+    template_posts = [
+        p for p in client.posted if "started requirements-definition" in json.dumps(p)
+    ]
+    assert template_posts == []
 
 
 def test_a_thread_declared_into_a_room_moves_to_the_room_as_a_room(tmp_path):

@@ -161,6 +161,10 @@ class SlackDirectory:
         #: built beside a channel never re-parses one to learn the same fact.
         self.token_env = token_env
         self._client: Any = None
+        #: Whether the last workspace listing was cut short by the page cap
+        #: (issue-393 B1/R1.4). Read by a caller that missed a name, to refuse
+        #: with "the listing was truncated" rather than "no such channel".
+        self._last_truncated = False
 
     @classmethod
     def beside(
@@ -199,6 +203,51 @@ class SlackDirectory:
         if not name:
             return ""
         return self._lookup(CONVERSATIONS, name)
+
+    def conversation_known(self, conversation_id: str) -> Optional[bool]:
+        """Whether the bot's directory lists ``conversation_id`` (issue-393 R2.3).
+
+        The doctor's question about a channel declared by **id**: an id needs no
+        lookup to be used, so :meth:`conversation_id` hands it straight back — but
+        an id the directory (memberships + workspace listing) has never seen is
+        the B1 failure class from the other side: a room the bot is not in, or
+        cannot list. Three answers, because "absent" and "could not look" must
+        not read the same: ``True`` listed, ``False`` absent from a listing that
+        was read, ``None`` when no listing could be read at all (no token, no
+        scope, a transport error) — the caller reports *unverifiable*, never
+        *ok*. Costs at most the one refresh a miss always costs.
+        """
+        ident = str(conversation_id or "").strip()
+        if not is_conversation_id(ident):
+            return False
+        cached = self._cached(CONVERSATIONS)
+        if ident in cached.values():
+            return True
+        if not self._stale(CONVERSATIONS):
+            return False
+        fresh = self._refresh(CONVERSATIONS)
+        if fresh:
+            return ident in fresh.values()
+        # The read failed: a stale map still answers "absent" (as `_lookup`
+        # does); no map at all answers "cannot tell".
+        return False if cached else None
+
+    def has_conversations(self) -> bool:
+        """Whether this machine holds any conversation listing at all — after a
+        miss, the difference between "no such channel" and "nothing could be
+        read" (issue-393 R2.3). A doctor reports the second as unverifiable."""
+        return bool(self._cached(CONVERSATIONS))
+
+    def listing_was_truncated(self) -> bool:
+        """Whether the last conversation refresh hit the page cap (issue-393 B1).
+
+        Meaningful only right after a :meth:`conversation_id` miss: it says the
+        workspace listing was incomplete, so the name may exist beyond the cap —
+        the difference between "no such channel" and "I could not see all of
+        them". ``False`` when the listing was exhausted (a trustworthy miss) or
+        when membership alone answered.
+        """
+        return self._last_truncated
 
     def user_id(self, value: str) -> str:
         """``value`` as a member id — itself when it already is one.
@@ -294,21 +343,78 @@ class SlackDirectory:
         return found
 
     def _read_conversations(self, client) -> Dict[str, str]:
-        """``{name: id}`` for every channel the workspace has (paginated).
+        """``{name: id}`` for every channel this bot can resolve (issue-393 B1).
 
-        Both kinds in one call: a private channel is as declarable as a public
-        one, and asking for them separately would double the rate-limit cost to
-        answer the same question.
+        Membership first, then the workspace. ``users.conversations`` lists
+        exactly the conversations the bot is a **member** of — public and
+        private — and in a large workspace that set is tiny where
+        ``conversations.list`` is enormous and, crucially, may not reach the
+        bot's own private rooms at all within the page cap. The e2e run read
+        11,374 public names and **zero** private ones from ``conversations.list``
+        and so could not find the very room it had been invited to; its
+        membership listing would have held that room in one short page.
+
+        The workspace listing still runs, second, so a **public** channel the
+        bot has not joined is still declarable by name — membership's entries win
+        on a clash (same name, same id). Whether the workspace listing was cut
+        short by the page cap is remembered (:attr:`_last_truncated`) so a miss
+        over a truncated listing refuses honestly rather than as "no such name".
         """
         found: Dict[str, str] = {}
+        # Membership first — small, complete, includes private (R1.1/R1.2).
+        found.update(self._read_memberships(client))
         cursor = ""
-        for _ in range(_MAX_PAGES):
+        truncated = False
+        for page in range(_MAX_PAGES):
             response = client.conversations_list(
                 types="public_channel,private_channel",
                 exclude_archived=True,
                 limit=1000,
                 cursor=cursor or None,
             )
+            for entry in response.get("channels") or []:
+                name = normalize_name(entry.get("name"))
+                ident = str(entry.get("id") or "")
+                if name and ident and name not in found:
+                    found[name] = ident
+            cursor = str(
+                (response.get("response_metadata") or {}).get("next_cursor") or ""
+            )
+            if not cursor:
+                break
+            if page == _MAX_PAGES - 1:
+                # A cursor remained when the cap was hit: the listing is
+                # incomplete, so a name we did not find may still exist (R1.4).
+                truncated = True
+        self._last_truncated = truncated
+        return found
+
+    def _read_memberships(self, client) -> Dict[str, str]:
+        """``{name: id}`` for the conversations the bot is a member of.
+
+        ``users.conversations`` with no ``user`` argument scopes to the caller —
+        the bot — and returns only its own conversations, so it is short and it
+        includes private channels the bot was invited to. Requires no scope the
+        directory does not already need (``channels:read`` / ``groups:read``).
+        A failure here is not fatal: it returns ``{}`` and the workspace listing
+        still runs, so this only ever *adds* reach.
+        """
+        found: Dict[str, str] = {}
+        reader = getattr(client, "users_conversations", None)
+        if reader is None:  # an older slack_sdk / a stub without the method
+            return found
+        cursor = ""
+        for _ in range(_MAX_PAGES):
+            try:
+                response = reader(
+                    types="public_channel,private_channel",
+                    exclude_archived=True,
+                    limit=1000,
+                    cursor=cursor or None,
+                )
+            except Exception as exc:  # noqa: BLE001 — never fatal; workspace still runs
+                logger.debug("slack: users.conversations read failed (%s)", exc)
+                break
             for entry in response.get("channels") or []:
                 name = normalize_name(entry.get("name"))
                 ident = str(entry.get("id") or "")

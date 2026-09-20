@@ -26,6 +26,7 @@ from the_loop.workchannels import (
     listen_mode_for,
     parse_channel_ref,
     parse_channel_refs,
+    resolve_channel_ref,
 )
 from the_loop.workitem import COLLABORATION_CHANNELS, WorkItemStore
 
@@ -404,3 +405,47 @@ def test_an_absent_store_listens_to_mentions_only(tmp_path):
     assert listen_mode_for(CollaborationChannelStore(tmp_path / "nowhere"), "C0A") == (
         "mentions"
     )
+
+
+# -- resolve_channel_ref's refusal distinguishes truncated from exhausted (B1) --
+
+
+class _FakeDirectory:
+    """Minimal SlackDirectory stand-in: a name resolver plus the truncation
+    flag resolve_channel_ref reads on a miss (issue-393 R1.4)."""
+
+    def __init__(self, resolved="", truncated=False):
+        self._resolved = resolved
+        self._truncated = truncated
+
+    def conversation_id(self, value):
+        return self._resolved
+
+    def listing_was_truncated(self):
+        return self._truncated
+
+
+def test_resolve_names_the_truncated_listing_on_a_miss():
+    """
+    Feature: a channel name resolves wherever the bot can already speak
+      Scenario: a miss over a truncated listing is not "no such channel"
+        Given a directory whose workspace listing was truncated at the page cap
+        When a name it could not find is resolved
+        Then the refusal says the listing was truncated and the name may exist
+             beyond the cap — never a flat "no such channel"
+
+    Requirement: docs/specs/issue-393/requirements.md R1.4 (B1)
+    """
+    ref = parse_channel_ref("slack@#test-room")
+    assert ref is not None
+    with pytest.raises(ValueError, match="truncated"):
+        resolve_channel_ref(ref, directory=_FakeDirectory(truncated=True))
+
+
+def test_resolve_says_no_such_channel_on_an_exhausted_miss():
+    """The counter-case: a listing that ran to its end is a trustworthy miss,
+    so the refusal is the definitive one (spelling / invite / scopes)."""
+    ref = parse_channel_ref("slack@#test-room")
+    assert ref is not None
+    with pytest.raises(ValueError, match="no Slack channel named"):
+        resolve_channel_ref(ref, directory=_FakeDirectory(truncated=False))

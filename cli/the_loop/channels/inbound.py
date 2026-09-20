@@ -46,14 +46,21 @@ from .once import first_sight
 from .slack import (
     ACTION_PREFIX,
     DECISION_VIEW_CALLBACK,
+    EXECUTE_ACTION,
     GITHUB_COMMENT_LIMIT,
     MENTION_SHORTCUTS,
+    PHASE_SELECTION_MARKER,
+    WITHOUT,
     decision_view,
     SlackBotChannel,
     SlackChannelConfig,
     _ts_key,
     action_value,
+    apply_without,
+    compose_selection_execute,
     is_kickoff_repo_action,
+    selection_rows,
+    without_clause,
     kickoff_cursor_key,
     render_kickoff_question,
     render_reply_blocks,
@@ -500,6 +507,21 @@ def process_reply(
             actor=reply.author,
             kind=event_type,
         )
+    if event_type == "control.command":
+        # The phase-selection reply grammar (issue-393 R9.3): `<execute keyword>
+        # without <n, …>` — and `skip <phase>`, composed into it above — is
+        # resolved HERE, after the same authorization and grant the bare keyword
+        # passes, into the checklist the gate reads: the keyword, then every
+        # row with the named phases unticked. A name the checklist does not
+        # offer refuses the whole reply with the reason (abuse case 4), so an
+        # execute that meant one selection can never freeze another.
+        composed, refusal = _selection_grammar(reply, cli_config)
+        if refusal:
+            bot.react(reply, "error")
+            _tell(bot, reply, refusal)
+            return _drop(reply, "unskippable-phase", actor=reply.author)
+        if composed != reply.text:
+            reply = replace(reply, text=composed)
     if verb is not None and verb.name == "record-decision" and not verb.rest.strip():
         # No model summarises a thread (R5.2): a decision is the text typed.
         bot.react(reply, "error")
@@ -704,6 +726,64 @@ def process_reply(
         link = f" — {record.url}" if record.url else ""
         bot.say(reply.thread, f"{what} on `{reply.work_item}`{link}", reply.channel_id)
     return outcome
+
+
+def _selection_checklist(work_item: str, cli_config: Optional[Mapping]) -> str:
+    """The body of the-loop's own phase-selection checklist on ``work_item`` —
+    the comment the gate reads its tick state from, found by its marker — or
+    ``""`` when it cannot be read (no ticket, an outage, none posted yet).
+
+    Read through the same integration the hook posts and reads it with, so the
+    rows a Slack reply counts are the rows the gate will parse: one checklist,
+    numbered once. Never raises.
+    """
+    if not work_item or parse_standing_ref(work_item):
+        return ""
+    try:
+        from ..graph.integrations import resolve
+
+        data = resolve("github", dict(cli_config or {})).call(
+            "list-comments", ref=work_item
+        )
+    except Exception as exc:  # noqa: BLE001 — unreadable is "", refused below
+        logger.debug("could not read the phase checklist for %s: %s", work_item, exc)
+        return ""
+    for comment in reversed(list((data or {}).get("comments") or [])):
+        if isinstance(comment, dict) and PHASE_SELECTION_MARKER in str(
+            comment.get("body") or ""
+        ):
+            return str(comment.get("body") or "")
+    return ""
+
+
+def _selection_grammar(
+    reply: InboundReply, cli_config: Optional[Mapping]
+) -> Tuple[str, str]:
+    """``(text, refusal)`` for a control reply: the text as it is unless it is
+    ``<execute keyword> without <n, …>``, which becomes the checklist reply the
+    gate reads (:func:`the_loop.channels.slack.apply_without`) — or a refusal
+    saying why it could not (an unknown or unskippable phase, a checklist that
+    could not be read). A refusal records nothing: the fail-closed direction is
+    the reply not landing, never a selection the person did not make.
+    """
+    from ..control import EXECUTE, parse_command
+
+    control = _control_config(cli_config)
+    if parse_command(reply.text, control).command != EXECUTE:
+        return reply.text, ""
+    keyword = control.keyword(EXECUTE)
+    items = without_clause(reply.text, keyword)
+    if items is None:
+        return reply.text, ""
+    rows = selection_rows(_selection_checklist(reply.work_item, cli_config))
+    if rows is None or not rows.phases:
+        return "", (
+            "Could not read the phase checklist on this work item just now, so "
+            f"`{WITHOUT}` cannot tell which phases you mean; nothing was recorded. "
+            "Try again in a moment, or tick the boxes on GitHub and reply "
+            f"`{keyword}` there."
+        )
+    return apply_without(rows, items, keyword)
 
 
 def _thread_permalink(bot: SlackBotChannel, reply: InboundReply) -> str:
@@ -1683,11 +1763,19 @@ def handle_socket_action(
     state_path = slack_state_path(cli_config)
     state = ChannelState.load(state_path, ChannelStores.beside(state_path))
     action_id = str(actions[0].get("action_id") or "")
+    text = action_value(actions[0])
+    if action_id == EXECUTE_ACTION and isinstance(message, Mapping):
+        # Execute on the phase-selection control (issue-393 R9.1): the press
+        # composes the keyword AND the boxes as the payload's `state.values`
+        # carries them — the reply a person types on GitHub with the list in
+        # it — so the gate's one parser freezes a Slack selection unchanged.
+        # A message without the control composes the bare keyword, as before.
+        text = compose_selection_execute(text, message, payload.get("state"))
     reply = InboundReply(
         channel="slack",
         work_item=state.work_item_for(thread) or "" if thread else "",
         author=str((payload.get("user") or {}).get("id") or ""),
-        text=action_value(actions[0]),
+        text=text,
         thread=thread,
         ts=str(
             container.get("message_ts")

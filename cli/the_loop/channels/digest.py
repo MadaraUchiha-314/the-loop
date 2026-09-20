@@ -35,13 +35,25 @@ from ..redact import neutralise_broadcasts, strip_html_comments
 __all__ = [
     "DEFAULT_DIGEST_MODE",
     "DIGEST_MODES",
+    "SUMMARY_MAX_CHARS",
     "condense",
     "fit",
+    "sanitize_summary",
     "shorten_paths",
     "strip_comments",
     "to_mrkdwn",
     "truncate",
 ]
+
+#: How long an agent-authored summary may be before it is capped (issue-393 R8).
+#: A summary is meant to be 2–3 sentences; a generous ceiling keeps a runaway one
+#: from taking over the message while never clipping a real one.
+SUMMARY_MAX_CHARS = 600
+
+#: A Slack user mention in text — `<@U…>` / `<@W…>`, with or without a `|label`.
+#: Neutralised in an agent-authored summary so it can ping no one (abuse case 3);
+#: broadcast sequences (`<!here>` …) are handled by `neutralise_broadcasts`.
+_USER_MENTION_RE = re.compile(r"<@([UW][A-Z0-9]+)(?:\|[^>]*)?>")
 
 #: What happens to a text section longer than ``maxChars`` (R1.4).
 DIGEST_MODES: Tuple[str, ...] = ("digest", "truncate")
@@ -495,6 +507,23 @@ def truncate(text: str, limit: int) -> str:
         return text
     rest = len(text) - limit
     return text[:limit].rstrip() + f"\n… ({rest} more characters — see the link)"
+
+
+def sanitize_summary(summary: str, limit: int = SUMMARY_MAX_CHARS) -> str:
+    """An agent-authored summary, safe to render into a room (issue-393 R8/R12).
+
+    The session writes this, so it is untrusted-adjacent: drawn as mrkdwn (which
+    neutralises broadcast sequences and strips the-loop's own markers), with
+    direct user mentions defused so a summary can ping no one, and capped so a
+    runaway one cannot take over the message. Empty in, empty out — the caller
+    then falls back to the digest excerpt.
+    """
+    text = (summary or "").strip()
+    if not text:
+        return ""
+    defused = _USER_MENTION_RE.sub(r"@\1", text)  # `<@U…>` → plain `@U…`, inert
+    drawn = to_mrkdwn(defused).strip()
+    return truncate(drawn, limit)
 
 
 def fit(text: str, limit: int, mode: str = DEFAULT_DIGEST_MODE, url: str = "") -> str:

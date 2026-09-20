@@ -1186,6 +1186,22 @@
               "default": "digest",
               "description": "What happens to a text section longer than `maxChars` (issue-338, decision-118). digest = a structural digest the channel computes, no model involved: the first question (or the `reply ...` instruction) first, lists as numbered lines, code fences / tables / stack traces replaced by a pointer, absolute paths shortened, the rest in the author's order, cut at a sentence, one closing line linking the full text. truncate = the first `maxChars` characters and a note (13.10.0's behaviour). A text at or under `maxChars` is posted whole either way."
             },
+            "room": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "How a work item's OWN room reads (issue-393). A room is a channel a single work item was declared into; this does not affect a shared/central channel, which keeps its header rendering.",
+              "properties": {
+                "style": {
+                  "type": "string",
+                  "enum": [
+                    "agentic",
+                    "classic"
+                  ],
+                  "default": "agentic",
+                  "description": "agentic (default) = one message per meaningful moment, in the-loop's first-person voice with one state emoji and no machine header; consecutive lifecycle events collapse into one transition, a gate is announced once (with its buttons), a phase's progress edits one message in place, and acknowledgements thread under the message they answer. classic = the pre-issue-393 rendering, byte-for-byte — the escape hatch and the compatibility baseline."
+                }
+              }
+            },
             "kickoff": {
               "type": "object",
               "additionalProperties": false,
