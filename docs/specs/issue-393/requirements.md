@@ -161,6 +161,16 @@ died and bypassing it.
 4. WHEN the critic is cut off by the timeout THEN the failure SHALL say the timeout was
    the cause and name the flag that raises it.
 
+> **Implementation note (2026-09-19).** Investigation found the CLI has honoured
+> `--timeout` end-to-end since v10 (default 900 s); the ~120 s death the e2e run hit was
+> the *caller's* own tool timeout, not the wrapper. R5.1–R5.4 are delivered as: a
+> regression test pinning the threading, `critic policy` surfacing each critic's
+> effective timeout, and a timeout error that names whose limit was hit and how to raise
+> it. A detached `critic run --detach` / `critic collect` (so a tool-timeout-capped
+> caller can run any-length rounds) realises R5.1's *spirit* for such callers and is
+> **deferred to a follow-up** (owner decision) — the core bug is already satisfied and
+> the error points at the real cause.
+
 ### R6 — one message per meaningful moment (rework rules 1, 3)
 
 **User story:** As a person in the room, I want the lifecycle collapsed — one message

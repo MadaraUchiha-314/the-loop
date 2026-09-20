@@ -29,10 +29,14 @@ overrides: {}
       `_read_memberships` (`users.conversations`, public+private) consulted before the
       workspace listing; listings record `truncated`; refusals distinguish
       truncated/exhausted and name paths + remedy. _Req:_ R1 · _Test:_ T1 unit rows.
-- [x] **A4 — critic timeout & detach (B9).** Regression test pinning `--timeout`
-      threading; `critic run --detach` + `critic collect` with round state under
-      `.the-loop/critic-rounds/`; `critic policy` prints effective timeout; timeout
-      error names the flag. _Req:_ R5 · _Test:_ T1 rows.
+- [x] **A4 — critic timeout (B9).** Regression test pinning `--timeout` threading
+      (the CLI has honoured it since v10 — the ~120 s death was the *caller's* tool
+      timeout, not the wrapper); `critic policy` prints each critic's effective
+      timeout; the timeout error names whose limit was hit and how to raise it.
+      **`critic run --detach` / `collect` deferred** (owner decision, 2026-09-19):
+      R5.1's core is already satisfied and proven, and the error now points at the
+      real cause; detach is a separable follow-up, not built here. _Req:_ R5.1–R5.4
+      (detach as R5.1's *spirit* deferred) · _Test:_ T1 rows.
 - [ ] **A5 — listener & refusal observability (B3 part).** Socket listener logs every
       ignored envelope (type, channel, reason) at debug; `control.rejected` posts a
       marked reply with reason + remedy at the attempt site. _Req:_ R2.4, R2.5 ·
