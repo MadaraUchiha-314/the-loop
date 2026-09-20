@@ -2,8 +2,8 @@
 type: testing-plan
 phase: test-planning
 workItem: "github:MadaraUchiha-314/the-loop#393"
-status: in-review            # draft | in-review | approved — reviewed with design.md at the design-approval gate on the spec PR
-approvedBy: []
+status: approved             # draft | in-review | approved
+approvedBy: ["MadaraUchiha-314"]  # locked with design.md at the design-approval gate, in-session on 2026-09-19
 overrides: {}
 ---
 

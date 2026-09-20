@@ -2,8 +2,8 @@
 type: design
 phase: design
 workItem: "github:MadaraUchiha-314/the-loop#393"
-status: in-review            # draft | in-review | approved — design-approval gate runs on the spec PR
-approvedBy: []
+status: approved             # draft | in-review | approved
+approvedBy: ["MadaraUchiha-314"]  # owner's approval, in-session on 2026-09-19: "looks good, no comments. go ahead with implementation"
 overrides: {}
 ---
 
