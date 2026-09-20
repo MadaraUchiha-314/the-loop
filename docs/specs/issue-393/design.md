@@ -2,7 +2,7 @@
 type: design
 phase: design
 workItem: "github:MadaraUchiha-314/the-loop#393"
-status: draft                # draft | in-review | approved
+status: in-review            # draft | in-review | approved — design-approval gate runs on the spec PR
 approvedBy: []
 overrides: {}
 ---

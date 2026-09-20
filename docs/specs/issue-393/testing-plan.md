@@ -2,7 +2,7 @@
 type: testing-plan
 phase: test-planning
 workItem: "github:MadaraUchiha-314/the-loop#393"
-status: draft                # draft | in-review | approved
+status: in-review            # draft | in-review | approved — reviewed with design.md at the design-approval gate on the spec PR
 approvedBy: []
 overrides: {}
 ---
