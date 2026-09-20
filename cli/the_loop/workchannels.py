@@ -226,6 +226,24 @@ def resolve_channel_ref(
     index = directory or SlackDirectory(cli_config)
     resolved = index.conversation_id(channel.target)
     if not resolved:
+        # issue-393 B1/R1.4: distinguish "I searched everything and it is not
+        # there" from "I could not see all the channels". A truncated workspace
+        # listing must never masquerade as a definitive "no such channel".
+        truncated = False
+        checker = getattr(index, "listing_was_truncated", None)
+        if callable(checker):
+            try:
+                truncated = bool(checker())
+            except Exception:  # noqa: BLE001 — a diagnostic never changes the outcome
+                truncated = False
+        if truncated:
+            raise ValueError(
+                f"could not find a Slack channel named {channel.target!r}, but the "
+                "workspace listing was truncated at the page cap, so it may exist "
+                "beyond what this bot could read. Invite the bot to the channel "
+                "(then its own membership resolves it), or declare it by its "
+                "conversation id, which always works"
+            )
         raise ValueError(
             f"no Slack channel named {channel.target!r} that this bot can see — "
             "check the spelling, invite the bot to the channel, and make sure "

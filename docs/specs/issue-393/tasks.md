@@ -25,7 +25,7 @@ overrides: {}
       adds `THE_LOOP_CLI_CONFIG` = the daemon's resolved config path, skipped when
       already present/empty; `ask` (and shared publish path) warns when the bus names
       no channels. _Req:_ R3 · _Test:_ T2 two Scenarios (spawn env; channel-less warn).
-- [ ] **A3 — membership-first channel resolution (B1).** `SlackDirectory` gains
+- [x] **A3 — membership-first channel resolution (B1).** `SlackDirectory` gains
       `_read_memberships` (`users.conversations`, public+private) consulted before the
       workspace listing; listings record `truncated`; refusals distinguish
       truncated/exhausted and name paths + remedy. _Req:_ R1 · _Test:_ T1 unit rows.
