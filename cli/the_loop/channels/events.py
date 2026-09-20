@@ -109,6 +109,13 @@ EVENTS: Dict[str, EventSpec] = {
         "A phase ended — the loop left its last node on a satisfied outcome, or "
         "finished at a terminal one (published by the runtime)."
     ),
+    "phase.progress": EventSpec(
+        "The loop stepped to a new node WITHIN the current phase — the review "
+        "chain walking self-review → critic-review → security-review is the loud "
+        "case (published by the runtime, issue-393). Not recorded on the ledger: "
+        "in an agentic room it edits that phase's one message in place, so a long "
+        "phase shows where it is rather than going silent until it ends."
+    ),
     "work-item.closed": EventSpec(
         "The work item ended on the ledger — its issue was closed, or the pull "
         "request that is the work item merged or closed — and this deployment "

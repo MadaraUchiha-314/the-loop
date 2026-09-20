@@ -189,16 +189,17 @@ so that following a work item on a phone is reading a conversation, not a log.
    as separate messages (owner decision, 2026-09-19: one message per phase, edits
    within it).
 
-   > **Implementation note.** The edit-in-place *mechanism* is delivered: RoomPolicy's
-   > `progress-edit` rule and the channel's `chat.update` path handle a
-   > `phase.progress` / `session.progress` event by editing that phase's one message
-   > (tested in `test_room_policy.py` and the channel path). What is **not** wired in
-   > this work item is a runtime *emitter* of those progress events — the lifecycle
-   > emits only `phase.started`/`phase.completed`, so nothing yet sends the intra-phase
-   > "Verifying — 5 tests green" stages. Emitting them needs a new signal from the
-   > session/runtime and is a **follow-up**; until then a phase shows its one
-   > `phase.started` line (collapsed per R6.1), not a live-updating one. The transition
-   > collapse, gate collapse, dedupe, threading and voice are all live now.
+   > **Implementation note.** Delivered end to end. RoomPolicy's `progress-edit`
+   > rule and the channel's `chat.update` path edit a phase's one message on a
+   > `phase.progress` event, and the runtime now **emits** one: when the graph
+   > advances to a new node whose phase label did not change (the review chain
+   > walking self-review → critic-review → security-review — the report's
+   > 55-minute-silence case), `_lifecycle` publishes `phase.progress` instead of
+   > nothing. So a long phase edits its one room message in place as it steps
+   > through its sub-nodes, rather than going quiet until the phase ends. The event
+   > is not recorded on the ledger (room-only). What a `phase.progress` names is the
+   > node reached; a richer intra-node signal ("5 tests green") would ride the same
+   > event and is the only piece left as a possible future refinement.
 4. WHEN an event has already been posted to the room THEN an identical event for the
    same work item and node SHALL NOT be posted again.
 5. WHEN Slack delivery collapses or suppresses a message THEN the GitHub ledger SHALL

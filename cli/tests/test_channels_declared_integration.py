@@ -611,6 +611,39 @@ def test_an_agentic_room_collapses_an_intermediate_transition(tmp_path):
     assert "done" not in [p.get("text") for p in client.posted]
 
 
+def test_an_agentic_room_edits_a_phase_in_place_on_progress(tmp_path):
+    """issue-393 R6.3: a `phase.progress` within a phase edits that phase's one
+    room message in place (chat.update) rather than posting a new one — so a long
+    phase (the review chain) shows where it is instead of going silent."""
+    config = cli_config(tmp_path)  # agentic
+    declare(config)
+    client = FakeSlackClient()
+    bot = channel_for(config, client)
+    assert bot.open(REF).ok
+
+    # The phase's first progress posts and is remembered…
+    bot.post(
+        Event(
+            event_type="phase.progress",
+            work_item=REF,
+            text="🔨 needs-review reached self-review.",
+            detail={"phase": "needs-review", "node": "self-review"},
+        )
+    )
+    # …a later progress in the same phase edits it, not a second message.
+    bot.post(
+        Event(
+            event_type="phase.progress",
+            work_item=REF,
+            text="🔨 needs-review reached critic-review.",
+            detail={"phase": "needs-review", "node": "critic-review"},
+        )
+    )
+    assert len(client.updates) == 1  # the second progress was an edit
+    channel, ts, text, _blocks = client.updates[0]
+    assert "critic-review" in text
+
+
 def test_the_session_voice_wins_over_a_later_template_for_the_same_node(tmp_path):
     """issue-393 B9/R12.3: when the session speaks for a node (its question, a
     source=cli event), a later runtime template (phase.started) for that same

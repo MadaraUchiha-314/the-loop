@@ -51,12 +51,20 @@ class FakeSlackClient:
         self.reactions = []  # (channel, ts, name) — issue-325
         self.replies = replies or {}  # thread ts -> [message dict, ...]
         self.history = []  # top-level messages, for the kickoff read
+        self.updates = []  # (channel, ts, text, blocks) — issue-393 edit-in-place
 
     def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
         self.posted.append(
             {"channel": channel, "text": text, "thread_ts": thread_ts, "blocks": blocks}
         )
         return {"ok": True, "channel": channel, "ts": f"1700.{len(self.posted):06d}"}
+
+    def chat_update(self, *, channel, ts, text, blocks=None):
+        # issue-393 B5: the edit-in-place path. Records the update and echoes the
+        # ts, so a progress event edits the phase's one message rather than
+        # posting a new one.
+        self.updates.append((channel, ts, text, blocks))
+        return {"ok": True, "channel": channel, "ts": ts}
 
     def conversations_history(self, *, channel, oldest=None, limit=100):
         return {"ok": True, "messages": list(self.history)}

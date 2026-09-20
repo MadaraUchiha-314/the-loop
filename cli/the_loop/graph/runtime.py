@@ -418,6 +418,11 @@ class Runtime:
             text = f"the-loop: {item.id} started phase *{phase}* ({node_id})."
             if actor == "human":
                 text += " — waiting on a person"
+        elif event_type == "phase.progress":
+            # A within-phase step (issue-393 R6.3): names the node reached, so the
+            # room's edited-in-place progress line can say where the phase is now
+            # (the classic rendering shows it as an ordinary lifecycle line).
+            text = f"the-loop: {item.id} — *{phase}* reached {node_id}."
         else:
             outcome = str(detail.get("outcome") or "")
             text = (
@@ -1204,6 +1209,21 @@ class Runtime:
                 to=target,
             )
             self._lifecycle(item, "phase.started", target, entered_phase)
+        else:
+            # A step WITHIN a phase (issue-393 R6.3): the graph moved to a new
+            # node but the phase label did not change — the review chain walking
+            # self-review → critic-review → security-review is the loud case, the
+            # one the report's 55-minute silence lived in. Emit a progress event
+            # so the room edits that phase's single message in place (RoomPolicy's
+            # progress-edit rule) rather than saying nothing until the phase ends.
+            self._lifecycle(
+                item,
+                "phase.progress",
+                target,
+                entered_phase,
+                outcome=outcome.outcome,
+                to=target,
+            )
         return report
 
     def _current_phase(self, state: "WorkItemState", node_id: str) -> str:

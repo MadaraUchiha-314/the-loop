@@ -75,10 +75,11 @@ flowchart LR
   ~120 s death was the caller's own tool timeout. Delivered as a regression test
   that proves the threading, plus a policy readout and a clearer error; a detached
   runner is a deferred follow-up (owner decision).
-- **Edit-in-place is wired but not yet triggered** — the mechanism (RoomPolicy
-  `progress-edit` + `chat.update`) is done and tested, but no runtime emitter sends
-  `phase.progress` yet, so that one rule is dormant until a follow-up adds the
-  emitter. Called out so R6.3 is not overclaimed.
+- **Edit-in-place is live end to end** (R6.3) — RoomPolicy's `progress-edit` rule
+  and `chat.update` edit a phase's one message, and the runtime now emits
+  `phase.progress` when the graph steps to a new node within the same phase (the
+  review chain's case), so a long phase updates in place instead of going silent.
+  The event is room-only (not recorded on the ledger).
 
 ## Evidence
 
@@ -111,5 +112,6 @@ retention on close). Separable, none in a hook this PR touches.
 
 ## Open questions for the reviewer
 
-1. The edit-in-place emitter (R6.3) is deferred — accept as a follow-up, or is a
-   minimal `phase.progress` emitter wanted in this PR?
+None blocking. A possible future refinement (not required by any acceptance
+criterion): `phase.progress` currently names the node the phase reached; a richer
+intra-node signal ("5 tests green") could ride the same event later.
