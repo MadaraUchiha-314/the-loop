@@ -104,6 +104,17 @@ package — there are no install extras (owner decision, PR #162).
   `status`/`stop` and the daemons API semantics are unchanged — and stops them,
   in reverse order, when the service shuts down. A lock already held by another
   process is skipped with a warning; a hosting failure never takes down the API.
+  **The hosted set follows the config** (issue-395): a supervisor thread re-hashes the
+  config file every five seconds, and WHEN an edit means an ingress the service hosts
+  is no longer enabled (`polling.enabled`, `webhooks.ghWebhook.enabled`,
+  `channels.slack.enabled` with `read.mode: socket`) THEN the service SHALL stop it —
+  loop ended through its stop event, lock released, `ingress.hosted_stopped` with
+  `reason: config` — without a restart; WHEN an edit newly enables one THEN the service
+  SHALL start it through the same starter, lock and refusals as at boot (`ingress.hosted`
+  with `reason: config`; a refusal is `ingress.hosted_failed` as at boot), and one
+  `config.reloaded` names what was stopped and started. Membership only: an edit that
+  leaves the enabled set as it is stops and starts nothing, and an unloadable edit
+  changes nothing. `service.hostIngresses` itself stays boot-only.
   An **enabled** ingress that does not start SHALL record `ingress.hosted_failed` at
   level `error` with the ingress and the reason (issue-339) — a lock another process
   holds, an enabled poller with no `polling.sources` or no top-level `repositories`
@@ -280,7 +291,12 @@ package — there are no install extras (owner decision, PR #162).
   unparseable keeps the last good config rather than reverting to defaults. The values
   read only at boot — `service.host`, `service.port`, `service.exposed` and everything
   under `service.cors` — SHALL be reported back as `restartRequired`, and that list SHALL
-  be empty when nothing in it changed.
+  be empty when nothing in it changed. *Which ingresses the service hosts* is not
+  boot-only either (issue-395): the hosted set is reconciled to the file on a supervisor
+  thread, so `read.mode: off` stops the listener the service hosts and `the-loop status`
+  never has to print `running … [disabled]` — a row that is running against its config
+  says so and names what ends it (the service's next config check for a hosted row,
+  `the-loop stop` for any other).
 - A config write SHALL be **visible**: every successful save emits `config.updated` with
   the file and the **changed key paths**, and never the values, which name people, hosts
   and binaries. The route SHALL NOT be exposed as an MCP tool — a daemon config an agent
@@ -433,6 +449,7 @@ package — there are no install extras (owner decision, PR #162).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-395 | The hosted ingress set follows the config (2026-09-20, B5 of the e2e run): `HostedIngresses` in `api/ingress.py` composes the set as `the-loop start` did, then re-hashes the config file every five seconds on a supervisor thread and reconciles membership on change — an ingress no longer enabled is stopped (`ingress.hosted_stopped reason=config`, lock released, no restart), one newly enabled is started through the same starter, lock and refusals as at boot (`ingress.hosted reason=config`), and one `config.reloaded` names both. So `channels.slack.read.mode: off` now ends the hosted listener's Socket Mode connection instead of leaving it consuming events until a restart. `the-loop status` no longer prints `running … [disabled]`: a running row the config disables says so and names what ends it. Membership only — a running ingress's own config keeps reloading as before; `service.hostIngresses` stays boot-only. No config key, schema, state or event type change | [spec](../specs/issue-395/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/395) |
 | issue-339 | The plane stopped reporting `ok` for a job it was not doing (2026-09-11): `GET /api/v1/health` carries the enabled ingresses with a reason for each one that is down, plus the `configPath` and `stateRoot` this process resolved — at HTTP 200 still, because the code is what the CLI's auto-start loop reads. An enabled ingress that fails to start records `ingress.hosted_failed` instead of only a logfile line. Both spawns of the service now carry `THE_LOOP_CLI_CONFIG` so the service and everything it hosts read the operator's config rather than re-resolving one from the working directory they inherited | [spec](../specs/issue-339/), [decision-119](../decisions/decision-119.md), [supervision](../cli/supervision.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/339) |
 | issue-368 | One portable record per work item (2026-09-15): a pull request delivering a tracked work item no longer gets a record of its own — its poll ledger is keyed under the owner's record — so `GET /api/v1/work-items` serves one row per work item, each naming the pull requests it links. The client-side reconciliation of the two identities (issue-302) **stays**: records written for a pull request before this change are read and never deleted, so a board that dropped the join would draw those twice. The `nodes` view the portable `graph` section used to carry is derived from `the-loop check`, which the client already calls | [spec](../specs/issue-368/), [decision-128](../decisions/decision-128.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/368) |
 | issue-329 | Closed work items leave *Needs you* (2026-09-09): the join reads the portable record's new `ended` section, nulls the item's question and parked gate, keeps it out of `needs-you`, groups it under *Shipped* (merged or issue closed) or *Idle* (PR closed unmerged) with a muted `merged` / `closed` chip, and contributes nothing to the inbox for it or its pull requests; `GET /attention` applies the same rule and reports neither `awaiting-input` nor `armed-without-session` for a stamped record. A record without the field, or with a malformed one, is open, as at 13.6.0. The demo's shipped item now carries the stamp | [spec](../specs/issue-329/), [decision-113](../decisions/decision-113.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/329) |

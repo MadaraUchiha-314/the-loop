@@ -186,6 +186,17 @@ class StatusCommand(Command):
             )
             if row.get("hosted"):
                 liveness = f"running (hosted in the service, pid {row['pid']})"
+            if row["running"] and not row["enabled"]:
+                # Never `running … [disabled]` (issue-395, B5): the two facts are both
+                # true, so say what reconciles them. A hosted row is the service's to
+                # stop — its supervisor does so on its next config check; anything
+                # else (a standalone daemon, a foreground `channels listen`) ends
+                # with `the-loop stop`, which ignores `enabled` on purpose.
+                flag = "disabled in config — still running; " + (
+                    "the service stops it on its next config check"
+                    if row.get("hosted")
+                    else "`the-loop stop` ends it"
+                )
             extra = ""
             if row["service"] == "service" and row["running"]:
                 extra = f" — {row['url']}, {'healthy' if row['healthy'] else 'unresponsive'}"

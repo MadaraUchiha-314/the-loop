@@ -137,7 +137,10 @@ names a path — and a write is spliced into the file rather than re-serialized,
 comments survive. Nothing is written unless the merged document passes the schema, the
 migration gate and the CORS boot rule. A saved change is live on the next request, and
 the values read once at boot (`service.host`, `service.port`, `service.exposed`,
-`service.cors.*`) come back in the response as `restartRequired`. See
+`service.cors.*`) come back in the response as `restartRequired`. Which ingresses the
+service **hosts** follows the file too: it checks the config every five seconds, stops a
+hosted ingress the edit no longer enables (`channels.slack.read.mode: off` closes the
+Socket Mode connection) and starts one the edit newly enables, with no restart. See
 [configuring the CLI](/config/cli/).
 
 ## MCP: connecting an agent

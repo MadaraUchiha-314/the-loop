@@ -1,6 +1,6 @@
 # `channels.slack.read.mode` is hot-reloaded in config but not in the running process
 
-**Kind:** bug · **Source:** e2e Slack test 2026-09-19 (B5) · **Not fixed in issue-393**
+**Kind:** bug · **Source:** e2e Slack test 2026-09-19 (B5) · **Not fixed in issue-393** · filed as [#395](https://github.com/MadaraUchiha-314/the-loop/issues/395), fixed by its spec's PR (the first suggested fix, plus the `status` wording of the second)
 
 ## What happens
 

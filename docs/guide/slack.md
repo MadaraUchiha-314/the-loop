@@ -300,7 +300,10 @@ tokens must be in the service's environment (the `.env` file the config names is
 at start); with one missing, `start` reports the row as `failed` and says which.
 `the-loop channels listen` remains the **foreground** form — for `hostIngresses: false`,
 or for watching the connection in a terminal — and takes the same single-instance lock,
-so it refuses to run beside a hosted one.
+so it refuses to run beside a hosted one. Setting `read.mode` to anything but `socket`
+in the config file **stops the hosted listener within a few seconds**, no restart
+needed — the way to take one of two instances off a shared Slack app — and setting it
+back starts a fresh one with the edited config.
 
 **No webhook server, no Request URL.** Socket Mode is an *outbound* WebSocket the-loop
 opens to Slack with the app-level token; Slack then pushes message events, button presses

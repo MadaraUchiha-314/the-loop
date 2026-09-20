@@ -246,3 +246,74 @@ def test_status_prints_the_instance_line(tmp_path, monkeypatch, capsys):
     assert main(["status"]) == 0
     first = capsys.readouterr().out.splitlines()[0]
     assert first == "instance    (unnamed) [open] — 0 declared, 0 managed"
+
+
+def test_status_never_prints_running_beside_disabled(tmp_path, monkeypatch, capsys):
+    """
+    Feature: `the-loop status`
+    Scenario: a row the config disables is still running (issue-395, B5)
+        Given a hosted slack-listener row that is running with enabled false
+        And a standalone poller row in the same state
+        When `the-loop status` runs in text form
+        Then neither line reads `running … [disabled]`
+        And the hosted line says the service stops it on its next config check
+        And the standalone line says `the-loop stop` ends it
+        And an enabled running row keeps its plain flag
+    Requirement: docs/specs/issue-395/bugfix.md R2.1
+    """
+    monkeypatch.chdir(tmp_path)
+    report = {
+        "services": [
+            {
+                "service": "service",
+                "enabled": True,
+                "running": True,
+                "pid": 7,
+                "url": "http://127.0.0.1:4114",
+                "healthy": True,
+                "mcp": {"enabled": True, "path": "/mcp"},
+            },
+            {
+                "service": "gh-webhook",
+                "enabled": True,
+                "running": True,
+                "pid": 7,
+                "hosted": True,
+            },
+            {
+                "service": "poller",
+                "enabled": False,
+                "running": True,
+                "pid": 99,
+                "hosted": False,
+            },
+            {
+                "service": "slack-listener",
+                "enabled": False,
+                "running": True,
+                "pid": 7,
+                "hosted": True,
+            },
+        ],
+        "ok": True,
+    }
+    monkeypatch.setattr(
+        lifecycle, "status_all", lambda config, config_path=None: report
+    )
+    monkeypatch.setattr(
+        "the_loop.poller.daemon.heartbeat_lines", lambda beat, running: []
+    )
+    assert main(["status"]) == 0
+    out = capsys.readouterr().out
+    lines = {line.split()[0]: line for line in out.splitlines() if line.strip()}
+    assert "[disabled]" not in out
+    assert lines["gh-webhook"].endswith(
+        "running (hosted in the service, pid 7) [enabled]"
+    )
+    assert (
+        "running (pid 99) [disabled in config — still running; `the-loop stop` ends it]"
+    ) in lines["poller"]
+    assert (
+        "running (hosted in the service, pid 7) [disabled in config — still running; "
+        "the service stops it on its next config check]"
+    ) in lines["slack-listener"]

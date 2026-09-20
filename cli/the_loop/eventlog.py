@@ -795,7 +795,9 @@ EVENT_TYPES: Dict[str, str] = {
         "re-forward each other's comments, so the second one does not run."
     ),
     "config.reloaded": (
-        "A config edit was hot-reloaded into a running process (detail)."
+        "A config edit was hot-reloaded into a running process (detail). The "
+        "service emits it too when the edit changed WHICH ingresses it hosts "
+        "(issue-395): detail names what was stopped and started."
     ),
     # -- process graph (source: any; issue-109) -------------------------------
     "graph.started": (
@@ -972,8 +974,9 @@ EVENT_TYPES: Dict[str, str] = {
     ),
     "ingress.hosted": (
         "The control-plane service is hosting this ingress (poller | "
-        "gh-webhook) as an in-process task (`service.hostIngresses`, "
-        "issue-231). Its pidfile lock is held by the service's pid."
+        "gh-webhook | slack-listener) as an in-process task (`service.hostIngresses`, "
+        "issue-231). Its pidfile lock is held by the service's pid. `reason` is "
+        "`startup`, or `config` when a config edit newly enabled it (issue-395)."
     ),
     "ingress.hosted_failed": (
         "An ENABLED ingress (poller | gh-webhook | slack-listener) did not start "
@@ -983,8 +986,10 @@ EVENT_TYPES: Dict[str, str] = {
         "visible only as the absence of a `poller.started`."
     ),
     "ingress.hosted_stopped": (
-        "A hosted ingress finished during the service's shutdown; its lock is "
-        "released. issue-231."
+        "A hosted ingress was stopped by the service and its lock released "
+        "(issue-231). `reason` is `shutdown`, or `config` when a config edit no "
+        "longer enables it — a `read.mode: off` stops the listener without a "
+        "restart (issue-395)."
     ),
     "diagnosis.detected": (
         "Self-diagnosis (issue-242, opt-in) accepted a NEW failure fingerprint "

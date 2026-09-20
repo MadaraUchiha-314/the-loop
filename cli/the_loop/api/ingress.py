@@ -28,18 +28,36 @@ logged warning and an ``ingress.hosted_failed`` event at level ``error``
 operator see and fix the reason, and the event is what puts it where the trail
 is read: before it, a poller that never came up was visible only as the
 *absence* of a ``poller.started``, which nothing was computing.
+
+**The set follows the config** (issue-395). Every long-lived process re-reads the
+CLI config from its content hash and applies what it can — sources, intervals,
+routing — but *which* ingresses this process hosts used to be composed once, in
+the lifespan's first line, and never revisited: turning the Slack listener off
+(``read.mode: off``) fired ``config.reloaded`` from the poller and left the
+listener's connection open until a restart. :class:`HostedIngresses` is the
+composition as a thing that can be re-run: it starts the set, watches the file
+on a supervisor thread, and on every change stops what is no longer enabled and
+starts what newly is, through the same starters, locks and refusals as at boot.
+Membership only — an ingress whose own config changed keeps reloading what it
+reloads today, and a listener that froze its config keeps it until it is stopped.
 """
 
 from __future__ import annotations
 
 import logging
 import threading
-from typing import List, Optional, Tuple
+from pathlib import Path
+from typing import Callable, List, Optional, Tuple, Union
 
 from .. import eventlog
 from ..runlock import RunLock
 
 logger = logging.getLogger("the-loop.service")
+
+#: How often the supervisor re-hashes the config file to reconcile the hosted set
+#: (issue-395). The operator-visible latency of a `read.mode: off` taking effect; one
+#: sha256 of a ~10 KB file per tick.
+RECONCILE_INTERVAL_SECONDS = 5.0
 
 #: What a starter answers: the hosted ingress, or ``None`` and WHY. The reason is a
 #: return value rather than only a log line because it is what the
@@ -76,7 +94,13 @@ class _HostedIngress:
         #: `finally` can tell "we shut it down" from "it ended by itself" (issue-339).
         self.stopping = stopping or threading.Event()
 
-    def stop(self) -> None:
+    def stop(self, reason: str = "shutdown") -> None:
+        """End the loop, release the lock, record it.
+
+        ``reason`` is ``shutdown`` (the service is going down) or ``config`` (the
+        config no longer enables this ingress, issue-395) — carried on the event so
+        the trail says why a listener went away while the service stayed up.
+        """
         self.stopping.set()
         try:
             self._stop()
@@ -90,7 +114,7 @@ class _HostedIngress:
                 _JOIN_TIMEOUT_SECONDS,
             )
         self.lock.release()
-        eventlog.emit("ingress.hosted_stopped", ingress=self.name)
+        eventlog.emit("ingress.hosted_stopped", ingress=self.name, reason=reason)
 
 
 def _host(name: str, lock: RunLock, run, stop) -> _HostedIngress:
@@ -280,46 +304,71 @@ def _start_slack_listener(cli_config: dict) -> _Start:
     )
 
 
+#: Boot order, and the starter for each ingress. ``stop`` walks it reversed.
+_STARTERS: Tuple[Tuple[str, Callable[[dict], _Start]], ...] = (
+    ("gh-webhook", _start_receiver),
+    ("poller", _start_poller),
+    ("slack-listener", _start_slack_listener),
+)
+
+
+def _wanted(config: dict) -> List[Tuple[str, Callable[[dict], _Start]]]:
+    """The ingresses ``config`` enables, in boot order, each with its starter.
+
+    The predicate is :func:`the_loop.core.lifecycle.enabled_services` — the one
+    ``the-loop start`` and ``the-loop status`` already share (`polling.enabled`,
+    `webhooks.ghWebhook.enabled`, `channels.slack.enabled` with `read.mode: socket`) —
+    so the boot composition and the reconcile (issue-395) can never disagree with
+    either command about what is enabled. Imported lazily: ``core.lifecycle`` is the
+    composition layer above this module, and pulling it in at import time would make
+    the hosting depend on the thing that depends on it.
+    """
+    from ..core.lifecycle import enabled_services
+
+    enabled = enabled_services(config)
+    return [(name, start) for name, start in _STARTERS if enabled.get(name)]
+
+
+def _start_one(name: str, start: Callable[[dict], _Start], config: dict, *, why: str):
+    """Run one starter and record the outcome; never raises. Returns the ingress or None."""
+    try:
+        ingress, reason = start(config)
+    except Exception as exc:  # noqa: BLE001 — one ingress must not take the API down
+        logger.exception("hosting the %s failed (%s)", name, why)
+        ingress, reason = None, str(exc) or exc.__class__.__name__
+    if ingress is not None:
+        logger.info("hosting the %s in this service process (%s)", name, why)
+        eventlog.emit("ingress.hosted", ingress=name, reason=why)
+        return ingress
+    if reason:
+        # The event that was missing (issue-339, R3.1). An enabled ingress that
+        # never came up used to leave a logfile line and NOTHING in the event log —
+        # so `the-loop events`, the stream and self-diagnosis saw only the absence
+        # of a `poller.started`, which is a signal something has to derive. A
+        # starter that declined because it was not asked for answers with an empty
+        # reason and is passed over (R3.3): a listener in `read.mode: poll` is a
+        # configuration, not a failure. The service keeps serving either way — the
+        # API being up is what makes the reason reachable (R3.2).
+        eventlog.emit(
+            "ingress.hosted_failed", level="error", ingress=name, reason=reason
+        )
+    return None
+
+
 def start_hosted_ingresses(cli_config: Optional[dict]) -> List[_HostedIngress]:
     """Start every ingress this process should host; never raises.
 
     Which ones is the same policy ``the-loop start`` composes on
-    (`webhooks.ghWebhook.enabled`, `polling.enabled`); whether *this process*
-    hosts them at all is ``service.hostIngresses``, resolved by the caller.
+    (`webhooks.ghWebhook.enabled`, `polling.enabled`, `channels.slack.enabled` with
+    `read.mode: socket`); whether *this process* hosts them at all is
+    ``service.hostIngresses``, resolved by the caller.
     """
     config = cli_config or {}
     hosted: List[_HostedIngress] = []
-    starters = []
-    if ((config.get("webhooks") or {}).get("ghWebhook") or {}).get("enabled", False):
-        starters.append(("gh-webhook", _start_receiver))
-    if (config.get("polling") or {}).get("enabled", False):
-        starters.append(("poller", _start_poller))
-    slack = (config.get("channels") or {}).get("slack") or {}
-    if isinstance(slack, dict) and slack.get("enabled", False):
-        starters.append(("slack-listener", _start_slack_listener))
-    for name, start in starters:
-        try:
-            ingress, reason = start(config)
-        except Exception as exc:  # noqa: BLE001 — one ingress must not take the API down
-            logger.exception("hosting the %s failed during startup", name)
-            ingress, reason = None, str(exc) or exc.__class__.__name__
+    for name, start in _wanted(config):
+        ingress = _start_one(name, start, config, why="startup")
         if ingress is not None:
             hosted.append(ingress)
-            logger.info("hosting the %s in this service process", name)
-            eventlog.emit("ingress.hosted", ingress=name)
-        elif reason:
-            # The event that was missing (issue-339, R3.1). An enabled ingress that
-            # never came up used to leave a logfile line and NOTHING in the event log —
-            # so `the-loop events`, the stream and self-diagnosis saw only the absence
-            # of a `poller.started`, which is a signal something has to derive. A
-            # starter that declined because it was not asked for answers with an empty
-            # reason and is passed over (R3.3): `channels.slack.enabled` puts the
-            # listener in `starters`, but `read.mode: poll` is a configuration, not a
-            # failure. The service keeps serving either way — the API being up is what
-            # makes the reason reachable (R3.2).
-            eventlog.emit(
-                "ingress.hosted_failed", level="error", ingress=name, reason=reason
-            )
     # The pidfiles double as the honest-start proof `the-loop start` waits on,
     # so nothing extra is written: a hosted ingress is up iff its lock is held.
     return hosted
@@ -329,3 +378,131 @@ def stop_hosted_ingresses(hosted: List[_HostedIngress]) -> None:
     """Stop in reverse start order; each stop is isolated."""
     for ingress in reversed(hosted):
         ingress.stop()
+
+
+class HostedIngresses:
+    """The hosted set as a thing that follows the config (issue-395).
+
+    ``start()`` composes the set exactly as :func:`start_hosted_ingresses` does, then
+    runs a supervisor thread that re-hashes ``config_path`` every ``interval`` seconds
+    through the same strict loader the service's :class:`~the_loop.cli_config.ConfigHolder`
+    uses, and on a change calls :meth:`reconcile`. ``stop()`` ends the supervisor
+    *first*, then the ingresses in reverse start order — under the one lock
+    :meth:`reconcile` takes, so a shutdown and a reconcile never interleave.
+
+    A thread rather than the per-request refresh because a service nobody is calling
+    (the second instance of the e2e run, whose listener was to be turned off) must
+    still notice; a :class:`~the_loop.reload.Reloader` rather than a watcher because it
+    is what every other process uses — stdlib, content hash, and an unloadable file
+    keeps the previous value, so a half-typed edit stops nothing.
+    """
+
+    def __init__(
+        self,
+        cli_config: Optional[dict],
+        config_path: Union[str, Path],
+        *,
+        interval: float = RECONCILE_INTERVAL_SECONDS,
+    ) -> None:
+        from ..cli_config import load_cli_config
+        from ..reload import Reloader
+
+        self.config: dict = dict(cli_config or {})
+        self.path = Path(config_path)
+        self.interval = float(interval)
+        self._hosted: List[_HostedIngress] = []
+        self._lock = threading.RLock()
+        self._stopping = threading.Event()
+        self.thread: Optional[threading.Thread] = None
+        self._reloader: "Reloader[dict]" = Reloader(
+            self.path, lambda: load_cli_config(self.path, strict=True)
+        )
+
+    @property
+    def hosted(self) -> List[_HostedIngress]:
+        """The ingresses hosted right now (a copy; boot order)."""
+        with self._lock:
+            return list(self._hosted)
+
+    def start(self) -> None:
+        with self._lock:
+            self._hosted = start_hosted_ingresses(self.config)
+        self._stopping.clear()
+        self.thread = threading.Thread(
+            target=self._supervise, name="the-loop-ingress-supervisor", daemon=True
+        )
+        self.thread.start()
+
+    def stop(self) -> None:
+        """End the supervisor, then every hosted ingress (reverse start order)."""
+        self._stopping.set()
+        thread = self.thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(_JOIN_TIMEOUT_SECONDS)
+        with self._lock:
+            stop_hosted_ingresses(self._hosted)
+            self._hosted = []
+
+    def _supervise(self) -> None:
+        while not self._stopping.wait(self.interval):
+            try:
+                fresh = self._reloader.poll_for_change()
+                if fresh is not None and not self._stopping.is_set():
+                    self.reconcile(fresh)
+            except Exception:  # noqa: BLE001 — one bad tick must not lose the supervisor
+                logger.exception("reconciling the hosted ingresses failed; will retry")
+
+    def reconcile(self, config: dict) -> None:
+        """Make the hosted set match what ``config`` enables.
+
+        Membership only: *hosted − wanted* is stopped (``reason: config``), *wanted −
+        hosted* is started with ``config`` through the same starter as at boot, and an
+        ingress in both is left exactly as it is. A hosted entry whose thread has
+        already ended on its own (its lock released by :func:`_host`) is dropped, so a
+        config edit can bring back a listener that died on, say, a rejected token.
+        """
+        with self._lock:
+            if self._stopping.is_set():
+                return
+            self.config = dict(config or {})
+            wanted = _wanted(self.config)
+            wanted_names = [name for name, _ in wanted]
+            alive = [h for h in self._hosted if h.thread.is_alive()]
+            dead = [h.name for h in self._hosted if not h.thread.is_alive()]
+            for name in dead:
+                logger.info(
+                    "the hosted %s had already ended on its own; the config can "
+                    "start it again",
+                    name,
+                )
+            keep = [h for h in alive if h.name in wanted_names]
+            stopped: List[str] = []
+            for ingress in reversed([h for h in alive if h.name not in wanted_names]):
+                logger.info(
+                    "the config no longer enables the %s; stopping it", ingress.name
+                )
+                ingress.stop(reason="config")
+                stopped.append(ingress.name)
+            started: List[str] = []
+            hosted_names = {h.name for h in keep}
+            for name, start in wanted:
+                if name in hosted_names:
+                    continue
+                ingress = _start_one(name, start, self.config, why="config")
+                if ingress is not None:
+                    keep.append(ingress)
+                    started.append(name)
+            # Boot order, whatever order the starts happened in.
+            order = {name: i for i, (name, _) in enumerate(_STARTERS)}
+            self._hosted = sorted(keep, key=lambda h: order.get(h.name, len(order)))
+            if stopped or started:
+                detail = "hosted ingresses: " + "; ".join(
+                    part
+                    for part in (
+                        f"stopped {', '.join(stopped)}" if stopped else "",
+                        f"started {', '.join(started)}" if started else "",
+                    )
+                    if part
+                )
+                logger.info("hot-reloaded %s", detail)
+                eventlog.emit("config.reloaded", detail=detail)
