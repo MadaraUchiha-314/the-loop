@@ -98,6 +98,11 @@ __all__ = [
     "probe_subscription",
     "subscription_findings",
     "unchecked_advice",
+    "EVENTS_UNVERIFIABLE_CAVEAT",
+    "HEARTBEAT_MARKER",
+    "expected_bot_events",
+    "heartbeat_nonce",
+    "heartbeat_text",
     "SlackBotChannel",
     "SlackChannelConfig",
     "SlackReactionConfig",
@@ -349,6 +354,80 @@ def _granted_scopes(response: Any) -> Optional[Tuple[str, ...]]:
     return tuple(scope.strip() for scope in raw.split(",") if scope.strip())
 
 
+#: Why the probe can name the expected events but never confirm them (issue-393
+#: R2.1). Slack's Web API has no method that lists an app's event subscriptions:
+#: `auth.test` says which SCOPES were granted, and nothing says which EVENTS the
+#: installed app asked for. So an app imported from an older manifest — scopes
+#: complete, `app_mention` never subscribed — reads as healthy on every probe
+#: while hearing nothing. One fixed sentence, printed beside the scope probe.
+EVENTS_UNVERIFIABLE_CAVEAT = (
+    "not verifiable through the API — Slack exposes no method that lists an "
+    "app's event subscriptions, so an app imported from an older manifest reads "
+    "as healthy here while hearing nothing. Test them: send the bot a mention "
+    "(@the-loop) in the channel and watch the listener answer; if it does not, "
+    "re-import the manifest (`the-loop channels manifest`) and Reinstall."
+)
+
+
+def expected_bot_events() -> Tuple[str, ...]:
+    """The bot events the packaged manifest subscribes to (issue-393 R2.1).
+
+    Read from the in-repo ``slack-app-manifest.yaml`` — the one place the
+    subscription is declared, and what an operator imports verbatim — so the
+    diagnostic can at least say what the installed app is *expected* to carry.
+    ``()`` when the manifest cannot be read: a caveat about events nobody can
+    name is worse than silence.
+    """
+    try:
+        import yaml
+
+        # Lazy: `.commands` imports this module at load time.
+        from .commands import manifest_text
+
+        data = yaml.safe_load(manifest_text()) or {}
+        events = (
+            ((data.get("settings") or {}).get("event_subscriptions") or {}).get(
+                "bot_events"
+            )
+            or []
+        )
+        return tuple(str(event).strip() for event in events if str(event).strip())
+    except Exception as exc:  # noqa: BLE001 — a diagnostic never fails its caller
+        logger.debug("slack: could not read the manifest's bot events: %s", exc)
+        return ()
+
+
+#: The fixed text `the-loop doctor slack` posts to find a second Socket Mode
+#: consumer (issue-393 F2 / R2.2), followed by one random nonce and nothing else
+#: — never config content. The listener recognises it by this prefix on a
+#: bot-posted message and records the receipt instead of reading it as input.
+HEARTBEAT_MARKER = "the-loop doctor heartbeat"
+_HEARTBEAT_NONCE_RE = re.compile(r"^[a-f0-9]{8,32}$")
+
+
+def heartbeat_text(nonce: str) -> str:
+    """The heartbeat message for ``nonce``: marker, one space, the nonce."""
+    return f"{HEARTBEAT_MARKER} {nonce}"
+
+
+def heartbeat_nonce(event: Mapping[str, Any]) -> str:
+    """The nonce when ``event`` is the doctor's own heartbeat, else ``""``.
+
+    Only a **bot-posted** message counts (``bot_id`` set, or the ``bot_message``
+    subtype): a member typing the marker gets an ordinary message, read through
+    the ordinary pipeline, and can neither forge a receipt nor hide a message
+    from the-loop by prefixing it.
+    """
+    if not (event.get("bot_id") or event.get("subtype") == "bot_message"):
+        return ""
+    text = str(event.get("text") or "").strip()
+    prefix = HEARTBEAT_MARKER + " "
+    if not text.startswith(prefix):
+        return ""
+    nonce = text[len(prefix) :].strip()
+    return nonce if _HEARTBEAT_NONCE_RE.match(nonce) else ""
+
+
 def probe_subscription(
     config: "SlackChannelConfig",
     *,
@@ -361,8 +440,10 @@ def probe_subscription(
     configured channel, and ``auth.test`` for the granted scopes. ``channel_id``
     lets a caller that already resolved the configured value pass the id in; left
     out, a configured **name** is resolved here (PR #376 review). Returns either
-    ``{"skipped": why}`` or ``{"kind", "scopes", "findings"}``; it never raises,
-    because a diagnostic that fails is not an error (R2.3).
+    ``{"skipped": why}`` or ``{"kind", "scopes", "findings", "events"}``; it
+    never raises, because a diagnostic that fails is not an error (R2.3).
+    ``events`` is what the manifest is *expected* to carry (issue-393 R2.1) —
+    named, not verified: see :data:`EVENTS_UNVERIFIABLE_CAVEAT`.
     """
     if not config.channel:
         return {"skipped": "no channel is configured"}
@@ -403,6 +484,8 @@ def probe_subscription(
         # different absences, each named on its own line.
         "findings": subscription_findings(channel_id, (kind,), scopes)
         + mention_findings(scopes),
+        # Expected, not measured (issue-393 R2.1) — the caller prints the caveat.
+        "events": expected_bot_events(),
     }
 
 
@@ -2603,6 +2686,16 @@ def report_subscription(config: "SlackChannelConfig") -> None:
         return
     for finding in result.get("findings") or ():
         logger.warning("slack: %s", finding)
+    # What the app is EXPECTED to hear, and why nobody can confirm it (issue-393
+    # R2.1) — one info line at connect, so the e2e failure "scopes fine, no
+    # event ever arrives" has its explanation in the log before it happens.
+    events = result.get("events") or ()
+    if events:
+        logger.info(
+            "slack: the manifest subscribes the bot to %s — %s",
+            ", ".join(events),
+            EVENTS_UNVERIFIABLE_CAVEAT,
+        )
 
 
 def run_socket_listener(
@@ -2704,6 +2797,19 @@ def run_socket_listener(
                     "(handled: app_mention, message)",
                     event_type,
                     event.get("channel") or event.get("channel_id") or "",
+                )
+                return
+            nonce = heartbeat_nonce(event)
+            if nonce:
+                # The doctor's own heartbeat (issue-393 F2 / R2.2): the receipt
+                # is the whole point — recorded where `the-loop doctor slack`
+                # reads it back, and never handed to the pipeline as input.
+                eventlog.emit(
+                    "channel.heartbeat",
+                    channel="slack",
+                    channel_id=str(event.get("channel") or ""),
+                    ts=str(event.get("ts") or ""),
+                    nonce=nonce,
                 )
                 return
             inbound.handle_socket_event(event, frozen_config, addressed=False)

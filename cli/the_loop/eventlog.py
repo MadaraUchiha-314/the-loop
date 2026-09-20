@@ -379,6 +379,15 @@ EVENT_TYPES: Dict[str, str] = {
         "a Slack retry of a message the catch-up already handled is dropped as "
         "`duplicate`."
     ),
+    "channel.heartbeat": (
+        "The Socket Mode listener received one of `the-loop doctor slack`'s own "
+        "heartbeat messages (channel_id, ts, nonce) — issue-393 F2. The doctor "
+        "posts a fixed-format nonce into the configured channel and counts how "
+        "many reach this listener within its window; a shortfall is EVIDENCE "
+        "(Slack lists no connections, so never proof) that a second Socket "
+        "Mode consumer shares the app token and Slack is splitting events "
+        "between them. A heartbeat never enters the inbound pipeline."
+    ),
     "channel.command_received": (
         "An authorized member's `/the-loop` slash command passed the grant "
         "check (channel, actor: the member id, family: work-item | instance | "

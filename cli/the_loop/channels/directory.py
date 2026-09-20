@@ -204,6 +204,40 @@ class SlackDirectory:
             return ""
         return self._lookup(CONVERSATIONS, name)
 
+    def conversation_known(self, conversation_id: str) -> Optional[bool]:
+        """Whether the bot's directory lists ``conversation_id`` (issue-393 R2.3).
+
+        The doctor's question about a channel declared by **id**: an id needs no
+        lookup to be used, so :meth:`conversation_id` hands it straight back — but
+        an id the directory (memberships + workspace listing) has never seen is
+        the B1 failure class from the other side: a room the bot is not in, or
+        cannot list. Three answers, because "absent" and "could not look" must
+        not read the same: ``True`` listed, ``False`` absent from a listing that
+        was read, ``None`` when no listing could be read at all (no token, no
+        scope, a transport error) — the caller reports *unverifiable*, never
+        *ok*. Costs at most the one refresh a miss always costs.
+        """
+        ident = str(conversation_id or "").strip()
+        if not is_conversation_id(ident):
+            return False
+        cached = self._cached(CONVERSATIONS)
+        if ident in cached.values():
+            return True
+        if not self._stale(CONVERSATIONS):
+            return False
+        fresh = self._refresh(CONVERSATIONS)
+        if fresh:
+            return ident in fresh.values()
+        # The read failed: a stale map still answers "absent" (as `_lookup`
+        # does); no map at all answers "cannot tell".
+        return False if cached else None
+
+    def has_conversations(self) -> bool:
+        """Whether this machine holds any conversation listing at all — after a
+        miss, the difference between "no such channel" and "nothing could be
+        read" (issue-393 R2.3). A doctor reports the second as unverifiable."""
+        return bool(self._cached(CONVERSATIONS))
+
     def listing_was_truncated(self) -> bool:
         """Whether the last conversation refresh hit the page cap (issue-393 B1).
 

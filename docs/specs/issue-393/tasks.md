@@ -41,7 +41,7 @@ overrides: {}
       ignored envelope (type, channel, reason) at debug; `control.rejected` posts a
       marked reply with reason + remedy at the attempt site. _Req:_ R2.4, R2.5 ·
       _Test:_ T2 two Scenarios.
-- [ ] **A6 — deployment doctor (F2).** `probe_subscription` prints the manifest's bot
+- [x] **A6 — deployment doctor (F2).** `probe_subscription` prints the manifest's bot
       events + the unverifiability caveat; new `doctor slack`: second-consumer
       heartbeat probe (labelled evidence, not proof) + declared-channel directory
       check. _Deps:_ A3 (directory truncated flag), A5. _Req:_ R2.1–R2.3 · _Test:_ T1
