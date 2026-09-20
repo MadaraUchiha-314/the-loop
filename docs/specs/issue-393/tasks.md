@@ -74,7 +74,7 @@ overrides: {}
       grammar; no-interactivity fallback copy; adversarial copy removed. _Deps:_ B5.
       _Req:_ R9 (abuse cases 2, 4) · _Test:_ T2 checkbox/fallback Scenarios + T1
       grammar + T8 unauthorized submit & hostile skip.
-- [ ] **B7 — PR gate & digest guard.** `pr-review-pending` names PR
+- [x] **B7 — PR gate & digest guard.** `pr-review-pending` names PR
       number/title/link/diffstat, leads with the briefing, button opens the PR; `fit`
       gains protected regions (questions/controls never cut; overflow says what was
       cut). _Deps:_ B1. _Req:_ R8.3–R8.4 · _Test:_ T1 digest rows + T2 PR-gate

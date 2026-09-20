@@ -467,6 +467,52 @@ def test_the_complete_node_announces_work_item_complete_with_a_link(
     assert "the thing" in text and "type: requirements" not in text
 
 
+def test_the_pr_review_gate_names_the_pull_request_and_links_to_it(
+    tmp_path, monkeypatch, slack
+):
+    """Scenario: the PR-review gate names the pull request, not the issue
+
+    Given a work item with a linked open pull request
+    When its pr-review-pending notify fires
+    Then the Slack message names the PR by number and its Open button goes to the
+      PR, never the issue (O8)
+
+    Requirement: docs/specs/issue-393/requirements.md R8.3 (B7)
+    """
+    from the_loop.graph.contract import HookContext, WorkItem
+    from the_loop.graph.hooks.sideeffects import notify
+    from the_loop.graph.state import WorkItemState
+
+    spec = tmp_path / "specs" / "issue-7"
+    spec.mkdir(parents=True)
+    state = WorkItemState(work_item="issue-7", current_node="human-approval")
+    state.link_pr(
+        "github:o/r#42",
+        repository="o/r",
+        number=42,
+        url="https://github.com/o/r/pull/42",
+    )
+    state.save(spec)
+
+    config = cli_config(tmp_path, subscribe=["pr-review-pending"])
+    ctx = HookContext(
+        work_item=WorkItem(id="issue-7", ref="github:o/r#7", spec_dir=spec),
+        node={"id": "human-approval"},
+        boundary="entry",
+        repo=tmp_path,
+        config=config,
+        params={"event": "pr-review-pending"},
+    )
+    result = notify(ctx)
+    assert result.status == "pass"
+    post = slack.posted[-1]
+    text = " ".join(b["text"]["text"] for b in post["blocks"] if "text" in b)
+    assert "PR #42" in text
+    # the link button points at the PR, not the issue
+    link = post["blocks"][-1]["elements"][0]["url"]
+    assert link == "https://github.com/o/r/pull/42"
+
+
 def test_an_approve_button_press_enters_the_pipeline_as_that_members_reply(
     tmp_path, monkeypatch, slack
 ):
