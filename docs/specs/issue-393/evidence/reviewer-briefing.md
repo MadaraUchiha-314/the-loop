@@ -91,10 +91,25 @@ flowchart LR
   reach the operator's cloud-workspace daemon; recorded, not ticked, in the
   testing plan.
 
+## Scope (what this PR does and does not touch)
+
+This work item is the report's **five bugs B1, B3, B6, B8, B9** plus the room
+rework and the feature requests F1–F3 (owner's scoping decision at the outset),
+and — because they landed in hooks this PR already touches — **B2** and **B10**:
+
+- **B2** (a refusal left no explanation) — **fixed**: R2.5 posts the reason and
+  remedy where the act was attempted.
+- **B10** (`set-phase-label` never removed the previous phase label, so they piled
+  up and broke the one-label-per-item dashboards) — **fixed**: setting the new
+  `loop:<phase>` now removes any other `loop:*` label, leaving non-`loop:` labels
+  alone (a surgical `remove-label`, not a PUT-replace that would wipe `bug` etc.).
+  Same hook as C1's R13 change, so folded in.
+
+The report's remaining bugs are **not** in this PR and stay open on issue-393:
+**B5** (`read.mode` hot-reload), **B7** (stale `graph status`), **B11** (tmux
+retention on close). Separable, none in a hook this PR touches.
+
 ## Open questions for the reviewer
 
 1. The edit-in-place emitter (R6.3) is deferred — accept as a follow-up, or is a
    minimal `phase.progress` emitter wanted in this PR?
-2. B2/B5/B7/B10/B11 from the report were scoped out (B2's essence — a refusal
-   explains itself — is delivered by R2.5). Confirm the remaining ones stay as
-   separate follow-up items.

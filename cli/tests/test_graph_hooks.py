@@ -526,17 +526,26 @@ def test_only_when_skipped_can_never_widen_what_may_be_skipped(tmp_path):
 
 class _LabelFakeGitHub:
     """Records label calls; fails set-labels with a chosen error until the label
-    is created, then succeeds — the shape of a repo missing its loop:* labels."""
+    is created, then succeeds — the shape of a repo missing its loop:* labels.
 
-    def __init__(self, missing_error="Label does not exist"):
+    ``existing`` seeds the labels already on the issue, so the B10 remove path can
+    be exercised; ``remove-label`` drops one from that set."""
+
+    def __init__(self, missing_error="Label does not exist", existing=()):
         self.calls = []
         self._created = set()
         self._missing_error = missing_error
+        self._labels = list(existing)
 
     def call(self, op, **params):
         from the_loop.graph.integrations import IntegrationError
 
-        self.calls.append((op, params.get("name") or params.get("labels")))
+        self.calls.append((op, params.get("name") or params.get("label") or params.get("labels")))
+        if op == "get-labels":
+            return {"labels": list(self._labels)}
+        if op == "remove-label":
+            self._labels = [n for n in self._labels if n != str(params["label"])]
+            return {"result": "ok"}
         if op == "create-label":
             self._created.add(str(params["name"]))
             return {"result": "ok"}
@@ -545,6 +554,7 @@ class _LabelFakeGitHub:
             missing = [l for l in labels if l not in self._created]
             if missing:
                 raise IntegrationError(self._missing_error)
+            self._labels += [l for l in labels if l not in self._labels]
             return {"result": "ok"}
         return {}
 
@@ -577,8 +587,70 @@ def test_set_phase_label_creates_a_missing_label_and_retries(tmp_path, monkeypat
     result = set_phase_label(_label_ctx(tmp_path))
     assert result.status == PASS
     assert result.data["applied"] is True and result.data["created"] is True
-    # set-labels, then create-label, then set-labels again
-    assert [op for op, _ in fake.calls] == ["set-labels", "create-label", "set-labels"]
+    # get-labels (B10 tidy, nothing stale), set-labels, create-label, set-labels
+    assert [op for op, _ in fake.calls] == [
+        "get-labels",
+        "set-labels",
+        "create-label",
+        "set-labels",
+    ]
+
+
+def test_set_phase_label_removes_the_previous_phase_labels(tmp_path, monkeypatch):
+    """
+    Scenario: one phase label per item, so a board shows it in one column
+
+    Requirement: issue-393 B10. The add was add-only, so `loop:*` labels piled
+    up and every dashboard query (one-label-per-item) broke. Setting the new one
+    now removes any OTHER `loop:*` label — and leaves every non-loop label alone.
+    """
+    from the_loop.graph.hooks.sideeffects import set_phase_label
+
+    fake = _LabelFakeGitHub(
+        existing=["loop:requirements-definition", "loop:test-planning", "bug", "design"]
+    )
+    # pre-create the target so set-labels succeeds on the first try
+    fake._created.add("loop:design")
+    monkeypatch.setattr(
+        "the_loop.graph.integrations.resolve", lambda target, config: fake
+    )
+    result = set_phase_label(_label_ctx(tmp_path))
+    assert result.status == PASS and result.data["applied"] is True
+    assert set(result.data["removed"]) == {
+        "loop:requirements-definition",
+        "loop:test-planning",
+    }
+    # the target and every NON-loop label survive; the stale loop:* are gone
+    assert set(fake._labels) == {"loop:design", "bug", "design"}
+    removed_ops = [(op, arg) for op, arg in fake.calls if op == "remove-label"]
+    assert ("remove-label", "loop:requirements-definition") in removed_ops
+    assert ("remove-label", "loop:test-planning") in removed_ops
+    # `bug` and `design` (a phase-NAMED but non-loop label) are never removed
+    assert all(arg not in ("bug", "design") for _, arg in removed_ops)
+
+
+def test_set_phase_label_tidy_is_best_effort(tmp_path, monkeypatch):
+    """If the labels cannot be read, the new one is still set — the position
+    marker a reader needs is the new label present, not the old ones gone."""
+    from the_loop.graph.hooks.sideeffects import set_phase_label
+    from the_loop.graph.integrations import IntegrationError
+
+    class _UnreadableLabels(_LabelFakeGitHub):
+        def call(self, op, **params):
+            if op == "get-labels":
+                self.calls.append((op, None))
+                raise IntegrationError("cannot list labels")
+            return super().call(op, **params)
+
+    fake = _UnreadableLabels()
+    fake._created.add("loop:design")
+    monkeypatch.setattr(
+        "the_loop.graph.integrations.resolve", lambda target, config: fake
+    )
+    result = set_phase_label(_label_ctx(tmp_path))
+    assert result.status == PASS and result.data["applied"] is True
+    assert result.data["removed"] == []  # nothing tidied, but the set still happened
+    assert "set-labels" in [op for op, _ in fake.calls]
 
 
 def test_set_phase_label_degrades_on_a_non_missing_error(tmp_path, monkeypatch):
@@ -593,4 +665,5 @@ def test_set_phase_label_degrades_on_a_non_missing_error(tmp_path, monkeypatch):
     result = set_phase_label(_label_ctx(tmp_path))
     assert result.status == PASS  # best-effort: never wedges the graph
     assert result.data["applied"] is False
-    assert [op for op, _ in fake.calls] == ["set-labels"]  # no create attempted
+    # get-labels (tidy), set-labels (fails 403); no create attempted
+    assert [op for op, _ in fake.calls] == ["get-labels", "set-labels"]

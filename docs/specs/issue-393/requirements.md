@@ -333,6 +333,18 @@ marker every dashboard reads — is never silently absent.
    once on the ticket — not only to the daemon log.
 4. WHILE ensuring labels, the daemon SHALL touch only repositories declared in its
    configuration.
+5. WHEN `set-phase-label` sets the new `loop:<phase>` THEN it SHALL remove any OTHER
+   `loop:*` label the item carries, leaving every non-`loop:` label untouched, so the
+   position marker is exactly one label per item and a board shows the item in one
+   column (**B10**). This tidy is best-effort: a failure to remove a stale label SHALL
+   NOT prevent the new label being set — the marker a reader needs is the new label
+   present, not the old ones gone.
+
+   > **Implementation note.** The removal is surgical (a `remove-label` op that deletes
+   > one label), never a wholesale replace: GitHub's `PUT …/labels` would also wipe
+   > non-`loop:` labels (`bug`, the arming labels), and the two transports already
+   > differed (the API `set-labels` PUTs/replaces, `gh` `--add-label` adds), so B10 is
+   > fixed by removing only the stale `loop:*` set and adding the new one.
 
 ## Non-functional requirements
 
@@ -389,10 +401,12 @@ marker every dashboard reads — is never silently absent.
 
 ## Out of scope
 
-- **B2, B5, B7, B10, B11** as standalone fixes — B2's essence (a refusal explains
-  itself) is delivered by R2.5; the others (hot-reload of `read.mode`, stale
-  `graph status`, phase-label removal, tmux retention on close) are real but separable
-  and stay on issue-393 for follow-up items.
+- **B5, B7, B11** as standalone fixes — hot-reload of `read.mode`, stale
+  `graph status`, tmux retention on close — are real but separable and stay on
+  issue-393 for follow-up items. (**B2**'s essence — a refusal explains itself — is
+  delivered by R2.5, and **B10** — the phase label never removing the previous one —
+  was folded in alongside R13 since it is the same `set-phase-label` hook; see the note
+  under R13.)
 - **O1, O4, O5, O7, O9** — observations without a requested change (room-declaration
   confirmation, ephemeral help, connector signature line, phantom prompt text, the
   merge-on-approval knob). O7 deserves its own investigation ticket.

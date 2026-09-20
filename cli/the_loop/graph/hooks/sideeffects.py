@@ -61,6 +61,13 @@ def set_phase_label(ctx: HookContext) -> HookResult:
         return HookResult.skipped(name, "node declares no phase label")
     label = f"{PHASE_LABEL_PREFIX}{phase}"
     github = _integration(ctx, "github")
+    # issue-393 B10: the phase label is documented as THE position marker, and
+    # every dashboard query assumes one `loop:*` label per item — but the add was
+    # add-only, so the labels piled up and a board showed the item in every
+    # column. Remove any other `loop:*` label first (best-effort: a failure to
+    # tidy an old label must never block setting the new one, which is the fact
+    # a reader actually needs).
+    removed = _remove_stale_phase_labels(github, ctx.work_item.ref, label)
     try:
         github.call("set-labels", ref=ctx.work_item.ref, labels=[label])
     except IntegrationError as exc:
@@ -71,17 +78,56 @@ def set_phase_label(ctx: HookContext) -> HookResult:
         # and retry once. Any other failure (permissions, outage) still degrades.
         if not _is_missing_label(exc):
             logger.warning("could not sync %s: %s", label, exc)
-            return HookResult.ok(name, label=label, applied=False, error=str(exc))
+            return HookResult.ok(
+                name, label=label, applied=False, error=str(exc), removed=removed
+            )
         try:
             github.call("create-label", ref=ctx.work_item.ref, name=label)
             github.call("set-labels", ref=ctx.work_item.ref, labels=[label])
         except IntegrationError as retry_exc:
             logger.warning("could not create/sync %s: %s", label, retry_exc)
             return HookResult.ok(
-                name, label=label, applied=False, error=str(retry_exc), created=False
+                name,
+                label=label,
+                applied=False,
+                error=str(retry_exc),
+                created=False,
+                removed=removed,
             )
-        return HookResult.ok(name, label=label, applied=True, created=True)
-    return HookResult.ok(name, label=label, applied=True)
+        return HookResult.ok(
+            name, label=label, applied=True, created=True, removed=removed
+        )
+    return HookResult.ok(name, label=label, applied=True, removed=removed)
+
+
+def _remove_stale_phase_labels(github, ref: str, keep: str) -> List[str]:
+    """Remove every ``loop:*`` label on ``ref`` except ``keep`` — the B10 fix.
+
+    Best-effort and never raises: reading the current labels or removing a stale
+    one can fail (permissions, outage, an API that cannot list), and none of that
+    should stop the new label being set — the position marker a reader needs is
+    the new one being present, not the old ones being gone. Returns the labels it
+    removed, for the hook's result. When the labels cannot even be read, it does
+    nothing rather than guess.
+    """
+    try:
+        current = github.call("get-labels", ref=ref).get("labels") or []
+    except Exception as exc:  # noqa: BLE001 — an unreadable label set tidies nothing
+        logger.debug("could not read labels on %s to tidy stale ones: %s", ref, exc)
+        return []
+    stale = [
+        str(name_)
+        for name_ in current
+        if str(name_).startswith(PHASE_LABEL_PREFIX) and str(name_) != keep
+    ]
+    removed: List[str] = []
+    for name_ in stale:
+        try:
+            github.call("remove-label", ref=ref, label=name_)
+            removed.append(name_)
+        except Exception as exc:  # noqa: BLE001 — one stale label left is not fatal
+            logger.debug("could not remove the stale label %s on %s: %s", name_, ref, exc)
+    return removed
 
 
 def _is_missing_label(exc: Exception) -> bool:

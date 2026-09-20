@@ -48,6 +48,7 @@ OPERATIONS: FrozenSet[str] = frozenset(
         "add-comment",
         "set-labels",
         "create-label",
+        "remove-label",
         "get-labels",
         "list-comments",
         "get-thread",
@@ -210,6 +211,27 @@ class GitHubApi:
                 if "already_exists" in str(exc) or "422" in str(exc):
                     return {"result": "exists"}
                 raise
+        if op == "remove-label":
+            # issue-393 B10: take ONE label off an issue, leaving every other
+            # label (`bug`, `enhancement`, the arming labels) in place — unlike a
+            # PUT of the label set, which would replace them all. A label the
+            # issue does not carry returns 404; that is success (it is not there,
+            # which is all the caller wanted).
+            from urllib.parse import quote
+
+            label = quote(str(params["label"]), safe="")
+            try:
+                return {
+                    "result": self._request(
+                        "DELETE",
+                        f"/repos/{owner}/{repo}/issues/{number}/labels/{label}",
+                        host=host,
+                    )
+                }
+            except IntegrationError as exc:
+                if "not found" in str(exc).lower() or "404" in str(exc):
+                    return {"result": "absent"}
+                raise
         if op == "get-labels":
             data = self._request(
                 "GET", f"/repos/{owner}/{repo}/issues/{number}/labels", host=host
@@ -299,6 +321,21 @@ class GitHubCli:
                     "--color",
                     str(params.get("color") or "ededed"),
                     "--force",
+                ]
+            )
+            return {"result": "ok"}
+        if op == "remove-label":
+            # issue-393 B10: `--remove-label` takes one label off, leaving the
+            # rest. `gh` is idempotent on a label the issue does not carry.
+            self._run(
+                [
+                    "issue",
+                    "edit",
+                    number,
+                    "--repo",
+                    slug,
+                    "--remove-label",
+                    str(params["label"]),
                 ]
             )
             return {"result": "ok"}
