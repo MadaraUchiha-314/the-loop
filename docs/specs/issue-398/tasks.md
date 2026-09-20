@@ -9,7 +9,7 @@ overrides: {}
 
 <!-- Authored per the the-loop:writing skill. -->
 
-# Tasks: a logo for the-loop — five hand-drawn SVG options to choose from
+# Tasks: a logo for the-loop — five brush-drawn SVG options to choose from
 
 > Phase 4 of 4. Each task names the requirement it satisfies and the testing-plan row
 > that proves it. For a design deliverable the "test" is the generator's own checker and
@@ -53,10 +53,35 @@ overrides: {}
       label at `loop:needs-review`. _Depends on:_ C1 · _Requirements:_ R4.3, R4.4 ·
       _Test:_ T11 (the owner's, on the ticket).
 
+### Round 2 — after the owner's review of round 1
+
+> *"Over stressed on the hand drawn part; no character."* The design-artifacts loop:
+> fold the feedback into the artifact and re-present.
+
+- [x] **E1 — the brush and the weave.** `brush()` (nib angle, contrast, pressure, lifts),
+      `enso_brush()`, `by_arc_length()`, `catmull_points()`, `woven()` with numeric
+      `crossings()` and a `<mask>`, `arrowhead()`; `outline()` clamps the offset to the
+      local curvature and fills `nonzero`. _Depends on:_ A1 · _Requirements:_ R2.1
+      (revised) · _Test:_ T1.
+- [x] **E2 — five marks with a character each.** `option_loop_word`, `option_knot`,
+      `option_flick`, `option_clip`, `option_enso`, iterated on the rendering (fill
+      rule and curvature clamp for holes at tight curls; contrast down from 0.5–0.6 to
+      0.32–0.45; the brush reading progress along the stroke; knot gap 3.0 → 2.2; a
+      plain chevron the stroke ends inside; ensō bases 16/13/9.5). Budget 40 → 64 kB.
+      _Depends on:_ E1 · _Requirements:_ R1.1–R1.3 (sharpened), R2 · _Test:_ T1, T5.
+- [x] **E3 — the record.** `design.md` (round-2 overview, components, inventory with
+      round 1 marked superseded, review comments), `requirements.md` (R1/R2.1 wording,
+      budget, review comments), `testing-plan.md` results re-run, this file, the
+      evidence files, the screenshots re-captured. _Depends on:_ E2 · _Test:_ T12.
+- [ ] **E4 — re-present.** Push; reply on the PR review with round 2; edit the ticket's
+      presentation comment in place (the round-1 image links point at files that no
+      longer exist); label back to `loop:needs-review`. _Depends on:_ E3 ·
+      _Requirements:_ R4.3, R4.4 · _Test:_ T11.
+
 ## Dependency graph (DAG)
 
 ```text
-A1 → A2 → B1 → B2 → C1 → D1
+A1 → A2 → B1 → B2 → C1 → D1 ─(review)─→ E1 → E2 → E3 → E4
 A1 → A3 ────────────↗
 ```
 

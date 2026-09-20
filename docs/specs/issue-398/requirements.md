@@ -11,7 +11,7 @@ riskTier: 2                  # docs/specs/issue-398/** only — no code, no conf
 
 <!-- Authored per the the-loop:writing skill. -->
 
-# Requirements: a logo for the-loop — five hand-drawn SVG options to choose from
+# Requirements: a logo for the-loop — five brush-drawn SVG options to choose from
 
 > Phase 1 of 4 (requirements → design → testing plan → tasks). A tier-2 work item:
 > the four files are short and locked together, and the loop completes on its own
@@ -38,6 +38,8 @@ as its input.
 
 **User story:** As the owner, I want several genuinely different logo concepts side by
 side, so that I am choosing between ideas rather than between shades of one idea.
+*(Sharpened after the review of round 1: different is not enough — each option has to
+have a **character**, a personality a person could name, not only a distinct geometry.)*
 
 #### Acceptance criteria (EARS)
 
@@ -57,8 +59,10 @@ a tool, so that it matches the project's voice.
 
 #### Acceptance criteria (EARS)
 
-1. Every loop SHALL be drawn with a visibly imperfect line — a wobble along its path
-   and a stroke whose width varies — rather than a geometrically exact stroke.
+1. Every loop SHALL be drawn with a line a hand made — a brush's pressure and angle
+   giving it a width that varies along its path — rather than a geometrically exact
+   stroke. *(Revised after the owner's review of round 1, below: the hand shows in
+   the brush, not in a wobble; a tremor reads as unsure, not as drawn.)*
 2. Every colour used SHALL be muted: a desaturated palette on a paper-toned background,
    with no pure primaries and no saturated accent.
 3. The set SHALL share one palette, so the five options read as a family and any one
@@ -107,7 +111,8 @@ and to record my pick where the paper trail lives.
 
 ## Non-functional requirements
 
-- **Size.** Each SVG under 40 KB; the gallery under 300 KB; screenshots as PNG at 1×
+- **Size.** Each SVG under 64 kB (round 1 budgeted 40 kB; a brush stroke needs denser
+  sampling than a wobbled ellipse); the gallery under 300 kB; screenshots as PNG at 1×
   device pixel ratio, so the spec folder stays reviewable in a diff.
 - **Toolchain.** The generator runs on the repository's Python (3.11) with the standard
   library only; screenshots come from the Chromium the repository already drives for
@@ -149,3 +154,11 @@ and to record my pick where the paper trail lives.
 
 None for the spec. The one open question — *which option?* — is the deliverable's
 purpose, raised as the ticket comment R4.3 requires, and answered there.
+
+## Review comments
+
+- **2026-09-20 · @MadaraUchiha-314 (owner, designer) · [PR #403 review](https://github.com/MadaraUchiha-314/the-loop/pull/403#pullrequestreview-5261761922)**
+  — *"I think you over stressed on the hand drawn part. there's no character to these
+  logos."* Recorded here because it changes what R1.2 and R2.1 ask for: the character
+  clause on R1, the brush-not-wobble wording on R2.1, and the 64 kB budget are the
+  edits; round 2 of the options is the response (`design.md` § Review comments).

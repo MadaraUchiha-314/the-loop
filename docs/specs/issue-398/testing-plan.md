@@ -9,7 +9,7 @@ overrides: {}
 
 <!-- Authored per the the-loop:writing skill. -->
 
-# Testing plan: a logo for the-loop — five hand-drawn SVG options to choose from
+# Testing plan: a logo for the-loop — five brush-drawn SVG options to choose from
 
 > Derived from [`requirements.md`](requirements.md) and [`design.md`](design.md).
 > Planned at `test-planning`, results recorded at `verification` (below). Nothing here
@@ -21,7 +21,7 @@ overrides: {}
 
 | # | Type | Applies? | Scope / what it proves | Where it runs |
 |---|------|----------|------------------------|---------------|
-| T1 | Unit | yes — as the generator's own checker | `generate.py --check`: every SVG and the gallery on disk are byte-identical to a fresh render (R3.3), well-formed XML with `<title>` and `<desc>` (R3.4), self-contained — no script, foreignObject, image, iframe, `url(`, `@import`, `src=`, non-fragment `href` (R3.1, abuse case 1) — under 40 000 bytes (NFR), and the render is deterministic within one process (R3.3) | `python3 docs/specs/issue-398/design/generate.py --check` |
+| T1 | Unit | yes — as the generator's own checker | `generate.py --check`: every SVG and the gallery on disk are byte-identical to a fresh render (R3.3), well-formed XML with `<title>` and `<desc>` (R3.4), self-contained — no script, foreignObject, image, iframe, `@import`, `src=`, non-fragment `href` or `url(` (R3.1, abuse case 1) — under 64 000 bytes (NFR, raised from 40 000 for round 2), and the render is deterministic within one process (R3.3) | `python3 docs/specs/issue-398/design/generate.py --check` |
 | T2 | Integration (scenario) | n/a — no components interact; there is no runtime | | |
 | T3 | Contract (OpenAPI) | n/a — no API | | |
 | T4 | End-to-end | n/a — nothing is deployed or embedded yet; embedding is the adoption follow-up | | |
@@ -79,14 +79,15 @@ overrides: {}
 
 ## Verification results
 
-Recorded on 2026-09-20 on the branch of the delivering PR; raw output in
+Recorded on 2026-09-20 on the branch of the delivering PR, **re-run for round 2** after
+the owner's review of round 1; raw output in
 [`evidence/automated-tests.md`](evidence/automated-tests.md).
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| T1 | `python3 docs/specs/issue-398/design/generate.py --check` | pass — `ok — 6 files match, well-formed, self-contained, titled` (red first: six `missing` failures before the first render) | `evidence/automated-tests.md` |
-| T5 | `node docs/specs/issue-398/design/screenshots.mjs docs/specs/issue-398/design/screenshots` | pass — 12 captures; the dark-scheme `<img>` captures show the light ink, so the standalone files' own media rule holds | `design/screenshots/` |
-| T6 | regenerate, then `git diff --exit-code -- docs/specs/issue-398/design/` | pass — clean tree | `evidence/automated-tests.md` |
+| T1 | `python3 docs/specs/issue-398/design/generate.py --check` | pass — `ok — 6 files match, well-formed, self-contained, titled` (round 1: red first, six `missing` before the first render; round 2: red first on the 40 kB budget, five `over 40 KB`, then green at the 64 kB budget the review-driven brush needs) | `evidence/automated-tests.md` |
+| T5 | `node docs/specs/issue-398/design/screenshots.mjs docs/specs/issue-398/design/screenshots` | pass — 12 round-2 captures; the dark-scheme `<img>` captures show the light ink, so the standalone files' own media rule holds; the knot's mask weave renders on both grounds | `design/screenshots/` |
+| T6 | regenerate, then `git diff --exit-code -- docs/specs/issue-398/design/` | pass — clean tree (round 2 files: 39–51 kB) | `evidence/automated-tests.md` |
 | T9 | T1's title/desc assertion; contrast snippet | pass — ink 9.9:1 on paper, 12.0:1 on slate; accents 2.0–2.8:1 / 4.8–6.8:1 (decorative) | `evidence/automated-tests.md` |
 | T12 | markdownlint; ruff format --check; ruff check | pass | `evidence/automated-tests.md` |
 
