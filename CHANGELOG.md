@@ -1,3 +1,9 @@
+## v19.8.1 (2026-09-20)
+
+### Fix
+
+- **issue-395**: the hosted ingress set follows the config — `read.mode: off` stops the listener without a restart (#400)
+
 ## v19.8.0 (2026-09-20)
 
 ### Feat
