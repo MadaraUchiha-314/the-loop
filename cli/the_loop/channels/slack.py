@@ -56,6 +56,7 @@ from .digest import (
     truncate,
 )
 from .events import APPROVAL_EVENTS, PUBLISHABLE_EVENTS, SUBSCRIBABLE_EVENTS
+from . import room_policy
 from .state import ROOM_MODE, ChannelState, ChannelStores
 from .voice import room_lead
 
@@ -1531,6 +1532,65 @@ class SlackBotChannel:
             old[0],
         )
 
+    def _room_decision(self, event: Event, agentic: bool) -> "room_policy.Decision":
+        """RoomPolicy's decision for ``event`` (issue-393 B5). Always ``post``
+        outside an agentic room, so the classic path never changes. Reads the
+        delivery memory under the lock, so it is a snapshot the post then acts on.
+        """
+        if not agentic or not event.work_item:
+            return room_policy.Decision(room_policy.POST, rule="not-a-room")
+        try:
+            with ChannelState.locked(self.state_path, self.stores) as state:
+                memory = state.delivery_for(event.work_item)
+        except Exception as exc:  # noqa: BLE001 — a memory read never fails a post
+            logger.debug("slack: delivery memory read failed (%s); posting", exc)
+            return room_policy.Decision(room_policy.POST, rule="no-memory")
+        return room_policy.decide(
+            event,
+            memory,
+            is_room=True,
+            session_authored=(event.source in ("cli", "session")),
+            is_operator_doc=bool((event.detail or {}).get("operatorDoc")),
+        )
+
+    def _edit_or_post(self, client, channel_id, ts, text, blocks):
+        """chat.update the message at ``ts``; if it is gone/stale, post fresh and
+        adopt the new ts (issue-393 B5 error handling — a lost progress message
+        never wedges the phase)."""
+        try:
+            return client.chat_update(
+                channel=channel_id, ts=ts, text=text, blocks=blocks
+            )
+        except Exception as exc:  # noqa: BLE001 — a stale ts is recoverable
+            logger.debug("slack: chat.update at %s failed (%s); posting fresh", ts, exc)
+            return client.chat_postMessage(channel=channel_id, text=text, blocks=blocks)
+
+    def _remember_delivery(
+        self, event: Event, decision: "room_policy.Decision", ts: str
+    ) -> None:
+        """Merge what the room now holds into the delivery memory. ``@ts`` in a
+        decision's ``remember`` is the placeholder for the message just posted —
+        resolved to ``ts`` here — and the last event/node are always recorded so
+        the dedupe rule can fire next time (issue-393 B5)."""
+        node = str((event.detail or {}).get("node") or (event.detail or {}).get("phase") or "")
+        changes: Dict[str, Any] = {
+            "lastEvent": event.event_type,
+            "lastNode": node,
+        }
+        for key, value in (decision.remember or {}).items():
+            if isinstance(value, dict):
+                changes[key] = {k: (ts if v == "@ts" else v) for k, v in value.items()}
+            else:
+                changes[key] = ts if value == "@ts" else value
+        try:
+            with ChannelState.locked(self.state_path, self.stores) as state:
+                state.remember_delivery(event.work_item, **changes)
+                state.save(self.state_path)
+        except Exception as exc:  # noqa: BLE001 — memory is best-effort
+            logger.debug(
+                "slack: could not record delivery for %s (%s)", event.work_item, exc
+            )
+
     def post(self, event: Event) -> PostResult:
         """Deliver ``event`` as a reply in its work item's thread — opening the
         thread first, once, when none is bound (issue-312 R1).
@@ -1557,6 +1617,21 @@ class SlackBotChannel:
         # a thread, or an unbound post keeps the header rendering.
         in_room = bool(bound and bound[0] and not bound[1])
         agentic = in_room and self.config.room_style == "agentic"
+
+        # issue-393 B5: in an agentic room, RoomPolicy decides whether this event
+        # is a new message, an edit of one already there, a threaded reply, or
+        # nothing — over the room's delivery memory. Outside a room the decision
+        # is always "post", so the classic path is unchanged.
+        decision = self._room_decision(event, agentic)
+        if decision.action == room_policy.DROP:
+            logger.debug(
+                "slack: room policy dropped %s for %s (%s)",
+                event.event_type,
+                event.work_item,
+                decision.rule,
+            )
+            return PostResult(channel=self.name, ok=True, thread=(bound and bound[1]) or "")
+
         blocks = render_blocks(
             event,
             self.config.verbosity,
@@ -1573,19 +1648,35 @@ class SlackBotChannel:
         if len(event.text.strip()) > self.config.max_chars:
             fallback = replace(event, text=_section_text(blocks))
         text = render(fallback, self.config.verbosity)
+        channel_id = bound[0] if bound and bound[0] else self.central_channel()
         try:
-            response = client.chat_postMessage(
-                channel=bound[0] if bound and bound[0] else self.central_channel(),
-                text=text,
-                blocks=blocks,
-                # A room conversation has no thread (issue-378): top-level, never
-                # `thread_ts=""`, which Slack refuses.
-                thread_ts=(bound[1] or None) if bound else None,
-            )
+            if decision.action == room_policy.EDIT and decision.ts:
+                response = self._edit_or_post(
+                    client, channel_id, decision.ts, text, blocks
+                )
+            elif decision.action == room_policy.THREAD and decision.ts:
+                response = client.chat_postMessage(
+                    channel=channel_id, text=text, blocks=blocks,
+                    thread_ts=decision.ts,
+                )
+            else:
+                response = client.chat_postMessage(
+                    channel=channel_id,
+                    text=text,
+                    blocks=blocks,
+                    # A room conversation has no thread (issue-378): top-level,
+                    # never `thread_ts=""`, which Slack refuses.
+                    thread_ts=(bound[1] or None) if bound else None,
+                )
         except ChannelError:
             raise
         except Exception as exc:  # SlackApiError and transport errors alike
             raise ChannelError(f"slack: post failed: {exc}") from None
+        # Record what the room now holds, so the next decision reads it (B5).
+        if agentic and event.work_item:
+            self._remember_delivery(
+                event, decision, str(response.get("ts") or "")
+            )
         if bound and bound[1]:
             return PostResult(channel=self.name, ok=True, thread=bound[1])
         return PostResult(

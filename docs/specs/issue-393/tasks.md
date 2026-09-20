@@ -64,7 +64,7 @@ overrides: {}
       rooms lose the header, central channels get short id + title link; single
       signature at render. _Deps:_ B1. _Req:_ R7, R11.1–R11.2, R11.4 · _Test:_ T1
       voice rows.
-- [ ] **B5 — delivery integration.** `SlackBotChannel.post` consults RoomPolicy:
+- [x] **B5 — delivery integration.** `SlackBotChannel.post` consults RoomPolicy:
       `chat.update` for progress (stale ts ⇒ fresh post), thread replies via stored
       `gate_ts`, suppressions applied; GitHub path untouched. _Deps:_ B2–B4. _Req:_
       R6, R10 · _Test:_ T2 suppression/edit/thread Scenarios.

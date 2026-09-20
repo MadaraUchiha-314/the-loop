@@ -551,8 +551,13 @@ def test_a_declared_room_is_the_conversation_and_events_are_top_level(tmp_path):
 
 
 def test_a_room_conversation_is_opened_once_and_every_event_is_top_level(tmp_path):
-    """R5.2, R5.7: `open` is idempotent; the second event opens nothing."""
-    config = cli_config(tmp_path)
+    """R5.2, R5.7: `open` is idempotent; the second event opens nothing.
+
+    Pinned to the classic room style: this asserts the room *plumbing* invariant
+    (top-level, never threaded), which the issue-393 rework's collapse rules
+    (agentic default) deliberately change — those have their own tests below.
+    """
+    config = cli_config(tmp_path, room={"style": "classic"})
     declare(config)
     client = FakeSlackClient()
     bot = channel_for(config, client)
@@ -568,6 +573,42 @@ def test_a_room_conversation_is_opened_once_and_every_event_is_top_level(tmp_pat
         (ROOM, None),
     ]
     assert conversation(config)["origin"] == "start"
+
+
+def test_an_agentic_room_collapses_an_intermediate_transition(tmp_path):
+    """issue-393 B5/R6.1: in the default agentic room, an intermediate
+    `phase.completed` is collapsed — RoomPolicy drops it — so it is not a third
+    top-level message. The `phase.started` still posts."""
+    config = cli_config(tmp_path)  # agentic is the default
+    declare(config)
+    client = FakeSlackClient()
+    bot = channel_for(config, client)
+
+    assert bot.open(REF).ok
+    bot.post(
+        Event(
+            event_type="phase.started",
+            work_item=REF,
+            text="🔨 Starting design.",
+            detail={"node": "design"},
+        )
+    )
+    bot.post(
+        Event(
+            event_type="phase.completed",
+            work_item=REF,
+            text="done",
+            detail={"node": "design"},
+        )
+    )
+    # The started message posted; the completed one was collapsed (not a
+    # separate post). Exactly one posted message mentions the phase, and none
+    # carries the collapsed "done".
+    import json
+
+    with_phase = [p for p in client.posted if "Starting design." in json.dumps(p)]
+    assert len(with_phase) == 1
+    assert "done" not in [p.get("text") for p in client.posted]
 
 
 def test_a_thread_declared_into_a_room_moves_to_the_room_as_a_room(tmp_path):
