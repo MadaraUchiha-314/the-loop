@@ -48,7 +48,13 @@ from .base import (
     PostResult,
     render,
 )
-from .digest import DEFAULT_DIGEST_MODE, DIGEST_MODES, fit, truncate
+from .digest import (
+    DEFAULT_DIGEST_MODE,
+    DIGEST_MODES,
+    fit,
+    sanitize_summary,
+    truncate,
+)
 from .events import APPROVAL_EVENTS, PUBLISHABLE_EVENTS, SUBSCRIBABLE_EVENTS
 from .state import ROOM_MODE, ChannelState, ChannelStores
 
@@ -917,6 +923,14 @@ def render_blocks(
     ]
     if verbosity != "quiet" and event.text.strip():
         blocks.append(section(event.text))
+    # issue-393 B1/R8: the agent's own summary leads the message when it wrote
+    # one — what a reviewer on a phone wants from a gate, in place of the
+    # document's first N characters. Rendered at any verbosity (it is the point
+    # of a gate message), sanitized (a summary pings no one), and it stands in
+    # for the excerpt below; absent, the excerpt is the fallback exactly as before.
+    summary = sanitize_summary(getattr(event, "summary", "") or "")
+    if summary:
+        blocks.append(section(summary))
     if verbosity == "verbose" and event.detail:
         lines = [
             f"*{key}:* {_cap(str(value), 300)}"
@@ -924,7 +938,7 @@ def render_blocks(
             if key not in ("excerpt",) and str(value).strip()
         ]
         excerpt = str(event.detail.get("excerpt") or "").strip()
-        if excerpt:
+        if excerpt and not summary:
             blocks.append(section(excerpt))
         if lines:
             blocks.append(

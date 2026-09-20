@@ -20,8 +20,10 @@ from the_loop.channels.base import Event
 from the_loop.channels.digest import (
     DEFAULT_DIGEST_MODE,
     DIGEST_MODES,
+    SUMMARY_MAX_CHARS,
     condense,
     fit,
+    sanitize_summary,
     shorten_paths,
     strip_comments,
     to_mrkdwn,
@@ -577,3 +579,65 @@ def test_status_prints_the_long_messages_line(
     assert ChannelsCommand().run(parser.parse_args(["status"])) == 0
     out = capsys.readouterr().out
     assert expected in out and "maxChars:     1500" in out
+
+
+# -- agent-authored summary (issue-393 B1/R8) -----------------------------------
+
+
+def test_sanitize_summary_defuses_a_mention_and_a_broadcast():
+    """
+    Scenario: a hostile summary can ping no one
+
+    Requirement: docs/specs/issue-393/requirements.md R8 (abuse case 3). The
+    session writes the summary, so it is untrusted-adjacent: a `<@U…>` mention
+    and a `<!here>` broadcast in it must not page anybody when it lands.
+    """
+    out = sanitize_summary("Decided X. <@U0DANA> <!here> please look")
+    assert "<@U0DANA>" not in out
+    assert "<!here>" not in out and "&lt;!here>" in out
+    # the words survive; only the addressing is defused
+    assert "Decided X." in out and "please look" in out
+
+
+def test_sanitize_summary_caps_a_runaway_summary():
+    out = sanitize_summary("x " * 2000)
+    assert len(out) <= SUMMARY_MAX_CHARS + 60  # + the "… (N more)" note
+    assert "more characters" in out
+
+
+def test_sanitize_summary_is_empty_for_empty_in():
+    assert sanitize_summary("") == ""
+    assert sanitize_summary("   ") == ""
+
+
+def test_a_summary_leads_the_message_in_place_of_the_excerpt():
+    """
+    Scenario: the gate message carries the agent's summary, not a file excerpt
+
+    Requirement: docs/specs/issue-393/requirements.md R8. When the event has a
+    summary it is rendered (at any verbosity) and the excerpt is suppressed;
+    without one, the excerpt is the fallback exactly as before.
+    """
+    event = Event(
+        event_type="phase-approval-pending",
+        work_item="github:octo/repo#1",
+        text="requirements-approval is ready",
+        detail={"excerpt": "Phase 1 of 3 … Following the Kiro spec approach …"},
+        summary="7 requirements; the three checks plus `make check`; no new "
+        "attack surface. Least sure: whether stderr or stdout for findings.",
+    )
+    blocks = render_blocks(event, verbosity="verbose", interactive=False)
+    rendered = json.dumps(blocks)
+    assert "no new attack surface" in rendered
+    assert "Following the Kiro spec" not in rendered  # excerpt suppressed
+
+
+def test_the_excerpt_is_the_fallback_without_a_summary():
+    event = Event(
+        event_type="phase-approval-pending",
+        work_item="github:octo/repo#1",
+        text="requirements-approval is ready",
+        detail={"excerpt": "Phase 1 of 3 … Following the Kiro spec approach …"},
+    )
+    blocks = render_blocks(event, verbosity="verbose", interactive=False)
+    assert "Following the Kiro spec" in json.dumps(blocks)

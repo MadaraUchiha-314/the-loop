@@ -49,7 +49,7 @@ overrides: {}
 
 ## Track B — the room rework (ordered)
 
-- [ ] **B1 — `Event.summary` transport.** Optional field bus→render; escaped, capped,
+- [x] **B1 — `Event.summary` transport.** Optional field bus→render; escaped, capped,
       mentions neutralised; `ask --summary` and the graph-complete artifact path accept
       it; digest fallback when absent. _Req:_ R8.1–R8.2, R12.2 (abuse case 3) ·
       _Test:_ T1 escape/cap rows + T8 hostile summary.
