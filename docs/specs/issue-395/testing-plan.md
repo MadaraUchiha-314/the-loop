@@ -76,9 +76,9 @@ Recorded in [`evidence/automated-tests.md`](evidence/automated-tests.md).
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| T1 + T2 + T8 | `cd cli && uv run pytest -q tests/test_hosted_reconcile.py tests/test_hosted_listener.py` | see evidence | `evidence/automated-tests.md` |
-| T7 | `cd cli && uv run pytest -q tests/test_lifecycle_cmd.py` | see evidence | `evidence/automated-tests.md` |
-| T12 | `cd cli && uv run pytest -q` · ruff · pyright | see evidence | `evidence/automated-tests.md` |
+| T1 + T2 + T8 | `uv run --project cli python -m pytest -q cli/tests/test_hosted_reconcile.py cli/tests/test_hosted_listener.py` | pass — 14 passed (8 new, red before the fix) | `evidence/automated-tests.md` |
+| T7 | `cd cli && uv run python -m pytest -q tests/test_lifecycle_cmd.py tests/test_instance.py` | pass — 72 passed | `evidence/automated-tests.md` |
+| T12 | `cd cli && uv run python -m pytest -q` · `uv run ruff check cli hooks` · `uv run ruff format --check cli hooks` · `uv run pyright cli` | pass — 4291 passed, 1 skipped; ruff and pyright clean; CI green on the PR head | `evidence/automated-tests.md` |
 
 ## Review comments
 
