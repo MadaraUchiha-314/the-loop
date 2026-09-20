@@ -21,7 +21,7 @@ overrides: {}
       that publishes the approval request; `at_human_gate` (graphlink.py:274) unchanged.
       _Req:_ R4 · _Test:_ T2 `Scenario: the first authorized answer after a gate
       publishes advances the gate` + T1 unit on the entry path.
-- [ ] **A2 — session inherits the daemon's bus (B6).** Spawn env (runner.py:379–390)
+- [x] **A2 — session inherits the daemon's bus (B6).** Spawn env (runner.py:379–390)
       adds `THE_LOOP_CLI_CONFIG` = the daemon's resolved config path, skipped when
       already present/empty; `ask` (and shared publish path) warns when the bus names
       no channels. _Req:_ R3 · _Test:_ T2 two Scenarios (spawn env; channel-less warn).
