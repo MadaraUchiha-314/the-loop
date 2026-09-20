@@ -7,17 +7,21 @@ remembers to move.
 ```bash
 # --spec-dir DIR (before the action) names where the specs live; default
 # routing.graph.specDir from the CLI config, else docs/specs (issue-352)
-the-loop graph [--repo .] show   [--format text|json]
-the-loop graph [--repo .] hooks  [--format text|json]
-the-loop graph [--repo .] status <work-item>
-the-loop graph [--repo .] advance <work-item> [--ref REF]
-the-loop graph [--repo .] complete <work-item> [--node NODE] [--actor WHO] [--ref REF] [--pr N] [--pr-repo OWNER/REPO]
-the-loop graph [--repo .] run    <work-item> [--ref REF] [--max-nodes 20] [--dry-run]
-the-loop graph [--repo .] skip   <work-item> --node TOKEN [--node TOKEN…] --reason TEXT [--actor WHO] [--ref REF]
-the-loop graph [--repo .] force  <work-item> --to NODE --reason TEXT [--actor WHO] [--ref REF]
+the-loop graph [--repo DIR] show   [--format text|json]
+the-loop graph [--repo DIR] hooks  [--format text|json]
+the-loop graph [--repo DIR] status <work-item>
+the-loop graph [--repo DIR] advance <work-item> [--ref REF]
+the-loop graph [--repo DIR] complete <work-item> [--node NODE] [--actor WHO] [--ref REF] [--pr N] [--pr-repo OWNER/REPO]
+the-loop graph [--repo DIR] run    <work-item> [--ref REF] [--max-nodes 20] [--dry-run]
+the-loop graph [--repo DIR] skip   <work-item> --node TOKEN [--node TOKEN…] --reason TEXT [--actor WHO] [--ref REF]
+the-loop graph [--repo DIR] force  <work-item> --to NODE --reason TEXT [--actor WHO] [--ref REF]
 ```
 
-`--repo` (default `.`) precedes the action.
+`--repo` precedes the action; unset, it is the current directory (for `status`, see
+below). `<work-item>` is the spec-directory id (`issue-194`) or the work item's ref
+(`github:OWNER/REPO#194`) — every verb translates a ref to the directory the daemon
+writes, `issue-<n>`
+([issue #396](https://github.com/MadaraUchiha-314/the-loop/issues/396)).
 
 ## Resolving the work-item ref
 
@@ -188,6 +192,36 @@ own modules in (issue-352).
 
 Where a work item is, with each reached node's verdict and messages. Nodes beyond the
 pointer are summarised as "not reached yet" rather than reported as failures.
+
+```text
+$ the-loop --config ~/.the-loop/cli-config.yaml graph status github:octo/repo#1
+issue-1: at requirements-approval
+  repo: /srv/the-loop/workspaces/octo-repo-1 (from the session registry)
+  state: /srv/the-loop/workspaces/octo-repo-1/docs/specs/issue-1/work-item-state.json
+  ok     phase-selection
+  ok     brainstorming
+  …
+```
+
+Two lines say **where the answer came from**
+([issue #396](https://github.com/MadaraUchiha-314/the-loop/issues/396)), because a
+daemon-run work item's state lives in the **session's checkout** — a worktree under
+`routing.workspace` — and not wherever you happen to stand:
+
+- `repo:` appears when `--repo` was not given and the current directory does not hold
+  the work item: a **ref** is then looked up in the [session registry](/cli/state) and
+  the checkout the daemon recorded for its session is reported on. A bare id cannot be
+  looked up (the registry is keyed by ref), and `--repo` always wins.
+- `state:` names the `work-item-state.json` the report was read from — always. When
+  none exists the line says `not found`, and when the state directory is not there
+  either, it says so and asks whether this is the work item's checkout: the node printed
+  above it is then the graph's start node by default, not a recorded position. Until issue-396 that fallback
+  was silent, and `graph status github:…#1` from the daemon's config directory reported
+  `phase-selection` for an item three nodes further on.
+
+Only the read verbs (`status`, and [`check`](/cli/commands/check)) resolve a checkout
+this way. A mutating verb writes into the checkout it is pointed at, and that stays
+your choice: `--repo`, or the directory you run it from.
 
 Exit `0` when satisfied, `1` when not.
 

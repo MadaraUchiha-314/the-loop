@@ -133,7 +133,8 @@ the-loop channels listen    # …or over Socket Mode: replies, Approve / Execute
                             # slash command (start a work item, a standing session, status,
                             # upgrade) — see docs/guide/slack.md for every mode of interaction
 
-the-loop graph status <id>            # where a work item sits in the outer loop
+the-loop graph status <id|ref>        # where a work item sits in the outer loop, and which
+                                      # work-item-state.json said so (a ref resolves the session's checkout)
 the-loop graph status <id> --pr <n>   # …and where a PR sits in its inner loop
 the-loop graph status <id> --pr <n> --pr-repo owner/repo   # …in another repository
 the-loop graph complete <id>          # the node-completion claim: the graph verdicts, not the claim

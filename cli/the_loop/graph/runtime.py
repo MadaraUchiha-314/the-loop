@@ -21,7 +21,7 @@ from .chain import ChainOutcome, run_chain
 from .contract import BLOCK, PASS, SKIP, WAIT, HookContext, WorkItem
 from .model import Graph, GraphConfigError, artifact_names, load_graph
 from .refs import derive_ref
-from .state import WorkItemState, StateLockBusy, state_lock, utc_now
+from .state import STATE_FILENAME, WorkItemState, StateLockBusy, state_lock, utc_now
 
 logger = logging.getLogger("the-loop.graph")
 
@@ -182,6 +182,12 @@ class StatusReport:
     current_node: str
     nodes: List[NodeReport] = field(default_factory=list)
     parked: Optional[Dict[str, Any]] = None
+    #: The ``work-item-state.json`` this report was read from — or, when none
+    #: exists, the path that was looked for (issue-396). A report that silently
+    #: fell back to the graph's start node was indistinguishable from a work
+    #: item that genuinely sits there; naming the file makes the miss visible.
+    state_path: str = ""
+    state_found: bool = False
 
     @property
     def ok(self) -> bool:
@@ -200,6 +206,8 @@ class StatusReport:
             "ok": self.ok,
             "parked": self.parked,
             "nodes": [n.as_dict() for n in self.nodes],
+            "statePath": self.state_path,
+            "stateFound": self.state_found,
         }
 
 
@@ -736,7 +744,9 @@ class Runtime:
         tampered or optimistic state file cannot survive review.
         """
         item = self.work_item(work_item_id)
-        state = WorkItemState.load(self.state_dir(item), work_item_id)
+        state_dir = self.state_dir(item)
+        state_file = WorkItemState.existing_path(state_dir)
+        state = WorkItemState.load(state_dir, work_item_id)
         # Declared skips are honoured in BOTH modes (issue-177): a declaration
         # is a recorded human input with an off-repo audit trail, not the state
         # file scoring itself — while an invalid declaration is honoured in
@@ -788,6 +798,8 @@ class Runtime:
             current_node=current,
             nodes=reports,
             parked=None if recompute else state.parked,
+            state_path=str(state_file or state_dir / STATE_FILENAME),
+            state_found=state_file is not None,
         )
 
     @staticmethod

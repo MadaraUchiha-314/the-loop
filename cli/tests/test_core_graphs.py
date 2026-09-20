@@ -113,7 +113,17 @@ def test_a_resolving_repo_keeps_exactly_the_keys_it_always_had(tmp_path):
 
     report = graphs.check(repo_root, "issue-161")
 
-    assert set(report) == {"workItem", "currentNode", "ok", "parked", "nodes"}
+    # issue-396 added exactly two keys — the state file the report was read
+    # from — so the pin moves with them; the next addition is again deliberate.
+    assert set(report) == {
+        "workItem",
+        "currentNode",
+        "ok",
+        "parked",
+        "nodes",
+        "statePath",
+        "stateFound",
+    }
     assert "repoResolved" not in report
 
 
@@ -179,3 +189,82 @@ def test_a_valid_pr_repo_selects_that_repositorys_inner_loop(tmp_path):
     (tmp_path / "docs" / "specs" / "issue-1").mkdir(parents=True)
     report = graphs.check(str(tmp_path), "issue-1", pr=7, pr_repo="octo/infra")
     assert report["workItem"] == "issue-1"
+
+
+@pytest.mark.parametrize(
+    "given, expected",
+    [
+        ("github:octo/repo#161", "issue-161"),
+        ("github:ghe.corp.example/octo/repo#7", "issue-7"),
+        ("  github:octo/repo#3  ", "issue-3"),
+        ("issue-5", "issue-5"),
+        ("jira:PROJ/board#5", "jira:PROJ/board#5"),  # another provider: no convention
+        ("github:octo/repo", "github:octo/repo"),  # not a ref: passed through
+        ("../../etc#1", "../../etc#1"),  # not a ref either — no new path shape
+    ],
+)
+def test_work_item_id_translates_a_ref_the_way_the_daemon_does(given, expected):
+    """A ref names the same spec directory the ingress writes (issue-396, R1.1).
+
+    `graphlink.spec_id_for` is the daemon's translation; this must agree with it
+    and touch nothing that is not a parsable GitHub ref.
+
+    Requirement: docs/specs/issue-396/bugfix.md R1.1, R1.4
+    """
+    assert graphs.work_item_id(given) == expected
+
+
+def test_check_on_a_ref_reads_the_same_directory_as_on_the_id():
+    """
+    Feature: `graph status` reads the state file the runtime wrote (issue-396)
+      Scenario: the operator names the work item by its ref
+        Given this repository's spec directory for issue-161
+        When the core check operation is given `github:octo/repo#161`
+        Then it reports issue-161, from the same state file as the bare id
+
+    Requirement: docs/specs/issue-396/bugfix.md R1.1, R2.2
+    """
+    import pathlib
+
+    repo_root = str(pathlib.Path(__file__).resolve().parents[2])
+
+    by_id = graphs.check(repo_root, "issue-161")
+    by_ref = graphs.check(repo_root, "github:octo/repo#161")
+
+    assert by_ref["workItem"] == "issue-161"
+    assert by_ref["statePath"] == by_id["statePath"]
+    assert by_ref["currentNode"] == by_id["currentNode"]
+
+
+def test_check_names_the_state_file_it_read_or_looked_for(tmp_path):
+    """The report says which `work-item-state.json` it is about (issue-396, R2.2).
+
+    Found or not, the path is the one the runtime would write — so a wrong
+    answer is diagnosable from the report alone.
+
+    Requirement: docs/specs/issue-396/bugfix.md R2.2
+    """
+    import json
+
+    spec_dir = tmp_path / "docs" / "specs" / "issue-1"
+    spec_dir.mkdir(parents=True)
+    expected = spec_dir / "work-item-state.json"
+
+    missing = graphs.check(str(tmp_path), "issue-1")
+    assert missing["stateFound"] is False
+    assert missing["statePath"] == str(expected)
+
+    expected.write_text(
+        json.dumps({"workItem": "issue-1", "currentNode": "brainstorming"})
+    )
+    found = graphs.check(str(tmp_path), "issue-1")
+    assert found["stateFound"] is True
+    assert found["statePath"] == str(expected)
+    assert found["currentNode"] == "brainstorming"
+
+    # A spec directory that is not there still names the place to look.
+    absent = graphs.check(str(tmp_path), "issue-2")
+    assert absent["stateFound"] is False
+    assert absent["statePath"] == str(
+        tmp_path / "docs" / "specs" / "issue-2" / "work-item-state.json"
+    )

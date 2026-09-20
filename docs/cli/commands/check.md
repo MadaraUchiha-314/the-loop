@@ -4,10 +4,14 @@ Evaluate a work item's [process-graph](/capabilities/process-graph) nodes agains
 checked-in artifacts, and report what is unmet.
 
 ```bash
-the-loop check <work-item> [--repo .] [--spec-dir docs/specs] [--format table|json]
+the-loop check <work-item> [--repo DIR] [--spec-dir docs/specs] [--format table|json]
                            [--recompute] [--fail-on unmet|block]
-the-loop check --all       [--repo .] [--spec-dir docs/specs] [--format table|json]
+the-loop check --all       [--repo DIR] [--spec-dir docs/specs] [--format table|json]
 ```
+
+`<work-item>` is the spec-directory id (`issue-117`) or the work item's ref
+(`github:OWNER/REPO#117`), which names the same directory the daemon writes
+([issue #396](https://github.com/MadaraUchiha-314/the-loop/issues/396)).
 
 `--spec-dir` names where the checkout keeps its specs; unset, the CLI config's
 [`routing.graph.specDir`](/config/cli/routing-options#graph-specdir) answers, else
@@ -19,12 +23,18 @@ and `routing.graph.specDir` or this flag is for an instance that departs from it
 ```text
 $ the-loop check issue-117
 issue-117: ok (at brainstorming)
+  state: /work/the-loop/docs/specs/issue-117/work-item-state.json
   ····   7 node(s) not reached yet
 ```
 
+The `state:` line names the `work-item-state.json` the answer came from — found or not.
 A work item that has not been driven through the graph sits at the start node with
-everything ahead of it "not reached yet" — which is `ok`, not a failure. When something
-at or before the pointer *is* unsatisfied, it is named with its status and its reasons:
+everything ahead of it "not reached yet" — which is `ok`, not a failure — and its line
+reads `(not found — the work item has not entered the graph; reporting its start
+node)`. When the work item's directory is not there at all the line says so and points
+at `--repo`: the answer above it is the graph's default, not a recorded position. When
+something at or before the pointer *is* unsatisfied, it is named with its status and its
+reasons:
 
 ```text
 issue-42: UNMET (at design-approval)
@@ -46,8 +56,8 @@ nothing about.
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| *(positional)* | — | Work item id, e.g. `issue-117`. Give this or `--all`. |
-| `--repo` | `.` | Repository root. |
+| *(positional)* | — | Work item id (`issue-117`) or ref (`github:OWNER/REPO#117`). Give this or `--all`. |
+| `--repo` | unset | Repository root. Unset: the current directory — or, for a **ref** the current directory does not hold, the checkout the [session registry](/cli/state) records for that work item's session (printed as `repo: … (from the session registry)`). Given, it is used verbatim. |
 | `--all` | off | Evaluate **every** work item under the spec root and report drift. |
 | `--format` | `table` | `table` or `json`. |
 | `--recompute` | off | Ignore stored work-item state; derive the verdict from the artifacts alone. |
@@ -112,7 +122,9 @@ Nodes are split at the pointer, deliberately:
   status view starts contradicting itself, printing `ok` above a wall of `BLOCK` lines.
 
 `--all` prints one line per work item plus the first finding for each, and a
-`n/m work items satisfied` summary.
+`n/m work items satisfied` summary — and no `state:` lines: it is a drift summary.
+
+With `--format json` the report carries `statePath` and `stateFound` beside its nodes.
 
 ## Exit codes
 

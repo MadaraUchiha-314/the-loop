@@ -2,6 +2,13 @@
 
 **Kind:** bug · **Source:** e2e Slack test 2026-09-19 (B7, and O6 — same cause) · **Not fixed in issue-393**
 
+> Filed as [#396](https://github.com/MadaraUchiha-314/the-loop/issues/396) and fixed
+> there ([`docs/specs/issue-396/`](../../specs/issue-396/)). Root cause: the command
+> took the ref as a spec-directory id (`docs/specs/github:…#1/`, never there) and
+> defaulted `--repo` to the working directory, then fell back to the graph's start
+> node in silence. It now translates the ref, resolves the session's checkout through
+> the session registry, and prints the state file it read.
+
 ## What happens
 
 After the event log had recorded `graph.advanced` through brainstorming,

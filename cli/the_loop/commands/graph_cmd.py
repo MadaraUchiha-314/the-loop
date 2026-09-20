@@ -14,7 +14,7 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from .base import Command, register
 from ..client.routing import routed, service_error
@@ -362,8 +362,12 @@ class CheckCommand(Command):
     help = "Evaluate a work item's nodes against its checked-in artifacts (read-only)."
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("work_item", nargs="?", help="work item id, e.g. issue-109")
-        parser.add_argument("--repo", default=".", help="repository root (default: .)")
+        parser.add_argument(
+            "work_item",
+            nargs="?",
+            help="work item id (issue-109) or ref (github:OWNER/REPO#109)",
+        )
+        _add_repo_flag(parser)
         _add_spec_dir_flag(parser)
         parser.add_argument("--format", choices=["table", "json"], default="table")
         parser.add_argument(
@@ -391,18 +395,20 @@ class CheckCommand(Command):
         )
 
     def run(self, args: argparse.Namespace) -> int:
-        root = Path(args.repo).resolve()
         try:
-            return self._report_on(root, args)
+            return self._report_on(args)
         except Exception as exc:  # noqa: BLE001 — every failure is a message
             return _report(exc)
 
-    def _report_on(self, root: Path, args: argparse.Namespace) -> int:
+    def _report_on(self, args: argparse.Namespace) -> int:
+        note = ""
         if args.all:
+            root = _resolve_root(args.repo)
             items = _discover_work_items(
                 root, _show(root, spec_dir=args.spec_dir)["specRoot"]
             )
         elif args.work_item:
+            root, note = _resolve_read_root(args.repo, args.work_item, args.spec_dir)
             items = [args.work_item]
         else:
             print("error: give a work item id, or --all")
@@ -429,6 +435,12 @@ class CheckCommand(Command):
                     continue
                 state = "ok" if report["ok"] else "UNMET"
                 print(f"{report['workItem']}: {state} (at {report['currentNode']})")
+                if not args.all:
+                    # Which file the answer came from (issue-396). `--all` is a
+                    # drift summary — one line per item, as before.
+                    if note:
+                        print(f"  {note}")
+                    print(f"  {_state_line(report, recompute=args.recompute)}")
                 # Only nodes at or before the pointer are findings; anything
                 # beyond it is simply not done yet, and saying "BLOCK" about it
                 # would make an ok work item read as a broken one.
@@ -453,6 +465,126 @@ class CheckCommand(Command):
             if args.all:
                 print(f"\n{len(payload) - failing}/{len(payload)} work items satisfied")
         return 1 if failing else 0
+
+
+def _add_repo_flag(parser: argparse.ArgumentParser) -> None:
+    """``--repo``: the repository root. Unset means *resolve it* (issue-396)."""
+    parser.add_argument(
+        "--repo",
+        default="",
+        help=(
+            "repository root (default: the current directory; for `status` and "
+            "`check`, the checkout the work item's session runs in when the "
+            "current directory does not hold the work item — issue-396)"
+        ),
+    )
+
+
+def _resolve_root(repo: str) -> Path:
+    """The repository root a verb runs against: ``--repo``, else the working directory."""
+    return Path(repo).resolve() if repo else Path(".").resolve()
+
+
+def _resolve_read_root(repo: str, work_item: str, spec_dir: str) -> Tuple[Path, str]:
+    """The root a **read** verb reports on, and how it was found (issue-396).
+
+    Three tiers: an explicit ``--repo`` is used verbatim; a working directory
+    that holds the work item's spec directory is used; failing both, a **ref**
+    is looked up in the session registry the CLI config resolves, and the
+    checkout the daemon recorded for its session is used — that is where the
+    daemon's runtime wrote ``work-item-state.json``, and until this change the
+    one place ``graph status`` could not find from another directory. The note
+    names the registry as the source so the answer is attributable. Anything
+    that does not resolve falls through to the working directory, where the
+    ``state:`` line then shows the miss.
+
+    Read verbs only (``graph status``, ``check <item>``): a mutating verb writes
+    into the checkout it is pointed at, and that stays the operator's choice.
+    """
+    if repo:
+        return Path(repo).resolve(), ""
+    cwd = Path(".").resolve()
+    from ..graph.bootstrap import resolve_spec_root
+
+    spec_root = resolve_spec_root(override=spec_dir)
+    if (cwd / spec_root / core_graphs.work_item_id(work_item)).is_dir():
+        return cwd, ""
+    checkout = _session_checkout(work_item)
+    if checkout is None:
+        return cwd, ""
+    return checkout, f"repo: {checkout} (from the session registry)"
+
+
+def _session_checkout(work_item: str) -> Optional[Path]:
+    """The checkout the daemon recorded for ``work_item``'s session, if it is there.
+
+    A pure read of the registry ``sessions list`` reads (``routing.registryDir``,
+    else the state layout's ``local/``, off the CLI config ``--config`` selected).
+    A closed record still answers — the operator asking after a finished item
+    wants its checkout too, as ``sessions attach`` does. Only a ref can be looked
+    up (the registry is keyed by ref); a bare id, a missing config, a missing or
+    unreadable record, or a ``cwd`` that is no longer a directory all yield
+    ``None``, never an error: this is a convenience on a read path.
+    """
+    from ..graph.bootstrap import load_cli_config_best_effort
+    from ..sessions import SessionRegistry, WorkItemRef
+    from ..state import layout_from_config
+
+    try:
+        ref = WorkItemRef.parse(work_item)
+    except ValueError:
+        return None
+    try:
+        config = load_cli_config_best_effort()
+        routing = config.get("routing") or {}
+        registry_dir = (
+            str(routing.get("registryDir") or "")
+            or layout_from_config(config).local_dir
+        )
+        session = SessionRegistry(registry_dir).find_by_work_item(
+            ref, include_closed=True
+        )
+    except Exception as exc:  # noqa: BLE001 — a registry we cannot read is "no answer"
+        logger.debug(
+            "could not consult the session registry for %s: %s", work_item, exc
+        )
+        return None
+    if session is None or not session.cwd:
+        return None
+    checkout = Path(session.cwd)
+    if not checkout.is_dir():
+        logger.debug(
+            "%s's session recorded cwd %s, which is not a directory",
+            work_item,
+            checkout,
+        )
+        return None
+    return checkout.resolve()
+
+
+def _state_line(report: Dict[str, Any], recompute: bool = False) -> str:
+    """``state: <path>`` — which ``work-item-state.json`` the report is about.
+
+    Printed found or not (issue-396): a report that fell back to the graph's
+    start node used to be indistinguishable from a work item that genuinely
+    sits there. When the state directory itself is absent the line says so and
+    points at the two ways to reach the right checkout.
+    """
+    path = str(report.get("statePath") or "")
+    if report.get("stateFound"):
+        return f"state: {path}"
+    parent = Path(path).parent
+    if not parent.is_dir():
+        return (
+            f"state: {path} (not found; {parent} does not exist — is this the "
+            "work item's checkout? run from it, or pass --repo)"
+        )
+    if recompute:
+        return f"state: {path} (not found; position derived from the artifacts)"
+    return (
+        f"state: {path} (not found — the work item has not entered the graph; "
+        "reporting its start node)"
+    )
 
 
 def _add_spec_dir_flag(parser: argparse.ArgumentParser) -> None:
@@ -564,7 +696,7 @@ class GraphCommand(Command):
     help = "Inspect and drive the-loop's process graph."
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("--repo", default=".", help="repository root (default: .)")
+        _add_repo_flag(parser)
         _add_spec_dir_flag(parser)
         sub = parser.add_subparsers(dest="action", required=True)
 
@@ -693,17 +825,25 @@ class GraphCommand(Command):
         )
 
     def run(self, args: argparse.Namespace) -> int:
-        root = Path(args.repo).resolve()
         try:
-            return self._dispatch(root, args)
+            return self._dispatch(args)
         except Exception as exc:  # noqa: BLE001 — every failure is a message
             return _report(exc)
 
-    def _dispatch(self, root: Path, args: argparse.Namespace) -> int:
+    def _dispatch(self, args: argparse.Namespace) -> int:
+        spec_dir = getattr(args, "spec_dir", "") or ""
+        # Only the READ verb resolves the checkout through the registry
+        # (issue-396): a mutating verb writes into the checkout it is pointed
+        # at, and that stays the operator's choice — `--repo` or the working
+        # directory.
+        note = ""
+        if args.action == "status":
+            root, note = _resolve_read_root(args.repo, args.work_item, spec_dir)
+        else:
+            root = _resolve_root(args.repo)
         if args.action == "hooks":
             return _report_hooks(root, args.format)
 
-        spec_dir = getattr(args, "spec_dir", "") or ""
         if args.action == "show":
             graph = _show(root, pr=args.pr, pr_repo=args.pr_repo, spec_dir=spec_dir)
             if args.format == "json":
@@ -749,6 +889,9 @@ class GraphCommand(Command):
             )
             reached, ahead = _split_at_pointer(report["nodes"], report["currentNode"])
             print(f"{report['workItem']}: at {report['currentNode']}")
+            if note:
+                print(f"  {note}")
+            print(f"  {_state_line(report)}")
             print(_render_table(reached, ahead))
             return 0 if report["ok"] else 1
 

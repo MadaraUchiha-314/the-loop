@@ -202,7 +202,11 @@ self-learning/ML capabilities.
   ([state on disk](https://madarauchiha-314.github.io/the-loop/cli/state)). the-loop SHALL
   never commit state on the operator's behalf.
 - `the-loop check [<work item>|--all]` SHALL evaluate a work item's nodes against its
-  checked-in artifacts and report what is unmet (`--format table|json`). It SHALL be
+  checked-in artifacts and report what is unmet (`--format table|json`). The work item
+  is its id or its ref; the report names the `work-item-state.json` it read
+  (`statePath`/`stateFound`, a `state:` line), and a ref the working directory does not
+  hold resolves the session's checkout through the session registry (issue-396; see
+  [process-graph](process-graph.md)). It SHALL be
   **pure** — no network, no subprocess, no mutation — which is what lets the same code run
   on every harness turn *and* in CI, so the gate is the runtime rather than a
   reimplementation of it. `--recompute` ignores stored work-item state and derives the verdict
@@ -430,6 +434,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-396 | `check` and `graph status` accept a work-item ref, print the `work-item-state.json` they read (`state:`), and — with no `--repo`, from a directory that does not hold the work item — report on the checkout the session registry records for the ref (`repo: … (from the session registry)`), where the daemon actually wrote the state (2026-09-20) | [spec](../specs/issue-396/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/396) |
 | issue-370 | `sessions link-pr` became the single writer of a work item's tracked pull requests (2026-09-16), and stopped depending on an agent remembering to run it: a `PostToolUse` hook records the pull request a session just created, and the tmux runner exports `THE_LOOP_WORK_ITEM` so the plugin's hooks can tell which work item they are in. The inference that covered the gap — the poller filing a labelled pull request under whichever issue GitHub's linkage named — is gone | [spec](../specs/issue-370/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/370) |
 | issue-368 | An attribute belongs to a party (2026-09-15): the rule that decides which of a work item's three files each attribute lives in, declared as data (`state.ATTRIBUTES`) and enforced by the portability suite. `sessionPerPr`, `model`, `effort` and the pull requests moved into the repository's own `work-item-state.json`; the portable `graph` section was retired (read for a work item frozen before the change, never written); the `session` block left the repository and `session: inherit` resolves through the session registry; a pull request's poll ledger moved under its owner, so one work item is one portable record; the channel binding moved to the operator's record and the read cursor to the machine's; the local record became a map of sessions keyed by ref, holding handles alone | [spec](../specs/issue-368/), [decision-128](../decisions/decision-128.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/368) |
 | issue-358 | `the-loop models list\|check` — the verb that makes a model declaration true by asking each harness what it accepts and caching the verdict; `sessions list` gained a `Model` column | [spec](../specs/issue-358/), [decision-124](../decisions/decision-124.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/358) |
