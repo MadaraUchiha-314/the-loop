@@ -5,7 +5,7 @@ workItem: "github:MadaraUchiha-314/the-loop#396"
 
 # Evidence: automated tests (issue-396)
 
-Run on 2026-09-20, on the branch of the delivering PR, from the repository root unless
+Run on 2026-09-20, on the branch of the delivering PR (#401), from the repository root unless
 noted. Nothing in the output names a token, a host or a person.
 
 ## T1 + T7 — core: the translation, the fields, the pinned key sets
