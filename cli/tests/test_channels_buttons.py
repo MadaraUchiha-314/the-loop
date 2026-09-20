@@ -279,6 +279,44 @@ def test_render_blocks_puts_command_buttons_before_the_approval_pair():
     assert render_blocks(event, "normal", commands={}) == render_blocks(event, "normal")
 
 
+def test_a_session_question_with_a_default_earns_a_defaults_are_fine_button():
+    """
+    Scenario: the session's question offers a one-tap affirmative
+
+    Requirement: docs/specs/issue-393/requirements.md R12.1 (B9). When a
+    session's ask states a default, the room's message carries a "Defaults are
+    fine" button whose value IS that default — a press delivers it as the reply.
+    Only when the channel can receive a press (interactive).
+    """
+    event = OutboundEvent(
+        event_type="session.awaiting_input",
+        work_item="github:o/r#7",
+        text="Two small calls — per-line or per-file findings?",
+        detail={"default": "Defaults are fine — go ahead"},
+    )
+    interactive = render_blocks(event, "normal", interactive=True)
+    assert (f"{ACTION_PREFIX}default", "Defaults are fine — go ahead") in buttons(
+        interactive
+    )
+    # Without interactivity there is no button nobody could press.
+    assert not any(
+        a == f"{ACTION_PREFIX}default" for a, _ in buttons(render_blocks(event, "normal"))
+    )
+
+
+def test_no_defaults_button_without_a_stated_default():
+    event = OutboundEvent(
+        event_type="session.awaiting_input",
+        work_item="github:o/r#7",
+        text="An open question with no default.",
+        detail={},
+    )
+    assert not any(
+        a == f"{ACTION_PREFIX}default"
+        for a, _ in buttons(render_blocks(event, "normal", interactive=True))
+    )
+
+
 def test_reply_blocks_carry_the_start_button():
     """R1.2: the kickoff reply's blocks — a section and, with a command, one
     actions block; with none, the section alone."""

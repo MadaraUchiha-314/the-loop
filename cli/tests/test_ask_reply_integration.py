@@ -533,6 +533,42 @@ def test_the_ask_verb_is_quiet_when_a_channel_subscribes(tmp_path, monkeypatch, 
     assert "reached GitHub only" not in err
 
 
+def test_the_ask_verb_carries_a_stated_default(tmp_path, monkeypatch):
+    """
+    Scenario: `ask --default` states the affirmative the room can one-tap
+
+    Requirement: docs/specs/issue-393/requirements.md R12.1 (B9). The default
+    rides on the event's detail, where the renderer turns it into the "Defaults
+    are fine" button.
+    """
+    captured = {}
+
+    def fake_publish(event, config, **kwargs):
+        captured["default"] = (event.detail or {}).get("default")
+        from the_loop.channels.base import PostResult, PublishResult
+
+        return PublishResult(record=PostResult(channel="github", ok=True, url="https://x/#c1"))
+
+    monkeypatch.setattr("the_loop.channels.bus.publish", fake_publish)
+    monkeypatch.setattr(
+        core_sessions,
+        "post_issue_comment_with_url",
+        lambda *a, **k: (True, "", "https://x/#c1"),
+    )
+    main(
+        [
+            "ask",
+            "--work-item",
+            REF,
+            "--question",
+            "per-line or per-file?",
+            "--default",
+            "Defaults are fine",
+        ]
+    )
+    assert captured["default"] == "Defaults are fine"
+
+
 def test_the_ask_verb_refuses_an_empty_question(tmp_path, monkeypatch, capsys):
     """
     Feature: agents ask through a verb

@@ -83,7 +83,7 @@ overrides: {}
       (default agentic) + schema + docs; `classic` byte-preserves today's rendering —
       existing outbound suites stay green unchanged. _Deps:_ B5. _Req:_ NFR config
       compat · _Test:_ T10 schema row + full existing suites.
-- [ ] **B9 — session voice in the room.** With A2 landed: `session.awaiting_input`
+- [x] **B9 — session voice in the room.** With A2 landed: `session.awaiting_input`
       renders per R12.1 (question, options, default button); session summary announces
       the artifact; `session-wins` proven end-to-end. _Deps:_ A2, B3–B5. _Req:_ R12 ·
       _Test:_ T2 session-voice Scenarios.

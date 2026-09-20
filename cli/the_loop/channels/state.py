@@ -910,6 +910,9 @@ def _delivery_record(info: Dict[str, Any]) -> Dict[str, Any]:
         "progressTs": _str_map(info.get("progressTs")),
         "gateTs": _str_map(info.get("gateTs")),
         "phaseSelectionTs": str(info.get("phaseSelectionTs") or ""),
+        # The node the session last spoke for (issue-393 B9/R12.3), so a later
+        # runtime template for it is suppressed.
+        "sessionSpokeFor": str(info.get("sessionSpokeFor") or ""),
     }
 
 

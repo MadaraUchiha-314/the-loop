@@ -665,7 +665,11 @@ def close_session(
 
 
 def ask_session(
-    ref: str, question: str, config: Optional[dict] = None, summary: str = ""
+    ref: str,
+    question: str,
+    config: Optional[dict] = None,
+    summary: str = "",
+    default_answer: str = "",
 ) -> Dict[str, Any]:
     """Post an agent's question on its work item and record the wait.
 
@@ -720,12 +724,15 @@ def ask_session(
     channel_results = []
     ok, error, url = False, "", ""
     try:
+        detail = {"actor": actor}
+        if default_answer:
+            detail["default"] = default_answer
         published = bus_publish(
             Event(
                 event_type="session.awaiting_input",
                 work_item=work_item.ref,
                 text=question,
-                detail={"actor": actor},
+                detail=detail,
                 source="cli",
                 summary=summary or "",
             ),

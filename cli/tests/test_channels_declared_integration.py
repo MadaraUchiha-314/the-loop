@@ -611,6 +611,46 @@ def test_an_agentic_room_collapses_an_intermediate_transition(tmp_path):
     assert "done" not in [p.get("text") for p in client.posted]
 
 
+def test_the_session_voice_wins_over_a_later_template_for_the_same_node(tmp_path):
+    """issue-393 B9/R12.3: when the session speaks for a node (its question, a
+    source=cli event), a later runtime template (phase.started) for that same
+    node is dropped — the agent's own words win over the boilerplate."""
+    config = cli_config(tmp_path)  # agentic
+    declare(config)
+    client = FakeSlackClient()
+    bot = channel_for(config, client)
+    assert bot.open(REF).ok
+
+    # The session asks — its own words, source=cli, recorded as spoken-for.
+    bot.post(
+        Event(
+            event_type="session.awaiting_input",
+            work_item=REF,
+            text="🤔 Two small calls — per-line or per-file?",
+            detail={"node": "requirements-definition"},
+            source="cli",
+        )
+    )
+    # A runtime template for the same node now — it should be suppressed.
+    bot.post(
+        Event(
+            event_type="phase.started",
+            work_item=REF,
+            text="the-loop: started requirements-definition",
+            detail={"node": "requirements-definition"},
+        )
+    )
+    import json
+
+    posts = json.dumps(client.posted)
+    assert "per-line or per-file" in posts  # the session's message landed
+    # the template did not add a second message for that node
+    template_posts = [
+        p for p in client.posted if "started requirements-definition" in json.dumps(p)
+    ]
+    assert template_posts == []
+
+
 def test_a_thread_declared_into_a_room_moves_to_the_room_as_a_room(tmp_path):
     """R5.4: the room opens as a conversation, the old thread is told and unmapped."""
     config = cli_config(tmp_path)

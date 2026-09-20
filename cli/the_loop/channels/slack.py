@@ -511,6 +511,9 @@ ACTION_PREFIX = "the-loop:"
 APPROVE_VALUE = "approved"
 CHANGES_VALUE = "changes requested"
 _BUTTON_VALUES = (APPROVE_VALUE, CHANGES_VALUE)
+#: Slack's ceiling on a button's ``value`` (issue-393 B9): a stated default longer
+#: than this is clipped rather than refused — the reply still carries the answer.
+_BUTTON_VALUE_LIMIT = 2000
 
 #: The command buttons (issue-337): control command → the label a member sees.
 #: Fixed; the button's VALUE is the configured keyword, read from
@@ -1555,6 +1558,22 @@ def render_blocks(
             }
         )
     actions.extend(_command_buttons(commands))
+    # issue-393 B9/R12.1: a session's question with a stated default gets a
+    # one-tap affirmative — the button's value is the default answer, delivered
+    # as that member's reply exactly as a typed one would be. Only when the
+    # channel can receive a press (Socket Mode + the gate.feedback grant, the
+    # same interactivity the Approve pair needs).
+    default_answer = str((event.detail or {}).get("default") or "").strip()
+    if interactive and default_answer:
+        actions.append(
+            {
+                "type": "button",
+                "text": {"type": "plain_text", "text": "Defaults are fine"},
+                "style": "primary",
+                "action_id": f"{ACTION_PREFIX}default",
+                "value": default_answer[:_BUTTON_VALUE_LIMIT],
+            }
+        )
     if interactive and event.event_type in APPROVAL_EVENTS:
         actions.append(
             {
@@ -2141,6 +2160,12 @@ class SlackBotChannel:
             "lastEvent": event.event_type,
             "lastNode": node,
         }
+        # issue-393 B9/R12.3: when the SESSION speaks for a node (its question or
+        # summary), remember that, so a later runtime template for the same node
+        # is suppressed by RoomPolicy's session-wins rule — the agent's own words
+        # win over the boilerplate.
+        if node and event.source in ("cli", "session"):
+            changes["sessionSpokeFor"] = node
         for key, value in (decision.remember or {}).items():
             if isinstance(value, dict):
                 changes[key] = {k: (ts if v == "@ts" else v) for k, v in value.items()}
