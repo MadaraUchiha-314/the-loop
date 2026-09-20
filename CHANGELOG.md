@@ -1,3 +1,9 @@
+## v19.8.0 (2026-09-20)
+
+### Feat
+
+- **issue-397**: confirm a room at its declaration, add `help public`, pin the first-line rule (#399)
+
 ## v19.7.0 (2026-09-20)
 
 ### Feat
