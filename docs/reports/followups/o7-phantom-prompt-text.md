@@ -33,3 +33,20 @@ This is an **investigation**, not a known fix:
 - The source of the phantom text is identified, and either eliminated or shown to
   be a harmless external cause (a human at the pane); the deliver path is shown
   not to concatenate a leftover line with the next delivered reply.
+
+## Fix (branch `fix/n1-selection-grammar-refusal-reason`)
+
+The source of the phantom line was not identified (it appears from outside
+the-loop's own delivery path — a human at the pane, or the harness/tmux), but the
+*hazard* it creates is closed regardless: `TmuxRunner.deliver_to` now clears the
+input line before pasting an event. A `\x01\x15` (Ctrl-A then Ctrl-U) is pasted
+**unbracketed** (so the control bytes act rather than paste as literal text) via
+the same client-free `paste-buffer` path as the submit, immediately before the
+bracketed event paste. A leftover unsent line at the `❯` prompt is therefore
+cleared and cannot be prepended to, or submitted with, the reply the daemon
+delivers. Harmless on an empty line; its buffer file is cleaned up in the same
+`finally` as the others. Pinned by `test_deliver_clears_the_input_line_before_pasting_the_event`.
+
+This satisfies the acceptance criterion's second half (the deliver path is shown
+not to concatenate a leftover with the next delivered reply); the first half
+(identifying the source) remains open but is now harmless.

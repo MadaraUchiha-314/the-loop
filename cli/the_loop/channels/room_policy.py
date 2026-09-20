@@ -45,6 +45,7 @@ single work item lives.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping
 
@@ -144,8 +145,12 @@ def decide(
     if not is_room:
         return Decision(POST, rule="not-a-room")
 
-    # operator-docs — for the ticket, never a room.
-    if is_operator_doc:
+    # operator-docs — a tmux cheat-sheet (attach table + shell block) is for the
+    # ticket, never a room. The caller stamps `is_operator_doc` when it knows;
+    # the session-started announcement, though, reaches the room as a nodeless
+    # mirrored `comment.agent` that carries no such flag (issue N2), so its own
+    # distinctive lead is recognised here too.
+    if is_operator_doc or _is_operator_doc_text(event):
         return Decision(DROP, rule="operator-docs")
 
     node = _node_of(event)
@@ -164,13 +169,47 @@ def decide(
     if not session_authored and _template_superseded(event, memory):
         return Decision(DROP, rule="session-wins")
 
+    # endgame-collapse — the terminal `complete`/`done` node's own lifecycle
+    # lines say nothing the room is not already told: `work-item-complete`
+    # announces arrival and `work-item.closed` announces the close, and the
+    # session posts its own "issue-N complete" summary between them (issue N2 —
+    # the run ended in five messages where two were these empty lifecycle lines,
+    # "started phase *complete* (complete)" and "completed phase *complete*").
+    # A `phase.completed` explicitly flagged `terminal` in its detail is the
+    # deliberate "the room should hear this completion" signal and is kept; the
+    # plain lifecycle pair for the terminal node is not. (The flag, not the node
+    # name — `_is_terminal` treats the node name alone as terminal, which is what
+    # transition-collapse wants but would keep every plain pair here.)
+    if (
+        event_type in LIFECYCLE_EVENTS
+        and _node_of(event) in ("complete", "done")
+        and not bool((getattr(event, "detail", None) or {}).get("terminal"))
+    ):
+        return Decision(DROP, rule="endgame-collapse")
+
     # gate-collapse — a gate announces once, with its buttons. After a `*-pending`
-    # for a node, that node's `phase.started` line and its mirrored "ready for
-    # review" comment are noise.
-    if node and gate_ts.get(node):
-        if event_type == "phase.started":
-            return Decision(DROP, rule="gate-collapse")
-        if event_type == MIRROR_EVENT and _looks_like_ready_for_review(event):
+    # for a node, that node's lifecycle line and its mirrored "ready for review"
+    # comment are noise.
+    #
+    # Two live-run facts (issue N2) shape this. First, an approval node usually
+    # declares no `phase:` of its own and inherits its predecessor's, so entering
+    # it does not change the phase label and the runtime emits `phase.progress`,
+    # not `phase.started` — so both must be collapsed at a gated node. Second, the
+    # "ready for review" restatement reaches the room as a mirrored `comment.agent`
+    # that carries NO node (the mirror derives none from the comment body), so it
+    # cannot be matched to a specific gate's node — but a room holds one gate open
+    # at a time, so a "ready for review" mirror while ANY gate is pending is that
+    # gate's restatement, and is dropped.
+    if node and gate_ts.get(node) and event_type in ("phase.started", "phase.progress"):
+        return Decision(DROP, rule="gate-collapse")
+    if event_type == MIRROR_EVENT and _looks_like_ready_for_review(event):
+        # The mirror carries no node; the node it names ("**<node>** is ready for
+        # review") is read from its own text and matched to a pending gate. That
+        # keeps the drop specific to the gate that is actually open — a later
+        # mirror after the gate is answered names a node with no live `gateTs`
+        # and posts as normal.
+        named = _ready_for_review_node(event)
+        if named and gate_ts.get(named):
             return Decision(DROP, rule="gate-collapse")
 
     # A gate's own pending message: post it, and remember its ts so the collapse
@@ -231,6 +270,43 @@ def _looks_like_ready_for_review(event: Any) -> bool:
     the one the `*-pending` message already made actionable."""
     text = str(getattr(event, "text", "") or "").lower()
     return "ready for review" in text or "reply with an approval" in text
+
+
+#: The lead of the session-started announcement
+#: (:func:`the_loop.announce.announcement_body`) — a tmux cheat-sheet that is
+#: operator documentation, recognised here because its mirror carries no flag.
+_OPERATOR_DOC_LEAD = "started an interactive session for"
+
+
+def _is_operator_doc_text(event: Any) -> bool:
+    """Whether a mirrored comment is the tmux cheat-sheet (issue N2). Matched on
+    the announcement's own lead plus the `tmux attach` line it always carries, so
+    an ordinary comment that merely mentions a session is not swept up."""
+    if str(getattr(event, "event_type", "") or "") != MIRROR_EVENT:
+        return False
+    text = str(getattr(event, "text", "") or "")
+    return _OPERATOR_DOC_LEAD in text and "tmux attach -t" in text
+
+
+#: The node named in a `request-review` mirror body: "**<node>** is ready for
+#: review" (:func:`the_loop.graph.hooks.sideeffects.request_review`). The mirror
+#: carries no `detail["node"]`, so the node it collapses against is read here.
+#: One or two asterisks — the runtime writes `**bold**`, and a mirror may re-emit
+#: it as `*mrkdwn*`.
+_READY_NODE_RE = re.compile(
+    r"\*{1,2}([A-Za-z0-9][\w-]*)\*{1,2}\s+is ready for review", re.I
+)
+
+
+def _ready_for_review_node(event: Any) -> str:
+    """The gate node a "ready for review" mirror names — from its own text, since
+    the mirror carries no ``detail["node"]`` (issue N2) — or ``""``. The event's
+    ``detail`` is consulted first for the rare mirror that does carry a node."""
+    node = _node_of(event)
+    if node:
+        return node
+    match = _READY_NODE_RE.search(str(getattr(event, "text", "") or ""))
+    return match.group(1) if match else ""
 
 
 def _is_ack(event: Any) -> bool:

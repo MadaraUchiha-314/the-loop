@@ -453,12 +453,20 @@ def run_critic(
         # Note the two layers: this is the-loop's OWN timeout; if a round dies
         # around ~120 s while `--timeout`/`timeoutSeconds` is far higher, the cap
         # is the *caller's* tool timeout, not this one — run the round as a
-        # background process so a caller's timeout cannot cut it short.
+        # background process so a caller's timeout cannot cut it short. Lead with
+        # the OBSERVED duration (N3): when it is well under the limit the reader
+        # sees at a glance that the-loop's limit was not what fired.
+        elapsed = result.duration_seconds
+        cut_short = elapsed < limit * 0.9
         result.error = (
-            f"{binary} timed out after the-loop's {limit}s limit — raise it with "
-            f"`--timeout` or the critic's `timeoutSeconds`. If it instead died "
-            f"far short of {limit}s, the cap is the caller's own tool timeout, "
-            f"not this one: run the round as a background process"
+            f"{binary} did not finish (ran {elapsed:.0f}s, the-loop's limit {limit}s"
+            + (
+                "). It stopped well short of that limit, so the cap that fired is "
+                "the CALLER's tool timeout, not the-loop's — run the round as a "
+                "background process so a caller's timeout cannot cut it short"
+                if cut_short
+                else "). Raise it with `--timeout` or the critic's `timeoutSeconds`"
+            )
         )
         return result
     except OSError as exc:

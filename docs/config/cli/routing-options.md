@@ -189,6 +189,22 @@ Policy for an event that matches no registered session:
 
 Harness used when spawning a session for an unmatched event.
 
+### `mergeOnApproval`
+
+- **Type:** `boolean`
+- **Default:** `true`
+
+What an approval at the `human-approval` gate does (issue O9).
+
+| Value | Behaviour |
+|-------|-----------|
+| `true` | Once the gate is satisfied, the session **merges** the pull request and closes the work item — the behaviour before this knob existed. |
+| `false` | The-loop stops at **approved** and leaves the merge to a person — right for a repository with branch protection or required reviews, where an auto-merge would be refused or unwanted. |
+
+Either way the `pr-review-pending` message states which behaviour is in effect, so a
+reviewer knows before approving whether the tap merges now or only marks it approved. The
+session reads this same knob to decide whether to run the merge.
+
 ## Execution control
 
 `authorizedUsers` says **who** may be an input and `autoExecuteLabels` says **which** items

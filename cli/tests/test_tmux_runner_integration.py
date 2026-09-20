@@ -310,10 +310,12 @@ def test_followup_event_is_pasted_into_the_running_session(pipeline, monkeypatch
     )
 
     verbs = [c[0] for c in calls()]
-    # has-session + list-panes = the liveness probe (issue-86). The submit is a
-    # second paste, not send-keys: tmux resolves send-keys against the session's
-    # current CLIENT, so a read-only observer would refuse every delivery
-    # (issue-240).
+    # has-session + list-panes = the liveness probe (issue-86). Since issue O7 the
+    # input line is cleared first — a load-buffer + unbracketed paste-buffer of
+    # Ctrl-A Ctrl-U — then the prompt (bracketed) and the submit (unbracketed).
+    # The submit is a second paste, not send-keys: tmux resolves send-keys against
+    # the session's current CLIENT, so a read-only observer would refuse every
+    # delivery (issue-240).
     assert verbs == [
         "has-session",
         "list-panes",
@@ -321,13 +323,16 @@ def test_followup_event_is_pasted_into_the_running_session(pipeline, monkeypatch
         "paste-buffer",
         "load-buffer",
         "paste-buffer",
+        "load-buffer",
+        "paste-buffer",
     ]
     assert "send-keys" not in verbs
-    paste, submit = calls()[3], calls()[5]
+    clear, paste, submit = calls()[3], calls()[5], calls()[7]
+    assert "-p" not in clear, "the clear is control bytes, unbracketed"
     assert "-p" in paste
     assert "-p" not in submit
-    assert paste[paste.index("-t") + 1] == "loop-github-octo-repo-15"
-    assert submit[submit.index("-t") + 1] == "loop-github-octo-repo-15"
+    for c in (clear, paste, submit):
+        assert c[c.index("-t") + 1] == "loop-github-octo-repo-15"
 
 
 def pr_close_payload(number=15):

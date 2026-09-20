@@ -49,6 +49,30 @@ A session driven by the CLI daemon is **told** where its answers come from, via
 When no daemon is involved (a human ran `/the-loop:work-on` themselves), the human is by
 definition at the terminal — that is `cli` behaviour, with the same paper-trail obligation.
 
+**Always give `the-loop ask` a `--summary`, and a `--default` when there is a safe
+one.** A channel (Slack) leads its message with your `--summary` — your own 2-3 sentence
+account of what you decided and what you are least sure of — instead of an excerpt of the
+document, which is what a reviewer on a phone actually needs to act (issue-393 R8); the
+full question text is still recorded on the ticket. When you would proceed a certain way
+absent an objection, pass that as `--default "…"` (e.g. `--default "Defaults are fine"`):
+the room then offers a **one-tap button** that replies with exactly that text (R12.1), so
+the human can approve without typing. So the normal shape of a question is:
+
+```sh
+the-loop ask --work-item <ref> \
+  --question-file q.md \
+  --summary "Requirements are ready: 7 requirements, the three checks plus make check, no new attack surface. Least sure of: whether to count binary files." \
+  --default "Defaults are fine — proceed"
+```
+
+At an approval gate the graph posts its own request with an artifact excerpt; your own
+account still reaches the room if you post it — a `the-loop ask --summary` (or a marked
+comment that states, in 2-3 sentences, what the artifact decided and what you are least
+sure of) is delivered in your voice and wins over the runtime template for that node
+(the session-voice rule), so the room reads your summary rather than the raw excerpt.
+Omitting the summary/default is not a failure, but it wastes the channel rework — a bare
+ask falls back to the document excerpt and no button (the 2026-09-20 e2e run's finding).
+
 **Every channel is a peer on one event bus, and the work item is the ledger**
 (issue-245, issue-309, decision-103). When the operator's CLI config declares `channels`
 (today: a Slack bot — `channels.slack`), everything the loop says is an **event**: the

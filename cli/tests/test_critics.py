@@ -382,11 +382,34 @@ def test_timeout_is_reported_as_a_failed_round(tmp_path: Path):
     )
     result = run_critic(critic, {"prompt": "review"}, cwd=str(tmp_path))
     assert result.ok is False
-    assert "timed out after the-loop's 0.5s limit" in result.error
-    # issue-393 R5.4: the failure names the flag that raises it, and points at
-    # the caller's own tool timeout as the other possible cap.
+    # N3: the error leads with the observed duration and the-loop's limit; when
+    # the round ran up to that limit (this case), it names the flag that lifts it.
+    assert "the-loop's limit 0.5s" in result.error
     assert "--timeout" in result.error
-    assert "tool timeout" in result.error
+
+
+def test_a_round_cut_short_of_the_limit_blames_the_callers_tool_timeout(
+    tmp_path: Path, monkeypatch
+):
+    """N3: when a round dies well under the-loop's limit, the error says the cap
+    that fired is the CALLER's tool timeout, not the-loop's — so an operator does
+    not chase `--timeout` for a limit that never fired."""
+    import subprocess as _sp
+
+    critic = Critic(
+        name="stub",
+        command=sys.executable,
+        args=("-c", "pass"),
+        timeout_seconds=900.0,
+    )
+
+    def _raise_quickly(*a, **k):
+        raise _sp.TimeoutExpired(cmd="stub", timeout=900.0)
+
+    monkeypatch.setattr(critics.subprocess, "run", _raise_quickly)
+    result = run_critic(critic, {"prompt": "review"}, cwd=str(tmp_path))
+    assert result.ok is False
+    assert "caller" in result.error.lower() and "background process" in result.error
 
 
 def test_an_explicit_timeout_reaches_subprocess_verbatim(tmp_path: Path, monkeypatch):

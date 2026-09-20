@@ -143,6 +143,16 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   the pair the human just approved at `design-approval`; the brainstorm converges when
   its author says so on the thread. Never write a downstream artifact against an
   upstream one whose gate has not yet approved it.
+- **What a `human-approval` approval does is the operator's choice** (issue O9).
+  `routing.mergeOnApproval` in the operator's `cli-config.yaml` governs it: **`true`
+  (default)** — once the gate is satisfied, merge the pull request and let its
+  merge/close carry the work item to `finish-tasks`, the pre-O9 behaviour; **`false`** —
+  stop at approved and **do not merge**: leave the merge to a person, which is what a
+  repository with branch protection or required reviews needs (an auto-merge there is
+  refused or unwanted). Read the knob when reachable (default `true` otherwise). The
+  `pr-review-pending` message already states which behaviour is in effect, so the
+  reviewer knows before approving whether the tap merges now; honour that same knob when
+  you reach the merge step, and never merge when it is `false`.
 - **Human review per phase** — always on, delivered by the graph's approval nodes, never
   re-implemented in a session (the `workflow.requireHumanReviewPerPhase` switch was
   removed in issue-352; nothing read it).

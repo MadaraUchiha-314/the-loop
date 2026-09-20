@@ -245,7 +245,11 @@ flowchart LR
   GitHub. A typed reply serves any connector: `execute without 1, 3`, `execute without
   <phase>`, `skip <phase>` — the numbers index the live checklist's phase rows, and an
   unknown or protected name refuses the whole reply with the offered list rather than
-  freezing a different selection. An unauthorized submit is refused (silent to a
+  freezing a different selection (dropped `unskippable-phase`). A checklist that cannot be
+  read at that moment (a transient GitHub read right after the item starts) refuses
+  differently — dropped `checklist-unreadable`, a retriable failure whose named phases may
+  be perfectly valid — so the drop record never says a phase name was rejected when it was
+  not (issue N1). An unauthorized submit is refused (silent to a
   stranger, explained to a collaborator) and freezes nothing. Slack Execute records
   phases and the outer-loop surface; sessions/model/effort fall to their defaults and the
   message says so.
@@ -572,7 +576,16 @@ flowchart LR
   classifies exactly as the same text typed in a thread did; a top-level `app_mention`
   in the central channel is the kickoff candidate, with the `<repo>:` grammar unchanged;
   a mention in a channel the-loop cannot attribute is `unmapped`. A button press and a
-  slash command are unchanged, because neither is a message. WHEN `read.mode` is `poll`
+  slash command are unchanged, because neither is a message.
+  **Integrations that cannot render a mention entity.** Some Slack integrations (a
+  connector, a bot posting through the web API without a mention widget) type `@the-loop`
+  as *literal text* rather than a real `<@BOT_ID>` mention, so Slack sends no
+  `app_mention` and a `mentions` room drops their message `not-addressed`. Two ways to
+  reach the bot from such an integration: send the raw mention markup — `<@BOT_ID> …`
+  with the bot's own user id (from "View profile" → member id, or `the-loop doctor
+  slack`) — which Slack renders as a real mention; or declare the room `--listen all`,
+  where plain messages are input. This is a property of the sending integration, not a
+  the-loop bug (2026-09-20 e2e run, N3). WHEN `read.mode` is `poll`
   THEN the poll transport SHALL read no mention-gated conversation (a DM's and an `all`
   room's messages excepted) and SHALL move no cursor for one, so a mention the listener
   later processes is never behind a cursor the reconcile moved; `catch_up` inherits the
