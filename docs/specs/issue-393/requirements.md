@@ -2,359 +2,397 @@
 type: requirements
 phase: requirements-definition
 workItem: "github:MadaraUchiha-314/the-loop#393"
-status: draft
-approvedBy: []
-collaborators: [engineer, approver]
+status: approved             # draft | in-review | approved
+approvedBy: ["MadaraUchiha-314"]  # owner's approval, in-session on 2026-09-19 ("Approve" at the requirements gate), to be countersigned on the spec PR
+collaborators: [product-manager, architect, engineer]
 overrides: {}
+riskTier: 4                  # gate-answer routing touches approval authorization; a new Block Kit control composes the signed execute; the daemon gains write access to repo labels on first contact
 ---
 
-<!-- Written per the `the-loop:writing` skill: front-load each section's
-     conclusion, draw it rather than describe it (3+ named parts -> a mermaid
-     diagram), and keep the formal registers formal (EARS, abuse cases,
-     RFC-2119, API contracts, schema descriptions). No length limit — length
-     follows the change; the test is whether a sentence can come out without
-     losing information. A gated section stays even when it is empty. -->
+<!-- Authored per the the-loop:writing skill. -->
 
-# Requirements: five bugs from the end-to-end Slack test, 2026-09-19
+# Requirements: the Slack room becomes a colleague — five e2e bugs, the message rework, and deployment self-service
 
-> Phase 1 of 3 (requirements → design → tasks). Following the Kiro spec approach
-> (https://kiro.dev/docs/specs/). This phase MUST be reviewed and approved by the
-> required collaborators before moving to design.
+> Phase 1 of 4 (requirements → design → testing plan → tasks). Following the Kiro spec
+> approach (<https://kiro.dev/docs/specs/>). This phase MUST be reviewed and approved by
+> the required collaborators before moving to design. Derived from the end-to-end test
+> report [`docs/reports/e2e-slack-test-2026-09-19.md`](../../reports/e2e-slack-test-2026-09-19.md),
+> filed as [issue-393](https://github.com/MadaraUchiha-314/the-loop/issues/393).
 
 ## Introduction
 
-[Issue #393](https://github.com/MadaraUchiha-314/the-loop/issues/393) is a distilled
-write-up of an operator-driven, end-to-end run of one work item entirely through Slack
-(`docs/reports/e2e-slack-test-2026-09-19.md`). Five bugs surfaced with a confirmed root
-cause each; this work item fixes all five. (The same report's UX-rewrite proposal and
-three feature requests are out of scope — see below.)
+[Issue-393](https://github.com/MadaraUchiha-314/the-loop/issues/393) is the report of
+one work item driven end-to-end from Slack. The run **completed** — brainstorm through
+merged PR in two hours — and the operator's verdict was still *"horrible; too much text;
+too dry; it does not feel like an agentic experience."* The report separates what broke
+(bugs), what is missing (feature requests) and what must change about the voice (the
+room rework). This work item delivers all three tracks:
 
-| ID | One line |
-|---|---|
-| B1 | A channel name never resolves in a large workspace — only its id does |
-| B3 | A dropped Slack envelope (anything but `message`/`app_mention`) leaves no trace |
-| B6 | A session's own `the-loop ask` never reaches the daemon's event bus when the daemon's config isn't at the default path |
-| B8 | The first Slack answer after any human gate opens is always misread as a reply, not a gate answer |
-| B9 | `the-loop critic run --timeout` above 120s is silently cut short by the CLI-to-service HTTP call, regardless of the value passed |
+| Track | Today | Consequence |
+|---|---|---|
+| **Bugs** B1, B3, B6, B8, B9 | Channel names don't resolve in a large workspace; two listeners on one app halve inbound silently; a session's `ask` publishes to a bus nobody reads; the first answer to every gate is misread as a reply; the critic dies at 120 s regardless of `--timeout` | The operator falls back to raw channel ids, resends every approval twice, never sees the agent's questions in the room, and the review chain only works when the agent bypasses the-loop's own critic command |
+| **Room rework** (report § "The Slack experience") | 41 templated messages for one small item: machine headers, triple-announced gates, 1,500-char file excerpts as digests, a tmux cheat-sheet, glyph checklists that promise controls that don't exist | A person on a phone mutes the channel; the agent's real voice (the one message that sounded like a collaborator) never reaches the room at all |
+| **Self-service** F1–F3 | Phase selection is GitHub-only; no diagnostic sees the whole deployment; a repo must be `/the-loop:init`-ed before the daemon can label it | A phone-only operator cannot shape a run, cannot see why events vanish, and every fresh repo starts degraded |
 
-This work item also fixes one unrelated, already-public detail leak found while
-auditing the repository for this contribution: `docs/specs/issue-377/bugfix.md` commits
-a real internal hostname (`github.intuit.com/…`) in a worked example. It is redacted to
-this project's existing fixture convention (`ghe.corp.example`, e.g.
-`docs/decisions/decision-048.md`) alongside the five bugs, since both are "public repo
-hygiene" fixes with no user-facing behavior change of their own.
+**The unit of the change is one principle:** the room gets *one message per meaningful
+moment, in the agent's own voice, with a control where a control is due* — and the
+plumbing bugs that today prevent exactly that (a session that cannot reach the bus, a
+gate that ignores its first answer) are fixed as the rework's foundation. GitHub remains
+the complete ledger; Slack stops being its mirror and becomes its conversational surface.
+
+```mermaid
+flowchart LR
+  subgraph emitters [message emitters]
+    RT["runtime lifecycle<br/>phase.started/completed"]
+    NH["notify hook<br/>*-pending digests"]
+    MIR["comment.agent mirror<br/>(GitHub → room)"]
+    SES["session voice<br/>ask · summaries (B6: lost today)"]
+  end
+  emitters --> BUS["event bus"]
+  BUS --> POL["room policy (new):<br/>collapse · suppress · thread · edit-in-place"]
+  POL --> SL["Slack: one message per moment,<br/>agent voice, real controls"]
+  BUS --> GH[("GitHub — unchanged,<br/>the complete ledger")]
+  SL -->|"gate answers · checkbox submissions<br/>(B8: first answer counts)"| BUS
+```
 
 ## Requirements
 
-### Requirement 1 — B1: resolve a Slack channel name in a large workspace
+### R1 — a channel name resolves wherever the bot can already speak (B1)
 
-**User story:** As an operator declaring a Slack room by name in a large workspace, I
-want `the-loop add-channel slack@#<name>` to find the bot's own channels, so that I am
-not forced to hunt for a conversation id in the channel details pane.
-
-**Root cause:** `SlackDirectory._read_conversations`
-(`cli/the_loop/channels/directory.py:296-322`) resolves a name using only
-`conversations.list`, paged at most `_MAX_PAGES = 20` times
-(`cli/the_loop/channels/directory.py:443`). In a workspace with thousands of channels,
-20 pages at 1,000 channels each is exhausted before reaching the bot's own — especially
-private — channels, and a truncated listing is indistinguishable from "no such name".
+**User story:** As an operator declaring a room, I want `add-channel slack@#<name>` to
+find any channel the bot is a member of — private ones included, in a workspace of any
+size — so that I never have to dig a conversation id out of the channel-details pane.
 
 #### Acceptance criteria (EARS)
 
-1. WHEN a name is resolved via `SlackDirectory.conversation_id` THEN the system SHALL
-   query `users.conversations` (`types=public_channel,private_channel`, the
-   conversations the bot is a member of) before falling back to `conversations.list`.
-2. IF `users.conversations` resolves the name THEN the system SHALL NOT call
-   `conversations.list` for that lookup.
-3. IF `users.conversations` does not resolve the name THEN the system SHALL fall back to
-   the existing `conversations.list` pagination, for a public channel the bot has not
-   joined.
-4. IF the `conversations.list` fallback pagination is exhausted (`_MAX_PAGES` reached)
-   while a `next_cursor` is still present THEN the system SHALL record that the listing
-   was truncated, distinguishably from "the name does not exist" in whatever the caller
-   surfaces (log line at minimum; see Requirement 1a below for the operator-facing
-   half of this).
+1. WHEN a channel name is resolved THEN the system SHALL consult the conversations the
+   bot is a member of (public and private) before any workspace-wide listing.
+2. IF the bot is a member of the named channel THEN resolution SHALL succeed regardless
+   of workspace size or the workspace-wide listing's page cap.
+3. IF the name is not among the bot's conversations THEN the system SHALL fall back to
+   the workspace-wide public listing.
+4. WHEN the workspace-wide listing ends because the page cap was reached (rather than
+   because the listing was exhausted) THEN the refusal SHALL say the listing was
+   truncated and suggest the conversation id — never claim the channel does not exist.
+5. WHEN any resolution path refuses THEN the refusal SHALL name the paths tried and the
+   remedy (spelling, invite the bot, use the id).
 
-### Requirement 1a — B2 (related): a refused control keyword explains itself on the thread
+### R2 — the deployment can diagnose itself, and a refusal explains itself (B3, F2)
 
-**User story:** As an operator whose `add-channel` keyword was refused, I want the
-refusal reason on the ticket thread, so that I do not have to read the daemon's log to
-find out why.
-
-> This is `B2` in the report — filed alongside B1 because the report's own B1 write-up
-> depends on it for a good error message, and the fix is a two-line addition to the
-> existing `control.rejected` path. Not a new requirement id; folded in here to avoid a
-> requirement with no acceptance criteria of its own.
+**User story:** As an operator running more than one instance, I want the-loop to tell
+me when events are being split, dropped or unverifiable — in the diagnostic command and
+at the moment of failure — so that a silent half-loss of inbound traffic costs minutes,
+not an evening of log archaeology.
 
 #### Acceptance criteria (EARS)
 
-1. WHEN a control keyword is refused (`control.rejected`) THEN the system SHALL post one
-   short, self-marked reply on the same thread quoting the rejection reason, the same way
-   the Slack path already does for a collaborator's refused binding act.
+1. WHEN the Slack status/probe diagnostic runs THEN it SHALL print the event
+   subscriptions the app manifest is expected to carry next to the scope probe, and
+   SHALL state plainly that event subscriptions cannot be verified through the API and
+   how to test them (send the bot a mention).
+2. WHEN a deployment-level doctor runs THEN it SHALL detect a second live consumer on
+   the same Slack app token and report that Slack splits Socket Mode events across
+   connections, halving inbound for both.
+3. WHEN the doctor runs THEN it SHALL verify the daemon's own declared channels are
+   present in its resolved directory (the B1 failure class) and report each miss.
+4. WHEN the Socket Mode listener ignores an envelope (unhandled type, unmapped channel)
+   THEN it SHALL log the envelope type and reason at debug level — never discard
+   silently.
+5. WHEN a control keyword or binding act is refused THEN the refusal reason and remedy
+   SHALL be posted as a marked reply where the act was attempted (the ticket thread or
+   the room), not only to the daemon log.
 
-### Requirement 2 — B3: an ignored Slack envelope is observable, not silent
+### R3 — what the session publishes reaches the bus the daemon owns (B6)
 
-**User story:** As an operator debugging why a mention or button press never arrived, I
-want the listener to log every envelope type it declines to handle, so that "nothing
-happened" is diagnosable from the log rather than indistinguishable from an app
-misconfiguration.
-
-**Root cause:** the Socket Mode `handle()` closure
-(`cli/the_loop/channels/slack.py:2538-2542`) does
-`if event.get("type") != "message": return` with no log line — any event type Slack
-delivers that is not `message` or `app_mention` (already handled above it) vanishes
-without a trace. The report also surfaced a second, non-code cause: two the-loop
-instances holding a Socket Mode connection to the **same** Slack app/token silently
-split event delivery between them (Slack delivers each envelope to exactly one
-connection) — this is documented Slack behavior, not a the-loop defect, and is handled
-by a warning rather than a code fix (Requirement 2c).
-
-#### Acceptance criteria (EARS)
-
-1. WHEN the Socket Mode listener receives an `events_api` envelope whose event type is
-   neither `message` nor `app_mention` THEN the system SHALL log it at `debug` level,
-   naming the event type, before returning.
-
-### Requirement 2b — B3 related: `channels status` states what it cannot verify
-
-**User story:** As an operator running `the-loop channels status --probe`, I want it to
-say plainly that it cannot verify the app's event *subscriptions* (only its OAuth
-*scopes*), so that a passing probe is not mistaken for proof that mentions will arrive.
+**User story:** As a person following a work item in its room, I want the agent's own
+questions and waits to arrive as messages, so that "the loop is waiting on you" is
+something the room tells me rather than something I discover on GitHub.
 
 #### Acceptance criteria (EARS)
 
-1. WHEN `the-loop channels status --probe` prints its scope findings THEN the system
-   SHALL also print one line stating that event subscriptions cannot be verified from
-   the Slack API, and suggest confirming with `@the-loop help`.
+1. WHEN the daemon spawns a session THEN the session's environment SHALL carry the
+   daemon's resolved CLI-config path, so every `the-loop` invocation inside the session
+   resolves the same config, state root and event bus as the daemon.
+2. WHEN `the-loop ask` (or any session-side publisher) publishes to a bus whose
+   configuration names no channels THEN it SHALL say so in its own output and on the
+   ticket, so a mis-wired session is visible at the moment it goes quiet.
+3. WHEN a session asks a question and enters its wait THEN the room SHALL receive one
+   message carrying the question (see R8 for its shape).
+4. IF the spawn environment already names a CLI config THEN the spawner SHALL NOT
+   override it.
 
-### Requirement 2c — B3 related: warn when a second listener may share one Slack app
+### R4 — the first answer to a gate counts (B8)
 
-**User story:** As an operator running two the-loop instances against the same Slack
-app, I want a warning that a second Socket Mode connection on one app-level token
-silently halves event delivery, so that I do not spend an end-to-end test discovering it
-by trial and error.
-
-#### Acceptance criteria (EARS)
-
-1. WHEN the Socket Mode listener starts THEN the system SHALL log a one-time warning at
-   startup stating that Slack delivers each Socket Mode envelope to exactly one
-   connection, so a second the-loop instance's listener sharing the same app-level token
-   will silently receive roughly half of all inbound events.
-
-> No live detection is required (the report's F2 — a cross-instance heartbeat check —
-> is a feature request, out of scope here); a static, always-shown warning is sufficient
-> to close the report's "document it, at minimum" ask.
-
-### Requirement 3 — B6: a spawned session's own events reach the daemon's bus
-
-**User story:** As an operator running the daemon from a non-default config path, I want
-a session it spawns (and that session's `the-loop ask`) to publish to the same event bus
-the daemon reads, so that `session.awaiting_input` — and everything else the session
-publishes — actually reaches Slack and the dashboard.
-
-**Root cause:** `TmuxRunner.spawn`/`_spawn` (`cli/the_loop/runner.py:379-390`) exports
-only `INSTANCE_ENV_VAR` and `WORK_ITEM_ENV_VAR` into a spawned tmux session's
-environment — never `CLI_CONFIG_ENV` (`THE_LOOP_CLI_CONFIG`,
-`cli/the_loop/cli_config.py:42`). A session with no inherited `THE_LOOP_CLI_CONFIG`
-resolves the default `~/.the-loop/cli-config.yaml` (absent, or a bus nobody subscribes
-to) instead of the daemon's own resolved config, wherever the operator keeps it. The same
-class of fix already exists for the control-plane **service**'s own child process
-(`cli/the_loop/core/lifecycle.py:154`, via `cli_config.child_env()`,
-`cli/the_loop/cli_config.py:152-165`) — the tmux spawn path never adopted it.
+**User story:** As an approver answering "reply with an approval" in the room, I want my
+first authorized answer to advance the gate, so that the ✅ reaction never lies to me
+about what my message did.
 
 #### Acceptance criteria (EARS)
 
-1. WHEN the runner spawns (or resumes) a tmux session for a work item THEN the system
-   SHALL export `THE_LOOP_CLI_CONFIG`, set to the daemon's own resolved config path, into
-   that session's environment — the same value `cli_config.child_env()` computes for the
-   service's own child process.
-2. IF the daemon's own config was resolved from the default path (no explicit `--config`
-   or `$THE_LOOP_CLI_CONFIG`) THEN the exported value SHALL still be that default path,
-   absolutized — so a session's behavior does not depend on how the daemon happened to be
-   started.
-3. WHEN `the-loop ask` (or any other event a session publishes) resolves its config THEN,
-   given Acceptance Criterion 1, the system SHALL publish to the same event bus the
-   daemon itself reads and dispatches from.
+1. WHEN a human gate has published its approval request THEN the system SHALL treat the
+   work item as *at a human gate* from that moment — derived from the current node's
+   actor in the work item's state, not from a parked/waiting status that only a later
+   evaluation sets.
+2. WHEN the first authorized answer arrives after the approval request is published —
+   top-level or thread reply, first ingress event or not — THEN it SHALL be classified
+   as gate feedback and advance or return the gate accordingly.
+3. WHEN a message is acknowledged with ✅ THEN that acknowledgement SHALL reflect what
+   the message actually did (a gate answer that was recorded as a mere reply SHALL NOT
+   receive the same acknowledgement as one that counted).
+4. WHILE no approval request has been published for the current node, an authorized
+   member's message SHALL keep its current classification (reply or keyword) — the fix
+   widens gate detection to the publish moment, not to the whole phase.
 
-### Requirement 3a — B6 related: `the-loop ask` warns when it publishes to nothing
+### R5 — the critic runs as long as the operator allows (B9)
 
-**User story:** As a session asking a question through `the-loop ask`, I want a warning
-on the ticket when the event I just published has no subscribed channel, so that the
-person on the other end is not left assuming Slack was told.
-
-#### Acceptance criteria (EARS)
-
-1. WHEN `the-loop ask` publishes `session.awaiting_input` and the publish result reports
-   no channel subscribed to that event (an empty `channels: []` outcome, the same signal
-   `sideeffects.notify` already detects) THEN the system SHALL post one additional short
-   line on the ticket saying the question was recorded but not delivered to any channel.
-
-### Requirement 4 — B8: the first Slack answer after a gate opens is read correctly
-
-**User story:** As a reviewer answering a `phase-approval-pending` request in Slack, I
-want my first reply to be read as the gate answer it is, so that I do not have to send
-the same approval twice.
-
-**Root cause:** entering a human-actor node
-(`cli/the_loop/graph/runtime.py:1147-1170`) calls `state.enter(target)` and runs the
-node's entry chain — which is what publishes `phase-approval-pending`
-(`cli/the_loop/graph/hooks/sideeffects.py`'s `notify` hook) — but never calls
-`state.park(...)`. Parking happens later, only inside `advance()`'s `WAIT` branch
-(`cli/the_loop/graph/runtime.py:1073-1076`), which runs on the **next** evaluation —
-triggered by the next inbound event, which is the human's first reply itself.
-`GraphContext.at_human_gate` (`cli/the_loop/graphlink.py:272-274`) already treats both
-`"waiting"` and `"parked"` as a gate, but `_context_from`
-(`cli/the_loop/graphlink.py`, the `elif state.parked:` branch) can only assign either
-status once `state.parked` is set — until then a freshly-entered human node's status
-falls through to `"in-progress"`, and `_at_human_gate` (`inbound.py:157-194`) reads
-`False`. The first reply that arrives is thus classified `work-item.reply`, not
-`gate.feedback`.
+**User story:** As an operator configuring a high-reasoning critic, I want
+`the-loop critic run --timeout` honoured, so that the configured review chain completes
+through the-loop's own command instead of depending on the agent noticing the wrapper
+died and bypassing it.
 
 #### Acceptance criteria (EARS)
 
-1. WHEN the graph enters a human-actor node THEN the system SHALL park that node
-   (`state.park(target, …)`) in the same step that runs the node's entry chain and
-   publishes its `*-pending` notification, before any inbound event is processed against
-   it.
-2. WHEN an authorized Slack reply arrives immediately after a `phase-approval-pending` (or
-   any other human-gate) notification — with no intervening reply — THEN the system SHALL
-   classify it `gate.feedback`, not `work-item.reply`.
-3. IF a work item has no session record yet, or the graph coupling is disabled THEN the
-   system's existing "cannot tell" (`None`) behavior of `_at_human_gate` SHALL be
-   unchanged — this requirement narrows the false-negative on a freshly entered gate, it
-   does not touch the "no session"/"no graph" cases.
+1. WHEN `--timeout` is passed to `critic run` THEN the effective process timeout SHALL
+   be that value — no fixed cap short of it anywhere in the wrapper.
+2. WHEN no timeout is passed THEN the default SHALL accommodate a harness that spawns a
+   full agent (well above 120 s), and the chosen default SHALL be documented.
+3. WHEN `the-loop critic policy` prints THEN it SHALL include the effective timeout per
+   critic.
+4. WHEN the critic is cut off by the timeout THEN the failure SHALL say the timeout was
+   the cause and name the flag that raises it.
 
-### Requirement 5 — B9: `the-loop critic run --timeout` is honored end to end
+### R6 — one message per meaningful moment (rework rules 1, 3)
 
-**User story:** As a session running a critic round with a high-reasoning model, I want
-`the-loop critic run --timeout <N>` to actually wait `N` seconds for the service's
-response, so that a critic that legitimately needs more than two minutes is not reported
-as failed while it is still working.
-
-**Root cause:** `the-loop critic run` is routed through the control-plane service
-(`cli/the_loop/commands/critic_cmd.py`, via `client.routing.routed`). `args.timeout` is
-placed inside the JSON request **body** (`cli/the_loop/commands/critic_cmd.py:209-227`)
-and correctly reaches the server-side subprocess timeout
-(`cli/the_loop/critics.py:433`, `limit = timeout if timeout is not None else
-critic.timeout_seconds`, default `DEFAULT_TIMEOUT_SECONDS = 900.0`). But the **HTTP
-request itself** — `Client.post` (`cli/the_loop/client/__init__.py:161-162`) — calls
-`_request("POST", …, body=body)` with no `timeout=` argument, so it always falls back to
-`_request`'s own default (`cli/the_loop/client/__init__.py:76`,
-`timeout: float = 120.0`). The client's socket gives up at 120 seconds regardless of what
-`--timeout` says, independent of whether the server-side subprocess is still legitimately
-running.
+**User story:** As a person in the room, I want the lifecycle collapsed — one message
+per transition, one announcement per gate, long phases as one message edited in place —
+so that following a work item on a phone is reading a conversation, not a log.
 
 #### Acceptance criteria (EARS)
 
-1. WHEN `Client.post` (and `Client.get`, for symmetry) is called with an explicit
-   `timeout` THEN the system SHALL use it as the underlying HTTP request's timeout,
-   instead of `_request`'s built-in default.
-2. WHEN `the-loop critic run --timeout <N>` is invoked and routed through the service
-   THEN the system SHALL pass a client-side HTTP timeout of at least `N` (plus a fixed
-   margin, so the client does not race the server's own subprocess deadline) to
-   `Client.post`.
-3. WHEN `the-loop critic run` is invoked with no `--timeout` THEN the client-side HTTP
-   timeout SHALL be derived from the critic's configured `timeoutSeconds` (falling back
-   to `DEFAULT_TIMEOUT_SECONDS`) with the same margin — never the unrelated `120.0`
-   general-purpose default.
-4. WHEN `the-loop critic policy` reports a critic's configuration THEN the system SHALL
-   surface its effective timeout (already resolved server-side per critic), so an
-   operator can see what a bare `the-loop critic run` will actually wait for.
+1. WHEN a node completes and its successor starts THEN the room SHALL receive at most
+   one message for the transition — never a `phase.completed` / `phase.started` pair.
+2. WHEN an approval request (`*-pending`) is posted for a node THEN the mirrored
+   "ready for review" comment and the lifecycle line for the same node SHALL be
+   suppressed on Slack (the ticket keeps all of them).
+3. WHILE an autonomous phase runs with nothing to ask, the room SHALL see one message
+   for that phase, edited in place as the phase progresses — never a stream of updates
+   as separate messages (owner decision, 2026-09-19: one message per phase, edits
+   within it).
+4. WHEN an event has already been posted to the room THEN an identical event for the
+   same work item and node SHALL NOT be posted again.
+5. WHEN Slack delivery collapses or suppresses a message THEN the GitHub ledger SHALL
+   remain complete and unchanged — collapse is a delivery policy, not an event-bus
+   change.
 
-### Requirement 6 — an existing internal hostname is redacted from the public repository
+### R7 — the sentence leads, the header goes (rework rule 2)
 
-**User story:** As a maintainer of an open-source project, I want no internal/enterprise
-hostnames in checked-in documentation, so that the public repository never carries
-details specific to one company's internal infrastructure.
+**User story:** As a person in the room, I want each message to open with what happened,
+so that the fixed machine preamble (raw event type + 50-character ref) stops burying the
+one line that matters.
 
 #### Acceptance criteria (EARS)
 
-1. WHEN `docs/specs/issue-377/bugfix.md` is read THEN the system SHALL show the worked
-   `session.spawned` example using this project's existing fixture host
-   (`ghe.corp.example`, as used throughout `docs/decisions/decision-048.md` and
-   elsewhere), not a real enterprise hostname.
-2. WHERE this work item touches any other file, THEN the system SHALL NOT introduce any
-   new internal hostname, organization name, username, Slack member/channel id, or
-   internal tool/registry reference — every example uses this project's established
-   fixture conventions (`ghe.corp.example`, `octo/repo`, `<placeholder>` markers per
-   `docs/reports/e2e-slack-test-2026-09-19.md`'s own convention).
+1. WHEN a message is posted into a work item's own room THEN it SHALL NOT carry the
+   event-type/ref header — the room's binding already says which item it is.
+2. WHEN a message is posted into a shared/central channel THEN it SHALL identify the
+   work item by its short id and title with a link — not by the full ref string.
+3. WHEN a message is rendered THEN it SHALL open with one state-carrying emoji and a
+   first-person sentence (see R11 for voice).
+
+### R8 — a gate message carries the agent's summary, not the file's first 1,500 characters (rework rule 4; O2, O8)
+
+**User story:** As an approver on a phone, I want the approval request to tell me what
+the agent decided and what it is unsure about, with the buttons and the link, so that I
+can approve from the room without reconstructing the document from its truncated front
+matter.
+
+#### Acceptance criteria (EARS)
+
+1. WHEN a session submits an artifact toward a human gate THEN it SHALL be able to
+   attach its own 2–3 sentence summary (what was decided, what is least certain), and
+   the approval request SHALL lead with that summary instead of a file excerpt.
+2. IF no summary was attached THEN the approval request SHALL fall back to the digest
+   excerpt (today's behaviour), never to nothing.
+3. WHEN the PR-review gate publishes THEN its message SHALL name the pull request —
+   number, title, link, diffstat — and lead with the reviewer briefing's summary; its
+   primary link SHALL open the PR, not the issue.
+4. WHEN a digest excerpt is truncated THEN the cut SHALL never remove an unanswered
+   question or unchecked control the message asks the reader to act on; if it cannot
+   fit, the message SHALL say what was cut and link to it.
+
+### R9 — phase selection is a control, not a picture of one (rework rule 5; F1, O3)
+
+**User story:** As a phone-only operator, I want to shape the run from Slack — untick
+phases, answer the outer-loop question, then execute — so that the checklist stops
+promising edits ("untick right here") that Slack cannot perform.
+
+#### Acceptance criteria (EARS)
+
+1. WHEN phase selection is announced in a room THEN the message SHALL present the
+   phases as in-message Block Kit checkboxes (owner decision, 2026-09-19: checkboxes,
+   not a modal) whose Execute submission composes the same signed execute the GitHub
+   checklist path produces.
+2. WHEN the control renders THEN the outer-loop placement question SHALL be presented
+   in the same message as its own element — never cut off by a digest cap.
+3. WHEN a person types `execute without <n, …>` / `skip <phase>` as a message THEN the
+   named phases SHALL be unticked before the freeze, recorded as the same signed
+   execute (F1's reply grammar, for connectors that cannot press buttons).
+4. IF the interactive control cannot be posted (no interactivity grant) THEN the
+   message SHALL say the checklist is edited on GitHub and link it — never instruct
+   "untick right here" where nothing can be unticked.
+5. WHEN the selection copy renders THEN it SHALL drop the adversarial framing (no
+   "recorded against your name"); the record of who chose what remains in the ledger.
+
+### R10 — acknowledgements thread, progress edits in place (rework rules 6, and 1's edit rule)
+
+**User story:** As a person in the room, I want the-loop's acknowledgements to land as
+thread replies under the message they answer, and running phases to update one progress
+message, so that the channel keeps one message per moment.
+
+#### Acceptance criteria (EARS)
+
+1. WHEN an approval is received THEN the acknowledgement ("locked, moving on") SHALL be
+   a thread reply under the approval request, not a new top-level message.
+2. WHILE a long autonomous stretch runs (build → verify → self-review → critic), the
+   room SHALL see one message edited in place through the stages, with a note when a
+   stage is expected to be slow.
+3. WHEN a room is bound at channel level (no thread) THEN the-loop SHALL still thread
+   its own acknowledgements under its own messages.
+
+### R11 — the-loop writes like a colleague (rework rule 7)
+
+**User story:** As a person in the room, I want messages in the first person, present
+tense, one state-carrying emoji, so that reading the room feels like working with
+someone rather than tailing a log.
+
+#### Acceptance criteria (EARS)
+
+1. WHEN any room message renders THEN it SHALL be first-person and present-tense, with
+   exactly one state emoji (🚀 🤔 📋 ✅ 🔨 👀 🎉 ⚠️ or equivalent mapping) chosen by
+   message kind.
+2. WHEN a mirrored agent comment reaches the room THEN the robot-face self-attribution
+   SHALL appear at most once, never stamped top and bottom.
+3. WHEN a message renders THEN it SHALL contain no policy or process boilerplate (no
+   spec-workflow preamble, no threat clauses); operator documentation (tmux tables,
+   shell blocks) SHALL NOT be posted to a room — it stays on the ticket.
+4. WHEN the work item completes THEN the room SHALL receive one closing message with
+   the outcome, the artifact of record (PR), and the elapsed shape of the run.
+
+### R12 — the session's voice is the room's content (rework rule 8; depends on R3)
+
+**User story:** As a person in the room, I want the agent's own words — its questions,
+its summaries, its "here is what I built" — to be what the room carries, so that the
+most interesting content of the run stops being the one thing Slack never shows.
+
+#### Acceptance criteria (EARS)
+
+1. WHEN the session asks a question THEN the room message SHALL carry the question text,
+   its options and the stated default, with a one-tap affirmative where the default
+   exists ("Defaults are fine").
+2. WHEN the session summarises a completed artifact (R8's summary) THEN that summary
+   SHALL be the room's announcement of the artifact.
+3. WHEN both a session-authored message and a runtime template could announce the same
+   moment THEN the session's words SHALL win and the template SHALL be suppressed.
+
+### R13 — the daemon owns repository setup (F3; subsumes B4)
+
+**User story:** As an operator pointing the daemon at a fresh repository, I want the
+labels the graph needs (`loop:*`, and the arming labels) created on first contact, so
+that a repo works without a manual `/the-loop:init` and the phase label — the position
+marker every dashboard reads — is never silently absent.
+
+#### Acceptance criteria (EARS)
+
+1. WHEN the daemon first works a repository (spawn or arming check) THEN it SHALL
+   ensure the `loop:*` label set and the configured auto-execute labels exist, creating
+   the missing ones.
+2. WHEN `set-phase-label` targets a label that does not exist THEN the hook SHALL
+   create it and retry once before degrading.
+3. WHEN label-ensuring fails (permissions, API) THEN the degradation SHALL be posted
+   once on the ticket — not only to the daemon log.
+4. WHILE ensuring labels, the daemon SHALL touch only repositories declared in its
+   configuration.
 
 ## Non-functional requirements
 
-- **Backward compatibility:** none of the five fixes changes a public CLI flag, config
-  key, or event schema. `Client.post`/`Client.get` gain an optional `timeout` parameter
-  with the current behavior as its default when omitted (Requirement 5.1) — every
-  existing caller is unaffected until it opts in.
-- **Observability:** Requirements 2 and 2b/2c are entirely new log lines / probe output;
-  they add no new metric or event type.
-- **Test cost:** each requirement is unit-testable without live Slack or a live service —
-  `SlackDirectory` and the Socket Mode `handle()` already take an injectable client/config
-  in tests; `graph/runtime.py`'s node-entry path already has integration test coverage to
-  extend; `Client`/`_request` already have a monkeypatch seam (`THE_LOOP_SERVICE_LOCAL`).
+- **Message budget.** No numeric contract (owner decision, 2026-09-19: no hard
+  target). The direction is the report's 9-message redesign table: one message per
+  meaningful moment. Verification observes and records the reference run's top-level
+  message count as evidence of the trend (41 → single digits), not as a pass/fail
+  gate.
+- **The ledger is untouched.** Every event, mirror and record on GitHub remains exactly
+  as today; all collapse/suppression/voice changes are Slack delivery policy. An
+  operator can reconstruct the full run from the ticket alone, as now.
+- **Config compatibility.** Existing channel configuration (verbosity, digests,
+  `maxChars`, subscriptions) keeps working; the rework's policies have documented
+  defaults and are tunable where they replace an existing knob.
+- **Public-repository hygiene.** Everything this work item commits — code, specs,
+  evidence, messages quoted in docs — carries no internal hostnames, organization or
+  repository names, usernames, Slack/user ids, or non-public registry URLs; live-run
+  evidence is redacted to the placeholder convention of the e2e report before it is
+  written under `docs/specs/issue-393/evidence/`.
+- **Observability.** Every new suppression/collapse decision is a debug-level log line
+  naming the rule that fired, so a "missing" message is diagnosable in minutes.
 
 ## Security considerations
 
-> Threat-model-lite, captured with the requirements (always required). "No new attack
-> surface" is a valid answer — written down and justified, never implied by omission.
-> See `reference/security.md`.
-
-- **Actors & trust:** the same actors as before these fixes — an authorized Slack user
-  answering a gate (Requirement 4), an operator running CLI commands locally
-  (Requirements 1, 2b, 2c, 5), and the daemon's own spawned session (Requirement 3). No
-  new actor is introduced.
-- **Trust boundaries & data:** Requirement 1's `users.conversations` call uses the same
-  bot token and the same trust boundary (Slack's API, over the network) as the existing
-  `conversations.list` call it supplements — no new credential, no new boundary.
-  Requirement 4's fix moves *when* a node is marked parked, not *what* is trusted to
-  answer a gate — `_at_human_gate`'s authorization check (an authorized user, per
-  `routing.authorizedUsers`) is unchanged. Requirement 3 exports a config **path**, never
-  a secret, into a spawned session's environment — the same class of value
-  `child_env()` already exports for the service's own child.
+- **Actors & trust:** room members (mixed trust — only some are authorized approvers),
+  GitHub commenters (untrusted), Slack interactive payloads (untrusted transport,
+  Slack-signed), the daemon (trusted), spawned sessions (trusted, but their environment
+  is now partially daemon-controlled — R3). The doctor (R2) reads deployment state; it
+  must not print tokens.
+- **Trust boundaries & data:** R4 moves the *when* of gate detection, not the *who* —
+  authorization of the answerer is unchanged and stays mandatory. R9's control
+  submission crosses from Slack into the signed-execute path: the submission must be
+  attributed to the pressing/submitting Slack user and pass the same authorization as
+  the typed keyword. R3 injects a config path into session environments: the path is
+  the daemon's own resolved config, never derived from work-item content. No new
+  secrets are stored; the doctor and refusal messages must quote ids, never tokens.
 - **Abuse cases (EARS):**
-  1. WHEN an unauthorized Slack member replies immediately after a `phase-approval-pending`
-     notification THEN the system SHALL still refuse to treat it as a gate answer — the
-     Requirement 4 fix only changes the *parked* classification, not the *authorization*
-     check `_at_human_gate`'s caller applies afterward.
-  2. WHEN a name resolved via the new `users.conversations` call (Requirement 1) is one
-     the bot is *not* actually a member of (a malformed or replayed API response) THEN
-     the system SHALL NOT declare a channel it cannot post to — the existing
-     `conversation_id`/`add-channel` refusal path (an unresolvable name refuses, per
-     `directory.py`'s public contract) is unchanged and still the final authority.
-- **Fail closed:** every fix here narrows a false negative (a real event silently
-  dropped, a real gate answer silently misclassified) or removes an artificial timeout —
-  none of them relaxes an existing authorization or validation check. Where a lookup
-  still fails (Requirement 1's fallback exhausted, Requirement 5's service still
-  unreachable) the existing refusal/error path is unchanged.
+  1. WHEN an unauthorized member answers an open gate THEN the system SHALL record it
+     as a reply/feedback without advancing the gate, exactly as before R4.
+  2. WHEN an unauthorized member submits the phase-selection control THEN the system
+     SHALL refuse with an explanation and SHALL NOT freeze the selection.
+  3. WHEN a session-authored summary (R8/R12) contains markup, mentions or oversized
+     content THEN the renderer SHALL treat it as text (escaped, capped) — a summary can
+     ping no one and impersonate nothing.
+  4. WHEN a `skip <phase>` grammar names a phase the sender may not skip (or that does
+     not exist) THEN the system SHALL refuse with the reason rather than silently
+     freezing a different selection.
+  5. WHEN label-ensuring (R13) is triggered by activity on an undeclared repository
+     THEN the daemon SHALL NOT create labels there (fail closed to declared repos).
+- **Fail closed:** a gate answer whose author cannot be authorized is a reply; a control
+  submission without a verifiable Slack user is dropped with a log line; a summary that
+  fails validation falls back to the digest excerpt; a doctor that cannot verify event
+  subscriptions says "unverifiable", never "ok".
 
 ## Out of scope
 
-- The report's UX-rewrite proposal (41 messages → 9, first-person tone, collapsed
-  lifecycle notifications, phase selection as a real Slack control) — a separate,
-  larger, design-heavy work item.
-- **F1** (untick phases from a Slack reply), **F2** (a `the-loop doctor slack` /
-  cross-deployment probe), **F3** (the daemon owning repository label setup on first
-  contact) — feature requests, not bugs; separate work items.
-- **B4** (missing `loop:*` labels on an uninitialized repo), **B5** (`read.mode` hot-reload
-  vs. restart-required), **B7** (`graph status` reading a stale/wrong state file), **B10**
-  (stale phase labels never removed), **B11** (tmux session removed despite
-  `keepSessionOnClose: true`) — real bugs from the same report, deliberately left for a
-  follow-up work item to keep this one reviewable.
-- **O1–O9** — observations in the report that are neither bugs nor feature requests;
-  none require code changes on their own.
+- **B2, B5, B7, B10, B11** as standalone fixes — B2's essence (a refusal explains
+  itself) is delivered by R2.5; the others (hot-reload of `read.mode`, stale
+  `graph status`, phase-label removal, tmux retention on close) are real but separable
+  and stay on issue-393 for follow-up items.
+- **O1, O4, O5, O7, O9** — observations without a requested change (room-declaration
+  confirmation, ephemeral help, connector signature line, phantom prompt text, the
+  merge-on-approval knob). O7 deserves its own investigation ticket.
+- Per-person notification routing (explicitly not built — decision-035 lineage).
+- Any change to the GitHub ledger's content or the event bus's event vocabulary.
 
 ## Open questions
 
-None outstanding — all five root causes were confirmed by reading the current source
-(see each requirement's **Root cause**), not just inferred from the report's hypotheses.
-Requirement 4 and Requirement 5's root causes are more precise than the report's own
-guesses (the report guessed `graphlink.py:272`'s status check itself was wrong; it is
-correct — the bug is that nothing sets `"waiting"`/`"parked"` early enough. The report
-guessed the critic *subprocess* timeout was hardcoded at 120s; it is not — the CLI's
-HTTP call to its own service is).
+All three questions raised at the requirements gate were answered by the owner
+(@MadaraUchiha-314) on 2026-09-19, in-session (paper trail carried here and on the spec
+PR, since ticket-comment posting from this environment is not authenticated for the
+public repository):
+
+1. **R6.3/R10.2 edit-in-place cadence** — *resolved:* one message per phase, edited in
+   place within the phase (not one message spanning the whole autonomous stretch).
+2. **R9 control shape** — *resolved:* in-message Block Kit checkboxes with the
+   outer-loop question as its own element in the same message; no modal.
+3. **Message budget** — *resolved:* no hard numeric target; the 9-message redesign
+   table is direction, and the reference run's count is recorded as evidence only.
 
 ## Review comments
 
 > Appended by the-loop's `record-feedback` hook when a human gate approves with
-> comments (issue-109). Append-only and attributed: an approval never silently
-> discards a reviewer's suggestions, and the feedback travels with the document
-> it concerns rather than living in a side-channel tracker.
+> comments (issue-109).

@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>issue-393 — the room, before and after</title>
+<style>
+  :root{
+    --bg:#f8f8f8; --panel:#fff; --ink:#1d1c1d; --dim:#616061; --line:#e0e0e0;
+    --accent:#1264a3; --green:#007a5a; --red:#c0392b; --chip:#5b3d8f;
+    --code-bg:#f6f6f6; --code-line:#e3e3e3; --quote:#dddddd;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding-block:0 48px;padding-inline:16px}
+  header.page{max-width:1400px;margin:0 auto;padding:28px 4px 12px}
+  header.page h1{font-size:22px;margin:0 0 6px}
+  header.page p{margin:4px 0;color:var(--dim);max-width:70ch}
+  .cols{max-width:1400px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:899px){.cols{grid-template-columns:1fr}}
+  section.room{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .roomhead{padding:10px 14px;border-bottom:1px solid var(--line);background:#fff}
+  .roomhead .chan{font-weight:700}
+  .roomhead .sub{color:var(--dim);font-size:12.5px}
+  .tagline{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.4px;
+    padding:2px 8px;border-radius:10px;margin-left:8px;vertical-align:2px}
+  .tag-before{background:#fdecea;color:var(--red)}
+  .tag-after{background:#e8f5ef;color:var(--green)}
+  details.roomtoggle > summary{cursor:pointer;padding:10px 14px;font-weight:600;color:var(--dim);
+    list-style:none;user-select:none}
+  details.roomtoggle > summary::before{content:"▸ ";}
+  details.roomtoggle[open] > summary::before{content:"▾ ";}
+  details.roomtoggle > summary:hover{color:var(--ink)}
+  .msgs{padding:6px 0 14px}
+  .msg{display:flex;gap:10px;padding:8px 14px;position:relative}
+  .msg + .msg.tight{padding-top:2px}
+  .av{flex:0 0 36px;width:36px;height:36px;border-radius:6px;display:flex;align-items:center;
+    justify-content:center;font-weight:700;color:#fff;font-size:15px}
+  .av.bot{background:#4a154b}
+  .av.human{background:#2d72d2}
+  .av.ghost{background:transparent}
+  .body{min-width:0;flex:1}
+  .who{font-weight:800}
+  .app{font-size:10px;font-weight:700;color:var(--dim);background:#eee;border-radius:3px;
+    padding:0 4px;margin-left:4px;vertical-align:1px}
+  .ts{color:var(--dim);font-size:12px;margin-left:6px}
+  .edited{color:var(--dim);font-size:11.5px;margin-left:4px}
+  .machinehead{color:var(--dim);font-size:12.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    background:#f1f1f1;border-radius:4px;padding:2px 6px;margin:4px 0;display:inline-block;word-break:break-all}
+  .txt{margin-top:2px}
+  .txt p{margin:4px 0}
+  .txt code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;
+    background:var(--code-bg);border:1px solid var(--code-line);border-radius:3px;padding:0 3px}
+  pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.5;
+    background:var(--code-bg);border:1px solid var(--code-line);border-radius:6px;
+    padding:8px 10px;overflow-x:auto;margin:6px 0}
+  blockquote{border-left:4px solid var(--quote);margin:6px 0;padding:2px 0 2px 10px;color:#3f3f3f}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 2px}
+  .btn{font-size:13px;font-weight:700;padding:5px 12px;border-radius:4px;border:1px solid #bbb;
+    background:#fff;color:var(--ink);cursor:default}
+  .btn.primary{background:var(--green);border-color:var(--green);color:#fff}
+  .btn.danger{color:var(--red);border-color:#e5b8b2}
+  .reacts{display:flex;gap:6px;margin-top:6px}
+  .react{font-size:12px;background:#f0f4f8;border:1px solid #d4dee8;border-radius:12px;padding:1px 8px}
+  .thread{border-left:2px solid #ddd;margin:8px 0 0 4px;padding-left:12px}
+  .thread .msg{padding:6px 0}
+  .threadmeta{color:var(--accent);font-size:12.5px;font-weight:600;margin-top:6px}
+  .patho{position:absolute;right:12px;top:8px;font-size:10.5px;font-weight:700;color:var(--red);
+    background:#fdecea;border-radius:9px;padding:2px 8px;max-width:170px;text-align:right}
+  .chipset{position:absolute;right:12px;top:8px;display:flex;gap:4px}
+  .chip{width:20px;height:20px;border-radius:50%;background:var(--chip);color:#fff;font-size:11px;
+    font-weight:700;display:flex;align-items:center;justify-content:center}
+  .checkbox-group{margin:8px 0;border:1px solid var(--line);border-radius:6px;padding:8px 10px;background:#fcfcfc}
+  .checkbox-group .grouplabel{font-size:12.5px;font-weight:700;color:var(--dim);margin-bottom:4px}
+  .cbrow{display:flex;align-items:center;gap:8px;padding:2px 0;font-size:14px}
+  .cbrow input{accent-color:var(--green);width:15px;height:15px}
+  .glyphlist{margin:6px 0;padding-left:20px}
+  .glyphlist li{margin:1px 0}
+  .cut{color:var(--dim);font-style:italic}
+  .sig{color:var(--dim);font-size:12.5px;font-style:italic}
+  .edithist{margin-top:8px;border:1px dashed #cfcfcf;border-radius:6px;padding:6px 10px;background:#fbfbfb}
+  .edithist .h{font-size:11px;font-weight:700;color:var(--dim);letter-spacing:.3px;margin-bottom:3px}
+  .edithist .row{font-size:12.5px;color:var(--dim)}
+  .edithist .row s{opacity:.75}
+  .legend{max-width:1400px;margin:20px auto 0;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:14px 18px}
+  .legend h2{font-size:15px;margin:0 0 8px}
+  .legend table{border-collapse:collapse;width:100%;font-size:13.5px}
+  .legend td{padding:4px 10px 4px 0;vertical-align:top}
+  .legend td:first-child{width:34px}
+  .datebar{text-align:center;color:var(--dim);font-size:12px;margin:10px 0 4px;position:relative}
+  .datebar span{background:var(--panel);padding:0 10px;position:relative;border:1px solid var(--line);border-radius:12px}
+  .datebar::before{content:"";position:absolute;left:14px;right:14px;top:50%;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1>issue-393 — the room, before and after</h1>
+  <p>A design prototype for the Slack rework (R6–R13): the same work-item run — issue&nbsp;#1,
+     “Add a repository health check” — as the room renders it today (left, 12 of the 41 real
+     messages) and as this design renders it (right). Purple chips on the right link each
+     element to its requirement; the legend is at the bottom.</p>
+  <p><strong>All names, hosts and ids are placeholders</strong> per this repository’s redaction
+     convention (<code>&lt;ghe-host&gt;</code>, <code>&lt;owner&gt;</code>, …); the people in the
+     redesign are fictional (“Alex”).</p>
+</header>
+
+<div class="cols">
+
+<!-- ======================= BEFORE ======================= -->
+<section class="room" aria-label="before">
+  <div class="roomhead">
+    <span class="chan">#issue-1</span><span class="tagline tag-before">TODAY — 41 messages</span>
+    <div class="sub">representative subset; every message shown is verbatim in shape</div>
+  </div>
+  <details class="roomtoggle" id="beforetoggle" open>
+  <summary>show / hide today’s room</summary>
+  <div class="msgs">
+
+    <div class="msg"><span class="patho">machine header on every message</span>
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">4:58 PM</span>
+        <div class="machinehead">room.opened · github:&lt;ghe-host&gt;/&lt;owner&gt;/&lt;test-repo&gt;#1</div>
+        <div class="txt"><p>Every update about <b>issue-1</b> is posted in this channel. Reply with <code>@the-loop …</code> to reach the loop.</p></div>
+      </div>
+    </div>
+
+    <div class="msg tight">
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">4:58 PM</span>
+        <div class="machinehead">phase.started · github:&lt;ghe-host&gt;/&lt;owner&gt;/&lt;test-repo&gt;#1</div>
+        <div class="txt"><p>the-loop: issue-1 started phase <b>phase-selection</b> (phase-selection) — waiting on a person.</p></div>
+      </div>
+    </div>
+
+    <div class="msg"><span class="patho">glyphs, not controls · cut before the one real question</span>
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">4:59 PM</span>
+        <div class="machinehead">comment.agent · github:&lt;ghe-host&gt;/&lt;owner&gt;/&lt;test-repo&gt;#1</div>
+        <div class="txt">
+          <p class="sig">🤖 <i>the-loop, autonomous comment</i></p>
+          <p><b>Phase selection.</b> Untick anything you want to skip — right here on this comment. Each box you untick is an omission recorded against your name.</p>
+          <ol class="glyphlist">
+            <li>☑ brainstorming</li><li>☑ requirements-definition</li><li>☑ requirements-approval</li>
+            <li>☑ design</li><li>☑ design-critic-review</li><li>☑ test-planning</li>
+            <li>☑ design-approval</li><li>☑ tasks-breakdown</li><li>☑ implementation</li>
+            <li>☑ verification</li><li>☑ self-review</li><li>☑ critic-review</li>
+            <li>☑ security-review</li><li>☑ evidence</li><li>☑ capability-docs</li>
+          </ol>
+          <p class="cut">Where should the outer loop hap… <b>[digest cut at 1,500 characters]</b></p>
+          <div class="btnrow"><button class="btn">Open on GitHub</button><button class="btn primary">Execute</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="msg"><span class="patho">operator docs posted to the room</span>
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">5:05 PM</span>
+        <div class="machinehead">comment.agent · github:&lt;ghe-host&gt;/&lt;owner&gt;/&lt;test-repo&gt;#1</div>
+        <div class="txt">
+          <p class="sig">🤖 <i>the-loop, autonomous comment</i></p>
+          <p><b>Started an interactive session.</b></p>
+          <pre>tmux attach -t the-loop-issue-1
+tmux capture-pane -pt the-loop-issue-1 -S -200</pre>
+          <p>If the harness exits, the runner respawns it with the same conversation id. The session is kept after the work completes, so this transcript stays readable.</p>
+          <p class="sig">🤖 <i>the-loop, autonomous comment</i></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="msg"><span class="patho">the pair: two messages, seconds apart, phase name ×2 each</span>
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">5:27 PM</span>
+        <div class="machinehead">phase.completed · github:&lt;ghe-host&gt;/&lt;owner&gt;/&lt;test-repo&gt;#1</div>
+        <div class="txt"><p>the-loop: issue-1 completed phase <b>brainstorming</b> (brainstorming: pass).</p></div>
+      </div>
+    </div>
+    <div class="msg tight">
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">5:27 PM</span>
+        <div class="machinehead">phase.started · github:&lt;ghe-host&gt;/&lt;owner&gt;/&lt;test-repo&gt;#1</div>
+        <div class="txt"><p>the-loop: issue-1 started phase <b>requirements-definition</b> (requirements-definition).</p></div>
+      </div>
+    </div>
+
+    <div class="msg"><span class="patho">gate announcement 1 of 3 · file pasted, cut mid-sentence</span>
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">5:28 PM</span>
+        <div class="machinehead">phase-approval-pending · github:&lt;ghe-host&gt;/&lt;owner&gt;/&lt;test-repo&gt;#1</div>
+        <div class="txt">
+          <p>the-loop: issue-1 is at <b>requirements-approval</b> (phase-approval-pending).</p>
+          <blockquote>
+            <p>Phase 1 of 3 (requirements → design → tasks). Following the Kiro spec approach. This phase MUST be reviewed and approved by the required collaborators before moving to design.</p>
+            <p><b>Introduction.</b> Issue-1 asks for a repository health check: a script and a make target that verify the working tree is in a runnable state…</p>
+            <p><b>Requirement 1 — the check runs everywhere.</b> WHEN <code>make check</code> is invoked THEN the system SHALL run scripts/healthcheck.sh and exit non-zero on the fi<span class="cut">… [cut at 1,500 characters]</span></p>
+          </blockquote>
+          <div class="btnrow"><button class="btn primary">Approve</button><button class="btn danger">Request changes</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="msg"><span class="patho">gate announcement 2 of 3 · signature ×2</span>
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">5:29 PM</span>
+        <div class="machinehead">comment.agent · The agent commented · @&lt;operator-login&gt;</div>
+        <div class="txt">
+          <p class="sig">🤖 <i>the-loop, autonomous comment</i></p>
+          <p><b>requirements-approval</b> is ready for review — reply with an approval or request changes.</p>
+          <p class="sig">🤖 <i>the-loop, autonomous comment</i></p>
+        </div>
+      </div>
+    </div>
+    <div class="msg tight"><span class="patho">gate announcement 3 of 3</span>
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">5:29 PM</span>
+        <div class="machinehead">phase.started · github:&lt;ghe-host&gt;/&lt;owner&gt;/&lt;test-repo&gt;#1</div>
+        <div class="txt"><p>the-loop: issue-1 started phase <b>requirements-approval</b> (requirements-approval) — waiting on a person.</p></div>
+      </div>
+    </div>
+
+    <div class="msg"><span class="patho">no PR number, button opens the issue</span>
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">6:55 PM</span>
+        <div class="machinehead">pr-review-pending · github:&lt;ghe-host&gt;/&lt;owner&gt;/&lt;test-repo&gt;#1</div>
+        <div class="txt">
+          <p>the-loop: issue-1 is at <b>human-approval</b> (pr-review-pending).</p>
+          <div class="btnrow"><button class="btn primary">Approve</button><button class="btn danger">Request changes</button><button class="btn">Open on GitHub</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="msg"><span class="patho">exact duplicate, 13 s apart</span>
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">6:57 PM</span>
+        <div class="machinehead">phase.completed · github:&lt;ghe-host&gt;/&lt;owner&gt;/&lt;test-repo&gt;#1</div>
+        <div class="txt"><p>the-loop: issue-1 completed phase <b>complete</b> (complete: pass).</p></div>
+      </div>
+    </div>
+    <div class="msg tight">
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">6:58 PM</span>
+        <div class="machinehead">phase.completed · github:&lt;ghe-host&gt;/&lt;owner&gt;/&lt;test-repo&gt;#1</div>
+        <div class="txt"><p>the-loop: issue-1 completed phase <b>complete</b> (complete: pass).</p></div>
+      </div>
+    </div>
+
+  </div>
+  </details>
+</section>
+
+<!-- ======================= AFTER ======================= -->
+<section class="room" aria-label="after">
+  <div class="roomhead">
+    <span class="chan">#issue-1</span><span class="tagline tag-after">REDESIGN — one message per moment</span>
+    <div class="sub">the same run; edits and thread replies, not new messages</div>
+  </div>
+  <div class="msgs">
+
+    <div class="datebar"><span>Friday</span></div>
+
+    <div class="msg">
+      <span class="chipset"><span class="chip" title="R9 — phase selection is a real control">9</span><span class="chip" title="R7 — no machine header, sentence leads">7</span></span>
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">4:58 PM</span>
+        <div class="txt">
+          <p>🚀 Picking up <b>#1 “Add a repository health check”</b>. I plan to run the full
+             process — brainstorm → requirements → design → tests → build → review. Anything to skip?</p>
+          <div class="checkbox-group">
+            <div class="grouplabel">PHASES (untick to skip)</div>
+            <label class="cbrow"><input type="checkbox" checked> brainstorming</label>
+            <label class="cbrow"><input type="checkbox" checked> requirements → approval</label>
+            <label class="cbrow"><input type="checkbox" checked> design + testing plan → approval</label>
+            <label class="cbrow"><input type="checkbox" checked> build, verify &amp; review chain</label>
+          </div>
+          <div class="checkbox-group">
+            <div class="grouplabel">WHERE SHOULD THE OUTER LOOP RUN?</div>
+            <label class="cbrow"><input type="radio" name="ol" checked> on the work item (default)</label>
+            <label class="cbrow"><input type="radio" name="ol"> on the pull request</label>
+          </div>
+          <div class="btnrow"><button class="btn primary">Execute</button></div>
+          <p class="sig">…or just type: <code>@the-loop skip brainstorming</code></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="msg">
+      <span class="chipset"><span class="chip" title="R12 — the session's own words">12</span><span class="chip" title="R3 — session events reach the room">3</span></span>
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">5:08 PM</span>
+        <div class="txt">
+          <p>🤔 Brainstorm’s done. Two small calls — I’ll take the defaults unless you say otherwise:
+             <b>(1)</b> report findings per line or per file (default: per file)?
+             <b>(2)</b> print to stdout or stderr (default: stdout)?</p>
+          <div class="btnrow"><button class="btn primary">Defaults are fine</button><button class="btn">Open the brainstorm</button></div>
+          <div class="thread">
+            <div class="msg"><div class="av human">A</div>
+              <div class="body"><span class="who">Alex (operator)</span><span class="ts">5:27 PM</span>
+                <div class="txt"><p>Defaults are fine on both.</p><div class="reacts"><span class="react">👀 1</span><span class="react">✅ 1</span></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="msg">
+      <span class="chipset"><span class="chip" title="R8 — the agent's summary, not the file's first 1,500 chars">8</span><span class="chip" title="R6 — one announcement per gate">6</span></span>
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">5:28 PM</span>
+        <div class="txt">
+          <p>📋 Requirements are ready: <b>7 requirements</b> — the three checks plus <code>make check</code>
+             wiring, no new attack surface. The one thing I’m least sure of: whether a failing check
+             should also fail <code>make test</code>. My call: no — the two stay separate.</p>
+          <div class="btnrow"><button class="btn primary">Approve</button><button class="btn danger">Request changes</button><button class="btn">Open requirements.md</button></div>
+          <div class="threadmeta">2 replies</div>
+          <div class="thread">
+            <div class="msg"><div class="av human">A</div>
+              <div class="body"><span class="who">Alex (operator)</span><span class="ts">5:35 PM</span>
+                <div class="txt"><p>@the-loop approved</p><div class="reacts"><span class="react">✅ 1</span></div></div>
+              </div>
+            </div>
+            <div class="msg">
+              <span class="chipset"><span class="chip" title="R10 — acknowledgements are thread replies">10</span><span class="chip" title="R4 — the FIRST answer counts">4</span></span>
+              <div class="av bot">tl</div>
+              <div class="body"><span class="who">the-loop</span><span class="app">APP</span><span class="ts">5:35 PM</span>
+                <div class="txt"><p>✅ Thanks, locked. On to the design.</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="msg">
+      <span class="chipset"><span class="chip" title="R6 — one message per phase, edited in place">6</span><span class="chip" title="R11 — first person, one emoji, no boilerplate">11</span></span>
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">5:51 PM</span><span class="edited">(edited)</span>
+        <div class="txt">
+          <p>🔨 Building — task <b>5 of 5</b>: README section and capability doc. All tests green so far.</p>
+          <div class="edithist">
+            <div class="h">EDITED IN PLACE — EARLIER STATES OF THIS ONE MESSAGE</div>
+            <div class="row"><s>🔨 Building — task 1 of 5: scripts/healthcheck.sh skeleton.</s></div>
+            <div class="row"><s>🔨 Building — task 3 of 5: wiring make check.</s></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="msg">
+      <span class="chipset"><span class="chip" title="R6 — one message per phase, edited in place">6</span></span>
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">5:55 PM</span><span class="edited">(edited)</span>
+        <div class="txt">
+          <p>🔍 Reviewing — critic round running. This one takes a while (budgeted up to an hour).</p>
+          <div class="edithist">
+            <div class="h">EDITED IN PLACE</div>
+            <div class="row"><s>🔍 Verifying — 5 tests green, evidence recorded.</s></div>
+            <div class="row"><s>🔍 Self-review — clean, moving to the critic.</s></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="msg">
+      <span class="chipset"><span class="chip" title="R8.3 — the PR gate names the PR">8</span></span>
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">6:55 PM</span>
+        <div class="txt">
+          <p>👀 <b>PR #2</b> is ready: <code>+840 −19</code> across 5 files, tests green, security review
+             clean. Start with <code>scripts/healthcheck.sh</code> — everything else follows from it.</p>
+          <div class="btnrow"><button class="btn primary">Approve</button><button class="btn danger">Request changes</button><button class="btn">Open PR #2</button></div>
+          <div class="threadmeta">2 replies</div>
+          <div class="thread">
+            <div class="msg"><div class="av human">A</div>
+              <div class="body"><span class="who">Alex (operator)</span><span class="ts">6:55 PM</span>
+                <div class="txt"><p>@the-loop approved</p><div class="reacts"><span class="react">✅ 1</span></div></div>
+              </div>
+            </div>
+            <div class="msg"><div class="av bot">tl</div>
+              <div class="body"><span class="who">the-loop</span><span class="app">APP</span><span class="ts">6:56 PM</span>
+                <div class="txt"><p>✅ Merging.</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="msg">
+      <span class="chipset"><span class="chip" title="R11.4 — one closing message with the outcome">11</span></span>
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">6:58 PM</span>
+        <div class="txt">
+          <p>🎉 Merged and closed. The health check lives at <code>make check</code>; PR #2 has the full
+             spec chain and evidence. Took 2 h 1 m — the critic round was 55 min of it.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="datebar"><span>if something goes wrong</span></div>
+
+    <div class="msg">
+      <span class="chipset"><span class="chip" title="R2.5 — a refusal explains itself where it happened">2</span><span class="chip" title="R1 — resolution tries the bot's own channels first">1</span></span>
+      <div class="av bot">tl</div>
+      <div class="body">
+        <span class="who">the-loop</span><span class="app">APP</span><span class="ts">—</span>
+        <div class="txt">
+          <p>⚠️ I couldn’t find a channel named <code>#team-room</code>. I can only resolve channels
+             I’m a member of, plus public ones — the workspace listing was truncated before I saw
+             every name. Try the channel id from <i>View channel details</i>, or invite me and try again.</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+</div>
+
+<div class="legend">
+  <h2>Chips → requirements (docs/specs/issue-393/requirements.md)</h2>
+  <table>
+    <tr><td><span class="chip">1</span></td><td><b>R1</b> — a channel name resolves wherever the bot can already speak (bot-membership listing first; a truncated workspace listing never reads as “no such channel”).</td></tr>
+    <tr><td><span class="chip">2</span></td><td><b>R2.5</b> — a refused act is explained where it was attempted, with the remedy, not only in the daemon log.</td></tr>
+    <tr><td><span class="chip">3</span></td><td><b>R3</b> — the session inherits the daemon’s config path, so its questions and summaries actually reach the room (the plumbing behind every session-voiced message here).</td></tr>
+    <tr><td><span class="chip">4</span></td><td><b>R4</b> — the <i>first</i> authorized answer advances the gate; the ✅ never lies.</td></tr>
+    <tr><td><span class="chip">6</span></td><td><b>R6</b> — one message per meaningful moment: no started/completed pairs, one announcement per gate, one per-phase progress message edited in place (owner decision: per phase).</td></tr>
+    <tr><td><span class="chip">7</span></td><td><b>R7</b> — no machine header; the emoji and the sentence lead.</td></tr>
+    <tr><td><span class="chip">8</span></td><td><b>R8</b> — the gate message carries the agent’s 2–3 sentence summary and what it is least sure of; the PR gate names PR, diffstat and link.</td></tr>
+    <tr><td><span class="chip">9</span></td><td><b>R9</b> — phase selection is in-message Block Kit checkboxes + the outer-loop question in the same message, submitting the same signed execute (owner decision: checkboxes, not a modal); typing <code>skip &lt;phase&gt;</code> works for connectors without buttons.</td></tr>
+    <tr><td><span class="chip">10</span></td><td><b>R10</b> — acknowledgements are thread replies under the message they answer.</td></tr>
+    <tr><td><span class="chip">11</span></td><td><b>R11</b> — first person, present tense, one state emoji, no robot-face signature, no policy boilerplate; one closing message with the outcome.</td></tr>
+    <tr><td><span class="chip">12</span></td><td><b>R12</b> — the session’s own words are the room’s content; templates yield to them.</td></tr>
+  </table>
+</div>
+
+<script>
+  // collapse the BEFORE column by default on narrow screens
+  if (window.matchMedia('(max-width: 899px)').matches) {
+    document.getElementById('beforetoggle').removeAttribute('open');
+  }
+</script>
+</body>
+</html>
