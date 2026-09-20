@@ -55,7 +55,8 @@ overrides: {}
 - **Bring-up:** for T5 only — the Chromium Playwright drives, as `ui/scripts/screenshots.mjs`
   already uses: `npm i --no-save playwright` in a directory above the script (or a
   `node_modules` link beside it), `CHROMIUM_PATH` pointing at a Chromium when Playwright
-  did not download one. **Tear-down:** remove the `node_modules` link.
+  did not download one, `CHROMIUM_NO_SANDBOX=1` only where Chromium cannot start
+  sandboxed (a root container). **Tear-down:** remove the `node_modules` link.
 - **If bring-up fails:** T5 stays unticked and the PR is not requested for review without
   its screenshots — the options are unreviewable without a rendering.
 

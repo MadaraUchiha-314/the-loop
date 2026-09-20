@@ -53,7 +53,7 @@ exit=0
 ## T5 — the rendered evidence
 
 ```
-$ CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome \
+$ CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome CHROMIUM_NO_SANDBOX=1 \
   node docs/specs/issue-398/design/screenshots.mjs docs/specs/issue-398/design/screenshots
 gallery-light
 gallery-dark
@@ -71,6 +71,10 @@ option-5-planetary-slate
 
 Playwright 1.63.0 with the Chromium already installed for the dashboard's evidence
 script; resolved through a `node_modules` link beside the script, removed afterwards.
+`CHROMIUM_NO_SANDBOX=1` because this container runs as root: Playwright adds the flag
+for a root user itself (a run without the variable produced the same twelve captures),
+so the variable only makes explicit what happens here anyway; on a machine with a
+working sandbox the flag is never passed.
 The `-slate` captures are `<img>` embeddings under an emulated dark scheme and show the
 light ink, so each standalone file's own `prefers-color-scheme` rule is what is proved.
 Files: [`../design/screenshots/`](../design/screenshots/).

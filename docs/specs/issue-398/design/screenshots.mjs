@@ -6,11 +6,14 @@
  * slate under a dark scheme, so the file's own prefers-color-scheme rule is what
  * is being proved. Writes one PNG per capture into <out-dir>.
  *
- *   npm i --no-save playwright          # or point NODE_PATH at an install
+ *   npm i --no-save playwright          # in a directory above this file, or link a
+ *                                       # node_modules beside it (ESM ignores NODE_PATH)
  *   node docs/specs/issue-398/design/screenshots.mjs docs/specs/issue-398/design/screenshots
  *
  * Chromium comes from Playwright's own install (PLAYWRIGHT_BROWSERS_PATH), or
  * from CHROMIUM_PATH when set — the same convention as ui/scripts/screenshots.mjs.
+ * Set CHROMIUM_NO_SANDBOX=1 only where Chromium refuses to start sandboxed (a
+ * container running as root); the flag is never passed otherwise.
  */
 
 import { mkdirSync, readdirSync, readFileSync } from "node:fs";
@@ -22,7 +25,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const out = resolve(process.argv[2] ?? join(here, "screenshots"));
 mkdirSync(out, { recursive: true });
 
-const launch = { args: ["--no-sandbox"] };
+const launch = { args: process.env.CHROMIUM_NO_SANDBOX ? ["--no-sandbox"] : [] };
 if (process.env.CHROMIUM_PATH) launch.executablePath = process.env.CHROMIUM_PATH;
 const browser = await chromium.launch(launch);
 
