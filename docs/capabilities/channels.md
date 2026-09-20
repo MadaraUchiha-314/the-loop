@@ -202,7 +202,7 @@ flowchart LR
   `agentic` (the default) AND an event is bound to a work item's **room** (a channel the
   item was declared into) THEN the channel SHALL render it in the-loop's first-person
   voice — one state emoji, the event's own sentence, **no** event-type/ref header — and
-  a [RoomPolicy](#) delivery decision SHALL apply: an event identical to the last one
+  a RoomPolicy delivery decision SHALL apply: an event identical to the last one
   delivered for the node is dropped; a `phase.completed` immediately followed by its
   successor's `phase.started` is collapsed to the one transition; a node's
   `phase.started` line and its mirrored "ready for review" comment are suppressed once a

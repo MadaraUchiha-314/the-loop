@@ -540,7 +540,9 @@ class _LabelFakeGitHub:
     def call(self, op, **params):
         from the_loop.graph.integrations import IntegrationError
 
-        self.calls.append((op, params.get("name") or params.get("label") or params.get("labels")))
+        self.calls.append(
+            (op, params.get("name") or params.get("label") or params.get("labels"))
+        )
         if op == "get-labels":
             return {"labels": list(self._labels)}
         if op == "remove-label":
@@ -551,10 +553,10 @@ class _LabelFakeGitHub:
             return {"result": "ok"}
         if op == "set-labels":
             labels = list(params["labels"])
-            missing = [l for l in labels if l not in self._created]
+            missing = [name for name in labels if name not in self._created]
             if missing:
                 raise IntegrationError(self._missing_error)
-            self._labels += [l for l in labels if l not in self._labels]
+            self._labels += [name for name in labels if name not in self._labels]
             return {"result": "ok"}
         return {}
 
