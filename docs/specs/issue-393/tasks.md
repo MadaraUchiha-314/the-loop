@@ -90,7 +90,7 @@ overrides: {}
 
 ## Track C — self-service
 
-- [ ] **C1 — the daemon ensures labels (F3).** `github.ensure_labels` (idempotent,
+- [x] **C1 — the daemon ensures labels (F3).** `github.ensure_labels` (idempotent,
       declared repos only, cached per daemon lifetime) on first contact;
       `set-phase-label` creates-and-retries once; failure posts once on the ticket.
       _Req:_ R13 (abuse case 5) · _Test:_ T1 ensure rows + T8 undeclared-repo.

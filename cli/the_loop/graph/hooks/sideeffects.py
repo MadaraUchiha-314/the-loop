@@ -60,14 +60,41 @@ def set_phase_label(ctx: HookContext) -> HookResult:
     if not phase:
         return HookResult.skipped(name, "node declares no phase label")
     label = f"{PHASE_LABEL_PREFIX}{phase}"
+    github = _integration(ctx, "github")
     try:
-        _integration(ctx, "github").call(
-            "set-labels", ref=ctx.work_item.ref, labels=[label]
-        )
+        github.call("set-labels", ref=ctx.work_item.ref, labels=[label])
     except IntegrationError as exc:
-        logger.warning("could not sync %s: %s", label, exc)
-        return HookResult.ok(name, label=label, applied=False, error=str(exc))
+        # issue-393 F3/R13.2: a repository the daemon works may never have been
+        # `/the-loop:init`-ed, so the `loop:*` label does not exist and the edit
+        # fails ("not found"). Rather than degrade silently — the phase label is
+        # the one thing a ticket reader and the dashboards use — create the label
+        # and retry once. Any other failure (permissions, outage) still degrades.
+        if not _is_missing_label(exc):
+            logger.warning("could not sync %s: %s", label, exc)
+            return HookResult.ok(name, label=label, applied=False, error=str(exc))
+        try:
+            github.call("create-label", ref=ctx.work_item.ref, name=label)
+            github.call("set-labels", ref=ctx.work_item.ref, labels=[label])
+        except IntegrationError as retry_exc:
+            logger.warning("could not create/sync %s: %s", label, retry_exc)
+            return HookResult.ok(
+                name, label=label, applied=False, error=str(retry_exc), created=False
+            )
+        return HookResult.ok(name, label=label, applied=True, created=True)
     return HookResult.ok(name, label=label, applied=True)
+
+
+def _is_missing_label(exc: Exception) -> bool:
+    """Whether an integration error is a 'label does not exist' (issue-393 R13.2).
+
+    Both transports surface it differently — the API as a 422/'not found' on the
+    label name, `gh` as its own 'not found' text — so match on the shared words
+    rather than a status. Conservative: an unrecognised error is NOT treated as a
+    missing label, so a permissions failure degrades rather than looping on
+    create.
+    """
+    text = str(exc).lower()
+    return "not found" in text or "does not exist" in text or "label" in text and "422" in text
 
 
 @hook("request-review")

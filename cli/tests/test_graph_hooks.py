@@ -519,3 +519,78 @@ def test_only_when_skipped_can_never_widen_what_may_be_skipped(tmp_path):
     ctx.skipped_artifacts = frozenset({"testing-plan.md"})
     _log(spec, "## Verification results\n\n", "evidence/verification.md")
     assert validate_artifacts(ctx).outcome == SKIP
+
+
+# -- set-phase-label creates a missing label and retries (issue-393 F3/R13) ------
+
+
+class _LabelFakeGitHub:
+    """Records label calls; fails set-labels with a chosen error until the label
+    is created, then succeeds — the shape of a repo missing its loop:* labels."""
+
+    def __init__(self, missing_error="Label does not exist"):
+        self.calls = []
+        self._created = set()
+        self._missing_error = missing_error
+
+    def call(self, op, **params):
+        from the_loop.graph.integrations import IntegrationError
+
+        self.calls.append((op, params.get("name") or params.get("labels")))
+        if op == "create-label":
+            self._created.add(str(params["name"]))
+            return {"result": "ok"}
+        if op == "set-labels":
+            labels = list(params["labels"])
+            missing = [l for l in labels if l not in self._created]
+            if missing:
+                raise IntegrationError(self._missing_error)
+            return {"result": "ok"}
+        return {}
+
+
+def _label_ctx(tmp_path):
+    spec = tmp_path / "docs" / "specs" / "issue-1"
+    spec.mkdir(parents=True, exist_ok=True)
+    return HookContext(
+        work_item=WorkItem(ref="github:o/r#1", id="issue-1", spec_dir=spec),
+        node={"id": "design", "phase": "design"},
+        boundary="entry",
+        repo=tmp_path,
+    )
+
+
+def test_set_phase_label_creates_a_missing_label_and_retries(tmp_path, monkeypatch):
+    """
+    Scenario: the daemon labels a repo that was never /the-loop:init-ed
+
+    Requirement: docs/specs/issue-393/requirements.md R13.2 (F3, subsumes B4).
+    A `loop:*` label the repository does not have makes set-labels fail; the hook
+    creates the label and retries once, rather than degrading silently.
+    """
+    from the_loop.graph.hooks.sideeffects import set_phase_label
+
+    fake = _LabelFakeGitHub()
+    monkeypatch.setattr(
+        "the_loop.graph.integrations.resolve", lambda target, config: fake
+    )
+    result = set_phase_label(_label_ctx(tmp_path))
+    assert result.status == PASS
+    assert result.data["applied"] is True and result.data["created"] is True
+    # set-labels, then create-label, then set-labels again
+    assert [op for op, _ in fake.calls] == ["set-labels", "create-label", "set-labels"]
+
+
+def test_set_phase_label_degrades_on_a_non_missing_error(tmp_path, monkeypatch):
+    """A permissions/outage failure is NOT a missing label — it degrades (records
+    and continues) rather than looping on create."""
+    from the_loop.graph.hooks.sideeffects import set_phase_label
+
+    fake = _LabelFakeGitHub(missing_error="HTTP 403: forbidden")
+    monkeypatch.setattr(
+        "the_loop.graph.integrations.resolve", lambda target, config: fake
+    )
+    result = set_phase_label(_label_ctx(tmp_path))
+    assert result.status == PASS  # best-effort: never wedges the graph
+    assert result.data["applied"] is False
+    assert [op for op, _ in fake.calls] == ["set-labels"]  # no create attempted

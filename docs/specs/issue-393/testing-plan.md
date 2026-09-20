@@ -80,6 +80,14 @@ overrides: {}
   `the-loop status` and `the-loop doctor slack` are green, seed the test issue.
   **Tear-down:** `the-loop stop` the second instance, close the test issue, archive the
   room.
+- **Deployment dependency (2026-09-19).** The live re-run (T4, the T5 live-room
+  screenshots, T11) requires the **patched the-loop deployed to the operator's cloud
+  workspace daemon** — the daemon runs the version installed there, not this working
+  tree, so the room rework cannot be exercised live until that deploy happens. This is
+  outside the agent's reach from the build environment. Until then T4/T5-live/T11 are
+  **blocked on deployment**, recorded as such under Verification results (not ticked,
+  not failed); the automated rows below (T1/T2/T8/T10) fully exercise the logic headless
+  and are the gate that can pass now.
 - **If bring-up fails:** record under Verification results, leave T4/T5-live/T11
   unticked, escalate — the gate does not pass on an environment that never came up.
 - **Redaction rule (hard):** every capture from this environment — logs, transcripts,

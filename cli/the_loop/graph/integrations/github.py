@@ -47,6 +47,7 @@ OPERATIONS: FrozenSet[str] = frozenset(
     {
         "add-comment",
         "set-labels",
+        "create-label",
         "get-labels",
         "list-comments",
         "get-thread",
@@ -188,6 +189,27 @@ class GitHubApi:
                     host=host,
                 )
             }
+        if op == "create-label":
+            # issue-393 F3/R13: create a label the repository does not have yet,
+            # so the daemon can label a repo that was never `/the-loop:init`-ed.
+            # A label that already exists returns 422; the caller treats that as
+            # success (the label is there, which is all it wanted).
+            try:
+                return {
+                    "result": self._request(
+                        "POST",
+                        f"/repos/{owner}/{repo}/labels",
+                        {
+                            "name": str(params["name"]),
+                            "color": str(params.get("color") or "ededed"),
+                        },
+                        host=host,
+                    )
+                }
+            except IntegrationError as exc:
+                if "already_exists" in str(exc) or "422" in str(exc):
+                    return {"result": "exists"}
+                raise
         if op == "get-labels":
             data = self._request(
                 "GET", f"/repos/{owner}/{repo}/issues/{number}/labels", host=host
@@ -262,6 +284,23 @@ class GitHubCli:
             for label in params["labels"]:
                 args += ["--add-label", str(label)]
             self._run(args)
+            return {"result": "ok"}
+        if op == "create-label":
+            # issue-393 F3/R13. `gh label create --force` is idempotent — it
+            # updates an existing label rather than failing — which is exactly
+            # the "ensure it exists" this needs.
+            self._run(
+                [
+                    "label",
+                    "create",
+                    str(params["name"]),
+                    "--repo",
+                    slug,
+                    "--color",
+                    str(params.get("color") or "ededed"),
+                    "--force",
+                ]
+            )
             return {"result": "ok"}
         if op == "get-labels":
             out = self._run(
