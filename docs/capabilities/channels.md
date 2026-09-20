@@ -228,6 +228,29 @@ flowchart LR
   one; WHEN no summary is attached THEN the digest excerpt is the fallback, as before.
   WHEN the PR-review gate publishes THEN its message SHALL name the pull request and its
   link SHALL open the **pull request**, not the issue.
+- **Phase selection is a real control on Slack** (issue-393, F1/R9). WHEN the
+  phase-selection checklist mirror reaches an interactive room (`read.mode: socket` and
+  the `control.command` grant) THEN the channel SHALL render the phases as Block Kit
+  **checkboxes** — pre-ticked to match the checklist, the outer-loop question its own
+  element — beside the Execute button; WHEN Execute is pressed THEN the-loop SHALL read
+  the checkbox state from the payload and compose the signed execute as a reconstructed
+  checklist body, so the gate's existing freeze parses it unchanged. Without the grant
+  the message keeps its text and Execute button and says to edit the checklist on
+  GitHub. A typed reply serves any connector: `execute without 1, 3`, `execute without
+  <phase>`, `skip <phase>` — the numbers index the live checklist's phase rows, and an
+  unknown or protected name refuses the whole reply with the offered list rather than
+  freezing a different selection. An unauthorized submit is refused (silent to a
+  stranger, explained to a collaborator) and freezes nothing. Slack Execute records
+  phases and the outer-loop surface; sessions/model/effort fall to their defaults and the
+  message says so.
+- **The session's own voice is the room's content** (issue-393, R12). WHEN a spawned
+  session publishes (its `the-loop ask` question, its summary) THEN — the session having
+  inherited the daemon's config so its events reach the bus — that message SHALL reach
+  the room in the-loop's voice; WHEN the ask states a default (`the-loop ask --default`)
+  AND the channel is interactive THEN the message SHALL carry a **Defaults are fine**
+  button whose press delivers that default as the member's reply; and WHEN the session
+  has spoken for a node THEN a later runtime template for that same node SHALL be
+  suppressed, so the agent's words win over the boilerplate.
 - **Long text is digested, never cut mid-sentence** (issue-338, decision-118). WHEN a
   text section — an event's text, a notification's artifact excerpt — is longer than
   `channels.slack.maxChars` AND `channels.slack.longMessages` is `digest` (the default)
