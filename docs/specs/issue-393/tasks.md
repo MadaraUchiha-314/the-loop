@@ -16,7 +16,7 @@ overrides: {}
 
 ## Track A — bug fixes (independent of each other)
 
-- [ ] **A1 — park at publish (B8).** In the graph runtime, entering a human-actor node
+- [x] **A1 — park at publish (B8).** In the graph runtime, entering a human-actor node
       sets its status to `waiting` and persists `work-item-state.json` in the same step
       that publishes the approval request; `at_human_gate` (graphlink.py:274) unchanged.
       _Req:_ R4 · _Test:_ T2 `Scenario: the first authorized answer after a gate

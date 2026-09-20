@@ -1147,11 +1147,21 @@ class Runtime:
         state.enter(target)
         entered_phase = self.phase_of(target, left_phase)
         state.phase = entered_phase
+        entry_node = self.graph.node(target)
+        if entry_node.actor == "human":
+            # Park at publish (issue-393, B8/R4): a human node waits from the
+            # moment its entry chain asks the human, not from the next
+            # evaluation. Before this, the first answer arrived while `parked`
+            # was still empty, `at_human_gate` read False, and an approval was
+            # routed as a plain reply.
+            state.park(target, "awaiting a human")
         state.save(
             self.state_dir(item)
         )  # persist BEFORE any dependent side effect (R8.2)
-        entry_node = self.graph.node(target)
         if entry_node.actor == "human":
+            eventlog.emit(
+                "graph.parked", work_item=item.ref, node=target, via="entry"
+            )
             # `session: inherit` honoured for real (issue-148, R5): decide which
             # session this gate runs in, and record how it was arrived at. The
             # registry stays the dispatch authority — this is the graph's own

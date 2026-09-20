@@ -193,6 +193,26 @@ def test_an_item_parked_at_a_human_gate_is_waiting(runtime, repo):
     assert ctx is not None and ctx.status == "waiting" and ctx.at_human_gate
 
 
+def test_a_gate_waits_from_the_moment_it_is_entered(runtime, repo):
+    """Scenario: the first authorized answer after a gate publishes advances the gate
+
+    Requirement: issue-393 R4 (B8). Entering a human node used to leave
+    ``parked`` empty until a LATER evaluation ran, so the first ingress event
+    after every gate — usually the answer itself — was classified as a plain
+    reply and only a resend counted. The node now parks in the same advance
+    that runs its entry chain (where the approval request publishes):
+    ``complete`` alone, with no evaluation after it, must leave the gate
+    answerable.
+    """
+    _write_design(repo)
+    runtime.start("issue-1")
+    runtime.complete("issue-1")  # advances INTO the gate; deliberately no advance()
+    state = WorkItemState.load(_spec(repo), "issue-1")
+    assert state.parked and state.parked.get("node") == "gate"
+    ctx = _link(repo, runtime).context(REF, str(repo))
+    assert ctx is not None and ctx.status == "waiting" and ctx.at_human_gate
+
+
 def test_a_blocked_item_carries_the_blocking_message(runtime, repo):
     _write_design(repo, status="draft")
     runtime.start("issue-1")
