@@ -403,7 +403,10 @@ a button nobody can receive is worse than none — and it is the only mode the
 [`/the-loop` slash command](#the-slash-command) can arrive in. A processed press is
 written back onto the pressed message (the buttons replaced by the outcome line);
 `the-loop channels status` prints the steps a configuration still needs before a press
-can arrive. See the [Slack guide's buttons section](/guide/slack#the-buttons). `off`: nothing
+can arrive. See the [Slack guide's buttons section](/guide/slack#the-buttons). A change
+to this key takes effect in the running service without a restart: the hosted listener is
+stopped within a few seconds when the mode leaves `socket`, and started when it returns
+([issue-395](https://github.com/MadaraUchiha-314/the-loop/issues/395)). `off`: nothing
 is read. An unknown value resolves to `off` with a warning — never to a reading mode by
 accident.
 

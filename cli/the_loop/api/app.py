@@ -124,7 +124,10 @@ def create_app(cli_config: Optional[dict] = None, *, config_path=None) -> FastAP
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
         lifespan=build_lifespan(
-            cli_config, mcp_app=mcp_app, host_ingresses=host_ingresses
+            cli_config,
+            mcp_app=mcp_app,
+            host_ingresses=host_ingresses,
+            config_path=holder.path,
         ),
     )
 

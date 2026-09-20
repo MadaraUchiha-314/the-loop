@@ -9,7 +9,7 @@ that PR.
 
 | File | Item(s) | Kind |
 |------|---------|------|
-| [`b5-read-mode-hot-reload.md`](b5-read-mode-hot-reload.md) | B5 | bug |
+| [`b5-read-mode-hot-reload.md`](b5-read-mode-hot-reload.md) | B5 | bug — filed as [#395](https://github.com/MadaraUchiha-314/the-loop/issues/395) |
 | [`b7-graph-status-stale-node.md`](b7-graph-status-stale-node.md) | B7, O6 | bug |
 | [`o7-phantom-prompt-text.md`](o7-phantom-prompt-text.md) | O7 | investigation |
 | [`o9-merge-on-approval-knob.md`](o9-merge-on-approval-knob.md) | O9 | enhancement |

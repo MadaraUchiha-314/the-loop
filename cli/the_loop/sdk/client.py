@@ -579,6 +579,7 @@ class TheLoop:
             self.config,
             mcp_app=self.mcp_app() if self._mcp_wanted else None,
             host_ingresses=self.host_ingresses(),
+            config_path=self.config_path,
         )
 
         @asynccontextmanager

@@ -14,7 +14,8 @@ for it. The standalone service and :class:`the_loop.sdk.TheLoop` call the same f
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import Any, Optional
+from pathlib import Path
+from typing import Any, Optional, Union
 
 
 def build_lifespan(
@@ -22,13 +23,17 @@ def build_lifespan(
     *,
     mcp_app: Any = None,
     host_ingresses: bool = False,
+    config_path: Optional[Union[str, Path]] = None,
 ):
     """An async context manager holding the process-lifetime concerns open.
 
     ``mcp_app`` is the streamable-HTTP app whose session manager must run (``None`` when
     MCP is disabled); ``host_ingresses`` decides whether the enabled ingresses run in
     *this* process. Both are resolved by the caller, because both are boot-time choices
-    the caller already had to make in order to build the app at all.
+    the caller already had to make in order to build the app at all. ``config_path`` is
+    the file the hosted set follows (issue-395): edited so that an ingress is no longer
+    enabled, that ingress is stopped without a restart; newly enabled, it is started.
+    It defaults to the path every other the-loop process resolves.
 
     The returned callable takes the application as its single argument, matching
     FastAPI's ``lifespan=`` contract, and ignores it — nothing here is per-app.
@@ -36,11 +41,16 @@ def build_lifespan(
 
     @asynccontextmanager
     async def lifespan(_app: Any = None):
+        from ..cli_config import default_cli_config_path
         from . import ingress as ingress_mod
 
-        hosted = (
-            ingress_mod.start_hosted_ingresses(cli_config) if host_ingresses else []
-        )
+        hosted: Optional[ingress_mod.HostedIngresses] = None
+        if host_ingresses:
+            hosted = ingress_mod.HostedIngresses(
+                cli_config,
+                config_path if config_path is not None else default_cli_config_path(),
+            )
+            hosted.start()
         try:
             if mcp_app is None:
                 yield
@@ -48,6 +58,7 @@ def build_lifespan(
                 async with mcp_app.router.lifespan_context(mcp_app):
                     yield
         finally:
-            ingress_mod.stop_hosted_ingresses(hosted)
+            if hosted is not None:
+                hosted.stop()
 
     return lifespan
