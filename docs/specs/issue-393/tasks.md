@@ -53,7 +53,7 @@ overrides: {}
       mentions neutralised; `ask --summary` and the graph-complete artifact path accept
       it; digest fallback when absent. _Req:_ R8.1–R8.2, R12.2 (abuse case 3) ·
       _Test:_ T1 escape/cap rows + T8 hostile summary.
-- [ ] **B2 — `ChannelState` delivery memory.** `last_delivered`, `progress_ts{phase}`,
+- [x] **B2 — `ChannelState` delivery memory.** `last_delivered`, `progress_ts{phase}`,
       `gate_ts{node}`, `phase_selection_ts`; absent keys ⇒ classic; corrupt file ⇒
       classic + one warn. _Req:_ R6 NFR, error handling · _Test:_ T10 degradation row.
 - [ ] **B3 — `room_policy.py`.** Pure `decide(event, state)`: dedupe, gate-collapse,

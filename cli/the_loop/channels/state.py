@@ -61,6 +61,7 @@ logger = logging.getLogger("the-loop.channels")
 
 __all__ = [
     "CONVERSATION_ORIGINS",
+    "DELIVERY_CAP",
     "LISTEN_MODES",
     "PENDING_CAP",
     "PENDING_TTL_SECONDS",
@@ -113,6 +114,11 @@ PENDING_CAP = 50
 #: only what is new. Past the cap the OLDEST goes — forgetting one only means
 #: the next `record-context` on that thread records it whole again.
 SNAPSHOT_CAP = 200
+
+#: How many work items' room-delivery memory one channel file keeps (issue-393
+#: B2). Past the cap the OLDEST goes — forgetting one only degrades that item's
+#: room to classic delivery (post everything), never to silence.
+DELIVERY_CAP = 200
 
 #: What a declared room hears (issue-389, decision-133 D1): only a message that
 #: mentions the bot (``mentions``, the default), or every message (``all``, an
@@ -365,6 +371,16 @@ class ChannelState:
     #: ts>`` → ``{workItem, last, count, at}``. Insertion-ordered; the cap drops
     #: the oldest. Local like the cursors — what THIS deployment recorded.
     snapshots: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    #: The room-delivery memory (issue-393 B2): work item → ``{lastNode,
+    #: lastEvent, progressTs{phase}, gateTs{node}, phaseSelectionTs}`` — what THIS
+    #: deployment has already shown in the room, so RoomPolicy can collapse a
+    #: transition, suppress a gate's duplicate announcements, edit a phase's
+    #: progress message in place, and thread an acknowledgement under the message
+    #: it answers. Local like the cursors and transient by nature: a file written
+    #: before B2 loads it as an empty map (never a crash), and a lost record
+    #: degrades delivery to classic (post everything, top-level), never to
+    #: silence. Insertion-ordered; the cap drops the oldest.
+    delivery: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     #: True when :meth:`load` derived a conversation from a pre-issue-312 file —
     #: the next writer saves so the file converges on the keyed shape (R3.4).
     backfilled: bool = field(default=False, repr=False, compare=False)
@@ -411,6 +427,10 @@ class ChannelState:
         # migration, no version — a question nobody asked is simply not pending.
         pending = raw.get("pending")
         snapshots = raw.get("snapshots")
+        # A file written before issue-393 has no `delivery` key: empty map, same
+        # as `pending`/`snapshots` before it. A lost or absent record just means
+        # RoomPolicy has no memory for that item and falls back to classic.
+        delivery = raw.get("delivery")
         state = cls(
             threads={
                 str(ts): {str(k): str(v) for k, v in info.items()}
@@ -434,6 +454,11 @@ class ChannelState:
                 str(key): _snapshot_record(info)
                 for key, info in (snapshots or {}).items()
                 if isinstance(info, dict) and info.get("last")
+            },
+            delivery={
+                str(item): _delivery_record(info)
+                for item, info in (delivery or {}).items()
+                if isinstance(info, dict)
             },
             stores=stores,
         )
@@ -523,6 +548,7 @@ class ChannelState:
                 "conversations": self.conversations,
                 "pending": self.pending,
                 "snapshots": self.snapshots,
+                "delivery": self.delivery,
             }
         kept = {
             item: record
@@ -537,6 +563,7 @@ class ChannelState:
             },
             "pending": self.pending,
             "snapshots": self.snapshots,
+            "delivery": self.delivery,
         }
         if kept:
             # A standing session's conversation is nobody's work item, so it
@@ -799,6 +826,38 @@ class ChannelState:
         while len(self.snapshots) > SNAPSHOT_CAP:
             self.snapshots.pop(next(iter(self.snapshots)), None)
 
+    # -- room-delivery memory (issue-393 B2) ----------------------------------------
+
+    def delivery_for(self, work_item: str) -> Dict[str, Any]:
+        """This work item's room-delivery memory — an empty record when there is
+        none (a first message, a lost file), so a caller reads it without a
+        None-check and RoomPolicy falls back to classic delivery."""
+        record = self.delivery.get(canonical(work_item))
+        return _delivery_record(record) if record else _delivery_record({})
+
+    def remember_delivery(self, work_item: str, **changes: Any) -> None:
+        """Merge ``changes`` into this work item's delivery memory — under the
+        caller's lock. Only the keys given are touched; the item moves to newest,
+        and past :data:`DELIVERY_CAP` the oldest is dropped (its room degrades to
+        classic, never to silence).
+
+        Nested maps (``progressTs``, ``gateTs``) merge key-by-key so remembering
+        one phase's progress ts does not forget another's; scalar keys replace.
+        """
+        key = canonical(work_item)
+        record = _delivery_record(self.delivery.get(key) or {})
+        for field_name, value in changes.items():
+            if field_name in ("progressTs", "gateTs") and isinstance(value, dict):
+                merged = dict(record.get(field_name) or {})
+                merged.update({str(k): str(v) for k, v in value.items() if v})
+                record[field_name] = merged
+            else:
+                record[field_name] = value
+        self.delivery.pop(key, None)  # move to newest
+        self.delivery[key] = _delivery_record(record)
+        while len(self.delivery) > DELIVERY_CAP:
+            self.delivery.pop(next(iter(self.delivery)), None)
+
 
 def _pending_record(info: Dict[str, Any]) -> Dict[str, Any]:
     """One question as it is held in memory — every field coerced, ``options``
@@ -829,6 +888,28 @@ def _snapshot_record(info: Dict[str, Any]) -> Dict[str, Any]:
         "last": str(info.get("last") or ""),
         "count": count,
         "at": str(info.get("at") or ""),
+    }
+
+
+def _delivery_record(info: Dict[str, Any]) -> Dict[str, Any]:
+    """One work item's room-delivery memory, every field coerced (issue-393 B2).
+
+    A malformed or partial record loads to its empty shape rather than raising —
+    the worst it costs is a duplicate room message, never a crash or a lost
+    delivery.
+    """
+
+    def _str_map(value: Any) -> Dict[str, str]:
+        if not isinstance(value, dict):
+            return {}
+        return {str(k): str(v) for k, v in value.items() if v}
+
+    return {
+        "lastNode": str(info.get("lastNode") or ""),
+        "lastEvent": str(info.get("lastEvent") or ""),
+        "progressTs": _str_map(info.get("progressTs")),
+        "gateTs": _str_map(info.get("gateTs")),
+        "phaseSelectionTs": str(info.get("phaseSelectionTs") or ""),
     }
 
 
