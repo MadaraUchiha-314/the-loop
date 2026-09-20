@@ -218,3 +218,49 @@ def test_an_unknown_listen_mode_is_refused_by_the_parser(tmp_path, posted):
         run("add-channel", tmp_path, ROOM, extra=("--listen", "everything"))
     assert excinfo.value.code == 2
     assert store(tmp_path).list(REF) == [] and posted == []
+
+
+def test_add_confirms_the_room_when_channels_are_configured(
+    tmp_path, posted, monkeypatch, capsys
+):
+    """
+    Scenario: a declaration from the CLI confirms the room (issue-397 O1)
+      Given the CLI config carries a channels section
+      When `the-loop add-channel slack@C0TMP375 --work-item …` is run
+      Then the work item's conversation is opened on the bus once, so the room
+           hears about the declaration now
+      And a failed open is reported and leaves the declaration standing
+    """
+    from the_loop.channels import bus
+    from the_loop.channels.base import PostResult
+
+    opened = []
+
+    def fake_open(work_item, cli_config=None, **_kw):
+        opened.append((work_item, bool((cli_config or {}).get("channels"))))
+        return [PostResult(channel="slack", ok=False, error="no bot token")]
+
+    monkeypatch.setattr(bus, "open_conversation", fake_open)
+    result = core_workchannels.manage_channels(
+        REF,
+        "add-channel",
+        [ROOM],
+        comment=False,
+        config={"channels": {"slack": {"enabled": True}}},
+        portable_dir=str(tmp_path / "portable"),
+    )
+    assert result["applied"] == [ROOM]
+    assert opened == [(REF, True)]
+    assert any("could not confirm the room" in m["text"] for m in result["messages"])
+    assert [record.ref for record in store(tmp_path).list(REF)] == [ROOM]
+
+    # Without a channels section nothing is opened at all.
+    result = core_workchannels.manage_channels(
+        REF,
+        "add-channel",
+        ["slack@C0OTHER"],
+        comment=False,
+        config={},
+        portable_dir=str(tmp_path / "portable"),
+    )
+    assert result["applied"] == ["slack@C0OTHER"] and opened == [(REF, True)]

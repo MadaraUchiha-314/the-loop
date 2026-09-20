@@ -132,3 +132,25 @@ def test_compose_keyword_reads_a_member_mention_as_the_roster_token():
     assert (
         compose_keyword("start <@U0456GHIJ>", control) == "the-loop start <@U0456GHIJ>"
     )
+
+
+def test_help_public_is_read_from_the_first_line_only():
+    """issue-397 O4/O5: `help public` asks for the answer as a visible reply;
+    only the first token after `help` on its FIRST line is read, so a connector
+    that signs every message on a second line ("*Sent using* @Claude", O5)
+    neither turns `help` public nor breaks the verb."""
+    from the_loop.channels.verbs import PUBLIC_HELP, wants_public_help
+
+    assert PUBLIC_HELP == "public"
+    assert wants_public_help(Verb("help", "")) is False
+    assert wants_public_help(Verb("help", "public")) is True
+    assert wants_public_help(Verb("help", "PUBLIC please")) is True
+    assert wants_public_help(Verb("help", "me public")) is False
+    assert wants_public_help(Verb("record-context", "public")) is False
+    # O5: the connector's signature line is never the word that is read.
+    signed = parse_verb("help\n*Sent using* @Claude")
+    assert signed is not None and signed == Verb("help", "*Sent using* @Claude")
+    assert wants_public_help(signed) is False
+    signed_public = parse_verb("help public\n*Sent using* @Claude")
+    assert signed_public is not None and wants_public_help(signed_public) is True
+    assert wants_public_help(Verb("help", "\npublic")) is False

@@ -13,7 +13,7 @@ that PR.
 | [`b7-graph-status-stale-node.md`](b7-graph-status-stale-node.md) | B7, O6 | bug |
 | [`o7-phantom-prompt-text.md`](o7-phantom-prompt-text.md) | O7 | investigation |
 | [`o9-merge-on-approval-knob.md`](o9-merge-on-approval-knob.md) | O9 | enhancement |
-| [`minor-observations-o1-o4-o5.md`](minor-observations-o1-o4-o5.md) | O1, O4, O5 | polish |
+| [`minor-observations-o1-o4-o5.md`](minor-observations-o1-o4-o5.md) | O1, O4, O5 | polish — filed as [#397](https://github.com/MadaraUchiha-314/the-loop/issues/397) |
 
 Each file's first `#` heading is the suggested issue title; the rest is the body.
 Quotes are drawn verbatim from the report, with the internal deployment kept in
