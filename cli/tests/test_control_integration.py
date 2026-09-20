@@ -853,7 +853,9 @@ def test_a_refused_keyword_explains_itself_on_the_ticket(setup, monkeypatch):
     monkeypatch.setattr(
         dispatcher_mod,
         "post_issue_comment",
-        lambda item, body, gh_binary="gh": posted.append((item.ref, body)) or (True, ""),
+        lambda item, body, gh_binary="gh": (
+            posted.append((item.ref, body)) or (True, "")
+        ),
     )
 
     dispatcher.handle(
@@ -899,7 +901,10 @@ def test_an_out_of_scope_refusal_stays_silent(setup, monkeypatch):
         labeled=False,
     )
     dispatcher._reject_control(
-        "add-collaborator", routed, "octocat", "missing-collaborator",
+        "add-collaborator",
+        routed,
+        "octocat",
+        "missing-collaborator",
         acknowledge=False,
     )
     assert posted == []

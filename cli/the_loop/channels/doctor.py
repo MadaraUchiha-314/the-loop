@@ -168,7 +168,11 @@ def _probe(
         return _unverifiable(
             result,
             "no channel to post the heartbeat into — channels.slack.channel is "
-            + ("unset" if not config.channel else f"{config.channel!r}, which resolves to no channel this bot can see"),
+            + (
+                "unset"
+                if not config.channel
+                else f"{config.channel!r}, which resolves to no channel this bot can see"
+            ),
         )
     result["channel"] = channel
     running = (
@@ -213,7 +217,9 @@ def _probe(
     try:
         for _ in range(result["beats"]):
             nonce = make_nonce()
-            response = client.chat_postMessage(channel=channel, text=heartbeat_text(nonce))
+            response = client.chat_postMessage(
+                channel=channel, text=heartbeat_text(nonce)
+            )
             posted.append((nonce, str((response or {}).get("ts") or "")))
         wanted = {nonce for nonce, _ in posted}
         deadline = time.monotonic() + result["window_seconds"]
@@ -477,14 +483,24 @@ def check_declared_channels(
                 "be resolved"
             )
             result["channels"] = [
-                {"declared": declared, "owner": owner, "id": "", "status": "unverifiable"}
+                {
+                    "declared": declared,
+                    "owner": owner,
+                    "id": "",
+                    "status": "unverifiable",
+                }
                 for declared, owner in entries
             ]
             return result
         directory = _directory(config, cli_config, client_factory)
         truncated = False
         for declared, owner in entries:
-            row = {"declared": declared, "owner": owner, "id": "", "status": "unverifiable"}
+            row = {
+                "declared": declared,
+                "owner": owner,
+                "id": "",
+                "status": "unverifiable",
+            }
             if is_conversation_id(declared):
                 known = directory.conversation_known(declared)
                 row["id"] = declared

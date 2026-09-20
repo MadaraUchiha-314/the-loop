@@ -16,7 +16,7 @@ shared channel or the ``classic`` style.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 __all__ = [
     "EMOJI",

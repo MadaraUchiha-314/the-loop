@@ -300,7 +300,8 @@ def test_a_session_question_with_a_default_earns_a_defaults_are_fine_button():
     )
     # Without interactivity there is no button nobody could press.
     assert not any(
-        a == f"{ACTION_PREFIX}default" for a, _ in buttons(render_blocks(event, "normal"))
+        a == f"{ACTION_PREFIX}default"
+        for a, _ in buttons(render_blocks(event, "normal"))
     )
 
 

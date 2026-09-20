@@ -126,7 +126,9 @@ def _remove_stale_phase_labels(github, ref: str, keep: str) -> List[str]:
             github.call("remove-label", ref=ref, label=name_)
             removed.append(name_)
         except Exception as exc:  # noqa: BLE001 — one stale label left is not fatal
-            logger.debug("could not remove the stale label %s on %s: %s", name_, ref, exc)
+            logger.debug(
+                "could not remove the stale label %s on %s: %s", name_, ref, exc
+            )
     return removed
 
 
@@ -140,7 +142,12 @@ def _is_missing_label(exc: Exception) -> bool:
     create.
     """
     text = str(exc).lower()
-    return "not found" in text or "does not exist" in text or "label" in text and "422" in text
+    return (
+        "not found" in text
+        or "does not exist" in text
+        or "label" in text
+        and "422" in text
+    )
 
 
 @hook("request-review")

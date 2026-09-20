@@ -412,11 +412,11 @@ class TestTmuxRunner:
         cmd = next(c for c in fake.calls if c[1] == "new-session")
         env_pairs = [cmd[i + 1] for i, part in enumerate(cmd) if part == "-e"]
         assert f"{runner_mod.CLI_CONFIG_ENV}={cfg.resolve()}" in env_pairs
-        assert f"{runner_mod.WORK_ITEM_ENV_VAR}={WorkItemRef.parse(REF).ref}" in env_pairs
+        assert (
+            f"{runner_mod.WORK_ITEM_ENV_VAR}={WorkItemRef.parse(REF).ref}" in env_pairs
+        )
 
-    def test_spawn_omits_the_cli_config_export_when_there_is_none(
-        self, monkeypatch
-    ):
+    def test_spawn_omits_the_cli_config_export_when_there_is_none(self, monkeypatch):
         """R3.4 / fail-safe: an empty resolved path is not exported — the session
         falls back to its own resolution exactly as before, never to an empty
         THE_LOOP_CLI_CONFIG that would pin it to a non-existent file."""

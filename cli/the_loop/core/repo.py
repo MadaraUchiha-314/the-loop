@@ -106,8 +106,7 @@ def review_policy(repo: str = "") -> Dict[str, Any]:
     policy = dict(critics_mod.load_review_policy())
     try:
         policy["criticTimeouts"] = {
-            critic.name: critic.timeout_seconds
-            for critic in critics_mod.load_critics()
+            critic.name: critic.timeout_seconds for critic in critics_mod.load_critics()
         }
     except Exception:  # noqa: BLE001 — a broken critics[] never hides the counts
         pass

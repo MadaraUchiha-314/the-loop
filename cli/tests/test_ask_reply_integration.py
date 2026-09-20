@@ -466,7 +466,9 @@ def test_the_ask_verb_reads_a_question_file(tmp_path, monkeypatch):
     assert posted["body"].startswith("## Two options")
 
 
-def test_the_ask_verb_warns_when_the_bus_names_no_channel(tmp_path, monkeypatch, capsys):
+def test_the_ask_verb_warns_when_the_bus_names_no_channel(
+    tmp_path, monkeypatch, capsys
+):
     """
     Feature: agents ask through a verb
       Scenario: ask warns when the resolved bus subscribes no channel to the wait
@@ -547,7 +549,9 @@ def test_the_ask_verb_carries_a_stated_default(tmp_path, monkeypatch):
         captured["default"] = (event.detail or {}).get("default")
         from the_loop.channels.base import PostResult, PublishResult
 
-        return PublishResult(record=PostResult(channel="github", ok=True, url="https://x/#c1"))
+        return PublishResult(
+            record=PostResult(channel="github", ok=True, url="https://x/#c1")
+        )
 
     monkeypatch.setattr("the_loop.channels.bus.publish", fake_publish)
     monkeypatch.setattr(

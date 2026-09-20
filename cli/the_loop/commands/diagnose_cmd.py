@@ -173,7 +173,10 @@ class DoctorCommand(Command):
         return _doctor_slack(
             data,
             beats=int(getattr(args, "beats", DEFAULT_BEATS) or DEFAULT_BEATS),
-            window=float(getattr(args, "window", DEFAULT_WINDOW_SECONDS) or DEFAULT_WINDOW_SECONDS),
+            window=float(
+                getattr(args, "window", DEFAULT_WINDOW_SECONDS)
+                or DEFAULT_WINDOW_SECONDS
+            ),
             heartbeat=not bool(getattr(args, "no_heartbeat", False)),
         )
 

@@ -148,6 +148,7 @@ def _cli_config_export() -> str:
         pass
     return ""
 
+
 _INSTALL_HINTS = {
     "tmux": (
         "macOS: `brew install tmux` · Debian/Ubuntu: `apt install tmux` · "

@@ -401,12 +401,9 @@ def expected_bot_events() -> Tuple[str, ...]:
         from .commands import manifest_text
 
         data = yaml.safe_load(manifest_text()) or {}
-        events = (
-            ((data.get("settings") or {}).get("event_subscriptions") or {}).get(
-                "bot_events"
-            )
-            or []
-        )
+        events = ((data.get("settings") or {}).get("event_subscriptions") or {}).get(
+            "bot_events"
+        ) or []
         return tuple(str(event).strip() for event in events if str(event).strip())
     except Exception as exc:  # noqa: BLE001 — a diagnostic never fails its caller
         logger.debug("slack: could not read the manifest's bot events: %s", exc)

@@ -46,7 +46,7 @@ single work item lives.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping
 
 __all__ = [
     "Decision",
@@ -67,9 +67,7 @@ EDIT = "edit"  # chat.update the message at `ts`
 THREAD = "thread"  # a reply under the message at `ts`
 
 #: Events that carry a gate's approval request — the one announcement a gate gets.
-GATE_PENDING_EVENTS = frozenset(
-    {"phase-approval-pending", "pr-review-pending"}
-)
+GATE_PENDING_EVENTS = frozenset({"phase-approval-pending", "pr-review-pending"})
 
 #: The lifecycle pair the transition-collapse rule folds into one line.
 LIFECYCLE_EVENTS = frozenset({"phase.started", "phase.completed"})
@@ -178,9 +176,7 @@ def decide(
     # A gate's own pending message: post it, and remember its ts so the collapse
     # above and the ack-thread below can find it.
     if event_type in GATE_PENDING_EVENTS and node:
-        return Decision(
-            POST, rule="gate-pending", remember={"gateTs": {node: "@ts"}}
-        )
+        return Decision(POST, rule="gate-pending", remember={"gateTs": {node: "@ts"}})
 
     # ack-thread — an acknowledgement of a consumed gate answer threads under the
     # gate's message rather than starting a new top-level line.
@@ -240,9 +236,10 @@ def _looks_like_ready_for_review(event: Any) -> bool:
 def _is_ack(event: Any) -> bool:
     """Whether an event is an acknowledgement of a consumed gate answer."""
     detail = getattr(event, "detail", None) or {}
-    return bool(detail.get("ack")) or str(
-        getattr(event, "event_type", "")
-    ) == "gate.acknowledged"
+    return (
+        bool(detail.get("ack"))
+        or str(getattr(event, "event_type", "")) == "gate.acknowledged"
+    )
 
 
 def _is_terminal(event: Any) -> bool:

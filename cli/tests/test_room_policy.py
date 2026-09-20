@@ -139,9 +139,7 @@ def test_an_intermediate_completed_is_collapsed():
 
 def test_a_terminal_completed_is_still_heard():
     d = decide(
-        _event(
-            "phase.completed", detail={"node": "complete", "terminal": "true"}
-        ),
+        _event("phase.completed", detail={"node": "complete", "terminal": "true"}),
         {},
         is_room=True,
     )

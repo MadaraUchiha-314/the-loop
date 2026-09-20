@@ -1164,9 +1164,7 @@ class Runtime:
             self.state_dir(item)
         )  # persist BEFORE any dependent side effect (R8.2)
         if entry_node.actor == "human":
-            eventlog.emit(
-                "graph.parked", work_item=item.ref, node=target, via="entry"
-            )
+            eventlog.emit("graph.parked", work_item=item.ref, node=target, via="entry")
             # `session: inherit` honoured for real (issue-148, R5): decide which
             # session this gate runs in, and record how it was arrived at. The
             # registry stays the dispatch authority — this is the graph's own
