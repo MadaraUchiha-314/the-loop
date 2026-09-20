@@ -113,25 +113,42 @@ overrides: {}
 ## Verification activities
 
 - [ ] T1 — `cd cli && uv run pytest tests/ -k 'not integration'`
-- [ ] T2 — `cd cli && uv run pytest tests/ -k integration`
-- [ ] T8 — `cd cli && uv run pytest tests/ -k 'abuse or unauthorized'`
-- [ ] T10 — `cd cli && uv run pytest tests/ -k 'config or state'`
-- [ ] T4 — live re-run of the report's timeline on the operator deployment (bring-up
-      above); observe each of B1/B3/B6/B8/B9 fixed at its original failure step;
-      record the room's message shape
-- [ ] T5a — mockup screenshots at ~400 px and desktop widths
-- [ ] T5b — redacted live-room screenshots of the six redesigned states
-- [ ] T11 — operator's readability verdict recorded
+- [x] T1 — unit rows (RoomPolicy, voice, digest/summary, checkboxes, directory,
+      critic timeout, label-ensure, doctor)
+- [x] T2 — integration rows (B8 first-answer, B6 spawn env, gate collapse, progress,
+      checkbox execute, session voice, doctor)
+- [x] T8 — abuse-case rows (unauthorized gate answer / checkbox submit, hostile
+      summary, hostile skip-grammar, undeclared-repo labels)
+- [x] T10 — config/state compat (room.style schema round-trip; pre-393 state loads
+      empty and degrades to classic)
+- [ ] T4 — live re-run of the report's timeline — **BLOCKED ON DEPLOYMENT** (the
+      patched build must be deployed to the operator's cloud-workspace daemon; not
+      reachable from the build environment)
+- [x] T5a — mockup renders at ~400 px and desktop widths (self-contained HTML at
+      `design/slack-room-redesign.html`; visual check)
+- [ ] T5b — redacted live-room screenshots — **BLOCKED ON DEPLOYMENT** (needs T4)
+- [ ] T11 — operator's readability verdict — **BLOCKED ON DEPLOYMENT** (needs T4)
 
 ## Verification results
 
-_Not yet executed._
+The automated rows (T1, T2, T8, T10 — the logic gate) pass; the live rows
+(T4/T5b/T11) are blocked on deploying the patched build to the operator's daemon and
+are recorded, not ticked. Full detail: [`evidence/automated-tests.md`](evidence/automated-tests.md).
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1 | `pytest` on the unit rows (room_policy, voice, digest, buttons, selection_control, directory, upgrade, critics, doctor, graph_hooks, graph_drive) | **pass** — 386 passed, 1 pre-existing env failure (`test_list_reports_availability`, cursor-agent installed locally, unrelated) | [automated-tests.md](evidence/automated-tests.md) |
+| T2 | `pytest` on the integration rows (channels_integration, channels_declared_integration, bus_integration, ask_reply_integration, graph_drive, graph_refs_integration, control_integration) | **pass** — 169 passed | [automated-tests.md](evidence/automated-tests.md) |
+| T8 | abuse-case scenarios within the above (unauthorized gate/checkbox, hostile summary escape/cap, skip-grammar refusal, undeclared-repo label guard) | **pass** | [automated-tests.md](evidence/automated-tests.md) |
+| T10 | `room.style` schema round-trip + legacy `ChannelState`/delivery degradation | **pass** | [automated-tests.md](evidence/automated-tests.md) |
+| T5a | render the mockup at phone and desktop widths | **pass** — self-contained, both widths | `design/slack-room-redesign.html` |
+| T4, T5b, T11 | live re-run + live screenshots + operator verdict | **blocked** — needs the patched build deployed to the operator's daemon (out of the build environment's reach) | — |
 
-**Not executed:** —
+**Not executed:** T4 (live e2e re-run), T5b (live-room screenshots), T11 (operator
+readability verdict) — all blocked on deploying this branch to the operator's cloud
+workspace. They are the last confirmation that the room *reads* right to a person; the
+automated rows prove every bug fix and every rework rule at the logic level. Run them
+once the branch is deployed (bring-up in "Verification environment" above).
 
 ## Review comments
 

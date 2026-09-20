@@ -79,7 +79,7 @@ overrides: {}
       gains protected regions (questions/controls never cut; overflow says what was
       cut). _Deps:_ B1. _Req:_ R8.3–R8.4 · _Test:_ T1 digest rows + T2 PR-gate
       Scenario.
-- [ ] **B8 — `room.style` config.** `channels.slack.room.style: agentic|classic`
+- [x] **B8 — `room.style` config.** `channels.slack.room.style: agentic|classic`
       (default agentic) + schema + docs; `classic` byte-preserves today's rendering —
       existing outbound suites stay green unchanged. _Deps:_ B5. _Req:_ NFR config
       compat · _Test:_ T10 schema row + full existing suites.
@@ -97,9 +97,9 @@ overrides: {}
 
 ## Closing tasks
 
-- [ ] **D1 — capability docs + decision records.** Update affected
+- [x] **D1 — capability docs + decision records.** Update affected
       `docs/capabilities/` pages in the same PR; log the two durable decisions
       (park-at-publish; delivery-policy seam) under `docs/decisions/`. _Deps:_ all.
-- [ ] **D2 — verification.** Execute `testing-plan.md` (T1/T2/T8/T10 suites; T4 live
+- [x] **D2 — verification.** Execute `testing-plan.md` (T1/T2/T8/T10 suites; T4 live
       re-run with hard redaction; T5 screenshots; T11 verdict); fill Verification
       results; evidence under `evidence/`. _Deps:_ all.

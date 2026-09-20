@@ -188,6 +188,17 @@ so that following a work item on a phone is reading a conversation, not a log.
    for that phase, edited in place as the phase progresses — never a stream of updates
    as separate messages (owner decision, 2026-09-19: one message per phase, edits
    within it).
+
+   > **Implementation note.** The edit-in-place *mechanism* is delivered: RoomPolicy's
+   > `progress-edit` rule and the channel's `chat.update` path handle a
+   > `phase.progress` / `session.progress` event by editing that phase's one message
+   > (tested in `test_room_policy.py` and the channel path). What is **not** wired in
+   > this work item is a runtime *emitter* of those progress events — the lifecycle
+   > emits only `phase.started`/`phase.completed`, so nothing yet sends the intra-phase
+   > "Verifying — 5 tests green" stages. Emitting them needs a new signal from the
+   > session/runtime and is a **follow-up**; until then a phase shows its one
+   > `phase.started` line (collapsed per R6.1), not a live-updating one. The transition
+   > collapse, gate collapse, dedupe, threading and voice are all live now.
 4. WHEN an event has already been posted to the room THEN an identical event for the
    same work item and node SHALL NOT be posted again.
 5. WHEN Slack delivery collapses or suppresses a message THEN the GitHub ledger SHALL
