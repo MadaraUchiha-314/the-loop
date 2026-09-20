@@ -55,7 +55,7 @@ overrides: {}
 
 ### Round 2 — after the owner's review of round 1
 
-> *"Over stressed on the hand drawn part; no character."* The design-artifacts loop:
+> _"Over stressed on the hand drawn part; no character."_ The design-artifacts loop:
 > fold the feedback into the artifact and re-present.
 
 - [x] **E1 — the brush and the weave.** `brush()` (nib angle, contrast, pressure, lifts),
