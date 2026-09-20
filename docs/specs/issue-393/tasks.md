@@ -60,7 +60,7 @@ overrides: {}
       transition-collapse, progress-edit, ack-thread, session-wins, operator-docs;
       every drop/edit logs its rule. _Deps:_ B2. _Req:_ R6, R10, R11.3, R12.3 ·
       _Test:_ T1 one test per rule row.
-- [ ] **B4 — `voice.py` + header removal.** Event→(emoji, first-person template) table;
+- [x] **B4 — `voice.py` + header removal.** Event→(emoji, first-person template) table;
       rooms lose the header, central channels get short id + title link; single
       signature at render. _Deps:_ B1. _Req:_ R7, R11.1–R11.2, R11.4 · _Test:_ T1
       voice rows.

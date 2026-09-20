@@ -57,6 +57,7 @@ from .digest import (
 )
 from .events import APPROVAL_EVENTS, PUBLISHABLE_EVENTS, SUBSCRIBABLE_EVENTS
 from .state import ROOM_MODE, ChannelState, ChannelStores
+from .voice import room_lead
 
 logger = logging.getLogger("the-loop.channels")
 
@@ -548,6 +549,12 @@ class SlackChannelConfig:
     #: ``digest`` (the default — the ask first, choices numbered, code and
     #: traces as pointers, cut at a sentence) or ``truncate`` (13.10.0's cut).
     long_messages: str = DEFAULT_DIGEST_MODE
+    #: How a work item's own room reads (issue-393 B8): ``agentic`` (the default
+    #: — one message per moment, first-person voice, no machine header, gates
+    #: collapsed, progress edited in place) or ``classic`` (16.x's rendering,
+    #: byte-for-byte, the escape hatch and the compatibility proof). Read from
+    #: ``channels.slack.room.style``; anything else is ``agentic``.
+    room_style: str = "agentic"
     kickoff_repo: str = ""
     kickoff_labels: Tuple[str, ...] = ()
     #: The people of `routing.authorizedUsers`, and their Slack ids (issue-309).
@@ -712,6 +719,18 @@ class SlackChannelConfig:
             if not isinstance(kickoff, Mapping):
                 logger.warning("channels.slack.kickoff is not a mapping — ignored")
                 kickoff = {}
+            room = section.get("room") or {}
+            if not isinstance(room, Mapping):
+                logger.warning("channels.slack.room is not a mapping — ignored")
+                room = {}
+            room_style = str(room.get("style") or "agentic")
+            if room_style not in ("agentic", "classic"):
+                logger.warning(
+                    "channels.slack.room.style %r is not 'agentic' or 'classic' "
+                    "— using 'agentic'",
+                    room_style,
+                )
+                room_style = "agentic"
             return cls(
                 enabled=bool(section.get("enabled", False)),
                 bot_token_env=str(section.get("botTokenEnv") or DEFAULT_BOT_TOKEN_ENV),
@@ -722,6 +741,7 @@ class SlackChannelConfig:
                 verbosity=verbosity,
                 max_chars=min(max_chars, _SECTION_LIMIT),
                 long_messages=long_messages,
+                room_style=room_style,
                 kickoff_repo=str(kickoff.get("repo") or "").strip(),
                 kickoff_labels=tuple(
                     str(lbl).strip()
@@ -886,6 +906,7 @@ def render_blocks(
     max_chars: int = DEFAULT_MAX_CHARS,
     commands: Optional[Mapping[str, str]] = None,
     long_messages: str = DEFAULT_DIGEST_MODE,
+    agentic: bool = False,
 ) -> List[Dict[str, Any]]:
     """``event`` as Block Kit: header, text, context, and the buttons it earns.
 
@@ -912,17 +933,26 @@ def render_blocks(
             },
         }
 
-    title = _TITLES.get(event.event_type, event.event_type)
-    who = f" · {event.actor.label}" if event.actor and event.actor.label else ""
-    author = event.detail.get("author") if event.detail else ""
-    if author and not who:
-        who = f" · @{author}"
-    header = f"{title}{who} · {event.work_item}"[:_HEADER_LIMIT]
-    blocks: List[Dict[str, Any]] = [
-        {"type": "header", "text": {"type": "plain_text", "text": header}}
-    ]
-    if verbosity != "quiet" and event.text.strip():
-        blocks.append(section(event.text))
+    blocks: List[Dict[str, Any]] = []
+    if agentic:
+        # issue-393 B4/R7, R11: no machine header — the room's binding already
+        # says which item this is. One state emoji and the event's own
+        # first-person sentence lead instead (voice.room_lead). The text section
+        # below is skipped: the lead IS the text, drawn as mrkdwn.
+        lead = room_lead(event)
+        blocks.append(section(lead))
+    else:
+        title = _TITLES.get(event.event_type, event.event_type)
+        who = f" · {event.actor.label}" if event.actor and event.actor.label else ""
+        author = event.detail.get("author") if event.detail else ""
+        if author and not who:
+            who = f" · @{author}"
+        header = f"{title}{who} · {event.work_item}"[:_HEADER_LIMIT]
+        blocks.append(
+            {"type": "header", "text": {"type": "plain_text", "text": header}}
+        )
+        if verbosity != "quiet" and event.text.strip():
+            blocks.append(section(event.text))
     # issue-393 B1/R8: the agent's own summary leads the message when it wrote
     # one — what a reviewer on a phone wants from a gate, in place of the
     # document's first N characters. Rendered at any verbosity (it is the point
@@ -1521,6 +1551,12 @@ class SlackBotChannel:
                 bound = self._conversation(client, state, event.work_item)
                 if before == bound and state.backfilled:
                     state.save(self.state_path)  # a 13.0.1 file, now keyed (R3.4)
+        # The agentic voice (issue-393 B4) applies to a work item's own ROOM — a
+        # channel-mode binding, `thread_ts == ""` with a channel — and only when
+        # the operator has not asked for the classic rendering. A shared channel,
+        # a thread, or an unbound post keeps the header rendering.
+        in_room = bool(bound and bound[0] and not bound[1])
+        agentic = in_room and self.config.room_style == "agentic"
         blocks = render_blocks(
             event,
             self.config.verbosity,
@@ -1528,6 +1564,7 @@ class SlackBotChannel:
             max_chars=self.config.max_chars,
             commands=self.config.command_buttons_for(*expected_commands(event)),
             long_messages=self.config.long_messages,
+            agentic=agentic,
         )
         # The plain-text fallback — what the phone's notification shows — carries
         # the text section as drawn, so a digested message leads with the ask

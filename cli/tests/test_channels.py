@@ -136,6 +136,11 @@ def test_config_defaults_match_the_schema():
     assert list(config.publish) == slack["publish"]["default"]
     assert config.max_chars == slack["maxChars"]["default"]
     assert config.long_messages == slack["longMessages"]["default"] == "digest"
+    assert (
+        config.room_style
+        == slack["room"]["properties"]["style"]["default"]
+        == "agentic"
+    )
     assert config.kickoff_repo == slack["kickoff"]["properties"]["repo"]["default"]
     read = slack["read"]["properties"]
     assert config.read_mode == read["mode"]["default"]
@@ -150,6 +155,23 @@ def test_malformed_read_mode_resolves_off(tmp_path, caplog):
         cli_config(tmp_path, read={"mode": "telepathy"})
     )
     assert config.read_mode == "off"
+
+
+def test_room_style_is_read_and_defaults_to_agentic(tmp_path, caplog):
+    """issue-393 B8: `channels.slack.room.style` is parsed; anything but
+    agentic/classic falls back to agentic (fail to the product default)."""
+    assert (
+        SlackChannelConfig.from_mapping(
+            cli_config(tmp_path, room={"style": "classic"})
+        ).room_style
+        == "classic"
+    )
+    assert SlackChannelConfig.from_mapping(cli_config(tmp_path)).room_style == "agentic"
+    with caplog.at_level("WARNING", logger="the-loop.channels"):
+        bad = SlackChannelConfig.from_mapping(
+            cli_config(tmp_path, room={"style": "loud"})
+        )
+    assert bad.room_style == "agentic"
 
 
 # -- event filter + verbosity (R2.1, R2.2) --------------------------------------
