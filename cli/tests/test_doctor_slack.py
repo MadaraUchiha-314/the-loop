@@ -98,7 +98,9 @@ class FakeSocket:
         self.acks.append(response)
 
     def deliver(self, event):
-        request = SimpleNamespace(type="events_api", envelope_id="env", payload={"event": event})
+        request = SimpleNamespace(
+            type="events_api", envelope_id="env", payload={"event": event}
+        )
         for listener in self.socket_mode_request_listeners:
             listener(self, request)
 
@@ -112,13 +114,17 @@ class FakeDoctorClient:
     def __init__(self, echo=lambda index: True, log_path=None, channels=None):
         self.echo = echo
         self.log_path = log_path
-        self.socket = None
+        self.socket: FakeSocket | None = None
         self.posted = []
         self.deleted = []
-        self._channels = channels if channels is not None else [
-            {"id": "C0CENTRAL", "name": "the-loop"},
-            {"id": "GTEST", "name": "test-room"},
-        ]
+        self._channels = (
+            channels
+            if channels is not None
+            else [
+                {"id": "C0CENTRAL", "name": "the-loop"},
+                {"id": "GTEST", "name": "test-room"},
+            ]
+        )
 
     def chat_postMessage(self, *, channel, text):
         index = len(self.posted)
@@ -137,7 +143,11 @@ class FakeDoctorClient:
                 self.socket.deliver(event)
             if self.log_path is not None:
                 nonce = text.split()[-1]
-                record = {"ts": "2026-09-19T00:00:00Z", "event": "channel.heartbeat", "nonce": nonce}
+                record = {
+                    "ts": "2026-09-19T00:00:00Z",
+                    "event": "channel.heartbeat",
+                    "nonce": nonce,
+                }
                 with open(self.log_path, "a", encoding="utf-8") as handle:
                     handle.write(json.dumps(record) + "\n")
         return {"ok": True, "ts": ts, "channel": channel}
@@ -147,7 +157,9 @@ class FakeDoctorClient:
         return {"ok": True}
 
     def auth_test(self):
-        return FakeResponse({"ok": True, "user_id": "UBOT"}, "chat:write,groups:history")
+        return FakeResponse(
+            {"ok": True, "user_id": "UBOT"}, "chat:write,groups:history"
+        )
 
     def conversations_info(self, *, channel):
         return {"ok": True, "channel": {"id": channel, "is_private": True}}
@@ -184,10 +196,13 @@ def test_the_probe_result_carries_the_expected_events(tmp_path, tokens):
     makes only its two fixed calls (bugfix §AC4 of issue-362 stands)."""
     client = FakeDoctorClient()
     calls = []
-    client.conversations_info = lambda *, channel: calls.append("info") or {  # type: ignore[method-assign]
-        "ok": True,
-        "channel": {"id": channel, "is_private": True},
-    }
+    client.conversations_info = lambda *, channel: (
+        calls.append("info")
+        or {  # type: ignore[method-assign]
+            "ok": True,
+            "channel": {"id": channel, "is_private": True},
+        }
+    )
     original = client.auth_test
     client.auth_test = lambda: calls.append("auth") or original()  # type: ignore[method-assign]
     config = SlackChannelConfig.from_mapping(cli_config(tmp_path))
@@ -263,9 +278,17 @@ def test_a_heartbeat_is_recognised_only_when_bot_posted_and_well_formed():
     text = heartbeat_text(nonce)
     assert text == f"{HEARTBEAT_MARKER} {nonce}"
     assert heartbeat_nonce({"type": "message", "bot_id": "B1", "text": text}) == nonce
-    assert heartbeat_nonce({"type": "message", "subtype": "bot_message", "text": text}) == nonce
+    assert (
+        heartbeat_nonce({"type": "message", "subtype": "bot_message", "text": text})
+        == nonce
+    )
     assert heartbeat_nonce({"type": "message", "user": "UHUMAN", "text": text}) == ""
-    assert heartbeat_nonce({"type": "message", "bot_id": "B1", "text": f"{HEARTBEAT_MARKER} rm -rf"}) == ""
+    assert (
+        heartbeat_nonce(
+            {"type": "message", "bot_id": "B1", "text": f"{HEARTBEAT_MARKER} rm -rf"}
+        )
+        == ""
+    )
     assert heartbeat_nonce({"type": "message", "bot_id": "B1", "text": "hello"}) == ""
 
 
@@ -303,6 +326,7 @@ def test_every_heartbeat_echoed_over_the_doctors_own_connection_reads_ok_as_evid
     text = consumer_verdict_text(result)
     assert "3/3" in text and "not proof" in text
     assert client.deleted == [row["ts"] for row in client.posted]
+    assert client.socket is not None
     assert client.socket.connected and client.socket.closed
     assert len(client.socket.acks) == 3
     # The heartbeat is a marker and a nonce — never config content, never a token.
@@ -521,10 +545,14 @@ class FakeDirectoryClient:
     """Membership + a workspace listing that either exhausts or never does."""
 
     def __init__(self, memberships=None, workspace=None, cap_pages=None, fail=False):
-        self.memberships = memberships if memberships is not None else [
-            {"id": "C0CENTRAL", "name": "the-loop"},
-            {"id": "GTEST", "name": "test-room"},
-        ]
+        self.memberships = (
+            memberships
+            if memberships is not None
+            else [
+                {"id": "C0CENTRAL", "name": "the-loop"},
+                {"id": "GTEST", "name": "test-room"},
+            ]
+        )
         self.workspace = workspace or []
         self.cap_pages = cap_pages
         self.fail = fail
@@ -600,7 +628,9 @@ def test_a_declared_room_the_directory_does_not_hold_is_reported(tmp_path, token
     assert _rows(report) == {"#nowhere": "miss", "G0NOWHERE": "absent", "GTEST": "ok"}
     by_declared = {row["declared"]: row for row in report["channels"]}
     assert by_declared["#nowhere"]["owner"] == "channels.slack.channel"
-    assert by_declared["G0NOWHERE"]["owner"] == "declared by github:octocat/hello-world#13"
+    assert (
+        by_declared["G0NOWHERE"]["owner"] == "declared by github:octocat/hello-world#13"
+    )
     assert report["truncated"] is False
 
 
@@ -608,7 +638,9 @@ def test_a_miss_over_a_truncated_listing_says_so(tmp_path, tokens):
     """R2.3 + R1.4: a name missing from a listing the page cap cut short is not a
     definitive miss — the report carries the truncation."""
     config = cli_config(tmp_path, channel="#nowhere")
-    client = FakeDirectoryClient(workspace=[{"id": "CPUB", "name": "general"}], cap_pages=1)
+    client = FakeDirectoryClient(
+        workspace=[{"id": "CPUB", "name": "general"}], cap_pages=1
+    )
     report = check_declared_channels(config, client_factory=lambda token: client)
     assert list(_rows(report).values()) == ["miss"]
     assert report["truncated"] is True
@@ -722,7 +754,10 @@ def test_doctor_slack_prints_all_three_sections_and_exits_zero_when_clean(
     assert "events:" in out and "not verifiable" in out
     assert "[ok] 3/3 heartbeats" in out and "not proof" in out
     assert "[ok] #the-loop → C0CENTRAL" in out
-    assert "[ok] GTEST — listed in the bot's directory (declared by github:octocat/hello-world#12)" in out
+    assert (
+        "[ok] GTEST — listed in the bot's directory (declared by github:octocat/hello-world#12)"
+        in out
+    )
     assert "[!]" not in out
     assert "supersecret" not in out
 
@@ -771,7 +806,9 @@ def test_doctor_slack_never_crashes_and_never_says_ok_for_what_it_could_not_meas
 def test_no_heartbeat_posts_nothing(tmp_path, monkeypatch, capsys, tokens):
     client = FakeDoctorClient()
     monkeypatch.setattr(slack_mod, "build_client", lambda token: client)
-    code, out = run_doctor(tmp_path, monkeypatch, capsys, cli_config(tmp_path), "--no-heartbeat")
+    code, out = run_doctor(
+        tmp_path, monkeypatch, capsys, cli_config(tmp_path), "--no-heartbeat"
+    )
     assert client.posted == []
     assert "skipped (--no-heartbeat)" in out
     assert code in (0, 1)

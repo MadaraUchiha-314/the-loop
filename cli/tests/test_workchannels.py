@@ -437,6 +437,7 @@ def test_resolve_names_the_truncated_listing_on_a_miss():
     Requirement: docs/specs/issue-393/requirements.md R1.4 (B1)
     """
     ref = parse_channel_ref("slack@#test-room")
+    assert ref is not None
     with pytest.raises(ValueError, match="truncated"):
         resolve_channel_ref(ref, directory=_FakeDirectory(truncated=True))
 
@@ -445,5 +446,6 @@ def test_resolve_says_no_such_channel_on_an_exhausted_miss():
     """The counter-case: a listing that ran to its end is a trustworthy miss,
     so the refusal is the definitive one (spelling / invite / scopes)."""
     ref = parse_channel_ref("slack@#test-room")
+    assert ref is not None
     with pytest.raises(ValueError, match="no Slack channel named"):
         resolve_channel_ref(ref, directory=_FakeDirectory(truncated=False))

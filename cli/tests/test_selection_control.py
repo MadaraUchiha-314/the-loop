@@ -193,6 +193,7 @@ def _typed(config, channel, text, *, thread, author="UHUMAN", addressed=False):
 
 def test_the_rows_are_read_off_the_checklists_own_text():
     rows = selection_rows(CHECKLIST)
+    assert rows is not None
     assert [(r.token, r.ticked) for r in rows.phases] == [
         ("brainstorming", True),
         ("requirements-definition", True),
@@ -434,7 +435,9 @@ def test_an_execute_press_composes_the_signed_execute_from_the_boxes(
     assert selection._parse_surface(body) == selection.SURFACE_PULL_REQUEST
     from the_loop.channels.envelope import parse as parse_envelope
 
-    assert parse_envelope(body).actor == {"github": "gh-UHUMAN", "slack": "UHUMAN"}
+    envelope = parse_envelope(body)
+    assert envelope is not None
+    assert envelope.actor == {"github": "gh-UHUMAN", "slack": "UHUMAN"}
     assert len(client.updates) == 1
     _, ts, _, blocks = client.updates[0]
     assert ts == press["message"]["ts"]
@@ -622,6 +625,7 @@ def test_without_clause_reads_numbers_and_names_after_the_keyword():
 def test_apply_without_unticks_the_named_phases_and_keeps_every_other_row():
     """T1: `execute without 1, 3` — by number in checklist order, or by name."""
     rows = selection_rows(CHECKLIST)
+    assert rows is not None
     composed, refusal = apply_without(rows, ["1", "design"], KEYWORD)
     assert refusal == ""
     lines = composed.splitlines()
@@ -662,7 +666,9 @@ def test_abuse_an_unknown_or_unskippable_phase_refuses_the_whole_reply(items, re
     """Abuse case 4: a name the checklist does not offer — a typo, a protected
     phase, a row that is not a phase — refuses the reply with the reason, and
     names what was offered; one bad name among good ones refuses all of them."""
-    composed, refusal = apply_without(selection_rows(CHECKLIST), items, KEYWORD)
+    rows = selection_rows(CHECKLIST)
+    assert rows is not None
+    composed, refusal = apply_without(rows, items, KEYWORD)
     assert composed == "" and reason in refusal
     assert "nothing was recorded" in refusal or "needs the phases" in refusal
     assert "1. `brainstorming`" in refusal and "5. `design-critic-review`" in refusal
@@ -670,6 +676,7 @@ def test_abuse_an_unknown_or_unskippable_phase_refuses_the_whole_reply(items, re
 
 def test_abuse_a_hostile_name_is_named_never_echoed():
     rows = selection_rows(CHECKLIST)
+    assert rows is not None
     for hostile in ("<!channel>", "x" * 60, "design;rm -rf /", "@here"):
         composed, refusal = apply_without(rows, [hostile], KEYWORD)
         assert composed == "" and hostile not in refusal and "that name" in refusal
@@ -840,6 +847,7 @@ def test_the_checklist_copy_neither_threatens_nor_promises_ticking_right_here():
     assert "recorded as its own declared choice" in body
     # and what the hook posts is what the channel reads: its rows are the control's
     rows = selection_rows(body)
+    assert rows is not None
     ordered = list(load_graph().ordered())
     assert [r.token for r in rows.phases if r.ticked] == [
         n.id for n in ordered if n.skippable and not n.opt_in
