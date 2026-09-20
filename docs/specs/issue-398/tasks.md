@@ -48,7 +48,7 @@ overrides: {}
       this file; `evidence/` — automated tests, self-review, security review,
       documentation, reviewer briefing. _Depends on:_ A3, B2 · _Test:_ T12
       (markdownlint).
-- [ ] **D1 — present for the pick.** Push, open the PR with the reviewer briefing as its
+- [x] **D1 — present for the pick.** Push, open the PR with the reviewer briefing as its
       body, comment on the ticket with the gallery, the SVGs and the PR, and rest the
       label at `loop:needs-review`. _Depends on:_ C1 · _Requirements:_ R4.3, R4.4 ·
       _Test:_ T11 (the owner's, on the ticket).
