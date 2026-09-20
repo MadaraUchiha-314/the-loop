@@ -1,3 +1,9 @@
+## v19.8.2 (2026-09-20)
+
+### Fix
+
+- **issue-396**: `graph status` reads the state file the runtime wrote, and says which (#401)
+
 ## v19.8.1 (2026-09-20)
 
 ### Fix
