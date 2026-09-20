@@ -382,7 +382,51 @@ def test_timeout_is_reported_as_a_failed_round(tmp_path: Path):
     )
     result = run_critic(critic, {"prompt": "review"}, cwd=str(tmp_path))
     assert result.ok is False
-    assert "timed out after 0.5s" in result.error
+    assert "timed out after the-loop's 0.5s limit" in result.error
+    # issue-393 R5.4: the failure names the flag that raises it, and points at
+    # the caller's own tool timeout as the other possible cap.
+    assert "--timeout" in result.error
+    assert "tool timeout" in result.error
+
+
+def test_an_explicit_timeout_reaches_subprocess_verbatim(tmp_path: Path, monkeypatch):
+    """
+    Scenario: --timeout is honoured end to end
+
+    Requirement: issue-393 R5.1 (B9). The observed ~120 s critic death was an
+    external caller's tool timeout, never the wrapper — the wrapper has honoured
+    the value since v10. This pins that: whatever run_critic is handed is the
+    exact `timeout=` subprocess.run sees, with no hidden cap in between.
+    """
+    seen = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = "{}"
+        stderr = ""
+
+    def _fake_run(argv, **kwargs):
+        seen["timeout"] = kwargs.get("timeout")
+        return _Proc()
+
+    monkeypatch.setattr(critics.subprocess, "run", _fake_run)
+    monkeypatch.setattr(critics.shutil, "which", lambda _b: "/usr/bin/stub")
+    critic = Critic(
+        name="stub", command="stub", args=("{prompt}",), timeout_seconds=42.0
+    )
+    # An explicit override wins over the critic's own timeoutSeconds…
+    run_critic(critic, {"prompt": "review"}, cwd=str(tmp_path), timeout=600.0)
+    assert seen["timeout"] == 600.0
+    # …and with no override, the critic's configured value is used verbatim —
+    # never a smaller hidden cap.
+    run_critic(critic, {"prompt": "review"}, cwd=str(tmp_path))
+    assert seen["timeout"] == 42.0
+
+
+def test_the_default_timeout_is_generous_for_a_full_agent():
+    """R5.2: the default accommodates a harness that spawns a whole agent —
+    well above the 120 s an impatient caller might impose."""
+    assert critics.DEFAULT_TIMEOUT_SECONDS >= 300.0
 
 
 def test_env_overlays_the_inherited_environment(tmp_path: Path, monkeypatch):
@@ -496,6 +540,8 @@ def test_policy_prints_the_defaulted_block(tmp_path: Path, capsys):
         "criticReviewCount": 2,
         "stopOnNoNewFindings": True,
         "escalateOnRepeatFinding": True,
+        # issue-393 R5.3: per-critic effective timeouts; none configured here.
+        "criticTimeouts": {},
     }
 
 
@@ -507,6 +553,7 @@ def test_policy_text_is_one_key_per_line(tmp_path: Path, capsys):
         "criticReviewCount: 3",
         "stopOnNoNewFindings: true",
         "escalateOnRepeatFinding: true",
+        "criticTimeouts: {}",  # issue-393 R5.3, empty with no critics configured
     ]
 
 

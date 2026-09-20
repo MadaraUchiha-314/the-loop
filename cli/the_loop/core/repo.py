@@ -95,8 +95,23 @@ def review_policy(repo: str = "") -> Dict[str, Any]:
 
     ``repo`` is kept for the route's shape and is not consulted: since issue-352 the
     counts are the operator's, not any repository's.
+
+    Also carries each configured critic's **effective timeout** (issue-393
+    B9/R5.3): the value a round will actually use — the critic's
+    ``timeoutSeconds`` or the built-in default — so an operator can see, without
+    reading the source, that the round is not capped at some hidden 120 s. A
+    critic-load failure never breaks the policy read; the timeouts are simply
+    omitted then.
     """
-    return critics_mod.load_review_policy()
+    policy = dict(critics_mod.load_review_policy())
+    try:
+        policy["criticTimeouts"] = {
+            critic.name: critic.timeout_seconds
+            for critic in critics_mod.load_critics()
+        }
+    except Exception:  # noqa: BLE001 — a broken critics[] never hides the counts
+        pass
+    return policy
 
 
 def spec_dir_for(repo: str, work_item: str) -> str:

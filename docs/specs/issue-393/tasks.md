@@ -29,7 +29,7 @@ overrides: {}
       `_read_memberships` (`users.conversations`, public+private) consulted before the
       workspace listing; listings record `truncated`; refusals distinguish
       truncated/exhausted and name paths + remedy. _Req:_ R1 · _Test:_ T1 unit rows.
-- [ ] **A4 — critic timeout & detach (B9).** Regression test pinning `--timeout`
+- [x] **A4 — critic timeout & detach (B9).** Regression test pinning `--timeout`
       threading; `critic run --detach` + `critic collect` with round state under
       `.the-loop/critic-rounds/`; `critic policy` prints effective timeout; timeout
       error names the flag. _Req:_ R5 · _Test:_ T1 rows.

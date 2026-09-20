@@ -447,7 +447,19 @@ def run_critic(
         )
     except subprocess.TimeoutExpired:
         result.duration_seconds = time.monotonic() - started
-        result.error = f"{binary} timed out after {limit}s"
+        # Name the flag that raises it (issue-393 B9/R5.4): a high-reasoning
+        # critic routinely needs minutes, and the operator should not have to
+        # read the source to discover the round is capped or how to lift it.
+        # Note the two layers: this is the-loop's OWN timeout; if a round dies
+        # around ~120 s while `--timeout`/`timeoutSeconds` is far higher, the cap
+        # is the *caller's* tool timeout, not this one — run the round as a
+        # background process so a caller's timeout cannot cut it short.
+        result.error = (
+            f"{binary} timed out after the-loop's {limit}s limit — raise it with "
+            f"`--timeout` or the critic's `timeoutSeconds`. If it instead died "
+            f"far short of {limit}s, the cap is the caller's own tool timeout, "
+            f"not this one: run the round as a background process"
+        )
         return result
     except OSError as exc:
         result.duration_seconds = time.monotonic() - started
