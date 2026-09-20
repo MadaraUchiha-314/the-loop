@@ -20,10 +20,11 @@ import re
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
-from ..control import COLLABORATOR_COMMANDS, ControlConfig
+from ..control import COLLABORATOR_COMMANDS, EXECUTE, ControlConfig
 
 __all__ = [
     "KINDS",
+    "SKIP",
     "VERBS",
     "Verb",
     "addresses_a_verb",
@@ -35,6 +36,13 @@ __all__ = [
 
 #: The-loop's own verbs, matched as the whole first token, case-insensitively.
 VERBS: Tuple[str, ...] = ("record-context", "record-decision", "help")
+
+#: The phase-selection shorthand (issue-393 R9.3, F1): ``skip <phase, …>`` is
+#: ``<execute keyword> without <phase, …>`` — the same signed execute, for a
+#: member whose connector cannot press a box. Composed here, resolved by the
+#: pipeline against the work item's checklist, so it rides the execute keyword's
+#: own authorization and grant rather than a vocabulary of its own.
+SKIP = "skip"
 
 #: What a decision may be about. Optional on the typed form (``record-decision
 #: tech: keep poll mode``); the modal's select offers exactly these.
@@ -141,13 +149,18 @@ def compose_keyword(text: str, control: ControlConfig) -> str:
     parts = (text or "").strip().split(None, 1)
     if not parts:
         return text
+    rest = parts[1].strip() if len(parts) > 1 else ""
+    if parts[0].lower() == SKIP:
+        # `skip design` → `the-loop execute without design` (issue-393 R9.3):
+        # nothing of its own to authorize or grant — it IS the execute keyword.
+        keyword = control.keyword(EXECUTE)
+        return f"{keyword} without {rest}".strip() if keyword else text
     command = _command_for(parts[0].lower(), control)
     if command is None:
         return text
     keyword = control.keyword(command)
     if not keyword:
         return text
-    rest = parts[1].strip() if len(parts) > 1 else ""
     if command in COLLABORATOR_COMMANDS:
         # A member typed as Slack types them (R3.5): `<@U0456>` or
         # `<@U0456|dana>` is the roster's `slack:U0456` token.
@@ -173,6 +186,8 @@ def help_text(config) -> str:
         "work item (authorized users only)\n"
         "• `start`, `execute`, … — any control keyword's last word "
         "(authorized users only)\n"
+        "• `execute without 1, 3` or `skip <phase>` — execute with those phases "
+        "of the checklist unticked (authorized users only)\n"
         "• `help` — this text\n"
         "• anything else — a reply, delivered to the session as input\n"
         f"What this channel may do here:\n{grants}"

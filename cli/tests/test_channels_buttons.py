@@ -106,12 +106,16 @@ def checklist_event(text=CHECKLIST, event_type="comment.agent"):
 
 
 def buttons(blocks):
-    """Every button in ``blocks``, as ``(action_id, value_or_url)``."""
+    """Every button in ``blocks``, as ``(action_id, value_or_url)`` — buttons
+    only: the phase-selection control's checkboxes (issue-393) share the
+    ``actions`` block type and are not buttons."""
     out = []
     for block in blocks:
         if block.get("type") != "actions":
             continue
         for element in block["elements"]:
+            if element.get("type") != "button":
+                continue
             out.append(
                 (element["action_id"], element.get("value") or element.get("url"))
             )

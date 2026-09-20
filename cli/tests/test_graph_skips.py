@@ -1084,7 +1084,9 @@ def test_the_checklist_says_so_when_nothing_is_protected(repo, fake_github):
         assert f"- [x] {node}" in body
     assert "always run and are not selectable" not in body
     assert "Every phase of this loop is selectable" in body
-    assert "recorded against your name" in body
+    # The choice is recorded and said so — without the threat (issue-393 R9.5).
+    assert "recorded as its own declared choice" in body
+    assert "recorded against your name" not in body
 
 
 def test_the_shipped_checklist_offers_every_phase_the_item_walks(repo, fake_github):

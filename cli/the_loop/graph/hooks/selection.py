@@ -115,8 +115,11 @@ def _execute_keyword(ctx: HookContext) -> str:
 #: `- [x] design` / `- [ ] design` — one phase line of the checklist. The token
 #: is a node id, so what the user reads is what the graph routes on.
 #:
+#: A leading `>` is admitted too (issue-393 R9): a selection made in a Slack
+#: room reaches the ticket as the ledger's relay of the member's words, which
+#: quotes them — `> - [ ] design` is that person's unticked box, not prose.
 _CHECK_LINE = re.compile(
-    r"^\s*[-*]\s*\[(?P<mark>[ xX])\]\s*`?(?P<token>[A-Za-z0-9][A-Za-z0-9._-]*)`?",
+    r"^\s*(?:>\s*)*[-*]\s*\[(?P<mark>[ xX])\]\s*`?(?P<token>[A-Za-z0-9][A-Za-z0-9._-]*)`?",
     re.MULTILINE,
 )
 
@@ -491,8 +494,7 @@ def _checklist_body(ctx: HookContext) -> str:
         "Before the loop starts, tell it what this item actually needs. "
         "**Untick anything this work item does not need"
         + (", tick anything optional it does want" if opt_in else "")
-        + " — right here on this "
-        f"comment — then reply `{keyword}`.** The tick state at that moment is "
+        + f", then reply `{keyword}`.** The tick state at that moment is "
         "frozen and becomes the graph this item walks.",
         "",
     ]
@@ -524,13 +526,17 @@ def _checklist_body(ctx: HookContext) -> str:
         # No protected rows is not an empty section — it is the loudest thing
         # this comment has to say (issue-179). The outer loop protects nothing
         # but this gate, so the honesty a floor used to provide now comes from
-        # the reply being signed: say that, rather than printing nothing.
+        # the reply being signed: say that, rather than printing nothing. Said
+        # plainly (issue-393 R9.5): the choice is recorded — in the work item's
+        # state, in the confirmation here, in every `the-loop check` — and that
+        # record is the whole of it; no threat rides on the sentence.
         lines += [
             "**Every phase of this loop is selectable — including the reviews, the "
             "security review and the approval gate.** Nothing but this question is "
-            "mandatory, so each box you untick is an omission recorded against your "
-            "name: in the work item's work-item state, in a confirmation comment here, "
-            "and in every `the-loop check` from now on.",
+            "mandatory. The phases this item skips are recorded as its own "
+            "declared choice — in its work-item state, in a confirmation comment "
+            "here, and in every `the-loop check` from now on — so a lighter run "
+            "is always a visible one.",
             "",
         ]
     if _asks_surface(ctx):

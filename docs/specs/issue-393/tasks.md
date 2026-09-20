@@ -68,7 +68,7 @@ overrides: {}
       `chat.update` for progress (stale ts ⇒ fresh post), thread replies via stored
       `gate_ts`, suppressions applied; GitHub path untouched. _Deps:_ B2–B4. _Req:_
       R6, R10 · _Test:_ T2 suppression/edit/thread Scenarios.
-- [ ] **B6 — phase selection control (F1).** Slack rendering of the checklist as
+- [x] **B6 — phase selection control (F1).** Slack rendering of the checklist as
       in-message checkboxes + outer-loop element + Execute composing the signed
       execute (attributed, authorized); typed `execute without <n,…>` / `skip <phase>`
       grammar; no-interactivity fallback copy; adversarial copy removed. _Deps:_ B5.

@@ -1343,11 +1343,14 @@ class UpdatingSlackClient(FakeSlackClient):
 
 
 def _button_ids(blocks):
+    """The buttons' action ids — buttons only: the phase-selection control's
+    checkboxes (issue-393) share the ``actions`` block type."""
     return [
         element["action_id"]
         for block in blocks or []
         if block.get("type") == "actions"
         for element in block["elements"]
+        if element.get("type") == "button"
     ]
 
 

@@ -86,6 +86,22 @@ __all__ = [
     "DEFAULT_MAX_CHARS",
     "DEFAULT_REACTIONS",
     "PHASE_SELECTION_MARKER",
+    "CHECKBOX_LIMIT",
+    "EXECUTE_ACTION",
+    "PHASE_BOX_ACTION",
+    "SELECTION_BLOCK",
+    "SURFACE_BOX_ACTION",
+    "SURFACE_TOKEN",
+    "WITHOUT",
+    "SelectionRow",
+    "SelectionRows",
+    "apply_without",
+    "compose_selection_execute",
+    "github_checklist_line",
+    "is_phase_selection",
+    "selection_control_blocks",
+    "selection_rows",
+    "without_clause",
     "REACTION_STATES",
     "READ_MODES",
     "CONVERSATION_KINDS",
@@ -531,6 +547,440 @@ BUTTON_NAMES: Dict[str, str] = {
 #: ``comment.agent`` mirror. Pinned to the hook's constant by a test; spelled here
 #: so rendering a Slack message never imports the graph.
 PHASE_SELECTION_MARKER = "<!-- the-loop:phase-selection -->"
+
+
+# -- the phase-selection control (issue-393 R9) --------------------------------------
+#
+# The checklist the hook posts on the ticket asks for boxes to be ticked; Slack
+# cannot tick a mirrored comment, so in a room that can receive a press the same
+# question is drawn as Block Kit checkboxes — the phases pre-ticked as the
+# checklist ticks them, the outer-loop question as an element of its own (R9.2),
+# Execute beside them. Pressing Execute composes the very reply a person types
+# on GitHub with the list in it: the keyword, then `- [x]` / `- [ ]` rows — so
+# the gate's one parser (`selection._parse_selection`) reads a Slack selection
+# exactly as it reads a typed one, and no second freeze path exists.
+
+#: One checklist row — the hook's ``_CHECK_LINE`` (``graph/hooks/selection.py``)
+#: with the rest of the line captured. Spelled here for the reason the marker
+#: is (rendering imports no graph) and pinned to the hook's grammar by a test.
+_CHECKLIST_ROW = re.compile(
+    r"^\s*(?:>\s*)*[-*]\s*\[(?P<mark>[ xX])\]\s*`?(?P<token>[A-Za-z0-9][A-Za-z0-9._-]*)`?"
+    r"(?P<about>[^\n]*)",
+    re.MULTILINE,
+)
+#: A protected phase's row — a bare bullet naming a node and nothing else, the
+#: shape of the checklist's "these phases always run" list.
+_PLAIN_ROW = re.compile(
+    r"^[ \t]*[-*][ \t]+(?P<token>[A-Za-z0-9][A-Za-z0-9._-]*)[ \t]*$", re.MULTILINE
+)
+#: A token a row may carry — what a checkbox ``value`` and a reply's name are
+#: validated against before either is written into a record.
+_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,74}$")
+
+#: The checklist's rows that are NOT phases: the hook's ``SURFACE_TOKEN`` and the
+#: prefixes of its ``PR_SESSIONS_TOKENS`` / ``MODEL_PREFIX`` / ``EFFORT_PREFIX``
+#: rows. Pinned to the hook's by a test, like the marker.
+SURFACE_TOKEN = "outer-loop-on-pull-request"
+_NON_PHASE_PREFIXES = ("pr-sessions-", "model-", "effort-")
+
+#: The control's own ids. A block id under :data:`SELECTION_BLOCK` is part of the
+#: control — the state a press carries is keyed by it, and the press report takes
+#: it away once the press landed (it acted once, like the button).
+SELECTION_BLOCK = f"{ACTION_PREFIX}selection"
+PHASE_BOX_ACTION = f"{ACTION_PREFIX}phase-box"
+SURFACE_BOX_ACTION = f"{ACTION_PREFIX}surface-box"
+EXECUTE_ACTION = f"{ACTION_PREFIX}command:execute"
+#: Slack's ceiling on one checkboxes element's options; a longer list is chunked.
+CHECKBOX_LIMIT = 10
+#: The reply grammar's one word (R9.3, F1): ``<execute keyword> without <n, …>``.
+WITHOUT = "without"
+#: The question's emoji — one state emoji per message (R11.1), the one a question
+#: carries in the voice table.
+_SELECTION_EMOJI = "🤔"
+
+
+@dataclass(frozen=True)
+class SelectionRow:
+    """One box of the checklist: its token, its tick, and the words beside it."""
+
+    token: str
+    ticked: bool
+    about: str = ""
+
+
+@dataclass(frozen=True)
+class SelectionRows:
+    """What a phase-selection checklist offers, read off its own text.
+
+    ``phases`` are the selectable phase rows in checklist order — the order the
+    reply grammar's numbers count; ``surface`` the outer-loop row when the loop
+    asks it; ``others`` the rows that are neither (sessions, model, effort);
+    ``always`` the protected phases named as plain bullets.
+    """
+
+    phases: Tuple[SelectionRow, ...]
+    surface: Optional[SelectionRow] = None
+    others: Tuple[SelectionRow, ...] = ()
+    always: Tuple[str, ...] = ()
+
+    def phase(self, name: str) -> Optional[SelectionRow]:
+        """The phase row ``name`` names, case-insensitively — ``None`` for none."""
+        wanted = name.strip().strip("`").lower()
+        for row in self.phases:
+            if row.token.lower() == wanted:
+                return row
+        return None
+
+
+def _about(rest: str) -> str:
+    """The words after a row's token, without the dash that joins them."""
+    return " ".join(rest.strip().lstrip("—-–:").split())
+
+
+def is_phase_selection(event: Event) -> bool:
+    """Whether ``event`` is the checklist's mirror — the hook's own comment,
+    carrying its marker. A human's comment never is, whatever it quotes."""
+    return event.event_type == "comment.agent" and PHASE_SELECTION_MARKER in event.text
+
+
+def selection_rows(text: str) -> Optional[SelectionRows]:
+    """The rows of a phase-selection checklist body — ``None`` for any other text.
+
+    Read off the checklist's own markdown, because the phase names exist nowhere
+    else the channel can see: the rows are the hook's rendering of the graph the
+    work item walks, and this is their one transcription. A token appearing twice
+    keeps its first row.
+    """
+    if PHASE_SELECTION_MARKER not in (text or ""):
+        return None
+    phases: List[SelectionRow] = []
+    others: List[SelectionRow] = []
+    surface: Optional[SelectionRow] = None
+    seen: set = set()
+    for match in _CHECKLIST_ROW.finditer(text):
+        token = match.group("token")
+        if token in seen:
+            continue
+        seen.add(token)
+        row = SelectionRow(
+            token, bool(match.group("mark").strip()), _about(match.group("about"))
+        )
+        if token == SURFACE_TOKEN:
+            surface = row
+        elif token.startswith(_NON_PHASE_PREFIXES):
+            others.append(row)
+        else:
+            phases.append(row)
+    always = tuple(
+        dict.fromkeys(
+            match.group("token")
+            for match in _PLAIN_ROW.finditer(text)
+            if match.group("token") not in seen
+        )
+    )
+    return SelectionRows(tuple(phases), surface, tuple(others), always)
+
+
+def _row_line(token: str, ticked: bool, *, code: bool = False) -> str:
+    """One checklist row as the hook writes it — a phase bare, any other token in
+    backticks — which is exactly the shape its parser reads back."""
+    name = f"`{token}`" if code else token
+    return f"- [{'x' if ticked else ' '}] {name}"
+
+
+def _mrkdwn(text: str) -> Dict[str, Any]:
+    return {"type": "mrkdwn", "text": text}
+
+
+def _checkbox_option(number: int, row: SelectionRow) -> Dict[str, Any]:
+    """One option: numbered as the reply grammar counts it, the token as its
+    value, the checklist's own words (or the opt-in note) as its description."""
+    option: Dict[str, Any] = {
+        "text": _mrkdwn(f"{number}. `{row.token}`"[:_OPTION_TEXT_LIMIT]),
+        "value": row.token,
+    }
+    about = row.about or ("" if row.ticked else "optional — runs only if ticked")
+    if about:
+        option["description"] = _mrkdwn(about[:_OPTION_TEXT_LIMIT])
+    return option
+
+
+def selection_control_blocks(rows: SelectionRows, keyword: str) -> List[Dict[str, Any]]:
+    """The checklist as a control (R9.1, R9.2): the question, one checkboxes
+    element per ten phases (pre-ticked as the checklist is), the outer-loop
+    question as its own element, and a note on what is NOT chosen here.
+
+    No Execute button here — the caller draws it in the message's actions block,
+    as it does today, so a press is the same press.
+    """
+    opt_in = any(not row.ticked for row in rows.phases)
+    lead = (
+        f"{_SELECTION_EMOJI} *Which phases does this work item need?* Untick what "
+        "it does not need"
+        + (", tick anything optional it does want" if opt_in else "")
+        + ", then press *Execute*. The boxes as they stand at that moment are the "
+        "graph this item walks."
+    )
+    blocks: List[Dict[str, Any]] = [{"type": "section", "text": _mrkdwn(lead)}]
+    for index in range(0, len(rows.phases), CHECKBOX_LIMIT):
+        chunk = rows.phases[index : index + CHECKBOX_LIMIT]
+        group = index // CHECKBOX_LIMIT
+        label = "*Phases* — ticked ones run" if group == 0 else "*Phases* (continued)"
+        options = [
+            _checkbox_option(index + offset + 1, row)
+            for offset, row in enumerate(chunk)
+        ]
+        element: Dict[str, Any] = {
+            "type": "checkboxes",
+            "action_id": f"{PHASE_BOX_ACTION}:{group}",
+            "options": options,
+        }
+        initial = [option for option, row in zip(options, chunk) if row.ticked]
+        if initial:
+            element["initial_options"] = initial
+        blocks.append(
+            {
+                "type": "section",
+                "block_id": f"{SELECTION_BLOCK}:phases-label:{group}",
+                "text": _mrkdwn(label),
+            }
+        )
+        blocks.append(
+            {
+                "type": "actions",
+                "block_id": f"{SELECTION_BLOCK}:phases:{group}",
+                "elements": [element],
+            }
+        )
+    if rows.surface is not None:
+        option = {
+            "text": _mrkdwn("On a pull request in this repository instead"),
+            "value": SURFACE_TOKEN,
+        }
+        element = {
+            "type": "checkboxes",
+            "action_id": SURFACE_BOX_ACTION,
+            "options": [option],
+        }
+        if rows.surface.ticked:
+            element["initial_options"] = [option]
+        blocks.append(
+            {
+                "type": "section",
+                "block_id": f"{SELECTION_BLOCK}:surface-label",
+                "text": _mrkdwn(
+                    "*Where does the outer loop happen?* Left unticked, the "
+                    "requirements, design, testing plan and task list are iterated "
+                    "on the work item itself (the default)."
+                ),
+            }
+        )
+        blocks.append(
+            {
+                "type": "actions",
+                "block_id": f"{SELECTION_BLOCK}:surface",
+                "elements": [element],
+            }
+        )
+    notes: List[str] = []
+    if rows.always:
+        notes.append(
+            "Always run: " + ", ".join(f"`{node}`" for node in rows.always) + "."
+        )
+    notes.append(
+        "Sessions per pull request, model and effort keep this deployment's "
+        "defaults from here — to choose them, tick them on GitHub and reply "
+        f"`{keyword}` there instead."
+    )
+    blocks.append({"type": "context", "elements": [_mrkdwn(" ".join(notes))]})
+    return blocks
+
+
+def github_checklist_line(url: str, keyword: str) -> str:
+    """What a room that cannot carry the control is told instead (R9.4): the
+    checklist is edited on GitHub — linked — and the reply is said there."""
+    where = f"<{url}|on GitHub>" if url else "on GitHub"
+    say = (
+        f"reply `{keyword}` there"
+        if keyword
+        else "reply with the execute keyword there"
+    )
+    return f"✍️ This checklist is edited {where}: tick the boxes there, then {say}."
+
+
+def _control_groups(
+    message: Mapping[str, Any],
+) -> List[Tuple[str, str, List[Tuple[str, bool]]]]:
+    """``(block_id, action_id, [(token, initially ticked), …])`` for every
+    checkboxes element of the control in ``message``, in message order — read
+    off the blocks the bot itself posted, values validated as tokens."""
+    groups: List[Tuple[str, str, List[Tuple[str, bool]]]] = []
+    for block in message.get("blocks") or []:
+        if not isinstance(block, Mapping) or block.get("type") != "actions":
+            continue
+        block_id = str(block.get("block_id") or "")
+        if not block_id.startswith(SELECTION_BLOCK):
+            continue
+        for element in block.get("elements") or []:
+            if not isinstance(element, Mapping) or element.get("type") != "checkboxes":
+                continue
+            action_id = str(element.get("action_id") or "")
+            if not (
+                action_id.startswith(PHASE_BOX_ACTION)
+                or action_id == SURFACE_BOX_ACTION
+            ):
+                continue
+            initial = {
+                str(o.get("value") or "")
+                for o in element.get("initial_options") or []
+                if isinstance(o, Mapping)
+            }
+            options = [
+                (str(o.get("value")), str(o.get("value")) in initial)
+                for o in element.get("options") or []
+                if isinstance(o, Mapping) and _TOKEN_RE.match(str(o.get("value") or ""))
+            ]
+            if options:
+                groups.append((block_id, action_id, options))
+    return groups
+
+
+def _chosen(state: Any, block_id: str, action_id: str) -> Optional[set]:
+    """The values ticked in one element per the press's ``state`` — ``None`` when
+    the state does not carry that element at all (or not in a readable shape)."""
+    if not isinstance(state, Mapping):
+        return None
+    values = state.get("values")
+    if not isinstance(values, Mapping):
+        return None
+    block = values.get(block_id)
+    if not isinstance(block, Mapping):
+        return None
+    element = block.get(action_id)
+    if not isinstance(element, Mapping):
+        return None
+    selected = element.get("selected_options")
+    if not isinstance(selected, list):
+        return None
+    return {
+        str(option.get("value") or "")
+        for option in selected
+        if isinstance(option, Mapping)
+    }
+
+
+def compose_selection_execute(
+    keyword: str, message: Mapping[str, Any], state: Any
+) -> str:
+    """The reply an Execute press composes on the control (R9.1).
+
+    The keyword, then one `- [x]` / `- [ ]` row per box the message offered,
+    ticked as the press's ``state.values`` says — the list a person puts in an
+    execute comment on GitHub, which the gate reads over the checklist. A
+    message without the control composes the bare keyword, as it always did.
+
+    Fail-closed, the gate's own way: an element the state does not carry (a
+    partial or malformed payload) keeps the ticks it was drawn with — every
+    default-on phase runs, no opt-in does, the outer loop stays on the work
+    item — so a broken press can only ever ask for *more* process. A value the
+    message never offered is not a box and is ignored.
+    """
+    groups = _control_groups(message)
+    if not groups:
+        return keyword
+    lines: List[str] = []
+    for block_id, action_id, options in groups:
+        chosen = _chosen(state, block_id, action_id)
+        for token, initial in options:
+            ticked = initial if chosen is None else token in chosen
+            lines.append(
+                _row_line(token, ticked, code=(action_id == SURFACE_BOX_ACTION))
+            )
+    return f"{keyword}\n\n" + "\n".join(lines)
+
+
+def without_clause(text: str, keyword: str) -> Optional[List[str]]:
+    """The names and numbers after ``<keyword> without`` in ``text`` — ``[]`` for
+    a clause naming nothing, ``None`` when the text carries no such clause."""
+    if not keyword or not text:
+        return None
+    pattern = (
+        r"(?<![\w:-])"
+        + re.escape(keyword)
+        + r"[ \t]+"
+        + WITHOUT
+        + r"(?![\w-])(?P<rest>[^\n]*)"
+    )
+    match = re.search(pattern, text, re.IGNORECASE)
+    if match is None:
+        return None
+    items = []
+    for raw in re.split(r"[\s,;]+", match.group("rest")):
+        item = raw.strip().strip("`'\"“”.:!?()[]{}")
+        if item and item.lower() not in ("and", "&", "the", "phase", "phases"):
+            items.append(item)
+    return items
+
+
+def _safe_name(item: str) -> str:
+    """``item`` as a refusal may echo it: a token, in backticks — anything else
+    (prose, markup, a broadcast) is named as *that*, never repeated."""
+    return f"`{item}`" if _TOKEN_RE.match(item) and len(item) <= 40 else "that name"
+
+
+def _offered(rows: SelectionRows) -> str:
+    listed = ", ".join(f"{n}. `{row.token}`" for n, row in enumerate(rows.phases, 1))
+    return (
+        f"The phases you may leave out: {listed} — say `execute without 2, 5` or "
+        "`skip <phase>`."
+    )
+
+
+def apply_without(
+    rows: SelectionRows, items: Sequence[str], keyword: str
+) -> Tuple[str, str]:
+    """``(composed reply, refusal)`` for ``execute without <items>`` (R9.3).
+
+    The checklist as it stands, every row kept as ticked, with the named phases
+    — by number in checklist order, or by name — unticked; the keyword first,
+    the list after, the reply the gate reads over the checklist. **Any item that
+    is not one of the offered phases refuses the whole reply** with the reason
+    (abuse case 4): a typo, a protected phase, a row that is not a phase — none
+    of them may quietly freeze a selection other than the one that was asked.
+    """
+    if not items:
+        return "", f"`{WITHOUT}` needs the phases to leave out. " + _offered(rows)
+    drop: set = set()
+    for item in items:
+        if item.isdigit():
+            number = int(item)
+            if not 1 <= number <= len(rows.phases):
+                return "", (
+                    f"There is no phase {number} on this checklist, so nothing was "
+                    "recorded. " + _offered(rows)
+                )
+            drop.add(rows.phases[number - 1].token)
+            continue
+        row = rows.phase(item)
+        if row is None:
+            if item.lower() in {node.lower() for node in rows.always}:
+                return "", (
+                    f"{_safe_name(item)} always runs on this work item and cannot be "
+                    "skipped, so nothing was recorded. " + _offered(rows)
+                )
+            return "", (
+                f"{_safe_name(item)} is not a phase this checklist offers, so nothing "
+                "was recorded. " + _offered(rows)
+            )
+        drop.add(row.token)
+    lines = [
+        _row_line(row.token, row.ticked and row.token not in drop)
+        for row in rows.phases
+    ]
+    if rows.surface is not None:
+        lines.append(_row_line(SURFACE_TOKEN, rows.surface.ticked, code=True))
+    lines += [_row_line(row.token, row.ticked, code=True) for row in rows.others]
+    return f"{keyword}\n\n" + "\n".join(lines), ""
 
 
 def build_client(token: str):
@@ -991,6 +1441,7 @@ def render_blocks(
     commands: Optional[Mapping[str, str]] = None,
     long_messages: str = DEFAULT_DIGEST_MODE,
     agentic: bool = False,
+    execute_keyword: str = "",
 ) -> List[Dict[str, Any]]:
     """``event`` as Block Kit: header, text, context, and the buttons it earns.
 
@@ -1005,6 +1456,13 @@ def render_blocks(
     — the text, the artifact excerpt — is drawn as mrkdwn and, above
     ``max_chars``, digested or truncated per ``long_messages`` (issue-338,
     :func:`fit`).
+
+    The phase-selection checklist (issue-393 R9) is the one message drawn as a
+    **control** rather than a digest: where its Execute button can be pressed
+    (``commands`` names ``execute``), its phases and its outer-loop question are
+    checkboxes (:func:`selection_control_blocks`) in place of the text; where it
+    cannot, the digest stands and a line says the checklist is edited on GitHub
+    (R9.4) — ``execute_keyword`` is the configured keyword that line names.
     """
     cap = min(max_chars, _SECTION_LIMIT)
 
@@ -1017,8 +1475,26 @@ def render_blocks(
             },
         }
 
+    def header() -> Dict[str, Any]:
+        title = _TITLES.get(event.event_type, event.event_type)
+        who = f" · {event.actor.label}" if event.actor and event.actor.label else ""
+        author = event.detail.get("author") if event.detail else ""
+        if author and not who:
+            who = f" · @{author}"
+        text = f"{title}{who} · {event.work_item}"[:_HEADER_LIMIT]
+        return {"type": "header", "text": {"type": "plain_text", "text": text}}
+
+    selection = selection_rows(event.text) if is_phase_selection(event) else None
+    control_keyword = str((commands or {}).get("execute") or "")
     blocks: List[Dict[str, Any]] = []
-    if agentic:
+    if selection is not None and control_keyword:
+        # The control (R9.1, R9.2): the header keeps its place outside a room;
+        # the checklist's prose gives way to the boxes, at every verbosity — the
+        # boxes are the point of the message, as the summary is of a gate's.
+        if not agentic:
+            blocks.append(header())
+        blocks.extend(selection_control_blocks(selection, control_keyword))
+    elif agentic:
         # issue-393 B4/R7, R11: no machine header — the room's binding already
         # says which item this is. One state emoji and the event's own
         # first-person sentence lead instead (voice.room_lead). The text section
@@ -1026,15 +1502,7 @@ def render_blocks(
         lead = room_lead(event)
         blocks.append(section(lead))
     else:
-        title = _TITLES.get(event.event_type, event.event_type)
-        who = f" · {event.actor.label}" if event.actor and event.actor.label else ""
-        author = event.detail.get("author") if event.detail else ""
-        if author and not who:
-            who = f" · @{author}"
-        header = f"{title}{who} · {event.work_item}"[:_HEADER_LIMIT]
-        blocks.append(
-            {"type": "header", "text": {"type": "plain_text", "text": header}}
-        )
+        blocks.append(header())
         if verbosity != "quiet" and event.text.strip():
             blocks.append(section(event.text))
     # issue-393 B1/R8: the agent's own summary leads the message when it wrote
@@ -1065,6 +1533,17 @@ def render_blocks(
             )
     elif verbosity == "normal" and event.detail.get("excerpt"):
         blocks.append(section(str(event.detail["excerpt"])))
+    if selection is not None and not control_keyword:
+        # No control can be posted here (R9.4): never "untick right here" where
+        # nothing can be unticked — say where the boxes are, and link them.
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [
+                    _mrkdwn(github_checklist_line(event.url, execute_keyword))
+                ],
+            }
+        )
     actions: List[Dict[str, Any]] = []
     if event.url:
         actions.append(
@@ -1655,7 +2134,9 @@ class SlackBotChannel:
         decision's ``remember`` is the placeholder for the message just posted —
         resolved to ``ts`` here — and the last event/node are always recorded so
         the dedupe rule can fire next time (issue-393 B5)."""
-        node = str((event.detail or {}).get("node") or (event.detail or {}).get("phase") or "")
+        node = str(
+            (event.detail or {}).get("node") or (event.detail or {}).get("phase") or ""
+        )
         changes: Dict[str, Any] = {
             "lastEvent": event.event_type,
             "lastNode": node,
@@ -1713,7 +2194,9 @@ class SlackBotChannel:
                 event.work_item,
                 decision.rule,
             )
-            return PostResult(channel=self.name, ok=True, thread=(bound and bound[1]) or "")
+            return PostResult(
+                channel=self.name, ok=True, thread=(bound and bound[1]) or ""
+            )
 
         blocks = render_blocks(
             event,
@@ -1723,6 +2206,7 @@ class SlackBotChannel:
             commands=self.config.command_buttons_for(*expected_commands(event)),
             long_messages=self.config.long_messages,
             agentic=agentic,
+            execute_keyword=self.config.keyword("execute"),
         )
         # The plain-text fallback — what the phone's notification shows — carries
         # the text section as drawn, so a digested message leads with the ask
@@ -1739,7 +2223,9 @@ class SlackBotChannel:
                 )
             elif decision.action == room_policy.THREAD and decision.ts:
                 response = client.chat_postMessage(
-                    channel=channel_id, text=text, blocks=blocks,
+                    channel=channel_id,
+                    text=text,
+                    blocks=blocks,
                     thread_ts=decision.ts,
                 )
             else:
@@ -1757,9 +2243,7 @@ class SlackBotChannel:
             raise ChannelError(f"slack: post failed: {exc}") from None
         # Record what the room now holds, so the next decision reads it (B5).
         if agentic and event.work_item:
-            self._remember_delivery(
-                event, decision, str(response.get("ts") or "")
-            )
+            self._remember_delivery(event, decision, str(response.get("ts") or ""))
         if bound and bound[1]:
             return PostResult(channel=self.name, ok=True, thread=bound[1])
         return PostResult(
@@ -2577,8 +3061,9 @@ def _press_blocks(
 ) -> List[Dict[str, Any]]:
     """The pressed message's blocks, rebuilt: an ``actions`` block keeps its link
     (``url``) elements only once the press landed — every element while it did
-    not — and is dropped when nothing remains; the outcome line closes the
-    message. A message with no blocks is its text."""
+    not — and is dropped when nothing remains; the phase-selection control's
+    blocks (issue-393 R9) go with the landed press too, having acted once; the
+    outcome line closes the message. A message with no blocks is its text."""
     blocks: List[Dict[str, Any]] = []
     source = message.get("blocks")
     if not isinstance(source, list) or not source:
@@ -2590,6 +3075,8 @@ def _press_blocks(
         ]
     for block in source:
         if not isinstance(block, Mapping):
+            continue
+        if landed and str(block.get("block_id") or "").startswith(SELECTION_BLOCK):
             continue
         if block.get("type") != "actions":
             blocks.append(dict(block))
