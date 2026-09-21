@@ -36,3 +36,18 @@ workItem: "github:MadaraUchiha-314/the-loop#398"
 | 2 | self (diff read) | new findings | (p) all five over the round-1 40 kB budget (39–63 kB) — a brush stroke needs ~2 px sampling → budget 64 kB in the checker and in `requirements.md`, with the reason; (q) two `zip()`s without `strict=` (ruff B905) → `strict=False`, the pairs are offset on purpose; (r) `url(` was a forbidden token but the knot's mask needs `mask="url(#…)"` → the external-reference regex admits `url(#` and refuses any other `url(`, the same rule as `href` | this PR |
 | 3 | self (final diff + gallery, after the security review's notes were taken) | new finding | (s) the rewritten fragment-only regex let `href="#ok"` through as *external* — with the quote optional, the lookahead could skip it and see the quote instead of the `#` → the lookahead allows an optional quote before the `#`; the negative probe (`automated-tests.md` § T8) pins both directions. The cap of three rounds is reached with this fixed and verified; nothing was found repeating. | this PR |
 | — | critic | unavailable | no critic CLI configured on this machine | `the-loop critic list` |
+
+## Human review — round 2 → round 3
+
+| Reviewer | Where | Finding | Disposition |
+|----------|-------|---------|-------------|
+| @MadaraUchiha-314 (owner, designer) | [PR #403 review comment on `option-5-enso.svg`](https://github.com/MadaraUchiha-314/the-loop/pull/403#discussion_r4058557797) | *"I am leaning towards this. Remove all others. Present some more colors and gradient options for this."* | round 3: the Ensō alone, its geometry frozen, in ten colourways — seven flat, two travelling gradients, one sweep; the four other marks removed; R1.1 superseded and R1.4 added in `requirements.md` § Review comments |
+
+## Review cycles — round 3
+
+| Round | Reviewer | Outcome | Findings → disposition | Link |
+|-------|----------|---------|------------------------|------|
+| 1 | self (rendering read) | new findings | (t) the travelling gradient's pieces stepped at every seam — each piece computed its own edge normals from its own few samples → the pieces are cut from **one** set of edges; (u) the pieces then showed tick marks along the edges — a closed Catmull-Rom spline per piece rounded its four corners → each piece is built from the stroke's **own Bézier segments** along its edges (`segment`, `piece`) with straight cuts across and a one-sample overlap, so adjacent pieces share an identical curve; (v) mauve was the one palette colour no colourway used → colourway 7 (mauve · dusk · clay) | this PR |
+| 2 | self (diff + budget read) | new findings | (w) the gallery (ten symbols) is 452 kB against the requirements' 300 kB budget written for five marks → the NFR raised to 500 kB with the reason, in `requirements.md`; (x) the allowlist needed exactly `linearGradient`, `stop`, `class` and seven gradient attributes, and a `fill="url(…)"` that is not a fragment had no rule → any `url(` value must be `url(#`, pinned by the probe | this PR |
+| 3 | self (final diff + gallery, both schemes) | zero (converged) | — | — |
+| — | critic | unavailable | no critic CLI configured on this machine | `the-loop critic list` |
