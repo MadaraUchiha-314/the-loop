@@ -24,15 +24,27 @@ Commits, publishing via GitHub Actions Trusted Publishing (OIDC).
   rewritten to the new version in the same bump commit (`.cz.toml` `version_files`),
   and a PR-time lockstep check (`cli/tests/test_version_lockstep.py`) SHALL fail any
   change that lets a versioned artifact drift from the commitizen version.
+- WHEN a bump happens THEN `uv.lock` SHALL be re-resolved and folded into the **same**
+  bump commit, with the release tag moved onto the amended commit — the lockfile
+  records the workspace member's own version, and `cz bump` cannot rewrite it
+  (every one of its ~70 `version = "…"` lines would match a `version_files` pattern).
+- WHEN a pull request is checked THEN CI SHALL sync with `uv sync --locked`, so a
+  lockfile that has fallen behind fails the run instead of being rewritten inside the
+  runner and thrown away.
+- The uv version SHALL be pinned in the workflows and bounded on developer machines
+  (`[tool.uv] required-version` in the root `pyproject.toml`), because the uv that
+  writes the committed lockfile decides its text — RULE: no local-vs-CI drift.
 
 ## Design
 
 [`docs/specs/issue-21/design.md`](../specs/issue-21/design.md) ·
+[`docs/specs/issue-407/design.md`](../specs/issue-407/design.md) ·
 [architecture § CLI companion](../architecture/architecture.md)
 
 ## History
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-407 | `uv.lock` re-locked into the bump commit, `uv sync --locked` in CI, uv pinned, and the lockstep guard extended to the lockfile | [spec](../specs/issue-407/) |
 | issue-46 | Plugin + marketplace manifests versioned in lockstep with releases (commitizen `version_files`), with a PR-time drift guard | [spec](../specs/issue-46/), [decision-028](../decisions/decision-028.md) |
 | issue-21 | Introduced PyPI Trusted Publishing + automatic semantic releases (incl. tag-push and first-release fixes) | [spec](../specs/issue-21/), [decision-019](../decisions/decision-019.md) |

@@ -18,14 +18,22 @@ jobs:
 
       # Install uv (the-loop's declared Python package manager), then `uv sync` the
       # workspace from uv.lock. RULE: no local-vs-CI tooling drift — the same pinned
-      # versions run locally and here.
+      # versions run locally and here, uv itself included: an unpinned runner re-resolves
+      # the lockfile's text differently as new uv versions ship, which `--locked` below
+      # would then report as drift. The pin sits inside the window `pyproject.toml`'s
+      # `required-version` enforces on developer machines.
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
+          version: "0.12.17"
           python-version: "3.11"
 
-      - name: Sync workspace (uv.lock)
-        run: uv sync
+      # `--locked` FAILS on a stale lockfile instead of quietly rewriting it in the
+      # runner. A bare `uv sync` re-locks in place and throws the result away, so a
+      # lockfile that had fallen behind the versions it locks sailed through every PR
+      # and was only noticed as a dirty tree on someone's machine (issue-407).
+      - name: Sync workspace (uv.lock, must be up to date)
+        run: uv sync --locked
 
       # Run the SAME pre-commit hooks the developer runs locally, via uv.
       - name: Run pre-commit (lint, format, type-check, markdownlint, tests, schema)
