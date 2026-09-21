@@ -85,20 +85,22 @@ class FakeOpener:
         return route
 
 
-def _fetch_recorder(content=b"png-bytes", content_type="image/png", fail=None):
+class _fetch_recorder:
     """A ``fetch`` double for ``slack_attachments`` / ``github_attachments``:
-    records ``(url, credential, allowed_hosts)`` and answers with the same
-    bytes for every URL — or raises ``fail``."""
-    calls = []
+    records ``(url, credential, allowed_hosts, max_bytes)`` and answers with the
+    same bytes for every URL — or raises ``fail``."""
 
-    def fetch(url, *, credential="", allowed_hosts=(), max_bytes=MAX_BYTES, **_):
-        calls.append((url, credential, tuple(allowed_hosts), max_bytes))
-        if fail is not None:
-            raise fail
-        return content_type, content
+    def __init__(self, content=b"png-bytes", content_type="image/png", fail=None):
+        self.content, self.content_type, self.fail = content, content_type, fail
+        self.calls: list = []
 
-    fetch.calls = calls  # type: ignore[attr-defined]
-    return fetch
+    def __call__(
+        self, url, *, credential="", allowed_hosts=(), max_bytes=MAX_BYTES, **_
+    ):
+        self.calls.append((url, credential, tuple(allowed_hosts), max_bytes))
+        if self.fail is not None:
+            raise self.fail
+        return self.content_type, self.content
 
 
 def _image(**over):
@@ -358,10 +360,11 @@ def test_the_default_opener_never_follows_a_redirect_by_itself():
       Then it carries no redirect handler that would re-send a credential unchecked
     """
     opener = mod._opener()
+    handlers = getattr(opener, "handlers")
     assert not any(
         isinstance(h, urllib.request.HTTPRedirectHandler)
         and type(h) is urllib.request.HTTPRedirectHandler
-        for h in opener.handlers
+        for h in handlers
     )
 
 

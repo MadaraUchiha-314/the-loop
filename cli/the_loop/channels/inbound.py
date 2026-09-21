@@ -38,6 +38,7 @@ from .. import eventlog
 from ..identity import principal_for
 from ..repos import declared_repositories
 from ..standing import parse_standing_ref
+from .attachments import record_lines, render_section, unfetched
 from .base import ChannelError, Event, InboundReply, PostResult
 from .bus import publish
 from .github import GitHubLedger
@@ -106,6 +107,24 @@ INPUT_ACTS = frozenset({"work-item.reply", "context.added", "help"})
 BINDING_ACTS = frozenset(
     {"decision.recorded", "control.command", "gate.feedback", "work-item.create"}
 )
+
+#: The events whose message's files are fetched and named (issue-416): the
+#: three the pipeline relays as the person's own words. A recording act names
+#: files through the snapshot instead, and a decision is the text typed.
+ATTACHED = frozenset({"work-item.reply", "gate.feedback", "control.command"})
+
+
+def _joined(text: str, extra: str) -> str:
+    """``text`` and ``extra`` under a blank line; either alone when the other is empty."""
+    return "\n\n".join(part for part in (text.rstrip(), extra.strip()) if part)
+
+
+def _files_of(event: Mapping[str, Any]) -> Tuple[Mapping[str, Any], ...]:
+    raw = event.get("files")
+    if not isinstance(raw, (list, tuple)):
+        return ()
+    return tuple(f for f in raw if isinstance(f, Mapping))
+
 
 #: The event types the channel delivers into the session itself, after the
 #: ledger record (issue-389 R3.7): the two acts join the reply. A gate answer and
@@ -570,6 +589,24 @@ def process_reply(
         # (R2.2): the ledger phrases a deferred reply as a reply.
         detail["gate"] = GATE_UNKNOWN
     text = reply.text
+    pane_text = reply.text
+    if reply.files and event_type in ATTACHED:
+        # The files the person attached (issue-416), fetched AFTER the last
+        # refusal — a stranger's file is never fetched — and rendered twice:
+        # the ticket gets names and links, the pane gets kinds and paths. A
+        # message that was only a screenshot is delivered by this alone.
+        bot._cli_config = bot._cli_config or cli_config
+        attached = bot.fetch_attachments(reply.files, reply.work_item)
+        text = _joined(reply.text, record_lines(attached))
+        pane_text = _joined(reply.text, render_section(attached))
+        eventlog.emit(
+            "channel.attachments",
+            channel=reply.channel,
+            work_item=reply.work_item,
+            actor=reply.author,
+            count=len(attached),
+            fetched=sum(1 for a in attached if a.path),
+        )
     snapshot_key = ""
     snapshot_newest = ""
     if event_type == "context.added":
@@ -729,7 +766,11 @@ def process_reply(
         "person": (actor.label if actor else "") or f"{reply.channel}:{reply.author}",
     }
     delivered, error = _deliver(
-        replace(reply, text=text), cli_config, deliver, kind=kind, detail=frame_detail
+        replace(reply, text=pane_text if kind == "reply" else text),
+        cli_config,
+        deliver,
+        kind=kind,
+        detail=frame_detail,
     )
     bot.react(reply, "completed" if landed and delivered else "error")
     outcome["delivered"] = delivered
@@ -994,6 +1035,12 @@ def process_kickoff(
         return _drop(reply, "unmapped", actor=reply.author)
     bot = channel or SlackBotChannel(config, slack_state_path(cli_config))
     bot.react(reply, "received")  # issue-325: accepted, about to become an issue
+    if reply.files:
+        # The issue links what was attached (issue-416 R3.4): names and
+        # permalinks, nothing fetched — there is no session to read a path yet.
+        reply = replace(
+            reply, text=_joined(reply.text, record_lines(unfetched(reply.files)))
+        )
     # WHICH repository is the message's to name (issue-341), resolved against the
     # set the operator declared and nothing else. This sits BELOW the allow-list
     # on purpose: a refusal names the declared repositories, and an unlisted
@@ -1374,6 +1421,7 @@ def handle_socket_event(
     config = SlackChannelConfig.from_mapping(cli_config)
     state_path = slack_state_path(cli_config)
     bot = SlackBotChannel(config, state_path, client_factory=client_factory)
+    bot._cli_config = cli_config
     state = ChannelState.load(state_path, bot.stores)
     ts = str(event.get("ts") or "")
     thread = str(event.get("thread_ts") or "")
@@ -1426,6 +1474,7 @@ def handle_socket_event(
                 top_level=True,
                 channel_id=channel_id,
                 addressed=addressed,
+                files=_files_of(event),
             )
             return process_kickoff(
                 reply,
@@ -1465,6 +1514,7 @@ def handle_socket_event(
         is_bot=is_bot,
         channel_id=channel_id,
         addressed=addressed,
+        files=_files_of(event),
     )
     if work_item and ts and seen and _ts_key(ts) <= _ts_key(seen):
         # Already processed — by the catch-up read after a reconnect, or by a

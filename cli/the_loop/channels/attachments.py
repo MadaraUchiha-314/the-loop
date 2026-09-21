@@ -34,7 +34,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -58,6 +58,7 @@ __all__ = [
     "render_section",
     "safe_name",
     "slack_attachments",
+    "unfetched",
     "vtt_to_text",
 ]
 
@@ -363,7 +364,7 @@ def slack_attachments(
     token: str,
     dest_dir: Path,
     files_info: Optional[Callable[[str], Mapping[str, Any]]] = None,
-    fetch: Callable[..., Tuple[str, bytes]] = fetch_url,
+    fetch: Optional[Callable[..., Tuple[str, bytes]]] = None,
     sleep: Callable[[float], Any] = time.sleep,
 ) -> List[Attachment]:
     """Every file on a Slack message as an :class:`Attachment` — fetched with the
@@ -376,6 +377,9 @@ def slack_attachments(
     ``sleep(TRANSCRIPT_WAIT_SECONDS)`` apart; a poll read passes none and takes
     the object as it is.
     """
+    # Bound at call time, so a test or an embedder patching ``fetch_url`` on
+    # the module is honoured by every caller that passes none.
+    fetch = fetch or fetch_url
     dest_dir = Path(dest_dir)
     out: List[Attachment] = []
     for index, file in enumerate(files or ()):
@@ -389,7 +393,7 @@ def slack_attachments(
             kind = "audio"
         declared = int(file.get("size") or 0)
         link = str(file.get("permalink") or "")
-        base = dict(
+        base = Attachment(
             name=name,
             kind=kind,
             mimetype=mimetype,
@@ -398,17 +402,17 @@ def slack_attachments(
             link=link,
         )
         if index >= MAX_FILES:
-            out.append(Attachment(**base, error="too-many"))
+            out.append(replace(base, error="too-many"))
             continue
         if not token:
-            out.append(Attachment(**base, error="no-token"))
+            out.append(replace(base, error="no-token"))
             continue
         if declared > MAX_BYTES:
-            out.append(Attachment(**base, error="over-cap"))
+            out.append(replace(base, error="over-cap"))
             continue
         url = str(file.get("url_private_download") or file.get("url_private") or "")
         if not url:
-            out.append(Attachment(**base, error="transfer-failed"))
+            out.append(replace(base, error="transfer-failed"))
             continue
         target = dest_dir / f"{file_id}-{name}"
         path = ""
@@ -425,19 +429,19 @@ def slack_attachments(
                 )
             except FetchError as exc:
                 logger.warning("slack: file %s not fetched: %s", file_id, exc)
-                out.append(Attachment(**base, error=exc.reason))
+                out.append(replace(base, error=exc.reason))
                 continue
             if not mimetype and content_type:
                 mimetype = content_type
-                base["mimetype"] = mimetype
-                base["kind"] = kind = kind_of(mimetype, name)
+                kind = kind_of(mimetype, name)
+                base = replace(base, mimetype=mimetype, kind=kind)
             try:
                 path = _save(dest_dir, target.name, data)
             except OSError as exc:
                 logger.warning(
                     "slack: file %s not saved: %s", file_id, type(exc).__name__
                 )
-                out.append(Attachment(**base, error="transfer-failed"))
+                out.append(replace(base, error="transfer-failed"))
                 continue
             size = len(data)
         transcript = ""
@@ -450,8 +454,33 @@ def slack_attachments(
                 files_info=files_info,
                 sleep=sleep,
             )
-        base["size"] = size
-        out.append(Attachment(**base, path=path, transcript=transcript))
+        out.append(replace(base, size=size, path=path, transcript=transcript))
+    return out
+
+
+def unfetched(files: Sequence[Mapping[str, Any]]) -> List[Attachment]:
+    """Every file on a Slack message as an :class:`Attachment` that is only
+    **named** — kind, name, type, size and permalink, nothing fetched — for a
+    surface with no session to read a path: the issue a kickoff opens."""
+    out: List[Attachment] = []
+    for index, file in enumerate(files or ()):
+        if not isinstance(file, Mapping):
+            continue
+        name = safe_name(str(file.get("name") or file.get("title") or ""))
+        mimetype = str(file.get("mimetype") or "")
+        kind = kind_of(mimetype, name)
+        if kind != "audio" and str(file.get("subtype") or "") == "slack_audio":
+            kind = "audio"
+        out.append(
+            Attachment(
+                name=name,
+                kind=kind,
+                mimetype=mimetype,
+                size=int(file.get("size") or 0),
+                source="slack",
+                link=str(file.get("permalink") or ""),
+            )
+        )
     return out
 
 
@@ -516,23 +545,24 @@ def github_attachments(
     token: str,
     dest_dir: Path,
     hosts: Sequence[str] = (),
-    fetch: Callable[..., Tuple[str, bytes]] = fetch_url,
+    fetch: Optional[Callable[..., Tuple[str, bytes]]] = None,
 ) -> List[Attachment]:
     """Every asset URL as an :class:`Attachment` — fetched with ``token`` (or
     anonymously when there is none) into ``dest_dir``, named by the URL's last
     path segment plus an extension from the content type; a file already there
     is reused without a request. Never raises."""
+    fetch = fetch or fetch_url
     dest_dir = Path(dest_dir)
     allowed = tuple(GITHUB_HOSTS) + tuple(h for h in hosts if h)
     out: List[Attachment] = []
     for index, url in enumerate(urls or ()):
         segment = urllib.parse.urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1]
         stem = safe_name(segment)
-        base = dict(
+        base = Attachment(
             name=stem, kind="file", mimetype="", size=0, source="github", link=url
         )
         if index >= MAX_FILES:
-            out.append(Attachment(**base, error="too-many"))
+            out.append(replace(base, error="too-many"))
             continue
         existing = sorted(dest_dir.glob(stem + "*")) if dest_dir.is_dir() else []
         existing = [p for p in existing if p.is_file() and not p.name.endswith(".part")]
@@ -540,13 +570,11 @@ def github_attachments(
             found = existing[0]
             kind = kind_of("", found.name)
             out.append(
-                Attachment(
-                    **{
-                        **base,
-                        "name": found.name,
-                        "kind": kind,
-                        "size": found.stat().st_size,
-                    },
+                replace(
+                    base,
+                    name=found.name,
+                    kind=kind,
+                    size=found.stat().st_size,
                     path=str(found),
                 )
             )
@@ -557,7 +585,7 @@ def github_attachments(
             )
         except FetchError as exc:
             logger.warning("github: asset %s not fetched: %s", url, exc)
-            out.append(Attachment(**base, error=exc.reason))
+            out.append(replace(base, error=exc.reason))
             continue
         ext = _EXT_FOR_TYPE.get(content_type, "")
         name = stem if ("." in stem or not ext) else f"{stem}.{ext}"
@@ -565,7 +593,7 @@ def github_attachments(
             path = _save(dest_dir, name, data)
         except OSError as exc:
             logger.warning("github: asset %s not saved: %s", url, type(exc).__name__)
-            out.append(Attachment(**base, error="transfer-failed"))
+            out.append(replace(base, error="transfer-failed"))
             continue
         out.append(
             Attachment(

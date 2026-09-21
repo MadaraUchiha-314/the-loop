@@ -200,7 +200,9 @@ def test_an_unrecognised_id_yields_no_findings():
 class FakeProbeClient:
     """Records every call, so the probe's two-endpoint contract is assertable."""
 
-    def __init__(self, info=None, scopes="chat:write,channels:history", raises=None):
+    def __init__(
+        self, info=None, scopes="chat:write,channels:history,files:read", raises=None
+    ):
         self.calls = []
         self._info = info if info is not None else {"id": "D0AU0SGP30T", "is_im": True}
         self._scopes = scopes
@@ -234,9 +236,10 @@ def test_probe_reads_the_kind_from_conversations_info_and_the_scopes_from_auth_t
     client = FakeProbeClient()
     result = probe_subscription(parsed(tmp_path), client_factory=lambda token: client)
     assert result["kind"] == "im"
-    assert result["scopes"] == ("chat:write", "channels:history")
+    assert result["scopes"] == ("chat:write", "channels:history", "files:read")
     # Two absences, two findings (issue-389): the DM's history scope, then the
-    # mention scope the address needs.
+    # mention scope the address needs. (`files:read` is granted here — its
+    # absence is issue-416's own finding, pinned in test_attachments_integration.)
     assert len(result["findings"]) == 2
     assert "im:history" in result["findings"][0]
     assert "app_mentions:read" in result["findings"][1]
@@ -259,10 +262,15 @@ def test_probe_reads_a_header_delivered_as_a_list(tmp_path, monkeypatch):
     monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
     client = FakeProbeClient()
     client.auth_test = lambda: FakeResponse(  # type: ignore[method-assign]
-        {"ok": True}, ["chat:write, im:history, app_mentions:read"]
+        {"ok": True}, ["chat:write, im:history, app_mentions:read, files:read"]
     )
     result = probe_subscription(parsed(tmp_path), client_factory=lambda token: client)
-    assert result["scopes"] == ("chat:write", "im:history", "app_mentions:read")
+    assert result["scopes"] == (
+        "chat:write",
+        "im:history",
+        "app_mentions:read",
+        "files:read",
+    )
     assert result["findings"] == ()
 
 

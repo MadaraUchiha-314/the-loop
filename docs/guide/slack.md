@@ -94,6 +94,11 @@ oauth_config:
       # event is input only in a DM with the bot or in a room an authorized
       # user switched to `--listen all`.
       - app_mentions:read   # hear @the-loop in any channel the bot is in
+      # A screenshot or a voice note on a message (issue-416): READ ONLY, and
+      # what lets the-loop fetch a file the bot can already see — the image for
+      # the session to read, the captions Slack itself produced for a voice
+      # clip. Without it a file is named and linked, never fetched.
+      - files:read
 settings:
   event_subscriptions:
     bot_events:

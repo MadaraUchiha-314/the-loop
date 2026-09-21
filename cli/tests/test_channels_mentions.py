@@ -60,7 +60,7 @@ def test_the_probe_appends_the_mention_finding_to_the_kind_finding(
 
     monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
     client = FakeProbeClient(
-        info={"id": "C123", "is_channel": True}, scopes="chat:write"
+        info={"id": "C123", "is_channel": True}, scopes="chat:write,files:read"
     )
     result = probe_subscription(
         parsed(tmp_path, channel="C123"), client_factory=lambda token: client
