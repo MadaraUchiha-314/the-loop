@@ -1,3 +1,9 @@
+## v19.12.0 (2026-09-21)
+
+### Feat
+
+- **issue-416**: multi-modal messages reach the session — the loop fetches and forwards, never parses (#418)
+
 ## v19.11.0 (2026-09-21)
 
 ### Feat
