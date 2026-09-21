@@ -64,5 +64,6 @@ See [installing the CLI](/cli/installation) for install instructions, and
 
 ## Next
 
-Run [`/the-loop:init`](/reference/commands#superset-commands) in your target repo, then
-follow the [quickstart](/guide/quickstart).
+Run [`/the-loop:init`](/reference/commands#superset-commands) in your target repo —
+[onboarding](/guide/onboarding) is what it will ask you — then follow the
+[quickstart](/guide/quickstart).

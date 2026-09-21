@@ -72,9 +72,50 @@ validating a config, never copied into the projects the-loop is run on.
   presented with ALL possibilities, free-form keys with schema `examples`, and
   sensible defaults resolved as existing answer → detected signal → schema default
   (see the skill's `reference/onboarding.md`).
+- **The CLI config is onboarded by the same walkthrough** (issue-415). `cli-config.schema.json`
+  SHALL carry its own `x-onboarding` block — ordered groups, ask levels, per-group
+  `explain` — and init SHALL walk it after the harness config, **whichever** answer the
+  user gave to where that file lives: the path is a storage question, and what the file
+  turns on is why they ran init. Every top-level property except `version` SHALL belong to
+  exactly one group, so no block ships that nobody is ever asked about.
+- **The user's threshold for automation is ONE question** (issue-415). `x-onboarding.profiles`
+  SHALL declare an ordered **autonomy ladder** — rungs each carrying a `title`, a
+  `summary`, a `stillHuman` line and the `values` they propose — and init SHALL present
+  the whole ladder with the recommendation marked, before the groups those values seed.
+  A rung is a **proposal**: init SHALL show the resolved values before writing them, and
+  SHALL record the applied rung as a provenance comment in the written config and by id
+  in the final report. The least autonomous rung SHALL be the shipped defaults, so
+  "not yet" is a supported answer.
+- **No autonomy profile SHALL buy away a human gate.** A rung's values SHALL be confined
+  to `webhooks`, `polling`, `routing`, `service`, `selfDiagnosis` and `channels`, and
+  SHALL NOT include `routing.authorizedUsers` — the phase-selection checklist, the
+  artifact approval gates, the pull-request approval and the risk tiers are fixed rules of
+  the skill and the process graph, not settings, and authority is granted by name and
+  never implied by a threshold. `cli/tests/test_onboarding_schema.py` enforces both.
+- **Init SHALL establish the deployment shape before proposing an ingress** (issue-415):
+  a personal machine proposes the poller, an always-on host with an inbound route proposes
+  the webhook receiver, and neither is proposed when the user has nowhere to run it. The
+  answer is used and never stored — a second source of truth for "is the webhook enabled"
+  would only drift.
+- **Init SHALL walk the Slack setup and verify it** (issue-415): the short explanation
+  (one thread per work item; `subscribe` is what the channel hears; `publish` is the
+  channel's authority; GitHub stays the ledger), then the app manifest, the two tokens,
+  the invite and the conversation id, then `the-loop channels status [--probe]` and
+  `the-loop doctor slack`. A declined Slack SHALL end the group immediately, and a
+  verification that could not run SHALL be reported as **unverified**, never as working.
+- **Init SHALL preflight every credential its configs name, presence only** (issue-415).
+  The variable names SHALL be read from the written configs — not a hardcoded list — and
+  init SHALL report whether each is set and nothing else: never a value, a prefix, a
+  length or a hash, and never a credential written into any file. An unset variable SHALL
+  be a **needs-user** line naming what it gates and where to obtain it; a variable only
+  the daemon's environment would carry SHALL be reported as *unverified*, distinctly from
+  *unset*. WHERE an `env.file` is proposed init SHALL say it holds secrets and verify
+  `.gitignore` covers it, offering the line when it does not.
 - WHERE `--defaults` is passed init SHALL apply sensible defaults without interaction
-  and report the remaining gaps under **needs-user**; WHEN init re-runs it SHALL
-  raise only gaps, never re-asking established answers.
+  and report the remaining gaps under **needs-user** — including, since issue-415, the
+  unanswered autonomy profile and every unset credential, and saying plainly that no
+  automation is enabled; WHEN init re-runs it SHALL raise only gaps, never re-asking
+  established answers, the autonomy profile included.
 - WHEN `/the-loop:upgrade-the-loop` finds a removed schema key that still carries live
   operational settings (not just a stale default) THEN it SHALL migrate the data, not
   merely flag and drop it — e.g. a pre-decision-032 `.the-loop/harness-config.yaml` still
@@ -106,6 +147,7 @@ validating a config, never copied into the projects the-loop is run on.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-415 | The onboarding covers what people install the-loop for: `cli-config.schema.json` gained its own `x-onboarding` block (seven groups, every block covered), an **autonomy ladder** turns "how much should it do unattended?" into one question with three rungs that provably cannot reach a human gate, init establishes the deployment shape before proposing an ingress, walks and probes the Slack setup, and preflights every credential the configs name — presence only, never a value | [spec](../specs/issue-415/), [onboarding guide](https://madarauchiha-314.github.io/the-loop/guide/onboarding), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/415) |
 | issue-220 | Config schemas made internal to the plugin (`manifest.schemasDir`); init stops copying up to 118 KB of them into each project, upgrade deletes the copies already there, and scaffolded configs carry a `# yaml-language-server: $schema=` modeline instead | [spec](../specs/issue-220/), [decision-080](../decisions/decision-080.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/220) |
 | issue-152 | The **Claude Code** plugin became installable and upgradable from the CLI (`the-loop install` / `upgrade`), at user or project scope, without opening a session — the terminal-side counterpart to the marketplace routes. Cursor stays in-editor-only, split out as issue-157 | [spec](../specs/issue-152/), [decision-057](../decisions/decision-057.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/152) |
 | issue-106 | A key whose default changes behaviour (`routing.control.requireStartCommand`) is reported as **needs-user**, not silently added; the `state`/`control` blocks are added with defaults and the poll-state move is offered, not forced | [spec](../specs/issue-106/), [decision-040](../decisions/decision-040.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/106) |
