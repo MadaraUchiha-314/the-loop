@@ -126,6 +126,13 @@ The manifest is the "reusable, importable" definition the ticket asked about —
 own format, checked into the-loop, the same for every workspace. (It is *not* a Workflow
 Builder workflow; [why](#why-not-slack-workflow-builder).)
 
+**The app's icon.** Slack's manifest format carries no icon, so set it once by hand:
+*Basic Information → Display Information → App icon & Preview*, and upload
+[`docs/assets/the-loop-logo-1024.png`](https://github.com/MadaraUchiha-314/the-loop/blob/main/docs/assets/the-loop-logo-1024.png)
+— the-loop's mark ([issue-398](https://github.com/MadaraUchiha-314/the-loop/issues/398))
+on its paper ground, at the square size Slack expects. It is the same mark the README and
+the docs site carry, so a thread in Slack and the repository read as one thing.
+
 ### Upgrading the app you already have (1b)
 
 An app created for an earlier the-loop (issue-245 / issue-309 — thread replies and
