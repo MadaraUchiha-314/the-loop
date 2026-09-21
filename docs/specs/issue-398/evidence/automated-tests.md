@@ -110,10 +110,13 @@ are what is proved. Files: [`../design/screenshots/`](../design/screenshots/).
 
 The checker validates each standalone SVG from its **parsed tree against an allowlist**
 (elements `svg, title, desc, style, path, linearGradient, stop`; a fixed attribute set;
-any `url(` value must be a fragment; a stylesheet may not `@import` or reference
-anything outside the file) and scans the HTML gallery case-insensitively for the same
-absences with a fragment-only rule for `href`/`url`. A planted script, handler, image,
-external fill and import each fail; fragments pass:
+any attribute value that references something must be a `#fragment`, case-insensitively
+and whatever the spacing; a stylesheet may not `@import` or reference anything outside
+the file) and scans the HTML gallery case-insensitively for the same absences, for
+event-handler attributes, and with a fragment-only rule for `href`/`url`. A planted
+script, handler, image, external fill (in any spelling) and import each fail; fragments
+pass; on the gallery side a handler, an `<object>` and a `<meta http-equiv>` are refused
+and an ordinary `class="option"` is not:
 
 ```
 $ python3 - <<'PY'
@@ -121,22 +124,31 @@ import sys; sys.path.insert(0, "docs/specs/issue-398/design")
 import generate as g, xml.etree.ElementTree as ET
 bad = g.render()["enso-10-sweep.svg"].replace(
     "</svg>",
-    '<script>alert(1)</script><path d="M0 0" fill="url(http://x/y)" onclick="x()"/>'
-    '<image href="http://x/y.png"/><style>@import url(http://x/a.css)</style></svg>')
+    '<script>alert(1)</script><path d="M0 0" fill="URL(http://x/y)" onclick="x()"/>'
+    '<path d="M0 0" fill=" url( http://x/y )"/><image href="http://x/y.png"/>'
+    '<style>@import url(http://x/a.css)</style></svg>')
 print("\n".join(g.svg_problems("probe.svg", ET.fromstring(bad))))
-for html in ("<a HREF='http://x'>", '<use href="#ok"/>', "url(#mask)", "url( http://x )"):
-    print(f"{html!r:28} -> {'flagged' if g.EXTERNAL_REF.search(html) else 'ok'}")
+def gallery_flags(html):
+    return (any(t.lower() in html.lower() for t in g.FORBIDDEN)
+            or bool(g.HANDLER.search(html)) or bool(g.EXTERNAL_REF.search(html)))
+for planted in ("<a HREF='http://x'>", '<use href="#ok"/>', 'url(#mask)', '<div onclick="x()">',
+                '<object data="x">', '<meta http-equiv="refresh">', '<span class="option">'):
+    print(f"{planted!r:32} -> {'flagged' if gallery_flags(planted) else 'ok'}")
 PY
 probe.svg: element <script> is not in the allowlist
-probe.svg: fill reference 'url(http://x/y)' is not a fragment
+probe.svg: fill reference 'URL(http://x/y)' is not a fragment
 probe.svg: attribute 'onclick' on <path> is not in the allowlist
+probe.svg: fill reference ' url( http://x/y )' is not a fragment
 probe.svg: element <image> is not in the allowlist
 probe.svg: attribute 'href' on <image> is not in the allowlist
 probe.svg: the stylesheet references something outside the file
-"<a HREF='http://x'>"        -> flagged
-'<use href="#ok"/>'          -> ok
-'url(#mask)'                 -> ok
-'url( http://x )'            -> flagged
+"<a HREF='http://x'>"            -> flagged
+'<use href="#ok"/>'              -> ok
+'url(#mask)'                     -> ok
+'<div onclick="x()">'            -> flagged
+'<object data="x">'              -> flagged
+'<meta http-equiv="refresh">'    -> flagged
+'<span class="option">'          -> ok
 ```
 
 ## T9 — titles and contrast

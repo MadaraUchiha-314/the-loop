@@ -656,10 +656,16 @@ FORBIDDEN = (
     "<foreignObject",
     "<image",
     "<iframe",
+    "<object",
+    "<embed",
+    "<link",
+    "<base",
+    "<meta http-equiv",
     "@import",
     "src=",
     "javascript:",
 )
+HANDLER = re.compile(r"\bon[a-z]+\s*=", re.I)  # onclick=, onload=, …
 EXTERNAL_REF = re.compile(r"""(?i)(href|url)\s*[=(]\s*(?!["']?#)""")
 
 
@@ -675,7 +681,7 @@ def svg_problems(name: str, root: ET.Element) -> list[str]:
                 out.append(
                     f"{name}: attribute {attr!r} on <{tag}> is not in the allowlist"
                 )
-            elif value.startswith("url(") and not value.startswith("url(#"):
+            elif EXTERNAL_REF.search(value):
                 out.append(f"{name}: {attr} reference {value!r} is not a fragment")
     for style in root.iter(f"{SVG_NS}style"):
         if EXTERNAL_REF.search(style.text or "") or "@import" in (style.text or ""):
@@ -712,6 +718,8 @@ def check(files: dict[str, str]) -> list[str]:
             for token in FORBIDDEN:
                 if token.lower() in content.lower():
                     problems.append(f"{name}: contains {token!r}")
+            if HANDLER.search(content):
+                problems.append(f"{name}: has an event-handler attribute")
             if EXTERNAL_REF.search(content):
                 problems.append(f"{name}: has an href or url() that is not a fragment")
     if render() != files:

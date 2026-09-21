@@ -102,7 +102,7 @@ overrides: {}
       rounds 1–2 superseded, review comments), `requirements.md` (R1 reframed, review
       comments), `testing-plan.md` results re-run, this file, the evidence files, the
       screenshots re-captured. _Depends on:_ F2, F3 · _Test:_ T12.
-- [ ] **F5 — re-present.** Push; reply in the review thread; update the PR description;
+- [x] **F5 — re-present.** Push; reply in the review thread; update the PR description;
       edit the ticket's presentation comment in place; label back to
       `loop:needs-review`. _Depends on:_ F4 · _Requirements:_ R4.3, R4.4 · _Test:_
       T11.
