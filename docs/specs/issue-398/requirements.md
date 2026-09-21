@@ -11,7 +11,7 @@ riskTier: 2                  # docs/specs/issue-398/** only — no code, no conf
 
 <!-- Authored per the the-loop:writing skill. -->
 
-# Requirements: a logo for the-loop — five brush-drawn SVG options to choose from
+# Requirements: a logo for the-loop — the Ensō, in colourways, to choose from
 
 > Phase 1 of 4 (requirements → design → testing plan → tasks). A tier-2 work item:
 > the four files are short and locked together, and the loop completes on its own
@@ -34,7 +34,7 @@ as its input.
 
 ## Requirements
 
-### R1 — five options, five concepts
+### R1 — five options, five concepts → *(round 3)* one mark, in colourways
 
 **User story:** As the owner, I want several genuinely different logo concepts side by
 side, so that I am choosing between ideas rather than between shades of one idea.
@@ -44,13 +44,19 @@ have a **character**, a personality a person could name, not only a distinct geo
 #### Acceptance criteria (EARS)
 
 1. The deliverable SHALL contain between three and five logo options; this work item
-   delivers five.
+   delivers five. *(Superseded by the owner's round-2 review, below: the mark is
+   chosen — the Ensō — and the deliverable is now that one mark in colour and gradient
+   options; round 3 delivers ten.)*
 2. Each option SHALL be built on a **distinct visual concept** of *inner, outer and many
    loops working together* — a different structural relationship between the loops,
    not a colour, size or tilt variation of another option. The concept SHALL be named
    in one sentence per option.
 3. Every option SHALL contain at least three loops, with at least one visibly *inside*
    or *carried by* another, so the inner/outer relationship reads without a caption.
+4. *(Round 3)* Every colourway SHALL be the same mark — the round-2 Ensō's geometry,
+   unchanged — differing only in paint: flat palettes from the shared palette, and
+   gradients, of which at least one travels along each stroke and at least one spans
+   the mark.
 
 ### R2 — hand-drawn, muted
 
@@ -112,8 +118,9 @@ and to record my pick where the paper trail lives.
 ## Non-functional requirements
 
 - **Size.** Each SVG under 64 kB (round 1 budgeted 40 kB; a brush stroke needs denser
-  sampling than a wobbled ellipse); the gallery under 300 kB; screenshots as PNG at 1×
-  device pixel ratio, so the spec folder stays reviewable in a diff.
+  sampling than a wobbled ellipse); the gallery under 500 kB (round 1 budgeted 300 kB
+  for five marks; round 3 carries ten colourways, one symbol each); screenshots as PNG
+  at 1× device pixel ratio, so the spec folder stays reviewable in a diff.
 - **Toolchain.** The generator runs on the repository's Python (3.11) with the standard
   library only; screenshots come from the Chromium the repository already drives for
   the dashboard's evidence (`ui/scripts/screenshots.mjs`'s approach), so nothing new is
@@ -162,3 +169,9 @@ purpose, raised as the ticket comment R4.3 requires, and answered there.
   logos."* Recorded here because it changes what R1.2 and R2.1 ask for: the character
   clause on R1, the brush-not-wobble wording on R2.1, and the 64 kB budget are the
   edits; round 2 of the options is the response (`design.md` § Review comments).
+- **2026-09-21 · @MadaraUchiha-314 (owner, designer) · [PR #403 review comment on `option-5-enso.svg`](https://github.com/MadaraUchiha-314/the-loop/pull/403#discussion_r4058557797)**
+  — *"I am leaning towards this. Remove all others. Present some more colors and
+  gradient options for this."* The pick, and a new ask: R1.1 is superseded (one mark,
+  not three to five) and R1.4 is added (colourways of one unchanged geometry); the
+  four other marks are removed. Round 3 of the artifacts is the response
+  (`design.md` § Review comments).

@@ -3,71 +3,68 @@ type: evidence
 workItem: "github:MadaraUchiha-314/the-loop#398"
 ---
 
-# A logo for the-loop — five brush-drawn SVG options, round 2 (issue-398) — reviewer briefing
+# A logo for the-loop — the Ensō in colourways, round 3 (issue-398) — reviewer briefing
 
 ## TL;DR
 
-Round 1 drew five loop *structures* with a wobbling, over-drawn hand; the owner's review
-said *over-stressed on the hand-drawn part, no character*. Round 2 keeps the hand — a
-flat brush held at an angle, pressed and lifted, never shaky — and gives each mark a
-**personality**: **loop** (the name written in one line, itself the loops — wit),
-**Knot** (a trefoil drawn as rope — strength), **Flick** (a loop-de-loop that ends in an
-arrow — momentum), **Clip** (a paperclip, one wire, inner loop in outer — utility with a
-wink), **Ensō** (three brush circles left open — calm). Same generator, same palette,
-same gallery and evidence pipeline; round 1 is in git history. **The ask is unchanged:
-look at the rendering and pick one, or say what to change.**
+You chose the **Ensō** — three brush circles, each left open where the hand lifted — and
+asked for colour and gradient options, with the other marks removed. Round 3 is that:
+the same mark, byte for byte in its geometry, in **ten colourways** — seven flat
+palettes (the original ink · dusk · clay; all ink; ink with a clay centre; warm; cool;
+earth; mauve), two gradients that **travel along each stroke** (dusk → clay; ink drying
+into an accent) and one **sweep** across the mark. Same generator, gallery and evidence
+pipeline; rounds 1 and 2 are in git history. **The ask: pick a colourway, or name a
+pairing you would rather see.**
 
 ## Where to focus (in this order)
 
 1. **The rendering** — `docs/specs/issue-398/design/logo-options.html`, or the stills
-   under `design/screenshots/`. Does any of the five have the character round 1 lacked?
-   Which?
-2. **The brush, not the wobble** — `design/generate.py` `brush()`/`enso_brush()`: width
-   is `base × (thick across the nib, thin along it) × pressure × lift`. Round 1's noise
-   and sketch passes are gone; one option keeps a 0.6-unit hair of it.
-3. **The weave** — `woven()`: crossings found numerically, alternated over/under, the
-   under strand carved by a `<mask>` (an internal `url(#…)`, which the checker admits).
-   Skim.
-4. **What the review changed in the spec** — `requirements.md` § Review comments (the
-   character clause on R1, brush-not-wobble on R2.1, 64 kB budget) and `design.md` §
-   Review comments. Skim.
+   under `design/screenshots/`. Which paint? The ink-free ones (6, 7, 8, 10) are the ones
+   to weigh against a dark ground; the ink ones swap their ink for the slate ink.
+2. **How a gradient travels along a brush stroke** — `design/generate.py`
+   `travelling_ring`: SVG has no along-path gradient, so the stroke is cut into twenty
+   pieces on its own Bézier segments (`segment`, `piece`), each a step further in OKLab
+   (`mix`). Look at colourway 8 at 220 px: no seams.
+3. **What the pick changed in the spec** — `requirements.md` § Review comments (R1.1
+   superseded, R1.4 added) and `design.md` § Review comments. Skim.
+4. **The checker** — widened by exactly `linearGradient`, `stop`, `class` and the
+   gradient attributes; a `url(` must be a fragment; the probe re-run (T8). Skim.
 
 ## What changed (map)
 
 ```mermaid
 flowchart LR
-  REV["review on #403:<br/>over-stressed hand · no character"] --> BR["brush(): nib angle, contrast,<br/>pressure, lifts — no wobble, no overdraw"]
-  REV --> FIVE["five personalities:<br/>loop · Knot · Flick · Clip · Ensō"]
-  BR --> GEN["design/generate.py"]
-  FIVE --> GEN
-  GEN --> SVG["option-1..5-*.svg (39–51 kB)"] --> SS["screenshots.mjs → 12 PNGs"]
-  GEN --> GAL["logo-options.html (231 kB)"] --> SS
-  GEN -->|"--check"| GATE["bytes match · well-formed · titled · no external ref · ≤ 64 kB · deterministic"]
-  PICK["the owner picks"] -.-> NEXT["follow-up: adopt"]
+  PICK["review comment on option-5-enso.svg:<br/>leaning towards this · remove all others · more colours and gradients"] --> PAINT["a paint layer over the fixed geometry:<br/>flat · travelling (OKLab pieces) · sweep (&lt;linearGradient&gt;)"]
+  PICK --> RM["loop · Knot · Flick · Clip removed<br/>(git history keeps them)"]
+  PAINT --> GEN["design/generate.py"]
+  GEN --> SVG["enso-1..10-*.svg (42–53 kB)"] --> SS["screenshots.mjs → 22 PNGs"]
+  GEN --> GAL["logo-options.html (453 kB)"] --> SS
+  GEN -->|"--check"| GATE["bytes match · well-formed · titled · parsed allowlist · ≤ 64 kB · deterministic"]
+  NEXT["the owner picks a colourway"] -.-> ADOPT["follow-up: adopt"]
 ```
 
 ## Key decisions & why
 
-- **Confidence over wobble.** A tremor reads as unsure; a brush's thick/thin reads as
-  made. The hand moved from noise on the path into the pen: nib angle, pressure, lifts.
-- **Personality over taxonomy.** Round 1's five differed in how loops related — a
-  classification, not a set of marks. Round 2's five differ in what they *are*: a word,
-  a rope, a whip, a wire, a breath. Each still carries inner, outer and many loops.
-- **Holes fixed at the source.** Filled outlines punched holes at tight curls
-  (`evenodd` on a self-crossing outline; offsets past the centre of curvature). Now:
-  `nonzero`, and the half-width clamped to 0.85 × the local radius of curvature.
-- **Weave by mask.** Painting gaps in the page colour breaks on any other ground.
-- **Budget 40 → 64 kB**, because a brush stroke needs ~2 px sampling; recorded in
-  `requirements.md`.
+- **Pieces for a travelling gradient.** No SVG gradient follows a path; twenty pieces
+  per stroke, cut on the stroke's own curves so the seams are invisible, each one shade
+  further along. Cost: 48–53 kB instead of 42 kB for those two files.
+- **OKLab blends.** An sRGB blend from dusk to clay goes grey in the middle; OKLab keeps
+  the ramp even and the mid-tones alive.
+- **A real `<linearGradient>` for the sweep.** It is what the element is for, and it is
+  portable; the checker admits it and nothing more.
+- **Ink stays `currentColor`; a ramp that touches ink carries dark fills.** So every
+  colourway still reads on paper and on slate.
+- **Geometry frozen.** Every colourway is the round-2 Ensō; the original colours
+  reproduce its file exactly, so the pick compares paint and nothing else.
 
 ## Evidence
 
-`docs/specs/issue-398/evidence/automated-tests.md` (round-2 run): checker green, clean
-regeneration, ruff and markdownlint clean, contrast table; `design/screenshots/` —
-twelve round-2 captures. Security review re-run on the round-2 diff:
-`evidence/security-review.md`.
+`docs/specs/issue-398/evidence/automated-tests.md` (round-3 run): the checker green, a
+clean regeneration, ruff and markdownlint clean, the contrast table, the T8 probe;
+`design/screenshots/` — twenty-two round-3 captures. Security review re-run on the
+round-3 diff: `evidence/security-review.md`.
 
 ## Open questions for the reviewer
 
-**Which option — or what would give one of them the character you want?** Answer on
-the ticket (#398) or here; the PR can merge as the record of the options either way.
+**Which colourway — or which pairing instead?** Answer on the ticket (#398) or here;
+the PR can merge as the record either way.

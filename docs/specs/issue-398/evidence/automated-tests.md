@@ -5,12 +5,19 @@ workItem: "github:MadaraUchiha-314/the-loop#398"
 
 # Evidence: automated checks (issue-398)
 
-Run from the repository root on 2026-09-20, on the branch of the delivering PR. Rows
-refer to [`testing-plan.md`](../testing-plan.md). **Round 2** (after the owner's review
-of round 1) re-ran every row; round 1's outputs are kept below where the red→green
-record lives there.
+Run from the repository root on the branch of the delivering PR. Rows refer to
+[`testing-plan.md`](../testing-plan.md). **Round 3** (2026-09-21, after the owner's pick)
+re-ran every row; the red→green records of rounds 1 and 2 are kept below.
 
-## T1 — the generator's checker (red first, then green)
+## T1 — the generator's checker
+
+Round 3, on the final files:
+
+```
+$ python3 docs/specs/issue-398/design/generate.py --check
+ok — 11 files match, well-formed, self-contained, titled
+exit=0
+```
 
 Round 1, before the first render — the checker against an empty folder:
 
@@ -37,29 +44,26 @@ FAIL option-5-enso.svg: over 40 KB
 check exit=1
 ```
 
-Round 2, on the final files (budget 64 kB, `requirements.md` NFR):
-
-```
-$ python3 docs/specs/issue-398/design/generate.py --check
-ok — 6 files match, well-formed, self-contained, titled
-exit=0
-```
-
 Round 1 also had two intermediate reds worth keeping: the coil and planetary marks over
 the size budget (58 903 and 51 515 bytes, brought under by fewer samples and dropped
 chevrons), and the first token list flagging the SVG namespace URL (`contains 'http:'`)
-— the check refuses a non-fragment `href` or `url(` instead.
+— the check reads the parsed tree against an allowlist now.
 
 ## T6 — a regeneration leaves the tree clean
 
 ```
 $ python3 docs/specs/issue-398/design/generate.py && git diff --exit-code --stat -- docs/specs/issue-398/design/
-wrote option-1-loop.svg (50.6 kB)
-wrote option-2-knot.svg (46.2 kB)
-wrote option-3-flick.svg (42.1 kB)
-wrote option-4-clip.svg (39.3 kB)
-wrote option-5-enso.svg (41.9 kB)
-wrote logo-options.html (231.2 kB)
+wrote enso-1-ink-dusk-clay.svg (41.9 kB)
+wrote enso-2-ink.svg (41.9 kB)
+wrote enso-3-ink-ink-clay.svg (41.9 kB)
+wrote enso-4-clay-ochre-ink.svg (41.9 kB)
+wrote enso-5-dusk-sage-ink.svg (41.9 kB)
+wrote enso-6-sage-ochre-clay.svg (41.9 kB)
+wrote enso-7-mauve-dusk-clay.svg (41.9 kB)
+wrote enso-8-dusk-to-clay.svg (48.6 kB)
+wrote enso-9-running-dry.svg (52.9 kB)
+wrote enso-10-sweep.svg (42.2 kB)
+wrote logo-options.html (452.5 kB)
 exit=0
 ```
 
@@ -70,42 +74,52 @@ $ CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome CHROMIUM_NO_S
   node docs/specs/issue-398/design/screenshots.mjs docs/specs/issue-398/design/screenshots
 gallery-light
 gallery-dark
-option-1-loop-paper
-option-1-loop-slate
-option-2-knot-paper
-option-2-knot-slate
-option-3-flick-paper
-option-3-flick-slate
-option-4-clip-paper
-option-4-clip-slate
-option-5-enso-paper
-option-5-enso-slate
+enso-1-ink-dusk-clay-paper
+enso-1-ink-dusk-clay-slate
+enso-10-sweep-paper
+enso-10-sweep-slate
+enso-2-ink-paper
+enso-2-ink-slate
+enso-3-ink-ink-clay-paper
+enso-3-ink-ink-clay-slate
+enso-4-clay-ochre-ink-paper
+enso-4-clay-ochre-ink-slate
+enso-5-dusk-sage-ink-paper
+enso-5-dusk-sage-ink-slate
+enso-6-sage-ochre-clay-paper
+enso-6-sage-ochre-clay-slate
+enso-7-mauve-dusk-clay-paper
+enso-7-mauve-dusk-clay-slate
+enso-8-dusk-to-clay-paper
+enso-8-dusk-to-clay-slate
+enso-9-running-dry-paper
+enso-9-running-dry-slate
 ```
 
 Playwright 1.63.0 with the Chromium already installed for the dashboard's evidence
 script; resolved through a `node_modules` link beside the script, removed afterwards.
 `CHROMIUM_NO_SANDBOX=1` because this container runs as root: Playwright adds the flag
-for a root user itself (a run without the variable produced the same twelve captures),
-so the variable only makes explicit what happens here anyway; on a machine with a
-working sandbox the flag is never passed. The `-slate` captures are `<img>` embeddings
-under an emulated dark scheme and show the light ink, so each standalone file's own
-`prefers-color-scheme` rule is what is proved; the knot's mask-carved weave renders on
-both grounds. Files: [`../design/screenshots/`](../design/screenshots/).
+for a root user itself (a run without the variable produced the same captures), so the
+variable only makes explicit what happens here anyway; on a machine with a working
+sandbox the flag is never passed. The `-slate` captures are `<img>` embeddings under
+an emulated dark scheme: the flat-ink colourways show the light ink, the running-dry
+colourway shows its dark-scheme piece fills, so each standalone file's own media rules
+are what is proved. Files: [`../design/screenshots/`](../design/screenshots/).
 
 ## T8 — the abuse case, probed
 
 The checker validates each standalone SVG from its **parsed tree against an allowlist**
-(elements `svg, title, desc, style, path, mask, rect`; a fixed attribute set; a `mask`
-must reference a fragment; a stylesheet may not `@import` or reference anything
-outside the file) and scans the HTML gallery case-insensitively for the same absences
-with a fragment-only rule for `href`/`url`. A planted script, handler, image and import
-each fail; fragments pass:
+(elements `svg, title, desc, style, path, linearGradient, stop`; a fixed attribute set;
+any `url(` value must be a fragment; a stylesheet may not `@import` or reference
+anything outside the file) and scans the HTML gallery case-insensitively for the same
+absences with a fragment-only rule for `href`/`url`. A planted script, handler, image,
+external fill and import each fail; fragments pass:
 
 ```
 $ python3 - <<'PY'
 import sys; sys.path.insert(0, "docs/specs/issue-398/design")
 import generate as g, xml.etree.ElementTree as ET
-bad = g.render()["option-1-loop.svg"].replace(
+bad = g.render()["enso-10-sweep.svg"].replace(
     "</svg>",
     '<script>alert(1)</script><path d="M0 0" fill="url(http://x/y)" onclick="x()"/>'
     '<image href="http://x/y.png"/><style>@import url(http://x/a.css)</style></svg>')
@@ -114,6 +128,7 @@ for html in ("<a HREF='http://x'>", '<use href="#ok"/>', "url(#mask)", "url( htt
     print(f"{html!r:28} -> {'flagged' if g.EXTERNAL_REF.search(html) else 'ok'}")
 PY
 probe.svg: element <script> is not in the allowlist
+probe.svg: fill reference 'url(http://x/y)' is not a fragment
 probe.svg: attribute 'onclick' on <path> is not in the allowlist
 probe.svg: element <image> is not in the allowlist
 probe.svg: attribute 'href' on <image> is not in the allowlist
@@ -151,9 +166,9 @@ ochre          on paper  2.00:1   on slate  6.77:1
 mauve          on paper  2.81:1   on slate  4.81:1
 ```
 
-The ink is swapped per ground (9.9:1 on paper, 12.0:1 on slate). Round 2 uses ink,
-dusk and clay; the accents are decorative loops, never text, and every option's
-silhouette is carried by ink.
+The ink is swapped per ground (9.9:1 on paper, 12.0:1 on slate). The accents are
+decorative loops, never text; the ink-free colourways (6, 7, 8, 10) rely on them alone
+and are the ones to weigh against a dark ground.
 
 ## T12 — lint
 

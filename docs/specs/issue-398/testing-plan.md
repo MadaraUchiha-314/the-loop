@@ -9,7 +9,7 @@ overrides: {}
 
 <!-- Authored per the the-loop:writing skill. -->
 
-# Testing plan: a logo for the-loop — five brush-drawn SVG options to choose from
+# Testing plan: a logo for the-loop — the Ensō, in colourways, to choose from
 
 > Derived from [`requirements.md`](requirements.md) and [`design.md`](design.md).
 > Planned at `test-planning`, results recorded at `verification` (below). Nothing here
@@ -81,16 +81,16 @@ overrides: {}
 
 ## Verification results
 
-Recorded on 2026-09-20 on the branch of the delivering PR, **re-run for round 2** after
-the owner's review of round 1; raw output in
+Recorded on the branch of the delivering PR — 2026-09-20 for rounds 1 and 2, and
+**re-run for round 3** on 2026-09-21 after the owner's pick; raw output in
 [`evidence/automated-tests.md`](evidence/automated-tests.md).
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| T1 | `python3 docs/specs/issue-398/design/generate.py --check` | pass — `ok — 6 files match, well-formed, self-contained, titled` (round 1: red first, six `missing` before the first render; round 2: red first on the 40 kB budget, five `over 40 KB`, then green at the 64 kB budget the review-driven brush needs) | `evidence/automated-tests.md` |
-| T5 | `node docs/specs/issue-398/design/screenshots.mjs docs/specs/issue-398/design/screenshots` | pass — 12 round-2 captures; the dark-scheme `<img>` captures show the light ink, so the standalone files' own media rule holds; the knot's mask weave renders on both grounds | `design/screenshots/` |
-| T6 | regenerate, then `git diff --exit-code -- docs/specs/issue-398/design/` | pass — clean tree (round 2 files: 39–51 kB) | `evidence/automated-tests.md` |
-| T8 | the probe snippet in `evidence/automated-tests.md` § T8 | pass — five refusals for the planted constructs, two passes for fragments | `evidence/automated-tests.md` |
+| T1 | `python3 docs/specs/issue-398/design/generate.py --check` | pass — `ok — 11 files match, well-formed, self-contained, titled` (round 1: red first, six `missing` before the first render; round 2: red first on the 40 kB budget, then green at 64 kB; round 3: green on the widened allowlist, ten SVGs of 42–53 kB) | `evidence/automated-tests.md` |
+| T5 | `node docs/specs/issue-398/design/screenshots.mjs docs/specs/issue-398/design/screenshots` | pass — 22 round-3 captures; the dark-scheme `<img>` captures show the light ink and the running-dry ramp's dark fills, so each standalone file's own media rules hold; the sweep gradient renders on both grounds | `design/screenshots/` |
+| T6 | regenerate, then `git diff --exit-code -- docs/specs/issue-398/design/` | pass — clean tree (round 3 files: 42–53 kB; the gallery 452 kB against the amended 500 kB budget) | `evidence/automated-tests.md` |
+| T8 | the probe snippet in `evidence/automated-tests.md` § T8 | pass — six refusals for the planted constructs (round 3 also refuses a non-fragment `fill="url(…)"`), two passes for fragments | `evidence/automated-tests.md` |
 | T9 | T1's title/desc assertion; contrast snippet | pass — ink 9.9:1 on paper, 12.0:1 on slate; accents 2.0–2.8:1 / 4.8–6.8:1 (decorative) | `evidence/automated-tests.md` |
 | T12 | markdownlint; ruff format --check; ruff check | pass | `evidence/automated-tests.md` |
 

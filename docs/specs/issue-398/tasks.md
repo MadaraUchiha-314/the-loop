@@ -9,7 +9,7 @@ overrides: {}
 
 <!-- Authored per the the-loop:writing skill. -->
 
-# Tasks: a logo for the-loop — five brush-drawn SVG options to choose from
+# Tasks: a logo for the-loop — the Ensō, in colourways, to choose from
 
 > Phase 4 of 4. Each task names the requirement it satisfies and the testing-plan row
 > that proves it. For a design deliverable the "test" is the generator's own checker and
@@ -73,16 +73,45 @@ overrides: {}
       round 1 marked superseded, review comments), `requirements.md` (R1/R2.1 wording,
       budget, review comments), `testing-plan.md` results re-run, this file, the
       evidence files, the screenshots re-captured. _Depends on:_ E2 · _Test:_ T12.
-- [ ] **E4 — re-present.** Push; reply on the PR review with round 2; edit the ticket's
+- [x] **E4 — re-present.** Push; reply on the PR review with round 2; edit the ticket's
       presentation comment in place (the round-1 image links point at files that no
       longer exist); label back to `loop:needs-review`. _Depends on:_ E3 ·
       _Requirements:_ R4.3, R4.4 · _Test:_ T11.
 
+### Round 3 — after the owner's pick
+
+> _"I am leaning towards this [the Ensō]. Remove all others. Present some more colors
+> and gradient options for this."_
+
+- [x] **F1 — the paint layer.** `Variant` rows (a paint per ring, an optional sweep);
+      `flat_ring`; `travelling_ring` — the stroke in 20 pieces cut on its own Bézier
+      segments (`edges`, `segment`, `piece`), each a step further in OKLab
+      (`to_oklab`/`from_oklab`/`mix`); a `<linearGradient>` sweep; per-piece
+      dark-scheme fills for a ramp that touches ink. The other four marks and their
+      machinery removed. _Depends on:_ E1 · _Requirements:_ R1.4, R2.2, R3.4 · _Test:_
+      T1.
+- [x] **F2 — ten colourways.** Seven flat (the original; ink; ink with a clay centre;
+      warm; cool; earth; mauve), two travelling (dusk → clay; ink → accent, running
+      dry), one sweep — iterated on the rendering (seams stepped, then corners rounded,
+      then cut on the stroke's own curves). _Depends on:_ F1 · _Requirements:_ R1.4 ·
+      _Test:_ T1, T5.
+- [x] **F3 — the checker widened by exactly what a gradient needs.** `linearGradient`,
+      `stop`, `class`, `gradientUnits`, `x1`–`y2`, `offset`, `stop-color`; any `url(`
+      value must be a fragment. Probe re-run. _Depends on:_ F1 · _Test:_ T1, T8.
+- [x] **F4 — the record.** `design.md` (round-3 overview, components, inventory with
+      rounds 1–2 superseded, review comments), `requirements.md` (R1 reframed, review
+      comments), `testing-plan.md` results re-run, this file, the evidence files, the
+      screenshots re-captured. _Depends on:_ F2, F3 · _Test:_ T12.
+- [ ] **F5 — re-present.** Push; reply in the review thread; update the PR description;
+      edit the ticket's presentation comment in place; label back to
+      `loop:needs-review`. _Depends on:_ F4 · _Requirements:_ R4.3, R4.4 · _Test:_
+      T11.
+
 ## Dependency graph (DAG)
 
 ```text
-A1 → A2 → B1 → B2 → C1 → D1 ─(review)─→ E1 → E2 → E3 → E4
-A1 → A3 ────────────↗
+A1 → A2 → B1 → B2 → C1 → D1 ─(review)─→ E1 → E2 → E3 → E4 ─(pick)─→ F1 → F2 → F4 → F5
+A1 → A3 ────────────↗                                                 F1 → F3 ──↗
 ```
 
 ## Checkpoints
