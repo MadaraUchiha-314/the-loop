@@ -129,6 +129,13 @@ EVENT_TYPES: Dict[str, str] = {
         "An event was delivered to its harness session (work_item, harness, "
         "via: resume | tmux)."
     ),
+    "dispatch.attachments": (
+        "A forwarded GitHub event's body carried attachment URLs (issue-416): how "
+        "many, and how many were fetched into the work item's attachment "
+        "directory before the prompt was delivered (work_item, gh_event, count, "
+        "fetched). A URL that was not fetched is named in the prompt with its "
+        "reason; this line carries no URL and no path."
+    ),
     "dispatch.failed": (
         "Delivering an event to its session failed (work_item, harness, "
         "error; will_retry: the delivery id was released so a redelivery / "
@@ -444,6 +451,13 @@ EVENT_TYPES: Dict[str, str] = {
         "The ephemeral answer to a slash command could not be posted through "
         "its response_url (channel, actor, error) — issue-334. The outcome "
         "stands; only the member's receipt was lost."
+    ),
+    "channel.attachments": (
+        "A forwarded Slack message carried files (issue-416): how many the message "
+        "attached and how many were fetched into the work item's attachment "
+        "directory for the session to read (channel, work_item, actor, count, "
+        "fetched). A file that was not fetched is named on the record and in the "
+        "pane with its reason; this line carries no file name and no path."
     ),
     "channel.mirrored": (
         "A channel reply was posted onto its work item as the-loop's own "

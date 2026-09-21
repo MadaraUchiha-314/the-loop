@@ -31,7 +31,7 @@ flowchart LR
 
 ## Task list
 
-- [ ] 1. Write `cli/the_loop/channels/attachments.py` with its unit tests, red first
+- [x] 1. Write `cli/the_loop/channels/attachments.py` with its unit tests, red first
   - `Attachment`, the constants, `kind_of`, `safe_name`, `vtt_to_text`,
     `github_attachment_urls`, `fetch_url` (no auto-redirect, host check per hop, the
     cap), `slack_attachments` (with the transcript wait), `github_attachments`,
@@ -41,21 +41,21 @@ flowchart LR
   - _Depends on:_ none
   - _Requirements:_ R1.2, R1.4–R1.6, R2.1–R2.4, R3.1, R3.2, R4.1, R6.2; abuse cases 1–5
   - _Test:_ `T1 / T8 — pytest cli/tests/test_attachments.py`
-- [ ] 2. Declare the attachments directory in the state layout
+- [x] 2. Declare the attachments directory in the state layout
   - `StateLayout.attachments_dir` → `<root>/local/attachments`; a `GENERATED_PATHS`
     entry (`portable=False`, its `why`); the tree line and the classification row on
     `docs/cli/state.md`, with the no-retention sentence.
   - _Depends on:_ 1
   - _Requirements:_ R6.1, R6.3
   - _Test:_ `T10 — pytest cli/tests/test_state_portability.py`
-- [ ] 3. Carry `files` on the normalized Slack message
+- [x] 3. Carry `files` on the normalized Slack message
   - `InboundReply.files: Tuple[Mapping, ...] = ()`; populated in `handle_socket_event`
     (both branches), `fetch_replies`, `fetch_kickoffs`, `fetch_channel_messages`.
   - _Depends on:_ 2
   - _Requirements:_ R1.1
   - _Test:_ `T2 — the poll-read and socket scenarios` (written in task 7; the readers are
     exercised by the existing channel suites meanwhile)
-- [ ] 4. Fetch and render in the pipeline; name files in the snapshot and the kickoff
+- [x] 4. Fetch and render in the pipeline; name files in the snapshot and the kickoff
   - `SlackBotChannel.fetch_attachments`; in `process_reply` the record text gains
     `record_lines`, the delivered text `render_section`, for the three relayed kinds;
     `snapshot_thread` appends 📎 per file; `process_kickoff` appends `record_lines` to the
@@ -63,7 +63,7 @@ flowchart LR
   - _Depends on:_ 3
   - _Requirements:_ R1.2, R1.3, R1.7, R2.1, R2.2, R3.1–R3.4; abuse case 6
   - _Test:_ `T2 — pytest cli/tests/test_attachments_integration.py -k "slack or voice or only or gate or snapshot or kickoff or stranger"`
-- [ ] 5. Append the section to the GitHub prompt
+- [x] 5. Append the section to the GitHub prompt
   - `Dispatcher._attachments_section(routed, work_item)` after `_render_prompt`'s
     render: bodies from the four containers, the configured host, the token from
     `integrations.github.api.tokenEnv`, reuse from disk.
@@ -71,21 +71,21 @@ flowchart LR
   - _Requirements:_ R4.1–R4.5
   - _Test:_ `T2 — pytest cli/tests/test_attachments_integration.py -k github` and
     `T10 — pytest cli/tests/test_interaction_integration.py` (a prompt without attachments unchanged)
-- [ ] 6. Declare the scope and measure it
+- [x] 6. Declare the scope and measure it
   - `files:read` in `slack-app-manifest.yaml` with its reason; `attachment_findings`
     beside `mention_findings`, appended in `probe_subscription`.
   - _Depends on:_ 5
   - _Requirements:_ R5.1–R5.3
   - _Test:_ `T1 — pytest cli/tests/test_attachments.py -k finding`; `T10 — the manifest suites`
-- [ ] 7. Write the integration scenarios
+- [x] 7. Write the integration scenarios
   - `cli/tests/test_attachments_integration.py`, Gherkin docstrings, every T2 row of the
     plan; fakes at the edges (`FakeSlackClient` + `files_info`, a fake fetch, `FakeTmux`).
   - _Depends on:_ 6
   - _Requirements:_ all
   - _Test:_ `T2 — pytest cli/tests/test_attachments_integration.py`
 - [ ] 8. Documentation and the decision record
-  - `docs/guide/slack.md`: the manifest copy gains `files:read`; a new *Images and voice
-    notes* section; a line under *Limits*. `docs/capabilities/channels.md` and
+  - `docs/guide/slack.md`: the manifest copy gains `files:read`; a new _Images and voice
+    notes_ section; a line under _Limits_. `docs/capabilities/channels.md` and
     `docs/capabilities/webhook-triggers.md`: current-behaviour clauses and history rows.
     `docs/decisions/decision-135.md` + its index row. `evidence/documentation.md`.
   - _Depends on:_ 7

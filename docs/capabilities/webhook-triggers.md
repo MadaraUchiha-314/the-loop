@@ -106,6 +106,28 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   - The excerpt is **prompt text only**. Routing, `authorizedUsers`, the self-comment
     marker check, control-keyword parsing, reaction targeting and head-ref resolution all
     read the **full** payload and are unaffected by what it omits.
+- **An attachment in a GitHub body reaches the session as a path** (issue-416,
+  [decision-135](../decisions/decision-135.md)). WHEN a forwarded event's `comment`,
+  `review`, `issue` or `pull_request` body carries an asset URL —
+  `https://github.com/user-attachments/assets/…`, `https://github.com/<owner>/<repo>/assets/…`,
+  `https://user-images.githubusercontent.com/…`, `https://private-user-images.githubusercontent.com/…`,
+  or the first two shapes on the configured GitHub Enterprise host — THEN the rendered
+  prompt SHALL end with an **Attachments** section, appended **after** the template and
+  outside the excerpt's JSON (a custom `routing.promptTemplate` carries it unchanged; an
+  event with no attachment renders byte-identically to before), naming each URL and, for
+  each one fetched, its kind, type, size and local path under
+  `<state.root>/local/attachments/<slug>/`, with the frame that says an image or a PDF
+  is read with the session's own tool and all of it is UNTRUSTED. The fetch SHALL send
+  the daemon's GitHub token — the first set variable of `integrations.github.api.tokenEnv`,
+  default `GH_TOKEN` then `GITHUB_TOKEN` — as a bearer credential only to GitHub's hosts
+  (and the configured enterprise host), re-checked on every redirect hop, at most 25 MiB
+  per file and ten per event; with no token the fetch is anonymous, which serves a public
+  repository's asset and fails for a private one. WHEN a fetch fails THEN the line SHALL
+  name the URL with a fixed reason and say the session may try the URL itself, and the
+  event SHALL be delivered regardless. WHEN the same asset is seen again for the same
+  work item THEN the saved file SHALL be reused and not fetched twice. The excerpt
+  contract above is unchanged: the section is built from the full body, so a URL the
+  per-field cap cut is still named.
 - **Every rendered prompt states where the work item stands in the process graph**
   (issue-148). WHEN a prompt is rendered THEN the item's graph context — current node,
   phase, status, gate messages, the node's resume command and the
@@ -904,6 +926,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-416 | **An attachment in a GitHub body reaches the session as a path** (2026-09-21): `_render_prompt` appends an Attachments section after the template for the asset URLs in the event's bodies, fetched with the daemon's token (GitHub's hosts only, redirects re-checked, 25 MiB, ten per event) into `<state.root>/local/attachments/<slug>/` and reused from disk; a failed fetch names the URL and the reason; the excerpt is untouched | [spec](../specs/issue-416/), [decision-135](../decisions/decision-135.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/416) |
 | issue-405 | The close branch **holds** a closure for a session at its endgame (2026-09-21): `_defer_close` reads the work item's `GraphContext` and parks the close when the pointer stands on an unexited terminal node; `sweep_closing` (the dispatcher's own sweeper thread, or an embedder's cycle) finishes it on the completion claim or at `routing.tmux.finishGraceSeconds`; `_record_reopen` cancels it; the poller's closure reconciliation skips a held ref; `session.autoclosed merged` reads the state file's merged pull requests | [spec](../specs/issue-405/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/405) |
 | issue-389 | A work-item collaborator can be known by **Slack member id** (2026-09-19): the roster entry gains an optional `slack` beside the optional `login` (at least one of the two, fail closed on neither or on a value that is not a member id), written by `add-collaborator slack:U…` on the ticket, by `@the-loop add-collaborator @member` in the work item's Slack room, or by the CLI's `--slack` (a member id or a handle). It buys the same thing issue-307's grant bought — input on that one work item — now on Slack too: their mentions there are context, replies and `help`, never a decision, a keyword or a room's listen switch, which stay `routing.authorizedUsers`'; a Slack-id-only collaborator is input on Slack only, since the ledger's ingress reads logins. `add-channel` gains `--listen` (`mentions`, the default, or `all`), an authorized user's switch recorded on the declaration | [spec](../specs/issue-389/), [decision-133](../decisions/decision-133.md), [channels](channels.md), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/389) |
 | issue-382 | The poller's clocks stopped being the repository's (2026-09-18): `lastPolledAt` and `closureCheckedAt` were stamped into the **tracked** `portable/<slug>.json` on every cycle for every item seen, so an operator whose `state.root` lives in a repository had a permanently dirty working tree. Both now sit in `<state.root>/local/poll-clocks.json`, keyed by ref — a clock reading describes a cycle this machine ran, and losing one costs a single closure question rather than a re-forwarded thread. The ledger keeps them in memory, so the closure schedule, the `poll` section and the served record are unchanged; a record written earlier is read and then stripped on the next write, and a cycle that learns nothing now rewrites no record at all | [spec](../specs/issue-382/), [decision-132](../decisions/decision-132.md), [state](../cli/state.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/382) |

@@ -97,6 +97,33 @@ flowchart LR
   `gate: open | none | unknown`. Before this the pipeline's reader had no control store,
   read no graph at all under the default policy, and turned every "cannot tell" into
   the marked record the gate never reads.
+- **A message's files reach the session and the ticket** (issue-416,
+  [decision-135](../decisions/decision-135.md)). WHEN an inbound Slack message — a Socket
+  Mode `message` or `app_mention`, or any of the three poll reads — carries `files` THEN
+  the normalized message SHALL carry the file objects, and WHEN it is relayed as
+  `work-item.reply`, `gate.feedback` or `control.command` THEN, after the last refusal
+  (a stranger's file is never fetched), the channel SHALL fetch each file with the bot
+  token into `<state.root>/local/attachments/<slug>/` — at most ten per message, 25 MiB
+  each, only from Slack's file host, redirects re-checked per hop — and render it twice:
+  the ledger record ends with one 📎 line per file (name, type, size, the **permalink**;
+  never a path or a private download URL) and, for an audio clip, Slack's transcript
+  quoted; the delivered reply ends with an **Attachments** section naming each file's
+  kind, name, type, size, local path and link under a frame that says an image or a PDF
+  is read with the session's own file-reading tool, a transcript is Slack's own, and all
+  of it is UNTRUSTED data. A message that is only a screenshot is delivered — the
+  section is its text — rather than refused as empty. WHEN a fetched clip is audio AND
+  Slack's `transcription.status` is `complete` THEN the transcript SHALL be the clip's
+  `vtt` captions stripped to text, else the preview; WHILE it is `processing` the file
+  SHALL be re-read through `files.info` up to three times, two seconds apart; the loop
+  SHALL run no speech-to-text, OCR or model call on any file. WHEN a file cannot be
+  fetched — no token, the `files:read` scope missing, over the cap, off-host, a transfer
+  error, past the tenth file — THEN it SHALL still be named with its permalink and a
+  fixed reason, and the message SHALL be delivered regardless. A `record-context`
+  snapshot names a message's files as `📎 <name> (<permalink>)` after its text, and a
+  kickoff's issue body ends with the same 📎 lines, nothing fetched. The shipped manifest
+  declares `files:read` (read-only), `channels status --probe` reports its absence as a
+  finding beside the mention's, and the fetched files are classified **local** on the
+  state page; nothing removes them.
 - **The comment mirror.** WHEN the router or poller accepts a human comment (authorized or
   collaborator) THEN it SHALL publish `comment.human`; WHEN it drops a marker-stamped,
   envelope-less comment THEN it SHALL publish `comment.agent` — once per comment, first
@@ -849,6 +876,7 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-416 | **A message's files reach the session** (2026-09-21): `InboundReply.files` from every Slack read; the pipeline fetches them after the last refusal (bot token, Slack's host only, ten files, 25 MiB, redirects re-checked) into `<state.root>/local/attachments/<slug>/` and renders them twice — 📎 name/type/size/permalink and Slack's quoted transcript on the ticket, kind/path/link under an UNTRUSTED frame in the pane — so a file-only message is delivered; a voice note is Slack's own transcript (captions stripped, `files.info` re-read while processing); the snapshot and a kickoff's body name files as links; the manifest gains `files:read` and the probe measures it. No speech-to-text, OCR or model call on a file | [spec](../specs/issue-416/), [decision-135](../decisions/decision-135.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/416) |
 | issue-405 | **The typed `execute without` clause reads the phases and nothing else** (2026-09-21, P1 of the 2026-09-20 run-3 e2e run): a connector's signature is dropped wherever it sits, Slack markup and invisible format characters around a name are stripped, a word that is still not a name refuses the reply by its position, and the four refusal families carry their own drop reasons with `read` on the record and the grammar's input logged. Before this the clause read everything to the end of the line, so a same-line signature was refused as *"that name"* while the offer quoted the valid name back — 0 for 4 across two live runs | [spec](../specs/issue-405/), [report](../reports/e2e-slack-test-2026-09-20-run-3.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/405) |
 | issue-398 | The Slack app's icon is the-loop's mark: `docs/assets/the-loop-logo-1024.png`, uploaded by hand under *Basic Information → Display Information* (Slack's manifest format carries no icon) — the step is in the Slack guide | [spec](../specs/issue-398/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/398) |
 | issue-395 | `read.mode` takes effect in the running service (2026-09-20, B5 of the 2026-09-19 e2e run): the service reconciles which ingresses it hosts to the config file every five seconds, so an edit that takes `read.mode` off `socket` stops the hosted Socket Mode listener — connection closed, lock released, `ingress.hosted_stopped reason=config` — with no restart, and an edit that brings it back starts one with the edited config through the boot-time starter and its refusals. `the-loop status` stops printing the contradictory `running … [disabled]`. Membership only: a running listener's own config stays frozen until it is stopped. See [control-plane](control-plane.md) for the mechanism | [spec](../specs/issue-395/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/395) |

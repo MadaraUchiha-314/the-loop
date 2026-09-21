@@ -184,7 +184,7 @@ itself, and a decision is the text typed.
 
 ### C4 — the thread snapshot and the kickoff
 
-`snapshot_thread` appends ` 📎 <name> (<permalink>)` per file to a message's line, so a
+`snapshot_thread` appends `📎 <name> (<permalink>)` per file to a message's line, so a
 screenshot in a recorded thread is a link rather than a blank. `process_kickoff` appends
 `record_lines` for the message's files to the issue body — names and permalinks, no
 fetch, since there is no session yet.
