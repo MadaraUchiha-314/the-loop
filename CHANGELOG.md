@@ -1,3 +1,9 @@
+## v19.11.0 (2026-09-21)
+
+### Feat
+
+- **issue-415**: the onboarding covers what people install the-loop for (#417)
+
 ## v19.10.1 (2026-09-21)
 
 ### Fix
