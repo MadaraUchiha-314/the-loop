@@ -788,6 +788,64 @@ run `the-loop channels poll` from cron beside the listener; it is the same cycle
 integration, and the one the-loop already uses with GitHub: push for latency, a
 cursor-based pull for completeness.
 
+## When nothing arrives at all
+
+The nastiest Slack failure is not an error: it is silence. A member mentions the-loop and
+gets no reaction; they press a button and nothing happens — and Slack's own client answers
+their press with `{"ok": true}`, because acceptance is not delivery. On the-loop's side
+there is nothing to grep: no `channel.dropped`, no `channel.*` record, nothing. The
+envelope was never offered to this process.
+
+The cause is almost always a **second Socket Mode consumer holding the same app-level
+token**. Slack load-balances an app's events across every open connection, so a stale
+`channels listen`, an instance in a workspace you stopped using, or a host nobody
+remembers takes roughly half of everything inbound and does nothing with it.
+
+The listener now finds this by itself
+([issue-413](https://github.com/MadaraUchiha-314/the-loop/issues/413)). At connect and on
+every [`read.catchUpSeconds`](/config/cli/channels-options#slackreadcatchupseconds)
+reconcile it posts
+[`read.splitCheckBeats`](/config/cli/channels-options#slackreadsplitcheckbeats) nonce
+heartbeats into the central channel, counts how many reach it, deletes them again, and
+reports a shortfall as `channel.split_suspected` (warning) and a line in
+[`the-loop status`](/cli/commands/status) and `the-loop channels status`. Run
+[`the-loop doctor slack`](/cli/commands/doctor) to take the same measurement on demand.
+
+It is **evidence, not proof** — Slack exposes no API that lists an app's connections — so
+the report reads the last eight checks rather than the latest one. At two beats a real
+split answers clean one time in four: the incident that filed the issue read `2/3 → 1/3 →
+3/3 → 1/3` across four runs of the doctor, minutes apart.
+
+### Fencing the other consumer out
+
+1. **Stop every other holder you can find.** A `channels listen` in a forgotten tmux
+   pane, a second instance, a colleague's laptop. `the-loop status` on each host says
+   whether its listener is running.
+2. **If the heartbeats are still short, rotate the app-level token.** This is the remedy
+   that works when the host cannot be found — and in the reported incident it never was:
+
+   ```console
+   # 1. api.slack.com/apps → your app → Basic Information → App-Level Tokens
+   #    → open the existing token → Revoke
+   # 2. Generate Token and Scopes → add connections:write → Generate
+   # 3. put the new xapp-… value in the env file your instance reads
+   $ the-loop restart
+   $ the-loop doctor slack
+   ```
+
+   Revoking is what fences the phantom out; generating a replacement is what lets this
+   instance reconnect. Do both, in that order.
+3. **Restarting the healthy instance does not help.** The other consumer keeps its own
+   connection, and Slack keeps splitting. This was tried first in the reported incident
+   and changed nothing; the rotation fixed it within a second — heartbeats `3/3` on every
+   run afterwards, and a repository-picker press that had been vanishing landed
+   immediately.
+
+The bot token is a separate credential and does not need rotating for this: a split is
+about **connections**, and only the app-level token opens one. Rolling any credential also
+leaves already-running sessions on the old value — see
+[`sessions restart`](/cli/commands/sessions#restart).
+
 ## Why not Slack Workflow Builder
 
 The ticket asked whether Slack workflows can be defined in JSON/YAML and imported. For

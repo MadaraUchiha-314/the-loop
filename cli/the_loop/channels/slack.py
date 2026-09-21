@@ -112,6 +112,8 @@ __all__ = [
     "CONVERSATION_KINDS",
     "ConversationKind",
     "DEFAULT_CATCH_UP_SECONDS",
+    "DEFAULT_SPLIT_CHECK_BEATS",
+    "MAX_SPLIT_CHECK_BEATS",
     "MIN_CATCH_UP_SECONDS",
     "kind_from_info",
     "kind_summary",
@@ -121,6 +123,8 @@ __all__ = [
     "unchecked_advice",
     "EVENTS_UNVERIFIABLE_CAVEAT",
     "HEARTBEAT_MARKER",
+    "SPLIT_CAVEAT",
+    "SPLIT_REMEDY",
     "expected_bot_events",
     "heartbeat_nonce",
     "heartbeat_text",
@@ -159,6 +163,14 @@ DEFAULT_CATCH_UP_SECONDS = 900
 #: A reconcile is a safety net, not a second poll transport: each cycle is one
 #: ``conversations.history`` plus one ``conversations.replies`` per bound thread.
 MIN_CATCH_UP_SECONDS = 60
+#: How many heartbeats the listener's own split check posts per cycle
+#: (issue-413). The doctor pays three because an operator is waiting on its one
+#: run; the watch runs forever, so it buys the same confidence with time instead
+#: of messages — two beats detect a split with probability 0.75 per check, which
+#: is 99.6% within four checks (one hour at the default cadence).
+DEFAULT_SPLIT_CHECK_BEATS = 2
+#: The ceiling — a check is a measurement, not a broadcast.
+MAX_SPLIT_CHECK_BEATS = 5
 
 
 @dataclass(frozen=True)
@@ -421,6 +433,27 @@ def expected_bot_events() -> Tuple[str, ...]:
 #: bot-posted message and records the receipt instead of reading it as input.
 HEARTBEAT_MARKER = "the-loop doctor heartbeat"
 _HEARTBEAT_NONCE_RE = re.compile(r"^[a-f0-9]{8,32}$")
+
+#: The caveat every split report carries, word for word. A shortfall is a
+#: measurement of an absence, and the absence has innocent causes.
+SPLIT_CAVEAT = (
+    "Evidence, not proof: Slack exposes no API that lists an app's connections."
+)
+
+#: The remedy, in the order an operator should try it — the same sentence in the
+#: event, in `status`, in `channels status` and in `doctor slack`, so it is read
+#: once and recognised afterwards. The second half is what the issue-413
+#: incident actually needed: the phantom consumer's host was never found, and
+#: restarting the healthy service changed nothing — only rotating the app-level
+#: token fenced the other consumer out.
+SPLIT_REMEDY = (
+    "Stop every other process connected with this app-level token — a second "
+    "the-loop instance, a stale `channels listen`, a host nobody remembers. When "
+    "the holder cannot be found, rotate the token instead: revoke it under the "
+    "Slack app's Basic Information, generate a new one with `connections:write`, "
+    "update the env file and restart. Rotation fences out every holder without "
+    "finding any of them; restarting this instance alone does not."
+)
 
 
 def heartbeat_text(nonce: str) -> str:
@@ -1172,6 +1205,9 @@ class SlackChannelConfig:
     #: How often socket mode re-reads the bound threads on top of the connect-time
     #: read (issue-362). ``0`` means connect-only — 16.0.1's behaviour.
     catch_up_seconds: int = DEFAULT_CATCH_UP_SECONDS
+    #: How many heartbeats the listener's own split check posts per cycle
+    #: (issue-413). ``0`` turns the check off entirely — nothing is posted.
+    split_check_beats: int = DEFAULT_SPLIT_CHECK_BEATS
     #: The acknowledgment on an accepted inbound message (issue-325).
     reactions: SlackReactionConfig = SlackReactionConfig()
     #: Every control command and its configured keyword (issue-337) — the values
@@ -1360,6 +1396,7 @@ class SlackChannelConfig:
                 read_mode=mode,
                 read_interval_seconds=float(read.get("intervalSeconds") or 30),
                 catch_up_seconds=_catch_up_seconds(read.get("catchUpSeconds")),
+                split_check_beats=_split_check_beats(read.get("splitCheckBeats")),
                 reactions=SlackReactionConfig.from_mapping(section.get("reactions")),
                 control_keywords=control_keywords,
             )
@@ -1404,6 +1441,47 @@ def _catch_up_seconds(raw: Any) -> int:
         )
         return MIN_CATCH_UP_SECONDS
     return seconds
+
+
+def _split_check_beats(raw: Any) -> int:
+    """``channels.slack.read.splitCheckBeats``, clamped (issue-413).
+
+    Read explicitly rather than through the ``or`` idiom, for the reason its
+    neighbour :func:`_catch_up_seconds` is: ``0`` has to survive, because it is
+    how an operator turns the check off. A value above the cap is lowered rather
+    than honoured — every beat is a message posted into a room people read, and
+    the confidence a bigger number buys is bought more cheaply by waiting for
+    the next cycle.
+    """
+    if raw is None:
+        return DEFAULT_SPLIT_CHECK_BEATS
+    try:
+        beats = int(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "channels.slack.read.splitCheckBeats %r is not a number — using %d",
+            raw,
+            DEFAULT_SPLIT_CHECK_BEATS,
+        )
+        return DEFAULT_SPLIT_CHECK_BEATS
+    if beats < 0:
+        logger.warning(
+            "channels.slack.read.splitCheckBeats %d is negative — using %d; 0 is "
+            "how the check is turned off",
+            beats,
+            DEFAULT_SPLIT_CHECK_BEATS,
+        )
+        return DEFAULT_SPLIT_CHECK_BEATS
+    if beats > MAX_SPLIT_CHECK_BEATS:
+        logger.warning(
+            "channels.slack.read.splitCheckBeats %d is above %d — using %d; a "
+            "split check is a measurement, not a broadcast",
+            beats,
+            MAX_SPLIT_CHECK_BEATS,
+            MAX_SPLIT_CHECK_BEATS,
+        )
+        return MAX_SPLIT_CHECK_BEATS
+    return beats
 
 
 def _control_keywords(raw: Any) -> Tuple[Tuple[str, str], ...]:
@@ -3280,6 +3358,21 @@ def report_subscription(config: "SlackChannelConfig") -> None:
         )
 
 
+def _split_check(watch: Any, waiter: threading.Event) -> None:
+    """One split check, guarded (issue-413, R1.7).
+
+    ``run_cycle`` already swallows everything it can name; this guards what it
+    cannot — the call itself, a future refactor — because a listener that dies
+    on a diagnostic is strictly worse than one that never diagnosed.
+    """
+    if watch is None:
+        return
+    try:
+        watch.run_cycle(stop_event=waiter)
+    except Exception:  # noqa: BLE001 — a diagnostic never ends the listener
+        logger.exception("slack: the split check raised; still listening")
+
+
 def run_socket_listener(
     cli_config: Optional[Mapping[str, Any]],
     stop_event: Optional[threading.Event] = None,
@@ -3325,9 +3418,16 @@ def run_socket_listener(
         SocketModeResponse,
     )
 
-    from . import commands, inbound
+    from . import commands, inbound, splitwatch
 
     frozen_config = dict(cli_config or {})
+    web_client = build_client(bot_token)
+    # The listener's own split check (issue-413). `None` when the deployment
+    # asks for none (`read.splitCheckBeats: 0`); every other obstacle is a
+    # recorded `unverifiable`, so "all is well" and "never ran" stay distinct.
+    watch = splitwatch.SplitWatch.for_config(
+        frozen_config, client=web_client, config=config
+    )
 
     def handle(client, request) -> None:
         if request.type not in ("events_api", "interactive", "slash_commands"):
@@ -3393,12 +3493,18 @@ def run_socket_listener(
                     ts=str(event.get("ts") or ""),
                     nonce=nonce,
                 )
+                # ...and, since issue-413, straight to this listener's own check,
+                # which posted it. The emit stays first and unconditional: the
+                # doctor reads the log, and a receipt it cannot see is a false
+                # `split-suspected` on the operator's screen.
+                if watch is not None:
+                    watch.observe(nonce)
                 return
             inbound.handle_socket_event(event, frozen_config, addressed=False)
         except Exception:  # one bad message never ends the listener
             logger.exception("slack: socket event handling raised; continuing")
 
-    client = SocketModeClient(app_token=app_token, web_client=build_client(bot_token))
+    client = SocketModeClient(app_token=app_token, web_client=web_client)
     client.socket_mode_request_listeners.append(handle)
     client.connect()
     logger.info(
@@ -3421,6 +3527,12 @@ def run_socket_listener(
     if due is not None:
         logger.info("slack: reconciling the bound threads every %gs", interval)
     waiter = stop_event or threading.Event()
+    # The split check rides the reconcile's deadline (issue-413) rather than a
+    # cadence of its own: a second key is a second thing to get wrong, and
+    # "how late may an inbound envelope be" is exactly the question a split
+    # makes urgent. `catchUpSeconds: 0` therefore keeps its connect-only
+    # contract for both.
+    _split_check(watch, waiter)
     try:
         while not waiter.wait(tick):
             if due is not None and time.monotonic() >= due:
@@ -3432,6 +3544,7 @@ def run_socket_listener(
                     # refactor), because a listener that dies on a reconcile is
                     # strictly worse than one that never reconciled.
                     logger.exception("slack: reconcile cycle raised; still listening")
+                _split_check(watch, waiter)
                 due = time.monotonic() + interval
     except KeyboardInterrupt:
         pass

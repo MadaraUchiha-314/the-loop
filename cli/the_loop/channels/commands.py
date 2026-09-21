@@ -376,7 +376,7 @@ def reset_seen() -> None:
 
 def render_status(doc: Mapping[str, Any]) -> str:
     """`status_all`'s document as the lines `the-loop status` prints."""
-    from ..core.lifecycle import environment_line
+    from ..core.lifecycle import environment_line, split_lines
 
     instance = doc.get("instance") or {}
     name = str(instance.get("name") or "unnamed")
@@ -408,6 +408,14 @@ def render_status(doc: Mapping[str, Any]) -> str:
     drift = environment_line(doc)
     if drift:
         lines.append(f"• sessions: {drift}")
+    split = split_lines(doc)
+    if split:
+        # The same sentences `the-loop status` prints (issue-413) — the operator
+        # reading this in Slack is the one whose room is losing envelopes. One
+        # bullet, because it is one finding; the caveat and the remedy are its
+        # continuation, not two more items in the list.
+        lines.append(f"• slack: {split[0]}")
+        lines.extend(f"  {line}" for line in split[1:])
     standing = doc.get("standingSessions") or []
     lines.append(
         "• standing: "

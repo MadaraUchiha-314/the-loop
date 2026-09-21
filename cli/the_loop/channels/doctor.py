@@ -51,6 +51,8 @@ from .. import eventlog
 from . import slack as _slack
 from .directory import SlackDirectory, is_conversation_id, normalize_name
 from .slack import (
+    SPLIT_CAVEAT,
+    SPLIT_REMEDY,
     SlackChannelConfig,
     heartbeat_nonce,
     heartbeat_text,
@@ -65,6 +67,7 @@ __all__ = [
     "DEFAULT_BEATS",
     "DEFAULT_WINDOW_SECONDS",
     "VERDICTS",
+    "central_channel",
     "check_declared_channels",
     "consumer_verdict_text",
     "listener_is_running",
@@ -163,7 +166,7 @@ def _probe(
     bot_token = os.environ.get(config.bot_token_env) or ""
     if not bot_token:
         return _unverifiable(result, f"no bot token — {config.bot_token_env} is unset")
-    channel = _central_channel(config, cli_config, client_factory)
+    channel = central_channel(config, cli_config, client_factory)
     if not channel:
         return _unverifiable(
             result,
@@ -380,11 +383,17 @@ def _event_log(
     return path, bool(cfg.get("enabled", True))
 
 
-def _central_channel(
+def central_channel(
     config: SlackChannelConfig,
-    cli_config: Optional[Mapping[str, Any]],
-    client_factory: Optional[Callable[[str], Any]],
+    cli_config: Optional[Mapping[str, Any]] = None,
+    client_factory: Optional[Callable[[str], Any]] = None,
 ) -> str:
+    """The conversation id ``channels.slack.channel`` names, or ``""``.
+
+    Public since issue-413: the listener's own split check posts into the same
+    room the doctor does, and resolves it the same way — one resolver, so the
+    two can never disagree about which room was measured.
+    """
     declared = config.channel
     if not declared:
         return ""
@@ -428,10 +437,7 @@ def consumer_verdict_text(result: Mapping[str, Any]) -> str:
             f"{echoed}/{beats} heartbeats reached {where} within {window:g}s — "
             "another Socket Mode consumer may hold this app's connection: Slack "
             "splits Socket Mode events across an app's connections, halving "
-            "inbound for both. Evidence, not proof (Slack lists no connections): "
-            "find every process connected with this app-level token — a second "
-            "the-loop instance, a stale `channels listen`, another host — and "
-            "stop all but one."
+            f"inbound for both. {SPLIT_CAVEAT} {SPLIT_REMEDY}"
         )
         if result.get("receiver") == "listener":
             text += (

@@ -146,6 +146,12 @@ class StateLayout:
         return str(self.root_path / "self-diagnosis.json")
 
     @property
+    def slack_split(self) -> str:
+        """What the Socket Mode listener's own split check last measured
+        (issue-413) — read by ``status`` and ``channels status``."""
+        return str(self.root_path / "local" / "slack-split.json")
+
+    @property
     def channels_dir(self) -> str:
         """Channel conversation state — thread bindings + read cursors (issue-245)."""
         return str(self.root_path / "channels")
@@ -385,6 +391,27 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
             "another machine it would suppress reports for failures that machine "
             "never diagnosed — its log is different — and the sibling .lock file "
             "guarding concurrent scans is kernel state that cannot travel at all."
+        ),
+    ),
+    GeneratedPath(
+        name="slack split check",
+        attr="slack_split",
+        default="<root>/local/slack-split.json",
+        portable=False,
+        holds=(
+            "what the Socket Mode listener's own split check last measured "
+            "(issue-413): the verdict, the beats posted and echoed, the window, "
+            "the channel id, the rolling window of recent verdicts and the "
+            "consecutive-short count the escalation ladder reads"
+        ),
+        why=(
+            "a measurement of what THIS process, on THIS host, heard back from "
+            "Slack. Copied elsewhere it reports a split that machine never had, "
+            "and the finding it carries is re-measured within one reconcile "
+            "cadence anyway. Machine-local also keeps it out of a repository, "
+            "where a forged verdict would be a report about someone else's "
+            "deployment — it drives a report and nothing else: no gate, no "
+            "authorization and no routing reads it."
         ),
     ),
     GeneratedPath(

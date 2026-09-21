@@ -26,6 +26,7 @@ from typing import Optional
 from .base import Command, register
 from .. import cli_config, eventlog
 from ..core import lifecycle
+from ..core.daemons import SLACK_LISTENER
 from ..poller.heartbeat import PollHeartbeat
 from ..state import layout_from_config
 
@@ -210,6 +211,14 @@ class StatusCommand(Command):
 
                 beat = PollHeartbeat.read(layout_from_config(config).poll_status)
                 for line in poller_daemon.heartbeat_lines(beat, row["running"]):
+                    print(f"            {line}")
+            if row["service"] == SLACK_LISTENER:
+                # What the listener's own split check measured (issue-413).
+                # Beside the liveness answer, because "running" and "hearing all
+                # of its traffic" are different questions and the incident that
+                # filed the issue was green on the first while failing the
+                # second.
+                for line in lifecycle.split_lines(report):
                     print(f"            {line}")
         drift = lifecycle.environment_line(report)
         if drift:

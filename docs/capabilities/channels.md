@@ -478,6 +478,30 @@ flowchart LR
   resolve in its directory, reporting each `absent` miss (the B1 failure class). Every
   check is fail-closed: an unverifiable result is `[?] unverifiable`, never `[ok]`, and
   only ids and channel names are printed, never tokens.
+- **The listener measures its own share of the inbound traffic, unasked** (issue-413).
+  WHEN the Socket Mode listener connects, and again on every
+  `channels.slack.read.catchUpSeconds` reconcile, THEN it SHALL post
+  `channels.slack.read.splitCheckBeats` (default 2; `0` = off; above 5 lowered to 5) nonce
+  heartbeats into the configured channel, count how many reach it within the window, and
+  delete each one afterwards. WHEN fewer come back than were posted THEN it SHALL record
+  `split-suspected` and emit `channel.split_suspected` at `warning` — on the first short
+  check and then once every sixth, so a persistent split is a periodic warning and not a
+  storm — and WHEN a check is clean after a short one THEN it SHALL emit
+  `channel.split_cleared` and reset that ladder. WHEN a check cannot run THEN it SHALL
+  record `unverifiable` with a reason, never `ok`, and SHALL NEVER end the listener. This
+  is the doctor's F2 measurement moved into the loop, because the failure it finds — a
+  second consumer on the same app token, halving everything inbound — leaves **no trace**
+  on this instance at all: no `channel.dropped`, no record of any kind, only an absence.
+- **A split reaches the surfaces the operator already reads** (issue-413). WHEN a check
+  completes THEN it SHALL be written to `<state.root>/local/slack-split.json` (ids, counts
+  and timestamps only), and WHEN the latest check or any of the last eight was short THEN
+  `the-loop status`, `the-loop channels status` and `/the-loop status` SHALL each report
+  it with the same three sentences: what was measured, that it is **evidence, not proof**
+  (Slack lists no connections), and the remedy — stop every other holder of the app-level
+  token, or, when the holder cannot be found, **rotate** it (revoke, regenerate, update the
+  env file, restart), which fences out every holder without finding any of them. The
+  window of eight, not the latest verdict, is deliberate: at two beats a real split answers
+  clean one time in four. A split SHALL NOT move `status`'s `ok` or its exit code.
 - **An ignored Socket Mode envelope is logged, and a refused keyword explains itself**
   (issue-393, R2.4/R2.5). WHEN the listener ignores an envelope — an unhandled
   `events_api` type, an unknown interactive kind, a non-message/non-mention event — THEN
@@ -744,7 +768,8 @@ flowchart LR
   issue-389 — the drop reasons `not-addressed` / `unauthorized-act` / `snapshot-failed`
   / `snapshot-too-large` / `empty-decision` / `bad-metadata`, and
   `channel.context_recorded`, `channel.decision_recorded`, `channel.snapshot_empty`,
-  `channel.shortcut_received`, `channel.shortcut_failed`, `channel.view_submitted`.
+  `channel.shortcut_received`, `channel.shortcut_failed`, `channel.view_submitted`, and
+  — issue-413 — `channel.split_suspected` (warning) / `channel.split_cleared`.
   Payloads carry ids, event types and counts, never text.
 
 ## Design

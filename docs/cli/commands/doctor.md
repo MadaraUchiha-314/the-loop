@@ -64,8 +64,17 @@ fixed-format nonce messages into the configured channel, counts how many come ba
   receives directly, acknowledging only its own heartbeats so a member's real message is
   left for Slack to redeliver.
 
-A shortfall reads `[!] … another Socket Mode consumer may hold this app's connection` — find
-every process connected with this app-level token and stop all but one. A full count reads
-`[ok]`, still hedged: a consumer that was idle or reconnecting during the window would not
-show. A listener started on a build older than this one records no heartbeat at all —
-`the-loop restart` on this build first.
+A shortfall reads `[!] … another Socket Mode consumer may hold this app's connection`, and
+names the two remedies in order: stop every other process connected with this app-level
+token, or — when the holder cannot be found — **rotate the token**: revoke it under the
+Slack app's Basic Information, generate a new one with `connections:write`, update the env
+file and restart. Rotation fences out every holder without finding any of them; restarting
+this instance alone does not. A full count reads `[ok]`, still hedged: a consumer that was
+idle or reconnecting during the window would not show. A listener started on a build older
+than this one records no heartbeat at all — `the-loop restart` on this build first.
+
+Since [issue-413](https://github.com/MadaraUchiha-314/the-loop/issues/413) the running
+listener makes the same measurement **on its own**, at connect and on every reconcile, and
+reports it through [`status`](/cli/commands/status) and
+[`channels status`](/cli/commands/channels) — so this verb is for confirming a suspicion
+on demand rather than for finding the problem in the first place.

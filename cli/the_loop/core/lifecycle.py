@@ -569,6 +569,13 @@ def status_all(
         # observation about sessions. It is reported so the answer arrives in the
         # minute after a rotation rather than on the third day of silence.
         "sessionEnvironment": _session_environment(config),
+        # What the Slack listener's own split check last measured (issue-413).
+        # Never moves `ok`, for the reason `sessionEnvironment` does not: `ok`
+        # means every enabled service is RUNNING, and a listener hearing half of
+        # its traffic is running. It is reported so the answer arrives from the
+        # command the operator already types, instead of from a member who never
+        # got a reply.
+        "slackSplit": _slack_split(config),
         # Which instance this is and what it manages (issue-322) — the same
         # document `GET /api/v1/instance` serves.
         "instance": core_instance.describe_instance(config),
@@ -606,6 +613,42 @@ def _session_environment(config: Optional[dict]) -> Dict[str, Any]:
             "unverified": 0,
             "sessions": [],
         }
+
+
+def _slack_split(config: Optional[dict]) -> Dict[str, Any]:
+    """The recorded split check, made safe for `status` to call (issue-413).
+
+    ``{}`` for a deployment that has never run one — which every surface prints
+    as nothing. Silence about a measurement never taken is correct; silence
+    about one that came back short is the defect issue-413 filed.
+    """
+    try:
+        from ..channels import splitwatch
+
+        state = splitwatch.read_state(splitwatch.split_state_path(config or {}))
+        if state is None:
+            return {}
+        doc = state.to_mapping()
+        doc["suspected"] = state.suspected
+        return doc
+    except Exception:  # noqa: BLE001 — never fails the status it decorates
+        logger.debug("could not read the slack split state", exc_info=True)
+        return {}
+
+
+def split_lines(doc: Mapping[str, Any]) -> List[str]:
+    """The report a suspected split earns in `status`; ``[]`` when there is none.
+
+    Read from the document rather than the file, so every renderer — text, JSON,
+    the slash command — is looking at the same reading.
+    """
+    from ..channels.splitwatch import SplitState
+    from ..channels.splitwatch import split_lines as _lines
+
+    raw = (doc.get("slackSplit") or {}) if isinstance(doc, Mapping) else {}
+    if not raw:
+        return []
+    return _lines(SplitState.from_mapping(raw))
 
 
 def environment_line(doc: Mapping[str, Any]) -> str:

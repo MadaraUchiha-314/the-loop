@@ -87,6 +87,8 @@ def _status(config: dict, probe: bool = False) -> int:
     else:
         cadence = ""
     print(f"  read:         {slack.read_mode}{cadence}")
+    for line in _split_check_lines(slack, config):
+        print(line)
     for line in _subscription_lines(slack, probe):
         print(line)
     for line in _button_lines(slack):
@@ -192,6 +194,23 @@ def _status(config: dict, probe: bool = False) -> int:
             f"  [{tick}] {name} — {SUBSCRIBABLE_EVENTS.get(name) or _publish_meaning(name)}"
         )
     return 0
+
+
+def _split_check_lines(slack: SlackChannelConfig, config: dict) -> list:
+    """What the listener's own split check has measured (issue-413).
+
+    Reads the state file and calls nothing, so `channels status` keeps its
+    contract that the un-probed form makes no API call. Only socket mode has a
+    listener to run the check, so poll mode says so once and stops.
+    """
+    from ..channels import splitwatch
+
+    if slack.read_mode != "socket":
+        return []
+    state = splitwatch.read_state(splitwatch.split_state_path(config))
+    lines = [f"  split check:  {splitwatch.cadence_line(state, slack)}"]
+    lines += [f"  [!] {line}" for line in splitwatch.split_lines(state)]
+    return lines
 
 
 def _subscription_lines(slack: SlackChannelConfig, probe: bool) -> list:

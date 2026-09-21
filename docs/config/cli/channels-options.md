@@ -42,6 +42,7 @@ channels:
       mode: socket                           # poll | socket | off
       intervalSeconds: 30
       catchUpSeconds: 900                    # socket mode: how often it re-reads the threads
+      splitCheckBeats: 2                     # socket mode: heartbeats per split check (0 = off)
     reactions:                               # acknowledge an accepted message on itself
       enabled: true
       received: eyes                         # 👀 the moment it is accepted
@@ -437,6 +438,39 @@ cycle costs one `conversations.history` plus one `conversations.replies` per bou
 Read **only** in socket mode — `poll` already re-reads every
 [`intervalSeconds`](#slackreadintervalseconds). A cycle processes exactly what the
 shared cursors say is new, so nothing is delivered twice.
+
+### `slack.read.splitCheckBeats`
+
+- **Type:** `integer` (minimum 0, maximum 5)
+- **Default:** `2`
+
+How many nonce heartbeats the listener posts into
+[`channel`](#slackchannel) to measure its **own share of the inbound traffic**
+([issue-413](https://github.com/MadaraUchiha-314/the-loop/issues/413)) — once at connect,
+and again on every [`catchUpSeconds`](#slackreadcatchupseconds) reconcile. Each heartbeat
+is deleted again as soon as the window closes.
+
+The failure it exists to find has no other symptom. When a second Socket Mode consumer
+holds this app-level token — a stale `channels listen`, an abandoned workspace's instance,
+a host nobody remembers — Slack load-balances the app's envelopes across the open
+connections, and roughly half of everything inbound lands on the other one: mentions,
+button presses, select-menu picks, slash commands. On this instance the loss leaves **no
+trace at all**, because the envelope was never offered to it, and Slack's client still
+answers the member's press with `{"ok": true}`.
+
+A check that hears back fewer beats than it posted records `split-suspected`, emits
+`channel.split_suspected` at `warning` (once, then every sixth consecutive short check),
+and puts a line in [`the-loop status`](/cli/commands/status) and
+[`the-loop channels status`](/cli/commands/channels). It is **evidence, not proof**: Slack
+exposes no API that lists an app's connections, so a consumer that was idle during the
+window does not show, and a beat lost for any other reason looks the same. That is why
+the report reads the last eight verdicts rather than the latest one — under a real split
+at two beats, one check in four comes back clean.
+
+`0` turns the check off and posts nothing. A value above `5` is lowered to `5`: a check is
+a measurement, not a broadcast, and confidence is bought more cheaply by waiting for the
+next cycle than by posting more messages into a room people read. Read **only** in socket
+mode — poll mode has no connection to split.
 
 ## The slash command
 
