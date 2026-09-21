@@ -108,6 +108,13 @@ the-loop channels manifest  # the Slack app manifest to import (scopes, events, 
   rooms and how many of them hear every message (`--listen all`). `--probe` measures
   the mention scope beside the kind's and reports its absence as a `[!]` finding naming
   the consequence.
+- **`status`** also prints a **`split check:`** line in socket mode
+  ([issue-413](https://github.com/MadaraUchiha-314/the-loop/issues/413)): the cadence the
+  listener measures its own share of the inbound traffic at, and what the last check read
+  — or `[!]` and the remedy when the last eight checks were not all clean, which means a
+  second Socket Mode consumer is holding this app-level token and Slack is splitting the
+  app's envelopes between the connections. It reads the state file the listener writes and
+  calls nothing, so the un-probed form still makes no API call.
 - **`status`** also prints a `commands:` line: which slash-command families this channel
   may run (`work-item` — `control.command`; `instance` — `instance.command`; `standing` —
   `standing.command`), or that none can arrive because `read.mode` is not `socket`.

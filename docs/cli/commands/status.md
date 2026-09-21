@@ -103,6 +103,34 @@ sessions. A host that will not report a process's environment claims no drift ra
 guessing at it. `--format json` carries the whole comparison as `sessionEnvironment`, with
 a row per session (`verdict`, and the variable **names** that differ — never their values).
 
+## When inbound is being split
+
+```console
+$ the-loop status
+slack-listener running (hosted in the service, pid 24846) [enabled]
+            inbound may be split across two Socket Mode consumers — 1/2 heartbeats reached the listener within 5s (3 of the last 8 checks short, last at 2026-09-21T07:41:02Z)
+            Evidence, not proof: Slack exposes no API that lists an app's connections.
+            Stop every other process connected with this app-level token …
+```
+
+The listener measures its own share of the inbound traffic
+([issue-413](https://github.com/MadaraUchiha-314/the-loop/issues/413)): it posts
+[`read.splitCheckBeats`](/config/cli/channels-options#slackreadsplitcheckbeats) nonce
+heartbeats at connect and on every reconcile, and counts how many reach it. A shortfall
+means a second Socket Mode consumer is holding the same app-level token, so Slack is
+splitting the app's envelopes between the connections and roughly half of everything
+inbound — mentions, button presses, slash commands — is landing elsewhere. Nothing else
+reports that: the envelope was never offered to this process, so there is no
+`channel.dropped` and no record of any kind.
+
+The report reads the **last eight checks**, not the latest one, because at two beats a
+real split answers clean one time in four; the reporter who filed the issue watched the
+doctor read `2/3 → 1/3 → 3/3 → 1/3`. It clears itself after a full clean window.
+
+Like the environment line, it does **not** move the exit code: `ok` means every enabled
+*service* is running, and a listener hearing half of its traffic is running. `--format
+json` carries the whole reading as `slackSplit`.
+
 [Standing sessions](/capabilities/standing-sessions) get their own section, and count
 toward the exit code — but only the ones [`start`](/cli/commands/start) **would have
 started** (the block enabled, and the entry's `autoStart` true). One declared without

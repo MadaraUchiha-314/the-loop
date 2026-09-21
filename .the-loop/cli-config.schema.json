@@ -1259,6 +1259,13 @@
                   "minimum": 0,
                   "default": 900,
                   "description": "Socket-mode reconcile cadence: how often the listener re-reads the bound threads and the kickoff cursor on top of its push reads and the one it runs at connect. It bounds every cause of a missed envelope — a message event the Slack app is not subscribed to, a Socket Mode reconnect gap, an acknowledgement that raced a restart. `0` means only at connect (16.0.1's behaviour); a non-zero value below 60 is raised to 60, because a reconcile is a safety net, not a second poll transport. Read only in socket mode — `poll` already re-reads every `intervalSeconds`."
+                },
+                "splitCheckBeats": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 5,
+                  "default": 2,
+                  "description": "Socket-mode split check (issue-413): how many fixed-format nonce heartbeats the listener posts into `channel` — at connect, and again on every `catchUpSeconds` reconcile — to count how many reach it. A shortfall is EVIDENCE (never proof: Slack exposes no API that lists an app's connections) that a second Socket Mode consumer holds this app-level token, which makes Slack split the app's envelopes across the connections so roughly half of everything inbound — mentions, button presses, slash commands — silently lands elsewhere, leaving no trace on this instance at all. Every heartbeat is deleted again. `0` turns the check off and posts nothing; a value above 5 is lowered to 5, because a check is a measurement, not a broadcast. Read only in socket mode — poll mode has no connection to split."
                 }
               }
             },

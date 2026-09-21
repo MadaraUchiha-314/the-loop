@@ -407,6 +407,27 @@ EVENT_TYPES: Dict[str, str] = {
         "Mode consumer shares the app token and Slack is splitting events "
         "between them. A heartbeat never enters the inbound pipeline."
     ),
+    "channel.split_suspected": (
+        "The Socket Mode listener's own split check heard back fewer heartbeats "
+        "than it posted (channel, channel_id, beats, echoed, window_seconds, "
+        "consecutive: how many checks in a row have now been short, remedy) — "
+        "issue-413. Warning level: roughly half of everything inbound — "
+        "mentions, presses, slash commands — is landing on another Socket Mode "
+        "consumer holding the same app-level token, and the loss is otherwise "
+        "visible only as an ABSENCE (no channel.dropped, no record at all). "
+        "EVIDENCE, never proof: Slack exposes no API that lists an app's "
+        "connections. Emitted on the first short check and then once every "
+        "SPLIT_ESCALATE_EVERY, so a persistent split is a periodic warning and "
+        "not a storm."
+    ),
+    "channel.split_cleared": (
+        "A split check came back clean after one or more short ones (channel, "
+        "channel_id, beats, echoed, after: how many consecutive short checks it "
+        "ends) — issue-413. Closes the warning ladder that "
+        "channel.split_suspected opened. It does not mean the split is gone: at "
+        "two beats a real split answers clean a quarter of the time, which is "
+        "why `status` reads the rolling window rather than this one verdict."
+    ),
     "channel.command_received": (
         "An authorized member's `/the-loop` slash command passed the grant "
         "check (channel, actor: the member id, family: work-item | instance | "
