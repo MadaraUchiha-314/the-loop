@@ -31,6 +31,7 @@ import os
 import re
 import threading
 import time
+import unicodedata
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -102,6 +103,10 @@ __all__ = [
     "selection_control_blocks",
     "selection_rows",
     "without_clause",
+    "EMPTY_CLAUSE",
+    "UNKNOWN_PHASE",
+    "UNSKIPPABLE_PHASE",
+    "read_summary",
     "REACTION_STATES",
     "READ_MODES",
     "CONVERSATION_KINDS",
@@ -594,6 +599,17 @@ EXECUTE_ACTION = f"{ACTION_PREFIX}command:execute"
 CHECKBOX_LIMIT = 10
 #: The reply grammar's one word (R9.3, F1): ``<execute keyword> without <n, …>``.
 WITHOUT = "without"
+#: Why a typed `without` reply was refused (issue-405 P1) — the drop label the
+#: caller records, one per family: a name or number the checklist does not
+#: offer (or a word that is not a name at all), a protected phase, a clause that
+#: names nothing. `checklist-unreadable` is the caller's own, fourth family.
+UNKNOWN_PHASE = "unknown-phase"
+UNSKIPPABLE_PHASE = "unskippable-phase"
+EMPTY_CLAUSE = "empty-clause"
+#: What the split words of a clause are stripped of before they are read as a
+#: name or number: quoting, brackets, trailing punctuation — and (issue-405 P1)
+#: Slack's own markup, because `*5*` is 5 and `_design_` is design.
+_ITEM_WRAPPERS = "`'\"“”.:!?()[]{}*_~"
 #: The question's emoji — one state emoji per message (R11.1), the one a question
 #: carries in the voice table.
 _SELECTION_EMOJI = "🤔"
@@ -899,11 +915,29 @@ def compose_selection_execute(
     return f"{keyword}\n\n" + "\n".join(lines)
 
 
+def _clean_item(raw: str) -> str:
+    """One split word of a clause, as the name or number it is (issue-405 P1):
+    invisible format characters (a zero-width space a client pasted in) removed,
+    then quoting, brackets, punctuation and Slack markup around it stripped."""
+    bare = "".join(ch for ch in raw if unicodedata.category(ch) != "Cf")
+    return bare.strip().strip(_ITEM_WRAPPERS)
+
+
 def without_clause(text: str, keyword: str) -> Optional[List[str]]:
     """The names and numbers after ``<keyword> without`` in ``text`` — ``[]`` for
-    a clause naming nothing, ``None`` when the text carries no such clause."""
+    a clause naming nothing, ``None`` when the text carries no such clause.
+
+    The clause is the rest of the keyword's **line** — every word of it, so a
+    word that is not a phase refuses the reply rather than being skipped over
+    (abuse case 4) — read after a connector's signature is dropped
+    (:func:`~.verbs.strip_signature`, issue-405 P1: the live message did not
+    end where the operator's list ended) and with each word cleaned of the
+    markup a client wraps a name in (:func:`_clean_item`).
+    """
     if not keyword or not text:
         return None
+    from .verbs import strip_signature
+
     pattern = (
         r"(?<![\w:-])"
         + re.escape(keyword)
@@ -911,21 +945,36 @@ def without_clause(text: str, keyword: str) -> Optional[List[str]]:
         + WITHOUT
         + r"(?![\w-])(?P<rest>[^\n]*)"
     )
-    match = re.search(pattern, text, re.IGNORECASE)
+    match = re.search(pattern, strip_signature(text), re.IGNORECASE)
     if match is None:
         return None
     items = []
     for raw in re.split(r"[\s,;]+", match.group("rest")):
-        item = raw.strip().strip("`'\"“”.:!?()[]{}")
+        item = _clean_item(raw)
         if item and item.lower() not in ("and", "&", "the", "phase", "phases"):
             items.append(item)
     return items
 
 
+def _is_name(item: str) -> bool:
+    """Whether ``item`` is token-shaped — what a refusal may echo and a row may
+    carry; anything else (prose, markup, a broadcast, an overlong string) is not."""
+    return bool(_TOKEN_RE.match(item)) and len(item) <= 40
+
+
 def _safe_name(item: str) -> str:
     """``item`` as a refusal may echo it: a token, in backticks — anything else
     (prose, markup, a broadcast) is named as *that*, never repeated."""
-    return f"`{item}`" if _TOKEN_RE.match(item) and len(item) <= 40 else "that name"
+    return f"`{item}`" if _is_name(item) else "that name"
+
+
+def read_summary(items: Sequence[str]) -> List[str]:
+    """``items`` as the drop record may carry them (issue-405 P1): a name
+    verbatim, anything else as its length only — the diagnostic the report asked
+    for, without a broadcast, a mention or prose reaching the event log."""
+    return [
+        item if _is_name(item) else f"<non-token: {len(item)} chars>" for item in items
+    ]
 
 
 def _offered(rows: SelectionRows) -> str:
@@ -938,8 +987,8 @@ def _offered(rows: SelectionRows) -> str:
 
 def apply_without(
     rows: SelectionRows, items: Sequence[str], keyword: str
-) -> Tuple[str, str]:
-    """``(composed reply, refusal)`` for ``execute without <items>`` (R9.3).
+) -> Tuple[str, str, str]:
+    """``(composed reply, refusal, reason)`` for ``execute without <items>`` (R9.3).
 
     The checklist as it stands, every row kept as ticked, with the named phases
     — by number in checklist order, or by name — unticked; the keyword first,
@@ -947,30 +996,54 @@ def apply_without(
     is not one of the offered phases refuses the whole reply** with the reason
     (abuse case 4): a typo, a protected phase, a row that is not a phase — none
     of them may quietly freeze a selection other than the one that was asked.
+    ``reason`` is the refusal's family (:data:`UNKNOWN_PHASE`,
+    :data:`UNSKIPPABLE_PHASE`, :data:`EMPTY_CLAUSE`; ``""`` when composed), the
+    drop label the caller records (issue-405 P1). A word that is not a name at
+    all is refused by its **position**, so the operator learns which word broke
+    the line without the word being repeated.
     """
     if not items:
-        return "", f"`{WITHOUT}` needs the phases to leave out. " + _offered(rows)
+        return (
+            "",
+            f"`{WITHOUT}` needs the phases to leave out. " + _offered(rows),
+            EMPTY_CLAUSE,
+        )
     drop: set = set()
-    for item in items:
+    for position, item in enumerate(items, 1):
         if item.isdigit():
             number = int(item)
             if not 1 <= number <= len(rows.phases):
-                return "", (
+                return (
+                    "",
                     f"There is no phase {number} on this checklist, so nothing was "
-                    "recorded. " + _offered(rows)
+                    "recorded. " + _offered(rows),
+                    UNKNOWN_PHASE,
                 )
             drop.add(rows.phases[number - 1].token)
             continue
+        if not _is_name(item):
+            return (
+                "",
+                f"that name (word {position} after `{WITHOUT}`) reads as markup, a "
+                "mention or prose, not a phase name, so nothing was recorded. Put "
+                f"only phase names or numbers on the `{WITHOUT}` line. "
+                + _offered(rows),
+                UNKNOWN_PHASE,
+            )
         row = rows.phase(item)
         if row is None:
             if item.lower() in {node.lower() for node in rows.always}:
-                return "", (
+                return (
+                    "",
                     f"{_safe_name(item)} always runs on this work item and cannot be "
-                    "skipped, so nothing was recorded. " + _offered(rows)
+                    "skipped, so nothing was recorded. " + _offered(rows),
+                    UNSKIPPABLE_PHASE,
                 )
-            return "", (
+            return (
+                "",
                 f"{_safe_name(item)} is not a phase this checklist offers, so nothing "
-                "was recorded. " + _offered(rows)
+                "was recorded. " + _offered(rows),
+                UNKNOWN_PHASE,
             )
         drop.add(row.token)
     lines = [
@@ -980,7 +1053,7 @@ def apply_without(
     if rows.surface is not None:
         lines.append(_row_line(SURFACE_TOKEN, rows.surface.ticked, code=True))
     lines += [_row_line(row.token, row.ticked, code=True) for row in rows.others]
-    return f"{keyword}\n\n" + "\n".join(lines), ""
+    return f"{keyword}\n\n" + "\n".join(lines), "", ""
 
 
 def build_client(token: str):

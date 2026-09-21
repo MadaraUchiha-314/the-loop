@@ -148,6 +148,21 @@ still carrying the key is warned about and otherwise ignored).
   and destroying an operator's uncommitted work on an unattributable event is not a
   trade worth making — an authorized user's `the-loop cleanup` is the remedy, and it
   works on a closed work item exactly as on an open one.
+- **A session at its endgame finishes before the close path ends it** (issue-405 P2).
+  WHEN a work item ends by completion (`issue-closed` or `pr-merged`) AND its session is
+  live with a running pane AND the work item's graph pointer stands on a **terminal**
+  node whose exit is not yet recorded (`finish-tasks` in progress — the completion
+  summary, the closing claim) THEN the closure SHALL be **held**, nothing torn down,
+  recorded as `session.closing` (reason, node, grace); WHEN the session claims
+  `the-loop graph complete <id>` (the terminal node's exit) OR
+  `routing.tmux.finishGraceSeconds` (default 300) has elapsed THEN the closure SHALL run
+  exactly as below, once, and `session.autoclosed` SHALL carry `waited_seconds` and
+  `finished`. A pointer anywhere else (a wontfix mid-work), a dead pane, a graph that
+  cannot be read or a grace of `0` closes at once; a reopen during the hold cancels it
+  (`session.closing_cancelled`); a second close for a held item is a no-op, and the
+  poller does not re-ask about it. Before this a merge's `Closes #N` closed the ticket
+  and the close path ended the harness mid-summary. `session.autoclosed merged` SHALL be
+  `true` when the closure is a merge or a pull request recorded on the work item merged.
 - WHEN a work item ends — the registered item itself closed or merged (one of its
   *linked* PRs closing does not end it, issue-101), or `the-loop sessions stop` /
   `the-loop sessions close` run —
@@ -326,6 +341,7 @@ belongs to does not.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-405 | **A closure that reaches a session at its endgame is held** (2026-09-21, P2 of the 2026-09-20 run-3 e2e run): a live session standing on the graph's terminal node keeps its harness, checkout and record until it claims `graph complete` or `routing.tmux.finishGraceSeconds` (default 300) runs out — `session.closing`, then `session.autoclosed` with `waited_seconds`/`finished`; a reopen cancels the hold, the poller leaves a held item alone, everything else closes at once as before. `GraphContext` gained `terminal` and `delivered_by_merge`, and `session.autoclosed merged` is true for an issue whose recorded pull request merged. Before this the merge's `Closes #N` closed the ticket and the close path SIGTERM'd the session mid-summary | [spec](../specs/issue-405/), [report](../reports/e2e-slack-test-2026-09-20-run-3.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/405) |
 | issue-377 | **Every session launches on the operator's declared arguments** (2026-09-18). `harnesses[].args` — the documented home since 16.0.0 — was read only on the model-choice path; the shared adapters both daemons build, `the-loop models check` and the standing sessions read the deprecated `routing.harnessArgs` alone, so a config that followed the deprecation warning launched every ordinary session bare and a released work item stalled on its first permission prompt. One resolver (`modelchoice.launch_args`) now feeds every adapter builder, `_adapter_for` derives the choice path from the adapter's own arguments, `_spawn_for` resolves the adapter **after** `on_arm` and from the checkout so the post-gate session carries the frozen choice, and the spawn events carry the argv | [spec](../specs/issue-377/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/377) |
 | issue-368 | The machine-local record became a **map of sessions keyed by the ref each serves** (2026-09-15) — the work item's own and one per pull request — holding handles alone: the pull request's repository, number, URL and upstream state are the repository's facts and live once, in its `work-item-state.json`, joined by that same ref. The record also carries what this deployment has already mirrored of the work item's channel threads. A record written before the change is read as it was and rewritten as a map on its next save | [spec](../specs/issue-368/), [decision-128](../decisions/decision-128.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/368) |
 | issue-358 | A work item picks its **model** and **effort** at `phase-selection`, and the spawn now happens **after** that gate rather than before it: `graphlink.on_spawn` split into `on_arm` (enter the graph) and `on_spawn` (bind the session), so an armed item parked at a human start gate costs no tmux session and the first spawn already carries the frozen choice. `Dispatcher._adapter_for` resolves the choice like `_tmux_for` resolves `sessionPerPr`; the session record gained `model`/`effort`/`harnessArgs` | [spec](../specs/issue-358/), [decision-124](../decisions/decision-124.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/358) |

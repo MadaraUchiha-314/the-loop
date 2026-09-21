@@ -14,6 +14,7 @@ import logging
 import queue
 import re
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -57,6 +58,7 @@ from ..graphlink import (
     GraphLinkConfig,
     render_graph_context,
     spec_id_for,
+    GraphContext,
 )
 from ..harness.base import HarnessAdapter, UnsupportedRunnerError
 from ..modelchoice import (
@@ -347,6 +349,12 @@ class TmuxConfig:
     resume_probe_seconds: float = 2.0
     kill_harness_on_close: bool = True
     harness_kill_grace_seconds: float = 5.0
+    #: How long a closure is HELD for a live session at its work item's terminal
+    #: node (issue-405 P2) — the endgame, where the session posts its completion
+    #: summary and claims `graph complete` while a merge's `Closes #N` has
+    #: already closed the ticket. The claim ends the hold early; the deadline
+    #: ends it regardless; ``0`` restores the immediate close.
+    finish_grace_seconds: float = 300.0
     session_per_pr: str = SESSION_PER_PR_CROSS_REPOSITORY
 
     def __post_init__(self) -> None:
@@ -374,6 +382,7 @@ class TmuxConfig:
             resume_probe_seconds=float(data.get("resumeProbeSeconds", 2.0)),
             kill_harness_on_close=bool(data.get("killHarnessOnClose", True)),
             harness_kill_grace_seconds=float(data.get("harnessKillGraceSeconds", 5.0)),
+            finish_grace_seconds=float(data.get("finishGraceSeconds", 300.0)),
             session_per_pr=session_per_pr_mode(data.get("sessionPerPr")),
         )
 
@@ -634,8 +643,28 @@ def _repo_payload(item: WorkItemRef) -> dict:
     }
 
 
+@dataclass
+class _PendingClose:
+    """A closure the dispatcher is **holding** for a session at its endgame
+    (issue-405 P2): everything the close needs, kept until the session claims
+    completion or the grace runs out. In memory only — a daemon stopped under
+    one leaves the item unstamped, and the poller's closure reconciliation finds
+    it again after a restart."""
+
+    session: Session
+    routed: RoutedEvent
+    reason: str
+    node: str
+    since: float  # time.monotonic()
+    deadline: float
+
+
 class Dispatcher:
     """Per-session FIFO dispatch of routed events through harness adapters."""
+
+    #: How often the sweeper looks at held closures (issue-405 P2). A class
+    #: attribute so a test can shorten it on one instance.
+    close_sweep_interval_seconds: float = 5.0
 
     def __init__(
         self,
@@ -769,6 +798,12 @@ class Dispatcher:
         self._queues: Dict[str, "queue.Queue"] = {}
         self._workers: Dict[str, threading.Thread] = {}
         self._lock = threading.Lock()
+        # Closures held for a session at its endgame (issue-405 P2), by the work
+        # item's ref, and the sweeper thread that finishes them.
+        self._closing: Dict[str, _PendingClose] = {}
+        self._closing_lock = threading.Lock()
+        self._sweeper: Optional[threading.Thread] = None
+        self._sweeper_stop = threading.Event()
 
     @staticmethod
     def _build_workspace(config: RoutingConfig) -> Optional[Workspace]:
@@ -1181,22 +1216,13 @@ class Dispatcher:
                         delivery_id=routed.delivery_id or None,
                     )
                     continue
-                self.close_session(session, routed)
-                # The work item ended: disarm it, drop its roster and stamp the
-                # closure on its portable record (issue-329) — before the cleanup
-                # below, which is where the pre-stamp order had the two clears.
-                self._record_closure(session.work_item, routed, reason)
-                logger.info(
-                    "auto-closed session %s (%s)", session.work_item.ref, reason
-                )
-                eventlog.emit(
-                    "session.autoclosed",
-                    work_item=session.work_item.ref,
-                    reason=reason,
-                    merged=reason == "pr-merged",
-                    delivery_id=routed.delivery_id or None,
-                )
-                self._cleanup_after_close(session.work_item, routed, reason)
+                # A session at its endgame is given the time to finish (issue-405
+                # P2): the closure is held, and finished by the sweeper on the
+                # session's completion claim or at the deadline.
+                held, context = self._defer_close(session, routed, reason)
+                if held:
+                    continue
+                self._close_ended_session(session, routed, reason, context=context)
             # The closure is a fact about the WORK ITEM, not about a session
             # (issue-329): a ref this machine tracks without a live session — a
             # paused or stopped one, an armed record, a frozen graph — is stamped
@@ -1958,6 +1984,8 @@ class Dispatcher:
         """Clear the closure stamp of every ref the event reopened (issue-329)."""
         reopened = _closing_refs(routed)  # the object the payload names, any action
         for item in routed.work_items:
+            if item.ref in reopened:
+                self._cancel_close(item.ref, source)
             if item.ref in reopened and self.control_store.clear_ended(item):
                 logger.info("%s is open again; its closure stamp is cleared", item.ref)
                 eventlog.emit(
@@ -2494,6 +2522,223 @@ class Dispatcher:
             actor=actor,
             source=source,
         )
+
+    # -- the endgame (issue-405 P2) ----------------------------------------------
+
+    def _close_ended_session(
+        self,
+        session: Session,
+        routed: RoutedEvent,
+        reason: str,
+        *,
+        context: Optional[GraphContext] = None,
+        waited: Optional[float] = None,
+        finished: Optional[bool] = None,
+    ) -> None:
+        """End a session whose work item ended — the one close, in today's order.
+
+        ``close_session`` (registry, tmux/harness, checkout), then the closure
+        stamp (issue-329 — before the cleanup, which is where the pre-stamp order
+        had the two clears), the ``session.autoclosed`` record, then the cleanup
+        an authorized closer earns. ``waited``/``finished`` are set when the
+        closure was **held** first (issue-405 P2) and say how long and whether the
+        session's completion claim ended it; a session an operator closed during
+        the hold (`sessions close`, `cleanup`) is only stamped, never closed twice.
+
+        ``merged`` is no longer ``reason == "pr-merged"`` alone: an issue closed by
+        the merge that delivered it says so, from the pull request the daemon
+        already recorded as merged in the work item's own state (issue-368).
+        """
+        ref = session.work_item.ref
+        if (
+            waited is not None
+            and self.registry.find_by_work_item(session.work_item) is None
+        ):
+            logger.info(
+                "%s was closed by an operator while its closure was held; stamping "
+                "the closure only",
+                ref,
+            )
+            if self.control_store.ended(session.work_item) is None:
+                self._record_closure(session.work_item, routed, reason)
+            return
+        if context is None:
+            context = self._graph_context(session)
+        merged = reason == "pr-merged" or bool(
+            context is not None and context.delivered_by_merge
+        )
+        self.close_session(session, routed)
+        self._record_closure(session.work_item, routed, reason)
+        logger.info("auto-closed session %s (%s)", ref, reason)
+        fields: Dict[str, Any] = {
+            "work_item": ref,
+            "reason": reason,
+            "merged": merged,
+            "delivery_id": routed.delivery_id or None,
+        }
+        if waited is not None:
+            fields["waited_seconds"] = round(waited, 1)
+            fields["finished"] = bool(finished)
+        eventlog.emit("session.autoclosed", **fields)
+        self._cleanup_after_close(session.work_item, routed, reason)
+
+    def _graph_context(self, session: Session) -> Optional[GraphContext]:
+        """The work item's graph context, read-only — ``None`` when it cannot be
+        read (no checkout, a foreign one, an unreadable state, the coupling off,
+        or a fault). Every caller treats ``None`` as *cannot tell*."""
+        try:
+            return self.graphlink.context(session.work_item, session.cwd)
+        except Exception as exc:  # noqa: BLE001 — a graph fault is "cannot tell"
+            logger.debug(
+                "could not read the graph for %s: %s", session.work_item.ref, exc
+            )
+            return None
+
+    def _defer_close(
+        self, session: Session, routed: RoutedEvent, reason: str
+    ) -> Tuple[bool, Optional[GraphContext]]:
+        """Whether to **hold** this closure for the session's endgame (issue-405 P2).
+
+        Held when every one of these is true, and closed at once otherwise —
+        every doubt answers *close now*, today's behaviour:
+
+        - ``routing.tmux.finishGraceSeconds`` is positive;
+        - the work item ended by completion (``issue-closed`` or ``pr-merged``),
+          not by an abandoned pull request;
+        - the session is live and its tmux pane is still running;
+        - the graph can be read, its pointer stands on a **terminal** node, and
+          that node has not been exited — the session is in `finish-tasks`,
+          posting the completion summary the merge's `Closes #N` raced.
+
+        A closure already held for the ref is a no-op (the poller re-detecting
+        the same closure, a webhook redelivery). Returns the context it read so
+        the immediate path need not read it twice.
+        """
+        grace = float(self.config.tmux.finish_grace_seconds or 0)
+        ref = session.work_item.ref
+        with self._closing_lock:
+            if ref in self._closing:
+                logger.info(
+                    "%s is already closing; this %s close is a no-op", ref, reason
+                )
+                return True, None
+        if grace <= 0 or reason not in ("issue-closed", "pr-merged"):
+            return False, None
+        if not session.is_live or not session.tmux_target:
+            return False, None
+        try:
+            live = self.tmux.has_live_session(session.tmux_target)
+        except Exception as exc:  # noqa: BLE001 — a tmux fault reads as not live
+            logger.debug("could not probe %s: %s", session.tmux_target, exc)
+            live = False
+        if not live:
+            return False, None
+        context = self._graph_context(session)
+        if context is None or not context.terminal or context.status == "complete":
+            return False, context
+        now = time.monotonic()
+        with self._closing_lock:
+            self._closing[ref] = _PendingClose(
+                session=session,
+                routed=routed,
+                reason=reason,
+                node=context.current_node,
+                since=now,
+                deadline=now + grace,
+            )
+        logger.info(
+            "%s ended (%s) while its session is at %s; holding the close for up "
+            "to %ss so the session can finish (routing.tmux.finishGraceSeconds)",
+            ref,
+            reason,
+            context.current_node,
+            grace,
+        )
+        eventlog.emit(
+            "session.closing",
+            work_item=ref,
+            reason=reason,
+            node=context.current_node,
+            grace_seconds=grace,
+            delivery_id=routed.delivery_id or None,
+        )
+        self._ensure_sweeper()
+        return True, context
+
+    def is_closing(self, ref: str) -> bool:
+        """Whether a closure for ``ref`` is being held (issue-405 P2) — what lets
+        the poller leave the item alone instead of re-asking every cycle."""
+        with self._closing_lock:
+            return ref in self._closing
+
+    def _cancel_close(self, ref: str, source: str) -> None:
+        """A reopen during the hold: the closure is dropped, the session stays."""
+        with self._closing_lock:
+            entry = self._closing.pop(ref, None)
+        if entry is None:
+            return
+        logger.info("%s is open again; its held closure is cancelled", ref)
+        eventlog.emit("session.closing_cancelled", work_item=ref, source=source)
+
+    def sweep_closing(self, now: Optional[float] = None) -> int:
+        """Finish every held closure whose session has claimed completion or whose
+        grace has run out; returns how many are still held (issue-405 P2).
+
+        ``now`` is a ``time.monotonic()`` reading, injectable for tests. Public
+        so an embedder with a cycle of its own can drive it; the sweeper thread
+        drives it otherwise.
+        """
+        now = time.monotonic() if now is None else now
+        with self._closing_lock:
+            held = list(self._closing.values())
+        for entry in held:
+            ref = entry.session.work_item.ref
+            context = self._graph_context(entry.session)
+            finished = context is not None and context.status == "complete"
+            if not finished and now < entry.deadline:
+                continue
+            with self._closing_lock:
+                if self._closing.get(ref) is not entry:
+                    continue  # cancelled meanwhile
+                del self._closing[ref]
+            logger.info(
+                "%s: %s; finishing the held close",
+                ref,
+                "the session claimed completion"
+                if finished
+                else "the finish grace ran out",
+            )
+            self._close_ended_session(
+                entry.session,
+                entry.routed,
+                entry.reason,
+                context=context,
+                waited=now - entry.since,
+                finished=finished,
+            )
+        with self._closing_lock:
+            return len(self._closing)
+
+    def _ensure_sweeper(self) -> None:
+        with self._closing_lock:
+            if self._sweeper is not None and self._sweeper.is_alive():
+                return
+            self._sweeper_stop.clear()
+            self._sweeper = threading.Thread(
+                target=self._sweep_loop, name="the-loop-closing-sweeper", daemon=True
+            )
+            self._sweeper.start()
+
+    def _sweep_loop(self) -> None:
+        """The sweeper: ``sweep_closing`` at the interval until nothing is held or
+        the dispatcher stops. A fault in one sweep is logged; the deadline still
+        ends every entry on a later one."""
+        while not self._sweeper_stop.wait(self.close_sweep_interval_seconds):
+            try:
+                if self.sweep_closing() == 0:
+                    return
+            except Exception:  # noqa: BLE001 — never let one sweep kill the loop
+                logger.exception("sweeping held closures raised")
 
     def _cleanup_after_close(
         self, work_item: WorkItemRef, routed: RoutedEvent, reason: str
@@ -4147,6 +4392,12 @@ class Dispatcher:
         delivers everything already queued; only what the timeout cuts off is
         reported here. Callers that do not care ignore the return value.
         """
+        # The closing sweeper (issue-405 P2) goes first; a closure it still holds
+        # is left unfinished on purpose — see `_PendingClose`.
+        self._sweeper_stop.set()
+        sweeper = self._sweeper
+        if sweeper is not None and sweeper.is_alive():
+            sweeper.join(timeout=timeout)
         with self._lock:
             items = list(self._workers.items())
         for key, _ in items:

@@ -1228,6 +1228,9 @@ class RecordingDispatcher:
     def stop(self, timeout=None):
         pass
 
+    def is_closing(self, ref):
+        return False
+
 
 def _item(number=15, author="octocat"):
     return WorkItem(

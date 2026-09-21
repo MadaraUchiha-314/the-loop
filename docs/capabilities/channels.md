@@ -245,11 +245,20 @@ flowchart LR
   GitHub. A typed reply serves any connector: `execute without 1, 3`, `execute without
   <phase>`, `skip <phase>` — the numbers index the live checklist's phase rows, and an
   unknown or protected name refuses the whole reply with the offered list rather than
-  freezing a different selection (dropped `unskippable-phase`). A checklist that cannot be
-  read at that moment (a transient GitHub read right after the item starts) refuses
-  differently — dropped `checklist-unreadable`, a retriable failure whose named phases may
-  be perfectly valid — so the drop record never says a phase name was rejected when it was
-  not (issue N1). An unauthorized submit is refused (silent to a
+  freezing a different selection. The clause is the rest of the keyword's line, read
+  after a connector's signature (`*Sent using* @Claude`, wherever it sits) is dropped and
+  with each word cleaned of Slack markup and invisible format characters (issue-405 P1:
+  live, the signature sat on the command's line and was read as one more "phase"); a word
+  that is still not a name refuses the reply **by its position** ("word 2 after
+  `without` reads as markup, a mention or prose"), never echoed. Each refusal drops
+  under its own family — `unknown-phase` (a name, number or word the checklist does not
+  offer), `unskippable-phase` (a protected phase), `empty-clause` (nothing named) — with
+  `read` on the record: the items the clause was read as, a non-name as its length only;
+  the text handed to the grammar and the items are logged at `info`. A checklist that
+  cannot be read at that moment (a transient GitHub read right after the item starts)
+  refuses differently — dropped `checklist-unreadable`, a retriable failure whose named
+  phases may be perfectly valid — so the drop record never says a phase name was rejected
+  when it was not (issue N1). An unauthorized submit is refused (silent to a
   stranger, explained to a collaborator) and freezes nothing. Slack Execute records
   phases and the outer-loop surface; sessions/model/effort fall to their defaults and the
   message says so.
@@ -815,6 +824,7 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-405 | **The typed `execute without` clause reads the phases and nothing else** (2026-09-21, P1 of the 2026-09-20 run-3 e2e run): a connector's signature is dropped wherever it sits, Slack markup and invisible format characters around a name are stripped, a word that is still not a name refuses the reply by its position, and the four refusal families carry their own drop reasons with `read` on the record and the grammar's input logged. Before this the clause read everything to the end of the line, so a same-line signature was refused as *"that name"* while the offer quoted the valid name back — 0 for 4 across two live runs | [spec](../specs/issue-405/), [report](../reports/e2e-slack-test-2026-09-20-run-3.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/405) |
 | issue-398 | The Slack app's icon is the-loop's mark: `docs/assets/the-loop-logo-1024.png`, uploaded by hand under *Basic Information → Display Information* (Slack's manifest format carries no icon) — the step is in the Slack guide | [spec](../specs/issue-398/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/398) |
 | issue-395 | `read.mode` takes effect in the running service (2026-09-20, B5 of the 2026-09-19 e2e run): the service reconciles which ingresses it hosts to the config file every five seconds, so an edit that takes `read.mode` off `socket` stops the hosted Socket Mode listener — connection closed, lock released, `ingress.hosted_stopped reason=config` — with no restart, and an edit that brings it back starts one with the edited config through the boot-time starter and its refusals. `the-loop status` stops printing the contradictory `running … [disabled]`. Membership only: a running listener's own config stays frozen until it is stopped. See [control-plane](control-plane.md) for the mechanism | [spec](../specs/issue-395/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/395) |
 | issue-397 | Three leftovers of the 2026-09-19 e2e run (2026-09-20): a **new room declaration confirms itself in the room** by opening the work item's conversation there at once (the idempotent spawn-path open, so declare/start in any order yields one message and a conversation bound elsewhere moves at the declaration); **`help public`** posts the grammar as a visible reply where the member asked, for integrations that never see an ephemeral (plain `help` and the slash command stay ephemeral); and the first-line-only rule that makes a connector's "*Sent using* @Claude" signature harmless is pinned by tests. No config, grant, scope, schema or state change | [spec](../specs/issue-397/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/397) |

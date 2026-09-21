@@ -32,7 +32,7 @@ import json
 import logging
 import re
 from dataclasses import replace
-from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .. import eventlog
 from ..identity import principal_for
@@ -57,6 +57,7 @@ from .slack import (
     _ts_key,
     action_value,
     apply_without,
+    read_summary,
     compose_selection_execute,
     is_kickoff_repo_action,
     selection_rows,
@@ -526,7 +527,7 @@ def process_reply(
         # row with the named phases unticked. A name the checklist does not
         # offer refuses the whole reply with the reason (abuse case 4), so an
         # execute that meant one selection can never freeze another.
-        composed, refusal, reason = _selection_grammar(reply, cli_config)
+        composed, refusal, reason, read = _selection_grammar(reply, cli_config)
         if refusal:
             bot.react(reply, "error")
             _tell(bot, reply, refusal)
@@ -535,8 +536,9 @@ def process_reply(
             # exists for — so the refusal is also mirrored as one marked comment
             # on the work item, the way the B2 fix explains a refused control
             # keyword. Best-effort: the ephemeral and reaction stand regardless.
+            # issue-405 P1: the drop record says what the clause was read as.
             _say_on_ticket(reply, f"⚠️ {refusal}", cli_config)
-            return _drop(reply, reason, actor=reply.author)
+            return _drop(reply, reason, actor=reply.author, read=read or None)
         if composed != reply.text:
             reply = replace(reply, text=composed)
     if verb is not None and verb.name == "record-decision" and not verb.rest.strip():
@@ -775,27 +777,38 @@ def _selection_checklist(work_item: str, cli_config: Optional[Mapping]) -> str:
 
 def _selection_grammar(
     reply: InboundReply, cli_config: Optional[Mapping]
-) -> Tuple[str, str, str]:
-    """``(text, refusal, reason)`` for a control reply: the text as it is unless
-    it is ``<execute keyword> without <n, …>``, which becomes the checklist reply
-    the gate reads (:func:`the_loop.channels.slack.apply_without`) — or a refusal
-    saying why it could not. ``reason`` is the drop label the caller records and
-    distinguishes the two refusal families the report (N1) found were reported
-    identically: a name the checklist does not offer is ``unskippable-phase`` (a
-    permanent user error), while a checklist that could not be read is
-    ``checklist-unreadable`` (transient and retriable — the phases named may be
-    perfectly valid). A refusal records nothing either way: the fail-closed
-    direction is the reply not landing, never a selection the person did not make.
+) -> Tuple[str, str, str, List[str]]:
+    """``(text, refusal, reason, read)`` for a control reply: the text as it is
+    unless it is ``<execute keyword> without <n, …>``, which becomes the checklist
+    reply the gate reads (:func:`the_loop.channels.slack.apply_without`) — or a
+    refusal saying why it could not. ``reason`` is the drop label the caller
+    records, one per refusal family (issue N1, issue-405 P1): ``unknown-phase``
+    for a name, number or word the checklist does not offer, ``unskippable-phase``
+    for a protected phase, ``empty-clause`` for a clause naming nothing — all
+    permanent user errors — and ``checklist-unreadable`` for a checklist that
+    could not be read (transient and retriable — the phases named may be
+    perfectly valid). ``read`` is what the clause was read as, for the record
+    (:func:`~.slack.read_summary`). A refusal records nothing either way: the
+    fail-closed direction is the reply not landing, never a selection the person
+    did not make.
     """
     from ..control import EXECUTE, parse_command
 
     control = _control_config(cli_config)
     if parse_command(reply.text, control).command != EXECUTE:
-        return reply.text, "", ""
+        return reply.text, "", "", []
     keyword = control.keyword(EXECUTE)
     items = without_clause(reply.text, keyword)
     if items is None:
-        return reply.text, "", ""
+        return reply.text, "", "", []
+    read = read_summary(items)
+    # issue-405 P1: the one trail the live path leaves. The report's next step
+    # was exactly this — log the string the grammar was handed and what it made
+    # of it — because every component passed in isolation while the live reply
+    # was refused.
+    logger.info(
+        "selection grammar on %s read %r as %s", reply.work_item, reply.text, read
+    )
     rows = selection_rows(_selection_checklist(reply.work_item, cli_config))
     if rows is None or not rows.phases:
         return (
@@ -807,9 +820,10 @@ def _selection_grammar(
                 f"`{keyword}` there."
             ),
             "checklist-unreadable",
+            read,
         )
-    composed, refusal = apply_without(rows, items, keyword)
-    return composed, refusal, ("unskippable-phase" if refusal else "")
+    composed, refusal, reason = apply_without(rows, items, keyword)
+    return composed, refusal, reason, read
 
 
 def _thread_permalink(bot: SlackBotChannel, reply: InboundReply) -> str:
