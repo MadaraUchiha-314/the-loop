@@ -1,3 +1,9 @@
+## v19.10.0 (2026-09-21)
+
+### Feat
+
+- **issue-410**: running sessions can be rolled onto a refreshed environment (#411)
+
 ## v19.9.2 (2026-09-21)
 
 ### Fix
