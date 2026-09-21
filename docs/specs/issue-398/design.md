@@ -9,14 +9,15 @@ overrides: {}
 
 <!-- Authored per the the-loop:writing skill. -->
 
-# Design: a logo for the-loop — the Ensō, in colourways
+# Design: a logo for the-loop — the Ensō, chosen and adopted
 
 > Phase 2 of 4. Derives from the approved [`requirements.md`](requirements.md).
 > The visual artifacts themselves live in [`design/`](design/) per
 > `reference/design-artifacts.md`; this document says how they are made and why.
-> **Round 3** — rounds 1 and 2 (five structures; five personalities) and this
-> document's earlier versions are in git history; the owner's reviews that turned it
-> are recorded under *Review comments*.
+> **Round 4** — rounds 1 and 2 (five structures; five personalities), round 3 (the Ensō
+> in colourways) and this document's earlier versions are in git history; the owner's
+> reviews that turned it, and the pick, are recorded under *Review comments*. The chosen
+> colourway is **5 — dusk · sage · ink**; § *Adoption* says where it went.
 
 ## Overview
 
@@ -71,8 +72,10 @@ There is no runtime. Two scripts and their outputs, all under `docs/specs/issue-
 | `generate.py` | the generator and its own checker | **source** |
 | `enso-{1..10}-*.svg` | the ten standalone colourways | output |
 | `logo-options.html` | the self-contained gallery (R4.1) | output |
-| `screenshots.mjs` | renders the evidence with the Chromium Playwright drives | source |
-| `screenshots/*.png` | the rendered evidence (R4.2) | output |
+| `screenshots.mjs` | renders the evidence with the Chromium Playwright drives; `--assets` renders the adopted mark's rasters; `--site` captures the built docs site | source |
+| `screenshots/*.png` | the rendered evidence (R4.2, R5) | output |
+| `../../../assets/the-loop-logo{,-light,-dark}.svg`, `../../../public/{favicon,logo-light,logo-dark}.svg`, `../../../../ui/public/favicon.svg` | the adopted mark, written outside the design folder by the same generator and pinned by the same `--check` | output |
+| `../../../assets/the-loop-logo-1024.png`, `../../../public/apple-touch-icon.png` | the adopted mark as rasters (`screenshots.mjs --assets`) | output |
 
 The generator is the canonical artifact; the SVGs and the gallery are what it makes,
 and `--check` refuses to pass when the files on disk differ from a fresh render. Editing
@@ -132,11 +135,11 @@ source (agent-led work — `reference/design-artifacts.md` § Figma ↔ code).
 
 | Artifact | Type | Location / link | Covers | Status |
 |----------|------|-----------------|--------|--------|
-| Colourway 1 — ink · dusk · clay | svg (generated) | [`design/enso-1-ink-dusk-clay.svg`](design/enso-1-ink-dusk-clay.svg) | R1–R3 | draft (round 3) — awaiting the owner's pick |
+| Colourway 1 — ink · dusk · clay | svg (generated) | [`design/enso-1-ink-dusk-clay.svg`](design/enso-1-ink-dusk-clay.svg) | R1–R3 | not chosen (kept as the record) |
 | Colourway 2 — ink | svg (generated) | [`design/enso-2-ink.svg`](design/enso-2-ink.svg) | R1–R3 | draft (round 3) |
 | Colourway 3 — ink · ink · clay | svg (generated) | [`design/enso-3-ink-ink-clay.svg`](design/enso-3-ink-ink-clay.svg) | R1–R3 | draft (round 3) |
 | Colourway 4 — clay · ochre · ink | svg (generated) | [`design/enso-4-clay-ochre-ink.svg`](design/enso-4-clay-ochre-ink.svg) | R1–R3 | draft (round 3) |
-| Colourway 5 — dusk · sage · ink | svg (generated) | [`design/enso-5-dusk-sage-ink.svg`](design/enso-5-dusk-sage-ink.svg) | R1–R3 | draft (round 3) |
+| Colourway 5 — dusk · sage · ink | svg (generated) | [`design/enso-5-dusk-sage-ink.svg`](design/enso-5-dusk-sage-ink.svg) | R1–R3, R5 | **approved** — the owner's pick ([review comment, 2026-09-21](https://github.com/MadaraUchiha-314/the-loop/pull/403#discussion_r4058602461)); adopted, § *Adoption* |
 | Colourway 6 — sage · ochre · clay | svg (generated) | [`design/enso-6-sage-ochre-clay.svg`](design/enso-6-sage-ochre-clay.svg) | R1–R3 | draft (round 3) |
 | Colourway 7 — mauve · dusk · clay | svg (generated) | [`design/enso-7-mauve-dusk-clay.svg`](design/enso-7-mauve-dusk-clay.svg) | R1–R3 | draft (round 3) |
 | Colourway 8 — dusk → clay, along the stroke | svg (generated) | [`design/enso-8-dusk-to-clay.svg`](design/enso-8-dusk-to-clay.svg) | R1–R3 | draft (round 3) |
@@ -167,6 +170,43 @@ source (agent-led work — `reference/design-artifacts.md` § Figma ↔ code).
   OS scheme.
 - **Evidence:** `design/screenshots/`, produced by `design/screenshots.mjs`
   (`testing-plan.md` T5).
+
+## Adoption
+
+**One generated source, every surface.** The chosen colourway is written by
+`generate.py` as brand assets outside the design folder — the same script, the same
+`--check` — so the adopted mark cannot drift from the option that was picked. Rasters,
+for the two surfaces that take no SVG, come from `screenshots.mjs --assets`.
+
+| File | Ink | For |
+|---|---|---|
+| `docs/assets/the-loop-logo.svg` | `currentColor` + the dark-scheme rule | anything that follows the OS scheme; the canonical asset |
+| `docs/assets/the-loop-logo-light.svg` / `-dark.svg` | fixed `#3f3a33` / `#e9e3d7` | GitHub's `<picture>` sources in the root README |
+| `docs/public/favicon.svg` | as the canonical | the docs site's favicon (`head`) |
+| `docs/public/logo-light.svg` / `logo-dark.svg` | fixed | the site's nav logo and hero image, switched by VitePress's own theme toggle |
+| `docs/public/apple-touch-icon.png` (180 px) | raster on paper | the site, for Safari and home screens |
+| `ui/public/favicon.svg` | as the canonical | the control-plane dashboard (`ui/index.html`) |
+| `docs/assets/the-loop-logo-1024.png` | raster on paper, 8 % inset | the Slack app icon (uploaded by hand — Slack's manifest carries no icon) and the CLI's PyPI README |
+
+| Surface | Change | Why this form |
+|---|---|---|
+| `README.md` | a centred `<picture>` before the title: dark source for `prefers-color-scheme: dark`, light `<img>` otherwise | GitHub's documented way to show an image per theme; a self-switching SVG would follow the OS, not GitHub's theme |
+| docs site | `head`: favicon + apple-touch icon (base-prefixed by hand — VitePress does not prefix `head`); `themeConfig.logo` and `hero.image` with `light`/`dark` files | the site's toggle, not the OS, must drive the mark |
+| `cli/README.md` | the 1024 px raster from `main`, 128 px wide | PyPI renders no SVG from a repository |
+| `ui/index.html` | `<link rel="icon" href="favicon.svg">`, relative | resolves under the dashboard's `/the-loop/ui/` base and in dev alike |
+| `docs/guide/slack.md` | the icon-upload step under *1. Create the Slack app* | the one adoption a human must do; the manifest format has no icon |
+| `docs/capabilities/documentation.md`, `channels.md` | *The mark* section; history rows | the organized view of the specs |
+
+**Why light/dark files and not the self-switching SVG everywhere.** The standalone
+SVG's media rule reads the operating system's scheme. GitHub and the docs site each let
+a reader pick a theme independently of the OS, so on those surfaces a fixed-ink file per
+theme, chosen by the surface, is the only form that always agrees with the page. Where
+nothing but the OS decides (a favicon tab, an `<img>` on a plain page), the
+self-switching file is the right one and needs no pair.
+
+**Not in scope of the adoption:** the plugin manifests (neither format has an icon
+field), the Slack manifest's `background_color` (pinned by tests and mirrored in the
+guide; a cosmetic later touch), and any wordmark type.
 
 ## Data models
 
@@ -276,3 +316,11 @@ a ticket or PR comment and becomes one row in `VARIANTS` and a re-run.
   travelling along the strokes, one sweep across the mark — with the geometry
   unchanged. `requirements.md` records the change to R1 (one mark, colourways, not
   three-to-five concepts).
+- **2026-09-21 · @MadaraUchiha-314 (owner, designer) · [PR #403 review comment on `enso-5-dusk-sage-ink.svg`](https://github.com/MadaraUchiha-314/the-loop/pull/403#discussion_r4058602461)**
+  — *"I choose this. Update all documentation and the github README to have this. The
+  slack app also must have this as it's logo."* **The pick, and the adoption — round 4**
+  (this version): colourway 5 marked *approved* in the inventory; the generator writes
+  it as brand assets under `docs/assets/`, `docs/public/` and `ui/public/`; the README,
+  the docs site, the PyPI README, the dashboard and the Slack guide carry it (§
+  *Adoption*); `requirements.md` gains R5. The Slack icon upload is the owner's manual
+  step, described in the guide.

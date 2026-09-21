@@ -3,68 +3,68 @@ type: evidence
 workItem: "github:MadaraUchiha-314/the-loop#398"
 ---
 
-# A logo for the-loop — the Ensō in colourways, round 3 (issue-398) — reviewer briefing
+# A logo for the-loop — the Ensō, chosen and adopted, round 4 (issue-398) — reviewer briefing
 
 ## TL;DR
 
-You chose the **Ensō** — three brush circles, each left open where the hand lifted — and
-asked for colour and gradient options, with the other marks removed. Round 3 is that:
-the same mark, byte for byte in its geometry, in **ten colourways** — seven flat
-palettes (the original ink · dusk · clay; all ink; ink with a clay centre; warm; cool;
-earth; mauve), two gradients that **travel along each stroke** (dusk → clay; ink drying
-into an accent) and one **sweep** across the mark. Same generator, gallery and evidence
-pipeline; rounds 1 and 2 are in git history. **The ask: pick a colourway, or name a
-pairing you would rather see.**
+You chose colourway **5 — dusk · sage · ink** and asked for it everywhere. Round 4
+adopts it: the root README opens with it (a theme-aware `<picture>`), the docs site
+carries it as nav logo, hero image and favicon, the CLI's PyPI page opens with a raster
+of it, the dashboard has it as favicon, and the Slack guide has the one step only you
+can do — uploading `docs/assets/the-loop-logo-1024.png` as the app icon, since Slack's
+manifest format carries no icon. Every adopted file is written by the same generator as
+the options and pinned by its `--check`; the site and the dashboard both build with them.
 
 ## Where to focus (in this order)
 
-1. **The rendering** — `docs/specs/issue-398/design/logo-options.html`, or the stills
-   under `design/screenshots/`. Which paint? The ink-free ones (6, 7, 8, 10) are the ones
-   to weigh against a dark ground; the ink ones swap their ink for the slate ink.
-2. **How a gradient travels along a brush stroke** — `design/generate.py`
-   `travelling_ring`: SVG has no along-path gradient, so the stroke is cut into twenty
-   pieces on its own Bézier segments (`segment`, `piece`), each a step further in OKLab
-   (`mix`). Look at colourway 8 at 220 px: no seams.
-3. **What the pick changed in the spec** — `requirements.md` § Review comments (R1.1
-   superseded, R1.4 added) and `design.md` § Review comments. Skim.
-4. **The checker** — widened by exactly `linearGradient`, `stop`, `class` and the
-   gradient attributes; a `url(` must be a fragment; the probe re-run (T8). Skim.
+1. **The README as GitHub renders it** — light and dark theme; the `<picture>` at the
+   top of `README.md`.
+2. **The site** — `docs/.vitepress/config.mts` (`head`, `themeConfig.logo`) and
+   `docs/index.md` (`hero.image`); the captures `design/screenshots/site-home-light.png`
+   and `-dark.png`. Toggle the theme: the logo follows the site, not the OS.
+3. **The Slack icon** — `docs/assets/the-loop-logo-1024.png` at size, and the upload
+   step in `docs/guide/slack.md` § *1. Create the Slack app*. Yours to upload.
+4. **The generator's adoption layer** — `generate.py` `ADOPTED`, `logo_file(mode)`,
+   `ADOPTED_FILES`; `screenshots.mjs --assets` for the rasters. Skim.
+5. **The record** — `requirements.md` R5 and § Review comments; `design.md` § Adoption
+   and the inventory (colourway 5 approved); the two capability docs. Skim.
 
 ## What changed (map)
 
 ```mermaid
 flowchart LR
-  PICK["review comment on option-5-enso.svg:<br/>leaning towards this · remove all others · more colours and gradients"] --> PAINT["a paint layer over the fixed geometry:<br/>flat · travelling (OKLab pieces) · sweep (&lt;linearGradient&gt;)"]
-  PICK --> RM["loop · Knot · Flick · Clip removed<br/>(git history keeps them)"]
-  PAINT --> GEN["design/generate.py"]
-  GEN --> SVG["enso-1..10-*.svg (42–53 kB)"] --> SS["screenshots.mjs → 22 PNGs"]
-  GEN --> GAL["logo-options.html (453 kB)"] --> SS
-  GEN -->|"--check"| GATE["bytes match · well-formed · titled · parsed allowlist · ≤ 64 kB · deterministic"]
-  NEXT["the owner picks a colourway"] -.-> ADOPT["follow-up: adopt"]
+  PICK["review comment on enso-5-dusk-sage-ink.svg:<br/>I choose this · all documentation · the README · the Slack app"] --> GEN["generate.py: ADOPTED → logo_file(auto|light|dark)"]
+  GEN --> A["docs/assets/the-loop-logo{,-light,-dark}.svg"] --> README["README.md &lt;picture&gt;"]
+  GEN --> P["docs/public/{favicon,logo-light,logo-dark}.svg"] --> SITE["config.mts head + logo · index.md hero"]
+  GEN --> U["ui/public/favicon.svg"] --> UI["ui/index.html"]
+  SS["screenshots.mjs --assets"] --> R1["docs/assets/the-loop-logo-1024.png"] --> SLACK["Slack app icon (manual) · cli/README.md"]
+  SS --> R2["docs/public/apple-touch-icon.png"] --> SITE
+  SITE --> B1["bun run docs:build ✓"]
+  UI --> B2["bun run lint && build ✓"]
 ```
 
 ## Key decisions & why
 
-- **Pieces for a travelling gradient.** No SVG gradient follows a path; twenty pieces
-  per stroke, cut on the stroke's own curves so the seams are invisible, each one shade
-  further along. Cost: 48–53 kB instead of 42 kB for those two files.
-- **OKLab blends.** An sRGB blend from dusk to clay goes grey in the middle; OKLab keeps
-  the ramp even and the mid-tones alive.
-- **A real `<linearGradient>` for the sweep.** It is what the element is for, and it is
-  portable; the checker admits it and nothing more.
-- **Ink stays `currentColor`; a ramp that touches ink carries dark fills.** So every
-  colourway still reads on paper and on slate.
-- **Geometry frozen.** Every colourway is the round-2 Ensō; the original colours
-  reproduce its file exactly, so the pick compares paint and nothing else.
+- **Light/dark files where the surface switches themes, the self-switching SVG where the
+  OS decides.** GitHub and VitePress each let a reader choose a theme independently of
+  the OS; a media-rule SVG there would disagree with the page.
+- **Generated, pinned, one source.** The adopted files are outputs of the same script
+  as the options; `--check` refuses a copy that drifted.
+- **A raster only where SVG cannot go** — PyPI's renderer and Slack's icon upload.
+- **The Slack icon is a manual step, documented,** because the manifest format has no
+  icon field; nothing in code can do it.
+- **Out of the adoption:** the plugin manifests (no icon field) and the Slack
+  manifest's background colour (pinned and mirrored; cosmetic).
 
 ## Evidence
 
-`docs/specs/issue-398/evidence/automated-tests.md` (round-3 run): the checker green, a
-clean regeneration, ruff and markdownlint clean, the contrast table, the T8 probe;
-`design/screenshots/` — twenty-two round-3 captures. Security review re-run on the
-round-3 diff: `evidence/security-review.md`.
+`docs/specs/issue-398/evidence/automated-tests.md`: the checker green on eighteen files,
+a clean regeneration, ruff clean, markdownlint over every Markdown file (1307 files,
+0 errors), the docs site and the dashboard built with the mark, the T8 probe;
+`design/screenshots/` — the site's home page in both appearances plus the round-3
+captures. Security review re-run on the adoption diff: `evidence/security-review.md`.
 
 ## Open questions for the reviewer
 
-**Which colourway — or which pairing instead?** Answer on the ticket (#398) or here;
-the PR can merge as the record either way.
+None for the artifacts. **Two acts are yours:** merge, and upload the Slack app icon
+(`docs/assets/the-loop-logo-1024.png`) under *Basic Information → Display Information*.

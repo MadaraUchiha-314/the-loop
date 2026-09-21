@@ -7,7 +7,8 @@ workItem: "github:MadaraUchiha-314/the-loop#398"
 
 Run from the repository root on the branch of the delivering PR. Rows refer to
 [`testing-plan.md`](../testing-plan.md). **Round 3** (2026-09-21, after the owner's pick)
-re-ran every row; the red→green records of rounds 1 and 2 are kept below.
+re-ran every row; **round 4** (2026-09-21, the adoption) added the build and whole-repo
+lint rows; the red→green records of rounds 1 and 2 are kept below.
 
 ## T1 — the generator's checker
 
@@ -202,3 +203,69 @@ exit=0
 `docs/specs/*/design/**` is excluded from markdownlint by the repository's config (the
 artifact is the contract), which is why the generator and the gallery are linted by hand
 above rather than by the hook.
+
+## T4a — the docs site builds with the mark
+
+```
+$ cd docs && bun install --frozen-lockfile && bun run docs:build
++ vitepress@1.6.4
+
+127 packages installed [3.48s]
+The language 'cron' is not loaded, falling back to 'txt' for syntax highlighting.
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+
+The language 'cron' is not loaded, falling back to 'txt' for syntax highlighting.
+[32m✓[0m building client + server bundles...
+- rendering pages...
+[32m✓[0m rendering pages...
+build complete in 118.73s.
+exit=0
+```
+
+The built output carries `favicon.svg`, `logo-light.svg`, `logo-dark.svg` and
+`apple-touch-icon.png` at its root, and `index.html` links the favicon
+(`<link rel="icon" href="/the-loop/favicon.svg" type="image/svg+xml">`) and the nav logo.
+The build's two warnings (a `cron` fence with no grammar; chunk size) predate this work
+item and are unrelated to it.
+
+## T4b — the dashboard lints and builds with its favicon
+
+```
+$ cd ui && bun install --frozen-lockfile && bun run lint && bun run build
+
+183 packages installed [3.33s]
+$ oxlint --type-aware
+rendering chunks...
+computing gzip size...
+dist/index.html                   2.05 kB │ gzip:  0.95 kB
+dist/assets/index-DCKic1t0.css   20.77 kB │ gzip:  5.13 kB
+dist/assets/index-eunMrwJY.js   310.84 kB │ gzip: 95.69 kB │ map: 1,338.35 kB
+✓ built in 1.34s
+exit=0
+```
+
+`dist/favicon.svg` is present and `dist/index.html` carries
+`<link rel="icon" href="favicon.svg" type="image/svg+xml" />`.
+
+## T12 (round 4) — every Markdown file, as the hook lints it
+
+```
+$ npx --yes markdownlint-cli2@0.18.1 "**/*.md"
+markdownlint-cli2 v0.18.1 (markdownlint v0.38.0)
+Finding: **/*.md !**/node_modules/** !cli/node_modules/** !**/.venv/** !docs/.vitepress/dist/** !docs/.vitepress/cache/** !docs/operating-model/reference/** !docs/specs/*/design/**
+Linting: 1307 file(s)
+Summary: 0 error(s)
+exit=0
+```
+
+## T13 — the adopted surfaces, rendered
+
+`design/screenshots/site-home-light.png` and `site-home-dark.png`: the built site's home
+page under each appearance, captured by `screenshots.mjs --site` against
+`bun run docs:preview --port 4173` — nav logo, hero image and favicon link in place.
+`docs/assets/the-loop-logo-1024.png` viewed at size: the mark on its paper ground with
+an 8 % inset, the square Slack expects.

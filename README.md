@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/the-loop-logo-dark.svg">
+    <img alt="the-loop — three brush circles, each left open where the hand lifted" src="docs/assets/the-loop-logo-light.svg" width="168">
+  </picture>
+</p>
+
 # the-loop
 
 **The loop for everything!** — an opinionated product-development lifecycle, shipped as an

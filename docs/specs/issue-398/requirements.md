@@ -11,7 +11,7 @@ riskTier: 2                  # docs/specs/issue-398/** only — no code, no conf
 
 <!-- Authored per the the-loop:writing skill. -->
 
-# Requirements: a logo for the-loop — the Ensō, in colourways, to choose from
+# Requirements: a logo for the-loop — the Ensō, chosen and adopted
 
 > Phase 1 of 4 (requirements → design → testing plan → tasks). A tier-2 work item:
 > the four files are short and locked together, and the loop completes on its own
@@ -27,10 +27,10 @@ is named for — **inner, outer and many loops working together** — presented 
 five options that each explore a *different* concept, preferably as SVG rather than a
 raster image.
 
-This work item delivers the options and the means to iterate them. It does **not**
-adopt one: the choice is the owner's, recorded on the ticket, and the adoption
-(README, docs site, plugin icon, favicon) is a follow-up work item with that decision
-as its input.
+This work item delivers the options and the means to iterate them, and — since the
+owner's pick on 2026-09-21 widened it (R5, *Review comments*) — the **adoption** of the
+chosen mark across the user-facing surfaces. The choice itself stayed the owner's,
+recorded on the pull request.
 
 ## Requirements
 
@@ -115,6 +115,30 @@ and to record my pick where the paper trail lives.
 4. The ticket SHALL rest at `loop:needs-review` once the options are presented: the
    item is waiting on a human decision, which no review round can substitute for.
 
+### R5 — the chosen mark, adopted *(added by the owner's pick, 2026-09-21)*
+
+**User story:** As the owner, having chosen a colourway, I want every place a reader
+meets the-loop to carry it, so that the repository, the site and the Slack app read as
+one thing.
+
+#### Acceptance criteria (EARS)
+
+1. The root `README.md` SHALL open with the mark, legible on GitHub's light and dark
+   themes (a `<picture>` with a source per scheme).
+2. The docs site SHALL carry the mark as its nav logo, its home-page hero image and its
+   favicon, following the site's own theme toggle, and SHALL build with them.
+3. The CLI's PyPI page (`cli/README.md`) SHALL open with the mark as a raster, since that
+   renderer takes no SVG from a repository.
+4. The control-plane dashboard SHALL carry the mark as its favicon and SHALL build with it.
+5. The Slack app SHALL have the mark as its icon: a square raster on the paper ground at
+   the size Slack expects, plus the manual upload step in the Slack guide, because Slack's
+   manifest format carries no icon.
+6. Every adopted file SHALL be **generated** by the same script as the options and pinned
+   by its `--check`, so the adopted mark cannot drift from its source; the rasters SHALL
+   come from the design folder's screenshot script.
+7. The two capability docs the adoption touches (`documentation`, `channels`) SHALL
+   record it, and `evidence/documentation.md` SHALL list every user-facing file changed.
+
 ## Non-functional requirements
 
 - **Size.** Each SVG under 64 kB (round 1 budgeted 40 kB; a brush stroke needs denser
@@ -148,9 +172,12 @@ and to record my pick where the paper trail lives.
 
 ## Out of scope
 
-- **Adopting a mark** — wiring the chosen SVG into `README.md`, the docs site's hero
-  and favicon, and the two plugin manifests. A follow-up work item, opened with the
-  owner's pick as its requirement.
+- **The plugin manifests** (`.claude-plugin/`, `.cursor-plugin/`): neither format has an
+  icon field today; nothing to carry the mark. *(Adoption of the mark elsewhere moved
+  into scope as R5 on the owner's pick.)*
+- **Changing the Slack app's `background_color`** in the shipped manifest to the paper
+  ground: cosmetic, and the manifest is pinned by tests and mirrored in the guide;
+  left for a later touch.
 - **A wordmark / typeface.** The gallery shows a lockup in the system monospace only to
   judge proportion; choosing type is part of adoption.
 - **A raster export pipeline** (PNG/ICO sizes for stores and favicons) — adoption.
@@ -175,3 +202,10 @@ purpose, raised as the ticket comment R4.3 requires, and answered there.
   not three to five) and R1.4 is added (colourways of one unchanged geometry); the
   four other marks are removed. Round 3 of the artifacts is the response
   (`design.md` § Review comments).
+- **2026-09-21 · @MadaraUchiha-314 (owner, designer) · [PR #403 review comment on `enso-5-dusk-sage-ink.svg`](https://github.com/MadaraUchiha-314/the-loop/pull/403#discussion_r4058602461)**
+  — *"I choose this. Update all documentation and the github README to have this. The
+  slack app also must have this as it's logo."* The pick — colourway 5, dusk · sage ·
+  ink — and the adoption, which the first version of this document had placed out of
+  scope as a follow-up. Folded in as **R5** and as round 4 of the artifacts: the README,
+  the docs site, the PyPI README, the dashboard and the Slack guide carry the mark; the
+  Slack icon itself is a manual upload the guide now describes.

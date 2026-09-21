@@ -51,3 +51,18 @@ workItem: "github:MadaraUchiha-314/the-loop#398"
 | 2 | self (diff + budget read) | new findings | (w) the gallery (ten symbols) is 452 kB against the requirements' 300 kB budget written for five marks → the NFR raised to 500 kB with the reason, in `requirements.md`; (x) the allowlist needed exactly `linearGradient`, `stop`, `class` and seven gradient attributes, and a `fill="url(…)"` that is not a fragment had no rule → any `url(` value must be `url(#`, pinned by the probe | this PR |
 | 3 | self (final diff + gallery, both schemes) | zero (converged) | — | — |
 | — | critic | unavailable | no critic CLI configured on this machine | `the-loop critic list` |
+
+## Human review — round 3 → round 4
+
+| Reviewer | Where | Finding | Disposition |
+|----------|-------|---------|-------------|
+| @MadaraUchiha-314 (owner, designer) | [PR #403 review comment on `enso-5-dusk-sage-ink.svg`](https://github.com/MadaraUchiha-314/the-loop/pull/403#discussion_r4058602461) | *"I choose this. Update all documentation and the github README to have this. The slack app also must have this as it's logo."* | the pick (colourway 5, marked approved in the inventory) and the adoption, added as R5 and delivered as round 4: generated brand assets, README, docs site, PyPI README, dashboard, Slack guide, capability docs |
+
+## Review cycles — round 4
+
+| Round | Reviewer | Outcome | Findings → disposition | Link |
+|-------|----------|---------|------------------------|------|
+| 1 | self (surface read) | new findings | (y) a self-switching SVG follows the OS scheme, but GitHub and the docs site switch themes on their own → fixed-ink light/dark files for those two surfaces, the self-switching file only where the OS decides (favicons); (z) VitePress does not base-prefix `head` entries → the favicon and apple-touch paths carry `/the-loop/` by hand, verified in the built `index.html`; (aa) `screenshots.mjs --assets` would have created a directory named `--assets` (the out-dir argument was `argv[2]`) → the arguments are parsed, and the out dir is made only for a capture run | this PR |
+| 2 | self (build + lint read) | new findings | (ab) PyPI renders no SVG from a repository → the CLI README takes the 1024 px raster from `main`; (ac) a whole-repo markdownlint run from inside `ui/` swept `node_modules` because the config lives at the root → re-run from the root: 1307 files, 0 errors; the build directories and installs are git-ignored, verified with `git check-ignore` | this PR |
+| 3 | self (final diff, both builds' output) | zero (converged) | — | — |
+| — | critic | unavailable | no critic CLI configured on this machine | `the-loop critic list` |

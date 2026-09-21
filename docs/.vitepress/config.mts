@@ -237,6 +237,14 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
 
+  // The mark (issue-398): the SVG favicon follows the OS scheme by its own media rule;
+  // the apple-touch icon is the raster the design folder's screenshot script renders.
+  // `head` is not base-prefixed by VitePress, so the paths carry it.
+  head: [
+    ["link", { rel: "icon", href: "/the-loop/favicon.svg", type: "image/svg+xml" }],
+    ["link", { rel: "apple-touch-icon", href: "/the-loop/apple-touch-icon.png" }],
+  ],
+
   // docs/decisions and docs/capabilities carry a handful of links out to cli/README.md
   // and skills/the-loop/SKILL.md — real files, but outside this site's srcDir (docs/).
   // Rather than rewrite the canonical docs to route around the site's scope, dead-link
@@ -265,6 +273,9 @@ export default defineConfig({
   },
 
   themeConfig: {
+    // One file per theme rather than the self-switching SVG: the site's own theme toggle
+    // is what should drive the mark here, not the OS scheme.
+    logo: { light: "/logo-light.svg", dark: "/logo-dark.svg", alt: "the-loop" },
     nav: [
       { text: "Guide", link: "/guide/what-is-the-loop" },
       { text: "CLI", link: "/cli/", activeMatch: "^/cli/" },

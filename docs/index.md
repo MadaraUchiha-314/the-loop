@@ -4,6 +4,10 @@ layout: home
 hero:
   name: the-loop
   text: The loop for everything!
+  image:
+    light: /logo-light.svg
+    dark: /logo-dark.svg
+    alt: the-loop — three brush circles, each left open where the hand lifted
   tagline: >-
     An opinionated product-development lifecycle, shipped as an executable process graph
     and a daemon that runs it. Nodes are the steps, hooks are the checks at their

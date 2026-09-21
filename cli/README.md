@@ -1,3 +1,7 @@
+<p align="center">
+  <img alt="the-loop" src="https://raw.githubusercontent.com/MadaraUchiha-314/the-loop/main/docs/assets/the-loop-logo-1024.png" width="128">
+</p>
+
 # the-loop CLI
 
 A lightweight, **extensible** command-line companion to

@@ -9,7 +9,7 @@ overrides: {}
 
 <!-- Authored per the the-loop:writing skill. -->
 
-# Tasks: a logo for the-loop — the Ensō, in colourways, to choose from
+# Tasks: a logo for the-loop — the Ensō, chosen and adopted
 
 > Phase 4 of 4. Each task names the requirement it satisfies and the testing-plan row
 > that proves it. For a design deliverable the "test" is the generator's own checker and
@@ -107,11 +107,50 @@ overrides: {}
       `loop:needs-review`. _Depends on:_ F4 · _Requirements:_ R4.3, R4.4 · _Test:_
       T11.
 
+### Round 4 — the pick, adopted
+
+> _"I choose this [colourway 5]. Update all documentation and the github README to have
+> this. The slack app also must have this as it's logo."_
+
+- [x] **G1 — the adopted mark as generated assets.** `ADOPTED`, `logo_file(mode)`
+      (auto / light / dark ink), `ADOPTED_FILES` → `docs/assets/the-loop-logo{,-light,-dark}.svg`,
+      `docs/public/{favicon,logo-light,logo-dark}.svg`, `ui/public/favicon.svg`; `--check`
+      pins all seven. `screenshots.mjs --assets` → `docs/assets/the-loop-logo-1024.png`
+      (Slack), `docs/public/apple-touch-icon.png`. _Depends on:_ F2 · _Requirements:_
+      R5.5, R5.6 · _Test:_ T1, T5.
+- [x] **G2 — the README and the PyPI README.** A `<picture>` with light/dark sources at
+      the top of `README.md`; the 1024 px raster at the top of `cli/README.md`.
+      _Depends on:_ G1 · _Requirements:_ R5.1, R5.3 · _Test:_ T12, T13 (the README as
+      GitHub renders it, in the screenshot evidence).
+- [x] **G3 — the docs site.** `head` (favicon, apple-touch icon) and `themeConfig.logo`
+      in `docs/.vitepress/config.mts`; `hero.image` in `docs/index.md`; the site builds.
+      _Depends on:_ G1 · _Requirements:_ R5.2 · _Test:_ T4a (`bun run docs:build`).
+- [x] **G4 — the dashboard.** `<link rel="icon">` in `ui/index.html`; the dashboard
+      lints and builds with `ui/public/favicon.svg`. _Depends on:_ G1 · _Requirements:_
+      R5.4 · _Test:_ T4b (`bun run lint && bun run build`).
+- [x] **G5 — the Slack icon step and the capability docs.** The upload step in
+      `docs/guide/slack.md`; a _The mark_ section and history row in
+      `docs/capabilities/documentation.md`; a history row in
+      `docs/capabilities/channels.md`. _Depends on:_ G1 · _Requirements:_ R5.5, R5.7 ·
+      _Test:_ T12.
+- [x] **G6 — the record.** `requirements.md` (R5, review comments), `design.md`
+      (adoption section, colourway 5 approved in the inventory), `testing-plan.md`
+      (T4a/T4b/T13, results), this file, the evidence files. _Depends on:_ G2–G5 ·
+      _Test:_ T12.
+- [ ] **G7 — hand back.** Push; reply in the review thread; update the PR description
+      and the ticket comment; label `loop:needs-review` — the PR is the owner's to
+      merge, and the Slack icon upload is the owner's to do. _Depends on:_ G6 ·
+      _Test:_ T11.
+
 ## Dependency graph (DAG)
 
 ```text
 A1 → A2 → B1 → B2 → C1 → D1 ─(review)─→ E1 → E2 → E3 → E4 ─(pick)─→ F1 → F2 → F4 → F5
 A1 → A3 ────────────↗                                                 F1 → F3 ──↗
+F5 ─(adopt)─→ G1 → G2 ┐
+              G1 → G3 ├→ G6 → G7
+              G1 → G4 │
+              G1 → G5 ┘
 ```
 
 ## Checkpoints

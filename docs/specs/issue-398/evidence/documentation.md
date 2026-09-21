@@ -9,11 +9,18 @@ workItem: "github:MadaraUchiha-314/the-loop#398"
 
 | Capability doc | What changed | History row |
 |----------------|--------------|-------------|
-| none affected | This work item produces design artifacts under its own spec folder and changes no capability's behaviour. It *uses* the `design-artifacts` capability (a self-contained gallery, iterated on the rendering with the designer — three rounds on the owner's reviews — screenshot evidence) exactly as that doc describes; nothing in `docs/capabilities/design-artifacts.md` becomes wrong or incomplete. | none |
+| `docs/capabilities/documentation.md` | a *The mark* section under *Current behaviour*: the site, the root README, the PyPI page and the dashboard carry the mark from one generated source, pinned by `--check`; which surfaces use the light/dark files and which the self-switching one | issue-398 row added |
+| `docs/capabilities/channels.md` | the Slack app's icon is the mark, uploaded by hand under *Basic Information → Display Information* (the manifest format carries no icon); the step is in the Slack guide | issue-398 row added |
+| `docs/capabilities/design-artifacts.md` | not changed: this work item *used* the capability exactly as described — a self-contained gallery, iterated on the rendering with the designer over three reviews, screenshot evidence, the designer's sign-off recorded as a row-level `approved` | none |
 
 ## Documentation
 
 | Document | What changed |
 |----------|--------------|
-| `README.md`, the docs site, the plugin manifests | **Not changed, on purpose.** Nothing is adopted until the owner picks a colourway; wiring the chosen mark into the README, the site's hero and favicon, and the two plugin manifests is the follow-up work item this one's `requirements.md` § Out of scope names. Until then the user-facing surface has no logo, as before, and describes nothing this PR makes wrong. |
-| `docs/specs/issue-398/design/logo-options.html` | New (round 3 supersedes rounds 1 and 2 in place) — the reviewable presentation of the Ensō's ten colourways; it says what round it is and carries its own instructions (the source file, how to regenerate and check), so a reader who lands on it needs nothing else. |
+| `README.md` | opens with the mark — a centred `<picture>` with a dark-scheme source and a light `<img>` (`docs/assets/the-loop-logo-dark.svg` / `-light.svg`) |
+| the docs site — `docs/.vitepress/config.mts`, `docs/index.md` | `head` links the SVG favicon and the apple-touch icon; `themeConfig.logo` and the home page's `hero.image` use the light/dark files under `docs/public/`; the site builds (T4a) |
+| `cli/README.md` (the PyPI page) | opens with the 1024 px raster, 128 px wide, from `main` |
+| `ui/index.html` (the dashboard) | `<link rel="icon" href="favicon.svg">`, served from `ui/public/`; the dashboard builds (T4b) |
+| `docs/guide/slack.md` | *The app's icon*: the manual upload step under *1. Create the Slack app from the manifest*, pointing at `docs/assets/the-loop-logo-1024.png` |
+| `docs/specs/issue-398/design/logo-options.html` | the reviewable presentation of the ten colourways (round 3), unchanged by the adoption |
+| the plugin manifests | not changed: neither format has an icon field |
