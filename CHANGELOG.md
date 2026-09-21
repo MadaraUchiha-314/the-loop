@@ -1,3 +1,9 @@
+## v19.10.1 (2026-09-21)
+
+### Fix
+
+- **issue-413**: the listener finds a second Socket Mode consumer itself (#414)
+
 ## v19.10.0 (2026-09-21)
 
 ### Feat
