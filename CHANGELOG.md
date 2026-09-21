@@ -1,3 +1,9 @@
+## v19.9.2 (2026-09-21)
+
+### Fix
+
+- **issue-407**: the release folds the refreshed uv.lock into the bump commit (#408)
+
 ## v19.9.1 (2026-09-21)
 
 ### Fix
