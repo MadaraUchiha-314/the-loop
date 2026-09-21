@@ -108,17 +108,37 @@ in captured output is elided.
 
 ## Verification activities
 
-- [ ] T1 — `uv run --project cli python -m pytest -q cli/tests/test_attachments.py`
-- [ ] T2 — `uv run --project cli python -m pytest -q cli/tests/test_attachments_integration.py`
-- [ ] T8 — the abuse-case selection: `uv run --project cli python -m pytest -q cli/tests/test_attachments.py cli/tests/test_attachments_integration.py -k "off_host or redirect or cap or hostile or untrusted or stranger or permalink"`
-- [ ] T10 — `uv run --project cli python -m pytest -q cli/tests/test_state_portability.py cli/tests/test_channels_mentions.py cli/tests/test_channels_dm.py cli/tests/test_doctor_slack.py cli/tests/test_interaction_integration.py cli/tests/test_channels.py`
-- [ ] T12 — `uv run --project cli python -m pytest -q cli/tests/test_docs_parity.py` and `make lint`
-- [ ] All — `make check`
-- [ ] T11 — the operator's first-use check (not executable here; procedure recorded)
+- [x] T1 — `uv run --project cli python -m pytest -q cli/tests/test_attachments.py`
+- [x] T2 — `uv run --project cli python -m pytest -q cli/tests/test_attachments_integration.py`
+- [x] T8 — the abuse-case selection: `uv run --project cli python -m pytest -q cli/tests/test_attachments.py cli/tests/test_attachments_integration.py -k "off_host or redirect or cap or hostile or untrusted or stranger or permalink"`
+- [x] T10 — `uv run --project cli python -m pytest -q cli/tests/test_state_portability.py cli/tests/test_channels_mentions.py cli/tests/test_channels_dm.py cli/tests/test_doctor_slack.py cli/tests/test_interaction_integration.py cli/tests/test_channels.py`
+- [x] T12 — `uv run --project cli python -m pytest -q cli/tests/test_docs_parity.py` and `make lint`
+- [x] All — `make check`
+- [ ] T11 — the operator's first-use check (not executable here; procedure recorded in `evidence/verification.md`)
 
 ## Verification results
 
-Not yet executed.
+Every automated activity ran; T11 is the operator's and is written down rather than
+ticked. Raw output: [`evidence/verification.md`](evidence/verification.md).
+
+`uv` is invoked as `python3 -m uv` (and `make` with the matching `uv` first on `PATH`):
+the container's own `uv` (0.8.17) predates this repo's `required-version` pin. The
+commands are otherwise exactly as planned.
+
+| Activity | Command / procedure | Outcome | Evidence |
+|----------|--------------------|---------|----------|
+| T1 | `pytest -q cli/tests/test_attachments.py` | **pass** — 1 collection error (ImportError) before the module existed, 23 passed after | [verification.md](evidence/verification.md) § T1 / T8 |
+| T2 | `pytest -q cli/tests/test_attachments_integration.py` | **pass** — ImportError before the wiring, 16 scenarios passed after (39 with T1) | [verification.md](evidence/verification.md) § T2 |
+| T8 | the abuse-case selection across both modules | **pass** — 13 passed | [verification.md](evidence/verification.md) § T1 / T8 |
+| T10 | the touched suites + `test_eventlog.py` | **pass** — 231 passed; four probe fixtures now grant `files:read`, and the event catalog gained the two new types | [verification.md](evidence/verification.md) § T10 / T12 |
+| T12 | `pytest -q cli/tests/test_docs_parity.py` and `make lint` | **pass** — parity held; markdownlint 0 errors across 1,365 files | [verification.md](evidence/verification.md) § The full `make check` |
+| All | `make check` (lint · format · typecheck · validate · test) | **pass**, with 4 pre-existing failures — see below | [verification.md](evidence/verification.md) § The full `make check` |
+| T11 | the operator's first-use check | **not executed here** — no Slack workspace or private-repository asset exists in this environment; the four-step procedure is recorded | [verification.md](evidence/verification.md) § T11 |
+
+**The 4 failures in `make check` are not this work item's.** All four are in
+`cli/tests/test_instance.py`, concern the argv a tmux spawn is built with, and reproduce
+identically on an untouched `origin/main` worktree — the same four issue-415 recorded.
+Recorded rather than fixed: outside this work item's scope.
 
 ## Review comments
 

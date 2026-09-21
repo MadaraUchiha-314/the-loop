@@ -83,7 +83,7 @@ flowchart LR
   - _Depends on:_ 6
   - _Requirements:_ all
   - _Test:_ `T2 — pytest cli/tests/test_attachments_integration.py`
-- [ ] 8. Documentation and the decision record
+- [x] 8. Documentation and the decision record
   - `docs/guide/slack.md`: the manifest copy gains `files:read`; a new _Images and voice
     notes_ section; a line under _Limits_. `docs/capabilities/channels.md` and
     `docs/capabilities/webhook-triggers.md`: current-behaviour clauses and history rows.
@@ -91,7 +91,7 @@ flowchart LR
   - _Depends on:_ 7
   - _Requirements:_ the loop's rule — docs change in the same PR
   - _Test:_ `T12 — pytest cli/tests/test_docs_parity.py` and `make lint`
-- [ ] 9. Verify and record
+- [x] 9. Verify and record
   - `make check`; fill `testing-plan.md` § Verification results; write
     `evidence/verification.md`, `self-review.md`, `security-review.md`,
     `pull-requests.md`; the T11 procedure written down and marked not executed here.
