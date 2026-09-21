@@ -31,7 +31,9 @@ you say otherwise, never relative to whatever directory a command was run from
 │   ├── github-octo-repo-15.json   # that item's session handle(s) — never tracked
 │   ├── model-verdicts.json        # which models this box's harnesses accept — never tracked
 │   ├── poll-clocks.json           # when this box's poller last looked at each item — never tracked
-│   └── slack-split.json           # what this listener's own split check last measured — never tracked
+│   ├── slack-split.json           # what this listener's own split check last measured — never tracked
+│   └── attachments/               # files people attached, fetched for this box's sessions to read — never tracked
+│       └── github-octo-repo-15/   #   one directory per work item (issue-416)
 ├── logs/
 │   ├── events.jsonl               # the decision trail
 │   └── poller.out                 # a daemonized poller's stdout/stderr
@@ -199,6 +201,7 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 | `<root>/local/model-verdicts.json` | `the-loop models check` (issue-358) | one verdict per harness × model-or-effort name: `ok`, `refused` or `unknown`, the argv it was taken against, and when — re-measured every 24h | **local** |
 | `<root>/local/poll-clocks.json` | the poller, as it finishes each item (issue-382) | per work-item ref — and per pull request delivering one — `lastPolledAt` and `closureCheckedAt`: when a cycle on **this** machine last listed it, and last asked whether an unlisted item had ended | **local** |
 | `<root>/local/slack-split.json` | the Socket Mode listener, after every split check (issue-413) | what this listener last measured of its own share of the traffic: the verdict, the beats posted and echoed, the window, the channel id, the rolling window of recent verdicts and the consecutive-short count the warning ladder reads | **local** |
+| `<root>/local/attachments/<slug>/` | the Slack channel and the GitHub dispatcher, as a message with a file is forwarded (issue-416) | the files people attached — a Slack upload saved as `<file id>-<name>`, a GitHub asset by its id — as opaque bytes for the session on this machine to read; the-loop never opens them and never removes them | **local** |
 | `<root>/local/standing/<name>.json` | the standing-session registry (issue-277, opt-in) | per standing session: harness, conversation id, `cwd`, tmux target, status, the Slack channel/thread its chat runs in — and, for a session created through the API, its whole definition | **local** |
 | `<root>/logs/events.jsonl` | every ingress, and `sessions` | one JSON object per decision | **local** |
 | `<root>/logs/poller.out` | a daemonized poller | its stdout and stderr, appended | **local** |
@@ -838,6 +841,26 @@ covers both (and the atomic writer's temporaries) with one `self-diagnosis.json*
 **If you delete it:** every failure still in the event log becomes "new" again on the
 next scan, so already-filed issues can be filed a second time. Delete it only together
 with (or after) the event log it summarises.
+
+## Fetched attachments — `<root>/local/attachments/<slug>/`
+
+The files people attached to a message the-loop forwarded
+([issue-416](https://github.com/MadaraUchiha-314/the-loop/issues/416)): a screenshot or
+a voice clip on a Slack reply, an image in a GitHub comment. The daemon fetches each one
+— with the bot token, or the GitHub token — into this work item's directory and pastes
+the path into the session's pane; the session reads an image or a PDF from that path
+with its own tool. A Slack upload is saved as `<file id>-<name>`, a GitHub asset under
+its own id, so a file seen twice is fetched once. At most ten files per message and
+25 MiB per file.
+
+Machine-local for the plainest reason of all: the path is only meaningful to the pane it
+was pasted into, and the bytes are a copy of something Slack or GitHub still holds.
+**Nothing removes them.** the-loop keeps no index of this directory and runs no sweeper;
+delete a work item's subdirectory when its session is gone, or the whole directory
+whenever you like — the next attached file recreates what it needs.
+
+**If you delete it:** a session that had been told a path finds nothing there; it still
+has the Slack permalink or the asset URL from the same message.
 
 ## Poll clocks — `<root>/local/poll-clocks.json`
 

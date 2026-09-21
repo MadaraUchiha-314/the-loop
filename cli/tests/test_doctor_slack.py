@@ -738,7 +738,7 @@ def test_doctor_slack_prints_all_three_sections_and_exits_zero_when_clean(
     client = FakeDoctorClient()
     client.auth_test = lambda: FakeResponse(  # type: ignore[method-assign]
         {"ok": True},
-        "chat:write,groups:history,app_mentions:read",
+        "chat:write,groups:history,app_mentions:read,files:read",
     )
 
     def socket_factory(app_token, web_client):
@@ -772,7 +772,7 @@ def test_doctor_slack_exits_one_on_a_miss_or_a_suspected_split(
     client = FakeDoctorClient(echo=lambda index: index == 0)
     client.auth_test = lambda: FakeResponse(  # type: ignore[method-assign]
         {"ok": True},
-        "chat:write,groups:history,app_mentions:read",
+        "chat:write,groups:history,app_mentions:read,files:read",
     )
 
     def socket_factory(app_token, web_client):

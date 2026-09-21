@@ -11,6 +11,7 @@ Spec: docs/specs/issue-15/design.md §4 (requirements R3.2/R3.3, R5).
 from __future__ import annotations
 
 import logging
+import os
 import queue
 import re
 import threading
@@ -4380,7 +4381,80 @@ class Dispatcher:
         )
         # A template that never declared the placeholder would drop the rule in
         # silence — safe_substitute does not complain (issue-134).
-        return apply_directive(rendered, template.template, directive)
+        rendered = apply_directive(rendered, template.template, directive)
+        # The files the event's comment or body attached (issue-416), fetched
+        # and named AFTER the template — outside the excerpt's JSON, outside the
+        # template's own placeholders — so a custom promptTemplate that never
+        # heard of attachments still carries them, and an event with none
+        # renders byte-identically to before.
+        return rendered + self._attachments_section(routed, work_item)
+
+    def _attachments_section(self, routed: RoutedEvent, work_item: WorkItemRef) -> str:
+        """The Attachments section for the asset URLs in the event's bodies — the
+        comment's, the review's, the issue's, the pull request's — or the empty
+        string when there are none (issue-416 R4). Best-effort by contract: a
+        failure to fetch is a line naming the URL, never a failed delivery."""
+        from ..ghhost import github_host
+        from .. import ghhost
+        from ..channels import attachments
+
+        payload = routed.payload or {}
+        bodies: List[str] = []
+        for container in ("comment", "review", "issue", "pull_request"):
+            body = (payload.get(container) or {}).get("body")
+            if isinstance(body, str) and body:
+                bodies.append(body)
+        if not bodies:
+            return ""
+        hosts: List[str] = []
+        try:
+            host = github_host(self.cli_config)
+        except Exception:  # noqa: BLE001 — a host resolver is a nicety here
+            host = ghhost.DEFAULT_GITHUB_HOST
+        if host and host != ghhost.DEFAULT_GITHUB_HOST:
+            hosts.append(host)
+        urls = attachments.github_attachment_urls("\n".join(bodies), hosts=hosts)
+        if not urls:
+            return ""
+        try:
+            dest = (
+                Path(layout_from_config(self.cli_config or {}).attachments_dir)
+                / work_item.slug
+            )
+            attached = attachments.github_attachments(
+                urls, token=self._github_token(), dest_dir=dest, hosts=hosts
+            )
+        except Exception as exc:  # noqa: BLE001 — never a failed delivery
+            logger.warning(
+                "attachments for %s not fetched: %s", work_item.ref, type(exc).__name__
+            )
+            return ""
+        eventlog.emit(
+            "dispatch.attachments",
+            work_item=work_item.ref,
+            gh_event=routed.event,
+            count=len(attached),
+            fetched=sum(1 for a in attached if a.path),
+        )
+        return "\n" + attachments.render_section(attached) + "\n"
+
+    def _github_token(self) -> str:
+        """The daemon's own GitHub credential for an asset fetch: the first set
+        variable of ``integrations.github.api.tokenEnv`` (default ``GH_TOKEN``,
+        then ``GITHUB_TOKEN``), else nothing — an anonymous fetch serves a public
+        repository's asset and is refused for a private one, which the section
+        then says."""
+        api = (
+            ((self.cli_config or {}).get("integrations") or {}).get("github") or {}
+        ).get("api") or {}
+        names = api.get("tokenEnv") or ["GH_TOKEN", "GITHUB_TOKEN"]
+        if isinstance(names, str):
+            names = [names]
+        for name in names:
+            value = os.environ.get(str(name)) or ""
+            if value:
+                return value
+        return ""
 
     # -- lifecycle ----------------------------------------------------------------
 

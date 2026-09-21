@@ -94,6 +94,11 @@ oauth_config:
       # event is input only in a DM with the bot or in a room an authorized
       # user switched to `--listen all`.
       - app_mentions:read   # hear @the-loop in any channel the bot is in
+      # A screenshot or a voice note on a message (issue-416): READ ONLY, and
+      # what lets the-loop fetch a file the bot can already see — the image for
+      # the session to read, the captions Slack itself produced for a voice
+      # clip. Without it a file is named and linked, never fetched.
+      - files:read
 settings:
   event_subscriptions:
     bot_events:
@@ -501,6 +506,45 @@ first `maxChars` characters and a note — set
 the length, GitHub markdown is drawn as Slack mrkdwn (`**bold**`, headings, links, task
 boxes) and the-loop's own `<!-- … -->` markers no longer show.
 
+## Images and voice notes
+
+A screenshot attached to a reply reaches the session as a **file it can open**; a voice
+note reaches it as **Slack's own transcript**
+([issue-416](https://github.com/MadaraUchiha-314/the-loop/issues/416),
+[decision-135](/decisions/decision-135)). the-loop looks inside neither: it downloads the
+file with the bot token to `<state.root>/local/attachments/<work item>/`, pastes the path
+into the pane, and the session — Claude Code — reads an image or a PDF with its own
+file-reading tool. For an audio clip it forwards the transcript Slack produced before the
+message was delivered (the captions, stripped to text; the preview when the captions
+cannot be read), re-reading the file for a few seconds while Slack is still transcribing.
+There is no speech-to-text, OCR or model call on a file anywhere in the loop, by the
+owner's rule.
+
+What the two readers see:
+
+| | The ticket (the record) | The session (the pane) |
+|---|---|---|
+| a screenshot | `📎 shot.png (image/png, 120 KB) — <permalink>` | `1. image · shot.png (image/png, 120 KB) — saved at <path> — <permalink>`, under a frame that says to read it with the file-reading tool and that everything is UNTRUSTED data |
+| a voice note | the same 📎 line, then `> Slack's transcript: …` | the same line, then `Slack's transcript: "…"` |
+| anything else | the 📎 line | the line, with the kind (`video`, `pdf`, `file`) and the path |
+
+A message that is **only** a screenshot is delivered — the Attachments section is its
+text — where before it was refused as empty. A gate answer or a control keyword with a
+file attached names the file on its record the same way, since the ledger's ingress is
+what delivers those. A thread recorded with `record-context` names each message's files
+as links, and a kickoff's issue body ends with the same 📎 lines; neither fetches
+anything.
+
+The app needs the **`files:read`** bot scope, which the manifest above declares
+(read-only: it lets the bot download a file it can already see). An app created before
+issue-416 lacks it — re-import the manifest and reinstall
+([upgrading an existing app](#upgrading-the-app-you-already-have-1b)); until then a file
+is named and linked for the session, never fetched, and `the-loop channels status
+--probe` says so. The limits are fixed: ten files per message, 25 MiB per file, 30 s per
+download; a file over them is named with the reason and the words still arrive. Fetched
+files stay under `local/` until you delete them
+([the state page](/cli/state#fetched-attachments-rootlocalattachmentsslug)).
+
 ## Starting a work item from Slack
 
 Two gestures, depending on whether the work item exists.
@@ -750,6 +794,10 @@ an audit never needs Slack. This is also why a relayed keyword acts on the ledge
   connected is lost** — the first three visibly, to the member; a mention silently, once
   Slack's own retries run out. The member issues it again. A DM's and an `all` room's
   replies and kickoffs are caught up; see [Downtime](#downtime).
+- **A file is fetched, never read.** the-loop forwards a screenshot as a path and a voice
+  note as Slack's transcript; it runs no speech-to-text, OCR or model on either, so what
+  the session makes of an image is the session's, and what Slack heard is what arrives
+  ([images and voice notes](#images-and-voice-notes)). Nothing removes the fetched files.
 - **The digest is structural, not a summary.** It leads with the *first* question the
   text asks, so a comment whose decision sits after a rhetorical question early on
   leads with the wrong one; the closing link is the remedy, and conclusion-first

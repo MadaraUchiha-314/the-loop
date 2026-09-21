@@ -60,6 +60,7 @@ from .events import APPROVAL_EVENTS, PUBLISHABLE_EVENTS, SUBSCRIBABLE_EVENTS
 from . import room_policy
 from .state import ROOM_MODE, ChannelState, ChannelStores
 from .voice import room_lead
+from . import attachments
 
 logger = logging.getLogger("the-loop.channels")
 
@@ -367,6 +368,32 @@ def mention_findings(scopes: Optional[Sequence[str]]) -> Tuple[str, ...]:
     )
 
 
+#: The scope a file download needs (issue-416). Read-only, like the directory
+#: scopes: it lets the bot fetch a file it can already see in a conversation.
+FILES_SCOPE = "files:read"
+
+
+def attachment_findings(scopes: Optional[Sequence[str]]) -> Tuple[str, ...]:
+    """What is **measured** to be wrong with fetching a file (issue-416 R5.2).
+
+    ``None`` — the scopes could not be read — yields no finding rather than a
+    wrong one, exactly as :func:`mention_findings`. Without the scope the-loop
+    still forwards a message with a file: the file is named and linked, never
+    fetched, and the session is told why.
+    """
+    if scopes is None:
+        return ()
+    granted = {str(scope).strip() for scope in scopes}
+    if FILES_SCOPE in granted:
+        return ()
+    return (
+        f"the app lacks the bot scope {FILES_SCOPE} — a screenshot or a voice note "
+        "attached to a message is named and linked for the session, never fetched, "
+        "so it cannot read the image or Slack's transcript: re-import the manifest "
+        "(`the-loop channels manifest`), then Reinstall.",
+    )
+
+
 def _granted_scopes(response: Any) -> Optional[Tuple[str, ...]]:
     """The bot token's scopes off a Web API response's ``x-oauth-scopes`` header.
 
@@ -534,7 +561,8 @@ def probe_subscription(
         # The kind's finding first, then the mention's (issue-389 R1.8): two
         # different absences, each named on its own line.
         "findings": subscription_findings(channel_id, (kind,), scopes)
-        + mention_findings(scopes),
+        + mention_findings(scopes)
+        + attachment_findings(scopes),
         # Expected, not measured (issue-393 R2.1) — the caller prints the caveat.
         "events": expected_bot_events(),
     }
@@ -1101,6 +1129,15 @@ def slack_state_path(cli_config: Optional[Mapping[str, Any]]) -> Path:
     from ..state import layout_from_config
 
     return Path(layout_from_config(dict(cli_config or {})).channels_dir) / "slack.json"
+
+
+def _files_of(message: Mapping[str, Any]) -> Tuple[Mapping[str, Any], ...]:
+    """The file objects on a Slack message, as sent (issue-416); a message
+    without any — or with a malformed ``files`` — carries the empty tuple."""
+    raw = message.get("files")
+    if not isinstance(raw, (list, tuple)):
+        return ()
+    return tuple(f for f in raw if isinstance(f, Mapping))
 
 
 def kickoff_cursor_key(channel_id: str) -> str:
@@ -2092,6 +2129,10 @@ class SlackBotChannel:
         self._own_user: Optional[str] = None
         #: The resolved central channel (PR #376 review), memoised per instance.
         self._central: Optional[str] = None
+        #: The CLI config this channel was built from, when a caller handed it
+        #: over (issue-416): the state layout the attachment directory derives
+        #: from. Absent, the layout's default root applies.
+        self._cli_config: Optional[Mapping[str, Any]] = None
 
     def subscribes(self, event_type: str) -> bool:
         return event_type in self.config.subscribe
@@ -2115,6 +2156,48 @@ class SlackBotChannel:
         # (and an env var set after construction) is always seen.
         factory = self._client_factory or build_client
         return factory(token)
+
+    def fetch_attachments(
+        self, files: Sequence[Mapping[str, Any]], work_item: str
+    ) -> List[attachments.Attachment]:
+        """The message's files, fetched with the bot token into this work item's
+        attachment directory (issue-416) — an audio clip with Slack's own
+        transcript, re-read through ``files.info`` while Slack is still producing
+        it. Never raises: with no token every file comes back named and linked
+        with the reason, and a client without ``files.info`` (a test double, an
+        older SDK) simply gets no transcript wait.
+        """
+        if not files:
+            return []
+        from ..sessions import WorkItemRef
+        from ..state import layout_from_config
+
+        token = os.environ.get(self.config.bot_token_env) or ""
+        try:
+            slug = WorkItemRef.parse(work_item).slug
+        except ValueError:
+            slug = attachments.safe_name(work_item)
+        layout = layout_from_config(dict(self._cli_config or {}))
+        dest = Path(layout.attachments_dir) / slug
+        files_info: Optional[Callable[[str], Mapping[str, Any]]] = None
+        if token:
+            try:
+                client = self._client()
+            except ChannelError:
+                client = None
+            method = getattr(client, "files_info", None)
+            if callable(method):
+                read = method
+
+                def _info(file_id: str) -> Mapping[str, Any]:
+                    result = read(file=file_id)
+                    return result if isinstance(result, Mapping) else {}
+
+                files_info = _info
+
+        return attachments.slack_attachments(
+            files, token=token, dest_dir=dest, files_info=files_info
+        )
 
     # -- outbound (R3) ---------------------------------------------------------
 
@@ -2880,6 +2963,16 @@ class SlackBotChannel:
                 ),
                 body,
             )
+            for file in _files_of(message):
+                # A screenshot in a recorded thread is a link, not a blank line
+                # (issue-416 R3.3): the name and the permalink, nothing fetched.
+                pin = attachments.safe_name(
+                    str(file.get("name") or file.get("title") or "")
+                )
+                permalink = str(file.get("permalink") or "")
+                body = (
+                    body + f" 📎 {pin}" + (f" ({permalink})" if permalink else "")
+                ).strip()
             line = f"**@{name}** ({when}" + (f", {link}" if link else "") + f"): {body}"
             if count >= SNAPSHOT_MESSAGE_CAP or size + len(line) > SNAPSHOT_CHAR_CAP:
                 truncated = True
@@ -2957,6 +3050,7 @@ class SlackBotChannel:
                         is_bot=bool(message.get("bot_id"))
                         or bool(own_user and author == own_user),
                         channel_id=channel_id,
+                        files=_files_of(message),
                     )
                 )
         return replies
@@ -3030,6 +3124,7 @@ class SlackBotChannel:
                     or bool(own_user and author == own_user),
                     top_level=True,
                     channel_id=self.central_channel(),
+                    files=_files_of(message),
                 )
             )
         return found
@@ -3112,6 +3207,7 @@ class SlackBotChannel:
                         or message.get("subtype") == "bot_message"
                         or bool(own_user and author == own_user),
                         channel_id=target,
+                        files=_files_of(message),
                     )
                 )
         return found

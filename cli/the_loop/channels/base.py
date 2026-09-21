@@ -154,6 +154,11 @@ class InboundReply:
     #: mention is read only then; a plain message in a DM or an ``all`` room is
     #: the reply it always was, whatever its first word.
     addressed: bool = False
+    #: The message's file objects, as Slack sent them (issue-416): read by the
+    #: pipeline when the message is forwarded, so a screenshot or a voice note
+    #: reaches the session beside the words. A message without files carries
+    #: the empty tuple, and nothing downstream changes for it.
+    files: Tuple[Mapping[str, Any], ...] = ()
 
 
 class Channel(Protocol):

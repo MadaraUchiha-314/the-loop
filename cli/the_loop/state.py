@@ -168,6 +168,15 @@ class StateLayout:
         """
         return str(self.root_path / "local" / "standing")
 
+    @property
+    def attachments_dir(self) -> str:
+        """Files people attached — a Slack upload, a GitHub asset — fetched for a
+        session on this machine to read (issue-416), one subdirectory per work
+        item slug. Under ``local/`` because a path into it is pasted into a
+        pane here and means nothing anywhere else; nothing indexes or removes
+        them."""
+        return str(self.root_path / "local" / "attachments")
+
 
 @dataclass(frozen=True)
 class LegacyLayout:
@@ -412,6 +421,24 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
             "where a forged verdict would be a report about someone else's "
             "deployment — it drives a report and nothing else: no gate, no "
             "authorization and no routing reads it."
+        ),
+    ),
+    GeneratedPath(
+        name="fetched attachments",
+        attr="attachments_dir",
+        default="<root>/local/attachments/<slug>/",
+        portable=False,
+        holds=(
+            "the files people attached to a message the-loop forwarded (issue-416): "
+            "a Slack upload as <file id>-<name>, a GitHub asset by its id — opaque "
+            "bytes, never opened by the-loop, kept until the operator deletes them"
+        ),
+        why=(
+            "fetched so that a session on THIS machine can read them from a path "
+            "pasted into its pane; on another machine the path names nothing, and "
+            "the bytes themselves are a copy of something Slack or GitHub still "
+            "holds. A screenshot is also exactly the kind of thing that must never "
+            "ride into a repository with the portable records."
         ),
     ),
     GeneratedPath(
