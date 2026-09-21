@@ -9,4 +9,4 @@ workItem: "github:MadaraUchiha-314/the-loop#405"
 
 | PR | Repository | Scope / tasks | Status |
 |----|------------|---------------|--------|
-| (opened with this branch — number recorded on the ticket) | this repository | A1–A3, B1–B4, C1 — the spec chain, both fixes, the run-3 report, docs and evidence | open |
+| [#406](https://github.com/MadaraUchiha-314/the-loop/pull/406) | this repository | A1–A3, B1–B4, C1 — the spec chain, both fixes, the run-3 report, docs and evidence | open |
