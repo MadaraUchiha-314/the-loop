@@ -62,7 +62,10 @@ flowchart LR
 a clean regeneration, ruff clean, markdownlint over every Markdown file (1307 files,
 0 errors), the docs site and the dashboard built with the mark, the T8 probe;
 `design/screenshots/` — the site's home page in both appearances plus the round-3
-captures. Security review re-run on the adoption diff: `evidence/security-review.md`.
+captures. Security review re-run on the adoption diff: `evidence/security-review.md` —
+no findings; three of its notes taken (the generator refuses to write outside
+the-loop's tree, `--check` holds the two rasters to a plain-PNG structure, `--site`
+takes a loopback host only).
 
 ## Open questions for the reviewer
 

@@ -7,7 +7,9 @@ Usage:
     python3 generate.py            write the SVGs and the gallery next to this file, and
                                    the adopted mark's brand assets under docs/ and ui/
     python3 generate.py --check    verify the files on disk are exactly what this script
-                                   makes, well-formed, self-contained and titled
+                                   makes, well-formed, self-contained and titled, and
+                                   that the two rasters screenshots.mjs --assets wrote
+                                   are plain PNGs of the expected size
 
 Standard library only. The mark is three brush circles, each left open where the hand
 lifted — outer, inner, and the one between. Each circle is one *stroke*: a centreline
@@ -624,7 +626,11 @@ def gallery(variants: list[Variant]) -> str:
 # ------------------------------------------------------------------- the adopted mark
 
 ADOPTED = "enso-5-dusk-sage-ink"  # the owner's pick — PR #403 review, 2026-09-21
-REPO = HERE.parents[3]  # docs/specs/issue-398/design → the repository root
+# docs/specs/issue-398/design → the repository root. The script writes outside its own
+# folder only when that root is the-loop's: target() refuses any other place the file
+# might have been copied to, rather than creating docs/ and ui/ there.
+REPO = HERE.parents[3] if len(HERE.parents) > 3 else HERE
+REPO_MARKER = ".the-loop/harness-config.yaml"
 
 # Where the mark lives once adopted. A path with a slash is relative to the repository
 # root; the design folder's own outputs stay bare names.
@@ -669,7 +675,56 @@ def logo_file(mode: str) -> str:
 
 
 def target(name: str) -> Path:
-    return REPO / name if "/" in name else HERE / name
+    if "/" not in name:
+        return HERE / name
+    if not (REPO / REPO_MARKER).is_file():
+        raise SystemExit(
+            "generate.py must live at docs/specs/issue-398/design/ inside the-loop's "
+            f"repository to write {name}: no {REPO_MARKER} under {REPO}"
+        )
+    return REPO / name
+
+
+# The rasters screenshots.mjs --assets writes for the surfaces that take no SVG. A
+# Chromium render is not byte-identical across builds, so they are not pinned by
+# hash; their structure is: the PNG signature, the expected square, only the three
+# critical chunks (a text or private chunk could carry anything), nothing after IEND.
+RASTERS = {
+    "docs/assets/the-loop-logo-1024.png": 1024,  # the Slack app icon; the PyPI README
+    "docs/public/apple-touch-icon.png": 180,  # the docs site's apple-touch icon
+}
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+PNG_CHUNKS = {b"IHDR", b"IDAT", b"IEND"}
+
+
+def png_problems(name: str, data: bytes, side: int) -> list[str]:
+    """What is wrong with `data` as a plain `side`×`side` PNG; empty when nothing is."""
+    if not data.startswith(PNG_SIGNATURE):
+        return [f"{name}: not a PNG"]
+    out: list[str] = []
+    kinds: list[bytes] = []
+    pos = len(PNG_SIGNATURE)
+    while pos + 8 <= len(data):
+        length = int.from_bytes(data[pos : pos + 4], "big")
+        kind = data[pos + 4 : pos + 8]
+        body = data[pos + 8 : pos + 8 + length]
+        kinds.append(kind)
+        if kind == b"IHDR" and len(body) >= 8:
+            w = int.from_bytes(body[:4], "big")
+            h = int.from_bytes(body[4:8], "big")
+            if (w, h) != (side, side):
+                out.append(f"{name}: {w}×{h}, expected {side}×{side}")
+        pos += 12 + length  # length, type, data, crc
+        if kind == b"IEND":
+            break
+    if not kinds or kinds[0] != b"IHDR" or kinds[-1] != b"IEND" or pos > len(data):
+        out.append(f"{name}: truncated or misordered PNG")
+    elif pos != len(data):
+        out.append(f"{name}: {len(data) - pos} bytes after IEND")
+    extra = sorted(k.decode("latin-1") for k in set(kinds) - PNG_CHUNKS)
+    if extra:
+        out.append(f"{name}: chunks beyond IHDR/IDAT/IEND: {', '.join(extra)}")
+    return out
 
 
 # ------------------------------------------------------------------------------ main
@@ -776,6 +831,12 @@ def check(files: dict[str, str]) -> list[str]:
                 problems.append(f"{name}: has an event-handler attribute")
             if EXTERNAL_REF.search(content):
                 problems.append(f"{name}: has an href or url() that is not a fragment")
+    for name, side in RASTERS.items():
+        path = target(name)
+        if not path.exists():
+            problems.append(f"{name}: missing")
+            continue
+        problems += png_problems(name, path.read_bytes(), side)
     if render() != files:
         problems.append("generate.py is not deterministic")
     return problems
@@ -788,7 +849,10 @@ def main(argv: list[str]) -> int:
         for p in problems:
             print(f"FAIL {p}")
         if not problems:
-            print(f"ok — {len(files)} files match, well-formed, self-contained, titled")
+            print(
+                f"ok — {len(files)} files match, well-formed, self-contained, titled; "
+                f"{len(RASTERS)} rasters plain PNG at size"
+            )
         return 1 if problems else 0
     for name, content in files.items():
         target(name).parent.mkdir(parents=True, exist_ok=True)

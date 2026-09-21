@@ -8,9 +8,19 @@ workItem: "github:MadaraUchiha-314/the-loop#398"
 Run from the repository root on the branch of the delivering PR. Rows refer to
 [`testing-plan.md`](../testing-plan.md). **Round 3** (2026-09-21, after the owner's pick)
 re-ran every row; **round 4** (2026-09-21, the adoption) added the build and whole-repo
-lint rows; the red→green records of rounds 1 and 2 are kept below.
+lint rows and, after its security review, the raster and root-guard probes; the
+red→green records of rounds 1 and 2 are kept below.
 
 ## T1 — the generator's checker
+
+Round 4, after the security review's notes were taken — the seven adopted SVGs held
+to the same rules as the options, and the two rasters to a plain-PNG structure:
+
+```
+$ python3 docs/specs/issue-398/design/generate.py --check
+ok — 18 files match, well-formed, self-contained, titled; 2 rasters plain PNG at size
+exit=0
+```
 
 Round 3, on the final files:
 
@@ -65,6 +75,14 @@ wrote enso-8-dusk-to-clay.svg (48.6 kB)
 wrote enso-9-running-dry.svg (52.9 kB)
 wrote enso-10-sweep.svg (42.2 kB)
 wrote logo-options.html (452.5 kB)
+exit=0
+```
+
+Round 4, with the adopted files written outside the design folder — the whole tree,
+after the generator gained its root guard:
+
+```
+$ python3 docs/specs/issue-398/design/generate.py >/dev/null && git diff --exit-code --stat -- '*.svg' '*.html'; echo exit=$?
 exit=0
 ```
 
@@ -150,6 +168,79 @@ probe.svg: the stylesheet references something outside the file
 '<object data="x">'              -> flagged
 '<meta http-equiv="refresh">'    -> flagged
 '<span class="option">'          -> ok
+```
+
+**Round 4 — the rasters and the root guard.** The security review of the adoption
+diff noted that `--check` held the SVGs but not the two PNGs that ship as icons, and
+that a copy of the generator outside the-loop's tree would write `docs/` and `ui/`
+wherever it sat. Both are now refused: `png_problems()` admits only a plain PNG of
+the expected square with the three critical chunks and nothing after `IEND`, and
+`target()` leaves the design folder only under a root that carries
+`.the-loop/harness-config.yaml`:
+
+```
+$ python3 - <<'PY'
+"""T8, round 4: the raster check and the root guard, probed in memory."""
+import struct, sys, zlib
+from pathlib import Path
+sys.path.insert(0, "docs/specs/issue-398/design")
+import generate as g
+
+def chunk(kind: bytes, body: bytes) -> bytes:
+    return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+
+def png(side: int, extra: bytes = b"", trailer: bytes = b"") -> bytes:
+    ihdr = struct.pack(">IIBBBBB", side, side, 8, 2, 0, 0, 0)
+    raw = b"".join(b"\x00" + b"\xf5\xf0\xe6" * side for _ in range(side))
+    return g.PNG_SIGNATURE + chunk(b"IHDR", ihdr) + extra + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"") + trailer
+
+cases = {
+    "a plain 4×4 PNG, asked for 4": (png(4), 4),
+    "the same file, asked for 8": (png(4), 8),
+    "with a tEXt chunk planted": (png(4, extra=chunk(b"tEXt", b"Comment\x00<script>")), 4),
+    "with 5 bytes after IEND": (png(4, trailer=b"XXXXX"), 4),
+    "an SVG in disguise": (b"<svg xmlns='http://www.w3.org/2000/svg'/>", 4),
+    "truncated after IHDR": (png(4)[:33], 4),
+}
+for label, (data, side) in cases.items():
+    problems = g.png_problems("probe.png", data, side)
+    print(f"{label:32} -> {problems or 'passes'}")
+for name, side in g.RASTERS.items():
+    print(f"{name:40} -> {g.png_problems(name, (g.REPO / name).read_bytes(), side) or 'passes'}")
+
+print("root guard:")
+print(f"  in the repository, target('docs/x.svg') -> {g.target('docs/x.svg').relative_to(g.REPO)}")
+g.REPO = Path("/tmp")
+try:
+    g.target("docs/x.svg")
+    print("  NOT refused")
+except SystemExit as e:
+    print(f"  from /tmp -> SystemExit: {e}")
+print(f"  a bare name never leaves the design folder: {g.target('enso-2-ink.svg').parent.name}")
+PY
+a plain 4×4 PNG, asked for 4     -> passes
+the same file, asked for 8       -> ['probe.png: 4×4, expected 8×8']
+with a tEXt chunk planted        -> ['probe.png: chunks beyond IHDR/IDAT/IEND: tEXt']
+with 5 bytes after IEND          -> ['probe.png: 5 bytes after IEND']
+an SVG in disguise               -> ['probe.png: not a PNG']
+truncated after IHDR             -> ['probe.png: truncated or misordered PNG']
+docs/assets/the-loop-logo-1024.png       -> passes
+docs/public/apple-touch-icon.png         -> passes
+root guard:
+  in the repository, target('docs/x.svg') -> docs/x.svg
+  from /tmp -> SystemExit: generate.py must live at docs/specs/issue-398/design/ inside the-loop's repository to write docs/x.svg: no .the-loop/harness-config.yaml under /tmp
+  a bare name never leaves the design folder: design
+```
+
+And `screenshots.mjs --site` launches no browser for anything but a loopback host —
+the docs preview is the only thing it is for:
+
+```
+$ node docs/specs/issue-398/design/screenshots.mjs --site http://example.com/ /tmp/probe
+--site takes the docs preview on a loopback host, not http://example.com/
+exit=2
+$ node docs/specs/issue-398/design/screenshots.mjs --site http://127.0.0.1:1/ /tmp/probe
+… page.goto: net::ERR_CONNECTION_REFUSED   # past the rule; nothing listens on port 1
 ```
 
 ## T9 — titles and contrast

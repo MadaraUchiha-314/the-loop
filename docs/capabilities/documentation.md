@@ -39,7 +39,8 @@ from that exact path — so `docs/scripts/sync-content.mts` copies it in at buil
   the site's `docs/public/{favicon,logo-light,logo-dark}.svg` and the dashboard's
   `ui/public/favicon.svg`, and its `--check` refuses a copy that drifted. The rasters
   (`docs/assets/the-loop-logo-1024.png` for the Slack app icon, `docs/public/apple-touch-icon.png`)
-  come from the same folder's `screenshots.mjs --assets`.
+  come from the same folder's `screenshots.mjs --assets`, and the same `--check` holds
+  them to a plain PNG of the expected size.
 - A surface that switches themes itself (GitHub's `<picture>`, the site's toggle) SHALL
   use the `-light`/`-dark` files; a surface that follows the OS (a favicon) SHALL use the
   self-switching one.

@@ -54,7 +54,7 @@ flowchart LR
     SWEEP["&lt;linearGradient&gt; (userSpaceOnUse)"] --> VAR
     VAR --> SVG["svg_file ×10<br/>currentColor ink · title/desc · dark rule (+ per-piece dark fills)"]
     VAR --> GAL["gallery()<br/>logo-options.html: symbols + &lt;use&gt;"]
-    CHK["--check<br/>bytes match · well-formed · titled · parsed allowlist · ≤ 64 kB · deterministic"] -.gates.-> SVG
+    CHK["--check<br/>bytes match · well-formed · titled · parsed allowlist · ≤ 64 kB · rasters plain PNG · deterministic"] -.gates.-> SVG
     CHK -.gates.-> GAL
   end
   GAL --> SS["design/screenshots.mjs<br/>Chromium: gallery light+dark, each SVG as &lt;img&gt; on paper (light) and slate (dark)"]
@@ -125,7 +125,10 @@ rule plus the travelling pieces' dark fills, `<title>`/`<desc>` with ids unique 
 variant); `svg_symbol`/`svg_use` for the gallery's one-definition-many-instances (the
 sections carry `-card` ids so no id is shared); `gallery(variants)`; `check(files)` with
 `svg_problems()` — the parsed-tree allowlist, extended for round 3 by `linearGradient`
-and `stop` and the attributes a gradient needs — see *Error handling*.
+and `stop` and the attributes a gradient needs — see *Error handling*. Round 4 adds
+`target(name)`, which leaves the design folder only when `REPO_MARKER`
+(`.the-loop/harness-config.yaml`) sits at the resolved root, and `png_problems()`,
+the two rasters' structural check.
 
 ## UI/UX design
 
@@ -176,7 +179,10 @@ source (agent-led work — `reference/design-artifacts.md` § Figma ↔ code).
 **One generated source, every surface.** The chosen colourway is written by
 `generate.py` as brand assets outside the design folder — the same script, the same
 `--check` — so the adopted mark cannot drift from the option that was picked. Rasters,
-for the two surfaces that take no SVG, come from `screenshots.mjs --assets`.
+for the two surfaces that take no SVG, come from `screenshots.mjs --assets` and are
+held by `--check` to a structure — a plain PNG of the expected size, the three
+critical chunks and nothing more — rather than a hash, since a Chromium render is
+not byte-identical across builds.
 
 | File | Ink | For |
 |---|---|---|
@@ -233,10 +239,13 @@ table in `generate.py` (and the *Overview* above). All on a 256×256 viewBox.
 | an SVG's parsed tree holds an element or attribute outside the allowlist (`svg, title, desc, style, path, linearGradient, stop`; `viewBox, color, role, aria-labelledby, id, d, fill, class, gradientUnits, x1, y1, x2, y2, offset, stop-color`), a `url(` reference that is not a fragment, or a stylesheet that imports or references anything | `FAIL`, exit 1 |
 | the gallery contains `<script`, `<foreignObject`, `<image`, `<iframe`, `@import`, `src=`, `javascript:` (case-insensitively), or an `href`/`url(` that is not a `#fragment` | `FAIL`, exit 1 |
 | an SVG exceeds 64 000 bytes | `FAIL`, exit 1 |
+| a raster is missing, not a PNG, not the expected square, carries a chunk beyond `IHDR/IDAT/IEND`, or has bytes after `IEND` | `FAIL`, exit 1 |
+| the script runs from a copy outside the-loop's tree (no `.the-loop/harness-config.yaml` at the resolved root) and would write beyond its folder | `SystemExit` naming the missing marker, before any write |
 | two renders in one process differ (non-determinism) | `FAIL generate.py is not deterministic`, exit 1 |
 
 `screenshots.mjs` fails loudly when Playwright or Chromium is absent (an import error /
-launch error); it never writes a partial set silently.
+launch error); it never writes a partial set silently. With `--site` it exits (code 2)
+before launching a browser unless the URL's host is loopback.
 
 ## Security design
 
@@ -250,11 +259,14 @@ a gradient needs) referenced by `fill="url(#…)"` — an internal fragment, whi
 the checker's reference rule admits and everything else it refuses — and `class`
 attributes on the travelling pieces, mapped to fills by the file's own stylesheet (which
 may not `@import` or reference anything outside the file). `screenshots.mjs` renders
-local files only (`file://` and `data:` URIs built from them) and is run by a person,
-never by CI or the daemon; Chromium's sandbox is disabled only when
+local files (`file://` and `data:` URIs built from them) and, with `--site`, the docs
+preview on a loopback host only; it is run by a person, never by CI or the daemon; Chromium's sandbox is disabled only when
 `CHROMIUM_NO_SANDBOX=1` is set. No secret, hostname or personal datum can appear in the
 outputs because the generator has no inputs; the screenshots show only the generated
-content.
+content. Round 4's review (`evidence/security-review.md`) added the root guard on
+`target()` and the rasters' structural check: the adopted files outside the design
+folder are written only into the-loop's own tree, and the two PNGs that ship as
+icons carry nothing beyond image data.
 
 ## Testing strategy
 

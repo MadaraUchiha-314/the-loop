@@ -5,59 +5,87 @@ workItem: "github:MadaraUchiha-314/the-loop#398"
 
 # Security review: a logo for the-loop (issue-398)
 
-## Security review (gate) — round 3
+## Security review (gate) — round 4 (the adoption)
 
-- **Mechanism:** the harness's built-in `security-review` skill, re-run against the
-  round-3 diff (`git diff origin/main...HEAD`, 44 paths, all under
-  `docs/specs/issue-398/`, with the round-2 → round-3 delta of the generator read in
-  full), with the repository's own model (`reference/security.md`,
-  `design.uiArtifacts.selfContained`, `.github/workflows/the-loop-gate.yml`) as
+- **Mechanism:** the harness's built-in `security-review` skill, run against the
+  adoption delta (`git diff 07d94e5 HEAD`: one commit, 25 text files and two rasters —
+  the README's and the CLI README's inline HTML, `config.mts` `head` and `logo`,
+  `index.md`'s hero, `ui/index.html`'s favicon link, the generator's adoption layer,
+  `screenshots.mjs --assets` / `--site`, seven SVGs under `docs/assets/`, `docs/public/`
+  and `ui/public/`), with the whole branch, the site-and-dashboard deploy workflow
+  (`.github/workflows/docs.yml`), `cli/pyproject.toml` and the markdownlint config as
   context; then the-loop checklist against the same diff.
 - **Outcome:** pass — **no findings** at HIGH or MEDIUM.
 - **Findings:** none. What the skill verified, in its words:
-  1. `generate.py --check` green on the eleven files; the tree stayed clean.
-  2. Every element and attribute in the ten committed SVGs enumerated with
-     `xml.etree`: elements exactly `{svg, title, desc, style, path, linearGradient,
-     stop}`, attributes exactly the allowlist; the only `url()` is the sweep's
-     `fill="url(#enso-10-sweep-sweep)"`; every `<style>` is the dark-scheme media rule
-     and `.class{fill:#rrggbb}` rules; every fill and stop colour a hex or
-     `currentColor`.
-  3. The gallery enumerated with `html.parser`: no script, link, object, embed, iframe,
-     image, foreignObject, animate, form, base or `meta http-equiv`; no `on*=` handler;
-     no `javascript:`/`data:`/`xlink`/`@import`; all 70 `href` values are fragments;
-     inline styles carry only constant backgrounds; no duplicate id.
-  4. All 22 PNGs carry only `IHDR/IDAT/IEND` chunks.
-  5. No token, key, PEM, e-mail, home path or credential string in the diff.
-  6. Data flow: the generator's only input is `--check` on argv; every interpolated
-     value is a constant or a clamped hex derived from one; output names are the fixed
-     `VARIANTS` slugs under the script's directory; the checker parses the in-memory
-     render, never the on-disk file.
-  7. The widened checker probed in memory: external fills, `href`/`xlink:href` on a
-     gradient, `style=`, handlers, `<a>`, `<animate>`, `@import`, spaced and
-     upper-cased `url(` in a stylesheet all refused; a legitimate `class` and the sweep
-     pass.
-- **Candidates rejected:** XSS via the gallery or SVGs (no script, handler, link or
-  external reference exists; constants only); external loads via `<linearGradient>`,
-  `fill="url(#…)"`, `<use href="#…">` (fragments; `gradientUnits` has no fetch
-  semantics); the stylesheet as a vector (media rule and class fills only); path
-  traversal (fixed names, script directory); command injection (no subprocess, no
-  `eval`; `screenshots.mjs` unchanged); RNG (a visual seed); dependencies (stdlib only).
-- **Defense-in-depth notes from the skill, both taken:**
-  - *The attribute `url(` rule was case-sensitive and anchored*: `fill="URL(http…)"` or
-    a leading space would have passed the SVG allowlist. Now every allowlisted
-    attribute value is run through the same case-insensitive, whitespace-tolerant
-    fragment-only rule as the stylesheet; the probe (`evidence/automated-tests.md`
-    § T8) plants `URL(http…)` and a fill with a leading space, and both are refused.
-  - *The gallery scan lacked parity with the SVG allowlist*: handlers, `<object>`,
-    `<embed>`, `<link>`, `<base>` and `<meta http-equiv>` were not refused. Now they
-    are — a case-insensitive `on*=` rule and six more tokens — and the probe covers
-    a handler, an `<object>` and a `<meta http-equiv>`.
+  1. `target(name)` is called only with the `VARIANTS` slugs and the literal
+     `ADOPTED_FILES` keys — seven fixed relative paths, no `..`; `main()` reads argv
+     only for `--check`; no environment variable, no stdin; `REPO` derives from the
+     script's own resolved location.
+  2. `--check` compares the on-disk bytes with the render and parses the render, never
+     the file on disk: a tampered file fails the equality check.
+  3. Every adopted SVG holds exactly `svg, title, desc, path ×3` (plus one `<style>`
+     with the dark-scheme colour rule on the three self-switching files), attributes
+     exactly `xmlns viewBox color role aria-labelledby id d fill`; zero hits for a
+     script, a handler, `foreignObject`, `href`, `url(`, `@import`, `http` outside the
+     namespace, `xlink`, an entity, a doctype, CDATA, `javascript:`, `data:` and every
+     fetching element.
+  4. The README block is the static `<picture>` pattern GitHub's sanitiser permits, its
+     sources relative and proxied; the alt text carries no quote or bracket. The PyPI
+     README's one `<img>` points at a host the repository owner controls, and an image
+     cannot execute there.
+  5. `config.mts`, `index.md` and `ui/index.html` carry string literals bound as
+     escaped attributes, pointing at same-origin static files.
+  6. `screenshots.mjs --site` navigates a fresh, credential-less headless context to a
+     URL the developer typed; nothing in CI or any package script invokes the file.
+     `--assets` builds a `data:` image from a repository file (an image context
+     executes nothing) and writes two literal paths.
+  7. Both rasters: valid PNG, 1024 × 1024 and 180 × 180, chunks `IHDR/IDAT/IEND` only,
+     zero bytes after `IEND`.
+  8. No manifest or lockfile changed; nothing is fetched at build or run time; no
+     token, key, e-mail or credential in the diff.
+- **Candidates rejected:** path traversal (fixed names, a root derived from the script);
+  a hostile on-disk file (never parsed); XSS via the SVGs or the READMEs (static, no
+  active content, sanitised where rendered); SSRF via `--site` (the developer's own
+  argument, no caller); supply chain (no dependency change, no remote load).
+- **Defense-in-depth notes from the skill — three taken, one recorded:**
+  - *`REPO = HERE.parents[3]` trusts the script's depth*: a copy of the file elsewhere
+    would create `docs/` and `ui/` four levels up from wherever it sat. Taken:
+    `target()` leaves the design folder only when `.the-loop/harness-config.yaml`
+    (`REPO_MARKER`) is at that root, and exits before any write otherwise; the probe
+    (`automated-tests.md` § T8, round 4) shows the refusal from `/tmp`.
+  - *`--check` pinned the SVGs but not the two rasters the Slack icon and the
+    apple-touch icon actually ship.* Taken as a structural check rather than a hash —
+    a Chromium render is not byte-identical across builds, and a hash would fail on
+    every legitimate re-render: `png_problems()` requires the PNG signature, the
+    expected square, only the `IHDR/IDAT/IEND` chunks (a text or private chunk could
+    carry anything) and nothing after `IEND`. The probe plants a `tEXt` chunk, a
+    trailer, a wrong size, a truncation and an SVG in disguise; each is refused.
+  - *`--site` could one day be wired to an externally influenced value.* Taken: the
+    script exits (code 2) before launching a browser unless the URL's host is loopback
+    — the docs preview (`bun run docs:preview`) is the only thing it is for.
+    `http://example.com/` is refused; `http://127.0.0.1:…` passes the rule.
+  - *The PyPI image points at the mutable `main` ref, and the file is absent there
+    until this PR merges.* Recorded, not taken: PyPI reads the CLI README at publish
+    time, no release is cut from this branch, and a reference that tracks `main` is
+    what lets a later change of the mark reach every release page — both ends are the
+    owner's. Should the mark ever change in a way an old release page must not follow,
+    that one line is the place to pin a tag.
 - **Checklist (the-loop):** authorization — n/a, no principal; untrusted input — none
-  (the generator has no inputs; the screenshot script reads only sibling files);
-  disclosure — static content, no data; secrets, logging, new calls — none. The
-  requirements' one abuse case (an embedded SVG executes and loads nothing) is pinned by
-  `generate.py --check` (T1/T8) as a parsed allowlist, probed.
+  new (the generator's inputs are unchanged; `--site` is a developer's argument, now
+  loopback-only); disclosure — static content, no data; secrets, logging, new calls —
+  none; new surfaces — the README, the site's `head`, the dashboard's favicon link, all
+  static references to same-origin files. The requirements' abuse case (an embedded SVG
+  executes and loads nothing) holds for the adopted files by the same `--check`
+  (T1/T8), and the two rasters carry nothing beyond image data.
 - **Human sign-off:** n/a (risk tier 2).
+
+## Security review (gate) — round 3
+
+The same skill on the round-3 diff (commit `fd6c1b9`, the Ensō in ten colourways): no
+findings; its two notes — the fragment-only rule applied case-insensitively to every
+allowlisted attribute value, and handlers, `<object>`, `<embed>`, `<link>`, `<base>` and
+`<meta http-equiv>` refused in the gallery scan — were taken then (commit `07d94e5`),
+with the T8 probe covering both.
 
 ## Security review (gate) — round 2
 

@@ -33,6 +33,12 @@ const args = process.argv.slice(2);
 const assetsOnly = args.includes("--assets");
 const siteIndex = args.indexOf("--site");
 const site = siteIndex >= 0 ? args[siteIndex + 1] : "";
+// --site is for the local preview (`bun run docs:preview`): the script navigates only
+// to a loopback host, so it is never a way to point a browser somewhere else.
+if (site && !["127.0.0.1", "localhost", "[::1]"].includes(new URL(site).hostname)) {
+  console.error(`--site takes the docs preview on a loopback host, not ${site}`);
+  process.exit(2);
+}
 const positional = args.filter((a, i) => !a.startsWith("--") && !(siteIndex >= 0 && i === siteIndex + 1));
 const out = resolve(positional[0] ?? join(here, "screenshots"));
 if (!assetsOnly) mkdirSync(out, { recursive: true });
