@@ -1003,6 +1003,11 @@ class Poller:
         for ref in tracked:
             if ref.ref in open_refs or not provider.owns(ref):
                 continue
+            if self.dispatcher.is_closing(ref.ref):
+                # Held for the session's endgame (issue-405 P2): the closure is
+                # already known and will finish on its own; asking again would
+                # only redeliver it.
+                continue
             if (
                 self.closure_store.ended(ref) is not None
                 and self.registry.find_by_work_item(ref) is None

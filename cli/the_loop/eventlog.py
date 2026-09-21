@@ -356,9 +356,16 @@ EVENT_TYPES: Dict[str, str] = {
         "self-authored | unauthorized-actor | undeliverable | "
         "unpublishable-event | kickoff-unknown-repo | kickoff-ambiguous-repo | "
         "kickoff-no-target | kickoff-empty-message | create-failed | "
-        "unknown-command | unknown-target | duplicate | channel-disabled; channel, "
-        "work_item, actor, kind: the classified event type — or, for a refused "
-        "kickoff, the repository prefix that was read, error). "
+        "unknown-command | unknown-target | duplicate | channel-disabled | "
+        "unknown-phase | unskippable-phase | empty-clause | checklist-unreadable; "
+        "channel, work_item, actor, kind: the classified event type — or, for a "
+        "refused kickoff, the repository prefix that was read, error; read: for a "
+        "refused `execute without` reply, the items the clause was read as, a "
+        "word that is not a name as its length only, issue-405). The four "
+        "selection reasons are a typed phase-selection reply refused (issue-393 "
+        "R9.3): a name, number or word the checklist does not offer, a protected "
+        "phase, a clause naming nothing, and a checklist that could not be read "
+        "just then (transient, retriable). "
         "undeliverable means the mirror "
         "stood but no session could take the reply; unpublishable-event means "
         "the message classified as a type the channel's `publish` list does "
@@ -602,7 +609,22 @@ EVENT_TYPES: Dict[str, str] = {
     ),
     "session.autoclosed": (
         "A session was auto-closed because its work item ended (work_item, "
-        "reason: issue-closed | pr-merged | pr-closed; merged)."
+        "reason: issue-closed | pr-merged | pr-closed; merged: the closure is a "
+        "merge, or a pull request recorded on the work item merged — issue-405; "
+        "waited_seconds, finished: only when the closure was first held for the "
+        "session's endgame, whether the completion claim ended the hold)."
+    ),
+    "session.closing": (
+        "A work item ended while its session stands on the graph's terminal "
+        "node — the endgame, where the completion summary is posted and `graph "
+        "complete` claimed — so the closure is HELD rather than run (work_item, "
+        "reason, node, grace_seconds, delivery_id; issue-405 P2). The session's "
+        "claim ends the hold; routing.tmux.finishGraceSeconds ends it regardless; "
+        "`session.autoclosed` then records how it ended."
+    ),
+    "session.closing_cancelled": (
+        "A held closure was dropped because the work item was reopened during "
+        "the hold (work_item, source); the session stays live (issue-405 P2)."
     ),
     "session.kept_open": (
         "A close event matched a session only through linkage — one of the "

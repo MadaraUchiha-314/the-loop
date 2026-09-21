@@ -12,6 +12,7 @@ from the_loop.channels.verbs import (
     help_text,
     parse_verb,
     strip_mention,
+    strip_signature,
 )
 from the_loop.control import ControlConfig
 from test_channels import cli_config
@@ -154,3 +155,24 @@ def test_help_public_is_read_from_the_first_line_only():
     signed_public = parse_verb("help public\n*Sent using* @Claude")
     assert signed_public is not None and wants_public_help(signed_public) is True
     assert wants_public_help(Verb("help", "\npublic")) is False
+
+
+def test_strip_signature_removes_a_connectors_signature_wherever_it_sits():
+    """issue-405 P1 (R1.1): "*Sent using* @Claude" — the second line issue-397 O5
+    recorded — is removed from the END of a message whether it sits on its own
+    line or on the command's, with or without markup, whoever the signer is.
+    Text with no signature is returned as it came."""
+    assert strip_signature("execute without 14 *Sent using* @Claude") == (
+        "execute without 14"
+    )
+    assert strip_signature("execute without 14\n*Sent using* @Claude") == (
+        "execute without 14"
+    )
+    assert strip_signature("help _Sent using_ <@UCLAUDE>") == "help"
+    assert strip_signature("help Sent using Claude") == "help"
+    assert strip_signature("help SENT USING claude") == "help"
+    assert strip_signature("execute without 14") == "execute without 14"
+    assert strip_signature("we sent using the wrong channel, retry") == (
+        "we sent using the wrong channel, retry"
+    )
+    assert strip_signature("") == ""

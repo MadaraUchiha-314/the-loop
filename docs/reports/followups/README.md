@@ -26,6 +26,16 @@ branch `fix/n1-selection-grammar-refusal-reason`:**
 | [`n2-room-policy-rules-not-suppressing.md`](n2-room-policy-rules-not-suppressing.md) | N2 | bug | **fixed** — gate-collapse for progress + nodeless mirror, operator-docs by text, endgame-collapse |
 | [`n3-critic-and-summary-and-docs.md`](n3-critic-and-summary-and-docs.md) | B9 remainder, `--summary`/`--default` adoption, mention-less connectors | bug / enhancement / docs | **fixed** — timeout surfacing, skill guidance, channels doc |
 
+The 2026-09-20 **run 3**
+([`docs/reports/e2e-slack-test-2026-09-20-run-3.md`](../e2e-slack-test-2026-09-20-run-3.md))
+validated the PR #402 fixes on 19.8.3 and recorded two findings — filed together as
+[#405](https://github.com/MadaraUchiha-314/the-loop/issues/405), **fixed**:
+
+| File | Item(s) | Kind | Status |
+|------|---------|------|--------|
+| [`p1-execute-without-reads-past-the-phase-list.md`](p1-execute-without-reads-past-the-phase-list.md) | P1 (N1/F1 regression) | bug | **fixed** — signature and markup stripped, refusal by position, distinct drop reasons, `read` on the record |
+| [`p2-close-path-races-the-endgame.md`](p2-close-path-races-the-endgame.md) | P2 | bug | **fixed** — a closure at the terminal node is held for `finishGraceSeconds` or the completion claim; `merged` from the state file |
+
 Each file's first `#` heading is the suggested issue title; the rest is the body.
 Quotes are drawn verbatim from the report, with the internal deployment kept in
 the report's placeholder form (`<host>`, `<test-repo>` …).

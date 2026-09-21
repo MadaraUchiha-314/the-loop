@@ -406,3 +406,47 @@ def test_a_gate_entry_without_a_registry_falls_back_to_a_fresh_session(
     assert any(
         '"graph.gate_session"' in r and '"fresh-with-artifacts"' in r for r in records
     )
+
+
+# -- issue-405 P2: the context names the endgame ------------------------------------
+
+
+def test_the_context_names_the_terminal_node_and_the_merge_that_delivered_it(
+    runtime, repo
+):
+    """
+    Feature: the close path waits for a session at its endgame
+      Scenario: the graph context says where the endgame stands
+        Given a work item forced onto its terminal node, not yet exited
+        Then the context reads terminal, and not complete
+        When the session claims completion of that node
+        Then the context reads complete
+        And a pull request the daemon recorded as merged reads delivered_by_merge
+
+    Requirement: docs/specs/issue-405/bugfix.md R2.1, R2.5 (P2)
+    """
+    from the_loop.graph.runtime import force
+
+    _write_design(repo)
+    runtime.start("issue-1")
+    before = _link(repo, runtime).context(REF, str(repo))
+    assert before is not None and not before.terminal
+    assert not before.delivered_by_merge
+
+    force(runtime, "issue-1", "done", reason="test", actor="tester")
+    at_end = _link(repo, runtime).context(REF, str(repo))
+    assert at_end is not None
+    assert at_end.current_node == "done" and at_end.terminal
+    assert at_end.status == "in-progress", "entered, not yet exited: the endgame"
+
+    assert runtime.complete("issue-1")["moved"] is False  # terminal: nowhere to go
+    done = _link(repo, runtime).context(REF, str(repo))
+    assert done is not None and done.terminal and done.status == "complete"
+
+    state = WorkItemState.load(_spec(repo), "issue-1")
+    linked = state.link_pr("github:octo/repo#9", repository="octo/repo", number=9)
+    assert linked is not None
+    assert state.set_pr_state("github:octo/repo#9", "merged") is not None
+    state.save(_spec(repo))
+    merged = _link(repo, runtime).context(REF, str(repo))
+    assert merged is not None and merged.delivered_by_merge

@@ -706,6 +706,12 @@
               "default": 5,
               "description": "How long killHarnessOnClose gives the harness to exit after SIGTERM before sending SIGKILL. 0 escalates immediately."
             },
+            "finishGraceSeconds": {
+              "type": "number",
+              "minimum": 0,
+              "default": 300,
+              "description": "How long a work item's closure is HELD when it ends while its session stands on the graph's terminal node — the endgame, where the session posts its completion summary and claims `the-loop graph complete` (issue-405). A merge whose body says `Closes #N` closes the ticket the moment it lands; without this hold the close path ended the harness and removed the checkout mid-summary. The session's completion claim ends the hold at once; the deadline ends it regardless (`session.autoclosed` records `waited_seconds` and `finished`). A session anywhere else in the graph, a dead pane, or a graph that cannot be read is closed immediately, as before. 0 restores the immediate close."
+            },
             "resumeProbeSeconds": {
               "type": "number",
               "minimum": 0,

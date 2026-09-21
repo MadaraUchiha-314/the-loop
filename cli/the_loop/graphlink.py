@@ -267,6 +267,16 @@ class GraphContext:
     #: Read here for one reason (issue-199): a contribution has no outer loop,
     #: so the prompt must not tell its session where to put one.
     loop: str = ""
+    #: Whether the current node is one the graph ends on (issue-405 P2). With
+    #: ``status`` this names the **endgame**: a terminal node entered but not
+    #: yet exited is a session finishing (`finish-tasks` — the completion
+    #: summary, the closing claim), which the close path now waits for; a
+    #: terminal node with an outcome is ``status: complete``.
+    terminal: bool = False
+    #: Whether a pull request recorded on this work item is merged upstream
+    #: (issue-405 P2) — what lets an issue's closure say it was delivered by a
+    #: merge, which its own close event cannot say.
+    delivered_by_merge: bool = False
 
     @property
     def at_human_gate(self) -> bool:
@@ -1194,6 +1204,11 @@ class GraphLink:
             # And which loop it is walking (issue-185), for the one prompt line
             # that differs between owning a work item and contributing to one.
             loop=str(getattr(state, "loop", "") or ""),
+            terminal=bool(getattr(node, "terminal", False)),
+            delivered_by_merge=any(
+                getattr(pr, "state", "") == "merged"
+                for pr in getattr(state, "pull_requests", []) or []
+            ),
         )
 
     @staticmethod

@@ -14,6 +14,10 @@ import pytest
 from the_loop.channels import inbound
 from the_loop.channels.base import InboundReply
 from the_loop.channels.slack import (
+    EMPTY_CLAUSE,
+    UNKNOWN_PHASE,
+    UNSKIPPABLE_PHASE,
+    read_summary,
     ACTION_PREFIX,
     CHECKBOX_LIMIT,
     DEFAULT_BOT_TOKEN_ENV,
@@ -626,8 +630,8 @@ def test_apply_without_unticks_the_named_phases_and_keeps_every_other_row():
     """T1: `execute without 1, 3` — by number in checklist order, or by name."""
     rows = selection_rows(CHECKLIST)
     assert rows is not None
-    composed, refusal = apply_without(rows, ["1", "design"], KEYWORD)
-    assert refusal == ""
+    composed, refusal, reason = apply_without(rows, ["1", "design"], KEYWORD)
+    assert refusal == "" and reason == ""
     lines = composed.splitlines()
     assert lines[0] == KEYWORD
     for line in (
@@ -650,26 +654,34 @@ def test_apply_without_unticks_the_named_phases_and_keeps_every_other_row():
 
 
 @pytest.mark.parametrize(
-    ("items", "reason"),
+    ("items", "reason", "family"),
     [
-        (["desgin"], "`desgin` is not a phase this checklist offers"),
-        (["security-review"], "`security-review` always runs on this work item"),
-        (["9"], "There is no phase 9"),
-        (["0"], "There is no phase 0"),
-        ([SURFACE_TOKEN], "is not a phase this checklist offers"),
-        (["pr-sessions-never"], "is not a phase this checklist offers"),
-        ([], "needs the phases to leave out"),
-        (["design", "desgin"], "`desgin` is not a phase"),
+        (["desgin"], "`desgin` is not a phase this checklist offers", UNKNOWN_PHASE),
+        (
+            ["security-review"],
+            "`security-review` always runs on this work item",
+            UNSKIPPABLE_PHASE,
+        ),
+        (["9"], "There is no phase 9", UNKNOWN_PHASE),
+        (["0"], "There is no phase 0", UNKNOWN_PHASE),
+        ([SURFACE_TOKEN], "is not a phase this checklist offers", UNKNOWN_PHASE),
+        (["pr-sessions-never"], "is not a phase this checklist offers", UNKNOWN_PHASE),
+        ([], "needs the phases to leave out", EMPTY_CLAUSE),
+        (["design", "desgin"], "`desgin` is not a phase", UNKNOWN_PHASE),
     ],
 )
-def test_abuse_an_unknown_or_unskippable_phase_refuses_the_whole_reply(items, reason):
+def test_abuse_an_unknown_or_unskippable_phase_refuses_the_whole_reply(
+    items, reason, family
+):
     """Abuse case 4: a name the checklist does not offer — a typo, a protected
     phase, a row that is not a phase — refuses the reply with the reason, and
-    names what was offered; one bad name among good ones refuses all of them."""
+    names what was offered; one bad name among good ones refuses all of them.
+    issue-405 P1: the reason names its family, so a protected phase and an
+    unknown name no longer drop under one label."""
     rows = selection_rows(CHECKLIST)
     assert rows is not None
-    composed, refusal = apply_without(rows, items, KEYWORD)
-    assert composed == "" and reason in refusal
+    composed, refusal, dropped = apply_without(rows, items, KEYWORD)
+    assert composed == "" and reason in refusal and dropped == family
     assert "nothing was recorded" in refusal or "needs the phases" in refusal
     assert "1. `brainstorming`" in refusal and "5. `design-critic-review`" in refusal
 
@@ -678,8 +690,62 @@ def test_abuse_a_hostile_name_is_named_never_echoed():
     rows = selection_rows(CHECKLIST)
     assert rows is not None
     for hostile in ("<!channel>", "x" * 60, "design;rm -rf /", "@here"):
-        composed, refusal = apply_without(rows, [hostile], KEYWORD)
+        composed, refusal, reason = apply_without(rows, [hostile], KEYWORD)
         assert composed == "" and hostile not in refusal and "that name" in refusal
+        assert reason == UNKNOWN_PHASE
+        # issue-405 P1: the drop record carries what was read, a non-token item
+        # as its length only — nothing hostile reaches the event log through it.
+        assert read_summary([hostile]) == [f"<non-token: {len(hostile)} chars>"]
+
+
+def test_without_clause_ignores_a_connector_signature_and_slack_markup():
+    """issue-405 P1 (R1.1, R1.2): the live message does not end where the
+    operator's list ends — a connector signs it, on the command's own line as
+    often as on a second — and a name a client bolded or padded with an invisible
+    character is still that name. The clause reads the phases and nothing else."""
+    signed = f"{KEYWORD} without capability-docs *Sent using* @Claude"
+    assert without_clause(signed, KEYWORD) == ["capability-docs"]
+    assert without_clause(f"{KEYWORD} without 14 *Sent using* <@UCLAUDE>", KEYWORD) == [
+        "14"
+    ]
+    assert without_clause(f"{KEYWORD} without 14 Sent using Claude", KEYWORD) == ["14"]
+    assert without_clause(f"{KEYWORD} without 14 _Sent using_ @Claude", KEYWORD) == [
+        "14"
+    ]
+    # A second-line signature never reached the clause; it still does not.
+    assert without_clause(f"{KEYWORD} without 2\n*Sent using* @Claude", KEYWORD) == [
+        "2"
+    ]
+    assert without_clause(f"{KEYWORD} without *5*, _design_, `2`", KEYWORD) == [
+        "5",
+        "design",
+        "2",
+    ]
+    assert without_clause(f"{KEYWORD} without capability-docs\u200b", KEYWORD) == [
+        "capability-docs"
+    ]
+    assert without_clause(f"{KEYWORD} without \u200b14", KEYWORD) == ["14"]
+    # Prose after the list is still an item, and still refuses (abuse case 4).
+    assert without_clause(f"{KEYWORD} without 2, 5 please", KEYWORD) == [
+        "2",
+        "5",
+        "please",
+    ]
+
+
+def test_a_non_token_word_is_refused_by_its_position_never_echoed():
+    """issue-405 P1 (R1.3): a word the cleaning could not make a name — markup,
+    a mention, a broadcast, prose — refuses the reply naming WHERE it sat, so
+    the operator learns which word broke the line without the word being
+    repeated; the checklist offer follows as before."""
+    rows = selection_rows(CHECKLIST)
+    assert rows is not None
+    composed, refusal, reason = apply_without(rows, ["design", "*Sent"], KEYWORD)
+    assert composed == "" and reason == UNKNOWN_PHASE
+    assert "that name (word 2 after `without`)" in refusal
+    assert "markup, a mention or prose" in refusal
+    assert "only phase names or numbers" in refusal
+    assert "*Sent" not in refusal and "1. `brainstorming`" in refusal
 
 
 def test_a_typed_execute_without_records_the_checklist_with_those_phases_unticked(
@@ -736,7 +802,7 @@ def test_abuse_an_unknown_phase_typed_is_refused_with_the_reason_and_records_not
     client = EphemeralClient()
     channel, thread, _ = _post_control(tmp_path, monkeypatch, client, config)
     outcome = _typed(config, channel, f"{KEYWORD} without desgin", thread=thread)
-    assert outcome == {"outcome": "unskippable-phase"}
+    assert outcome == {"outcome": UNKNOWN_PHASE}
     assert client.ephemeral[-1][1] == "UHUMAN"
     assert "`desgin` is not a phase" in client.ephemeral[-1][2]
     assert ("C123", "1800.1", "warning") in client.reactions, "the error reaction"
@@ -786,11 +852,81 @@ def test_the_two_selection_refusals_carry_distinct_drop_reasons(tmp_path, monkey
     monkeypatch.setattr(inbound, "_selection_checklist", lambda work_item, cfg: "")
     unreadable = _typed(config, channel, f"{KEYWORD} without 2", thread=thread)
 
-    assert rejected == {"outcome": "unskippable-phase"}
+    assert rejected == {"outcome": UNKNOWN_PHASE}
     assert unreadable == {"outcome": "checklist-unreadable"}
     # Each refusal mirrors its own explanation to the ticket (N1); neither
     # freezes a selection.
     assert len(records) == 2
+
+
+def test_a_signed_execute_without_freezes_the_selection(tmp_path, monkeypatch):
+    """
+    Feature: the typed phase-selection grammar on Slack
+      Scenario: a connector signs the execute-without line
+        Given the live checklist offers `design`
+        When an authorized member sends "execute without design *Sent using* @Claude"
+        Then the record is the checklist with design unticked
+        And nothing is refused
+
+    Requirement: docs/specs/issue-405/bugfix.md R1.1, R1.5 (P1)
+    """
+    records = []
+    _wire(monkeypatch, records)
+    monkeypatch.setattr(
+        inbound, "_selection_checklist", lambda work_item, cfg: CHECKLIST
+    )
+    config = interactive_config(tmp_path)
+    client = EphemeralClient()
+    channel, thread, _ = _post_control(tmp_path, monkeypatch, client, config)
+    outcome = _typed(
+        config,
+        channel,
+        "<@UBOT> execute without design *Sent using* @Claude",
+        thread=thread,
+        addressed=True,
+    )
+    assert outcome["outcome"] == "processed" and outcome["event"] == "control.command"
+    body = records[0][1]
+    assert "> - [ ] design" in body and "> - [x] brainstorming" in body
+    assert "Sent using" not in body
+    assert client.ephemeral == []
+
+
+def test_a_non_token_word_drops_as_unknown_phase_and_the_record_says_what_was_read(
+    tmp_path, monkeypatch
+):
+    """
+    Feature: the typed phase-selection grammar on Slack
+      Scenario: a word on the without line is not a phase name
+        Given the live checklist offers `design`
+        When an authorized member sends "execute without design, <!here>"
+        Then the reply is refused naming word 2 after `without`
+        And the drop is recorded as `unknown-phase` with the items read,
+            the non-token one as its length only
+        And the refusal is mirrored to the ticket
+
+    Requirement: docs/specs/issue-405/bugfix.md R1.3, R1.4, R1.5 (P1)
+    """
+    records, emitted = [], []
+    _wire(monkeypatch, records)
+    monkeypatch.setattr(
+        inbound, "_selection_checklist", lambda work_item, cfg: CHECKLIST
+    )
+    monkeypatch.setattr(
+        inbound.eventlog, "emit", lambda event, **f: emitted.append((event, f))
+    )
+    config = interactive_config(tmp_path)
+    client = EphemeralClient()
+    channel, thread, _ = _post_control(tmp_path, monkeypatch, client, config)
+    outcome = _typed(
+        config, channel, f"{KEYWORD} without design, <!here>", thread=thread
+    )
+    assert outcome == {"outcome": UNKNOWN_PHASE}
+    assert "that name (word 2 after `without`)" in client.ephemeral[-1][2]
+    assert len(records) == 1 and "word 2 after" in records[0][1]
+    dropped = [f for event, f in emitted if event == "channel.dropped"]
+    assert dropped and dropped[-1]["reason"] == UNKNOWN_PHASE
+    assert dropped[-1]["read"] == ["design", "<non-token: 7 chars>"]
 
 
 def test_a_bare_execute_reads_no_checklist_and_records_the_keyword_alone(

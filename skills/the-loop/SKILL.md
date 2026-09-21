@@ -152,7 +152,13 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   refused or unwanted). Read the knob when reachable (default `true` otherwise). The
   `pr-review-pending` message already states which behaviour is in effect, so the
   reviewer knows before approving whether the tap merges now; honour that same knob when
-  you reach the merge step, and never merge when it is `false`.
+  you reach the merge step, and never merge when it is `false`. **The merge races your
+  own endgame** (issue-405 P2): a PR body's `Closes #N` closes the ticket the moment the
+  merge lands, and the daemon holds your session for `routing.tmux.finishGraceSeconds`
+  (default 300 s) — no longer — for two acts, in this order: post the **completion
+  summary** on the ticket, then claim `the-loop graph complete <id>`. Do them at once
+  after the merge, nothing in between; the claim ends the hold, the deadline ends it
+  regardless, and a ticket the merge already closed is expected, never reopened.
 - **Human review per phase** — always on, delivered by the graph's approval nodes, never
   re-implemented in a session (the `workflow.requireHumanReviewPerPhase` switch was
   removed in issue-352; nothing read it).

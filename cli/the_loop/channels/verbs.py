@@ -26,6 +26,7 @@ __all__ = [
     "KINDS",
     "PUBLIC_HELP",
     "SKIP",
+    "strip_signature",
     "VERBS",
     "Verb",
     "addresses_a_verb",
@@ -168,6 +169,27 @@ def compose_keyword(text: str, control: ControlConfig) -> str:
         # `<@U0456|dana>` is the roster's `slack:U0456` token.
         rest = _MENTION_RE.sub(r"slack:\1", rest)
     return f"{keyword} {rest}".strip()
+
+
+#: A connector's signature (issue-397 O5): "*Sent using* @Claude" — with or
+#: without markup, the signer a mention, an @name or a bare word — at the END
+#: of a message, on its own line or on the command's. issue-405 P1: the one
+#: reader that consumes a whole line (`execute without …`) drops it first, so a
+#: signature on the command's line is not read as one more phase name.
+_SIGNATURE_RE = re.compile(
+    r"\s*[*_~]*sent[ \t]+using[*_~]*[ \t]+(?:<@[^>\n]*>|@?[^\s*_~]+)[*_~]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def strip_signature(text: str) -> str:
+    """``text`` without a trailing connector signature, wherever it sits.
+
+    Removes text only — nothing is added or reordered — and only the one shape a
+    connector signs with (:data:`_SIGNATURE_RE`); a message with no signature is
+    returned exactly as it came.
+    """
+    return _SIGNATURE_RE.sub("", text or "", count=1)
 
 
 #: The one word after `help` that asks for the answer as an ordinary reply

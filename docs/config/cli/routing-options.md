@@ -825,6 +825,22 @@ the scrollback survives the process.
 
 How long the harness gets to exit after SIGTERM before SIGKILL. `0` escalates immediately.
 
+### `tmux.finishGraceSeconds`
+
+- **Type:** `number`
+- **Default:** `300`
+- **Since:** issue-405
+
+How long a work item's closure is **held** when it ends while its session stands on the
+graph's terminal node — the endgame, where the session posts its completion summary and
+claims `the-loop graph complete <id>`. A merge whose body says `Closes #N` closes the
+ticket the moment it lands; before this the close path ended the harness and removed the
+checkout mid-summary. The session's completion claim ends the hold at once; the deadline
+ends it regardless (`session.closing` when held, then `session.autoclosed` with
+`waited_seconds` and `finished`). A session anywhere else in the graph, a dead pane or a
+graph that cannot be read is closed immediately, as before; a reopen during the hold
+cancels it. `0` restores the immediate close.
+
 ### `tmux.sessionPerPr`
 
 - **Type:** `string` (`never` · `cross-repository` · `always`) — the legacy booleans still parse
