@@ -392,7 +392,11 @@ def _raw(name: str) -> dict:
 #: reports a sample object's own field names as though they were JSON Schema
 #: keywords — which is what `harnesses`/`models` first exposed (issue-358), being
 #: the first sections whose `examples` are objects rather than strings.
-_DATA_KEYWORDS = ("examples", "default", "enum")
+#: ``x-onboarding`` (issue-415) is the same shape of thing one level up: its groups,
+#: ask levels and autonomy ladder are init's data, and the config paths inside a
+#: rung's ``values`` would otherwise be reported as keywords. Its own consistency is
+#: asserted by ``test_onboarding_schema.py``, not here.
+_DATA_KEYWORDS = ("examples", "default", "enum", "x-onboarding")
 
 
 def _keywords(node, out: set, in_names: bool = False) -> None:

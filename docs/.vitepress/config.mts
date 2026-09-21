@@ -304,6 +304,7 @@ export default defineConfig({
           items: [
             { text: "What is the-loop?", link: "/guide/what-is-the-loop" },
             { text: "Installation", link: "/guide/installation" },
+            { text: "Onboarding", link: "/guide/onboarding" },
             { text: "Quickstart", link: "/guide/quickstart" },
             { text: "How it works", link: "/guide/how-it-works" },
             { text: "Slack integration", link: "/guide/slack" },

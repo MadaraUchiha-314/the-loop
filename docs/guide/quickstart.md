@@ -8,14 +8,23 @@ This walks through taking a single GitHub issue through the whole loop.
 /the-loop:init
 ```
 
-A guided, schema-driven onboarding writes `.the-loop/harness-config.yaml` with sensible
-defaults. Idempotent — safe to re-run. Pass `--defaults` to skip the interactive
-walkthrough.
+A guided, schema-driven onboarding establishes **both** configs with you —
+`.the-loop/harness-config.yaml` (how work is done in this repository) and
+`cli-config.yaml` (what the daemon watches, and how much it does unattended) — then tells
+you which credentials are still missing. Idempotent: safe to re-run, and re-running it is
+how you turn something on later. Pass `--defaults` to skip the interactive walkthrough, or
+`--dry-run` to see what it would do without writing anything.
 
-The schema that validates it ships **with the plugin** and is never copied into your
-repository, so what you get is your configuration and nothing of the-loop's internals. The
-written file opens with a `# yaml-language-server: $schema=…` line, which is what gives
-your editor completion and validation while you edit it.
+Two questions in it only you can answer: **where the daemon will run** (a laptop polls;
+an always-on host receives webhooks) and **how much it should do while you are not
+looking** — one of three rungs on the autonomy ladder. No rung removes a human approval;
+it only changes who starts the work. [Onboarding](/guide/onboarding) is the whole
+walkthrough in one page, including the Slack setup and the credential checklist.
+
+The schemas that validate the configs ship **with the plugin** and are never copied into
+your repository, so what you get is your configuration and nothing of the-loop's
+internals. Each written file opens with a `# yaml-language-server: $schema=…` line, which
+is what gives your editor completion and validation while you edit it.
 
 ## 2. Run the whole spec workflow on a ticket
 

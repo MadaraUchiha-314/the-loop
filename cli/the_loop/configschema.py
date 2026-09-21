@@ -89,6 +89,10 @@ SUPPORTED = frozenset(
         "description",
         "default",
         "examples",
+        # `/the-loop:init`'s walkthrough metadata (issue-415): the ordered config
+        # groups, their ask levels and the autonomy ladder. Read by the agent running
+        # init, never by validate() — its contents are data, not schema.
+        "x-onboarding",
     }
 )
 

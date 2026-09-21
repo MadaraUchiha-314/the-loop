@@ -5,6 +5,135 @@
   "description": "Schema for the-loop's CLI config (cli-config.yaml: webhooks/polling/eventLog/collaborators/notifications), read by `the-loop gh-webhook`/`poll`/`sessions`/`events`. Independent of .the-loop/harness-config.schema.json (the per-repo HARNESS/plugin config): the CLI is expected to work across multiple repos, so its config resolves in priority order: --config/-c flag, $THE_LOOP_CLI_CONFIG env var, ./.the-loop/cli-config.yaml (repo-relative — an operator may choose to track it in a specific repo), else ~/.the-loop/cli-config.yaml. See decision-032. The operator's own notification recipients are DECLARED here (collaborators, same structure as collaborators.schema.json), never looked up from any repo's collaborators.yaml (issue-82, decision-035). Since issue-352 it also carries the two blocks of executable configuration the CLI used to read from a repository's harness config — `critics[]` and `routing.graph.hooks` — because the CLI reads that file no more (decision-123).",
   "type": "object",
   "additionalProperties": false,
+  "x-onboarding": {
+    "description": "Drives the guided onboarding `/the-loop:init` runs over THIS file (issue-415). The harness config has carried such a block since issue-49; the CLI config — which holds every automation the-loop has, all of it shipping off — carried none, so init asked one question about where the file should live and left the rest to the documentation site. The procedure is the same one, and it is stated once, in the the-loop skill's reference/onboarding.md: read the groups in order, explain what the group decides, show each proposed value with where it came from, ask once per group, offer the fast path. Per-key explanations, defaults, enum possibilities and examples come from the property schemas below — this block only adds grouping, ask policy and the autonomy ladder, so the schema stays the single source of truth. `version` belongs to no group: init stamps it. A group may carry no key (`posture`): it exists to establish facts that become OTHER keys' proposals. Validators ignore x-* keywords.",
+    "askLevels": {
+      "always": "No sensible default exists — init MUST establish this group with the user (or report it under needs-user when running non-interactively).",
+      "confirm": "Init proposes sensible values (from the autonomy profile, else detected from the machine and the repository, else the schema default) and asks the user to confirm or adjust the whole group in one pass.",
+      "advanced": "Sensible defaults are applied silently; the group is only walked through when the user asks for the full tour."
+    },
+    "profiles": {
+      "description": "The autonomy ladder: named rungs, ordered least to most autonomous, each a small bundle of values for the keys that decide what the-loop does while nobody is watching. It exists because users do not share one threshold for automation, and because expressing that threshold otherwise means reasoning about six interacting keys in four blocks before having watched the loop work once. A rung is a PROPOSAL: init shows the resolved values and the user may still adjust any of them. Asked BEFORE the groups below, so those groups become confirmations rather than open questions. INVARIANT: no rung may remove, skip or pre-answer a human gate. The phase-selection checklist, the requirements and design approval gates, the pull-request approval and the risk tiers are fixed rules of the skill and the process graph, not settings — so every value a rung declares is under `webhooks`, `polling`, `routing`, `service`, `selfDiagnosis` or `channels`, and none is a key the graph or the tiers read. `routing.authorizedUsers` is deliberately untouched by every rung: who may drive the loop is established with the user by name, never implied by a threshold they picked. cli/tests/test_onboarding_schema.py enforces all of it.",
+      "recommended": "watch-and-ask",
+      "ladder": [
+        {
+          "id": "commands-only",
+          "title": "Commands only — the-loop is the slash commands in my editor",
+          "summary": "No daemon, nothing watching a repository, nothing running once you close the session. `/the-loop:work-on`, `/the-loop:new-requirement` and the rest work exactly as documented; events on GitHub reach nobody. These are the shipped defaults, so this rung changes nothing — it is here so that \"not yet\" is an answer rather than a walkthrough to fight. Re-run `/the-loop:init` when you want more.",
+          "stillHuman": "Everything. You start each work item yourself, in a session you are sitting in front of.",
+          "values": {
+            "routing.enabled": false,
+            "routing.spawnOnUnmatched": "never",
+            "webhooks.ghWebhook.enabled": false,
+            "polling.enabled": false,
+            "channels.slack.enabled": false,
+            "selfDiagnosis.enabled": false
+          }
+        },
+        {
+          "id": "watch-and-ask",
+          "title": "Watch and ask — notice my work items, but wait for me to say go",
+          "summary": "The daemon watches the repositories you name and follows every work item you arm with the auto-execute labels, but nothing spawns until an authorized user comments `the-loop start` on the item. Comments, reviews and CI results on an item already running are delivered to its session. A pull request that clears its approval gate stops at approved — you merge it. This is the recommended rung: you see the loop work while every irreversible act is still yours.",
+          "stillHuman": "Starting each item, and merging every pull request. Plus everything below: the phase-selection checklist, the requirements and design approvals, the pull-request approval, and a named security sign-off at risk tier 4 and above.",
+          "values": {
+            "routing.enabled": true,
+            "routing.spawnOnUnmatched": "labeled",
+            "routing.control.requireStartCommand": true,
+            "routing.mergeOnApproval": false,
+            "selfDiagnosis.enabled": false
+          }
+        },
+        {
+          "id": "armed",
+          "title": "Armed — the labels are the go-ahead",
+          "summary": "An item carrying every auto-execute label spawns its session without a start command, and a pull request that clears its approval gate merges itself. the-loop also files its own diagnosis when a harness failure repeats. The label is still necessary: an unlabelled item is received and ignored, and nothing spawns on an event nobody armed. Pick this once you have watched a few work items run and want to stop typing `the-loop start`.",
+          "stillHuman": "Every gate. The phase-selection checklist chooses which phases this item walks; `requirements.md` and `design.md` are each locked by a human approval; the pull request needs its approval before the merge this rung automates; risk tier 4 and above needs a named security sign-off as well. Autonomy here changes who STARTS the work, never who APPROVES it.",
+          "values": {
+            "routing.enabled": true,
+            "routing.spawnOnUnmatched": "labeled",
+            "routing.control.requireStartCommand": false,
+            "routing.mergeOnApproval": true,
+            "selfDiagnosis.enabled": true
+          }
+        }
+      ]
+    },
+    "groups": [
+      {
+        "id": "posture",
+        "title": "How much of this do you want running?",
+        "ask": "always",
+        "explain": "Two facts init cannot detect and no default can guess, established before anything is proposed. FIRST, where the daemon will run: a personal machine you close (a laptop, a desktop) or an always-on host with an inbound route (a cloud box, a VM, a container). That answer alone decides the ingress — GitHub cannot reach a webhook receiver behind NAT, so a laptop polls and a reachable host receives. SECOND, the autonomy profile from `x-onboarding.profiles`: show every rung with its summary and what still needs a human, mark the recommendation, and take the answer as the PROPOSAL for the groups that follow. This group carries no key of its own; its answers are the provenance of other keys' values, which init reports as \"from the profile you picked\". Neither answer is stored as configuration: the deployment shape's whole output is the ingress proposal, and the profile is recorded as a comment in the written file so a re-run knows the question was answered.",
+        "keys": []
+      },
+      {
+        "id": "deployment",
+        "title": "Where this instance lives",
+        "ask": "confirm",
+        "explain": "Where the-loop's CLI keeps the files it generates, where its credentials come from, and what this instance calls itself. `state.root` is one directory to back up, relocate or wipe instead of four independent path defaults. `env.file` is the one that matters most on a fresh machine: every credential the-loop uses is NAMED in this config and READ from the process environment, and the config never carries a value — so `env.file` is how you avoid exporting four variables by hand before every `the-loop start`. It holds secrets: init states that, and checks that `.gitignore` covers it. `instance` matters only when more than one the-loop watches the same repository from different environments; leave it alone otherwise.",
+        "keys": [
+          "state",
+          "env",
+          "instance"
+        ]
+      },
+      {
+        "id": "ingress",
+        "title": "What is watched, and how events arrive",
+        "ask": "confirm",
+        "explain": "`repositories` is WHAT the-loop watches. The other two are HOW an event gets to it, and exactly one of them is normally on: the webhook receiver (`webhooks.ghWebhook`) is push, low-latency, and needs an inbound route plus a shared secret; the poller (`polling`) is pull, needs nothing reachable, and is what a laptop or anything behind NAT uses. The posture group's first answer has already proposed one of them. Both are OFF by default, which is why a the-loop that was never onboarded watches nothing — if you decline both, routing stays off and init says so rather than scaffolding half a daemon.",
+        "keys": [
+          "repositories",
+          "webhooks",
+          "polling"
+        ]
+      },
+      {
+        "id": "execution",
+        "title": "What happens when an event matches",
+        "ask": "confirm",
+        "explain": "The rules the dispatcher follows once an event has arrived, shared verbatim by both ingresses — one dispatch stack, two front doors. Four answers carry the weight. `routing.autoExecuteLabels` is the list of labels EVERY ONE of which must be on a work item before anything spawns: it is what arms an item, and an operator sharing a repository adds one of their own. `routing.authorizedUsers` is who may drive the loop — start it, stop it, answer a gate — and it is EMPTY by default, so until you name someone here nobody can. `routing.workspace.root` is where spawned sessions get their checkout; the daemon runs independent of any repository, so without it there is nowhere to work. `harnesses`, `models` and `effort` are which agent runs, on which model, at what thinking effort.",
+        "keys": [
+          "routing",
+          "harnesses",
+          "models",
+          "effort"
+        ]
+      },
+      {
+        "id": "channels",
+        "title": "Slack",
+        "ask": "confirm",
+        "explain": "Slack is a channel: a peer on the-loop's event bus that holds ONE THREAD PER WORK ITEM and lets an authorized member drive the loop back from their phone. Two lists define it, and they are not symmetric. `subscribe` is what the channel HEARS — which events get posted into it. `publish` is what a message there MAY BECOME — a reply to the session, a gate answer, a control command, a new work item — and it is the channel's AUTHORITY, so everything is off except `work-item.reply` until you write it down. GitHub stays the ledger either way: anything that starts in Slack is recorded on the work item first. Setup is four steps at api.slack.com — import the manifest `the-loop channels manifest` prints, install the app for the bot token, mint an app-level token for Socket Mode, invite the bot and take the conversation id — and two environment variables, `botTokenEnv` and `appTokenEnv`. Init walks those steps, then runs `the-loop channels status --probe` so a missing scope is named in the session instead of discovered later. The full reference is docs/guide/slack.md; do not restate it in the walkthrough.",
+        "keys": [
+          "channels"
+        ]
+      },
+      {
+        "id": "review",
+        "title": "Critics & review rounds",
+        "ask": "advanced",
+        "explain": "Who reviews the work besides the session that wrote it: the critic roster (`critics[]` — a different model reading the artifact, spawned by `the-loop critic run`) and how many rounds of self and critic review a work item gets before it may be presented. Defaults are sensible and this is rarely the first thing a new operator wants to tune, so it is applied silently and offered as part of the full tour.",
+        "keys": [
+          "critics",
+          "reviews"
+        ]
+      },
+      {
+        "id": "operations",
+        "title": "Service, logs & integrations",
+        "ask": "advanced",
+        "explain": "The furniture a running deployment needs and a new one rarely changes: the control-plane service and its `/mcp` surface (`service`), the event log everything the-loop does is written to (`eventLog`), which GitHub it talks to and under which token (`integrations`), long-lived sessions not bound to a work item (`standingSessions`), and whether the-loop files issues about its own repeated failures (`selfDiagnosis`, which the top rung of the autonomy ladder turns on). Defaults are applied silently; the autonomy profile's values for these keys are shown in the final report like any other.",
+        "keys": [
+          "service",
+          "eventLog",
+          "integrations",
+          "standingSessions",
+          "selfDiagnosis"
+        ]
+      }
+    ]
+  },
   "properties": {
     "version": {
       "type": "string",
