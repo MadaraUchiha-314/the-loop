@@ -7,7 +7,14 @@
  * bubbles, node moves and bookkeeping as one-line meta rows, tool calls and
  * thinking behind **Used n tools** / **thinking** disclosures — native
  * `<details>`, collapsed by default, so nothing renders blank and everything
- * opens from the keyboard. A **Tool calls** switch removes the tool groups.
+ * opens from the keyboard.
+ *
+ * A single **Verbose** switch sets the whole stream's verbosity (issue-419).
+ * Off — the default — the panel keeps what a human reads and drops the rest:
+ * the tool groups, the tool output, the empty harness meta rows, and the
+ * bookkeeping half of the event trail. On, everything renders as it always
+ * did. Both halves filter on `model.ts`'s `isReadable` / `isBookkeeping`, and
+ * a view the filter emptied says so rather than looking broken.
  *
  * The composer is the chat bar (issue-208/230): it posts to
  * `POST /api/v1/sessions/reply` with the viewed ref — the work item's for the
@@ -18,22 +25,85 @@
 import { useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { ApiError } from "../api/client.ts";
-import { timeOf, transcriptThread, type SessionState, type ThreadRow, type ToolCallView } from "../api/model.ts";
+import {
+  isBookkeeping,
+  isReadable,
+  timeOf,
+  transcriptThread,
+  type SessionState,
+  type ThreadRow,
+  type ToolCallView,
+} from "../api/model.ts";
 import type { EventRecord, TranscriptEntry } from "../api/types.ts";
 import { describeEvent } from "../api/model.ts";
 import { useApi } from "../state/ApiContext.tsx";
 import { BotIcon, BrainIcon, ChevronRightIcon, CircleArrowRightIcon, FileTextIcon, SendHorizontalIcon, TerminalIcon, WrenchIcon } from "./Icons.tsx";
 import { renderInline } from "./primitives.tsx";
 
-/** The transcript as the reading column; `showTools=false` drops the tool groups. */
-export function TranscriptView({ entries, showTools = true }: { entries: TranscriptEntry[]; showTools?: boolean }) {
+/** The name of the one switch that sets the trace's verbosity, in every place it is spoken. */
+export const VERBOSE_LABEL = "Verbose";
+
+/** How many rows of the fallback trail the panel draws. */
+const TRAIL_LIMIT = 40;
+
+/**
+ * The transcript as the reading column. `verbose` is the switch: off — the
+ * default — only the rows `isReadable` keeps are drawn, and the tool groups
+ * inside them are dropped.
+ */
+export function TranscriptView({ entries, verbose = false }: { entries: TranscriptEntry[]; verbose?: boolean }) {
+  const rows = transcriptThread(entries);
+  const shown = verbose ? rows : rows.filter(isReadable);
+  if (shown.length === 0) return <HiddenNote hidden={rows.length} noun="row" />;
   return (
     <>
-      {transcriptThread(entries).map((row, index) => (
-        <ThreadRowView key={`${row.time}-${index}`} row={row} showTools={showTools} />
+      {shown.map((row, index) => (
+        <ThreadRowView key={`${row.time}-${index}`} row={row} showTools={verbose} />
       ))}
     </>
   );
+}
+
+/**
+ * The event trail — the trace's fallback when no transcript is served.
+ *
+ * The filter runs **before** the row budget, on purpose: newest-first, forty
+ * consecutive `poll.*` rows would otherwise bury the `graph.parked` behind
+ * them, which is the shape the issue reported.
+ */
+export function EventTrail({
+  events,
+  verbose,
+  limit = TRAIL_LIMIT,
+}: {
+  events: EventRecord[];
+  verbose: boolean;
+  limit?: number;
+}) {
+  const kept = verbose ? events : events.filter((event) => !isBookkeeping(event));
+  if (kept.length === 0) return <HiddenNote hidden={events.length} noun="bookkeeping event" />;
+  return (
+    <>
+      {kept.slice(0, limit).map((event, index) => (
+        <EventLine key={`${event.ts}-${index}`} event={event} />
+      ))}
+    </>
+  );
+}
+
+/**
+ * What a view the filter emptied says instead of nothing. A source that is
+ * empty for its own reasons renders nothing here — the caller's own empty
+ * state owns that case, so "nothing happened" stays distinct from "nothing
+ * survived the filter".
+ */
+function HiddenNote({ hidden, noun }: { hidden: number; noun: string }) {
+  if (hidden === 0) return null;
+  const line =
+    hidden === 1
+      ? `1 ${noun} hidden — turn on ${VERBOSE_LABEL} to see it`
+      : `${hidden} ${noun}s hidden — turn on ${VERBOSE_LABEL} to see them`;
+  return <p className="text-center font-mono text-[0.68rem] text-muted-foreground">{line}</p>;
 }
 
 /** A one-line meta row: an icon, a mono label, a hairline, the time at the right. */
@@ -97,7 +167,7 @@ function ThreadRowView({ row, showTools }: { row: ThreadRow; showTools: boolean 
     const label = row.kind === "malformed" ? "malformed" : row.label || "entry";
     const detail = row.text || (row.kind === "meta" ? `(${row.label || "entry"})` : "");
     return (
-      <div data-entry={row.kind} className="space-y-1">
+      <div data-entry={row.kind} data-label={label} className="space-y-1">
         <MetaLine
           icon={<CircleArrowRightIcon className={`h-3.5 w-3.5 ${row.kind === "malformed" ? "text-state-blocked" : "text-state-skipped"}`} />}
           label={label}
@@ -219,8 +289,8 @@ function ToolCall({ tool }: { tool: ToolCallView }) {
   );
 }
 
-/** One event of the trail — the trace's fallback when no transcript is served. */
-export function EventLine({ event }: { event: EventRecord }) {
+/** One event of the trail, drawn as a meta row. */
+function EventLine({ event }: { event: EventRecord }) {
   const detail = describeEvent(event);
   return (
     <div data-entry="event" className="space-y-1">

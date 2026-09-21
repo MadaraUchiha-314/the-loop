@@ -11,6 +11,8 @@ import {
   awaitingInput,
   buildWorkItemViews,
   innerKey,
+  isBookkeeping,
+  isReadable,
   itemGroup,
   parseRef,
   questionOf,
@@ -25,6 +27,7 @@ import {
   transcriptPath,
   transcriptThread,
 } from "./model.ts";
+import type { ThreadRow } from "./model.ts";
 import type { EventRecord, GraphStatus, SessionRecord, WorkItemRecord } from "./types.ts";
 
 describe("parseRef", () => {
@@ -948,5 +951,110 @@ describe("an ended work item (issue-329)", () => {
     });
     expect(malformed!.ended).toBeNull();
     expect(itemGroup(malformed!)).toBe("needs-you");
+  });
+});
+
+/**
+ * The trace's verbosity predicates (issue-419). Between them they decide what a
+ * reader sees with the **Verbose** switch off, so the classification table is
+ * the test: every row kind, every hidden family, and the two ways a row escapes
+ * the filter — an error level, and a family nobody classified.
+ */
+const streamRow = (partial: Partial<ThreadRow> & Pick<ThreadRow, "kind">): ThreadRow => ({
+  time: "2026-09-21T10:00:00Z",
+  text: "",
+  thinking: "",
+  label: "",
+  tools: [],
+  ...partial,
+});
+
+const trailEvent = (name: string, level: EventRecord["level"] = "info"): EventRecord => ({
+  ts: "2026-09-21T10:00:00Z",
+  event: name,
+  level,
+});
+
+describe("isReadable", () => {
+  it("keeps a turn that carries prose or thinking", () => {
+    expect(isReadable(streamRow({ kind: "assistant", text: "Ran the suite; one failure." }))).toBe(true);
+    expect(isReadable(streamRow({ kind: "assistant", thinking: "The fixture looks stale." }))).toBe(true);
+    expect(isReadable(streamRow({ kind: "user", text: "Ship it." }))).toBe(true);
+  });
+
+  it("keeps a drifted line — a malformed entry is a finding, not noise", () => {
+    expect(isReadable(streamRow({ kind: "malformed", text: "{\"type\":\"assis" }))).toBe(true);
+  });
+
+  it("drops raw tool output, which is the class the switch already hid", () => {
+    expect(isReadable(streamRow({ kind: "tool result", text: "1 failed, 41 passed" }))).toBe(false);
+  });
+
+  it("keeps a meta row that carries text and drops the empty one", () => {
+    expect(isReadable(streamRow({ kind: "meta", label: "summary", text: "Context compacted." }))).toBe(true);
+    expect(isReadable(streamRow({ kind: "meta", label: "system" }))).toBe(false);
+    expect(isReadable(streamRow({ kind: "meta", label: "system", text: "   " }))).toBe(false);
+  });
+
+  it("drops an assistant turn whose only content was tool calls", () => {
+    const tools = [{ id: "t1", name: "Bash", summary: "pytest -q", input: "", result: "", isError: false }];
+    expect(isReadable(streamRow({ kind: "assistant", tools }))).toBe(false);
+    // …and keeps it once it also says something.
+    expect(isReadable(streamRow({ kind: "assistant", text: "Running the suite.", tools }))).toBe(true);
+  });
+});
+
+describe("isBookkeeping", () => {
+  it.each([
+    "webhook.received",
+    "routing.dropped",
+    "dispatch.dropped",
+    "dispatch.succeeded",
+    "poll.comment_settled",
+    "poll.cycle",
+    "bus.published",
+    "reaction.added",
+    "control.command",
+    "control.rejected",
+    "stream.subscribed",
+    "api.request",
+    "mcp.call",
+    "config.reloaded",
+    "service.started",
+    "server.stopped",
+    "poller.blocked",
+    "restart.scheduled",
+    "ingress.hosted",
+    "workspace.prepared",
+    "cleanup.deferred",
+  ])("hides %s — the loop talking to itself", (name) => {
+    expect(isBookkeeping(trailEvent(name))).toBe(true);
+  });
+
+  it.each([
+    "graph.parked",
+    "graph.blocked",
+    "graph.completed",
+    "session.awaiting_input",
+    "session.spawned",
+    "channel.reply_received",
+    "standing.said",
+    "work_item.ended",
+    "diagnosis.detected",
+  ])("keeps %s — the work item's own progress, or a person's act", (name) => {
+    expect(isBookkeeping(trailEvent(name))).toBe(false);
+  });
+
+  it("never hides an error, whatever family it is in", () => {
+    expect(isBookkeeping(trailEvent("dispatch.failed", "error"))).toBe(false);
+    expect(isBookkeeping(trailEvent("poll.provider_error", "error"))).toBe(false);
+    // A warning in a hidden family is still hidden — the documented trade-off.
+    expect(isBookkeeping(trailEvent("dispatch.dropped", "warning"))).toBe(true);
+  });
+
+  it("keeps an event nobody classified — the list fails open", () => {
+    expect(isBookkeeping(trailEvent("invented.thing"))).toBe(false);
+    expect(isBookkeeping(trailEvent("noseparator"))).toBe(false);
+    expect(isBookkeeping(trailEvent(""))).toBe(false);
   });
 });

@@ -180,32 +180,41 @@ describe("the control plane, on demo data", () => {
     });
   });
 
-  it("renders the session's turns and tool calls from the transcript route", async () => {
+  it("renders the session's turns from the transcript route, quiet by default", async () => {
     const user = userEvent.setup();
     renderApp();
 
     await user.click(await sidebarRow("loop-lab#214"));
 
-    // The panel is live (issue-209): real turns, with tool invocations, and a
-    // server-flagged malformed line surfaced rather than dropped.
+    // The panel is live (issue-209): real turns, and a server-flagged malformed
+    // line surfaced rather than dropped. The tool calls are behind the switch
+    // now (issue-419), so the reading column is prose and findings only.
     expect(await screen.findByText(/Reading the briefing template/)).toBeInTheDocument();
-    expect(screen.getByText("Read")).toBeInTheDocument();
     expect(screen.getByText(/truncated by the harness mid-write/)).toBeInTheDocument();
+    expect(screen.queryByText("Read")).not.toBeInTheDocument();
+    expect(document.querySelectorAll("[data-tools]")).toHaveLength(0);
     // The path moved to the session panel: it still names the served file.
     expect(screen.getByText(/~\/\.claude\/projects\/.*\.jsonl/)).toBeInTheDocument();
   });
 
-  it("hides the tool groups behind the Tool calls switch, from the mouse and the keyboard", async () => {
+  it("reveals the whole trace behind the Verbose switch, from the mouse and the keyboard", async () => {
     const user = userEvent.setup();
     renderApp();
 
     await user.click(await sidebarRow("loop-lab#214"));
     await screen.findByText(/Reading the briefing template/);
-    expect(document.querySelectorAll("[data-tools]").length).toBeGreaterThan(0);
 
-    const toggle = screen.getByRole("switch", { name: "Tool calls" });
-    await user.click(toggle);
+    // Off at load (issue-419) — the switch names the whole stream, not the tools.
+    const toggle = screen.getByRole("switch", { name: "Verbose" });
     expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(screen.queryByRole("switch", { name: "Tool calls" })).not.toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    expect(document.querySelectorAll("[data-tools]").length).toBeGreaterThan(0);
+    expect(screen.getByText("Read")).toBeInTheDocument();
+
+    await user.click(toggle);
     expect(document.querySelectorAll("[data-tools]")).toHaveLength(0);
 
     toggle.focus();

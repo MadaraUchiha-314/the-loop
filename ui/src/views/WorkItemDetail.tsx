@@ -2,7 +2,7 @@
  * One work item as the design's main column (issue-327): the header (title,
  * ref chip, phase chip, repository, age; copy / GitHub / theme controls), the
  * loop as a node strip, one tab per session, the harness trace as a reading
- * column with a **Tool calls** switch, the two things that need a human —
+ * column with a **Verbose** switch, the two things that need a human —
  * a parked gate, the agent's question — as accent banners above the composer,
  * and the composer itself. The session panel beside it is rendered by `Work`.
  *
@@ -10,6 +10,11 @@
  * `GET /api/v1/sessions/transcript` (issue-209). When the route answers 404
  * the panel says why and falls back to the event-log trail. The composer
  * posts via issue-208's `POST /api/v1/sessions/reply`.
+ *
+ * The **Verbose** switch is off by default (issue-419): the stream shows what
+ * a human can read or act on, and the tool groups, the empty harness meta rows
+ * and the trail's bookkeeping wait behind it. `Transcript.tsx` owns the filter;
+ * this file owns the switch and which events it is given.
  */
 
 import { useEffect, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
@@ -29,7 +34,7 @@ import { HeaderBar, type Chrome } from "../components/HeaderBar.tsx";
 import { CheckIcon, CopyIcon, ExternalLinkIcon, GitBranchIcon, TriangleAlertIcon } from "../components/Icons.tsx";
 import { ControlButton, Empty, IconButton, Notice, PhaseChip } from "../components/primitives.tsx";
 import { SessionTabs } from "../components/SessionTabs.tsx";
-import { ChatBar, EventLine, TranscriptView } from "../components/Transcript.tsx";
+import { ChatBar, EventTrail, TranscriptView, VERBOSE_LABEL } from "../components/Transcript.tsx";
 import { useApi } from "../state/ApiContext.tsx";
 import { useAsync } from "../state/useAsync.ts";
 import { itemStatus, repoOf } from "./grouping.ts";
@@ -77,7 +82,7 @@ interface DetailProps {
 export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, traceRef, chrome }: DetailProps) {
   const { api } = useApi();
   const viewed = resolveViewed(view, traceRef);
-  const [showTools, setShowTools] = useState(true);
+  const [verbose, setVerbose] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const events = useAsync((signal) => api.events({ workItem: view.ref, limit: 200 }, signal), [api, view.ref]);
@@ -116,7 +121,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
   function onSwitchKey(event: KeyboardEvent<HTMLElement>): void {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      setShowTools((value) => !value);
+      setVerbose((value) => !value);
     }
   }
 
@@ -171,19 +176,22 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
           <span>
             Harness trace{traceSession?.harness ? <span className="font-mono"> · {traceSession.harness}</span> : null}
           </span>
-          <label className="flex cursor-pointer items-center gap-2">
-            <span>Tool calls</span>
+          <label
+            className="flex cursor-pointer items-center gap-2"
+            title="Show the tool calls, the harness bookkeeping and the whole event trail"
+          >
+            <span>{VERBOSE_LABEL}</span>
             <span
               role="switch"
-              aria-checked={showTools}
-              aria-label="Tool calls"
+              aria-checked={verbose}
+              aria-label={VERBOSE_LABEL}
               tabIndex={0}
-              onClick={() => setShowTools((value) => !value)}
+              onClick={() => setVerbose((value) => !value)}
               onKeyDown={onSwitchKey}
-              className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${showTools ? "bg-primary" : "bg-border-strong"}`}
+              className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${verbose ? "bg-primary" : "bg-border-strong"}`}
             >
               <span
-                className={`absolute h-3 w-3 rounded-full bg-background transition-transform ${showTools ? "translate-x-3.5" : "translate-x-0.5"}`}
+                className={`absolute h-3 w-3 rounded-full bg-background transition-transform ${verbose ? "translate-x-3.5" : "translate-x-0.5"}`}
               />
             </span>
           </label>
@@ -218,7 +226,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
                 {transcript.data.entries.length === 0 ? (
                   <Empty>The transcript exists but holds no entries yet.</Empty>
                 ) : (
-                  <TranscriptView entries={transcript.data.entries} showTools={showTools} />
+                  <TranscriptView entries={transcript.data.entries} verbose={verbose} />
                 )}
               </>
             ) : (
@@ -233,11 +241,12 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
                 {events.loading && !events.data ? (
                   <Empty>Loading events…</Empty>
                 ) : events.data && events.data.length > 0 ? (
-                  events.data
-                    .filter((event) => (viewed === view.ref ? true : eventRef(event) === viewed))
-                    .toReversed()
-                    .slice(0, 40)
-                    .map((event, index) => <EventLine key={`${event.ts}-${index}`} event={event} />)
+                  <EventTrail
+                    events={events.data
+                      .filter((event) => (viewed === view.ref ? true : eventRef(event) === viewed))
+                      .toReversed()}
+                    verbose={verbose}
+                  />
                 ) : (
                   <Empty>No events recorded for this work item.</Empty>
                 )}
