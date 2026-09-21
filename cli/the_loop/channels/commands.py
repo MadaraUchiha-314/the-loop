@@ -376,6 +376,8 @@ def reset_seen() -> None:
 
 def render_status(doc: Mapping[str, Any]) -> str:
     """`status_all`'s document as the lines `the-loop status` prints."""
+    from ..core.lifecycle import environment_line
+
     instance = doc.get("instance") or {}
     name = str(instance.get("name") or "unnamed")
     mode = str((instance.get("scope") or {}).get("mode") or "open")
@@ -403,6 +405,9 @@ def render_status(doc: Mapping[str, Any]) -> str:
             f"• conflict: `{rival}` also holds a poller heartbeat — reporting on "
             f"`{doc.get('stateRoot')}`"
         )
+    drift = environment_line(doc)
+    if drift:
+        lines.append(f"• sessions: {drift}")
     standing = doc.get("standingSessions") or []
     lines.append(
         "• standing: "

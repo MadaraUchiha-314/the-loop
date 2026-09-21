@@ -270,6 +270,31 @@ still carrying the key is warned about and otherwise ignored).
   independent of `harnessTrust` (either may be off without the other), shares its write
   discipline and its `workspace.trusted` / `workspace.trust_failed` events, and is a
   silent no-op for cursor-agent.
+- WHEN a session is spawned AND [`env.file`](../config/cli/index.md) names a file THEN
+  the pane SHALL be handed what that file declares **at spawn time** (issue-410), rather
+  than inheriting the tmux server's environment for those names — a copy captured when
+  that server started and never refreshed, so a session spawned an hour after a
+  credential rotation was previously still born on the retired value. Deployments that
+  declare no env file spawn exactly the argv they spawned before, and a tmux below 3.2
+  (no `new-session -e`) keeps its existing single warning.
+- WHEN an operator runs `the-loop sessions restart --all` (or names work items) THEN each
+  **running** session SHALL be relaunched in place — `respawn-pane -k`, so the tmux
+  session and window keep their identity and an attached client is not dropped (the
+  pane's scrollback is cleared, as a fresh session's would be) — **resuming** its
+  recorded conversation in its recorded working directory, on the environment the file
+  declares now. A session
+  that is not running is skipped rather than started, and one whose conversation cannot
+  be resumed is left running rather than replaced with a blank one.
+- WHEN a session has been relaunched THEN its new process's environment SHALL be read
+  back and compared with the file: a session still on a retired value is **named, with
+  the variables that differ**, and the command exits non-zero. A host that will not
+  report a process's environment yields `unverified`, which does not fail the run.
+  No environment **value** is ever printed — a variable is identified by name and by a
+  truncated SHA-256 fingerprint.
+- WHEN running sessions hold values that differ from the file THEN
+  [`the-loop status`](../cli/commands/status.md) SHALL carry one line saying how many, and
+  the command that fixes it — and nothing at all when they do not. It never moves the
+  exit code: `status`'s contract is "every enabled *service* is running".
 - A registry record SHALL carry no `runner` field (issue-156). A record with an empty
   `tmuxTarget` — one self-registered via `the-loop sessions register`, or written
   before issue-156, an old `runner: "process"` record included — SHALL be healed
@@ -341,6 +366,7 @@ belongs to does not.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-410 | **A session's environment is no longer frozen for its whole life** (2026-09-21): `the-loop sessions restart [--all\|--work-item …]` relaunches each running session in place (`respawn-pane -k`, resuming its conversation) on what `env.file` declares now, then **verifies** each one and exits non-zero on any that did not land; `the-loop status` carries a line when the fleet has drifted; and a spawn re-reads the file rather than inheriting the tmux server's long-frozen copy. Before this, rotating a credential left the service on the new value and every running session on the old one — the reporter's deployment looked healthy while 144 consecutive agent questions failed over three days. `envstate` is the new module, and no value reaches any output: a variable is named with a fingerprint | [spec](../specs/issue-410/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/410) |
 | issue-405 | **A closure that reaches a session at its endgame is held** (2026-09-21, P2 of the 2026-09-20 run-3 e2e run): a live session standing on the graph's terminal node keeps its harness, checkout and record until it claims `graph complete` or `routing.tmux.finishGraceSeconds` (default 300) runs out — `session.closing`, then `session.autoclosed` with `waited_seconds`/`finished`; a reopen cancels the hold, the poller leaves a held item alone, everything else closes at once as before. `GraphContext` gained `terminal` and `delivered_by_merge`, and `session.autoclosed merged` is true for an issue whose recorded pull request merged. Before this the merge's `Closes #N` closed the ticket and the close path SIGTERM'd the session mid-summary | [spec](../specs/issue-405/), [report](../reports/e2e-slack-test-2026-09-20-run-3.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/405) |
 | issue-377 | **Every session launches on the operator's declared arguments** (2026-09-18). `harnesses[].args` — the documented home since 16.0.0 — was read only on the model-choice path; the shared adapters both daemons build, `the-loop models check` and the standing sessions read the deprecated `routing.harnessArgs` alone, so a config that followed the deprecation warning launched every ordinary session bare and a released work item stalled on its first permission prompt. One resolver (`modelchoice.launch_args`) now feeds every adapter builder, `_adapter_for` derives the choice path from the adapter's own arguments, `_spawn_for` resolves the adapter **after** `on_arm` and from the checkout so the post-gate session carries the frozen choice, and the spawn events carry the argv | [spec](../specs/issue-377/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/377) |
 | issue-368 | The machine-local record became a **map of sessions keyed by the ref each serves** (2026-09-15) — the work item's own and one per pull request — holding handles alone: the pull request's repository, number, URL and upstream state are the repository's facts and live once, in its `work-item-state.json`, joined by that same ref. The record also carries what this deployment has already mirrored of the work item's channel threads. A record written before the change is read as it was and rewritten as a map on its next save | [spec](../specs/issue-368/), [decision-128](../decisions/decision-128.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/368) |

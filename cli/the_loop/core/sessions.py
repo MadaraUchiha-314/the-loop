@@ -24,9 +24,9 @@ import uuid
 from collections import deque
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from .. import cli_config, eventlog
+from .. import cli_config, envstate, eventlog
 from ..authz import mark_self_authored
 from ..cleanup import SESSION, TMUX, WORKSPACE
 from ..comments import post_issue_comment, post_issue_comment_with_url
@@ -41,6 +41,7 @@ from ..control import (
     command_comment,
 )
 from ..harness import ClaudeCodeAdapter, CursorAgentAdapter
+from ..harness.base import UnsupportedRunnerError
 from ..instance import INSTANCE_LOCKED, LOCKED, InstanceConfig
 from ..runner import TmuxRunner
 from ..sessions.registry import RegistryError, Session, SessionRegistry
@@ -1441,3 +1442,431 @@ def _announce(
         command=verb,
         error=error,
     )
+
+
+# -- environment refresh (issue-410) ---------------------------------------------
+
+#: What an operator's relaunched agent is told, submitted into the resumed TUI. The
+#: session's whole context survives the respawn, so this says only what changed —
+#: and says it plainly, because an agent that cannot tell a relaunch from a crash
+#: will spend a turn working out which one it was.
+RESTART_NOTICE = (
+    "[the-loop] This session was relaunched in place to pick up a refreshed "
+    "environment (an operator rotated a credential). Your conversation, working "
+    "directory and work item are unchanged — carry on where you left off."
+)
+
+#: The harness conversation ids the-loop itself writes (a uuid4). Validated before
+#: it reaches an argv, the rule the dispatcher's resume path already applies.
+_RESTART_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+def _declared_environment(
+    config: Optional[dict],
+) -> Optional[Tuple[Dict[str, str], Tuple[int, ...]]]:
+    """What ``env.file`` declares right now, or ``None`` when it names no file."""
+    return envstate.declared(config or {}, cli_config.default_cli_config_path())
+
+
+def _restart_adapter(session: Session, config: Optional[dict]):
+    """The adapter that reproduces ``session``'s own launch argv.
+
+    Built from the arguments the registry **recorded at launch** rather than from
+    a fresh read of the model/effort config: a relaunch refreshes the environment
+    and nothing else, so a session must come back on the command line it went down
+    on. Re-resolving the choice here would fold issue-410 into the separate
+    frozen-launch-flags work item, silently.
+    """
+    from ..harness import build_adapters
+    from ..harness_plugins import PluginConfig
+    from ..trust import TrustConfig
+
+    routing = _routing(config)
+    adapters = build_adapters(
+        harness_args={session.harness: list(session.harness_args)},
+        trust=TrustConfig.from_mapping(routing.get("harnessTrust") or {}),
+        plugins=PluginConfig.from_mapping(routing.get("harnessPlugins") or {}),
+    )
+    return adapters.get(session.harness)
+
+
+def _environment_row(
+    session: Session,
+    declared_values: Mapping[str, str],
+    live_pids: Mapping[str, List[int]],
+) -> Dict[str, Any]:
+    """One session's environment as it stands: live pids, verdict, differing names.
+
+    ``verdict`` is ``fresh``/``stale``/``unverified``/``not-running``. A session
+    with several live panes is ``stale`` when **any** of them is: they all belong
+    to the same work item, and one pane on a retired credential is the whole
+    session broken.
+    """
+    target = session.tmux_target
+    pids = list(live_pids.get(target, [])) if target else []
+    if not pids:
+        return {
+            "ref": session.work_item.ref,
+            "tmuxTarget": target,
+            "verdict": "not-running",
+            "stale": [],
+            "pids": [],
+        }
+    verdicts: List[str] = []
+    differing: List[str] = []
+    for pid in pids:
+        verdict, names = envstate.environ_matches_declared(declared_values, pid)
+        verdicts.append(verdict)
+        differing += [name for name in names if name not in differing]
+    if "stale" in verdicts:
+        overall = "stale"
+    elif "fresh" in verdicts:
+        # At least one pane answered and matched; an unreadable sibling pane is
+        # not evidence of drift, and claiming drift the-loop has not observed is
+        # exactly what R3.4 forbids.
+        overall = "fresh"
+    else:
+        overall = "unverified"
+    return {
+        "ref": session.work_item.ref,
+        "tmuxTarget": target,
+        "verdict": overall,
+        "stale": sorted(differing),
+        "pids": pids,
+    }
+
+
+def environment_drift(
+    config: Optional[dict] = None,
+    registry_dir: str = "",
+    portable_dir: str = "",
+) -> Dict[str, Any]:
+    """How the running sessions compare with the environment the config declares.
+
+    The read half of the restart (issue-410), with no side effect at all: what
+    ``env.file`` says now, what each live pane actually holds, and the names where
+    the two differ. ``the-loop status`` and ``sessions restart --dry-run`` are both
+    renderings of this one answer.
+
+    ``configured`` is false when no ``env.file`` is named — there is then nothing to
+    compare against, every count is zero, and no caller may read that as "clean".
+    """
+    declared = _declared_environment(config)
+    if declared is None:
+        return {
+            "configured": False,
+            "running": 0,
+            "stale": 0,
+            "unverified": 0,
+            "sessions": [],
+        }
+    declared_values = declared[0]
+    # One tmux call for the whole fleet, not one per session: `status` calls this
+    # on every invocation and is used as a keepalive primitive.
+    live_pids = TmuxRunner().live_pane_pids_by_session()
+    rows: List[Dict[str, Any]] = []
+    registry = SessionRegistry(_registry_dir(config, registry_dir))
+    for session in registry.list_sessions(status="active"):
+        rows.append(_environment_row(session, declared_values, live_pids))
+    running = [row for row in rows if row["verdict"] != "not-running"]
+    return {
+        "configured": True,
+        "running": len(running),
+        "stale": len([row for row in running if row["verdict"] == "stale"]),
+        "unverified": len([row for row in running if row["verdict"] == "unverified"]),
+        "sessions": rows,
+    }
+
+
+def _restart_selection(
+    registry: SessionRegistry, refs: Sequence[str], all_sessions: bool
+) -> Tuple[List[Session], List[Dict[str, Any]]]:
+    """The sessions to act on, and a ``skipped`` row for each ref that has none."""
+    if all_sessions:
+        return (list(registry.list_sessions(status="active")), [])
+    selected: List[Session] = []
+    missing: List[Dict[str, Any]] = []
+    for ref in refs:
+        work_item = WorkItemRef.parse(ref)
+        session = registry.find_by_work_item(work_item)
+        if session is None:
+            missing.append(
+                {
+                    "ref": work_item.ref,
+                    "tmuxTarget": "",
+                    "outcome": "skipped",
+                    "detail": "no session is registered for this work item",
+                    "stale": [],
+                }
+            )
+            continue
+        selected.append(session)
+    return (selected, missing)
+
+
+def _restart_one(
+    session: Session,
+    declared_values: Mapping[str, str],
+    config: Optional[dict],
+    runner: TmuxRunner,
+    dry_run: bool,
+) -> Dict[str, Any]:
+    """Relaunch one session in place and say what became of it.
+
+    The order is the design's: a pane that is not running is left to ``start``, a
+    conversation that cannot be resumed is left running rather than replaced with a
+    blank one (R1.5 — losing twenty conversations is worse than a stale token), and
+    only then is the pane respawned, probed and verified.
+    """
+    row: Dict[str, Any] = {
+        "ref": session.work_item.ref,
+        "tmuxTarget": session.tmux_target,
+        "outcome": "",
+        "detail": "",
+        "stale": [],
+    }
+    target = session.tmux_target
+    if not target or not runner.live_pane_pids(target):
+        row.update(
+            outcome="skipped",
+            detail=(
+                "not running — `the-loop sessions start` brings a stopped session up"
+            ),
+        )
+        return row
+    session_id = session.harness_session_id
+    if not session_id or not _RESTART_SESSION_ID_RE.match(session_id):
+        row.update(
+            outcome="skipped",
+            detail=(
+                "no resumable harness conversation is recorded; left running rather "
+                "than replaced with a blank one"
+            ),
+        )
+        return row
+    adapter = _restart_adapter(session, config)
+    if adapter is None:
+        row.update(outcome="skipped", detail=f"unknown harness {session.harness!r}")
+        return row
+    try:
+        adapter.interactive_resume_argv(RESTART_NOTICE, session_id)
+    except UnsupportedRunnerError as exc:
+        row.update(outcome="skipped", detail=str(exc))
+        return row
+    if dry_run:
+        row.update(outcome="would-restart", detail="")
+        return row
+    result = runner.respawn_in(
+        target,
+        adapter,
+        RESTART_NOTICE,
+        cwd=session.cwd,
+        session_id=session_id,
+        work_item=session.work_item.ref,
+    )
+    if not result.ok:
+        row.update(outcome="failed", detail=result.error)
+        eventlog.emit(
+            "session.restart_failed",
+            level="error",
+            work_item=session.work_item.ref,
+            harness=session.harness,
+            tmux_target=target,
+            error=result.error,
+        )
+        return row
+    tmux = _tmux_config(config)
+    if not runner.survived(target, tmux.resume_probe_seconds):
+        # The issue-89 rule: `claude --resume <id>` exits in well under a second
+        # when it cannot resume, so a pane that is gone by now is a corpse. Said
+        # so rather than reported as a success the operator would not re-check.
+        row.update(
+            outcome="failed",
+            detail=(
+                "the relaunched harness exited immediately — the conversation "
+                "could not be resumed"
+            ),
+        )
+        eventlog.emit(
+            "session.restart_failed",
+            level="error",
+            work_item=session.work_item.ref,
+            harness=session.harness,
+            tmux_target=target,
+            error="the relaunched harness did not survive the probe",
+        )
+        return row
+    verdicts = [
+        envstate.environ_matches_declared(declared_values, pid)
+        for pid in runner.live_pane_pids(target)
+    ]
+    differing = sorted({name for _, names in verdicts for name in names})
+    if any(verdict == "stale" for verdict, _ in verdicts):
+        row.update(outcome="stale", detail="", stale=differing)
+    elif any(verdict == "fresh" for verdict, _ in verdicts):
+        row.update(outcome="restarted", detail="")
+    else:
+        row.update(
+            outcome="unverified",
+            detail="this host would not report the new process's environment",
+        )
+    eventlog.emit(
+        "session.restarted",
+        level="warning" if row["outcome"] == "stale" else "info",
+        work_item=session.work_item.ref,
+        harness=session.harness,
+        tmux_target=target,
+        outcome=row["outcome"],
+        stale=", ".join(differing) or None,
+    )
+    return row
+
+
+def restart_sessions(
+    refs: Optional[Sequence[str]] = None,
+    all_sessions: bool = False,
+    dry_run: bool = False,
+    config: Optional[dict] = None,
+    registry_dir: str = "",
+    portable_dir: str = "",
+) -> Dict[str, Any]:
+    """Relaunch running sessions on the environment ``env.file`` declares now.
+
+    A session's environment is whatever tmux handed its pane when the pane was
+    forked, so a credential rotation leaves the service on the new value and every
+    running session on the old one — for as long as they run (issue-410). This is
+    the verb that ends that state: re-read the file, replace the process in each
+    pane while keeping its conversation, then **prove** each one landed on the new
+    values and say so when it did not.
+
+    Executed in-process rather than through the control-plane service, the rule
+    ``reset`` established (issue-137): this is bootstrap-and-recovery for a
+    deployment whose credentials have just changed, and routing it through the
+    service would make the recovery depend on the thing it repairs. It is also
+    irreducibly local — it replaces processes on this host.
+
+    Returns the per-session rows, the counts, the ``messages`` the CLI renders and
+    the exit code it should use. No value ever appears in any of them: a variable
+    that differs is named, and identified by fingerprint alone (R5).
+    """
+    messages: List[Dict[str, str]] = []
+    refs = list(refs or [])
+    if bool(refs) == bool(all_sessions):
+        messages.append(
+            {
+                "stream": "err",
+                "text": (
+                    "error: name a work item to restart, or pass --all to restart "
+                    "every running session"
+                ),
+            }
+        )
+        return {"sessions": [], "exitCode": 2, "messages": messages}
+    declared = _declared_environment(config)
+    if declared is None:
+        messages.append(
+            {
+                "stream": "err",
+                "text": (
+                    "error: no env file is configured, so there is no refreshed "
+                    "environment to restart onto — set `env.file` in the CLI config "
+                    "(the credentials the sessions carry are the ones it names)"
+                ),
+            }
+        )
+        return {"sessions": [], "exitCode": 2, "messages": messages}
+    declared_values, invalid_lines = declared
+    if not declared_values:
+        messages.append(
+            {
+                "stream": "err",
+                "text": (
+                    "error: the configured env file declares no usable variable; "
+                    "nothing was restarted"
+                    + (
+                        f" (malformed: {', '.join(f'line {n}' for n in invalid_lines)})"
+                        if invalid_lines
+                        else ""
+                    )
+                ),
+            }
+        )
+        return {"sessions": [], "exitCode": 2, "messages": messages}
+    if invalid_lines:
+        messages.append(
+            {
+                "stream": "err",
+                "text": (
+                    "note: the env file has malformed "
+                    + ", ".join(f"line {n}" for n in invalid_lines)
+                    + "; the rest were read"
+                ),
+            }
+        )
+    registry = SessionRegistry(_registry_dir(config, registry_dir))
+    selected, rows = _restart_selection(registry, refs, all_sessions)
+    # The values the respawned panes are handed — the whole point of the verb, and
+    # the one parse of the file the whole run uses, so every session in a roll lands
+    # on the same bytes even if the file is rewritten underneath it.
+    runner = TmuxRunner(env_provider=lambda: declared_values)
+    messages.append(
+        {
+            "stream": "out",
+            "text": (
+                f"{'checking' if dry_run else 'restarting'} {len(selected)} "
+                f"session(s) against {len(declared_values)} declared variable(s) "
+                f"[{', '.join(sorted(declared_values))}]"
+            ),
+        }
+    )
+    for session in selected:
+        rows.append(_restart_one(session, declared_values, config, runner, dry_run))
+    for row in rows:
+        messages.append({"stream": "out", "text": _restart_line(row, declared_values)})
+    failed = [row for row in rows if row["outcome"] in ("failed", "stale")]
+    if failed:
+        messages.append(
+            {
+                "stream": "err",
+                "text": (
+                    f"error: {len(failed)} session(s) did not come back on the "
+                    "declared environment — they are named above"
+                ),
+            }
+        )
+    unverified = [row for row in rows if row["outcome"] == "unverified"]
+    if unverified:
+        messages.append(
+            {
+                "stream": "err",
+                "text": (
+                    f"note: {len(unverified)} session(s) were relaunched but could "
+                    "not be verified on this host; `the-loop status` will not report "
+                    "on them either"
+                ),
+            }
+        )
+    return {
+        "sessions": rows,
+        "declared": sorted(declared_values),
+        "fingerprints": {
+            name: envstate.fingerprint(value)
+            for name, value in sorted(declared_values.items())
+        },
+        "dryRun": dry_run,
+        "exitCode": 1 if failed else 0,
+        "messages": messages,
+    }
+
+
+def _restart_line(row: Mapping[str, Any], declared_values: Mapping[str, str]) -> str:
+    """One rendered row. Names a differing variable; never prints its value."""
+    line = f"{row['ref']:<40} {row['outcome']}"
+    if row.get("stale"):
+        line += " — still differing: " + ", ".join(
+            f"{name} (wanted {envstate.fingerprint(declared_values.get(name, ''))})"
+            for name in row["stale"]
+        )
+    elif row.get("detail"):
+        line += f" — {row['detail']}"
+    return line

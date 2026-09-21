@@ -210,9 +210,18 @@ What the loader does, and does not do ([decision-108](/decisions/decision-108)):
   `the-loop start` spawns inherit the CLI's environment *and* load the file again on
   their own start, so a systemd unit that runs the daemon directly sees the same
   variables.
-- **Read once, at start.** A change to the file needs a restart; the daemons' hot reload
-  of `cli-config.yaml` does not re-read it, so a reload can never change the credentials
-  a running process holds.
+- **Read once, at start — for the process that reads it.** A change to the file needs a
+  restart of that process; the daemons' hot reload of `cli-config.yaml` does not re-read
+  it, so a reload can never change the credentials a running process holds.
+- **Harness sessions are the exception, and they have their own verb**
+  ([issue-410](https://github.com/MadaraUchiha-314/the-loop/issues/410)). A session the
+  daemon **spawns** is handed what the file declares at *that moment*, rather than
+  inheriting the tmux server's long-frozen copy — so a session started after a rotation
+  is not born on the retired value. A session **already running** is still frozen, by
+  definition: roll them with
+  [`the-loop sessions restart --all`](/cli/commands/sessions#restart), which relaunches
+  each one in place on the current file and verifies that it landed.
+  [`the-loop status`](/cli/commands/status) says when any of them have drifted.
 - **The grammar** is the usual one: `NAME=value` per line, `#` comments, an optional
   leading `export`, double quotes with `\n \t \r \\ \"` unescaped, single quotes
   literal, an unquoted value trimmed and cut at a trailing comment (a space, then `#`). There is **no

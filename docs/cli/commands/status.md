@@ -82,6 +82,27 @@ Two properties carried over from the removed `poll status` (issue-191/205):
 - **The heartbeat is enrichment.** An absent or unreadable one loses the progress
   lines, never the liveness answer.
 
+A **`sessions`** line appears when running harness sessions hold credentials that differ
+from what [`env.file`](/config/cli/#env-file) declares now — and nothing at all when they
+do not ([issue-410](https://github.com/MadaraUchiha-314/the-loop/issues/410)):
+
+```console
+$ the-loop status
+sessions    2 of 6 running with a stale environment — `the-loop sessions restart --all`
+```
+
+A session's environment is frozen when its pane is forked, so rotating a credential leaves
+the service on the new value and every session already running on the old one. The line
+exists because that state is otherwise invisible: the reporter's deployment looked healthy
+for three days while 144 consecutive agent questions failed. Roll them with
+[`sessions restart`](/cli/commands/sessions#restart).
+
+Like `conflict`, it does **not** move the exit code: `status`'s contract is "every enabled
+*service* is running", and a session on a retired credential is an observation about
+sessions. A host that will not report a process's environment claims no drift rather than
+guessing at it. `--format json` carries the whole comparison as `sessionEnvironment`, with
+a row per session (`verdict`, and the variable **names** that differ — never their values).
+
 [Standing sessions](/capabilities/standing-sessions) get their own section, and count
 toward the exit code — but only the ones [`start`](/cli/commands/start) **would have
 started** (the block enabled, and the entry's `autoStart` true). One declared without

@@ -300,6 +300,18 @@ EVENT_TYPES: Dict[str, str] = {
         "e.g. an unresumable id or a harness without interactive resume. Not "
         "emitted when resuming is simply off (routing.tmux.resumeOnRespawn)."
     ),
+    "session.restarted": (
+        "A running session was relaunched in place onto the environment `env.file` "
+        "declares now (work_item, harness, tmux_target, outcome, stale) — issue-410's "
+        "recovery from a credential rotation. `outcome` is restarted / stale / "
+        "unverified, and `stale` names the variables that STILL differ afterwards, "
+        "never their values."
+    ),
+    "session.restart_failed": (
+        "A relaunch did not produce a running harness (work_item, harness, "
+        "tmux_target, error): tmux refused the respawn, or the resumed harness "
+        "exited inside the probe window. The session is left as it was found."
+    ),
     "session.announced": (
         "A comment announcing a newly spawned tmux session (and how to attach "
         "to it) was posted on the work item (work_item, tmux_target); a respawn "

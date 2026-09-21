@@ -437,6 +437,41 @@ class SessionsCommand(Command):
         )
         close.set_defaults(_action=self._close)
 
+        restart = actions.add_parser(
+            "restart",
+            help=(
+                "Relaunch running sessions on the environment env.file declares "
+                "now (after a credential rotation)"
+            ),
+        )
+        restart.add_argument(
+            "--work-item",
+            action="append",
+            default=[],
+            help=(
+                "The work item whose session to relaunch; repeatable. Either this "
+                "or --all."
+            ),
+        )
+        restart.add_argument(
+            "--all",
+            dest="all_sessions",
+            action="store_true",
+            help="Relaunch every running session this machine manages.",
+        )
+        restart.add_argument(
+            "--dry-run",
+            action="store_true",
+            help=(
+                "Report which sessions would be relaunched, and why the rest would "
+                "not, without touching a pane."
+            ),
+        )
+        restart.add_argument("--format", choices=["text", "json"], default="text")
+        restart.add_argument("--registry-dir", default=registry_dir)
+        restart.add_argument("--portable-dir", default=portable_dir)
+        restart.set_defaults(_action=self._restart)
+
     def run(self, args: argparse.Namespace) -> int:
         # register/close write session-lifecycle events via the registry.
         eventlog.configure_from_file("sessions")
@@ -556,6 +591,33 @@ class SessionsCommand(Command):
         if not sessions:
             print("(no registered sessions)", file=sys.stderr)
         return 0
+
+    def _restart(self, args: argparse.Namespace) -> int:
+        """``sessions restart`` — in-process, like ``reset`` and for its reason.
+
+        This is bootstrap-and-recovery for a deployment whose credentials have
+        just changed (issue-410); routing it through the control-plane service
+        would make the recovery depend on the thing an operator runs it to
+        repair, and it replaces processes on this host either way.
+        """
+        try:
+            result = core_sessions.restart_sessions(
+                refs=args.work_item,
+                all_sessions=args.all_sessions,
+                dry_run=args.dry_run,
+                config=_cli_config(),
+                registry_dir=args.registry_dir,
+                portable_dir=args.portable_dir,
+            )
+        except Exception as exc:  # noqa: BLE001 — mapped, or re-raised below
+            return self._report(exc)
+        if args.format == "json":
+            # `messages` is carried too, unlike `list`'s JSON: this verb can refuse
+            # (no env file, neither --all nor a ref) and a caller that got only an
+            # exit code would have no way to learn why.
+            print(json.dumps(result))
+            return int(result.get("exitCode") or 0)
+        return _render(result)
 
     @staticmethod
     def _report(exc: Exception) -> int:
