@@ -137,7 +137,7 @@ overrides: {}
       (adoption section, colourway 5 approved in the inventory), `testing-plan.md`
       (T4a/T4b/T13, results), this file, the evidence files. _Depends on:_ G2–G5 ·
       _Test:_ T12.
-- [ ] **G7 — hand back.** Push; reply in the review thread; update the PR description
+- [x] **G7 — hand back.** Push; reply in the review thread; update the PR description
       and the ticket comment; label `loop:needs-review` — the PR is the owner's to
       merge, and the Slack icon upload is the owner's to do. _Depends on:_ G6 ·
       _Test:_ T11.
