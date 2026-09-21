@@ -23,13 +23,14 @@ scriptable as a health check.
 
 from __future__ import annotations
 
+import logging
 import os
 import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from .. import cli_config, eventlog
 from ..api.config import base_url, service_config, service_pidfile
@@ -45,6 +46,8 @@ from . import standing as core_standing
 #: Start order. The service first, so anything the daemons spawn can reach it;
 #: :func:`stop_all` walks it reversed.
 SERVICES = ("service", "gh-webhook", "poller")
+
+logger = logging.getLogger("the-loop.core.lifecycle")
 
 #: How long ``start`` waits for the service's /health.
 SERVICE_START_TIMEOUT_SECONDS = 15.0
@@ -560,6 +563,12 @@ def status_all(
     return {
         "services": rows,
         "standingSessions": standing["sessions"],
+        # Whether the running sessions still hold what `env.file` declares
+        # (issue-410). Never moves `ok`: `status`'s contract is "every enabled
+        # *service* is running", and a session on a retired credential is an
+        # observation about sessions. It is reported so the answer arrives in the
+        # minute after a rotation rather than on the third day of silence.
+        "sessionEnvironment": _session_environment(config),
         # Which instance this is and what it manages (issue-322) — the same
         # document `GET /api/v1/instance` serves.
         "instance": core_instance.describe_instance(config),
@@ -574,6 +583,46 @@ def status_all(
         "conflictingRoots": list(rival_roots(layout)),
         "ok": ok and standing["ok"],
     }
+
+
+def _session_environment(config: Optional[dict]) -> Dict[str, Any]:
+    """`environment_drift`, made safe for `status` to call (issue-410, R3.4).
+
+    A `status` that cannot read `/proc`, or whose registry is unreadable, is still
+    a `status`: every failure yields the "nothing observed" document, and no caller
+    may read that as a clean fleet — `configured` says whether there was anything
+    to compare against at all.
+    """
+    from .sessions import environment_drift
+
+    try:
+        return environment_drift(config)
+    except Exception:  # noqa: BLE001 — never fails the status it decorates
+        logger.debug("could not read the sessions' environments", exc_info=True)
+        return {
+            "configured": False,
+            "running": 0,
+            "stale": 0,
+            "unverified": 0,
+            "sessions": [],
+        }
+
+
+def environment_line(doc: Mapping[str, Any]) -> str:
+    """The one line a drifted fleet earns in `status`; ``""`` when it is clean.
+
+    One line and only when `stale` is non-zero (R3.2): a clean deployment gains
+    nothing to read past, which is what keeps the line worth reading when it
+    appears.
+    """
+    env = (doc.get("sessionEnvironment") or {}) if isinstance(doc, Mapping) else {}
+    stale = int(env.get("stale") or 0)
+    if not stale:
+        return ""
+    return (
+        f"{stale} of {int(env.get('running') or 0)} running with a stale "
+        "environment — `the-loop sessions restart --all`"
+    )
 
 
 def _standing_enabled(config: Optional[dict]) -> bool:

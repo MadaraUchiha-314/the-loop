@@ -1653,3 +1653,279 @@ class TestSessionsCli:
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(os.system("pytest -q " + __file__))
+
+
+class TestEnvironmentRefresh:
+    """The runner's half of issue-410: what a pane is handed, and respawning one.
+
+    Spec: docs/specs/issue-410/design.md · testing plan row T2.
+    """
+
+    TOKEN = "xoxb-the-new-one"
+
+    @staticmethod
+    def _fake(monkeypatch, **kwargs):
+        kwargs.setdefault("per_verb", {"has-session": 1})
+        # `-e` is gated on `tmux -V` reporting 3.2+; FakeRun answers "" by
+        # default, which reads as "version unknown" and suppresses every export.
+        kwargs["stdout_per_verb"] = {
+            "-V": "tmux 3.3a",
+            **kwargs.get("stdout_per_verb", {}),
+        }
+        fake = FakeRun(**kwargs)
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        return fake
+
+    @staticmethod
+    def _exported(cmd):
+        return {cmd[i + 1] for i, a in enumerate(cmd) if a == "-e"}
+
+    def test_a_spawn_carries_what_the_env_file_declares(self, monkeypatch):
+        """
+        Feature: a session spawned after a rotation is not born stale
+          Scenario: the daemon spawns while the env file names the new credential
+            Given a runner whose provider declares SLACK_BOT_TOKEN
+            When it spawns a session
+            Then the new-session argv exports that variable
+
+        Requirement: docs/specs/issue-410/requirements.md R4.1
+        """
+        fake = self._fake(monkeypatch)
+        runner = TmuxRunner(env_provider=lambda: {"SLACK_BOT_TOKEN": self.TOKEN})
+        assert runner.spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=ClaudeCodeAdapter(),
+            prompt="go",
+            cwd="/work",
+            session_id="uuid-1",
+        ).ok
+        cmd = next(c for c in fake.calls if c[1] == "new-session")
+        assert f"SLACK_BOT_TOKEN={self.TOKEN}" in self._exported(cmd)
+
+    def test_no_provider_spawns_the_argv_it_spawned_before(self, monkeypatch):
+        """R4.2 — a deployment that declares no env file gains no new behaviour."""
+        fake = self._fake(monkeypatch)
+        TmuxRunner().spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=ClaudeCodeAdapter(),
+            prompt="go",
+            cwd="/work",
+            session_id="uuid-1",
+        )
+        with_none = next(c for c in fake.calls if c[1] == "new-session")
+
+        fake = self._fake(monkeypatch)
+        TmuxRunner(env_provider=lambda: {}).spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=ClaudeCodeAdapter(),
+            prompt="go",
+            cwd="/work",
+            session_id="uuid-1",
+        )
+        assert next(c for c in fake.calls if c[1] == "new-session") == with_none
+
+    def test_an_env_file_cannot_redefine_the_loops_own_names(self, monkeypatch):
+        """R5.1 — the runner's identity is the one it was constructed with, and a
+        hand-written env file declaring THE_LOOP_INSTANCE does not get to move it.
+        the-loop's own names are appended last, so tmux's own last-wins applies."""
+        fake = self._fake(monkeypatch)
+        runner = TmuxRunner(
+            instance="laptop-b", env_provider=lambda: {"THE_LOOP_INSTANCE": "evil"}
+        )
+        runner.spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=ClaudeCodeAdapter(),
+            prompt="go",
+            cwd="/work",
+            session_id="uuid-1",
+        )
+        cmd = next(c for c in fake.calls if c[1] == "new-session")
+        pairs = [cmd[i + 1] for i, a in enumerate(cmd) if a == "-e"]
+        assert pairs[-3:].count("THE_LOOP_INSTANCE=laptop-b") == 1
+        assert pairs.index("THE_LOOP_INSTANCE=evil") < pairs.index(
+            "THE_LOOP_INSTANCE=laptop-b"
+        )
+
+    def test_a_tmux_too_old_for_e_exports_nothing_and_still_spawns(self, monkeypatch):
+        """R4.3 — tmux below 3.2 has no `new-session -e`; the spawn proceeds."""
+        fake = self._fake(monkeypatch, stdout_per_verb={"-V": "tmux 3.0a"})
+        runner = TmuxRunner(env_provider=lambda: {"SLACK_BOT_TOKEN": self.TOKEN})
+        assert runner.spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=ClaudeCodeAdapter(),
+            prompt="go",
+            cwd="/work",
+            session_id="uuid-1",
+        ).ok
+        cmd = next(c for c in fake.calls if c[1] == "new-session")
+        assert "-e" not in cmd
+
+    def test_a_provider_that_raises_never_fails_the_spawn(self, monkeypatch, caplog):
+        def boom():
+            raise RuntimeError("the env file is on fire")
+
+        fake = self._fake(monkeypatch)
+        with caplog.at_level(logging.WARNING):
+            assert (
+                TmuxRunner(env_provider=boom)
+                .spawn(
+                    work_item=WorkItemRef.parse(REF),
+                    adapter=ClaudeCodeAdapter(),
+                    prompt="go",
+                    cwd="/work",
+                    session_id="uuid-1",
+                )
+                .ok
+            )
+        assert any(c[1] == "new-session" for c in fake.calls)
+
+    def test_respawn_replaces_the_pane_resuming_in_the_recorded_cwd(self, monkeypatch):
+        """
+        Feature: relaunching a session in place
+          Scenario: an operator rolls a running session onto a new credential
+            Given a live loop-* session recorded against /work
+            When it is respawned
+            Then tmux is asked to respawn-pane -k in /work, resuming the
+                 conversation and carrying the declared environment
+
+        Requirement: R1.4, R4.1
+        """
+        fake = self._fake(
+            monkeypatch,
+            per_verb={"has-session": 0},
+            stdout_per_verb={"list-panes": "0\n"},
+        )
+        result = TmuxRunner(
+            env_provider=lambda: {"SLACK_BOT_TOKEN": self.TOKEN}
+        ).respawn_in(
+            "loop-github-octo-repo-15",
+            ClaudeCodeAdapter(),
+            "relaunched",
+            cwd="/work",
+            session_id="uuid-1",
+            work_item=REF,
+        )
+        assert result.ok, result.error
+        cmd = next(c for c in fake.calls if c[1] == "respawn-pane")
+        assert "-k" in cmd
+        assert cmd[cmd.index("-t") + 1] == "loop-github-octo-repo-15"
+        # Explicitly: a respawned pane otherwise starts wherever the agent last cd-ed.
+        assert cmd[cmd.index("-c") + 1] == "/work"
+        assert f"SLACK_BOT_TOKEN={self.TOKEN}" in self._exported(cmd)
+        assert cmd[cmd.index("--") + 1 :] == [
+            "claude",
+            "--resume",
+            "uuid-1",
+            "relaunched",
+        ]
+
+    def test_respawn_refuses_a_target_the_runner_could_not_have_minted(
+        self, monkeypatch
+    ):
+        """A respawn kills a running process, so the name must be a `loop-<slug>` —
+        the same provenance rule that governs which pids the-loop will signal."""
+        fake = self._fake(monkeypatch)
+        result = TmuxRunner().respawn_in(
+            "someone-elses-session",
+            ClaudeCodeAdapter(),
+            "hi",
+            cwd="/work",
+            session_id="uuid-1",
+        )
+        assert not result.ok
+        assert "unrecognised target" in result.error
+        assert not fake.calls
+
+    def test_respawn_will_not_start_a_session_that_is_not_running(self, monkeypatch):
+        """R1.6 — `restart` refreshes what is running; `start` brings one up."""
+        fake = self._fake(monkeypatch, per_verb={"has-session": 1})
+        result = TmuxRunner().respawn_in(
+            "loop-github-octo-repo-15",
+            ClaudeCodeAdapter(),
+            "hi",
+            cwd="/work",
+            session_id="uuid-1",
+        )
+        assert not result.ok
+        assert result.session_missing
+        assert not any(c[1] == "respawn-pane" for c in fake.calls)
+
+    def test_respawn_reports_a_harness_that_cannot_resume(self, monkeypatch):
+        """R1.5 — a session whose harness has no interactive resume is left alone,
+        never replaced with a blank conversation."""
+        self._fake(
+            monkeypatch,
+            per_verb={"has-session": 0},
+            stdout_per_verb={"list-panes": "0\n"},
+        )
+        result = TmuxRunner().respawn_in(
+            "loop-github-octo-repo-15",
+            CursorAgentAdapter(),
+            "hi",
+            cwd="/work",
+            session_id="uuid-1",
+        )
+        assert not result.ok
+        assert "resume" in result.error
+
+    def test_a_declared_name_is_exported_even_when_its_value_is_blank(
+        self, monkeypatch
+    ):
+        """`NAME=` in an env file is an operator **blanking** a credential. Skipping
+        it would leave the pane inheriting the very value they just retired — and
+        every later verification would report that session stale, forever."""
+        fake = self._fake(monkeypatch)
+        TmuxRunner(env_provider=lambda: {"SLACK_BOT_TOKEN": ""}).spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=ClaudeCodeAdapter(),
+            prompt="go",
+            cwd="/work",
+            session_id="uuid-1",
+        )
+        cmd = next(c for c in fake.calls if c[1] == "new-session")
+        assert "SLACK_BOT_TOKEN=" in self._exported(cmd)
+
+    def test_the_loops_own_names_are_still_dropped_when_empty(self, monkeypatch):
+        """An unnamed instance and a session with no work item export nothing —
+        unchanged, and the reason `_env_flags` cannot simply drop every blank."""
+        fake = self._fake(monkeypatch)
+        TmuxRunner(env_provider=lambda: {"SLACK_BOT_TOKEN": self.TOKEN}).spawn_in(
+            "loop-standing-supervisor",
+            ClaudeCodeAdapter(),
+            "go",
+            cwd="/work",
+            session_id="uuid-1",
+        )
+        cmd = next(c for c in fake.calls if c[1] == "new-session")
+        exported = self._exported(cmd)
+        assert f"SLACK_BOT_TOKEN={self.TOKEN}" in exported
+        assert not any(e.startswith("THE_LOOP_INSTANCE=") for e in exported)
+        assert not any(e.startswith("THE_LOOP_WORK_ITEM=") for e in exported)
+
+    def test_the_whole_fleet_is_read_in_one_tmux_call(self, monkeypatch):
+        """`status` calls the drift read on every invocation and is used as a
+        keepalive primitive, so it must not cost a subprocess per session."""
+        fake = self._fake(
+            monkeypatch,
+            per_verb={"list-panes": 0},
+            stdout_per_verb={
+                "list-panes": (
+                    "loop-github-octo-repo-15 4830 0\n"
+                    "loop-github-octo-repo-16 4841 0\n"
+                    "loop-github-octo-repo-17 4852 1\n"  # dead pane: already exited
+                    "the-loop-hub 4860 0\n"
+                )
+            },
+        )
+        found = TmuxRunner().live_pane_pids_by_session()
+        assert found == {
+            "loop-github-octo-repo-15": [4830],
+            "loop-github-octo-repo-16": [4841],
+            "the-loop-hub": [4860],
+        }
+        assert len([c for c in fake.calls if c[1] == "list-panes"]) == 1
+
+    def test_an_unreadable_fleet_is_empty_never_an_exception(self, monkeypatch):
+        self._fake(monkeypatch, per_verb={"list-panes": 1})
+        assert TmuxRunner().live_pane_pids_by_session() == {}

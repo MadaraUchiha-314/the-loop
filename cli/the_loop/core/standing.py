@@ -22,7 +22,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .. import eventlog
+from .. import envstate, eventlog
 from ..harness import build_adapters
 from ..harness.base import HarnessAdapter, TrustResult, UnsupportedRunnerError
 from ..harness_plugins import PluginConfig
@@ -120,6 +120,9 @@ def _runner(config: Optional[dict]) -> TmuxRunner:
         remain_on_exit=_tmux_config(config).remain_on_exit,
         # A standing session on a named instance knows its instance too (issue-322).
         instance=instance_config(config).name,
+        # …and the environment its `env.file` declares *now* (issue-410), rather
+        # than whatever the tmux server captured when it started.
+        env_provider=lambda: envstate.spawn_environment(lambda: config or {}),
     )
 
 

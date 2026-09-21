@@ -211,6 +211,13 @@ class StatusCommand(Command):
                 beat = PollHeartbeat.read(layout_from_config(config).poll_status)
                 for line in poller_daemon.heartbeat_lines(beat, row["running"]):
                     print(f"            {line}")
+        drift = lifecycle.environment_line(report)
+        if drift:
+            # One line, and only when there is drift (issue-410, R3.2). It names
+            # the fixing command because the operator reading it has just been
+            # told something is wrong and should not have to go and look up what
+            # to do about it.
+            print(f"{'sessions':<11} {drift}")
         standing = report.get("standingSessions") or []
         if standing:
             print("standing sessions:")

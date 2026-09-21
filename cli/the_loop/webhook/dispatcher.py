@@ -21,7 +21,7 @@ from pathlib import Path
 from string import Template
 from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple
 
-from .. import eventlog
+from .. import envstate, eventlog
 from ..announce import AnnounceConfig, SessionAnnouncer
 from ..instance import (
     REFUSALS as SCOPE_REFUSALS,
@@ -744,6 +744,13 @@ class Dispatcher:
             else TmuxRunner(
                 remain_on_exit=self.config.tmux.remain_on_exit,
                 instance=self.config.instance.name,
+                # Re-read per spawn (issue-410): a pane otherwise inherits the
+                # tmux *server's* environment, captured when that server started
+                # and never refreshed — so a session spawned an hour after a
+                # credential rotation was still born on the retired value.
+                env_provider=lambda: envstate.spawn_environment(
+                    lambda: self.cli_config
+                ),
             )
         )
         # An injected runner (tests / embedding) still learns the instance's name:
