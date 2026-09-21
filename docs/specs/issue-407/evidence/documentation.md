@@ -21,6 +21,7 @@ workItem: "github:MadaraUchiha-314/the-loop#407"
 | `pyproject.toml` | `[tool.uv] required-version` with the reason (the uv that writes the committed lockfile decides its text); `scripts` added to pyright's `cli/tests` extra paths, with the reason |
 | `scripts/check_version_lockstep.py` | module docstring: why `uv.lock` is checked here and cannot be a `version_files` entry; `check_uv_lock`'s own docstring |
 | `cli/tests/test_version_lockstep.py` | module docstring: the two drifts the one script now covers |
+| `.gitignore` | `cli/.the-loop/` — the state the pytest hook leaves behind when it runs from `cli/`, with why the existing patterns cannot reach it (each contains a `/`, so it is anchored to the repository root) |
 
 No user-facing document changes: nothing in the CLI's behaviour, configuration or
 commands moves. The spec chain under `docs/specs/issue-407/` is the record.
