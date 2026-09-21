@@ -70,7 +70,7 @@ flowchart TD
 - **The bump commit.** `.github/workflows/release.yml`'s `Bump version (commitizen)`
   step is the only thing between the merge and the push, and commitizen's contract is
   `version_files` — a per-line pattern replace. The one entry that could cover the
-  lockfile, `uv.lock:^version = `, matches every package in it, so the guard in
+  lockfile, `uv.lock:^version =`, matches every package in it, so the guard in
   `scripts/check_version_lockstep.py` (*every* matching line must carry the version)
   would reject it, correctly. The lockfile needs a **re-lock**, not a rewrite, and the
   job never runs one.
