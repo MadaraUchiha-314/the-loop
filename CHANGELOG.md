@@ -1,3 +1,9 @@
+## v19.9.1 (2026-09-21)
+
+### Fix
+
+- **issue-405**: the typed selection grammar reads the phases only, and the close path waits for the session's endgame (#406)
+
 ## v19.9.0 (2026-09-21)
 
 ### Feat
