@@ -1,3 +1,9 @@
+## v19.12.1 (2026-09-21)
+
+### Fix
+
+- **issue-419**: one Verbose switch over the whole trace, defaulting to quiet (#420)
+
 ## v19.12.0 (2026-09-21)
 
 ### Feat
