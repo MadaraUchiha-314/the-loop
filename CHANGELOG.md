@@ -1,3 +1,9 @@
+## v19.9.0 (2026-09-21)
+
+### Feat
+
+- **issue-398**: the Ensō logo — chosen, in ten colourways, and adopted across README, docs site, PyPI, dashboard and Slack (#403)
+
 ## v19.8.3 (2026-09-20)
 
 ### Fix
