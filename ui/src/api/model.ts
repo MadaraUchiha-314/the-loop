@@ -333,6 +333,74 @@ export function transcriptThread(entries: TranscriptEntry[]): ThreadRow[] {
   return rows;
 }
 
+/**
+ * Whether a projected stream row carries something a human reads (issue-419).
+ *
+ * The trace's **Verbose** switch filters on this: with it off the panel keeps
+ * the conversation — prose, thinking, human replies, a `summary` line that says
+ * what was compacted, a drifted line worth reporting — and drops the rest.
+ *
+ * It is a question about the **row**, not about the entry, for one reason: only
+ * after the projection is it known that a turn's whole content was tool calls.
+ * Such a turn has nothing left once the tool groups are hidden, and would
+ * otherwise render as a bare `the-loop` header over an empty body.
+ */
+export function isReadable(candidate: ThreadRow): boolean {
+  // A line the server could not parse is a finding about the harness.
+  if (candidate.kind === "malformed") return true;
+  // Raw tool output — the same class as the `Used n tools` groups.
+  if (candidate.kind === "tool result") return false;
+  return candidate.text.trim() !== "" || candidate.thinking.trim() !== "";
+}
+
+/**
+ * Event families that are the loop talking to itself: a delivery's route from
+ * GitHub to a pane, the poller's cycles, the bus's fan-out, an emoji ack, the
+ * dashboard's own SSE, the daemon's lifecycle, checkouts made and removed.
+ *
+ * Classification stops at the family on purpose. A member-level list over the
+ * 166 types in `EVENT_TYPES` would rot faster than it would help, and every
+ * offender the issue reported is a whole family. What is NOT here renders:
+ * `graph.*` (where the loop stands), `session.*` (including the agent's
+ * question), `channel.*`, `standing.*`, `work_item.*`, `diagnosis.*` — and any
+ * family nobody has classified, which is the direction this list fails in.
+ */
+const BOOKKEEPING_FAMILIES = new Set([
+  "webhook",
+  "routing",
+  "dispatch",
+  "poll",
+  "bus",
+  "reaction",
+  "control",
+  "stream",
+  "api",
+  "mcp",
+  "config",
+  "service",
+  "server",
+  "poller",
+  "restart",
+  "ingress",
+  "workspace",
+  "cleanup",
+]);
+
+/**
+ * Whether an event is plumbing rather than something addressed to a person
+ * (issue-419) — the trail's half of the **Verbose** filter.
+ *
+ * An `error` is never plumbing, whatever it is named: turning the noise down
+ * must never turn a failure off. A `warning` in a hidden family IS hidden —
+ * `dispatch.dropped` is a warning and is exactly what the issue reported.
+ */
+export function isBookkeeping(event: EventRecord): boolean {
+  if (event.level === "error") return false;
+  // An unnamed event yields "", which is in no set — it renders, like every
+  // other family nobody classified.
+  return BOOKKEEPING_FAMILIES.has(event.event?.split(".")[0] ?? "");
+}
+
 /** How a node mark is drawn on a rail. */
 export type NodeVisualState = "done" | "current" | "pending" | "skipped" | "blocked";
 
