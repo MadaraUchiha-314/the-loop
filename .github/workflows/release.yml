@@ -45,9 +45,14 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       # Same uv setup as CI (.github/workflows/ci.yml) — RULE: no local-vs-CI drift.
+      # The uv version is pinned because this job REWRITES `uv.lock` (below): an
+      # unpinned runner would re-resolve the same dependency set into different text
+      # whenever a new uv ships, folding unrelated churn into the bump commit. The pin
+      # sits inside the window `pyproject.toml`'s `required-version` enforces locally.
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
+          version: "0.12.17"
           python-version: "3.11"
 
       - name: Configure git identity
@@ -95,6 +100,28 @@ jobs:
             echo "::error::cz bump failed (exit ${code})"
             exit "$code"
           fi
+
+      # `cz bump` rewrites `.cz.toml` and every `version_files` target, but it knows
+      # nothing about `uv.lock` — which carries the workspace member's version too
+      # (`the-loopy-one`, an editable member of this workspace). Left alone, the bump
+      # commit lands on main with a lockfile one version behind the package it locks,
+      # and the next `uv lock` on any machine produces a dirty tree nobody asked for
+      # (issue-407). Re-lock and fold the result INTO the bump commit rather than
+      # adding a second commit, so main never holds a revision where the two disagree.
+      # Amending moves the commit, so the tag `cz bump` just created has to move with
+      # it — free here, because the tag is still local until the push step below.
+      - name: Fold the refreshed uv.lock into the bump commit
+        if: steps.bump.outputs.released == 'true'
+        run: |
+          uv lock
+          if git diff --quiet -- uv.lock; then
+            echo "uv.lock already carries ${{ steps.bump.outputs.version }} — nothing to fold in."
+            exit 0
+          fi
+          git add uv.lock
+          git commit --amend --no-edit
+          git tag -f "v${{ steps.bump.outputs.version }}"
+          echo "Folded uv.lock into $(git rev-parse --short HEAD); tag v${{ steps.bump.outputs.version }} moved with it."
 
       # Push the bump commit and its tag together. NOTE: `git push --follow-tags` only
       # pushes *annotated* tags, but commitizen creates a *lightweight* tag — so the tag

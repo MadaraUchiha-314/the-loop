@@ -3,6 +3,16 @@
 # dogfoods uv here rather than raw pip. This root is a *virtual* workspace root (not a
 # published package); it aggregates the `cli` member and the repo-level dev tooling.
 # Reproducibility (RULE: no local-vs-CI drift) comes from the committed `uv.lock`.
+
+# One resolver for everyone. `uv.lock` is committed, so the uv that writes it decides
+# what the file looks like: an older uv re-resolves the same dependency set into
+# *different* text (markers move around), which lands as a spurious dirty lockfile on
+# the next `uv lock` and hides the real drift (issue-407). Requiring a version window
+# makes uv itself refuse to run outside it, with a message that says what to do, and
+# `.github/workflows/*` pin the exact uv inside that window. RULE: no local-vs-CI drift.
+[tool.uv]
+required-version = ">=0.12,<0.13"
+
 [tool.uv.workspace]
 members = ["cli"]
 
@@ -23,6 +33,8 @@ dev = [
 ]
 
 # Test modules import shared doubles from their sibling conftest.py (pytest puts
-# the tests directory on sys.path); tell pyright the same thing.
+# the tests directory on sys.path); tell pyright the same thing. `scripts/` is there
+# for the same reason: test_version_lockstep.py imports the repo-level guard it covers
+# after putting that directory on sys.path itself.
 [tool.pyright]
-executionEnvironments = [{ root = "cli/tests", extraPaths = ["cli/tests"] }]
+executionEnvironments = [{ root = "cli/tests", extraPaths = ["cli/tests", "scripts"] }]

@@ -22,7 +22,10 @@ jobs:
           # could not run is worse than no gate — it is this repository's whole
           # defect, in the enforcement code for that defect.
           fetch-depth: 0
+      # Pinned to the same uv as ci.yml / release.yml — RULE: no local-vs-CI drift.
       - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.17"
       - name: Install
         run: uv sync
       - name: Validate the shipped process graph
