@@ -226,8 +226,17 @@ suite from the root and committed the result.
 Not fixed here, because it is a different defect from the two this ticket names and fixing
 it would widen the PR past its acceptance criteria — the same call
 [#410](https://github.com/MadaraUchiha-314/the-loop/issues/410) made when it split this
-ticket out. Filed separately; recorded here so the split is on the record rather than in
-someone's memory. **The Makefile change in this PR removes the way a contributor most
+ticket out. Filed as
+[#422](https://github.com/MadaraUchiha-314/the-loop/issues/422); recorded here so the split
+is on the record rather than in someone's memory.
+
+Two bisection passes narrowed it without naming the test, and the negative results are the
+useful part: `pytest --collect-only` from the root leaves the tree **clean**, and a plugin
+baselining at `pytest_sessionstart` and re-checking at every one of 4493 tests' setup *and*
+teardown reported **nothing** while the file was demonstrably rewritten during that run.
+That places the write after the last teardown — at session or interpreter shutdown (an
+`atexit` handler, or a non-daemon worker joined on the way out) — which is where #422 says
+to start. **The Makefile change in this PR removes the way a contributor most
 easily hits it**: `make test` no longer runs the suite from the repository root.
 
 The file was restored (`git checkout`) and is **not** part of this PR's diff.
