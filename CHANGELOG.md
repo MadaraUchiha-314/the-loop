@@ -1,3 +1,9 @@
+## v19.12.3 (2026-09-22)
+
+### Fix
+
+- **issue-409**: an event no channel took is queued, retried and counted (#423)
+
 ## v19.12.2 (2026-09-22)
 
 ### Fix
