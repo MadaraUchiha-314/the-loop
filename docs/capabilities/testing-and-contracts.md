@@ -106,6 +106,35 @@ every API is authored contract-first with docs generated from the contract).
   early fails on **every** run instead of about one in three. It SHALL be inert unless
   asked for, and its patches SHALL unwind per test.
 
+### A test reads no ambient machine state, and `make` runs what CI runs (issue-412)
+
+- WHEN a test exercises code that resolves a path relative to the **working directory** or
+  the **home directory** THEN it SHALL pin that resolution, and SHALL NOT let the answer
+  depend on where pytest was started or on what the machine running it happens to have on
+  disk. A test that passes from one directory and fails from another is not testing the
+  behaviour it names.
+- the-loop's CLI config is the standing instance of that shape: `default_cli_config_path()`
+  falls through `--config` → `$THE_LOOP_CLI_CONFIG` → `./.the-loop/cli-config.yaml` →
+  `~/.the-loop/cli-config.yaml`, and the last two branches read ambient state. A test
+  touching it SHALL either **pin** the lookup (set `$THE_LOOP_CLI_CONFIG` to a path under
+  its own `tmp_path`, leaving the real resolution to run and answer "no config"
+  identically everywhere) or **control** it (`chdir` into a `tmp_path` and write the
+  `./.the-loop/cli-config.yaml` it means to read).
+- A cwd-relative lookup is NOT ambient in itself, and SHALL NOT be pinned wholesale: the
+  config path's parent anchors the **state root**, so a suite-wide pin moves that root out
+  from under every test that legitimately controls the cwd branch. Fix the tests that
+  neither pin nor control the lookup; leave the ones that do.
+- RULE: a green CI is not evidence that the suite is hermetic — it is one row of the
+  table. A suite is hermetic when it passes from any working directory, with and without
+  the operator's own config present.
+- WHEN the `Makefile` claims CI parity THEN each target SHALL run the command the
+  corresponding pre-commit hook runs, **working directory included**, or its comment SHALL
+  say where and why it differs. `make test` therefore runs `cd cli && uv run python -m
+  pytest -q`, byte-for-byte the `pytest` hook's entry: running the same tests from the repo
+  root is a different command wherever the-loop resolves anything cwd-relative, and a
+  parity that is claimed but not kept sends the first contributor who hits it looking for a
+  bug in their own diff.
+
 ### Scenario docstrings and contract-first APIs
 
 - Every integration test SHALL carry a Gherkin-syntax docstring
@@ -131,6 +160,7 @@ every API is authored contract-first with docs generated from the contract).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-412 | A test pins or controls what it resolves, and never reads the machine it runs on (2026-09-21): four `test_instance.py` argv assertions stopped passing or failing on the working directory and on whether the developer has `~/.the-loop/cli-config.yaml` — pinned in the module that had the defect, not suite-wide, because the config path anchors the state root and a wholesale pin breaks the tests that legitimately control the cwd branch; and `make test` became byte-for-byte the pre-commit `pytest` hook, `cd cli` included, so the Makefile's CI-parity rule is true | [spec](../specs/issue-412/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/412) |
 | issue-365 | The e2e conformance keys followed the artifact (2026-09-14): `executionLogSections` and `executionLogEntries` became one `evidenceSections` map of file → sections, and the walk is asserted by the node trace alone rather than by checkpoints a hook wrote into a log | [spec](../specs/issue-365/), [decision-126](../decisions/decision-126.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/365) |
 | issue-251 | Waiting became a rule rather than a habit (2026-08-16): an asynchronous test waits on the state its next line depends on, not on the attempt that precedes it, and a fixed sleep before a positive assertion is a defect — with `pytest --dispatch-lag=<seconds>` shipped so the shape is found by running the suite rather than by reading it | [spec](../specs/issue-251/), [decision-091](../decisions/decision-091.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/251) |
 | issue-217 | The process itself became integration-tested (2026-08-12): a scenario-driven e2e suite drives one work item per scenario through the shipped outer loop against a fixture-playback agent, asserting process conformance (node trace with skips distinct from passes, label trail, locks before implementation, ordered event subsequence, execution-log sections) — seven scenarios covering the happy path with the inner-loop seam, trivial-tier declared skips, ask/reply with the fail-closed dead-pane refusal, gate rejection, review rejection looping back, GitHub-outage degradation, and loop prevention; new scenarios are fixture sets kept in lockstep with named tests by a consistency test | [spec](../specs/issue-217/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/217) |
