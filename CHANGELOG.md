@@ -1,3 +1,9 @@
+## v19.12.2 (2026-09-22)
+
+### Fix
+
+- **issue-412**: the spawn-argv tests stop reading the machine they run on, and `make test` runs CI's command (#421)
+
 ## v19.12.1 (2026-09-21)
 
 ### Fix
