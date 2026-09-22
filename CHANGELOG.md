@@ -1,3 +1,9 @@
+## v19.12.4 (2026-09-22)
+
+### Fix
+
+- **issue-422**: the suite stops writing into the checked-in `.the-loop/` (#424)
+
 ## v19.12.3 (2026-09-22)
 
 ### Fix
