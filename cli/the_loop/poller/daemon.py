@@ -493,6 +493,16 @@ def _run_locked(
         cli_config.load_cli_config(_config_path()), stop_event
     )
 
+    # The outbox (issue-409, opt-in with channels): the events no channel
+    # accepted, re-posted until one does. Either daemon may be the only one a
+    # deployment runs, so both drain; a cycle claims its entries under the
+    # file's lock, so two drainers never post the same one twice.
+    from ..channels import outbox as channels_outbox
+
+    channels_outbox.start_drainer(
+        cli_config.load_cli_config(_config_path()), stop_event
+    )
+
     if install_signal_handlers:
 
         def _shutdown(signum, _frame):

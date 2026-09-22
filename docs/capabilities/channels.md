@@ -50,6 +50,27 @@ flowchart LR
   post it to every enabled channel whose `subscribe` names its type and that is not its
   source. Every step SHALL be best-effort per channel: a failure is a `PostResult` and a
   `bus.record_failed` / `channel.post_failed` event, never an exception to the publisher.
+- **What no channel took is queued, not lost** (issue-409). WHEN at least one channel is
+  asked to post an event and **none** accepts it THEN the bus SHALL write the event to
+  `<state.root>/channels/undelivered.json` and emit `channel.undelivered` at `warning`.
+  An event a channel took, and one nobody was asked to take, are queued not at all. A
+  drain thread in the poller and in the webhook receiver re-posts the backlog every 60s,
+  oldest first, at most 20 entries a cycle and never before an entry's backoff has
+  elapsed (60s, doubling per attempt, capped at an hour); an entry any channel accepts is
+  removed with one `channel.delivered_late` line. The drain **only posts** — it never
+  records, so a replayed entry can never write a comment, open an issue or answer a gate
+  — and it posts to the channels the current config resolves. The file holds 200 entries;
+  past that the oldest goes with `channel.undelivered_dropped`. `the-loop status` prints
+  one line while it is non-empty (count, age of the oldest, last error) and nothing when
+  it is empty, and never moves its exit code; where neither daemon is running the line
+  says nothing is draining the backlog rather than promising a retry. Before this the fan-out's failure was a
+  `debug` line with `posted: 0` in whichever process published: a rotated token cost one
+  deployment 144 of 144 agent questions over three days while `status` stayed green.
+- **The asking session is told what reached whom** (issue-409). WHEN `the-loop ask`
+  publishes a question that no channel accepted THEN the verb SHALL say that nobody was
+  paged and that the question is queued, and its `session.awaiting_input` event SHALL
+  carry `channels_posted`. The exit code is unchanged: the **record on the ticket**
+  decides it, so a channel outage never fails an ask.
 - **The ledger.** `channels.ledger` names the channel of record — `github`, the only value
   shipped; an unknown value is refused at load. A record is a comment carrying a
   machine-readable **envelope** (`<!-- the-loop:event {…} -->`: type, source, the actor's
@@ -876,6 +897,7 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-409 | **An event no channel took is queued, retried and counted** (2026-09-22): `publish` writes what every channel refused to `<root>/channels/undelivered.json` and warns (`channel.undelivered`), a drain thread in both daemons re-posts it oldest-first on a 60s cycle with a per-entry backoff and a per-cycle budget until a channel takes it (`channel.delivered_late`), and `the-loop status` names the backlog until it is empty. The drain posts and never records, so a replay cannot comment, open an issue or answer a gate. `the-loop ask` now says plainly when nobody was paged and carries `channels_posted` on its event. Before this the failure lived in one `debug` line in the publishing checkout's own event log — the report lost 144 of 144 asks to a rotated token over three days with every surface green | [spec](../specs/issue-409/), [state](../cli/state.md#undelivered-channel-events---rootchannelsundeliveredjson), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/409) |
 | issue-416 | **A message's files reach the session** (2026-09-21): `InboundReply.files` from every Slack read; the pipeline fetches them after the last refusal (bot token, Slack's host only, ten files, 25 MiB, redirects re-checked) into `<state.root>/local/attachments/<slug>/` and renders them twice — 📎 name/type/size/permalink and Slack's quoted transcript on the ticket, kind/path/link under an UNTRUSTED frame in the pane — so a file-only message is delivered; a voice note is Slack's own transcript (captions stripped, `files.info` re-read while processing); the snapshot and a kickoff's body name files as links; the manifest gains `files:read` and the probe measures it. No speech-to-text, OCR or model call on a file | [spec](../specs/issue-416/), [decision-135](../decisions/decision-135.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/416) |
 | issue-405 | **The typed `execute without` clause reads the phases and nothing else** (2026-09-21, P1 of the 2026-09-20 run-3 e2e run): a connector's signature is dropped wherever it sits, Slack markup and invisible format characters around a name are stripped, a word that is still not a name refuses the reply by its position, and the four refusal families carry their own drop reasons with `read` on the record and the grammar's input logged. Before this the clause read everything to the end of the line, so a same-line signature was refused as *"that name"* while the offer quoted the valid name back — 0 for 4 across two live runs | [spec](../specs/issue-405/), [report](../reports/e2e-slack-test-2026-09-20-run-3.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/405) |
 | issue-398 | The Slack app's icon is the-loop's mark: `docs/assets/the-loop-logo-1024.png`, uploaded by hand under *Basic Information → Display Information* (Slack's manifest format carries no icon) — the step is in the Slack guide | [spec](../specs/issue-398/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/398) |

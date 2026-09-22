@@ -378,6 +378,63 @@ def test_the_ledger_refuses_a_non_github_ref_and_a_standing_ref():
     assert posts == []
 
 
+# -- the outbox (issue-409, R1.1-R1.3) ------------------------------------------------
+
+
+def test_publish_queues_only_what_a_channel_was_asked_for_and_refused(
+    tmp_path, monkeypatch
+):
+    """The three guards, one call each: an event nobody took is queued; a
+    delivered one, an unsubscribed one and an injected channel list are not."""
+    from the_loop.channels import outbox
+
+    cfg = {"state": {"root": str(tmp_path / "state")}, "channels": {"slack": {}}}
+    ledger = FakeLedger()
+    resolved = []
+    monkeypatch.setattr(
+        "the_loop.channels.bus.load_channels",
+        lambda config, client_factory=None: list(resolved),
+    )
+
+    resolved[:] = [FakeChannel(subscribe=["session.awaiting_input"], fail=True)]
+    publish(an_event(), cfg, ledger=ledger)
+    assert len(outbox.entries(cfg)) == 1  # R1.1
+
+    resolved[:] = [FakeChannel(subscribe=["session.awaiting_input"])]
+    publish(an_event(), cfg, ledger=ledger)
+    assert len(outbox.entries(cfg)) == 1  # R1.2: a channel took it
+
+    resolved[:] = [FakeChannel(subscribe=["comment.human"])]
+    publish(an_event(), cfg, ledger=ledger)
+    assert len(outbox.entries(cfg)) == 1  # R1.3: nobody was even asked
+
+    publish(
+        an_event(),
+        cfg,
+        channels=[FakeChannel(subscribe=["session.awaiting_input"], fail=True)],
+        ledger=ledger,
+    )
+    assert len(outbox.entries(cfg)) == 1  # an injected list is the caller's
+
+
+def test_a_failing_outbox_never_changes_what_publish_returns(tmp_path, monkeypatch):
+    """R1.6 — the queue is best-effort like everything else on this path."""
+    from the_loop.channels import outbox
+
+    monkeypatch.setattr(
+        outbox, "remember", lambda *a: (_ for _ in ()).throw(OSError("read-only"))
+    )
+    monkeypatch.setattr(
+        "the_loop.channels.bus.load_channels",
+        lambda config, client_factory=None: [
+            FakeChannel(subscribe=["session.awaiting_input"], fail=True)
+        ],
+    )
+    cfg = {"state": {"root": str(tmp_path / "state")}, "channels": {"slack": {}}}
+    result = publish(an_event(), cfg, ledger=FakeLedger())
+    assert result.recorded and not result.delivered
+
+
 # -- ingress publishers (R6.1, A10) ----------------------------------------------------
 
 

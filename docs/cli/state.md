@@ -39,7 +39,9 @@ you say otherwise, never relative to whatever directory a command was run from
 │   └── poller.out                 # a daemonized poller's stdout/stderr
 ├── channels/
 │   ├── slack.json                 # channel conversations: thread bindings, per-work-item threads, read cursors, pending questions — never tracked
-│   └── slack.json.lock            # the writers' flock — empty, never tracked
+│   ├── slack.json.lock            # the writers' flock — empty, never tracked
+│   ├── undelivered.json           # events no channel accepted, waiting to be re-posted — never tracked
+│   └── undelivered.json.lock      # its writers' flock — empty, never tracked
 ├── gh-webhook.pid                 # the running receiver
 ├── poll.pid                       # the running poller — and its lock
 ├── slack-listener.pid             # the running Slack listener (hosted or foreground) — and its lock
@@ -211,6 +213,7 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 | `<root>/poll-status.json` | the poller, after every cycle | the heartbeat `the-loop status` reads: `startedAt`, `lastCycleAt`, last cycle's counters — and no pid, which is `poll.pid`'s to name | **local** |
 | `<root>/self-diagnosis.json` | self-diagnosis (issue-242, opt-in) | which failure fingerprints this machine already reported (with the issue URL), abandoned or is retrying, and when it last posted | **local** |
 | `<root>/channels/<channel>.json` | the channels reader/writer (issue-245, issue-312, opt-in) | per channel type, only what belongs to **no** work item: the per-channel kickoff cursor, the questions the-loop is waiting on, and a standing session's thread binding. A work item's own binding and read cursor moved to its records in issue-368 | **local** |
+| `<root>/channels/undelivered.json` | every process that publishes on the bus; drained by the daemons (issue-409) | one entry per event **no** channel accepted: the event, the work item, the record's URL, the channels asked and their errors, the attempts made. An entry lives until a drain delivers it | **local** |
 
 The same table is declared in code, in
 [`the_loop/state.py`](https://github.com/MadaraUchiha-314/the-loop/blob/main/cli/the_loop/state.py)
@@ -1023,6 +1026,36 @@ threads stop being read (an unbound thread is dropped as `unmapped`), and the ne
 for a work item opens a fresh thread instead of continuing the old one. Nothing is
 double-processed — the bindings are how replies are *found*, not how they are deduped
 against the ticket.
+
+## Undelivered channel events — `<root>/channels/undelivered.json`
+
+The posts the bus still owes its channels
+([issue-409](https://github.com/MadaraUchiha-314/the-loop/issues/409)). When `publish` asks
+at least one channel to take an event and every one of them refuses, the event is written
+here instead of being forgotten, and a `channel.undelivered` warning names it. Each entry
+holds the event (its type, work item, text, the record's URL, its detail, source and
+actor), the channels that were asked, the error each returned, how many attempts have been
+made and when the last one was — everything a later process needs to post it again.
+
+A drain thread in the poller and in the webhook receiver re-posts the backlog once a minute,
+oldest first, at most twenty entries a cycle and never before an entry's backoff has elapsed
+(one minute, doubling per attempt, capped at an hour). An entry any channel accepts is
+removed on the spot, with one `channel.delivered_late` line saying how long it waited. A
+drain **only posts** — it never writes to the ledger, so a replayed entry cannot comment,
+open an issue or answer a gate. The file holds at most two hundred entries; past that the
+oldest goes with a `channel.undelivered_dropped` warning.
+
+`the-loop status` prints one line while the file is non-empty — the count, the age of the
+oldest entry and the last error — and nothing at all when it is empty or absent. It never
+moves the exit code, which answers "is every enabled service running".
+
+Beside it sits `undelivered.json.lock`, the same empty `flock` file `slack.json` has, for
+the same reason: every publishing process appends here and both daemons drain.
+
+**If you delete `undelivered.json`:** the backlog is gone. Whatever was waiting is never
+posted to a channel — the ticket still carries it, which is where it was recorded first —
+and `status` goes quiet. That is the supported way to abandon a backlog you do not want
+redelivered.
 
 ## Wiping one work item — `sessions reset`
 

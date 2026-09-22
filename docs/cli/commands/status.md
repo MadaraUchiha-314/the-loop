@@ -103,6 +103,35 @@ sessions. A host that will not report a process's environment claims no drift ra
 guessing at it. `--format json` carries the whole comparison as `sessionEnvironment`, with
 a row per session (`verdict`, and the variable **names** that differ — never their values).
 
+## When channel deliveries are behind
+
+```console
+$ the-loop status
+channels    3 event(s) undelivered, oldest 2h ago (slack: channel_not_found) — retried every 60s
+```
+
+A **`channels`** line appears while the bus is holding events that **no** channel would
+take ([issue-409](https://github.com/MadaraUchiha-314/the-loop/issues/409)), and nothing at
+all when it is holding none. Each one is an event — an agent's question, a relayed reply, a
+phase notification — that was recorded on its work item and then refused by every
+subscribed channel: a rotated token, a renamed channel, a rate limit, a network blip. The
+poller and the webhook receiver re-post the backlog once a minute, oldest first, so the
+line normally clears itself; a line that stays is a channel that is still refusing, and its
+last error is in the line. The drain lives in those two daemons, so when neither is running
+the line says so instead of promising a retry that nothing will perform.
+
+This is the other half of the same incident the `sessions` line reports: the deployment
+that lost 144 consecutive agent questions was green on every surface for three days,
+because the failure was one `debug` line in each session's own event log. Now the failed
+delivery is a `channel.undelivered` warning and a count here.
+
+Like `conflict` and the environment line, it does **not** move the exit code: `ok` means
+every enabled *service* is running, and a backlog is an observation about channels.
+`--format json` carries the reading as `channelDelivery` (`pending`, `oldest`,
+`waitedSeconds`, `lastError`, `channels`). The queue itself is
+[`<root>/channels/undelivered.json`](/cli/state#undelivered-channel-events---rootchannelsundeliveredjson);
+deleting it abandons the backlog, which is the supported way to say "do not send these".
+
 ## When inbound is being split
 
 ```console
