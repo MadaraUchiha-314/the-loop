@@ -6,7 +6,7 @@ The guard is `conftest._audit_state_writes`, an audit hook, and
 `_no_protected_state_writes`, which fails the test that tripped it. These tests
 point the guard at a directory under `tmp_path` and check what it records.
 
-Spec: docs/specs/issue-422/bugfix.md · Testing plan row T6.
+Spec: docs/specs/issue-422/bugfix.md · Testing plan row T4.
 """
 
 import os

@@ -155,8 +155,9 @@ writer.
 
 ## What it costs
 
-- One Python call per audited event for the whole suite. Wall-clock over the full suite
-  was 200.4s with the hook and 200.4s without (§ T7 of the evidence).
+- One Python call per audited event for the whole suite. Measured from `cli/`, back to
+  back on one machine: 185.05s without the hook, 180.81s with it. That is within
+  run-to-run noise (§ T7 of the evidence).
 - A test that writes into a protected tree now fails with a message naming
   `tmp_path` as the fix. That is the intent.
 - `.gitignore`'s `cli/.the-loop/` entry now describes residue the suite no longer leaves.

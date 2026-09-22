@@ -63,10 +63,10 @@ tree. Without that control, a green guard could equally mean a guard that sees n
 
 ## Activities
 
-- [ ] T3 — negative control on the unfixed tree
-- [ ] T1 — full suite from the root, then both trees' status
-- [ ] T2 — full suite from `cli/`, then both trees' status
-- [ ] T4, T5 — targeted modules
-- [ ] T6 — `make lint format-check typecheck`
-- [ ] T7 — timing with and without the hook
-- [ ] T15 — tracer run, recorded
+- [x] T3 — negative control on the unfixed tree
+- [x] T1 — full suite from the root, then both trees' status
+- [x] T2 — full suite from `cli/`, then both trees' status
+- [x] T4, T5 — targeted modules
+- [x] T6 — `make lint format-check typecheck`
+- [x] T7 — timing with and without the hook
+- [x] T15 — tracer run, recorded
