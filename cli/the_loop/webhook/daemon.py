@@ -403,10 +403,12 @@ def build_receiver(options: ReceiverOptions):
         verifying_signatures=bool(secret),
     )
 
-    # Background watchers, both opt-in and bounded by this receiver's
-    # lifetime: self-diagnosis (issue-242) scanning the event log, and the
+    # Background watchers, all opt-in and bounded by this receiver's
+    # lifetime: self-diagnosis (issue-242) scanning the event log, the
     # channels reader (issue-245) fetching Slack thread replies when
-    # channels.slack has read.mode: poll.
+    # channels.slack has read.mode: poll, and the outbox drainer (issue-409)
+    # re-posting the events no channel accepted.
+    from ..channels import outbox as channels_outbox
     from ..channels import watcher as channels_watcher
     from ..core import selfdiagnosis
 
@@ -415,6 +417,9 @@ def build_receiver(options: ReceiverOptions):
         cli_config.load_cli_config(_config_path()), watchers_stop
     )
     channels_watcher.start_watcher(
+        cli_config.load_cli_config(_config_path()), watchers_stop
+    )
+    channels_outbox.start_drainer(
         cli_config.load_cli_config(_config_path()), watchers_stop
     )
 

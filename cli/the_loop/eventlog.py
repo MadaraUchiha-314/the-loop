@@ -339,7 +339,9 @@ EVENT_TYPES: Dict[str, str] = {
     "session.awaiting_input": (
         "A session asked a human a question through `the-loop ask` and is now "
         "waiting for the answer (work_item, question, actor, comment_url, "
-        "comment_posted: whether the question reached the ticket) — issue-208. "
+        "comment_posted: whether the question reached the ticket, "
+        "channels_posted: how many channels took it — 0 means nobody was paged "
+        "and the outbox holds it, issue-409) — issue-208. "
         "The verb stamps the loop-prevention marker centrally, so the wait is "
         "recorded even when the agent forgot nothing. Closed by the next "
         "session.reply_sent; an answer given on the ticket instead is forwarded "
@@ -362,6 +364,24 @@ EVENT_TYPES: Dict[str, str] = {
         "A channel post failed (channel, work_item, event_type, error) — "
         "best-effort by contract: the ask's outcome is unaffected and the "
         "work item remains the record."
+    ),
+    "channel.undelivered": (
+        "The bus asked at least one channel to take an event and NONE accepted "
+        "it, so the event was queued for redelivery (event_type, work_item, "
+        "channels: the ones asked, error: the first refusal, pending: how many "
+        "entries the outbox now holds) — issue-409. Warning level: before this "
+        "the fact lived only in a debug `bus.published` line with `posted: 0`, "
+        "which is how three days of agent questions went missing. Ids and counts "
+        "only; the message text is in the outbox, never in the log."
+    ),
+    "channel.delivered_late": (
+        "A queued event was accepted by a channel on a later attempt and left the "
+        "outbox (event_type, work_item, attempts, waited_seconds) — issue-409."
+    ),
+    "channel.undelivered_dropped": (
+        "The outbox was full and its OLDEST entry was dropped to make room "
+        "(work_item, event_type, queued_at, cap) — issue-409. The event is gone "
+        "from the queue; the work item still carries whatever the ledger recorded."
     ),
     "channel.reply_received": (
         "An authorized reply arrived through a channel and entered the "

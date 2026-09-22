@@ -220,6 +220,12 @@ class StatusCommand(Command):
                 # second.
                 for line in lifecycle.split_lines(report):
                     print(f"            {line}")
+        undelivered = lifecycle.undelivered_line(report)
+        if undelivered:
+            # One line, and only when something is queued (issue-409, R3.1). The
+            # operator learns that deliveries are behind from the command they
+            # already type, instead of from a ticket three days later.
+            print(f"{'channels':<11} {undelivered}")
         drift = lifecycle.environment_line(report)
         if drift:
             # One line, and only when there is drift (issue-410, R3.2). It names

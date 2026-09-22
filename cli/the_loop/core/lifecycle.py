@@ -576,6 +576,12 @@ def status_all(
         # command the operator already types, instead of from a member who never
         # got a reply.
         "slackSplit": _slack_split(config),
+        # What the bus could not deliver (issue-409). Never moves `ok` either: a
+        # backlog of undelivered events is a statement about channels, not about
+        # whether the enabled services are running. It is reported because the
+        # alternative — a `debug` line in whichever checkout published — is how a
+        # deployment lost three days of agent questions while `status` stayed green.
+        "channelDelivery": _channel_delivery(config),
         # Which instance this is and what it manages (issue-322) — the same
         # document `GET /api/v1/instance` serves.
         "instance": core_instance.describe_instance(config),
@@ -613,6 +619,22 @@ def _session_environment(config: Optional[dict]) -> Dict[str, Any]:
             "unverified": 0,
             "sessions": [],
         }
+
+
+def _channel_delivery(config: Optional[dict]) -> Dict[str, Any]:
+    """The outbox's backlog, made safe for `status` to call (issue-409, R3.4).
+
+    An empty summary for a deployment that has never queued anything — which
+    every renderer prints as nothing — and the same for an outbox that cannot be
+    read: `status` answers its own question either way.
+    """
+    from ..channels import outbox
+
+    try:
+        return outbox.summary(config)
+    except Exception:  # noqa: BLE001 — never fails the status it decorates
+        logger.debug("could not read the undelivered outbox", exc_info=True)
+        return {"pending": 0, "oldest": "", "waitedSeconds": 0, "lastError": ""}
 
 
 def _slack_split(config: Optional[dict]) -> Dict[str, Any]:
@@ -666,6 +688,52 @@ def environment_line(doc: Mapping[str, Any]) -> str:
         f"{stale} of {int(env.get('running') or 0)} running with a stale "
         "environment — `the-loop sessions restart --all`"
     )
+
+
+def undelivered_line(doc: Mapping[str, Any]) -> str:
+    """The one line a channel backlog earns in `status`; ``""`` when there is none.
+
+    Read from the document rather than the file, so the text renderer and the
+    JSON one are looking at the same reading — `split_lines`'s rule. One line
+    and only when something is queued (R3.2): a deployment that has delivered
+    everything gains nothing to read past.
+    """
+    delivery = (doc.get("channelDelivery") or {}) if isinstance(doc, Mapping) else {}
+    pending = int(delivery.get("pending") or 0)
+    if not pending:
+        return ""
+    from ..channels.outbox import DRAIN_INTERVAL_SECONDS
+
+    waited = _humanize_seconds(int(delivery.get("waitedSeconds") or 0))
+    error = str(delivery.get("lastError") or "").strip()
+    # The drain lives in the two ingress daemons, so a deployment running neither
+    # is holding a backlog nothing will ever clear. Say which of the two it is:
+    # "retried every 60s" would be a promise the report itself can see is false.
+    draining = any(
+        row.get("running")
+        for row in (doc.get("services") or [])
+        if isinstance(row, Mapping) and row.get("service") in ("poller", "gh-webhook")
+    )
+    return (
+        f"{pending} event(s) undelivered, oldest {waited} ago"
+        + (f" ({error})" if error else "")
+        + (
+            f" — retried every {DRAIN_INTERVAL_SECONDS}s"
+            if draining
+            else " — nothing is draining them: start the poller or the webhook receiver"
+        )
+    )
+
+
+def _humanize_seconds(seconds: int) -> str:
+    """`90` as `1m`, `7200` as `2h` — the age of the oldest queued event."""
+    if seconds < 60:
+        return f"{max(0, seconds)}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    if seconds < 86400:
+        return f"{seconds // 3600}h"
+    return f"{seconds // 86400}d"
 
 
 def _standing_enabled(config: Optional[dict]) -> bool:

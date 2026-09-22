@@ -751,6 +751,11 @@ def ask_session(
             ok, error, url = post_issue_comment_with_url(
                 work_item, mark_self_authored(question), gh_binary=control.gh_binary
             )
+    # How many channels took the question (issue-409). `ok` is still the record's
+    # answer alone — a channel outage must not fail the ask (R4.4) — but a count
+    # of zero means no human was paged, and until now that fact lived only in a
+    # `debug` line in this checkout's event log.
+    channels_posted = sum(1 for posted in channel_results if posted.ok)
     eventlog.emit(
         "session.awaiting_input",
         level="info" if ok else "warning",
@@ -759,12 +764,15 @@ def ask_session(
         actor=actor,
         comment_url=url or None,
         comment_posted=ok,
+        channels_posted=channels_posted,
     )
     messages: List[Dict[str, str]] = []
     if ok:
         where = f" — {url}" if url else ""
         messages.append({"stream": "out", "text": f"asked on {work_item.ref}{where}"})
         for posted in channel_results:
+            if not posted.ok and not channels_posted:
+                continue  # the one line below says it once, and says it properly
             messages.append(
                 {
                     "stream": "out" if posted.ok else "err",
@@ -773,8 +781,28 @@ def ask_session(
                         if posted.ok
                         else (
                             f"note: the {posted.channel} channel did not take the "
-                            f"question ({posted.error}); the work item has it"
+                            f"question ({posted.error}); another channel did, and "
+                            "the work item has it"
                         )
+                    ),
+                }
+            )
+        if channel_results and not channels_posted:
+            # Every configured channel refused it (issue-409): the bus has queued
+            # the question for redelivery, so say so plainly rather than leave the
+            # session believing a human heard it.
+            refused = "; ".join(
+                f"{posted.channel}: {posted.error}"
+                for posted in channel_results
+                if not posted.ok
+            )
+            messages.append(
+                {
+                    "stream": "err",
+                    "text": (
+                        f"note: NO channel took this question ({refused}) — nobody "
+                        "has been paged. It is queued for redelivery and "
+                        "`the-loop status` counts it until it lands"
                     ),
                 }
             )

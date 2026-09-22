@@ -157,6 +157,16 @@ class StateLayout:
         return str(self.root_path / "channels")
 
     @property
+    def channels_outbox(self) -> str:
+        """Events no channel accepted, waiting to be re-posted (issue-409).
+
+        Beside the channel state and for the same reason — it is about this
+        deployment's conversations — but it is its own file because its writers
+        and its lifetime are different: every process that publishes appends to
+        it, and an entry lives only until some channel takes it."""
+        return str(self.root_path / "channels" / "undelivered.json")
+
+    @property
     def standing_dir(self) -> str:
         """Standing-session records — one per declared name (issue-277).
 
@@ -475,6 +485,26 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
             "replies the other machine never mirrored, and the thread ids name "
             "conversations its bot may not even be a member of. It also names "
             "Slack member and channel ids, which do not belong in a repository."
+        ),
+    ),
+    GeneratedPath(
+        name="undelivered channel events",
+        attr="channels_outbox",
+        default="<root>/channels/undelivered.json",
+        portable=False,
+        holds=(
+            "one entry per event the bus published that NO channel accepted "
+            "(issue-409): the event itself, the work item, the record's URL, the "
+            "channels that were asked and the error each returned, its attempts "
+            "and its last attempt's time. An entry lives until a drain delivers it"
+        ),
+        why=(
+            "a queue of posts owed to THIS deployment's channels. Carried "
+            "elsewhere it would re-post another machine's backlog into rooms its "
+            "bot may not be a member of, dated to an outage that happened "
+            "somewhere else. It also names the channels a post failed on, and "
+            "carries the message text that was going to them — which is the one "
+            "thing under `channels/` that must never ride into a repository."
         ),
     ),
 )

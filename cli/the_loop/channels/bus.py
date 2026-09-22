@@ -14,6 +14,12 @@ an event-log line, never an exception to the publisher — the caller decides wh
 failed record means to *it* (the ask's exit code still says the post failed; a
 reply's pipeline still delivers).
 
+3. **Queue what nobody took.** When at least one channel was asked and every one of
+   them refused, the event goes to :mod:`the_loop.channels.outbox` and a warning
+   says so, so a rotated token or a rate limit costs a delay rather than the
+   message (issue-409). Best-effort like everything else here: the
+   ``PublishResult`` the caller sees is the same either way.
+
 ``broadcast`` is the pre-issue-309 spelling, kept as a wrapper that never records.
 
 ``open_conversation`` (issue-317) is the bus's other verb: not an event, an
@@ -137,6 +143,21 @@ def publish(
         posted=sum(1 for post in posts if post.ok),
         channels=[post.channel for post in posts],
     )
+    # Nobody took it (issue-409): queue it rather than lose it. Three guards, each
+    # load-bearing. `cli_config` — without one there is no state root to write
+    # under, and a bare `publish(event, channels=[...])` must not create
+    # `./.the-loop`. `channels is None` — the bus resolved the channels itself; an
+    # injected list is a caller's one-off (a test, an embedder) whose failures are
+    # that caller's to interpret. `posts` — at least one channel was ASKED: an
+    # event nobody subscribes to was never going to be delivered, and queueing it
+    # would make the outbox a log of everything.
+    if cli_config and channels is None and posts and not any(post.ok for post in posts):
+        from . import outbox
+
+        try:
+            outbox.remember(event, posts, cli_config)
+        except Exception:  # noqa: BLE001 — a failed queue never changes the result
+            logger.exception("could not queue the undelivered %s", event.event_type)
     return PublishResult(record=recorded, posts=posts)
 
 
