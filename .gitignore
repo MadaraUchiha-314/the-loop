@@ -238,12 +238,11 @@ cli/.pytest_cache/
 .the-loop/channels/
 .the-loop/portable/*.tmp
 
-# The same state, written where the tests run it. The pytest hook is
-# `cd cli && uv run python -m pytest`, so a suite that exercises the state root
-# leaves `cli/.the-loop/` behind on every hook run — test residue, never the
-# repository's own work-item state (nothing under it is tracked). The patterns
-# above cannot cover it: each contains a `/`, which anchors it to this file's
-# directory.
+# The same state, written where the tests run it (`cd cli && …pytest`). Since
+# issue-422 the suite fails any test that writes a cwd-relative `.the-loop/`, so
+# nothing should land here; the entry stays for checkouts that still carry the
+# old residue. The patterns above cannot cover it: each contains a `/`, which
+# anchors it to this file's directory.
 cli/.the-loop/
 
 # the-loop: the pre-issue-128 layout, still READ once per work item so an

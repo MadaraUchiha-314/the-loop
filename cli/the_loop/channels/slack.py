@@ -511,6 +511,7 @@ def probe_subscription(
     *,
     client_factory: Optional[Callable[[str], Any]] = None,
     channel_id: str = "",
+    cli_config: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Ask the installed app what the configured channel is and what it may read.
 
@@ -521,7 +522,9 @@ def probe_subscription(
     ``{"skipped": why}`` or ``{"kind", "scopes", "findings", "events"}``; it
     never raises, because a diagnostic that fails is not an error (R2.3).
     ``events`` is what the manifest is *expected* to carry (issue-393 R2.1) —
-    named, not verified: see :data:`EVENTS_UNVERIFIABLE_CAVEAT`.
+    named, not verified: see :data:`EVENTS_UNVERIFIABLE_CAVEAT`. ``cli_config``
+    places the name lookup's directory cache under its ``state.root``; left out,
+    the cache resolves against the working directory (issue-422).
     """
     if not config.channel:
         return {"skipped": "no channel is configured"}
@@ -537,7 +540,7 @@ def probe_subscription(
         from .directory import SlackDirectory
 
         channel_id = SlackDirectory(
-            token_env=config.bot_token_env, client_factory=client_factory
+            cli_config, token_env=config.bot_token_env, client_factory=client_factory
         ).conversation_id(channel_id)
         if not channel_id:
             return {
@@ -3420,7 +3423,9 @@ def catch_up(cli_config: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
     return summary
 
 
-def report_subscription(config: "SlackChannelConfig") -> None:
+def report_subscription(
+    config: "SlackChannelConfig", cli_config: Optional[Mapping[str, Any]] = None
+) -> None:
     """Probe the installed app once and log what it cannot receive (R2.4).
 
     Best-effort in both directions: a probe that cannot run is an ``info`` line,
@@ -3429,7 +3434,7 @@ def report_subscription(config: "SlackChannelConfig") -> None:
     reads the same sentence here and in ``the-loop channels status --probe``.
     """
     try:
-        result = probe_subscription(config)
+        result = probe_subscription(config, cli_config=cli_config)
     except Exception:  # noqa: BLE001 — a diagnostic never costs a channel its listener
         logger.exception("slack: the subscription probe raised; listening anyway")
         return
@@ -3607,7 +3612,7 @@ def run_socket_listener(
         "slack: Socket Mode connected — listening for mentions, button presses, "
         "shortcuts and /the-loop commands"
     )
-    report_subscription(config)
+    report_subscription(config, frozen_config)
     catch_up(frozen_config)
     # The periodic reconcile (issue-362, R3): one deadline carried through the
     # existing one-second tick rather than a second thread, so the stop event is

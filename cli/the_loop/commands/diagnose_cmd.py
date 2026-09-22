@@ -194,7 +194,7 @@ def _doctor_slack(config: dict, *, beats: int, window: float, heartbeat: bool) -
     if not slack.enabled:
         print(f"  {_UNKNOWN} channels.slack is not enabled — nothing here is in use")
     try:
-        lines = _subscription_lines(slack, probe=True)
+        lines = _subscription_lines(slack, probe=True, cli_config=config)
     except Exception as exc:  # noqa: BLE001 — a diagnostic never crashes
         lines = [f"  {_UNKNOWN} the scope probe raised {type(exc).__name__}: {exc}"]
     if not lines:

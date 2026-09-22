@@ -9,6 +9,7 @@ CLI's auto-start loop still terminates.
 Spec: docs/specs/issue-339/design.md §D3, §D4 · Testing plan rows T2, T8.
 """
 
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -237,6 +238,12 @@ def test_a_hosted_loop_that_ends_on_its_own_drops_its_lock_and_says_so(
 
     log = tmp_path / "events.jsonl"
     config = _config(tmp_path, polling=POLLING)
+    # The hosted poller takes its pidfile from the config *file*, not from the
+    # mapping it is handed — so the file must be this one, or the lock lands in
+    # whichever `.the-loop/` the ambient lookup finds (issue-422).
+    config_file = tmp_path / "cli-config.yaml"
+    config_file.write_text(json.dumps(config), encoding="utf-8")
+    monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(config_file))
     monkeypatch.setattr(eventlog, "configure_from_file", lambda source: None)
     monkeypatch.setattr(
         poller_daemon, "_run_locked", lambda *a, **k: 1

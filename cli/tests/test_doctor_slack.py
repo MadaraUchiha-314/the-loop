@@ -759,6 +759,9 @@ def test_doctor_slack_prints_all_three_sections_and_exits_zero_when_clean(
         in out
     )
     assert "[!]" not in out
+    # The name lookup's cache is under the configured state root, not the
+    # working directory's `.the-loop/` (issue-422).
+    assert (tmp_path / "state" / "local" / "slack-directory.json").exists()
     assert "supersecret" not in out
 
 

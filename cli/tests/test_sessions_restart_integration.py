@@ -529,7 +529,10 @@ class TestSecretsAreNeverPrinted:
 
         Requirement: R5.1, R5.3
         """
-        eventlog.configure(str(tmp_path / "events.jsonl"), enabled=True)
+        # `source` first: a path passed positionally names the source and leaves
+        # the log on its cwd-relative default, where `_sinks` never looks
+        # (issue-422).
+        eventlog.configure("test", path=str(tmp_path / "events.jsonl"), enabled=True)
         add_session(deployment, 15)
         environs = {
             "fresh": {115: {"SLACK_BOT_TOKEN": NEW_TOKEN}},
@@ -545,6 +548,7 @@ class TestSecretsAreNeverPrinted:
             )
         )
         result = restart(deployment, runner)
+        assert (tmp_path / "events.jsonl").read_text(encoding="utf-8")
         haystack = self._sinks(deployment, result, tmp_path)
         for value in SECRET_VALUES:
             assert value not in haystack, f"{value!r} leaked on the {case} path"
