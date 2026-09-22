@@ -1,8 +1,12 @@
 """Shared fixtures and doubles for the CLI test suite."""
 
+import os
+import sys
 import threading
 import time
+import traceback
 import uuid
+from pathlib import Path
 from typing import Optional
 
 import pytest
@@ -64,6 +68,121 @@ def _freeze_legacy_graph(store, work_item, frozen: dict) -> None:
     from the_loop.workitem import GRAPH
 
     store.store.write_section(work_item, GRAPH, dict(frozen))
+
+
+#: The state trees no test may write into (issue-422): this repository's own
+#: `.the-loop/` — its checked-in config and tracked `portable/` records — and the
+#: `.the-loop/` of the directory pytest was started from, which is where every
+#: cwd-relative default (`RoutingConfig.portable_dir`, `StateLayout()`) lands. A
+#: test that needs a state root gives it one under `tmp_path`.
+_PROTECTED_STATE = tuple(
+    {
+        os.path.join(os.path.abspath(p), "")
+        for base in (Path(__file__).resolve().parents[2], Path.cwd())
+        for p in (base / ".the-loop", (base / ".the-loop").resolve())
+    }
+)
+#: The frames a report keeps: the-loop's own code and its tests, not the stdlib.
+_CLI_DIR = str(Path(__file__).resolve().parents[1])
+_WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_TRUNC
+#: Per audit event, `(path index, dir_fd index)` for each path it changes. A
+#: rename changes both ends; a link only its destination, never its target.
+_PATH_ARGS = {
+    "os.rename": ((0, 2), (1, 3)),
+    "os.link": ((1, 3),),
+    "os.symlink": ((1, 2),),
+    "os.mkdir": ((0, 2),),
+    "os.remove": ((0, 1),),
+    "os.rmdir": ((0, 1),),
+}
+#: `(event, path, where)` for each write into a protected tree, drained by
+#: `_no_protected_state_writes` after every test.
+_protected_writes: list = []
+
+
+def _protected(path) -> bool:
+    if not isinstance(path, (str, bytes, os.PathLike)):
+        return False  # an fd: whatever it points at was opened, and checked, by path
+    try:
+        absolute = os.path.abspath(os.fsdecode(path))
+    except (OSError, ValueError):  # a deleted cwd: nothing can resolve against it
+        return False
+    return os.path.join(absolute, "").startswith(_PROTECTED_STATE)
+
+
+def _audit_state_writes(event, args):
+    """Record a write into a protected state tree, with the code that made it.
+
+    An audit hook rather than a before/after snapshot because it names the test
+    and the line, and because a daemon an operator runs from this checkout
+    writes the same tree legitimately. It sees this process only: a test's
+    subprocess is not covered. It must never raise: an exception in an audit
+    hook propagates into the operation that was audited.
+    """
+    if event == "open":
+        flags = args[2]
+        paths = (args[0],) if isinstance(flags, int) and flags & _WRITE_FLAGS else ()
+    elif event in _PATH_ARGS:
+        # A name beside a dir_fd is relative to that directory, not the cwd:
+        # `shutil.rmtree` removes a tmp tree's own `.the-loop/` that way.
+        paths = tuple(
+            args[path]
+            for path, dir_fd in _PATH_ARGS[event]
+            if args[dir_fd] in (None, -1)
+        )
+    else:
+        return
+    for path in paths:
+        if _protected(path):
+            frames = [
+                f
+                for f in traceback.extract_stack()[:-1]
+                if f.filename.startswith(_CLI_DIR)
+            ]
+            where = "".join(traceback.format_list(frames[-6:]))
+            _protected_writes.append((event, os.fsdecode(path), where))
+
+
+sys.addaudithook(_audit_state_writes)
+
+
+def _protected_write_report() -> str:
+    writes = list(_protected_writes)
+    _protected_writes.clear()
+    return "\n".join(f"{event} {path}\n{where}" for event, path, where in writes)
+
+
+@pytest.fixture(autouse=True)
+def _no_protected_state_writes():
+    """Fail the test that wrote into this repository's or the cwd's `.the-loop/`.
+
+    Run from the repository root, a cwd-relative default resolves to the
+    checked-in tree, and the write is silent: nothing fails, the tree is just
+    dirty, and a staged-everything commit carries test debris in (issue-422).
+    A write from a background thread that outlives its test is reported by
+    the next one — the stack still names the code.
+    """
+    _protected_writes.clear()
+    yield
+    report = _protected_write_report()
+    if report:
+        pytest.fail(
+            "wrote into a protected `.the-loop/` state tree — give the code "
+            "under test a state root under tmp_path (issue-422):\n" + report,
+            pytrace=False,
+        )
+
+
+def pytest_sessionfinish(session):
+    """The writes no test's teardown saw: from a thread that outlived the last."""
+    report = _protected_write_report()
+    if report:
+        session.config.get_terminal_writer().line(
+            "\nwrote into a protected `.the-loop/` state tree after the last "
+            "test (issue-422):\n" + report,
+            red=True,
+        )
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
 def pytest_addoption(parser):

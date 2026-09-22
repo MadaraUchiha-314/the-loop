@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import sys
+from typing import Optional
 
 from .base import Command, register
 from .sessions_cmd import _cli_config
@@ -89,7 +90,7 @@ def _status(config: dict, probe: bool = False) -> int:
     print(f"  read:         {slack.read_mode}{cadence}")
     for line in _split_check_lines(slack, config):
         print(line)
-    for line in _subscription_lines(slack, probe):
+    for line in _subscription_lines(slack, probe, config):
         print(line)
     for line in _button_lines(slack):
         print(line)
@@ -213,7 +214,9 @@ def _split_check_lines(slack: SlackChannelConfig, config: dict) -> list:
     return lines
 
 
-def _subscription_lines(slack: SlackChannelConfig, probe: bool) -> list:
+def _subscription_lines(
+    slack: SlackChannelConfig, probe: bool, cli_config: Optional[dict] = None
+) -> list:
     """What kind of conversation the channel is, and whether the app can hear it
     (issue-362 R2). Slack emits a different message event per conversation kind
     and delivers only what the app subscribed to, so a channel configured with a
@@ -232,7 +235,7 @@ def _subscription_lines(slack: SlackChannelConfig, probe: bool) -> list:
     if not probe:
         lines += [f"  [!] {advice}" for advice in unchecked_advice(slack.channel)]
         return lines
-    result = probe_subscription(slack)
+    result = probe_subscription(slack, cli_config=cli_config)
     if result.get("skipped"):
         # The manifest is local, so the expected events are printable even when
         # Slack could not be asked — labelled unverifiable either way.

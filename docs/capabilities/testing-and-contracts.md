@@ -135,6 +135,27 @@ every API is authored contract-first with docs generated from the contract).
   parity that is claimed but not kept sends the first contributor who hits it looking for a
   bug in their own diff.
 
+### The suite never writes into a checked-in `.the-loop/` (issue-422)
+
+- WHEN a test exercises code that writes state THEN it SHALL give that code a state root
+  under `tmp_path`. A default relative to the working directory
+  (`RoutingConfig.portable_dir`, `StateLayout()`, the event log's `DEFAULT_PATH`) or to
+  the ambient config file (`default_options()` in either daemon) resolves to this
+  repository's own `.the-loop/` when pytest is started from the root. The write there is
+  silent, and a staged-everything commit carries it in.
+- The suite SHALL fail any test that writes into this repository's `.the-loop/` or into
+  the `.the-loop/` of the directory pytest was started from. `cli/tests/conftest.py`
+  enforces it with an audit hook that records each write-mode `open`, rename, `mkdir`,
+  removal or link under either tree. An autouse fixture then fails the test and prints
+  the path and the stack. Guarding the working directory's tree is what makes CI, which
+  runs from `cli/`, enforce the rule too.
+- The guard records and fails at teardown. It does not raise inside the hook, because
+  fail-open code would swallow that and the test would pass. It sees the test process
+  only, not its subprocesses.
+- RULE: an assertion over a file SHALL establish that the file was written before it
+  searches it. A "no secret in the log" check over a log that was never created passes
+  without looking at anything.
+
 ### Scenario docstrings and contract-first APIs
 
 - Every integration test SHALL carry a Gherkin-syntax docstring
@@ -160,6 +181,7 @@ every API is authored contract-first with docs generated from the contract).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-422 | The suite stopped writing into the repository it runs in (2026-09-22): four tests wrote into this checkout's `.the-loop/` when run from the root, one of them into the tracked `portable/`, where an earlier run's control record had already been committed. Each now gets a `tmp_path` state root, the two debris records are deleted, and an audit-hook guard in `conftest.py` fails any test that writes into the repository's or the working directory's `.the-loop/`. Two of the four were weaker than they read: an abuse-case log check searched a file that was never written, and a lock assertion watched a pidfile the poller never held | [spec](../specs/issue-422/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/422) |
 | issue-412 | A test pins or controls what it resolves, and never reads the machine it runs on (2026-09-21): four `test_instance.py` argv assertions stopped passing or failing on the working directory and on whether the developer has `~/.the-loop/cli-config.yaml` — pinned in the module that had the defect, not suite-wide, because the config path anchors the state root and a wholesale pin breaks the tests that legitimately control the cwd branch; and `make test` became byte-for-byte the pre-commit `pytest` hook, `cd cli` included, so the Makefile's CI-parity rule is true | [spec](../specs/issue-412/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/412) |
 | issue-365 | The e2e conformance keys followed the artifact (2026-09-14): `executionLogSections` and `executionLogEntries` became one `evidenceSections` map of file → sections, and the walk is asserted by the node trace alone rather than by checkpoints a hook wrote into a log | [spec](../specs/issue-365/), [decision-126](../decisions/decision-126.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/365) |
 | issue-251 | Waiting became a rule rather than a habit (2026-08-16): an asynchronous test waits on the state its next line depends on, not on the attempt that precedes it, and a fixed sleep before a positive assertion is a defect — with `pytest --dispatch-lag=<seconds>` shipped so the shape is found by running the suite rather than by reading it | [spec](../specs/issue-251/), [decision-091](../decisions/decision-091.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/251) |

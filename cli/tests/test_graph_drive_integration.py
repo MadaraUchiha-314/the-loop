@@ -136,6 +136,9 @@ def _wait(predicate, timeout=5.0):
 
 def _dispatcher(tmp_path, link, **overrides):
     registry = SessionRegistry(tmp_path / "sessions")
+    # The default is cwd-relative: from the repository root, a spawn's control
+    # record would land in the checked-in `.the-loop/portable/` (issue-422).
+    overrides.setdefault("portable_dir", str(tmp_path / "portable"))
     overrides.setdefault("control", ControlConfig(require_start_command=False))
     tmux = _SeqTmux(link.seq)
     dispatcher = Dispatcher(
