@@ -180,6 +180,25 @@ into it and says so.
 `.pre-commit-config.yaml` and `.github/workflows/ci.yml` are **unchanged**: the local target
 moved onto CI's command, not the reverse, so nothing about what runs on a runner changed.
 
+And the target a contributor is actually told to run, end to end, on a machine that **has**
+`~/.the-loop/cli-config.yaml` — the configuration in which it used to be red:
+
+```console
+$ make check                    # lint, format-check, typecheck, validate, test
+home config PRESENT
+...
+4493 passed, 1 skipped in 227.35s (0:03:47)
+MAKE CHECK EXIT=0
+```
+
+Each target individually: `ruff check cli hooks` — *All checks passed!*; `ruff format
+--check` — *350 files already formatted*; `pyright cli` — *0 errors, 0 warnings, 0
+informations*; `validate_config.py` — all `VALID`; `markdownlint-cli2 "**/*.md"` —
+*1387 file(s), 0 error(s)*.
+
+**AC2 met**: `make check` passes on a machine carrying the operator's own CLI config, which
+is the machine CI's green was not predicting.
+
 ## Found while verifying, not fixed here: the repo-root run writes into the checked-in tree
 
 Running the suite from the repository root leaves the working tree **dirty**:
