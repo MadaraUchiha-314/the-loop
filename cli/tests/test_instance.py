@@ -308,6 +308,29 @@ def test_the_announcement_names_the_instance():
     )
 
 
+@pytest.fixture(autouse=True)
+def _no_ambient_cli_config(tmp_path, monkeypatch):
+    """Pin the CLI-config lookup for the spawn-argv tests below (issue-412).
+
+    ``TmuxRunner`` exports ``THE_LOOP_CLI_CONFIG`` into a spawned pane whenever
+    ``cli_config.default_cli_config_path()`` names a file, and that lookup falls
+    through to ``./.the-loop/cli-config.yaml`` and then
+    ``~/.the-loop/cli-config.yaml``. The argv assertions here are about the
+    *instance* and *work item* the runner was built with, so an inherited third
+    flag made them pass or fail on the directory pytest was started from and on
+    whether the machine running them has a config at all — green from ``cli/`` on
+    a runner with neither, red for every contributor who actually runs the-loop.
+
+    Point the variable at a path inside this test's ``tmp_path`` that is never
+    created, rather than stubbing the lookup: resolution still runs for real and
+    answers "no config" identically everywhere. Tests that want a config assert
+    on the export directly (``test_tmux_runner.py``); tests that want the
+    cwd/home branches drop the variable and chdir first
+    (``test_state_root_integration.py``, ``test_poll_status.py``).
+    """
+    monkeypatch.setenv(cli_config.CLI_CONFIG_ENV, str(tmp_path / "cli-config.yaml"))
+
+
 class _Probe(TmuxRunner):
     def __init__(self, version="tmux 3.3a", instance=""):
         super().__init__(instance=instance)
