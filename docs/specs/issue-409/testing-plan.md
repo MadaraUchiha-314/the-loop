@@ -89,15 +89,18 @@ Under `docs/specs/issue-409/evidence/`:
 ## Verification results
 
 Recorded at the `verification` node in
-[evidence/verification.md](evidence/verification.md).
+[evidence/verification.md](evidence/verification.md): T1, T2, T3, T4, T5, T7, T8, T9, T10
+and T12 pass; T6 is `n/a` as planned; T11 did not run for want of a real Slack workspace to
+break, and the scenario it would walk is T4's, which runs against the real modules with the
+SDK client faked at its injection point.
 
 ## Activities checklist
 
-- [ ] T1, T2 unit tests written red, then green
-- [ ] T3, T4, T5 integration scenarios written with Gherkin docstrings, red then green
-- [ ] T7 bounds asserted with an injected clock
-- [ ] T8 security assertions in the suite, not only in prose
-- [ ] T9 upgrade path proved on an absent, a partial and a corrupt file
-- [ ] T10 full `make test` green
-- [ ] T12 `docs/cli/state.md` and `docs/capabilities/channels.md` updated; lint green
-- [ ] Evidence committed
+- [x] T1, T2 unit tests written red, then green
+- [x] T3, T4, T5 integration scenarios written with Gherkin docstrings, red then green
+- [x] T7 bounds asserted with an injected clock
+- [x] T8 security assertions in the suite, not only in prose
+- [x] T9 upgrade path proved on an absent, a partial and a corrupt file
+- [x] T10 full `make test` green
+- [x] T12 `docs/cli/state.md` and `docs/capabilities/channels.md` updated; lint green
+- [x] Evidence committed
