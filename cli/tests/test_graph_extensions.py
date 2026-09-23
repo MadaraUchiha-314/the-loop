@@ -546,3 +546,9 @@ def test_an_attachment_may_be_scoped_to_a_declared_loop():
         declaration.digest()
         != _declaration(attach=[{"hook": "x-a", "node": "work"}]).digest()
     )
+
+
+def test_an_empty_loops_scope_is_refused():
+    """issue-343 review F6 — present means "only these"; empty would silently mean all."""
+    with pytest.raises(GraphConfigError, match="empty"):
+        _declaration(attach=[{"hook": "x-a", "node": "work", "loops": []}])

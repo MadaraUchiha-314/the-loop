@@ -268,6 +268,11 @@ def _read_loops(name: str, value: Any, known_loops: Sequence[str]) -> Tuple[str,
             "that is not a list"
         )
     loops = tuple(str(loop).strip() for loop in value)
+    if not loops:
+        raise GraphConfigError(
+            f"CLI config: `{CONFIG_KEY}.attach` entry for {name!r} has an empty "
+            "`loops`; omit the key to attach to every loop, or name the loops"
+        )
     unknown = [loop for loop in loops if loop not in known_loops]
     if unknown:
         raise GraphConfigError(

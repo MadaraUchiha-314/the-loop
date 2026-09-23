@@ -690,7 +690,7 @@
                   "guest": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Walk this graph as a GUEST, as the shipped contribution and review loops do: the spec tree is kept out of the repository's git history and the plan is posted to the thread. Set it on a graph that replaces `contribute` or `review`."
+                    "description": "Walk this graph as a GUEST, as the shipped contribution and review loops do: the spec tree is kept out of the repository's git history and `publish-artifact` posts the plan to the thread. Set it on a graph that replaces `contribute` or `review`. It is the posture only: the session-prompt lines written for the shipped contribution and review loops (no outer loop; change no code) are not applied — put what your session must know in your graph's nodes."
                   }
                 }
               },

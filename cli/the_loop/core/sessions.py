@@ -513,6 +513,9 @@ def _record_pull_request_in_state(
 
     link = GraphLink(
         GraphLinkConfig.from_mapping((_routing(config).get("graph")) or {}),
+        # The control config carries the operator's declared loops (issue-343):
+        # without it a work item walking one would resolve to the default here.
+        _control_config(config),
         control_store=_control_store(config),
     )
     link.on_pr_linked(work_item, pr, record.cwd)

@@ -674,16 +674,24 @@ included, however empty the log was.
   `loop` selects, then its command through `LOOP_FOR_CONTROL_COMMAND`. Every reader SHALL
   resolve a recorded name through `resolve_outer_loop(name, declared)`, which accepts a
   custom name only while the operator declares it — the state file is agent-writable, so
-  any other name reads as the default loop. A declared graph that fails to load SHALL fail
-  loudly; it SHALL NOT fall back to the default.
-- `guest: true` SHALL make the runtime a guest (`guestLoop`), with every consequence the
-  shipped guest loops have.
+  any other name is ignored: the recording command's current binding applies, else its
+  shipped loop (`do` → the ad-hoc loop), else the default. The same holds with no loop
+  recorded at all — a CLI `sessions start`, a spawn with no start required — so an
+  overridden `start` applies however the item was armed. A declared graph that fails to
+  load SHALL fail loudly; it SHALL NOT fall back to the default.
+- `guest: true` SHALL make the runtime a guest (`guestLoop`): the spec tree is kept out of
+  git and `publish-artifact` posts the plan to the thread. The session-prompt lines tied to
+  the shipped contribution and review loops (no outer loop; change no code) are not
+  applied to a custom graph.
 - An attachment (`routing.graph.hooks.attach[]`) MAY carry `loops`, scoping it to those
   loops (shipped or declared); unscoped it SHALL apply to every loop as before. An unknown
   loop name SHALL fail the load.
-- `the-loop graph loops` SHALL list every shipped and declared loop with the commands that
-  arm it, compile each declared graph **without importing a hook module**, and exit 1 when
-  one does not compile.
+- `the-loop graph loops` SHALL list every shipped and declared loop with the keywords that
+  arm it, read the CLI config strictly, compile each declared graph and check the
+  attachments that apply to it and that its `x-` hooks have a module to come from —
+  **without importing a hook module** — and exit 1 when anything fails. A command word
+  SHALL NOT be one of the-loop's own CLI verbs (`graph`, `check`, …), so a comment quoting
+  one never arms a work item.
 
 ### Testing is planned and verified as nodes (issue-163)
 

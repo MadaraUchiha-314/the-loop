@@ -49,7 +49,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from . import eventlog
 from .ghhost import repo_slug as _repo_slug
-from .control import ControlConfig, ControlStore
+from .control import START, ControlConfig, ControlStore
 from .sessions import WorkItemRef
 
 logger = logging.getLogger("the-loop.graph")
@@ -1266,21 +1266,26 @@ class GraphLink:
             recorded = ""
         if recorded:
             return resolve_outer_loop(recorded, declared)
+        command = START
         if self.control_store is not None:
             try:
                 record = self.control_store.get(work_item)
                 if record is not None:
                     # The operator's own loop the arming command selected
                     # (issue-343), through the same fail-closed resolver the
-                    # state file goes through; else the shipped mapping.
-                    if record.loop:
-                        return resolve_outer_loop(record.loop, declared)
-                    return resolve_outer_loop(
-                        LOOP_FOR_CONTROL_COMMAND.get(record.command, "")
-                    )
+                    # state file goes through.
+                    chosen = resolve_outer_loop(record.loop, declared)
+                    if chosen:
+                        return chosen
+                    command = record.command
             except Exception as exc:  # noqa: BLE001
                 logger.debug("could not read %s's control record: %s", item_id, exc)
-        return ""
+        # No loop recorded — a CLI `sessions start`, a label spawn with no start
+        # required, an older record, or a record naming a graph no longer
+        # declared: the command's CURRENT binding (issue-343), else what it
+        # selects when nobody bound it.
+        bound = resolve_outer_loop(self.control.bindings.get(command, ""), declared)
+        return bound or resolve_outer_loop(LOOP_FOR_CONTROL_COMMAND.get(command, ""))
 
     def _spec_dir(self) -> str:
         """Where this daemon's work items keep their specs, as the operator declared.

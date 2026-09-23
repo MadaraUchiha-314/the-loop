@@ -90,6 +90,7 @@ routing:
         path: /etc/the-loop/review.yaml
         commands: [review]
         guest: true                        # keep the guest posture review has
+                                           # (spec tree out of git; plan on the thread)
 ```
 
 | A command word may be | What happens |
@@ -114,8 +115,9 @@ acme-triage-loop  (declared)
   compiles: ok — names x-triage-complete
 ```
 
-[`the-loop graph loops`](/cli/commands/graph#loops) compiles every graph you declared and
-exits 1 when one does not — without importing any hook module.
+[`the-loop graph loops`](/cli/commands/graph#loops) compiles every graph you declared,
+checks the hook attachments that apply to it, and exits 1 when anything fails — without
+importing any hook module.
 
 ## How a work item picks it
 
@@ -124,8 +126,12 @@ exits 1 when one does not — without importing any hook module.
 2. The first spawn enters that graph; `work-item-state.json` records its name.
 3. From then on the recorded name is the fact — a later command cannot re-shape a walk in
    progress. The name selects your graph **only while your config declares it**: the state
-   file is writable by the agent, so any name you did not declare reads as the default
-   loop.
+   file is writable by the agent, so any name you did not declare is ignored.
+
+An overridden `start` applies however the item is armed — a comment, `the-loop sessions
+start`, or a spawn when no start is required — and `/the-loop triage #12` works from Slack.
+A new word may not be one of the-loop's own verbs (`graph`, `check`, `sessions`, …), so a
+comment quoting `the-loop graph complete …` never arms anything.
 
 Remove or rename a graph only when no work item is walking it.
 

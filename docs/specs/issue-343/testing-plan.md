@@ -84,14 +84,17 @@ Under `docs/specs/issue-343/evidence/`:
 ## Verification results
 
 Recorded at the `verification` node in
-[evidence/verification.md](evidence/verification.md).
+[evidence/verification.md](evidence/verification.md): T1–T10 and T12 pass (4634 passed,
+1 skipped in the full suite); T13 and T14 are `n/a` as planned; T11 did not run for want of
+a real repository and daemon — T5 walks the same dispatcher with the same comment against a
+real checkout.
 
 ## Activities checklist
 
-- [ ] T1–T4, T6, T7 unit tests written red, then green
-- [ ] T5 integration scenarios written with Gherkin docstrings, red then green
-- [ ] T8 abuse cases asserted in the suite, not only in prose
-- [ ] T9 schema parity and sample validation green
-- [ ] T10 full `make test` green
-- [ ] T12 docs updated; lint green
-- [ ] Evidence committed
+- [x] T1–T4, T6, T7 unit tests written red, then green
+- [x] T5 integration scenarios written with Gherkin docstrings, red then green
+- [x] T8 abuse cases asserted in the suite, not only in prose
+- [x] T9 schema parity and sample validation green
+- [x] T10 full `make test` green
+- [x] T12 docs updated; lint green
+- [x] Evidence committed

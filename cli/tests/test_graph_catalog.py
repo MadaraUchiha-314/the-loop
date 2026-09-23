@@ -508,12 +508,12 @@ def test_graph_loops_lists_shipped_and_declared_loops(tmp_path, monkeypatch, cap
     assert code == 0
     rows = {row["name"]: row for row in report["loops"]}
     assert set(SHIPPED_LOOPS) | {NAME} == set(rows)
-    assert rows[NAME]["commands"] == ["triage", "do"]
+    assert rows[NAME]["commands"] == ["the-loop triage", "the-loop do"]
     assert rows[NAME]["status"] == "ok"
     assert rows[NAME]["path"] == str(tmp_path / "graphs" / "triage.yaml")
     # `do` now selects the operator's loop, so the shipped row no longer claims it.
     assert rows[PDLC_ADHOC_LOOP]["commands"] == []
-    assert rows[PDLC_WORK_ITEM_LOOP]["commands"] == ["start"]
+    assert rows[PDLC_WORK_ITEM_LOOP]["commands"] == ["the-loop start"]
     assert rows[PDLC_REVIEW_LOOP]["guest"] is True
 
 
@@ -548,3 +548,151 @@ def test_graph_loops_reports_an_unreadable_declaration(tmp_path, monkeypatch, ca
     code, report = _loops(tmp_path, capsys)
     assert code == 1
     assert "reserved" in report["error"]
+
+
+# -- review round 1 (independent reviewer) ------------------------------------
+
+
+def test_graph_loops_compiles_in_a_fresh_process(tmp_path):
+    """Review F1 — the report must register the shipped hooks itself; in-process
+    tests had them imported already, which hid a report of 'unknown hook' for
+    every real graph."""
+    import os
+    import subprocess
+    import sys
+
+    _graph_file(tmp_path)
+    config = tmp_path / "cli-config.yaml"
+    config.write_text('version: "0.10.0"\nrouting:\n  graph:\n' + TRIAGE_DECLARED)
+    env = dict(os.environ, THE_LOOP_CLI_CONFIG=str(config))
+    proc = subprocess.run(
+        [sys.executable, "-m", "the_loop", "graph", "loops"],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=tmp_path,
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "compiles: ok" in proc.stdout
+
+
+def test_graph_loops_reports_an_attachment_on_a_node_the_graph_lacks(
+    tmp_path, monkeypatch, capsys
+):
+    """Review F3 — the R6.1 adoption failure is caught by the report, not at load."""
+    _graph_file(tmp_path)
+    _cli_config(
+        tmp_path,
+        monkeypatch,
+        TRIAGE_DECLARED,
+        "    hooks:\n      attach:\n        - {hook: x-a, node: design}\n",
+    )
+    code, report = _loops(tmp_path, capsys)
+    assert code == 1
+    row = next(r for r in report["loops"] if r["name"] == NAME)
+    assert "scope the attachment" in row["error"]
+
+
+def test_graph_loops_reports_x_hooks_with_no_module(tmp_path, monkeypatch, capsys):
+    _graph_file(tmp_path, HOOKED)
+    _cli_config(tmp_path, monkeypatch, TRIAGE_DECLARED)
+    code, report = _loops(tmp_path, capsys)
+    assert code == 1
+    row = next(r for r in report["loops"] if r["name"] == NAME)
+    assert "declares no module" in row["error"]
+
+
+def test_graph_loops_reports_an_unparseable_config(tmp_path, monkeypatch, capsys):
+    """Review F3 — a config that cannot be read is an error, not 'nothing declared'."""
+    path = tmp_path / "cli-config.yaml"
+    path.write_text("routing: [unclosed\n")
+    monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(path))
+    code, report = _loops(tmp_path, capsys)
+    assert code == 1 and report["error"]
+
+
+def test_graph_loops_shows_the_configured_keyword(tmp_path, monkeypatch, capsys):
+    """Review F9 — what a person types, and nothing for a disabled command."""
+    _graph_file(tmp_path)
+    _cli_config(
+        tmp_path,
+        monkeypatch,
+        TRIAGE_DECLARED,
+        "  control:\n    keywords:\n      start: '@loop go'\n      review: ''\n",
+    )
+    code, report = _loops(tmp_path, capsys)
+    assert code == 0
+    rows = {row["name"]: row for row in report["loops"]}
+    assert rows[PDLC_WORK_ITEM_LOOP]["commands"] == ["@loop go"]
+    assert rows[PDLC_REVIEW_LOOP]["commands"] == []
+
+
+@pytest.mark.parametrize(
+    "graphs, match",
+    [({}, "must be a list"), ("", "must be a list"), (False, "must be a list")],
+)
+def test_a_falsy_non_list_declaration_is_refused(graphs, match):
+    """Review F6"""
+    with pytest.raises(GraphConfigError, match=match):
+        read_catalog({"routing": {"graph": {"graphs": graphs}}})
+
+
+def test_a_non_string_path_is_refused():
+    """Review F6"""
+    with pytest.raises(GraphConfigError, match="each a string"):
+        _catalog({"name": NAME, "path": ["graphs/t.yaml"]})
+
+
+@pytest.mark.parametrize("word", ["graph", "check", "sessions", "events", "new"])
+def test_a_new_word_may_not_be_one_of_the_loops_own_verbs(word):
+    """Review F7 — a comment quoting `the-loop graph complete …` must not arm."""
+    with pytest.raises(GraphConfigError, match="own verbs"):
+        _catalog({"name": NAME, "path": "a.yaml", "commands": [word]})
+
+
+def test_an_overridden_start_applies_without_a_comment(tmp_path):
+    """Review F2 — a CLI `sessions start` (a `start` record with no loop) and a
+    spawn with no record at all both follow `start`'s current binding."""
+    from the_loop.graphlink import GraphLink, GraphLinkConfig
+    from the_loop.sessions import WorkItemRef
+
+    store = ControlStore(tmp_path / "portable")
+    control = ControlConfig.from_mapping(
+        {}, graph={"graphs": [{"name": NAME, "path": "t.yaml", "commands": ["start"]}]}
+    )
+    link = GraphLink(GraphLinkConfig(), control, control_store=store)
+    ref = WorkItemRef.parse(REF)
+    (tmp_path / "docs" / "specs" / WORK_ITEM).mkdir(parents=True)
+    outer = lambda: link._outer_loop_name(tmp_path, "docs/specs", WORK_ITEM, ref)  # noqa: E731
+
+    assert outer() == NAME
+    store.record(ref, "start", source="cli", actor="operator")
+    assert outer() == NAME
+
+
+def test_a_removed_override_falls_back_to_the_commands_shipped_loop(tmp_path):
+    """Review F8 — a `do` armed onto a graph since removed walks the ad-hoc loop."""
+    from the_loop.graphlink import GraphLink, GraphLinkConfig
+    from the_loop.sessions import WorkItemRef
+
+    store = ControlStore(tmp_path / "portable")
+    link = GraphLink(GraphLinkConfig(), ControlConfig(), control_store=store)
+    ref = WorkItemRef.parse(REF)
+    (tmp_path / "docs" / "specs" / WORK_ITEM).mkdir(parents=True)
+    store.record(ref, "do", actor="owner", loop="acme-removed")
+    assert (
+        link._outer_loop_name(tmp_path, "docs/specs", WORK_ITEM, ref) == PDLC_ADHOC_LOOP
+    )
+
+
+def test_the_slack_command_knows_the_operators_words():
+    """Review F2 — `/the-loop triage #1` is a control verb, not an unknown one."""
+    from the_loop.channels.commands import parse_invocation
+
+    control = ControlConfig.from_mapping(
+        {}, graph={"graphs": [{"name": NAME, "path": "t.yaml", "commands": ["triage"]}]}
+    )
+    invocation = parse_invocation("triage #12", control)
+    assert invocation.family == "work-item"
+    assert control.keyword(invocation.verb) == "the-loop triage"

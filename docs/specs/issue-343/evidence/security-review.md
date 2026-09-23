@@ -31,7 +31,7 @@ No new network call, credential, secret, subprocess or permission.
 | 3 | An unauthorized user types a declared new command | It parses as `START`, so the existing named-actor check refuses it (`unauthorized-actor`) before anything is recorded | `test_unauthorized_custom_command_is_refused` (integration) |
 | 4 | A comment carries a new command and a built-in one | `found` holds words, so two different words are ambiguous: nothing executed, nothing forwarded | `test_custom_and_builtin_command_is_ambiguous` |
 | 5 | A repository ships `.the-loop/<declared-name>.yaml` to shadow the operator's graph | The loader never reads a repository file; the warning names it and points at `routing.graph.graphs` | `test_repo_file_for_declared_name_is_ignored` |
-| 6 | A declaration rebinds `stop`/`pause`/`resume`/`execute`/`cleanup`/an argument command, or names a graph `pdlc-*` | `read_catalog` refuses both at parse | `test_catalog_refuses_binding_a_command_that_selects_no_loop`, `test_catalog_refuses_a_malformed_entry` |
+| 6 | A declaration rebinds `stop`/`pause`/`resume`/`execute`/`cleanup`/an argument command, names a graph `pdlc-*`, or takes one of the-loop's own verbs as a new word | `read_catalog` refuses all three at parse | `test_catalog_refuses_binding_a_command_that_selects_no_loop`, `test_catalog_refuses_a_malformed_entry`, `test_a_new_word_may_not_be_one_of_the_loops_own_verbs` |
 
 Further checks made over the diff:
 
@@ -50,7 +50,16 @@ Further checks made over the diff:
 - **Paths are the operator's.** A graph path comes only from the CLI config and resolves
   against that file's directory, never a checkout — so a session cannot edit the graph it
   walks unless the operator placed both the config and the graph inside a checkout, which
-  is no wider than the config file's own exposure today.
+  is no wider than the config file's own exposure today. One caveat, pre-existing and
+  shared with `routing.graph.hooks.modules`: a CLI command run *inside a session* resolves
+  the CLI config through the exported `THE_LOOP_CLI_CONFIG`, and when the daemon had no
+  config file to export it falls back to the checkout's `./.the-loop/cli-config.yaml`.
+  Loop **selection** for a daemon-driven work item happens in the daemon, so this does not
+  let a session choose its graph; it is recorded here so the claim is not read wider than
+  it is.
+- **New words cannot shadow the-loop's own verbs.** A command word that is a CLI
+  sub-command (`graph`, `check`, `sessions`, …) or a Slack verb is refused, so a comment
+  quoting `the-loop graph complete …` — which sessions post — never arms a work item.
 - **Fail closed.** Every malformed declaration, unreadable file, unknown phase or hook
   raises. A declared graph that fails to load raises from `build_runtime` rather than
   walking the default (R4.4).

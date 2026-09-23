@@ -655,6 +655,7 @@ def _declared_hooks() -> Dict[str, Any]:
                 "node": a.node,
                 "boundary": a.boundary,
                 "with": dict(a.params),
+                **({"loops": list(a.loops)} if a.loops else {}),
             }
             for a in declaration.attachments
         ],
@@ -680,6 +681,8 @@ def _report_hooks(root: Path, fmt: str) -> int:
         print(f"  module  {ref['path'] or ref['module']}")
     for entry in attach:
         suffix = f"  with: {entry['with']}" if entry["with"] else ""
+        if entry.get("loops"):
+            suffix += f"  in: {', '.join(entry['loops'])}"
         print(
             f"  attach  {entry['hook']} → {entry['node']} ({entry['boundary']}){suffix}"
         )
@@ -690,17 +693,35 @@ def _report_hooks(root: Path, fmt: str) -> int:
     return 0
 
 
+def _strict_cli_config() -> Dict[str, Any]:
+    """The CLI config in effect, read STRICTLY: a file that cannot be parsed or
+    validated raises, rather than reading as "nothing declared" — the report's
+    whole job is to find a mistake before a work item does."""
+    from .. import cli_config
+
+    path = cli_config.default_cli_config_path()
+    if not path.is_file():
+        return {}
+    loaded = cli_config.load_cli_config(path, strict=True) or {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
 def _declared_loops() -> Dict[str, Any]:
     """Every loop this machine can walk: the shipped ones and the operator's own
-    (``routing.graph.graphs``, issue-343), each with the commands that select it.
+    (``routing.graph.graphs``, issue-343), each with the keywords that arm it.
 
-    Each declared graph is **compiled** — the same checks a load makes — but no
-    hook module is imported: the ``x-`` hooks a graph names are listed, and bound
-    only when a work item actually loads it. A catalog that cannot be parsed is
-    reported as the one error, with no rows.
+    Each declared graph is compiled and checked the way a load checks it — the
+    compiler's rules, the phase vocabulary, every attachment that applies to it
+    naming a node it declares, its ``x-`` hooks having a module to come from —
+    but **no hook module is imported**: whether a module really registers a name
+    is settled only when a work item loads the graph. A configuration that cannot
+    be read, a malformed declaration or a clashing keyword is reported as the one
+    error, with no rows.
     """
-    from ..graph.bootstrap import load_cli_config_best_effort
+    from ..control import ControlConfig
+    from ..graph import hooks as _hooks  # noqa: F401 — registers the built-ins
     from ..graph.catalog import compile_custom, read_catalog
+    from ..graph.extensions import read_declaration
     from ..graph.model import (
         GUEST_LOOPS,
         LOOP_FOR_CONTROL_COMMAND,
@@ -711,9 +732,21 @@ def _declared_loops() -> Dict[str, Any]:
     )
 
     try:
-        catalog = read_catalog(load_cli_config_best_effort())
+        cfg = _strict_cli_config()
+        routing = cfg.get("routing") or {}
+        catalog = read_catalog(cfg)
+        declaration = read_declaration(cfg)
+        control = ControlConfig.from_mapping(
+            routing.get("control") or {}, graph=(routing.get("graph") or {})
+        )
     except Exception as exc:  # noqa: BLE001 — the report IS the error
         return {"loops": [], "error": str(exc)}
+
+    def keywords(words: List[str]) -> List[str]:
+        # What a person actually types: the configured keyword, and nothing for
+        # a command the operator disabled.
+        return [control.keyword(w) for w in words if control.keyword(w)]
+
     bindings = catalog.bindings
     shipped_commands: Dict[str, List[str]] = {PDLC_WORK_ITEM_LOOP: ["start"]}
     for command, loop in LOOP_FOR_CONTROL_COMMAND.items():
@@ -726,9 +759,9 @@ def _declared_loops() -> Dict[str, Any]:
                 "kind": "shipped",
                 # A shipped command the operator bound elsewhere no longer selects
                 # its shipped loop; say where it went rather than listing it twice.
-                "commands": [
-                    c for c in shipped_commands.get(name, []) if c not in bindings
-                ],
+                "commands": keywords(
+                    [c for c in shipped_commands.get(name, []) if c not in bindings]
+                ),
                 "guest": name in GUEST_LOOPS,
                 "inner": name == PDLC_PR_LOOP,
                 "status": "ok",
@@ -739,17 +772,32 @@ def _declared_loops() -> Dict[str, Any]:
         row: Dict[str, Any] = {
             "name": entry.name,
             "kind": "declared",
-            "commands": list(entry.commands),
+            "commands": keywords(list(entry.commands)),
             "guest": entry.guest,
             "inner": False,
             "path": str(path),
         }
         try:
             graph = compile_custom(entry, path)
+            problems = [
+                f"`routing.graph.hooks.attach` puts {a.hook} on node {a.node!r}, "
+                "which this graph does not declare — scope the attachment with "
+                "`loops`"
+                for a in declaration.attachments
+                if a.applies_to(graph.name) and a.node not in graph.nodes
+            ]
+            named = extension_hook_names(graph)
+            if named and not declaration.modules:
+                problems.append(
+                    f"names {', '.join(named)} but `routing.graph.hooks.modules` "
+                    "declares no module to register them"
+                )
+            if problems:
+                raise ValueError("; ".join(problems))
         except Exception as exc:  # noqa: BLE001 — a broken graph is a row, not a crash
             row.update(status="error", error=str(exc))
         else:
-            row.update(status="ok", extensionHooks=extension_hook_names(graph))
+            row.update(status="ok", extensionHooks=named)
         rows.append(row)
     return {"loops": rows, "error": ""}
 
@@ -768,7 +816,7 @@ def _report_loops(fmt: str) -> int:
         )
         return 1
     for row in report["loops"]:
-        commands = ", ".join(f"the-loop {c}" for c in row["commands"]) or "—"
+        commands = ", ".join(row["commands"]) or "—"
         traits = [row["kind"]]
         if row["guest"]:
             traits.append("guest")
@@ -780,7 +828,14 @@ def _report_loops(fmt: str) -> int:
             print(f"  file:     {row['path']}")
             if row["status"] == "ok":
                 hooks = ", ".join(row["extensionHooks"])
-                print("  compiles: ok" + (f" — names {hooks}" if hooks else ""))
+                print(
+                    "  compiles: ok"
+                    + (
+                        f" — names {hooks} (bound when a work item loads it)"
+                        if hooks
+                        else ""
+                    )
+                )
             else:
                 print(f"  compiles: NO — {row['error']}")
     if not any(row["kind"] == "declared" for row in report["loops"]):

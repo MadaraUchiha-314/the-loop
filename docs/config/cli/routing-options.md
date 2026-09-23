@@ -741,8 +741,11 @@ refused; a new keyword equal to one already configured is refused.
 - **Default:** `false`
 
 Walk this graph as a **guest**, as the shipped contribution and review loops do: the spec
-tree is kept out of the repository's git history, and the plan is posted to the thread.
-Set it on a graph that replaces `contribute` or `review`.
+tree is kept out of the repository's git history, and `publish-artifact` posts the plan to
+the thread. Set it on a graph that replaces `contribute` or `review`. It is the posture
+only: the session-prompt lines the-loop writes for its own contribution and review loops
+("this item has no outer loop", "change no code") are tied to those loops and are not
+applied — say what your session must know in your graph's nodes and slash commands.
 
 ## Where sessions run
 

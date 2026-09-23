@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,11 +75,14 @@ def config_base() -> Path:
     ``~/.the-loop/``: the same resolution every other reader of the file uses, so
     the graph sits beside the declaration that named it. Made absolute, so a
     config found as ``./.the-loop/cli-config.yaml`` does not leave its graphs
-    relative to whatever the process's working directory later becomes.
+    relative to whatever the process's working directory later becomes — but not
+    symlink-resolved: "this file's directory" is where the operator sees the file.
     """
     from .. import cli_config
 
-    return cli_config.default_cli_config_path().expanduser().resolve().parent
+    return Path(
+        os.path.abspath(cli_config.default_cli_config_path().expanduser())
+    ).parent
 
 
 @dataclass(frozen=True)
@@ -150,9 +154,9 @@ def read_catalog(cli_config: Mapping[str, Any]) -> Catalog:
     if not isinstance(block, Mapping):
         raise GraphConfigError("CLI config: `routing.graph` must be a mapping")
     raw = block.get("graphs")
-    if not raw:
+    if raw is None:
         return Catalog()
-    if isinstance(raw, (str, Mapping)) or not isinstance(raw, list):
+    if not isinstance(raw, list):
         raise GraphConfigError(f"CLI config: `{CATALOG_KEY}` must be a list")
 
     entries: list[CustomGraph] = []
@@ -187,8 +191,13 @@ def _read_entry(item: Any) -> CustomGraph:
             f"CLI config: `{CATALOG_KEY}` entry {dict(item)!r} has unknown "
             f"key(s) {', '.join(unknown)}"
         )
-    name = str(item.get("name") or "").strip()
-    path = str(item.get("path") or "").strip()
+    raw_name, raw_path = item.get("name"), item.get("path")
+    if not isinstance(raw_name, str) or not isinstance(raw_path, str):
+        raise GraphConfigError(
+            f"CLI config: `{CATALOG_KEY}` entry {dict(item)!r} needs both a "
+            "`name` and a `path`, each a string"
+        )
+    name, path = raw_name.strip(), raw_path.strip()
     if not name or not path:
         raise GraphConfigError(
             f"CLI config: `{CATALOG_KEY}` entry {dict(item)!r} needs both a "
@@ -236,6 +245,12 @@ def _read_commands(name: str, item: Mapping[str, Any]) -> Tuple[str, ...]:
                 "must be lowercase letters, digits and hyphens, starting with a "
                 "letter"
             )
+        if word not in COMMANDS and word in _reserved_words():
+            raise GraphConfigError(
+                f"CLI config: `{CATALOG_KEY}` entry {name!r}: {word!r} is one of "
+                "the-loop's own verbs (`the-loop " + word + " …`), so a comment "
+                "quoting that command would arm a work item; choose another word"
+            )
         if word in COMMANDS and word not in SPAWN_COMMANDS:
             raise GraphConfigError(
                 f"CLI config: `{CATALOG_KEY}` entry {name!r}: {word!r} is a control "
@@ -246,6 +261,16 @@ def _read_commands(name: str, item: Mapping[str, Any]) -> Tuple[str, ...]:
         if word not in words:
             words.append(word)
     return tuple(words)
+
+
+def _reserved_words() -> frozenset:
+    """Words that already follow ``the-loop`` somewhere else: the CLI's own
+    sub-commands (``the-loop graph complete …``, ``the-loop check …``) and the
+    Slack command's non-control verbs. A comment QUOTING one of those — a session
+    reporting what it ran — must never read as an arming command."""
+    from ..commands import iter_commands
+
+    return frozenset(c.name for c in iter_commands()) | {"new", "help", "standing"}
 
 
 # -- compiling ----------------------------------------------------------------
@@ -262,6 +287,8 @@ def compile_custom(entry: CustomGraph, target: Optional[Path] = None) -> Graph:
     against the declared modules — compiling never executes a module, which is
     what lets ``the-loop graph loops`` check a graph without running any code.
     """
+    from . import hooks  # noqa: F401 — the shipped registry, before any name resolves
+
     path = target if target is not None else entry.resolved_path()
     data = dict(_read_graph_file(path, entry.name))
     written = data.get("name")

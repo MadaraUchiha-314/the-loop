@@ -120,7 +120,8 @@ I chose with a word they type.
 1. A `commands` entry SHALL be either one of the four arming commands that may spawn a
    session (`start`, `contribute`, `do`, `review`) — **overriding** the loop that command
    selects — or a **new** word matching `^[a-z][a-z0-9-]*$` that is not any other
-   built-in control command.
+   built-in control command and not one of the-loop's own CLI or Slack verbs (so a
+   comment quoting `the-loop graph complete …` never arms a work item).
 2. WHEN a command word is bound by two entries THEN loading the declaration SHALL fail.
 3. WHEN a command word names a built-in command that is not an arming spawn command
    (`stop`, `pause`, `resume`, `execute`, `cleanup`, the collaborator and channel
@@ -150,13 +151,18 @@ with, and nothing but my declaration to be able to choose a custom graph.
    later control command SHALL NOT change it. Before the first start, the control record's
    recorded `loop` SHALL select; a record with none SHALL select by its command, as today.
 2. A recorded loop name — in the state file or the control record — SHALL select a custom
-   graph only WHEN the operator's configuration currently declares that name. Any other
-   value SHALL read as the default loop, as an invented name does today.
+   graph only WHEN the operator's configuration currently declares that name. An
+   undeclared name in the state file SHALL read as the default loop, as an invented name
+   does today; an undeclared name on the control record SHALL be ignored, and the
+   recording command's current binding, else its shipped loop, SHALL apply.
 3. The same resolution SHALL apply on every path that selects a loop: the daemon's graph
    coupling, `the-loop check`, `the-loop graph …`, and the runtime builder.
 4. WHEN a declared graph fails to load at the moment a work item needs it THEN the
    operation SHALL fail loudly (as a shipped-graph fault does) — it SHALL NOT silently
    walk the default loop instead.
+5. WHEN a work item is armed without a recorded loop (a CLI `sessions start`, a spawn when
+   no start command is required) THEN the binding of `start` SHALL apply, so an overridden
+   `start` holds however the item was armed.
 
 ### R5 — a custom graph can be a guest
 
@@ -167,8 +173,9 @@ else's repository.
 #### Acceptance criteria (EARS)
 
 1. WHEN a custom graph is declared `guest: true` THEN runtimes built for it SHALL carry
-   `guestLoop: true`, with every consequence the shipped guest loops have (spec tree
-   git-excluded, `publish-artifact` posting to the thread).
+   `guestLoop: true` (spec tree git-excluded, `publish-artifact` posting to the thread).
+   The session-prompt lines tied to the shipped contribution and review loops are not
+   part of the posture and SHALL NOT be claimed for a custom graph.
 2. A custom graph without `guest` SHALL NOT be a guest.
 
 ### R6 — attached hooks can be scoped to loops
@@ -182,7 +189,7 @@ my hooks.
 1. A `routing.graph.hooks.attach[]` entry SHALL accept an optional `loops` list of loop
    names (shipped or declared). WHEN present THEN the attachment SHALL apply only to those
    loops; WHEN absent THEN it SHALL apply to every loop, exactly as today (including
-   failing a load whose graph lacks the node).
+   failing a load whose graph lacks the node). An empty `loops` SHALL be refused.
 2. WHEN `loops` names a loop that is neither shipped nor declared THEN loading the
    declaration SHALL fail naming it.
 
@@ -196,8 +203,9 @@ walk and proves each one compiles, so that I find my mistake before a ticket doe
 1. `the-loop graph loops` SHALL list every shipped loop and every declared custom loop
    with the commands that select it, whether it is a guest, and (for a custom loop) its
    resolved path.
-2. It SHALL compile each custom graph (without executing any hook module) and report
-   `ok` or the compile error per graph, exiting non-zero when any fails.
+2. It SHALL read the CLI config strictly, compile each custom graph and check the
+   attachments that apply to it (without executing any hook module), and report `ok` or
+   the error per graph, exiting non-zero when any fails.
 3. `--format json` SHALL emit the same facts as a JSON document.
 
 ### R8 — a repository still cannot supply a graph

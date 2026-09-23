@@ -163,14 +163,18 @@ missing node (R6.1). `Declaration.digest()` includes `loops`.
   `_apply_control(control.command, routed, loop=control.loop)`; its `record()` passes
   `loop`; the `control.command` event carries `loop` when set (R3.8). `review`'s PR
   binding keys on the command, so an overridden `review` still binds to the PR (R3.7).
-- The other `ControlConfig.from_mapping` builders (`channels/inbound.py`,
-  `channels/commands.py`, `channels/slack.py`, `core/sessions.py`) pass the routing
-  block's `graph` too, so every surface recognises the same vocabulary.
+- The other `ControlConfig.from_mapping` builders that parse or select (`channels/inbound.py`,
+  `channels/commands.py`, `core/sessions.py`) pass the routing block's `graph` too, so
+  every surface recognises the same vocabulary; the Slack slash command resolves a new
+  word as a verb. (`channels/slack.py`'s buttons list only the built-in commands and are
+  unchanged.)
 - `graphlink._outer_loop_name`: state first → `resolve_outer_loop(recorded,
   self.control.loops)`; then the control record → `resolve_outer_loop(record.loop,
   self.control.loops)` when `record.loop` is set, else the shipped
-  `LOOP_FOR_CONTROL_COMMAND` (unchanged for every existing record). The control-record
-  branch now goes through the resolver too, closing the gap the survey noted.
+  `LOOP_FOR_CONTROL_COMMAND` (unchanged for every existing record). With no usable
+  recorded loop — none recorded, no record, or one naming a graph no longer declared — the
+  command's current binding applies (for no record, `start`'s), else its shipped loop. The
+  control-record branch goes through the resolver too, closing the gap the survey noted.
 
 ## §7 The runtime builder and the CLI
 

@@ -149,7 +149,9 @@ def _command_for(verb: str, control: ControlConfig) -> Optional[str]:
     (`the-loop start` → `start`; an operator's `loop go` → `go`) or the command's
     own name. A disabled keyword (``""``) names nothing; two matches name nothing."""
     matches: List[str] = []
-    for command in COMMANDS:
+    # The operator's own words too (issue-343): the line posted is the word's
+    # keyword, which the dispatcher parses as `start` onto the bound loop.
+    for command in (*COMMANDS, *control.custom_commands):
         keyword = control.keyword(command)
         if not keyword:
             continue
