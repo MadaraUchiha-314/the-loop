@@ -690,6 +690,106 @@ def _report_hooks(root: Path, fmt: str) -> int:
     return 0
 
 
+def _declared_loops() -> Dict[str, Any]:
+    """Every loop this machine can walk: the shipped ones and the operator's own
+    (``routing.graph.graphs``, issue-343), each with the commands that select it.
+
+    Each declared graph is **compiled** — the same checks a load makes — but no
+    hook module is imported: the ``x-`` hooks a graph names are listed, and bound
+    only when a work item actually loads it. A catalog that cannot be parsed is
+    reported as the one error, with no rows.
+    """
+    from ..graph.bootstrap import load_cli_config_best_effort
+    from ..graph.catalog import compile_custom, read_catalog
+    from ..graph.model import (
+        GUEST_LOOPS,
+        LOOP_FOR_CONTROL_COMMAND,
+        PDLC_PR_LOOP,
+        PDLC_WORK_ITEM_LOOP,
+        SHIPPED_LOOPS,
+        extension_hook_names,
+    )
+
+    try:
+        catalog = read_catalog(load_cli_config_best_effort())
+    except Exception as exc:  # noqa: BLE001 — the report IS the error
+        return {"loops": [], "error": str(exc)}
+    bindings = catalog.bindings
+    shipped_commands: Dict[str, List[str]] = {PDLC_WORK_ITEM_LOOP: ["start"]}
+    for command, loop in LOOP_FOR_CONTROL_COMMAND.items():
+        shipped_commands.setdefault(loop, []).append(command)
+    rows: List[Dict[str, Any]] = []
+    for name in SHIPPED_LOOPS:
+        rows.append(
+            {
+                "name": name,
+                "kind": "shipped",
+                # A shipped command the operator bound elsewhere no longer selects
+                # its shipped loop; say where it went rather than listing it twice.
+                "commands": [
+                    c for c in shipped_commands.get(name, []) if c not in bindings
+                ],
+                "guest": name in GUEST_LOOPS,
+                "inner": name == PDLC_PR_LOOP,
+                "status": "ok",
+            }
+        )
+    for entry in catalog.entries:
+        path = entry.resolved_path()
+        row: Dict[str, Any] = {
+            "name": entry.name,
+            "kind": "declared",
+            "commands": list(entry.commands),
+            "guest": entry.guest,
+            "inner": False,
+            "path": str(path),
+        }
+        try:
+            graph = compile_custom(entry, path)
+        except Exception as exc:  # noqa: BLE001 — a broken graph is a row, not a crash
+            row.update(status="error", error=str(exc))
+        else:
+            row.update(status="ok", extensionHooks=extension_hook_names(graph))
+        rows.append(row)
+    return {"loops": rows, "error": ""}
+
+
+def _report_loops(fmt: str) -> int:
+    report = _declared_loops()
+    failed = bool(report["error"]) or any(
+        row["status"] != "ok" for row in report["loops"]
+    )
+    if fmt == "json":
+        print(json.dumps(report, indent=2))
+        return 1 if failed else 0
+    if report["error"]:
+        print(
+            f"the CLI config's `routing.graph.graphs` cannot be read: {report['error']}"
+        )
+        return 1
+    for row in report["loops"]:
+        commands = ", ".join(f"the-loop {c}" for c in row["commands"]) or "—"
+        traits = [row["kind"]]
+        if row["guest"]:
+            traits.append("guest")
+        if row["inner"]:
+            traits.append("inner loop, one per pull request")
+        print(f"{row['name']}  ({', '.join(traits)})")
+        print(f"  armed by: {commands}")
+        if row["kind"] == "declared":
+            print(f"  file:     {row['path']}")
+            if row["status"] == "ok":
+                hooks = ", ".join(row["extensionHooks"])
+                print("  compiles: ok" + (f" — names {hooks}" if hooks else ""))
+            else:
+                print(f"  compiles: NO — {row['error']}")
+    if not any(row["kind"] == "declared" for row in report["loops"]):
+        print(
+            "\nno graphs of your own declared (`routing.graph.graphs` in the CLI config)"
+        )
+    return 1 if failed else 0
+
+
 @register
 class GraphCommand(Command):
     name = "graph"
@@ -810,6 +910,16 @@ class GraphCommand(Command):
             ),
         ).add_argument("--format", choices=["text", "json"], default="text")
 
+        sub.add_parser(
+            "loops",
+            help=(
+                "list every loop this machine can walk — the shipped ones and "
+                "your own (routing.graph.graphs, issue-343) — with the commands "
+                "that arm each, compiling your graphs without importing any hook "
+                "module; exits 1 when one does not compile"
+            ),
+        ).add_argument("--format", choices=["text", "json"], default="text")
+
         run = sub.add_parser(
             "run", help="drive a work item until it waits, escalates or completes"
         )
@@ -843,6 +953,8 @@ class GraphCommand(Command):
             root = _resolve_root(args.repo)
         if args.action == "hooks":
             return _report_hooks(root, args.format)
+        if args.action == "loops":
+            return _report_loops(args.format)
 
         if args.action == "show":
             graph = _show(root, pr=args.pr, pr_repo=args.pr_repo, spec_dir=spec_dir)

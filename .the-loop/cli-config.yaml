@@ -195,6 +195,16 @@ routing:
     #     - hook: x-licence-header
     #       node: implementation
     #       boundary: exit                          # entry | exit (default exit)
+    #       loops: [pdlc-work-item-loop]            # optional; omitted = every loop
+    # GRAPHS of your own (issue-343): a YAML file you wrote, and the arming
+    # commands that select it — a shipped one (start|contribute|do|review) to
+    # override, or a new word (`the-loop triage`). Same compiler, same hooks,
+    # same phase labels as the shipped loops. `the-loop graph loops` checks them.
+    # graphs:
+    #   - name: acme-triage-loop                # not pdlc-*: reserved for shipped loops
+    #     path: graphs/acme-triage-loop.yaml    # relative to THIS file's directory
+    #     commands: [triage]                    # new word → `the-loop triage`
+    #     guest: false                          # true keeps a contribution's posture
   # SECURITY: no fallback to this repo's plugin config (issue-63 review) —
   # empty here means nothing human-authored is actioned (fail closed).
   # Set this explicitly, e.g. ["MadaraUchiha-314"], to actually route events.

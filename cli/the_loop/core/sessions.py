@@ -97,7 +97,12 @@ def _tmux_config(config: Optional[dict] = None) -> TmuxConfig:
 
 
 def _control_config(config: Optional[dict] = None) -> ControlConfig:
-    return ControlConfig.from_mapping(_routing(config).get("control") or {})
+    routing = _routing(config)
+    # `routing.graph` too (issue-343): the operator's own command words and the
+    # loops they select, as the dispatcher parses them.
+    return ControlConfig.from_mapping(
+        routing.get("control") or {}, graph=routing.get("graph") or {}
+    )
 
 
 def _instance(config: Optional[dict]) -> InstanceConfig:

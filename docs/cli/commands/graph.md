@@ -188,6 +188,43 @@ when the operator's own CLI config declares it under
 [`routing.graph.hooks`](/config/cli/routing-options#graph-hooks) — a checkout cannot opt its
 own modules in (issue-352).
 
+## `loops`
+
+List every loop this machine can walk — the five shipped loops and any graphs **of your
+own** declared under [`routing.graph.graphs`](/config/cli/routing-options#graph-graphs)
+([issue-343](https://github.com/MadaraUchiha-314/the-loop/issues/343)) — with the arming
+commands that select each. Every declared graph is **compiled**, with the same checks a
+work item's load makes; no hook module is imported (the `x-` hooks a graph names are listed,
+not bound).
+
+```text
+$ the-loop graph loops
+pdlc-work-item-loop  (shipped)
+  armed by: the-loop start
+pdlc-pr-loop  (shipped, inner loop, one per pull request)
+  armed by: —
+pdlc-contribution-loop  (shipped, guest)
+  armed by: the-loop contribute
+pdlc-adhoc-loop  (shipped)
+  armed by: —
+pdlc-review-loop  (shipped, guest)
+  armed by: the-loop review
+acme-quick-loop  (declared)
+  armed by: the-loop do, the-loop triage
+  file:     /home/me/.the-loop/graphs/quick.yaml
+  compiles: ok
+```
+
+A shipped command you bound elsewhere is listed under your graph, not under the shipped
+loop (`the-loop do` above).
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--format` | `text` | `text`, or `json` (`loops[]` with `name`, `kind`, `commands`, `guest`, `inner`, `status`, and for a declared graph `path` and `extensionHooks` or `error`; plus a top-level `error`) for scripting. |
+
+Exits **1** when a declared graph does not compile, or when `routing.graph.graphs` itself
+cannot be read. See [bringing your own graph](/cli/graphs).
+
 ## `status`
 
 Where a work item is, with each reached node's verdict and messages. Nodes beyond the

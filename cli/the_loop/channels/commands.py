@@ -461,8 +461,13 @@ def manifest_text() -> str:
 def _control_config(cli_config: Optional[Mapping]) -> ControlConfig:
     routing = (dict(cli_config or {}).get("routing") or {}) if cli_config else {}
     control = routing.get("control") if isinstance(routing, Mapping) else None
+    graph = routing.get("graph") if isinstance(routing, Mapping) else None
+    # `routing.graph` too (issue-343): the operator's own command words are
+    # control commands on every surface, or a Slack reply would forward one the
+    # dispatcher executes.
     return ControlConfig.from_mapping(
-        dict(control) if isinstance(control, Mapping) else {}
+        dict(control) if isinstance(control, Mapping) else {},
+        graph=dict(graph) if isinstance(graph, Mapping) else {},
     )
 
 

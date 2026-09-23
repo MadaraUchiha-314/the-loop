@@ -663,6 +663,87 @@ on arrival.
 Typed parameters handed to the hook as `ctx.params`, exactly as a shipped chain entry's
 `with:` is.
 
+### `graph.hooks.attach[].loops`
+
+- **Type:** `string[]` — shipped loop names or your own from `graph.graphs` (below)
+- **Default:** none — the attachment applies to every loop
+- **Related:** [bringing your own graph](/cli/graphs) · [decision-136](/decisions/decision-136)
+
+The loops this attachment applies to
+([issue-343](https://github.com/MadaraUchiha-314/the-loop/issues/343)). Omitted, it applies
+to **every** loop, and a loop that does not declare the node fails to load — which is what
+you want for a typo, and not what you want for a hook on `design` once a graph without a
+`design` node is in use. Scope such an attachment: `loops: [pdlc-work-item-loop]`. A name
+that is neither shipped nor declared fails the load.
+
+### graph.graphs
+
+- **Type:** `object[]` — `name`, `path`, and optionally `commands` and `guest`
+- **Default:** none (only the shipped loops)
+- **Related:** [bringing your own graph](/cli/graphs) · [process-graph](/capabilities/process-graph) · [`the-loop graph loops`](/cli/commands/graph#loops) · [decision-136](/decisions/decision-136)
+
+Graphs of **your own**
+([issue-343](https://github.com/MadaraUchiha-314/the-loop/issues/343)): each entry names a
+graph YAML you wrote and the arming commands that select it.
+
+```yaml
+routing:
+  graph:
+    graphs:
+      - name: acme-triage-loop
+        path: graphs/acme-triage-loop.yaml   # relative to this file's directory
+        commands: [triage]                   # a new word → `the-loop triage`
+      - name: acme-quick-loop
+        path: ~/.the-loop/graphs/quick.yaml
+        commands: [do]                       # `the-loop do` now walks this graph
+```
+
+Your graph is compiled by the same code as the shipped loops and held to the same rules —
+known hooks only (shipped, or `x-` hooks a `graph.hooks.modules` (above) entry
+registers), the-loop's phases only, a well-formed `command:` per node. A work item's
+recorded loop selects your graph **only while this list declares it**: any other name reads
+as the default loop. **A graph decides which gates a work item passes** — review it like
+code. `the-loop graph loops` lists every loop and checks that each of yours compiles.
+
+### `graph.graphs[].name`
+
+- **Type:** `string`, matching `^[a-z][a-z0-9-]*$`
+- **Default:** none — required
+
+The loop's name, recorded in `work-item-state.json`. Not a shipped loop's name and not
+`pdlc-*` — that prefix is reserved for the loops the-loop ships. Unique across the list.
+
+### `graph.graphs[].path`
+
+- **Type:** `string`
+- **Default:** none — required
+
+The graph YAML: absolute, `~/…`, or relative to the directory of **this** config file.
+Never resolved against a work item's checkout, so no session can edit the graph it walks.
+A missing, unreadable or invalid file fails the load, naming the entry.
+
+### `graph.graphs[].commands`
+
+- **Type:** `string[]`, each matching `^[a-z][a-z0-9-]*$`
+- **Default:** `[]` — the graph is declared but no command selects it
+
+The arming commands that select this graph. `start`, `contribute`, `do` or `review`
+**override** the shipped command's loop — everything else about the command is unchanged,
+and `review` still binds to the pull request it was typed on. Any other word is a **new**
+command: its keyword is `the-loop <word>`, matched like every other keyword, and it arms
+exactly as `start` does. `stop`, `pause`, `resume`, `execute`, `cleanup` and the
+collaborator and channel commands select no loop and are refused; a word bound twice is
+refused; a new keyword equal to one already configured is refused.
+
+### `graph.graphs[].guest`
+
+- **Type:** `boolean`
+- **Default:** `false`
+
+Walk this graph as a **guest**, as the shipped contribution and review loops do: the spec
+tree is kept out of the repository's git history, and the plan is posted to the thread.
+Set it on a graph that replaces `contribute` or `review`.
+
 ## Where sessions run
 
 ### `spawnWorkdir`

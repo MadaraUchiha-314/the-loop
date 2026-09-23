@@ -5,22 +5,26 @@ that **every structural failure is a startup failure** — an unknown hook, an
 edge pointing at a node that does not exist, a malformed chain entry — rather
 than a surprise three nodes into a traversal at 2am.
 
-The graph ships **with the CLI**, as package data beside this module (R1.1) —
-the CLI is what executes it, and every hook it names is registered here. A
-repository cannot define or override it; a repo-supplied one is ignored with a
-warning (R1.4). It stays fully declarative so user-authored graphs can arrive
-later as a distribution change rather than a rewrite.
+The shipped graphs live **with the CLI**, as package data beside this module
+(R1.1) — the CLI is what executes them, and every hook they name is registered
+here. A repository cannot define or override one; a repo-supplied file is ignored
+with a warning (R1.4). The **operator** can declare graphs of their own in the
+CLI config (``routing.graph.graphs``, issue-343): compiled by the same code, held
+to the same vocabulary, selected only by name from that declaration
+(:mod:`the_loop.graph.catalog`).
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    Collection,
     Dict,
     List,
     Mapping,
@@ -99,12 +103,38 @@ LOOP_FOR_CONTROL_COMMAND: Dict[str, str] = {
     "review": PDLC_REVIEW_LOOP,
 }
 
+#: Every phase a node may declare, in walk order (issue-343). The ``loop:<phase>``
+#: label vocabulary is one fixed list (decision-123 D3) so a dashboard built on it
+#: works for every repository — which is why an operator's own graph is held to it
+#: rather than minting labels of its own. A test pins it equal to the union of the
+#: shipped loops' phases, so a new shipped phase lands here in the same change.
+PHASE_VOCABULARY = (
+    "phase-selection",
+    "brainstorming",
+    "requirements-definition",
+    "design",
+    "test-planning",
+    "tasks-breakdown",
+    "implementation",
+    "verification",
+    "needs-review",
+    "complete",
+    "cleanup",
+)
+
+#: What a node's ``command:`` may say (issue-343): a slash command of the-loop's
+#: own (``do-task``) or, namespaced, one of another plugin's (``acme:triage``).
+#: Checked for every graph, so the text a session is told to run can never carry
+#: whitespace, a path or a second instruction.
+_COMMAND = re.compile(r"^[a-z0-9][a-z0-9-]*(:[a-z0-9][a-z0-9-]*)?$")
+
 #: The default shipped graph — the outer loop — package data beside this module
 #: (see shipped_graph_path). Named pdlc.yaml before issue-172 split the process
 #: into the two loops.
 GRAPH_FILENAME = f"{PDLC_WORK_ITEM_LOOP}.yaml"
 
 if TYPE_CHECKING:  # pragma: no cover
+    from .catalog import Catalog
     from .extensions import Declaration
 
 logger = logging.getLogger("the-loop.graph")
@@ -119,6 +149,7 @@ __all__ = [
     "PDLC_PR_LOOP",
     "PDLC_REVIEW_LOOP",
     "PDLC_WORK_ITEM_LOOP",
+    "PHASE_VOCABULARY",
     "SHIPPED_LOOPS",
     "ArtifactSlot",
     "Edge",
@@ -126,15 +157,17 @@ __all__ = [
     "GraphConfigError",
     "Node",
     "artifact_names",
+    "extension_hook_names",
     "load_graph",
     "resolve_outer_loop",
     "resolve_produces",
     "shipped_graph_path",
+    "slash_command",
     "validate_produces_entry",
 ]
 
 
-def resolve_outer_loop(name: str) -> str:
+def resolve_outer_loop(name: str, declared: Collection[str] = ()) -> str:
     """``name`` when it is a **non-default** outer-path loop, else ``""``.
 
     The one place that decides whether a recorded loop name may choose a graph.
@@ -148,11 +181,31 @@ def resolve_outer_loop(name: str) -> str:
     value, the default outer loop itself, the *inner* loop (addressed by
     pull-request number, never by name — selecting it here would walk a pull
     request's graph with a work item's state layout), and anything invented.
+
+    ``declared`` is the operator's own graph names (issue-343,
+    ``routing.graph.graphs``): an exact member selects that graph. It is the
+    only way the set grows — a name the operator does not declare *now* reads as
+    the default, however it got into the state file.
     """
     value = str(name or "")
+    if value and value in tuple(declared) and value not in SHIPPED_LOOPS:
+        return value
     if value == PDLC_WORK_ITEM_LOOP or value not in OUTER_PATH_LOOPS:
         return ""
     return value
+
+
+def slash_command(command: str) -> str:
+    """The slash command a node's ``command:`` names, as a session types it.
+
+    A bare name is one of the-loop's own (``do-task`` → ``/the-loop:do-task``);
+    a namespaced one is another plugin's, rendered verbatim (``acme:triage`` →
+    ``/acme:triage``) — how an operator's graph points a session at its own
+    commands (issue-343). The grammar is enforced at compile time, so the
+    result is always one token.
+    """
+    value = str(command or "")
+    return f"/{value}" if ":" in value else f"/the-loop:{value}"
 
 
 _ACTORS = frozenset({"agent", "human", "code"})
@@ -478,7 +531,9 @@ def _normalise_edge_keys(raw: Mapping[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def _build_node(raw: Mapping[str, Any]) -> Node:
+def _build_node(
+    raw: Mapping[str, Any], known: Optional[Callable[[str], bool]] = None
+) -> Node:
     node_id = str(raw.get("id") or "").strip()
     if not node_id:
         raise GraphConfigError(
@@ -493,6 +548,13 @@ def _build_node(raw: Mapping[str, Any]) -> Node:
     if session not in _SESSION_MODES:
         raise GraphConfigError(
             f"node {node_id!r}: session {session!r} is not one of {sorted(_SESSION_MODES)}"
+        )
+    command = str(raw.get("command", "") or "")
+    if command and not _COMMAND.match(command):
+        raise GraphConfigError(
+            f"node {node_id!r}: command {command!r} is not a slash-command name; "
+            "write `do-task` for one of the-loop's own or `acme:triage` for "
+            "another plugin's"
         )
     produces = raw.get("produces") or []
     if isinstance(produces, str):
@@ -518,7 +580,7 @@ def _build_node(raw: Mapping[str, Any]) -> Node:
         phase=str(raw.get("phase", "")),
         actor=actor,
         produces=tuple(str(p) for p in produces),
-        command=str(raw.get("command", "")),
+        command=command,
         stage=str(raw.get("stage", "")),
         session=session,
         required=bool(raw.get("required", False)),
@@ -530,14 +592,22 @@ def _build_node(raw: Mapping[str, Any]) -> Node:
         opt_in=opt_in,
         description=str(raw.get("description", "") or "").strip(),
         max_attempts=int(raw.get("maxAttempts", 3)),
-        entry=_validate_chain(node_id, "entry", raw.get("entry") or []),
-        exit=_validate_chain(node_id, "exit", raw.get("exit") or []),
+        entry=_validate_chain(node_id, "entry", raw.get("entry") or [], known),
+        exit=_validate_chain(node_id, "exit", raw.get("exit") or [], known),
         terminal=bool(raw.get("terminal", False)),
     )
 
 
-def compile_graph(data: Mapping[str, Any]) -> Graph:
-    """Compile a parsed mapping into a frozen, indexed :class:`Graph`."""
+def compile_graph(
+    data: Mapping[str, Any], known: Optional[Callable[[str], bool]] = None
+) -> Graph:
+    """Compile a parsed mapping into a frozen, indexed :class:`Graph`.
+
+    ``known`` widens which hook names count as registered — an operator's graph
+    passes a predicate accepting ``x-`` names, which :func:`load_graph` then
+    resolves against the declared modules (issue-343). ``None`` — every shipped
+    graph — accepts the shipped registry alone.
+    """
     raw_nodes = data.get("nodes")
     if not isinstance(raw_nodes, list) or not raw_nodes:
         raise GraphConfigError("the graph declares no nodes")
@@ -546,7 +616,7 @@ def compile_graph(data: Mapping[str, Any]) -> Graph:
     for raw in raw_nodes:
         if not isinstance(raw, Mapping):
             raise GraphConfigError(f"node entries must be mappings; found {raw!r}")
-        node = _build_node(raw)
+        node = _build_node(raw, known)
         if node.id in nodes:
             raise GraphConfigError(f"duplicate node id {node.id!r}")
         nodes[node.id] = node
@@ -638,7 +708,7 @@ def compile_graph(data: Mapping[str, Any]) -> Graph:
     )
 
 
-_CACHE: Dict[Tuple[str, str, str], Graph] = {}
+_CACHE: Dict[Tuple[str, str, str, str], Graph] = {}
 
 
 def load_graph(
@@ -646,20 +716,22 @@ def load_graph(
     repo: Optional[Path] = None,
     name: str = PDLC_WORK_ITEM_LOOP,
     declaration: Optional["Declaration"] = None,
+    catalog: Optional["Catalog"] = None,
 ) -> Graph:
-    """Load and compile a shipped loop. Cached — compiled once per declaration.
+    """Load and compile a loop. Cached — compiled once per declaration.
 
-    ``name`` selects which loop when no explicit ``path`` is given: the
-    work-item loop (the default, and the whole process before issue-172) or the
-    PR loop. Both are shipped, compiled by the same code, and executed by the
-    same runtime.
+    ``name`` selects which loop when no explicit ``path`` is given: one of the
+    shipped loops (package data beside this module), or — issue-343 — a graph the
+    operator declared in ``routing.graph.graphs``, passed here as ``catalog``.
+    Both kinds are compiled by the same code and executed by the same runtime; a
+    name that is neither is a :class:`GraphConfigError`, never a fallback.
 
     ``declaration`` is the operator's ``routing.graph.hooks`` block, already
     parsed (issue-248, re-homed in issue-352): its modules are executed and its
     hooks appended to the nodes it named, with any ``path`` entry resolved
     against ``repo`` — the checkout the loop is walked in. That is why the cache
     key carries the repository and the declaration's digest. ``None`` — every
-    caller that has no CLI config at hand — compiles the shipped file alone.
+    caller that has no CLI config at hand — compiles the file alone.
     ``repo`` without a declaration still warns about a repository-supplied graph
     file, which the-loop ignores.
     """
@@ -667,43 +739,133 @@ def load_graph(
     from .extensions import Declaration, apply
 
     declared = declaration if declaration is not None else Declaration()
+    custom = (
+        catalog.get(name)
+        if catalog is not None and not path and name not in SHIPPED_LOOPS
+        else None
+    )
     if repo is not None:
-        _warn_on_repo_graph(repo)
-    target = Path(path) if path else shipped_graph_path(name)
-    key = (str(target), str(repo or ""), declared.digest())
+        _warn_on_repo_graph(repo, catalog.names if catalog is not None else ())
+    if path:
+        target = Path(path)
+    elif custom is not None:
+        target = custom.resolved_path()
+    elif name in SHIPPED_LOOPS:
+        target = shipped_graph_path(name)
+    else:
+        raise GraphConfigError(
+            f"loop {name!r} is neither one of the-loop's shipped loops "
+            f"({', '.join(SHIPPED_LOOPS)}) nor declared in the CLI config's "
+            "`routing.graph.graphs`"
+        )
+    key = (
+        str(target),
+        custom.name if custom is not None else "",
+        str(repo or ""),
+        declared.digest(),
+    )
     if key in _CACHE:
         return _CACHE[key]
-    try:
-        data = yaml.safe_load(target.read_text(encoding="utf-8")) or {}
-    except OSError as exc:
-        raise GraphConfigError(f"could not read the graph at {target}: {exc}") from None
-    except yaml.YAMLError as exc:
-        raise GraphConfigError(
-            f"the graph at {target} is not valid YAML: {exc}"
-        ) from None
-    if not isinstance(data, Mapping):
-        raise GraphConfigError(f"the graph at {target} must be a mapping")
-    graph = compile_graph(data)
+    if custom is not None:
+        from .catalog import compile_custom
+
+        graph = compile_custom(custom, target)
+        graph = _resolve_extensions(graph, repo, declared)
+        logger.info("loaded %s, the operator's own graph, from %s", custom.name, target)
+    else:
+        graph = compile_graph(_read_graph_file(target))
     if repo is not None and not declared.empty:
         graph = apply(graph, Path(repo), declared)
     _CACHE[key] = graph
     return graph
 
 
-def _warn_on_repo_graph(repo: Path) -> None:
+def _read_graph_file(target: Path, label: str = "") -> Mapping[str, Any]:
+    """``target`` parsed as a YAML mapping, or a :class:`GraphConfigError` that
+    names it — and, for an operator's graph, which declaration pointed there."""
+    where = f"the graph at {target}" + (f" (declared as {label!r})" if label else "")
+    try:
+        data = yaml.safe_load(target.read_text(encoding="utf-8")) or {}
+    except OSError as exc:
+        raise GraphConfigError(f"could not read {where}: {exc}") from None
+    except yaml.YAMLError as exc:
+        raise GraphConfigError(f"{where} is not valid YAML: {exc}") from None
+    if not isinstance(data, Mapping):
+        raise GraphConfigError(f"{where} must be a mapping")
+    return data
+
+
+def extension_hook_names(graph: Graph) -> List[str]:
+    """Every ``x-`` hook ``graph``'s own chains name, sorted (issue-343).
+
+    Only an operator's graph can have any — the shipped registry refuses the
+    prefix — and they are what :func:`load_graph` resolves against the declared
+    modules, and what ``the-loop graph loops`` lists without importing one.
+    """
+    from .registry import EXTENSION_PREFIX
+
+    names = set()
+    for node in graph.nodes.values():
+        for spec in tuple(node.entry) + tuple(node.exit):
+            name = spec if isinstance(spec, str) else str(spec.get("hook", ""))
+            if name.startswith(EXTENSION_PREFIX):
+                names.add(name)
+    return sorted(names)
+
+
+def _resolve_extensions(
+    graph: Graph, repo: Optional[Path], declared: "Declaration"
+) -> Graph:
+    """Bind the ``x-`` hooks an operator's graph names to the declared modules.
+
+    Deferred at compile time (the compiler accepted any ``x-`` name) and settled
+    here, where the repository and the declaration are both in hand: a name no
+    declared module registers fails the load, exactly as an unknown shipped hook
+    does — a gate the graph asked for either runs or is loudly absent.
+    """
+    wanted = extension_hook_names(graph)
+    if not wanted:
+        return graph
+    if repo is None or not declared.modules:
+        raise GraphConfigError(
+            f"the {graph.name} loop names {', '.join(wanted)}, but no module in "
+            "`routing.graph.hooks.modules` is loaded for it; declare the module "
+            "that registers them"
+        )
+    from dataclasses import replace
+
+    from .extensions import load_modules
+
+    table = load_modules(Path(repo), declared)
+    missing = [name for name in wanted if name not in table]
+    if missing:
+        raise GraphConfigError(
+            f"the {graph.name} loop names {', '.join(missing)}, which no declared "
+            f"module registered; registered hooks are: "
+            f"{', '.join(sorted(table)) or '(none)'}"
+        )
+    return replace(graph, extension_hooks=dict(table))
+
+
+def _warn_on_repo_graph(repo: Path, declared: Sequence[str] = ()) -> None:
     """A repository cannot define the process — say so rather than merging it (R1.4).
 
     The candidate list is **derived** from :data:`SHIPPED_LOOPS` plus the two
     historical filenames, rather than written out: a hand-maintained copy is how
     the fourth loop shipped with no warning for its own override (issue-225).
+    ``declared`` adds the operator's own graph names (issue-343): a repository
+    file of that name is not what runs either, and saying so is how the
+    difference is found.
     """
     candidates = [repo / ".the-loop" / "graph.yaml", repo / ".the-loop" / "pdlc.yaml"]
-    candidates += [repo / ".the-loop" / f"{name}.yaml" for name in SHIPPED_LOOPS]
+    candidates += [
+        repo / ".the-loop" / f"{name}.yaml" for name in (*SHIPPED_LOOPS, *declared)
+    ]
     for candidate in candidates:
         if candidate.is_file():
             logger.warning(
-                "ignoring %s: the-loop's process graph ships with the CLI and "
-                "cannot be overridden by a repository (user-defined graphs are a "
-                "future feature)",
+                "ignoring %s: a repository's graph file cannot be overridden into "
+                "the-loop's process; an operator declares their own graphs in the "
+                "CLI config's `routing.graph.graphs`",
                 candidate,
             )

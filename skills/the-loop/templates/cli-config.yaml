@@ -293,6 +293,28 @@ routing:
     #     - hook: x-licence-header
     #       node: implementation
     #       boundary: exit                          # entry | exit (default exit)
+    #       loops: [pdlc-work-item-loop]            # optional (issue-343); omitted =
+    #                                               # every loop, and a loop without
+    #                                               # the node then fails to load
+    # GRAPHS OF YOUR OWN (issue-343, decision-136). The shipped loops are
+    # the-loop's; these are yours: a YAML file you wrote and the arming commands
+    # that select it. A command is one of the four arming commands (start,
+    # contribute, do, review) — your graph then replaces the shipped one for it —
+    # or a NEW word, which becomes the keyword `the-loop <word>` and arms exactly
+    # as `start` does. Your graph is compiled by the same code as the shipped
+    # loops: shipped hooks or your `x-` hooks only, the-loop's phases only (the
+    # `loop:<phase>` labels are one vocabulary), and a node's `command:` may name
+    # another plugin's slash command as `plugin:command`. A graph decides which
+    # gates a work item passes — review it like code. `the-loop graph loops`
+    # lists every loop and checks each of yours compiles.
+    # graphs:
+    #   - name: acme-triage-loop                # not pdlc-*: reserved for the-loop
+    #     path: graphs/acme-triage-loop.yaml    # absolute, ~/…, or relative to THIS file
+    #     commands: [triage]                    # a new word → `the-loop triage`
+    #   - name: acme-quick-loop
+    #     path: ~/.the-loop/graphs/quick.yaml
+    #     commands: [do]                        # `the-loop do` now walks this graph
+    #     guest: false                          # true: a guest, like contribute/review
   # SECURITY (prompt-injection guard): only these GitHub logins' actions are acted on
   # by BOTH the webhook receiver and the poller — the actor who DID the thing, so a
   # comment is judged by its own author. Comments/reviews/labels from anyone else are

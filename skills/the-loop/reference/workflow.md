@@ -568,6 +568,33 @@ Two rules govern working inside it:
   working state only, excluded from git. The only local file is
   `<specDir>/<id>/work-item-state.json` — never commit it from a review session.
 
+## A graph of the operator's own (issue-343)
+
+An operator may declare **graphs of their own** in their CLI config
+(`routing.graph.graphs`, [decision-136](../../../docs/decisions/decision-136.md)) and bind
+arming commands to them: a shipped one (`the-loop do` now walks their quick loop) or a new
+word (`the-loop triage`, which arms exactly as `start` does). The choice is recorded the
+same way every loop choice is — the control record, then `work-item-state.json`'s `loop`
+field — and a recorded name selects the graph only while the operator declares it.
+
+Working inside one:
+
+- **The graph is the process, not this document.** A custom graph may have none of the
+  phases above, or all of them in another order. Do what its current node asks — the
+  `$graph_context` block and the `deliver-assignment` message name the node, its phase
+  and the slash command to run — and claim it with `the-loop graph complete <id>` as in
+  any loop. `the-loop graph loops` lists what this machine declares; `the-loop check <id>`
+  shows the walk.
+- **A node's `command:` may be another plugin's** (`acme:triage` → `/acme:triage`). Run
+  that command; if it is not installed in this harness, say so on the ticket rather than
+  improvising its behaviour.
+- **The loop's rules still hold wherever the graph does not speak** — the marker on every
+  comment, the paper trail, secrets never committed, evidence redacted. A graph can leave
+  out a gate; it cannot license you to skip the rules that are not gates.
+- **Never edit the graph or the declaration from a session.** Both are the operator's
+  files, outside the checkout on purpose; a graph that seems wrong is a finding on the
+  ticket.
+
 ## Link artifacts to the ticket (single source of truth)
 
 Once each spec document is established (requirements, design, tasks), **update the work

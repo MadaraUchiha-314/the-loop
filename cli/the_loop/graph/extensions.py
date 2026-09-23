@@ -50,7 +50,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, Mapping, Sequence, Tuple
 
-from .model import Graph, GraphConfigError, _validate_chain
+from .model import Graph, GraphConfigError, _validate_chain, extension_hook_names
 from .registry import EXTENSION_PREFIX, HookFn, collecting
 
 logger = logging.getLogger("the-loop.graph")
@@ -94,9 +94,17 @@ class Attachment:
     node: str
     boundary: str = "exit"
     params: Mapping[str, Any] = field(default_factory=dict)
+    #: The loops this attachment applies to (issue-343); empty means every loop,
+    #: which is the behaviour an unscoped attachment always had.
+    loops: Tuple[str, ...] = ()
+
+    def applies_to(self, loop: str) -> bool:
+        return not self.loops or loop in self.loops
 
     def render(self) -> str:
         rendered = f"{self.hook} → {self.node} ({self.boundary})"
+        if self.loops:
+            rendered += f" in {', '.join(self.loops)}"
         return f"{rendered} with: {dict(self.params)}" if self.params else rendered
 
 
@@ -122,7 +130,8 @@ class Declaration:
         payload = {
             "modules": [[m.path, m.dotted] for m in self.modules],
             "attach": [
-                [a.hook, a.node, a.boundary, a.params] for a in self.attachments
+                [a.hook, a.node, a.boundary, a.params, list(a.loops)]
+                for a in self.attachments
             ],
         }
         blob = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
@@ -155,9 +164,13 @@ def read_declaration(cli_config: Mapping[str, Any]) -> Declaration:
             f"CLI config: `{CONFIG_KEY}` must be a mapping with `modules` "
             "and `attach` lists"
         )
+    from .catalog import read_catalog
+    from .model import SHIPPED_LOOPS
+
+    loops = (*SHIPPED_LOOPS, *read_catalog(cli_config).names)
     return Declaration(
         modules=_read_modules(raw.get("modules")),
-        attachments=_read_attachments(raw.get("attach")),
+        attachments=_read_attachments(raw.get("attach"), loops),
     )
 
 
@@ -198,7 +211,7 @@ def _read_modules(value: Any) -> Tuple[ModuleRef, ...]:
     return tuple(refs)
 
 
-def _read_attachments(value: Any) -> Tuple[Attachment, ...]:
+def _read_attachments(value: Any, known_loops: Sequence[str]) -> Tuple[Attachment, ...]:
     attachments: list[Attachment] = []
     for entry in _entries(value, "attach"):
         if not isinstance(entry, Mapping):
@@ -234,9 +247,35 @@ def _read_attachments(value: Any) -> Tuple[Attachment, ...]:
                 "`with` that is not a mapping"
             )
         attachments.append(
-            Attachment(hook=name, node=node, boundary=boundary, params=dict(params))
+            Attachment(
+                hook=name,
+                node=node,
+                boundary=boundary,
+                params=dict(params),
+                loops=_read_loops(name, entry.get("loops"), known_loops),
+            )
         )
     return tuple(attachments)
+
+
+def _read_loops(name: str, value: Any, known_loops: Sequence[str]) -> Tuple[str, ...]:
+    """An attachment's ``loops`` scope (issue-343): names of loops that exist."""
+    if value is None:
+        return ()
+    if isinstance(value, (str, Mapping)) or not isinstance(value, Sequence):
+        raise GraphConfigError(
+            f"CLI config: `{CONFIG_KEY}.attach` entry for {name!r} has `loops` "
+            "that is not a list"
+        )
+    loops = tuple(str(loop).strip() for loop in value)
+    unknown = [loop for loop in loops if loop not in known_loops]
+    if unknown:
+        raise GraphConfigError(
+            f"CLI config: `{CONFIG_KEY}.attach` entry for {name!r} names "
+            f"{', '.join(repr(loop) for loop in unknown)}, which is neither a "
+            "shipped loop nor declared in `routing.graph.graphs`"
+        )
+    return loops
 
 
 # -- loading (executes the repository's code) ---------------------------------
@@ -367,6 +406,8 @@ def apply(graph: Graph, repo: Path, declaration: Declaration) -> Graph:
     known = table.__contains__
     nodes = dict(graph.nodes)
     for attachment in declaration.attachments:
+        if not attachment.applies_to(graph.name):
+            continue
         if attachment.hook not in table:
             raise GraphConfigError(
                 f"`{CONFIG_KEY}.attach` names {attachment.hook!r}, which no declared "
@@ -392,7 +433,10 @@ def apply(graph: Graph, repo: Path, declaration: Declaration) -> Graph:
         len(declaration.modules),
         len(declaration.attachments),
     )
-    unattached = sorted(set(table) - {a.hook for a in declaration.attachments})
+    # A hook an operator's own graph names in its chains (issue-343) runs there
+    # without an attachment, so it is not "attached to no node".
+    used = {a.hook for a in declaration.attachments} | set(extension_hook_names(graph))
+    unattached = sorted(set(table) - used)
     if unattached:
         # Executed code that gates nothing. Not an error — a hook may be attached
         # in the next commit — but silence here reads as "my check is running".

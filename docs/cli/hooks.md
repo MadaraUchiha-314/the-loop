@@ -10,9 +10,10 @@ the declaration is the **operator's CLI config**, not a repository's harness con
 CLI reads no repository's configuration, so a hook runs only where the operator wrote it
 down. The module can still live in the repository's tree.
 
-The graph itself stays the-loop's: nobody declares nodes, edges or loops, and nobody
-removes, reorders or replaces a shipped hook. What you can do is **append** one of your own
-to a boundary the shipped graph already declares.
+Nobody removes, reorders or replaces a shipped hook in a shipped loop. What you can do is
+**append** one of your own to a boundary a loop already declares — or, since
+[issue-343](https://github.com/MadaraUchiha-314/the-loop/issues/343), name it directly in a
+[graph of your own](/cli/graphs).
 
 ## Write it
 
@@ -62,7 +63,9 @@ routing:
 ```
 
 A `path` resolves against each checkout the loop walks, so one declaration serves every
-repository this instance drives. `the-loop graph hooks` prints what is declared **without
+repository this instance drives. An attachment applies to **every** loop, and a loop without
+the named node fails to load; add `loops: [pdlc-work-item-loop]` (or your own graph's name)
+to scope it to the loops that have its node. `the-loop graph hooks` prints what is declared **without
 importing any of it**; `the-loop check <work item>` is what loads it.
 
 ## What a hook of your own can and cannot do
@@ -98,6 +101,7 @@ next start.
 ## See also
 
 - [`the-loop graph hooks`](/cli/commands/graph#hooks) — what your config declares.
+- [Bringing your own graph](/cli/graphs) — a loop of your own, and the commands that arm it.
 - [process-graph](/capabilities/process-graph) — the hook contract and the shipped hooks.
 - [routing options](/config/cli/routing-options#graph-hooks) — where `routing.graph.hooks`
   lives, and why it is the operator's.

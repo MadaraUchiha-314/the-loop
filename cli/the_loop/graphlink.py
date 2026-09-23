@@ -417,7 +417,9 @@ def render_graph_context(
     if verdict:
         lines.append(f"  this event was classified by the gate first: {verdict}")
     if ctx.next_command:
-        lines.append(f"  resume with: `/the-loop:{ctx.next_command} {item_id}`")
+        from .graph.model import slash_command
+
+        lines.append(f"  resume with: `{slash_command(ctx.next_command)} {item_id}`")
     claim_suffix = f" --pr {pr_number}" if pr_number is not None else ""
     if pr_number is not None and pr_repo:
         claim_suffix += f" --pr-repo {pr_repo}"
@@ -1246,13 +1248,16 @@ class GraphLink:
         control command cannot re-shape a walk in progress; before the first
         start, the arming command recorded in the portable control record is
         the declared intent (``contribute`` → the contribution loop, ``do`` →
-        the ad-hoc loop, issue-225). Only a shipped **outer-path** loop is ever
-        returned — the state file is agent-writable, so an invented name reads
-        as the default rather than choosing a graph (fail closed).
+        the ad-hoc loop, issue-225; any arming command the operator bound to a
+        graph of their own, issue-343). Only a shipped **outer-path** loop or a
+        loop the operator declares is ever returned — the state file is
+        agent-writable, so an invented name reads as the default rather than
+        choosing a graph (fail closed).
         """
         from .graph.model import LOOP_FOR_CONTROL_COMMAND, resolve_outer_loop
         from .graph.state import WorkItemState
 
+        declared = self.control.loops
         try:
             state = WorkItemState.load(root / spec_dir / item_id, item_id)
             recorded = str(getattr(state, "loop", "") or "")
@@ -1260,12 +1265,19 @@ class GraphLink:
             logger.debug("could not read %s's recorded loop: %s", item_id, exc)
             recorded = ""
         if recorded:
-            return resolve_outer_loop(recorded)
+            return resolve_outer_loop(recorded, declared)
         if self.control_store is not None:
             try:
                 record = self.control_store.get(work_item)
                 if record is not None:
-                    return LOOP_FOR_CONTROL_COMMAND.get(record.command, "")
+                    # The operator's own loop the arming command selected
+                    # (issue-343), through the same fail-closed resolver the
+                    # state file goes through; else the shipped mapping.
+                    if record.loop:
+                        return resolve_outer_loop(record.loop, declared)
+                    return resolve_outer_loop(
+                        LOOP_FOR_CONTROL_COMMAND.get(record.command, "")
+                    )
             except Exception as exc:  # noqa: BLE001
                 logger.debug("could not read %s's control record: %s", item_id, exc)
         return ""

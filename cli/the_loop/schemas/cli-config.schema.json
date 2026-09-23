@@ -658,6 +658,44 @@
               "default": "docs/specs",
               "description": "Where the work items' specs live in every checkout this instance drives, relative to the checkout root. ONE value for the whole instance (issue-352): the CLI reads no repository's harness config, and the loop's convention is docs/specs/<id>/ — set this only for an instance whose repositories are laid out differently. Empty reads as the default. `the-loop check`/`graph --spec-dir` override it for one invocation. A work item with no directory under the resolved path is skipped (recorded as `graph.skipped`), which is what makes the coupling inert for repos that keep no specs. issue-123, issue-352."
             },
+            "graphs": {
+              "type": "array",
+              "description": "Graphs of YOUR OWN (issue-343): each entry names a graph YAML you wrote and the arming commands that select it. A command is either one of the four arming commands (`start`, `contribute`, `do`, `review`) — which then selects your graph instead of the shipped one — or a NEW word, which becomes the keyword `the-loop <word>` and arms exactly as `start` does. Your graph is compiled by the same code as the shipped loops: every hook it names must be shipped or an `x-` hook a module in `hooks.modules` registers, every `phase` must be one of the-loop's phases (the `loop:<phase>` labels are one vocabulary), and a node's `command:` may name another plugin's slash command as `plugin:command`. Selection fails closed: a loop name in a work item's state selects your graph only while this list declares it. EXECUTABLE CONFIGURATION — a graph decides which gates a work item passes — so review it like code. `the-loop graph loops` lists every loop and checks each of yours compiles.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "path"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$",
+                    "description": "The loop's name — what `work-item-state.json` records. Not a shipped loop's name, and not `pdlc-*`: that prefix is reserved for the loops the-loop ships."
+                  },
+                  "path": {
+                    "type": "string",
+                    "description": "The graph YAML: absolute, `~/…`, or relative to the directory of THIS config file. Never resolved against a work item's checkout, so no session can edit the graph it walks."
+                  },
+                  "commands": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]*$"
+                    },
+                    "description": "The arming commands that select this graph: `start`, `contribute`, `do` or `review` to override, or a new word. Each word may be bound once across the whole list; `stop`, `pause`, `resume`, `execute`, `cleanup` and the collaborator and channel commands select no loop and are refused.",
+                    "default": []
+                  },
+                  "guest": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Walk this graph as a GUEST, as the shipped contribution and review loops do: the spec tree is kept out of the repository's git history and the plan is posted to the thread. Set it on a graph that replaces `contribute` or `review`."
+                  }
+                }
+              },
+              "default": []
+            },
             "hooks": {
               "type": "object",
               "description": "Hooks of YOUR OWN on the-loop's process graph (issue-248; moved here from the harness config's `graph.hooks` in issue-352): `modules` names the Python that defines them, `attach` says where each one runs. Applied to every checkout this instance drives — a `path` entry resolves against each checkout's root. Every hook a module registers is named `x-<something>` — the unprefixed namespace is the-loop's, so your hook can never shadow a shipped one. An attached hook is APPENDED to the node's shipped chain, so every shipped gate runs (and short-circuits) first: a hook here can add a constraint, never relax one, and an `outcome` it declares is ignored so it can neither approve a gate nor choose an edge. EXECUTABLE CONFIGURATION — the modules run inside the-loop's own process, with your credentials — so review an entry like code, exactly as `critics[]`. `the-loop graph hooks` reports what is declared without importing any of it.",
@@ -716,6 +754,13 @@
                         "type": "object",
                         "description": "Typed parameters handed to the hook as `ctx.params`, exactly as a shipped chain entry's `with:` is.",
                         "default": {}
+                      },
+                      "loops": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "The loops this attachment applies to (issue-343) — shipped loop names or your own from `routing.graph.graphs`. Omitted, it applies to EVERY loop, and a loop without the named node fails to load: scope an attachment to the loops that have its node. A name that is neither shipped nor declared fails the load."
                       }
                     }
                   },
