@@ -288,6 +288,13 @@ walk and proves each one compiles, so that I find my mistake before a ticket doe
   declaration is the operator's, as hooks are since issue-352.
 - **Custom inner (pull-request) loops.** `pdlc-pr-loop` is addressed by PR number and
   keeps its own state layout; replacing it is a different change.
+- **Custom phases and per-node prompts.** The owner asked about both in the PR #425
+  review and decided they are follow-ups
+  ([comment](https://github.com/MadaraUchiha-314/the-loop/pull/425#issuecomment-5820263493)).
+  They are tracked as [#427](https://github.com/MadaraUchiha-314/the-loop/issues/427)
+  (a custom graph declaring its own phases, which reverses decision-123 D3 for custom
+  graphs) and [#428](https://github.com/MadaraUchiha-314/the-loop/issues/428) (a node-level
+  `prompt:`/`promptFile:` sent when the node is entered).
 - **Hot reload.** A changed graph file takes effect on the next process start, as a
   changed hook module does.
 - **Migrating a work item between graphs** when an operator removes or renames a
