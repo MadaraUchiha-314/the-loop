@@ -149,7 +149,9 @@ def _command_for(verb: str, control: ControlConfig) -> Optional[str]:
     (`the-loop start` → `start`; an operator's `loop go` → `go`) or the command's
     own name. A disabled keyword (``""``) names nothing; two matches name nothing."""
     matches: List[str] = []
-    for command in COMMANDS:
+    # The operator's own words too (issue-343): the line posted is the word's
+    # keyword, which the dispatcher parses as `start` onto the bound loop.
+    for command in (*COMMANDS, *control.custom_commands):
         keyword = control.keyword(command)
         if not keyword:
             continue
@@ -461,9 +463,25 @@ def manifest_text() -> str:
 def _control_config(cli_config: Optional[Mapping]) -> ControlConfig:
     routing = (dict(cli_config or {}).get("routing") or {}) if cli_config else {}
     control = routing.get("control") if isinstance(routing, Mapping) else None
+    # The declared graphs too (issue-343): the operator's own command words are
+    # control commands on every surface, or a Slack reply would forward one the
+    # dispatcher executes.
     return ControlConfig.from_mapping(
-        dict(control) if isinstance(control, Mapping) else {}
+        dict(control) if isinstance(control, Mapping) else {},
+        graphs=_declared_graphs(cli_config),
     )
+
+
+def _declared_graphs(cli_config: Optional[Mapping]) -> Any:
+    """The top-level ``graphs`` list, or the ``routing._graphs`` copy the loader
+    fans it into (issue-343) — whichever this config object carries."""
+    if not cli_config:
+        return None
+    raw = dict(cli_config).get("graphs")
+    if raw is None:
+        routing = dict(cli_config).get("routing")
+        raw = routing.get("_graphs") if isinstance(routing, Mapping) else None
+    return raw
 
 
 def _drop(reason: str, actor: str, level: str = "info", **fields) -> Dict[str, Any]:

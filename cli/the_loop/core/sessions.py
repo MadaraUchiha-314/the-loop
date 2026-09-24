@@ -97,7 +97,14 @@ def _tmux_config(config: Optional[dict] = None) -> TmuxConfig:
 
 
 def _control_config(config: Optional[dict] = None) -> ControlConfig:
-    return ControlConfig.from_mapping(_routing(config).get("control") or {})
+    routing = _routing(config)
+    # The declared graphs too (issue-343): the operator's own command words and
+    # the loops they select, as the dispatcher parses them.
+    graphs = (config or {}).get("graphs")
+    return ControlConfig.from_mapping(
+        routing.get("control") or {},
+        graphs=graphs if graphs is not None else routing.get("_graphs"),
+    )
 
 
 def _instance(config: Optional[dict]) -> InstanceConfig:
@@ -508,6 +515,9 @@ def _record_pull_request_in_state(
 
     link = GraphLink(
         GraphLinkConfig.from_mapping((_routing(config).get("graph")) or {}),
+        # The control config carries the operator's declared loops (issue-343):
+        # without it a work item walking one would resolve to the default here.
+        _control_config(config),
         control_store=_control_store(config),
     )
     link.on_pr_linked(work_item, pr, record.cwd)

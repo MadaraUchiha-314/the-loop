@@ -1532,8 +1532,13 @@ def _control_keywords(raw: Any) -> Tuple[Tuple[str, str], ...]:
     from ..control import COMMANDS, ControlConfig
 
     try:
+        # The buttons carry the built-in commands only, so the operator's
+        # command bindings (issue-343) — which may name graphs this reader was
+        # not handed — are left out of the parse.
         control = ControlConfig.from_mapping(
-            dict(raw) if isinstance(raw, Mapping) else {}
+            {k: v for k, v in raw.items() if k != "commands"}
+            if isinstance(raw, Mapping)
+            else {}
         )
     except (TypeError, ValueError, AttributeError) as exc:
         # The dispatcher refuses such a config on its own; here the buttons

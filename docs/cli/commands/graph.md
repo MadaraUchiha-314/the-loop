@@ -188,6 +188,47 @@ when the operator's own CLI config declares it under
 [`routing.graph.hooks`](/config/cli/routing-options#graph-hooks) — a checkout cannot opt its
 own modules in (issue-352).
 
+## `loops`
+
+List every loop this machine can walk — the five shipped loops and any graphs **of your
+own** declared under the top-level [`graphs`](/config/cli/graphs-options)
+([issue-343](https://github.com/MadaraUchiha-314/the-loop/issues/343)) — with the keywords
+that arm each, as [`routing.control.commands`](/config/cli/routing-options#control-commands)
+binds them (as configured; a disabled one is omitted). The CLI config is read
+**strictly**, and every declared graph is **compiled** and checked: the compiler's rules,
+the phase vocabulary, every hook attachment that applies to it naming a node it declares,
+and its `x-` hooks having a declared module. No hook module is imported, so whether a
+module really registers a name is settled when a work item loads the graph.
+
+```text
+$ the-loop graph loops
+pdlc-work-item-loop  (shipped)
+  armed by: the-loop start
+pdlc-pr-loop  (shipped, inner loop, one per pull request)
+  armed by: —
+pdlc-contribution-loop  (shipped, guest)
+  armed by: the-loop contribute
+pdlc-adhoc-loop  (shipped)
+  armed by: —
+pdlc-review-loop  (shipped, guest)
+  armed by: the-loop review
+acme-quick-loop  (declared)
+  armed by: the-loop do, the-loop triage
+  file:     /home/me/.the-loop/graphs/quick.yaml
+  compiles: ok
+```
+
+A shipped command you bound elsewhere is listed under the graph it now selects, not under
+its shipped loop (`the-loop do` above). The built-in words come first, then your new ones.
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--format` | `text` | `text`, or `json` (`loops[]` with `name`, `kind`, `commands`, `guest`, `inner`, `status`, and for a declared graph `path` and `extensionHooks` or `error`; plus a top-level `error`) for scripting. |
+
+Exits **1** when a declared graph fails a check, or when the CLI config, the
+`graphs` list, a `routing.control.commands` binding or a keyword it derives cannot be
+read. See [bringing your own graph](/cli/graphs).
+
 ## `status`
 
 Where a work item is, with each reached node's verdict and messages. Nodes beyond the

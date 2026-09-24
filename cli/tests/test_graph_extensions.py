@@ -478,3 +478,77 @@ def test_a_broken_declaration_fails_the_load_rather_than_degrading(tmp_path):
     )
     with pytest.raises(GraphConfigError, match="does not exist"):
         load_graph(repo=repo, declaration=broken)
+
+
+# ------------------------------------------------------ scoped attachments (issue-343)
+
+
+def test_an_attachment_scoped_to_loops_leaves_every_other_loop_alone(tmp_path):
+    """
+    issue-343 R6.1 — an operator's graph without the outer loop's nodes still loads
+    when the attachment is scoped to the loop that has them; unscoped, it fails as
+    it always did.
+    """
+    repo = _repo(tmp_path)
+    scoped = _declaration(
+        modules=[{"path": ".the-loop/hooks/house.py"}],
+        attach=[
+            {
+                "hook": "x-house-rules",
+                "node": "design",
+                "loops": ["pdlc-work-item-loop"],
+            }
+        ],
+    )
+    other = dict(GRAPH, name="pdlc-adhoc-loop")
+    assert extensions.apply(compile_graph(other), repo, scoped).node("work").exit == ()
+    outer = load_graph(repo=repo, declaration=scoped)
+    assert outer.node("design").exit[-1] == {"hook": "x-house-rules"}
+
+    unscoped = _declaration(
+        modules=[{"path": ".the-loop/hooks/house.py"}],
+        attach=[{"hook": "x-house-rules", "node": "design"}],
+    )
+    with pytest.raises(GraphConfigError, match="does not declare"):
+        extensions.apply(compile_graph(other), repo, unscoped)
+
+
+def test_an_attachment_scoped_to_an_unknown_loop_is_refused():
+    """issue-343 R6.2"""
+    with pytest.raises(GraphConfigError, match="neither a shipped loop"):
+        _declaration(attach=[{"hook": "x-a", "node": "work", "loops": ["acme-nope"]}])
+    with pytest.raises(GraphConfigError, match="not a list"):
+        _declaration(attach=[{"hook": "x-a", "node": "work", "loops": "acme"}])
+
+
+def test_an_attachment_may_be_scoped_to_a_declared_loop():
+    """issue-343 R6.1 — the operator's own loop names are valid scopes."""
+    declaration = extensions.read_declaration(
+        {
+            "graphs": [{"name": "acme-triage-loop", "path": "t.yaml"}],
+            "routing": {
+                "graph": {
+                    "hooks": {
+                        "attach": [
+                            {
+                                "hook": "x-a",
+                                "node": "work",
+                                "loops": ["acme-triage-loop"],
+                            }
+                        ]
+                    },
+                }
+            },
+        }
+    )
+    assert declaration.attachments[0].loops == ("acme-triage-loop",)
+    assert (
+        declaration.digest()
+        != _declaration(attach=[{"hook": "x-a", "node": "work"}]).digest()
+    )
+
+
+def test_an_empty_loops_scope_is_refused():
+    """issue-343 review F6 — present means "only these"; empty would silently mean all."""
+    with pytest.raises(GraphConfigError, match="empty"):
+        _declaration(attach=[{"hook": "x-a", "node": "work", "loops": []}])

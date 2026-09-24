@@ -253,9 +253,27 @@ class ControlConfig:
     require_start_command: bool = True
     keywords: Dict[str, str] = field(default_factory=lambda: dict(DEFAULT_KEYWORDS))
     gh_binary: str = "gh"
+    #: Command word → the loop it selects (issue-343, ``routing.control.commands``):
+    #: an arming command re-pointed, or a new word, which then arms exactly as
+    #: ``start`` does. The loop may be a shipped one or the operator's own.
+    bindings: Dict[str, str] = field(default_factory=dict)
+    #: Every loop name the operator declared — what a recorded loop may be
+    #: resolved against (:func:`the_loop.graph.model.resolve_outer_loop`).
+    loops: Tuple[str, ...] = ()
 
     @classmethod
-    def from_mapping(cls, data: Optional[dict]) -> "ControlConfig":
+    def from_mapping(
+        cls, data: Optional[dict], graphs: Optional[Any] = None
+    ) -> "ControlConfig":
+        """``routing.control`` — its keywords, and the command bindings its
+        ``commands`` block declares (issue-343).
+
+        ``graphs`` is the top-level ``graphs`` list (the loader also fans it into
+        ``routing._graphs``, which is where the dispatcher reads it from): a
+        binding may name one of those, or a shipped loop. Parsed strictly: a
+        malformed binding, or one naming a graph nobody declared, raises rather
+        than reading as "no commands".
+        """
         data = data or {}
         configured = data.get("keywords") or {}
         keywords = dict(DEFAULT_KEYWORDS)
@@ -264,15 +282,50 @@ class ControlConfig:
                 # An empty string disables that ONE command (documented), which
                 # is why this is not a truthiness filter.
                 keywords[command] = str(configured[command] or "").strip()
+        bindings: Dict[str, str] = {}
+        # Imported here, not at the top: this module is below the graph package,
+        # which imports it back (the catalog validates words against COMMANDS).
+        from .graph.catalog import parse_catalog, read_bindings
+
+        catalog = parse_catalog(graphs)
+        loops: Tuple[str, ...] = catalog.names
+        for word, binding in read_bindings(data.get("commands"), catalog).items():
+            bindings[word] = binding.graph
+            if word in COMMANDS:
+                continue
+            # A new command's keyword: the operator's, else the shipped family's
+            # prefix plus the word.
+            keyword = binding.keyword or f"the-loop {word}"
+            clash = next(
+                (c for c, k in keywords.items() if k and k.lower() == keyword.lower()),
+                None,
+            )
+            if clash is not None:
+                # Two commands on one keyword would make every comment carrying
+                # it ambiguous — refused now, not at 2am.
+                from .graph.model import GraphConfigError
+
+                raise GraphConfigError(
+                    f"CLI config: the new command {word!r} would use the keyword "
+                    f"{keyword!r}, which `{clash}` already uses"
+                )
+            keywords[word] = keyword
         return cls(
             enabled=bool(data.get("enabled", True)),
             require_start_command=bool(data.get("requireStartCommand", True)),
             keywords=keywords,
             gh_binary=str(data.get("_ghBinary", "gh")),
+            bindings=bindings,
+            loops=loops,
         )
 
     def keyword(self, command: str) -> str:
         return self.keywords.get(command, "")
+
+    @property
+    def custom_commands(self) -> Tuple[str, ...]:
+        """The operator's NEW command words — bound, and not a built-in command."""
+        return tuple(word for word in self.bindings if word not in COMMANDS)
 
 
 @dataclass(frozen=True)
@@ -303,6 +356,10 @@ class ControlResult:
     emptied, when that token named a mode that is not one: the whole command is
     refused rather than declared with a default the person did not ask for, and
     the text names the two modes for the person who typed it.
+
+    A NEW command the operator declared (issue-343) is reported as ``start``
+    with :attr:`loop` set and the word in :attr:`matched`: it arms exactly as
+    ``start`` does, so every seam that handles ``start`` handles it unchanged.
     """
 
     command: Optional[str] = None
@@ -312,6 +369,10 @@ class ControlResult:
     slack: List[str] = field(default_factory=list)
     listen: str = ""
     refusal: str = ""
+    #: The operator's own loop this arming command selects (issue-343), looked
+    #: up from :attr:`ControlConfig.bindings` by the matched word — never body
+    #: text. ``""`` when the command selects what it always did.
+    loop: str = ""
 
     def __bool__(self) -> bool:
         return self.command is not None or self.ambiguous
@@ -375,7 +436,7 @@ def parse_command(body: Optional[str], config: ControlConfig) -> ControlResult:
         return ControlResult()
     found: List[str] = []
     patterns: Dict[str, str] = {}
-    for command in COMMANDS:
+    for command in (*COMMANDS, *config.custom_commands):
         keyword = config.keyword(command)
         if not keyword:
             continue
@@ -388,6 +449,11 @@ def parse_command(body: Optional[str], config: ControlConfig) -> ControlResult:
     if len(found) > 1:
         return ControlResult(ambiguous=True, matched=found)
     command = found[0]
+    if command not in COMMANDS:
+        # One of the operator's own words (issue-343): `start`, onto its loop.
+        return ControlResult(
+            command=START, matched=found, loop=config.bindings[command]
+        )
     subjects: List[str] = []
     slack: List[str] = []
     listen = ""
@@ -419,7 +485,14 @@ def parse_command(body: Optional[str], config: ControlConfig) -> ControlResult:
                 if subject not in subjects:
                     subjects.append(subject)
     return ControlResult(
-        command=command, matched=found, subjects=subjects, slack=slack, listen=listen
+        command=command,
+        matched=found,
+        subjects=subjects,
+        slack=slack,
+        listen=listen,
+        # An overridden arming command (issue-343); bindings only ever hold a
+        # spawn command or a new word, so nothing else can pick up a loop here.
+        loop=config.bindings.get(command, "") if command in SPAWN_COMMANDS else "",
     )
 
 
@@ -504,9 +577,14 @@ class ControlRecord:
     # portable record travels; this is how a reader elsewhere (a future manager)
     # learns who took the work item.
     instance: str = ""
+    # The operator's own loop the arming command selected (issue-343) — "" when
+    # it selected what its command always does, and in every older record.
+    # Resolved against the operator's CURRENT declaration when read, never
+    # trusted as written: a portable record is a file like any other.
+    loop: str = ""
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "ref": self.ref,
             "command": self.command,
             "source": self.source,
@@ -515,6 +593,9 @@ class ControlRecord:
             "note": self.note,
             "instance": self.instance,
         }
+        if self.loop:
+            data["loop"] = self.loop
+        return data
 
     @classmethod
     def from_dict(cls, data: dict) -> "ControlRecord":
@@ -526,6 +607,7 @@ class ControlRecord:
             requested_at=str(data.get("requestedAt") or ""),
             note=str(data.get("note") or ""),
             instance=str(data.get("instance") or ""),
+            loop=str(data.get("loop") or ""),
         )
 
 
@@ -619,8 +701,13 @@ class ControlStore:
         actor: str = "",
         note: str = "",
         instance: str = "",
+        loop: str = "",
     ) -> ControlRecord:
-        """Persist ``command`` as the work item's current control state."""
+        """Persist ``command`` as the work item's current control state.
+
+        ``loop`` is the operator's own loop an arming command selected
+        (issue-343), carried from :attr:`ControlResult.loop`.
+        """
         if command not in COMMANDS:
             raise ValueError(f"unknown control command {command!r}")
         item = _as_ref(work_item)
@@ -632,6 +719,7 @@ class ControlStore:
             requested_at=_utcnow(),
             note=note,
             instance=instance,
+            loop=loop,
         )
         self.store.write_section(item, CONTROL, record.to_dict())
         logger.info(
