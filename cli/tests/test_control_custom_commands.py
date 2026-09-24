@@ -30,16 +30,17 @@ QUICK = "acme-quick-loop"
 REF = "github:octo/repo#343"
 
 
+GRAPHS = [{"name": NAME, "path": "t.yaml"}, {"name": QUICK, "path": "q.yaml"}]
+COMMANDS = {
+    "triage": {"graph": NAME},
+    "do": {"graph": QUICK},
+    "review": {"graph": QUICK},
+}
+
+
 def _config(**control) -> ControlConfig:
-    return ControlConfig.from_mapping(
-        control,
-        graph={
-            "graphs": [
-                {"name": NAME, "path": "t.yaml", "commands": ["triage"]},
-                {"name": QUICK, "path": "q.yaml", "commands": ["do", "review"]},
-            ]
-        },
-    )
+    """``routing.control`` binding ``COMMANDS`` over the top-level ``GRAPHS``."""
+    return ControlConfig.from_mapping({"commands": COMMANDS, **control}, graphs=GRAPHS)
 
 
 def test_bindings_and_declared_loops_reach_the_config():
@@ -50,7 +51,7 @@ def test_bindings_and_declared_loops_reach_the_config():
     assert config.keyword("triage") == "the-loop triage"
 
 
-def test_no_graph_block_is_exactly_the_shipped_vocabulary():
+def test_no_commands_block_is_exactly_the_shipped_vocabulary():
     config = ControlConfig.from_mapping({})
     assert config.bindings == {} and config.loops == ()
     assert parse_command("the-loop do", config).loop == ""
@@ -110,17 +111,45 @@ def test_a_new_word_matches_case_insensitively():
 def test_a_new_keyword_that_clashes_with_a_configured_one_is_refused():
     """Two commands on one keyword would make every such comment ambiguous."""
     with pytest.raises(GraphConfigError, match="already uses"):
-        ControlConfig.from_mapping(
-            {"keywords": {"start": "the-loop triage"}},
-            graph={"graphs": [{"name": NAME, "path": "t", "commands": ["triage"]}]},
-        )
+        _config(keywords={"start": "the-loop triage"})
 
 
-def test_a_malformed_graph_block_fails_the_control_config():
+def test_a_new_words_own_keyword_is_what_a_person_types():
+    """R3.4 — `keyword` replaces the derived `the-loop <word>`."""
+    commands = {"triage": {"graph": NAME, "keyword": "@acme triage"}}
+    config = ControlConfig.from_mapping({"commands": commands}, graphs=GRAPHS)
+    assert config.keyword("triage") == "@acme triage"
+    assert parse_command("hey @ACME triage", config).loop == NAME
+    assert not parse_command("the-loop triage", config)
+
+
+def test_a_new_words_keyword_may_not_reuse_a_builtin_ones():
+    commands = {"triage": {"graph": NAME, "keyword": "the-loop stop"}}
+    with pytest.raises(GraphConfigError, match="already uses"):
+        ControlConfig.from_mapping({"commands": commands}, graphs=GRAPHS)
+
+
+def test_a_shipped_command_rebound_to_a_shipped_loop_needs_no_graphs():
+    """`do` onto the review loop: a binding, no graph of the operator's own."""
+    config = ControlConfig.from_mapping(
+        {"commands": {"do": {"graph": "pdlc-review-loop"}}}
+    )
+    assert config.bindings == {"do": "pdlc-review-loop"} and config.loops == ()
+    assert parse_command("the-loop do", config).loop == "pdlc-review-loop"
+
+
+@pytest.mark.parametrize(
+    "commands, graphs",
+    [
+        ({"stop": {"graph": NAME}}, GRAPHS),
+        ({"triage": {"graph": "acme-undeclared"}}, GRAPHS),
+        ({"triage": {"graph": NAME}}, None),
+        ({}, [{"name": "pdlc-mine", "path": "t"}]),
+    ],
+)
+def test_a_malformed_declaration_fails_the_control_config(commands, graphs):
     with pytest.raises(GraphConfigError):
-        ControlConfig.from_mapping(
-            {}, graph={"graphs": [{"name": NAME, "path": "t", "commands": ["stop"]}]}
-        )
+        ControlConfig.from_mapping({"commands": commands}, graphs=graphs)
 
 
 def test_the_control_record_carries_the_loop(tmp_path):
@@ -137,3 +166,11 @@ def test_the_control_record_carries_the_loop(tmp_path):
     record = store.get(ref)
     assert record is not None and record.loop == ""
     assert "loop" not in record.to_dict()
+
+
+def test_a_new_word_may_select_a_shipped_loop():
+    """The owner's example: `audit: {graph: pdlc-review-loop, keyword: …}`."""
+    commands = {"audit": {"graph": "pdlc-review-loop", "keyword": "the-loop audit"}}
+    config = ControlConfig.from_mapping({"commands": commands})
+    result = parse_command("the-loop audit", config)
+    assert result.command == START and result.loop == "pdlc-review-loop"

@@ -571,8 +571,8 @@ Two rules govern working inside it:
 ## A graph of the operator's own (issue-343)
 
 An operator may declare **graphs of their own** in their CLI config
-(`routing.graph.graphs`, [decision-136](../../../docs/decisions/decision-136.md)) and bind
-arming commands to them: a shipped one (`the-loop do` now walks their quick loop) or a new
+(the top-level `graphs`, [decision-136](../../../docs/decisions/decision-136.md)) and bind
+arming commands to them under `routing.control.commands`: a shipped one (`the-loop do` now walks their quick loop) or a new
 word (`the-loop triage`, which arms exactly as `start` does). The choice is recorded the
 same way every loop choice is — the control record, then `work-item-state.json`'s `loop`
 field — and a recorded name selects the graph only while the operator declares it.

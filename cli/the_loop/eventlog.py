@@ -169,7 +169,7 @@ EVENT_TYPES: Dict[str, str] = {
         "stop, and (issue-307, with `collaborator`: the login) of who was "
         "invited onto a work item or removed from it. `loop` (issue-343) names "
         "the operator's own graph an arming command selected — a new command "
-        "declared in `routing.graph.graphs` is logged as `start` with its `loop`."
+        "bound in `routing.control.commands` is logged as `start` with its `loop`."
     ),
     "control.rejected": (
         "A control command was recognised but refused (work_items, command, "

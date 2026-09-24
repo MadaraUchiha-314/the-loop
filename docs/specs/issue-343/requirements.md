@@ -38,16 +38,19 @@ Which loop a work item walks is chosen by four fixed arming keywords:
 | `the-loop review` | `pdlc-review-loop` | No |
 | *anything else* | — | No new arming word can be added |
 
-**The unit of the change is one list in the operator's CLI config
-(`routing.graph.graphs`): each entry names a graph YAML the operator wrote, and the arming
-commands that select it** — an existing one (overriding the loop it selects) or a new word
-(a new command). Everything a shipped loop is held to, a custom one is held to: the same
+**The unit of the change is two declarations in the operator's CLI config: the top-level
+`graphs` list, where each entry names a graph YAML the operator wrote, and
+`routing.control.commands`, which binds command words to graphs** — an existing arming
+command (re-pointing the loop it selects) or a new word (a new command). The owner set this
+shape in the PR #425 review, replacing a single `routing.graph.graphs` list that carried
+the commands. Everything a shipped loop is held to, a custom one is held to: the same
 compiler, the same hook registry, the same phase vocabulary, the same fail-closed
 selection.
 
 ```mermaid
 flowchart LR
-  CFG["operator's cli-config.yaml<br/>routing.graph.graphs[]"] --> CAT["graph catalog<br/>(shipped + declared)"]
+  CFG["operator's cli-config.yaml<br/>graphs[]"] --> CAT["graph catalog<br/>(shipped + declared)"]
+  BND["operator's cli-config.yaml<br/>routing.control.commands"] --> PARSE
   YAML["acme-triage-loop.yaml<br/>(operator's file)"] --> CAT
   CMT["comment: the-loop triage"] --> PARSE["control parser<br/>(fixed + declared words)"]
   CAT --> PARSE
@@ -67,9 +70,9 @@ prompt.
 
 #### Acceptance criteria (EARS)
 
-1. The CLI config SHALL accept `routing.graph.graphs`, a list of entries each carrying a
-   `name`, a `path`, and optionally `commands` (a list of command words) and `guest`
-   (a boolean, default `false`). An absent or empty list SHALL change nothing.
+1. The CLI config SHALL accept a top-level `graphs`, a list of entries each carrying a
+   `name`, a `path`, and optionally `guest` (a boolean, default `false`). An absent or
+   empty list SHALL change nothing. Declaring a graph SHALL select nothing by itself.
 2. A graph `name` SHALL match `^[a-z][a-z0-9-]*$`, SHALL NOT be a shipped loop's name and
    SHALL NOT begin with `pdlc-` — the prefix is reserved for loops the-loop ships, so a
    future shipped loop can never collide with an operator's.
@@ -79,8 +82,8 @@ prompt.
    config file in effect (`--config` / `$THE_LOOP_CLI_CONFIG` / the default search) — the
    operator's file, resolved on the operator's machine, never against a work item's
    checkout.
-5. WHEN any entry is malformed (missing `name` or `path`, a non-list `commands`, a
-   non-boolean `guest`, an unknown key) THEN loading the declaration SHALL fail with an
+5. WHEN any entry is malformed (missing `name` or `path`, a non-boolean `guest`, an
+   unknown key) THEN loading the declaration SHALL fail with an
    error naming the entry — never degrade to "no custom graphs".
 
 ### R2 — a custom graph is compiled by the rules a shipped one is
@@ -117,19 +120,24 @@ I chose with a word they type.
 
 #### Acceptance criteria (EARS)
 
-1. A `commands` entry SHALL be either one of the four arming commands that may spawn a
-   session (`start`, `contribute`, `do`, `review`) — **overriding** the loop that command
-   selects — or a **new** word matching `^[a-z][a-z0-9-]*$` that is not any other
+1. `routing.control.commands` SHALL map command words to `{graph, keyword?}`. A command
+   with no entry SHALL keep selecting its shipped loop. A key SHALL be either one of the
+   four arming commands that may spawn a session (`start`, `contribute`, `do`, `review`)
+   — **re-pointing** the loop that command selects — or a **new** word matching `^[a-z][a-z0-9-]*$` that is not any other
    built-in control command and not one of the-loop's own CLI or Slack verbs (so a
    comment quoting `the-loop graph complete …` never arms a work item).
-2. WHEN a command word is bound by two entries THEN loading the declaration SHALL fail.
+2. `graph` SHALL name a shipped outer-path loop or a graph declared under `graphs`; WHEN
+   it names anything else THEN loading the declaration SHALL fail. (A word cannot be bound
+   twice: it is one key of one mapping.)
 3. WHEN a command word names a built-in command that is not an arming spawn command
    (`stop`, `pause`, `resume`, `execute`, `cleanup`, the collaborator and channel
    commands) THEN loading the declaration SHALL fail — those commands do not select a
    loop, and rebinding them would change what they mean.
-4. A new command's keyword SHALL be `the-loop <word>`, matched by the same whole-token,
-   case-insensitive rule as every other keyword, and SHALL take part in the
-   two-different-commands ambiguity refusal.
+4. A new command's keyword SHALL be its `keyword`, else `the-loop <word>`, matched by the
+   same whole-token, case-insensitive rule as every other keyword, and SHALL take part in
+   the two-different-commands ambiguity refusal. A `keyword` on a built-in command SHALL
+   fail the load (its keyword lives in `routing.control.keywords`), as SHALL a new keyword
+   equal to one already configured.
 5. WHEN an authorized user's comment carries a new command THEN the system SHALL treat it
    exactly as `start` in every respect but the loop (same authorization, same spawn
    policy, same arming semantics, same durable record) and SHALL record the selected loop
@@ -211,13 +219,13 @@ walk and proves each one compiles, so that I find my mistake before a ticket doe
 ### R8 — a repository still cannot supply a graph
 
 1. A graph YAML inside a repository (`.the-loop/<name>.yaml`, `graph.yaml`, `pdlc.yaml`)
-   SHALL still be ignored with a warning; the warning SHALL name `routing.graph.graphs` as
+   SHALL still be ignored with a warning; the warning SHALL name the top-level `graphs` as
    the supported way to declare one.
 
 ## Non-functional requirements
 
 - **No behaviour change for an operator who declares nothing.** Every existing test
-  passes unmodified in intent; an absent `routing.graph.graphs` is exactly today's
+  passes unmodified in intent; an absent `graphs` and `routing.control.commands` is exactly today's
   behaviour, including the four shipped keyword→loop bindings.
 - **Compiled once.** A custom graph is compiled once per process per declaration, like a
   shipped one (the existing cache, keyed by file path, repository and declaration).
@@ -280,8 +288,6 @@ walk and proves each one compiles, so that I find my mistake before a ticket doe
   declaration is the operator's, as hooks are since issue-352.
 - **Custom inner (pull-request) loops.** `pdlc-pr-loop` is addressed by PR number and
   keeps its own state layout; replacing it is a different change.
-- **Custom keywords for new commands.** A new command's keyword is `the-loop <word>`;
-  per-command keyword text stays a shipped-command feature of `routing.control.keywords`.
 - **Hot reload.** A changed graph file takes effect on the next process start, as a
   changed hook module does.
 - **Migrating a work item between graphs** when an operator removes or renames a

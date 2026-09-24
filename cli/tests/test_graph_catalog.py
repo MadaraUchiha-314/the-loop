@@ -21,7 +21,15 @@ from the_loop.commands.graph_cmd import GraphCommand
 from the_loop.control import ControlConfig, ControlStore
 from the_loop.graph import extensions, hooks  # noqa: F401 — registers the built-ins
 from the_loop.graph.bootstrap import build_runtime
-from the_loop.graph.catalog import Catalog, CustomGraph, compile_custom, read_catalog
+from the_loop.graph.catalog import (
+    Binding,
+    Catalog,
+    CustomGraph,
+    compile_custom,
+    parse_catalog,
+    read_bindings,
+    read_catalog,
+)
 from the_loop.graph.model import (
     PDLC_ADHOC_LOOP,
     PDLC_REVIEW_LOOP,
@@ -81,7 +89,20 @@ def _forget_loaded_modules():
 
 
 def _catalog(*entries: dict) -> Catalog:
-    return read_catalog({"routing": {"graph": {"graphs": list(entries)}}})
+    return read_catalog({"graphs": list(entries)})
+
+
+def _bindings(block, *entries: dict) -> dict:
+    """``routing.control.commands`` parsed against the declared ``entries`` —
+    ``NAME`` alone when none are given."""
+    return read_bindings(block, _catalog(*(entries or ({"name": NAME, "path": "a"},))))
+
+
+def _control(commands: dict, *entries: dict) -> ControlConfig:
+    """A control config binding ``commands`` over ``entries`` (``NAME`` alone by
+    default), built as every daemon-side builder builds it."""
+    graphs = list(entries or ({"name": NAME, "path": "t.yaml"},))
+    return ControlConfig.from_mapping({"commands": commands}, graphs=graphs)
 
 
 def _graph_file(tmp_path: Path, body: str = TRIAGE, name: str = "triage.yaml") -> Path:
@@ -91,20 +112,33 @@ def _graph_file(tmp_path: Path, body: str = TRIAGE, name: str = "triage.yaml") -
     return path
 
 
-def _cli_config(tmp_path: Path, monkeypatch, graphs: str, extra: str = "") -> Path:
+def _cli_config(tmp_path: Path, monkeypatch, body: str) -> Path:
     path = tmp_path / "cli-config.yaml"
-    path.write_text(
-        'version: "0.10.0"\nrouting:\n  graph:\n' + graphs + extra,
-    )
+    path.write_text('version: "0.10.0"\n' + body)
     monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(path))
     return path
 
 
-TRIAGE_DECLARED = f"""    graphs:
-      - name: {NAME}
-        path: graphs/triage.yaml
-        commands: [triage]
-"""
+def _declared(
+    *,
+    graph: str = "",
+    control: str = "",
+    commands: str = f"      triage: {{graph: {NAME}}}\n",
+    guest: bool = False,
+) -> str:
+    """A CLI config body declaring ``NAME`` at the top level and binding
+    ``commands`` to graphs under ``routing.control.commands``. ``graph`` and
+    ``control`` are further lines under ``routing.graph`` / ``routing.control``."""
+    body = f"graphs:\n  - name: {NAME}\n    path: graphs/triage.yaml\n"
+    if guest:
+        body += "    guest: true\n"
+    body += "routing:\n"
+    if graph:
+        body += "  graph:\n" + graph
+    return body + "  control:\n" + control + "    commands:\n" + commands
+
+
+TRIAGE_DECLARED = _declared()
 
 
 @pytest.fixture()
@@ -120,18 +154,30 @@ def repo(tmp_path):
 def test_an_absent_declaration_is_an_empty_catalog():
     assert read_catalog({}).empty
     assert read_catalog({"routing": {"graph": {}}}).empty
-    assert read_catalog({"routing": {"graph": {"graphs": []}}}).empty
+    assert read_catalog({"graphs": []}).empty
+    assert parse_catalog(None).empty
 
 
-def test_a_declaration_parses_names_paths_commands_and_guest():
+def test_a_declaration_parses_names_paths_and_guest():
     catalog = _catalog(
-        {"name": NAME, "path": "a.yaml", "commands": ["triage", "do"]},
+        {"name": NAME, "path": "a.yaml"},
         {"name": "acme-review", "path": "/abs/b.yaml", "guest": True},
     )
     assert catalog.names == (NAME, "acme-review")
-    assert catalog.bindings == {"triage": NAME, "do": NAME}
     assert catalog.is_guest("acme-review") and not catalog.is_guest(NAME)
     assert catalog.get("nope") is None
+
+
+def test_the_list_travels_to_the_routing_readers_as_routing_graphs(
+    tmp_path, monkeypatch
+):
+    """The loader fans the top-level list into ``routing._graphs`` (as ``instance``
+    travels as ``_instance``), for the readers handed the routing block alone."""
+    from the_loop.cli_config import load_cli_config
+
+    config = load_cli_config(_cli_config(tmp_path, monkeypatch, TRIAGE_DECLARED))
+    assert read_catalog({"routing": config["routing"]}).names == (NAME,)
+    assert read_catalog(config).names == (NAME,)
 
 
 @pytest.mark.parametrize(
@@ -144,8 +190,7 @@ def test_a_declaration_parses_names_paths_commands_and_guest():
         ({"name": "pdlc-mine", "path": "a.yaml"}, "reserved"),
         ({"name": PDLC_ADHOC_LOOP, "path": "a.yaml"}, "reserved"),
         ({"name": NAME, "path": "a.yaml", "guest": "yes"}, "guest"),
-        ({"name": NAME, "path": "a.yaml", "commands": "triage"}, "must be a list"),
-        ({"name": NAME, "path": "a.yaml", "commands": ["Triage"]}, "lowercase"),
+        ({"name": NAME, "path": "a.yaml", "commands": ["triage"]}, "control.commands"),
         ({"name": NAME, "path": "a.yaml", "loop": "x"}, "unknown key"),
         ("acme", "must be a mapping"),
     ],
@@ -158,7 +203,7 @@ def test_catalog_refuses_a_malformed_entry(entry, match):
 
 def test_catalog_refuses_a_non_list_declaration():
     with pytest.raises(GraphConfigError, match="must be a list"):
-        read_catalog({"routing": {"graph": {"graphs": {"name": NAME}}}})
+        read_catalog({"graphs": {"name": NAME}})
 
 
 def test_catalog_refuses_a_duplicate_name():
@@ -179,27 +224,61 @@ def test_catalog_refuses_a_duplicate_name():
         "remove-channel",
     ],
 )
-def test_catalog_refuses_binding_a_command_that_selects_no_loop(word):
+def test_binding_refuses_a_command_that_selects_no_loop(word):
     """R3.3 / abuse case 6 — rebinding `stop` would change what `stop` means."""
     with pytest.raises(GraphConfigError, match="does not select a loop"):
-        _catalog({"name": NAME, "path": "a.yaml", "commands": [word]})
+        _bindings({word: {"graph": NAME}})
 
 
 @pytest.mark.parametrize("word", ["start", "contribute", "do", "review", "triage"])
 def test_an_arming_command_or_a_new_word_may_be_bound(word):
     """R3.1"""
-    assert _catalog({"name": NAME, "path": "a.yaml", "commands": [word]}).bindings == {
-        word: NAME
+    assert _bindings({word: {"graph": NAME}}) == {word: Binding(word, NAME)}
+
+
+def test_a_command_may_be_bound_to_a_shipped_loop():
+    """R3.1 — `do` onto the work-item loop needs no graph of the operator's own."""
+    assert _bindings({"do": {"graph": PDLC_WORK_ITEM_LOOP}}, *()) == {
+        "do": Binding("do", PDLC_WORK_ITEM_LOOP)
+    }
+    assert read_bindings({"do": {"graph": PDLC_REVIEW_LOOP}}, Catalog()) == {
+        "do": Binding("do", PDLC_REVIEW_LOOP)
     }
 
 
-def test_catalog_refuses_one_command_bound_to_two_graphs():
-    """R3.2"""
-    with pytest.raises(GraphConfigError, match="one loop"):
-        _catalog(
-            {"name": NAME, "path": "a.yaml", "commands": ["do"]},
-            {"name": "acme-other", "path": "b.yaml", "commands": ["do"]},
-        )
+def test_a_new_word_may_carry_its_own_keyword():
+    """R3.4 — normalised to single spaces, as every keyword is."""
+    assert _bindings({"triage": {"graph": NAME, "keyword": "  @acme   triage "}}) == {
+        "triage": Binding("triage", NAME, "@acme triage")
+    }
+
+
+@pytest.mark.parametrize(
+    "block, match",
+    [
+        ({"triage": {"graph": "acme-undeclared"}}, "nor declared under `graphs`"),
+        ({"triage": {"graph": PDLC_REVIEW_LOOP + "x"}}, "nor declared"),
+        ({"triage": {"graph": "pdlc-pr-loop"}}, "nor declared"),
+        ({"triage": {}}, "needs a `graph`"),
+        ({"triage": {"graph": "  "}}, "needs a `graph`"),
+        ({"triage": NAME}, "must be a mapping"),
+        ({"triage": {"graph": NAME, "loop": "x"}}, "unknown key"),
+        ({"Triage": {"graph": NAME}}, "lowercase"),
+        ({"do": {"graph": NAME, "keyword": "@acme do"}}, "routing.control.keywords"),
+        ({"triage": {"graph": NAME, "keyword": ""}}, "non-empty string"),
+        ({"triage": {"graph": NAME, "keyword": 3}}, "non-empty string"),
+        ([{"triage": NAME}], "must be a mapping of command"),
+    ],
+)
+def test_binding_refuses_a_malformed_entry(block, match):
+    """R3.1, R3.2 — a binding names a loop that exists, and only that."""
+    with pytest.raises(GraphConfigError, match=match):
+        _bindings(block)
+
+
+def test_an_absent_commands_block_binds_nothing():
+    assert read_bindings(None, Catalog()) == {}
+    assert read_bindings({}, Catalog()) == {}
 
 
 def test_a_path_resolves_against_the_config_directory(tmp_path, monkeypatch):
@@ -362,7 +441,7 @@ def test_repo_file_for_declared_name_is_ignored(tmp_path, caplog):
     with caplog.at_level("WARNING", logger="the-loop.graph"):
         graph = load_graph(repo=repo, name=NAME, catalog=catalog)
     assert graph.start == "triage"
-    assert "routing.graph.graphs" in caplog.text
+    assert "top-level `graphs`" in caplog.text
     assert "cannot be overridden" in caplog.text
 
 
@@ -398,7 +477,7 @@ def test_build_runtime_walks_a_declared_graph(tmp_path, monkeypatch, repo):
 def test_a_guest_declaration_makes_the_runtime_a_guest(tmp_path, monkeypatch, repo):
     """R5.1"""
     _graph_file(tmp_path)
-    _cli_config(tmp_path, monkeypatch, TRIAGE_DECLARED + "        guest: true\n")
+    _cli_config(tmp_path, monkeypatch, _declared(guest=True))
     assert build_runtime(repo, loop=NAME).config["guestLoop"] is True
 
 
@@ -444,9 +523,7 @@ def test_graphlink_selects_the_recorded_loop_through_the_resolver(tmp_path):
     from the_loop.sessions import WorkItemRef
 
     store = ControlStore(tmp_path / "portable")
-    control = ControlConfig.from_mapping(
-        {}, graph={"graphs": [{"name": NAME, "path": "t.yaml", "commands": ["triage"]}]}
-    )
+    control = _control({"triage": {"graph": NAME}})
     link = GraphLink(GraphLinkConfig(), control, control_store=store)
     ref = WorkItemRef.parse(REF)
     spec = tmp_path / "docs" / "specs" / WORK_ITEM
@@ -498,17 +575,16 @@ def test_graph_loops_lists_shipped_and_declared_loops(tmp_path, monkeypatch, cap
     _cli_config(
         tmp_path,
         monkeypatch,
-        f"""    graphs:
-      - name: {NAME}
-        path: graphs/triage.yaml
-        commands: [triage, do]
-""",
+        _declared(
+            commands=f"      triage: {{graph: {NAME}}}\n      do: {{graph: {NAME}}}\n"
+        ),
     )
     code, report = _loops(tmp_path, capsys)
     assert code == 0
     rows = {row["name"]: row for row in report["loops"]}
     assert set(SHIPPED_LOOPS) | {NAME} == set(rows)
-    assert rows[NAME]["commands"] == ["the-loop triage", "the-loop do"]
+    # The built-in words first, in the vocabulary's order, then the new ones.
+    assert rows[NAME]["commands"] == ["the-loop do", "the-loop triage"]
     assert rows[NAME]["status"] == "ok"
     assert rows[NAME]["path"] == str(tmp_path / "graphs" / "triage.yaml")
     # `do` now selects the operator's loop, so the shipped row no longer claims it.
@@ -532,8 +608,9 @@ def test_graph_loops_imports_no_hook_module(tmp_path, monkeypatch, capsys):
     _cli_config(
         tmp_path,
         monkeypatch,
-        TRIAGE_DECLARED,
-        "    hooks:\n      modules:\n        - module: acme_never_imported\n",
+        _declared(
+            graph="    hooks:\n      modules:\n        - module: acme_never_imported\n"
+        ),
     )
     code, report = _loops(tmp_path, capsys)
     assert code == 0
@@ -542,9 +619,7 @@ def test_graph_loops_imports_no_hook_module(tmp_path, monkeypatch, capsys):
 
 
 def test_graph_loops_reports_an_unreadable_declaration(tmp_path, monkeypatch, capsys):
-    _cli_config(
-        tmp_path, monkeypatch, "    graphs:\n      - name: pdlc-x\n        path: a\n"
-    )
+    _cli_config(tmp_path, monkeypatch, "graphs:\n  - name: pdlc-x\n    path: a\n")
     code, report = _loops(tmp_path, capsys)
     assert code == 1
     assert "reserved" in report["error"]
@@ -563,7 +638,7 @@ def test_graph_loops_compiles_in_a_fresh_process(tmp_path):
 
     _graph_file(tmp_path)
     config = tmp_path / "cli-config.yaml"
-    config.write_text('version: "0.10.0"\nrouting:\n  graph:\n' + TRIAGE_DECLARED)
+    config.write_text('version: "0.10.0"\n' + TRIAGE_DECLARED)
     env = dict(os.environ, THE_LOOP_CLI_CONFIG=str(config))
     proc = subprocess.run(
         [sys.executable, "-m", "the_loop", "graph", "loops"],
@@ -585,8 +660,9 @@ def test_graph_loops_reports_an_attachment_on_a_node_the_graph_lacks(
     _cli_config(
         tmp_path,
         monkeypatch,
-        TRIAGE_DECLARED,
-        "    hooks:\n      attach:\n        - {hook: x-a, node: design}\n",
+        _declared(
+            graph="    hooks:\n      attach:\n        - {hook: x-a, node: design}\n"
+        ),
     )
     code, report = _loops(tmp_path, capsys)
     assert code == 1
@@ -618,8 +694,7 @@ def test_graph_loops_shows_the_configured_keyword(tmp_path, monkeypatch, capsys)
     _cli_config(
         tmp_path,
         monkeypatch,
-        TRIAGE_DECLARED,
-        "  control:\n    keywords:\n      start: '@loop go'\n      review: ''\n",
+        _declared(control="    keywords:\n      start: '@loop go'\n      review: ''\n"),
     )
     code, report = _loops(tmp_path, capsys)
     assert code == 0
@@ -635,7 +710,7 @@ def test_graph_loops_shows_the_configured_keyword(tmp_path, monkeypatch, capsys)
 def test_a_falsy_non_list_declaration_is_refused(graphs, match):
     """Review F6"""
     with pytest.raises(GraphConfigError, match=match):
-        read_catalog({"routing": {"graph": {"graphs": graphs}}})
+        read_catalog({"graphs": graphs})
 
 
 def test_a_non_string_path_is_refused():
@@ -648,7 +723,7 @@ def test_a_non_string_path_is_refused():
 def test_a_new_word_may_not_be_one_of_the_loops_own_verbs(word):
     """Review F7 — a comment quoting `the-loop graph complete …` must not arm."""
     with pytest.raises(GraphConfigError, match="own verbs"):
-        _catalog({"name": NAME, "path": "a.yaml", "commands": [word]})
+        _bindings({word: {"graph": NAME}})
 
 
 def test_an_overridden_start_applies_without_a_comment(tmp_path):
@@ -658,9 +733,7 @@ def test_an_overridden_start_applies_without_a_comment(tmp_path):
     from the_loop.sessions import WorkItemRef
 
     store = ControlStore(tmp_path / "portable")
-    control = ControlConfig.from_mapping(
-        {}, graph={"graphs": [{"name": NAME, "path": "t.yaml", "commands": ["start"]}]}
-    )
+    control = _control({"start": {"graph": NAME}})
     link = GraphLink(GraphLinkConfig(), control, control_store=store)
     ref = WorkItemRef.parse(REF)
     (tmp_path / "docs" / "specs" / WORK_ITEM).mkdir(parents=True)
@@ -690,9 +763,93 @@ def test_the_slack_command_knows_the_operators_words():
     """Review F2 — `/the-loop triage #1` is a control verb, not an unknown one."""
     from the_loop.channels.commands import parse_invocation
 
-    control = ControlConfig.from_mapping(
-        {}, graph={"graphs": [{"name": NAME, "path": "t.yaml", "commands": ["triage"]}]}
-    )
+    control = _control({"triage": {"graph": NAME}})
     invocation = parse_invocation("triage #12", control)
     assert invocation.family == "work-item"
     assert control.keyword(invocation.verb) == "the-loop triage"
+
+
+# -- PR #425 review: top-level `graphs`, `routing.control.commands` -----------
+
+
+def test_graph_loops_shows_a_new_words_own_keyword_and_a_shipped_rebinding(
+    tmp_path, monkeypatch, capsys
+):
+    """A new word's `keyword` is what the report shows; a built-in re-pointed at
+    another SHIPPED loop moves to that loop's row."""
+    _graph_file(tmp_path)
+    _cli_config(
+        tmp_path,
+        monkeypatch,
+        _declared(
+            commands=(
+                f"      triage: {{graph: {NAME}, keyword: '@acme triage'}}\n"
+                f"      do: {{graph: {PDLC_WORK_ITEM_LOOP}}}\n"
+            )
+        ),
+    )
+    code, report = _loops(tmp_path, capsys)
+    assert code == 0
+    rows = {row["name"]: row for row in report["loops"]}
+    assert rows[NAME]["commands"] == ["@acme triage"]
+    assert rows[PDLC_WORK_ITEM_LOOP]["commands"] == ["the-loop start", "the-loop do"]
+    assert rows[PDLC_ADHOC_LOOP]["commands"] == []
+
+
+def test_graph_loops_reports_a_binding_to_an_undeclared_graph(
+    tmp_path, monkeypatch, capsys
+):
+    _cli_config(
+        tmp_path,
+        monkeypatch,
+        "routing:\n  control:\n    commands:\n      triage: {graph: acme-nope}\n",
+    )
+    code, report = _loops(tmp_path, capsys)
+    assert code == 1
+    assert "acme-nope" in report["error"]
+
+
+def test_a_command_bound_to_the_default_loop_selects_the_default(tmp_path):
+    """`do: {graph: pdlc-work-item-loop}` walks the work-item loop — the default
+    outer loop reads as "" — never falling through to `do`'s ad-hoc loop."""
+    from the_loop.graphlink import GraphLink, GraphLinkConfig
+    from the_loop.sessions import WorkItemRef
+
+    store = ControlStore(tmp_path / "portable")
+    control = _control({"do": {"graph": PDLC_WORK_ITEM_LOOP}})
+    link = GraphLink(GraphLinkConfig(), control, control_store=store)
+    ref = WorkItemRef.parse(REF)
+    (tmp_path / "docs" / "specs" / WORK_ITEM).mkdir(parents=True)
+    store.record(ref, "do", actor="owner", loop=PDLC_WORK_ITEM_LOOP)
+    assert link._outer_loop_name(tmp_path, "docs/specs", WORK_ITEM, ref) == ""
+    store.record(ref, "do", source="cli", actor="operator")
+    assert link._outer_loop_name(tmp_path, "docs/specs", WORK_ITEM, ref) == ""
+
+
+def test_the_schema_accepts_the_documented_shape_and_refuses_the_old_one():
+    """The owner's shape validates; the retired `routing.graph.graphs` does not."""
+    from the_loop.configschema import validate
+
+    good = {
+        "version": "0.10.0",
+        "graphs": [{"name": NAME, "path": "graphs/triage.yaml", "guest": False}],
+        "routing": {
+            "control": {
+                "commands": {
+                    "triage": {"graph": NAME, "keyword": "@acme triage"},
+                    "do": {"graph": NAME},
+                }
+            }
+        },
+    }
+    assert not validate(good)
+    old = {
+        "version": "0.10.0",
+        "routing": {"graph": {"graphs": [{"name": NAME, "path": "a.yaml"}]}},
+    }
+    assert validate(old)
+    missing_graph = {
+        "version": "0.10.0",
+        "routing": {"control": {"commands": {"triage": {"keyword": "x"}}}},
+    }
+    assert validate(missing_graph)

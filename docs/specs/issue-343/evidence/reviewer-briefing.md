@@ -7,11 +7,12 @@ workItem: "github:MadaraUchiha-314/the-loop#343"
 
 ## TL;DR
 
-An operator can now declare **graphs of their own** in their CLI config
-(`routing.graph.graphs`): a YAML file plus the arming commands that select it. A command
-can **override** a built-in one (`start`/`contribute`/`do`/`review`), or be a **new word**
-(`the-loop triage`) that arms a work item exactly like `start`, but onto the operator's
-graph. A custom graph goes through the same compiler, hook registry and phase vocabulary
+An operator can now declare **graphs of their own** in their CLI config: the top-level
+`graphs` list names each YAML file, and `routing.control.commands` binds command words to
+graphs (the owner's shape from the PR review). A binding can **re-point** a built-in
+command (`start`/`contribute`/`do`/`review`), or add a **new word** (`the-loop triage`)
+that arms a work item exactly like `start`, but onto the operator's graph. A command with
+no binding keeps its shipped loop. A custom graph goes through the same compiler, hook registry and phase vocabulary
 as the built-in loops. A graph is chosen only by a name the operator's config declares
 right now. Risk tier **4**: this needs a **named human security sign-off**.
 
@@ -27,9 +28,11 @@ right now. Risk tier **4**: this needs a **named human security sign-off**.
    so every existing `start` path handles it (authorization, spawn policy, arming). Check
    that `ControlResult.loop` comes only from the operator's bindings, never from the
    comment text.
-3. **The catalog.** `cli/the_loop/graph/catalog.py`. It parses and validates the
-   declaration: the reserved `pdlc-` prefix, which commands may be bound, the
-   the-loop CLI verbs a new word may not reuse. It also compiles a custom graph against
+3. **The catalog.** `cli/the_loop/graph/catalog.py`. `read_catalog` parses the graphs
+   (the reserved `pdlc-` prefix, names, paths). `read_bindings` parses the commands: which
+   words may be bound, the-loop CLI verbs a new word may not reuse, and a `graph` that must
+   be shipped or declared. `cli_config.apply_graphs` fans the list into `routing._graphs`
+   for the routing-only readers. It also compiles a custom graph against
    the phase vocabulary. `x-` hooks are bound in `model._resolve_extensions`.
 4. **Behaviour change for everyone: the `command:` grammar.** `model._build_node` now
    checks every graph's node `command:`. All shipped commands already fit.
@@ -40,8 +43,10 @@ right now. Risk tier **4**: this needs a **named human security sign-off**.
 
 ```mermaid
 flowchart TD
-  CFG["cli-config.yaml<br/>routing.graph.graphs[]"] --> CAT["graph/catalog.py"]
-  CAT --> CC["control.ControlConfig<br/>bindings + keywords"]
+  CFG["cli-config.yaml<br/>graphs[]"] --> CAT["graph/catalog.py<br/>read_catalog"]
+  BND["cli-config.yaml<br/>routing.control.commands"] --> RB["catalog.read_bindings"]
+  CAT --> RB
+  RB --> CC["control.ControlConfig<br/>bindings + keywords"]
   CC --> PC["parse_command → start + loop"]
   PC --> DSP["dispatcher records loop<br/>on the control record"]
   DSP --> GL["graphlink._outer_loop_name<br/>state → record loop → binding → shipped"]
@@ -52,7 +57,8 @@ flowchart TD
 ```
 
 Commits: `c100907` spec chain · `4cca7fa` implementation, tests, docs ·
-`7b95008` fixes from the independent review, plus evidence.
+`7b95008` fixes from the independent review, plus evidence · the reshape to top-level
+`graphs` plus `routing.control.commands` (PR review).
 
 ## Key decisions & why
 
@@ -60,6 +66,10 @@ Commits: `c100907` spec chain · `4cca7fa` implementation, tests, docs ·
   would be one the session could edit. The declaration sits beside `critics[]` and
   `routing.graph.hooks` ([decision-123](../../../decisions/decision-123.md)). Recorded as
   [decision-136](../../../decisions/decision-136.md).
+- **Two declarations, not one list** (the owner's call on the PR). Which graphs exist is
+  a top-level fact, like `critics[]`. Which command selects which graph sits with the rest
+  of the command vocabulary in `routing.control`. As a result, a command can also be
+  re-pointed at another *shipped* loop.
 - **A new command is `start` with a loop recorded.** New entries in `COMMANDS` would have
   forced every constant set and `ControlStore` to know the operator's config.
 - **Phases stay in the shipped vocabulary.** The `loop:<phase>` labels are one vocabulary
@@ -75,7 +85,7 @@ Commits: `c100907` spec chain · `4cca7fa` implementation, tests, docs ·
 ## Evidence
 
 - [verification.md](verification.md) is the full record:
-  - 4634 passed, 1 skipped (baseline before the change: 4528).
+  - 4659 passed, 1 skipped after the reshape (baseline before the change: 4528).
   - Ruff, format and pyright are clean; markdownlint is clean on every changed page.
   - Red first: 21 of the new tests failed on the tree before the change.
 - The end-to-end scenarios (`tests/test_custom_graph_integration.py`) run a real
@@ -94,9 +104,6 @@ Commits: `c100907` spec chain · `4cca7fa` implementation, tests, docs ·
 
 1. **Security sign-off (tier 4).** Do you accept the stated risk? A custom graph can omit
    gates, and that is the operator's choice on their own machine.
-2. **Keyword for new commands.** New commands get the derived keyword `the-loop <word>`.
-   Do you want per-command keyword text, as the built-in commands have
-   (`routing.control.keywords`)? It is out of scope here.
-3. **Removing a graph that work items are still on.** An item keeps working only by
+2. **Removing a graph that work items are still on.** An item keeps working only by
    falling back (to the command's built-in loop, else the default). Is documenting "remove
    a graph only when nothing walks it" enough, or do you want a migration verb?

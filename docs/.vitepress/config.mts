@@ -176,6 +176,7 @@ const configSidebar = [
       { text: "Harnesses, models and effort", link: "/config/cli/harnesses-options" },
       { text: "Webhook options", link: "/config/cli/webhook-options" },
       { text: "Routing options", link: "/config/cli/routing-options" },
+      { text: "Graphs", link: "/config/cli/graphs-options" },
       { text: "Standing-session options", link: "/config/cli/standing-sessions-options" },
       { text: "Critic options", link: "/config/cli/critics-options" },
       { text: "Polling options", link: "/config/cli/polling-options" },

@@ -191,9 +191,10 @@ own modules in (issue-352).
 ## `loops`
 
 List every loop this machine can walk — the five shipped loops and any graphs **of your
-own** declared under [`routing.graph.graphs`](/config/cli/routing-options#graph-graphs)
+own** declared under the top-level [`graphs`](/config/cli/graphs-options)
 ([issue-343](https://github.com/MadaraUchiha-314/the-loop/issues/343)) — with the keywords
-that arm each (as configured; a disabled one is omitted). The CLI config is read
+that arm each, as [`routing.control.commands`](/config/cli/routing-options#control-commands)
+binds them (as configured; a disabled one is omitted). The CLI config is read
 **strictly**, and every declared graph is **compiled** and checked: the compiler's rules,
 the phase vocabulary, every hook attachment that applies to it naming a node it declares,
 and its `x-` hooks having a declared module. No hook module is imported, so whether a
@@ -217,15 +218,16 @@ acme-quick-loop  (declared)
   compiles: ok
 ```
 
-A shipped command you bound elsewhere is listed under your graph, not under the shipped
-loop (`the-loop do` above).
+A shipped command you bound elsewhere is listed under the graph it now selects, not under
+its shipped loop (`the-loop do` above). The built-in words come first, then your new ones.
 
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `--format` | `text` | `text`, or `json` (`loops[]` with `name`, `kind`, `commands`, `guest`, `inner`, `status`, and for a declared graph `path` and `extensionHooks` or `error`; plus a top-level `error`) for scripting. |
 
 Exits **1** when a declared graph fails a check, or when the CLI config, the
-`routing.graph.graphs` list or a keyword it derives cannot be read. See [bringing your own graph](/cli/graphs).
+`graphs` list, a `routing.control.commands` binding or a keyword it derives cannot be
+read. See [bringing your own graph](/cli/graphs).
 
 ## `status`
 

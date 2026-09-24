@@ -525,9 +525,9 @@ def test_an_attachment_may_be_scoped_to_a_declared_loop():
     """issue-343 R6.1 — the operator's own loop names are valid scopes."""
     declaration = extensions.read_declaration(
         {
+            "graphs": [{"name": "acme-triage-loop", "path": "t.yaml"}],
             "routing": {
                 "graph": {
-                    "graphs": [{"name": "acme-triage-loop", "path": "t.yaml"}],
                     "hooks": {
                         "attach": [
                             {
@@ -538,7 +538,7 @@ def test_an_attachment_may_be_scoped_to_a_declared_loop():
                         ]
                     },
                 }
-            }
+            },
         }
     )
     assert declaration.attachments[0].loops == ("acme-triage-loop",)

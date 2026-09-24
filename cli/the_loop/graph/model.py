@@ -9,7 +9,7 @@ The shipped graphs live **with the CLI**, as package data beside this module
 (R1.1) — the CLI is what executes them, and every hook they name is registered
 here. A repository cannot define or override one; a repo-supplied file is ignored
 with a warning (R1.4). The **operator** can declare graphs of their own in the
-CLI config (``routing.graph.graphs``, issue-343): compiled by the same code, held
+CLI config (top-level ``graphs``, issue-343): compiled by the same code, held
 to the same vocabulary, selected only by name from that declaration
 (:mod:`the_loop.graph.catalog`).
 """
@@ -183,7 +183,7 @@ def resolve_outer_loop(name: str, declared: Collection[str] = ()) -> str:
     request's graph with a work item's state layout), and anything invented.
 
     ``declared`` is the operator's own graph names (issue-343,
-    ``routing.graph.graphs``): an exact member selects that graph. It is the
+    the top-level ``graphs``): an exact member selects that graph. It is the
     only way the set grows — a name the operator does not declare *now* reads as
     the default, however it got into the state file.
     """
@@ -722,7 +722,7 @@ def load_graph(
 
     ``name`` selects which loop when no explicit ``path`` is given: one of the
     shipped loops (package data beside this module), or — issue-343 — a graph the
-    operator declared in ``routing.graph.graphs``, passed here as ``catalog``.
+    operator declared in the top-level ``graphs``, passed here as ``catalog``.
     Both kinds are compiled by the same code and executed by the same runtime; a
     name that is neither is a :class:`GraphConfigError`, never a fallback.
 
@@ -756,7 +756,7 @@ def load_graph(
         raise GraphConfigError(
             f"loop {name!r} is neither one of the-loop's shipped loops "
             f"({', '.join(SHIPPED_LOOPS)}) nor declared in the CLI config's "
-            "`routing.graph.graphs`"
+            "top-level `graphs`"
         )
     key = (
         str(target),
@@ -866,6 +866,6 @@ def _warn_on_repo_graph(repo: Path, declared: Sequence[str] = ()) -> None:
             logger.warning(
                 "ignoring %s: a repository's graph file cannot be overridden into "
                 "the-loop's process; an operator declares their own graphs in the "
-                "CLI config's `routing.graph.graphs`",
+                "CLI config's top-level `graphs`",
                 candidate,
             )

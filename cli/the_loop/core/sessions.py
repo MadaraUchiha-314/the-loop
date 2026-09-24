@@ -98,10 +98,12 @@ def _tmux_config(config: Optional[dict] = None) -> TmuxConfig:
 
 def _control_config(config: Optional[dict] = None) -> ControlConfig:
     routing = _routing(config)
-    # `routing.graph` too (issue-343): the operator's own command words and the
-    # loops they select, as the dispatcher parses them.
+    # The declared graphs too (issue-343): the operator's own command words and
+    # the loops they select, as the dispatcher parses them.
+    graphs = (config or {}).get("graphs")
     return ControlConfig.from_mapping(
-        routing.get("control") or {}, graph=routing.get("graph") or {}
+        routing.get("control") or {},
+        graphs=graphs if graphs is not None else routing.get("_graphs"),
     )
 
 

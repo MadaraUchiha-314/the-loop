@@ -144,9 +144,11 @@ def _control_config(cli_config: Optional[Mapping]):
     routing = (dict(cli_config or {}).get("routing") or {}) if cli_config else {}
     if not isinstance(routing, Mapping):
         return ControlConfig.from_mapping({})
-    # `routing.graph` too (issue-343): the operator's own command words.
+    # The declared graphs too (issue-343): the operator's own command words.
+    graphs = dict(cli_config or {}).get("graphs") if cli_config else None
     return ControlConfig.from_mapping(
-        routing.get("control") or {}, graph=routing.get("graph") or {}
+        routing.get("control") or {},
+        graphs=graphs if graphs is not None else routing.get("_graphs"),
     )
 
 

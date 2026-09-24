@@ -253,9 +253,9 @@ class ControlConfig:
     require_start_command: bool = True
     keywords: Dict[str, str] = field(default_factory=lambda: dict(DEFAULT_KEYWORDS))
     gh_binary: str = "gh"
-    #: Command word → the operator's own loop it selects (issue-343,
-    #: ``routing.graph.graphs[].commands``): an arming command it overrides, or a
-    #: new word, which then arms exactly as ``start`` does.
+    #: Command word → the loop it selects (issue-343, ``routing.control.commands``):
+    #: an arming command re-pointed, or a new word, which then arms exactly as
+    #: ``start`` does. The loop may be a shipped one or the operator's own.
     bindings: Dict[str, str] = field(default_factory=dict)
     #: Every loop name the operator declared — what a recorded loop may be
     #: resolved against (:func:`the_loop.graph.model.resolve_outer_loop`).
@@ -263,12 +263,16 @@ class ControlConfig:
 
     @classmethod
     def from_mapping(
-        cls, data: Optional[dict], graph: Optional[dict] = None
+        cls, data: Optional[dict], graphs: Optional[Any] = None
     ) -> "ControlConfig":
-        """``routing.control``, plus the command bindings ``routing.graph`` declares.
+        """``routing.control`` — its keywords, and the command bindings its
+        ``commands`` block declares (issue-343).
 
-        ``graph`` is the ``routing.graph`` block (issue-343). Parsed strictly: a
-        malformed ``graphs`` list raises rather than reading as "no commands".
+        ``graphs`` is the top-level ``graphs`` list (the loader also fans it into
+        ``routing._graphs``, which is where the dispatcher reads it from): a
+        binding may name one of those, or a shipped loop. Parsed strictly: a
+        malformed binding, or one naming a graph nobody declared, raises rather
+        than reading as "no commands".
         """
         data = data or {}
         configured = data.get("keywords") or {}
@@ -279,35 +283,33 @@ class ControlConfig:
                 # is why this is not a truthiness filter.
                 keywords[command] = str(configured[command] or "").strip()
         bindings: Dict[str, str] = {}
-        loops: Tuple[str, ...] = ()
-        if graph:
-            # Imported here, not at the top: this module is below the graph
-            # package, which imports it back (the catalog validates its words
-            # against COMMANDS).
-            from .graph.catalog import read_catalog
+        # Imported here, not at the top: this module is below the graph package,
+        # which imports it back (the catalog validates words against COMMANDS).
+        from .graph.catalog import parse_catalog, read_bindings
 
-            catalog = read_catalog({"routing": {"graph": graph}})
-            bindings, loops = catalog.bindings, catalog.names
-            for word in bindings:
-                if word in COMMANDS:
-                    continue
-                # A new command's keyword is derived, not configured: the
-                # shipped family's prefix plus the word.
-                keyword = f"the-loop {word}"
-                clash = next(
-                    (c for c, k in keywords.items() if k.lower() == keyword),
-                    None,
+        catalog = parse_catalog(graphs)
+        loops: Tuple[str, ...] = catalog.names
+        for word, binding in read_bindings(data.get("commands"), catalog).items():
+            bindings[word] = binding.graph
+            if word in COMMANDS:
+                continue
+            # A new command's keyword: the operator's, else the shipped family's
+            # prefix plus the word.
+            keyword = binding.keyword or f"the-loop {word}"
+            clash = next(
+                (c for c, k in keywords.items() if k and k.lower() == keyword.lower()),
+                None,
+            )
+            if clash is not None:
+                # Two commands on one keyword would make every comment carrying
+                # it ambiguous — refused now, not at 2am.
+                from .graph.model import GraphConfigError
+
+                raise GraphConfigError(
+                    f"CLI config: the new command {word!r} would use the keyword "
+                    f"{keyword!r}, which `{clash}` already uses"
                 )
-                if clash is not None:
-                    # Two commands on one keyword would make every comment
-                    # carrying it ambiguous — refused now, not at 2am.
-                    from .graph.model import GraphConfigError
-
-                    raise GraphConfigError(
-                        f"CLI config: the new command {word!r} would use the "
-                        f"keyword {keyword!r}, which `{clash}` already uses"
-                    )
-                keywords[word] = keyword
+            keywords[word] = keyword
         return cls(
             enabled=bool(data.get("enabled", True)),
             require_start_command=bool(data.get("requireStartCommand", True)),

@@ -278,7 +278,7 @@ def _read_loops(name: str, value: Any, known_loops: Sequence[str]) -> Tuple[str,
         raise GraphConfigError(
             f"CLI config: `{CONFIG_KEY}.attach` entry for {name!r} names "
             f"{', '.join(repr(loop) for loop in unknown)}, which is neither a "
-            "shipped loop nor declared in `routing.graph.graphs`"
+            "shipped loop nor declared under the top-level `graphs`"
         )
     return loops
 

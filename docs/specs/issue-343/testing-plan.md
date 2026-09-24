@@ -31,7 +31,7 @@ repository and a running instance. T5 drives the same dispatcher with the same c
 
 | # | Type | Applies? | Scope / what it proves | Where it runs |
 |---|------|----------|------------------------|---------------|
-| T1 | Unit | yes | `read_catalog`: every R1 and R3.1–R3.3 rule (grammar, reserved prefix, shipped names, duplicates, unknown keys, command classes, double binding), path resolution against a base, an absent block | `cd cli && uv run python -m pytest tests/test_graph_catalog.py` |
+| T1 | Unit | yes | `read_catalog` / `read_bindings`: every R1 and R3.1–R3.4 rule (grammar, reserved prefix, shipped names, duplicates, unknown keys, command classes, a binding to an undeclared graph, `keyword` only on a new word), the loader's `routing._graphs` fan-in, path resolution against a base, an absent block | `cd cli && uv run python -m pytest tests/test_graph_catalog.py` |
 | T2 | Unit | yes | `compile_custom` / `load_graph`: same compiler errors, `name` mismatch, unknown phase, missing/invalid file, `x-` hook resolution (declared, undeclared, no modules), the unknown-name error, the cache, `slash_command`, the `command:` grammar on every shipped loop | `cd cli && uv run python -m pytest tests/test_graph_catalog.py` |
 | T3 | Unit | yes | `resolve_outer_loop(name, declared)`, `build_runtime` choosing / refusing / guest, `_outer_loop_name` state-first then record `loop` then command, `core/graphs._recorded_loop` | `cd cli && uv run python -m pytest tests/test_graph_catalog.py` |
 | T4 | Unit | yes | `ControlConfig` bindings and keywords, `parse_command` for a new word, an override, an undeclared word, ambiguity; `ControlRecord` `loop` round trip and an older record without it | `cd cli && uv run python -m pytest tests/test_control_custom_commands.py` |
@@ -39,7 +39,7 @@ repository and a running instance. T5 drives the same dispatcher with the same c
 | T6 | Unit | yes | `attach[].loops`: scoped attachment skipped on other loops, applied on its own, unknown loop refused, digest changes, unscoped behaviour unchanged | `cd cli && uv run python -m pytest tests/test_graph_extensions.py` |
 | T7 | Unit | yes | `the-loop graph loops`: text and JSON rows for shipped and declared loops, a broken graph reported with exit 1, no module imported | `cd cli && uv run python -m pytest tests/test_graph_catalog.py -k loops` |
 | T8 | Security / abuse case | yes | The six abuse cases of `requirements.md`, each a named negative test (design § Security design table) | `cd cli && uv run python -m pytest tests/test_graph_catalog.py tests/test_control_custom_commands.py tests/test_custom_graph_integration.py` |
-| T9 | Contract / schema | yes | Both copies of `cli-config.schema.json` stay identical and accept the documented sample; the shipped sample configs validate | `cd cli && uv run python -m pytest tests/test_config_schema_parity.py tests/test_configschema.py` |
+| T9 | Contract / schema | yes | Both copies of `cli-config.schema.json` stay identical; the documented shape (top-level `graphs`, `routing.control.commands`) validates and the retired `routing.graph.graphs` does not; the shipped sample configs validate | `cd cli && uv run python -m pytest tests/test_config_schema_parity.py tests/test_configschema.py tests/test_docs_parity.py tests/test_graph_catalog.py -k schema` |
 | T10 | Regression | yes | The whole Python suite — the control parser, the dispatcher, the graph coupling and every shipped loop are touched | `make test` |
 | T11 | Manual exploratory | yes | A real daemon: declare a graph and a new command, type it on a ticket, watch the session walk the custom graph | an operator's instance; not available in this environment |
 | T12 | Documentation parity | yes | Capability docs, the config reference and the skill describe the feature; markdown lint green | `make lint` |
@@ -61,7 +61,7 @@ repository and a running instance. T5 drives the same dispatcher with the same c
 | T6 | R6.1, R6.2 | `an attachment scoped to loops leaves every other loop alone` |
 | T7 | R7.1–R7.3 | `graph loops lists and checks every loop without importing a module` |
 | T8 | abuse 1–6 | design § Security design table |
-| T2 | R8 | `a repository's graph file is ignored, and the warning names routing.graph.graphs` |
+| T2 | R8 | `a repository's graph file is ignored, and the warning names the top-level graphs` |
 
 ## Verification environment
 

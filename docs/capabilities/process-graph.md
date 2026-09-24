@@ -9,7 +9,7 @@
 The runtime under `cli/the_loop/graph/` plus the shipped loop definitions
 (`cli/the_loop/graph/pdlc-work-item-loop.yaml`, `pdlc-pr-loop.yaml`,
 `pdlc-contribution-loop.yaml`, `pdlc-adhoc-loop.yaml` and `pdlc-review-loop.yaml`),
-plus any graphs the operator declares of their own (`routing.graph.graphs`, issue-343),
+plus any graphs the operator declares of their own (the top-level `graphs`, issue-343),
 surfaced as `the-loop check` and `the-loop graph`.
 It exists because before it, the PDLC was enforced only by prompts: there was no event
 anywhere in the-loop meaning *"this node of the process completed"*, so there was nowhere
@@ -640,12 +640,17 @@ included, however empty the log was.
 
 > [decision-136](../decisions/decision-136.md) · [bringing your own graph](../cli/graphs.md)
 
-- An operator SHALL be able to declare **graphs of their own** in their
-  [CLI config](../config/cli/routing-options.md#graph-graphs): `routing.graph.graphs[]`,
-  each entry a `name`, a `path` (absolute, `~/…`, or relative to the config file's
-  directory — never a work item's checkout), optional `commands` and optional `guest`. An
-  absent list SHALL change nothing. A repository SHALL still not supply a graph: a
-  `.the-loop/<name>.yaml` is ignored with a warning naming `routing.graph.graphs`.
+- An operator SHALL be able to declare **graphs of their own** in their CLI config, in
+  two declarations kept apart (the owner's shape, PR #425 review). **Which graphs exist**
+  is the top-level [`graphs[]`](../config/cli/graphs-options.md): each entry a `name`, a
+  `path` (absolute, `~/…`, or relative to the config file's directory — never a work
+  item's checkout) and an optional `guest`. **Which command selects which graph** is
+  [`routing.control.commands`](../config/cli/routing-options.md#control-commands):
+  `<word>: {graph, keyword?}`. Absent, both SHALL change nothing. The loader SHALL fan the
+  list into `routing._graphs` for the readers handed the routing block alone
+  (`cli_config.apply_graphs`, as `instance` travels as `_instance`). A repository SHALL
+  still not supply a graph: a `.the-loop/<name>.yaml` is ignored with a warning naming the
+  top-level `graphs`.
 - A name SHALL match `^[a-z][a-z0-9-]*$`, SHALL be unique, and SHALL NOT be a shipped
   loop's name or begin with `pdlc-` (reserved for loops the-loop ships). A malformed entry
   SHALL fail the load naming it.
@@ -659,12 +664,14 @@ included, however empty the log was.
   graph. A bare name renders as `/the-loop:<name>`; a namespaced one as `/<plugin>:<name>`
   (`graph.model.slash_command`), which is how a custom graph points a session at another
   plugin's command.
-- `commands` SHALL bind arming words to the graph. `start`, `contribute`, `do` or `review`
-  **override** the loop that command selects; any other word not a built-in command is a
-  **new** command whose keyword is `the-loop <word>`, parsed by the same whole-token,
-  case-insensitive rule and taking part in the two-commands ambiguity refusal. The
-  non-arming commands SHALL be refused, as SHALL a word bound twice or a new keyword equal
-  to one already configured.
+- `routing.control.commands` SHALL bind command words to graphs. A command with no entry
+  SHALL keep its shipped loop. `start`, `contribute`, `do` or `review` are **re-pointed**
+  to the named graph; any other word not a built-in command is a **new** command whose
+  keyword is its `keyword`, else `the-loop <word>`, parsed by the same whole-token,
+  case-insensitive rule and taking part in the two-commands ambiguity refusal. `graph`
+  SHALL name a shipped outer-path loop or a declared one; anything else fails the load. The
+  non-arming commands SHALL be refused, as SHALL a `keyword` on a built-in command (that
+  lives in `routing.control.keywords`) and a new keyword equal to one already configured.
 - A new command SHALL parse as `start` with `loop` set (`ControlResult.loop`), and an
   overridden one as itself with `loop` set: authorization, spawn policy and arming are
   `start`'s, unchanged, and `review` keeps its binding to the pull request it was typed
@@ -971,7 +978,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-343 | Graphs of the operator's own (2026-09-23): `routing.graph.graphs` in the CLI config declares a YAML file and the arming commands that select it — an overridden `start`/`contribute`/`do`/`review`, or a new word that parses as `start` with a loop. The control record keeps the loop; `resolve_outer_loop` accepts a declared name and nothing else; a custom graph is compiled by the shipped compiler, held to `PHASE_VOCABULARY`, and may name the operator's `x-` hooks; a node's `command:` is grammar-checked in every graph and may name another plugin's slash command; attachments may be scoped with `loops`; `the-loop graph loops` lists and checks every loop | [spec](../specs/issue-343/), [decision-136](../decisions/decision-136.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/343) |
+| issue-343 | Graphs of the operator's own (2026-09-23): the top-level `graphs` in the CLI config declares a YAML file, and `routing.control.commands` binds the commands that select it — a re-pointed `start`/`contribute`/`do`/`review`, or a new word that parses as `start` with a loop. The control record keeps the loop; `resolve_outer_loop` accepts a declared name and nothing else; a custom graph is compiled by the shipped compiler, held to `PHASE_VOCABULARY`, and may name the operator's `x-` hooks; a node's `command:` is grammar-checked in every graph and may name another plugin's slash command; attachments may be scoped with `loops`; `the-loop graph loops` lists and checks every loop | [spec](../specs/issue-343/), [decision-136](../decisions/decision-136.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/343) |
 | issue-396 | `graph status` reads the state file the runtime wrote, and says which (2026-09-20, B7/O6 of the e2e run): every graph verb accepts a work-item **ref** and translates it to the daemon's `issue-<n>` directory (`core.graphs.work_item_id`, on `graphlink.spec_id_for`); the check report carries `statePath`/`stateFound` and the CLI prints a `state:` line, found or not; `graph status`/`check` with no `--repo` and a ref the working directory does not hold resolve the session's checkout through the session registry and say so (`repo: … (from the session registry)`). Before, `graph status github:…#1` addressed `docs/specs/github:…#1/` — never there — and reported the graph's start node in silence | [spec](../specs/issue-396/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/396) |
 | issue-378 | The runtime publishes `phase.started` / `phase.completed` on the channel bus at every transition of every graph (2026-09-18), following the label rather than the node: `WorkItemState.phase` records the phase the walk is in, an approval node inherits its author node's phase, a force publishes nothing, `cleanup` starts its phase and completes none. Nothing about the graphs' YAML, the verdicts or the pointer changed | [spec](../specs/issue-378/), [decision-130](../decisions/decision-130.md), [channels](channels.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/378) |
 | issue-370 (owner ruling) | A pull request armed as its **own** work item is recorded in its `pullRequests[]` too (2026-09-16), marked `self: true` and carrying no `stateDir` — the work item's own directory is the loop, so the derived inner-loop path would nest it inside itself. `the-loop review` and `the-loop contribute` are armed on a pull request, and the entity the-loop manages is a work item whatever represents it, so both relations a pull request can have to a work item live in one list and the marker says which | [spec](../specs/issue-370/), [PR #372](https://github.com/MadaraUchiha-314/the-loop/pull/372), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/370) |

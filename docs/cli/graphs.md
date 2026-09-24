@@ -10,7 +10,8 @@ walks your triage loop).
 
 ```mermaid
 flowchart LR
-  CMT["comment: the-loop triage"] --> CFG["your CLI config<br/>routing.graph.graphs"]
+  CMT["comment: the-loop triage"] --> CMD["your CLI config<br/>routing.control.commands"]
+  CMD --> CFG["your CLI config<br/>graphs"]
   CFG --> G["acme-triage-loop.yaml"]
   G --> RT["the same runtime the shipped loops use"]
 ```
@@ -74,33 +75,41 @@ teardown recorded as a transition, as every shipped work-item loop does.
 
 ## Declare it
 
-In your [CLI config](/config/cli/routing-options#graph-graphs):
+Two declarations in your CLI config, kept apart: **which graphs exist**, in the top-level
+[`graphs`](/config/cli/graphs-options) list, and **which command selects which graph**,
+under [`routing.control.commands`](/config/cli/routing-options#control-commands).
 
 ```yaml
+graphs:
+  - name: acme-triage-loop             # not pdlc-*: reserved for the-loop's loops
+    path: graphs/acme-triage-loop.yaml # absolute, ~/…, or relative to THIS file
+  - name: acme-quick-loop
+    path: ~/.the-loop/graphs/quick.yaml
+  - name: acme-review
+    path: /etc/the-loop/review.yaml
+    guest: true                        # keep the guest posture review has
+                                       # (spec tree out of git; plan on the thread)
+
 routing:
-  graph:
-    graphs:
-      - name: acme-triage-loop             # not pdlc-*: reserved for the-loop's loops
-        path: graphs/acme-triage-loop.yaml # absolute, ~/…, or relative to THIS file
-        commands: [triage]                 # a new word → `the-loop triage`
-      - name: acme-quick-loop
-        path: ~/.the-loop/graphs/quick.yaml
-        commands: [do]                     # `the-loop do` now walks this graph
-      - name: acme-review
-        path: /etc/the-loop/review.yaml
-        commands: [review]
-        guest: true                        # keep the guest posture review has
-                                           # (spec tree out of git; plan on the thread)
+  control:
+    commands:
+      triage: {graph: acme-triage-loop}        # a new word → `the-loop triage`
+      do: {graph: acme-quick-loop}             # `the-loop do` now walks this graph
+      review: {graph: acme-review}
 ```
+
+A command you do not list keeps its shipped loop, so an operator who adds nothing here
+sees no change. Declaring a graph selects nothing by itself: a command must name it.
 
 | A command word may be | What happens |
 |---|---|
-| `start`, `contribute`, `do` or `review` | That command now selects your graph. Everything else about it is unchanged — `review` still binds to the pull request it was typed on |
-| A new word (`triage`) | `the-loop triage` becomes a keyword, matched like every other, and arms exactly as `start` does — same authorization, same spawn policy |
+| `start`, `contribute`, `do` or `review` | That command now selects the named graph, yours or another shipped loop. Everything else about it is unchanged: `review` still binds to the pull request it was typed on |
+| A new word (`triage`) | `the-loop triage` becomes a keyword (or the `keyword:` you give it), matched like every other. It arms exactly as `start` does, with the same authorization and the same spawn policy |
 | `stop`, `pause`, `resume`, `execute`, `cleanup`, the collaborator or channel commands | Refused: they do not select a loop |
 
-Each word may be bound once. Two different commands in one comment (`the-loop triage` and
-`the-loop stop`) are refused as ambiguous, as they always were.
+A binding to a graph that is neither shipped nor declared fails the load. Two different
+commands in one comment (`the-loop triage` and `the-loop stop`) are refused as ambiguous,
+as they always were.
 
 ## Check it
 

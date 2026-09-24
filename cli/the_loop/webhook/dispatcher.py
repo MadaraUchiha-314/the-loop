@@ -536,8 +536,11 @@ class RoutingConfig:
             principals=list(principals),
             reactions=ReactionConfig.from_mapping(data.get("reactions") or {}),
             announce=AnnounceConfig.from_mapping(data.get("announce") or {}),
+            # The operator's own graphs travel as `_graphs` (issue-343,
+            # `cli_config.apply_graphs`): a `routing.control.commands` binding
+            # may name one of them.
             control=ControlConfig.from_mapping(
-                data.get("control") or {}, graph=data.get("graph") or {}
+                data.get("control") or {}, graphs=data.get("_graphs")
             ),
             graph=GraphLinkConfig.from_mapping(data.get("graph") or {}),
             interaction=InteractionConfig.from_mapping(data.get("interaction") or {}),

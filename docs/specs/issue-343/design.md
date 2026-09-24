@@ -16,7 +16,8 @@ overrides: {}
 
 ## Overview
 
-**One new module (`graph/catalog.py`) parses `routing.graph.graphs`; the compiler, the
+**One new module (`graph/catalog.py`) parses the top-level `graphs` and
+`routing.control.commands`; the compiler, the
 loader and the one fail-closed resolver learn a second source of names; the control parser
 learns the declared words and records the loop each one selects.** A new command is
 `start` with a loop attached — so every seam that already handles `start` (authorization,
@@ -24,8 +25,10 @@ spawn policy, arming, disarming) handles it unchanged.
 
 ```mermaid
 flowchart TD
-  CFG["cli-config.yaml<br/>routing.graph.graphs[]"] --> CAT["graph/catalog.py<br/>read_catalog → Catalog"]
-  CAT -->|"bindings, names"| CC["control.ControlConfig<br/>(keywords + bindings)"]
+  CFG["cli-config.yaml<br/>graphs[]"] --> CAT["graph/catalog.py<br/>read_catalog → Catalog"]
+  BND["cli-config.yaml<br/>routing.control.commands"] --> RB["catalog.read_bindings"]
+  CAT -->|"names"| RB
+  RB -->|"bindings"| CC["control.ControlConfig<br/>(keywords + bindings)"]
   CC --> PC["parse_command<br/>→ ControlResult(command, loop)"]
   PC --> DSP["dispatcher._apply_control<br/>record(..., loop)"]
   DSP --> CR[("control record<br/>+ loop")]
@@ -42,51 +45,66 @@ flowchart TD
   CC2 --> EXT["x- hooks resolved against<br/>routing.graph.hooks modules"]
 ```
 
-## §1 The declaration — `routing.graph.graphs`
+## §1 The declaration — top-level `graphs`, `routing.control.commands`
+
+Two declarations, kept apart (the owner's shape, PR #425 review): **which graphs exist**
+and **which command selects which graph**.
 
 ```yaml
+graphs:
+  - name: acme-triage-loop               # ^[a-z][a-z0-9-]*$, not pdlc-*, not shipped
+    path: graphs/acme-triage-loop.yaml   # absolute, ~/…, or relative to this file's dir
+  - name: acme-quick-loop
+    path: ~/.the-loop/graphs/quick.yaml
+  - name: acme-guest-review
+    path: /etc/the-loop/review.yaml
+    guest: true                          # keeps the guest posture (R5)
+
 routing:
-  graph:
-    graphs:
-      - name: acme-triage-loop               # ^[a-z][a-z0-9-]*$, not pdlc-*, not shipped
-        path: graphs/acme-triage-loop.yaml   # absolute, ~/…, or relative to this file's dir
-        commands: [triage]                   # a NEW command → `the-loop triage`
-      - name: acme-quick-loop
-        path: ~/.the-loop/graphs/quick.yaml
-        commands: [do]                       # OVERRIDES the shipped `do`
-      - name: acme-guest-review
-        path: /etc/the-loop/review.yaml
-        commands: [review]
-        guest: true                          # keeps the guest posture (R5)
+  control:
+    commands:
+      triage: {graph: acme-triage-loop}  # a NEW command → `the-loop triage`
+      do: {graph: acme-quick-loop}       # RE-POINTS the shipped `do`
+      review: {graph: acme-guest-review}
 ```
 
-`graph/catalog.py` owns it:
+A command with no entry keeps its shipped loop, so nothing needs writing to keep today's
+behaviour. The loader fans the top-level list into `routing._graphs`
+(`cli_config.apply_graphs`, called beside `apply_instance`): the dispatcher and the other
+`ControlConfig` builders are handed the routing block alone, exactly as `instance` travels
+as `_instance`.
+
+`graph/catalog.py` owns both:
 
 | Name | Shape | Notes |
 |---|---|---|
-| `CATALOG_KEY` | `"routing.graph.graphs"` | For messages |
+| `CATALOG_KEY`, `BINDINGS_KEY` | `"graphs"`, `"routing.control.commands"` | For messages |
 | `RESERVED_PREFIX` | `"pdlc-"` | R1.2 |
-| `CustomGraph` | frozen: `name`, `path` (raw), `commands: Tuple[str,…]`, `guest: bool` | `resolved_path(base)` expands `~`, keeps absolute, joins relative onto `base` |
-| `Catalog` | frozen: `entries: Tuple[CustomGraph,…]` | `names`, `get(name)`, `bindings` (`{word: loop}`), `is_guest(name)`, `empty`, `digest()` |
-| `read_catalog(cli_config)` | → `Catalog` | Validates R1.1–R1.5 and R3.1–R3.3; raises `GraphConfigError`; absent block → empty catalog |
-| `config_base()` | → `Path` | `cli_config.default_cli_config_path().parent` — the directory of the file in effect (`--config`, `$THE_LOOP_CLI_CONFIG`, `./.the-loop/`, `~/.the-loop/`) |
-| `compile_custom(entry, base)` | → `Graph` | Reads, compiles, checks R2.2/R2.3; `x-` hooks deferred (§3) |
+| `CustomGraph` | frozen: `name`, `path` (raw), `guest: bool` | `resolved_path(base)` expands `~`, keeps absolute, joins relative onto `base` |
+| `Catalog` | frozen: `entries: Tuple[CustomGraph,…]` | `names`, `get(name)`, `is_guest(name)`, `empty`, `digest()` |
+| `read_catalog(cli_config)` / `parse_catalog(raw)` | → `Catalog` | Top-level `graphs`, else `routing._graphs`; validates R1.1–R1.5; absent → empty |
+| `Binding` | frozen: `word`, `graph`, `keyword` | One `routing.control.commands` entry |
+| `read_bindings(block, catalog)` | → `{word: Binding}` | Validates R3.1–R3.4 against the catalog; absent → `{}` |
+| `config_base()` | → `Path` | The directory of the CLI config in effect (`--config`, `$THE_LOOP_CLI_CONFIG`, `./.the-loop/`, `~/.the-loop/`) |
+| `compile_custom(entry, target)` | → `Graph` | Reads, compiles, checks R2.2/R2.3; `x-` hooks deferred (§3) |
 
 Command-word validation needs the control vocabulary. `catalog` imports it from
-`the_loop.control` **inside** `read_catalog`, and `control` imports `read_catalog` inside
+`the_loop.control` **inside** `read_bindings`, and `control` imports the catalog inside
 `ControlConfig.from_mapping`: two function-level imports, no module-level cycle, and
 `control` keeps its "no graph imports at module level" property.
 
 Rules, all at parse time:
 
-- `name` grammar, not shipped, not `pdlc-*`, unique.
-- `path` a non-empty string.
-- `commands` a list; each word matches `^[a-z][a-z0-9-]*$`; each is either in
-  `SPAWN_COMMANDS` (`start`, `contribute`, `do`, `review`) or not in `COMMANDS` at all;
-  each is bound once across the whole list.
-- `guest` a boolean when present; any other key is refused (the schema's
-  `additionalProperties: false`, enforced in code too so a config that skips schema
-  validation still fails closed).
+- A graph: `name` grammar, not shipped, not `pdlc-*`, unique; `path` a non-empty string;
+  `guest` a boolean when present; any other key refused (a `commands` key gets a hint
+  pointing at `routing.control.commands`).
+- A binding: the word matches `^[a-z][a-z0-9-]*$` and is either in `SPAWN_COMMANDS`
+  (`start`, `contribute`, `do`, `review`) or in neither `COMMANDS` nor the-loop's own
+  verbs; `graph` names a shipped outer-path loop or a declared graph; `keyword` only on a
+  new word, a non-empty string, whitespace-normalised. A word cannot be bound twice — it
+  is one key of one mapping.
+- The schema says the same (`additionalProperties: false`, `required`), enforced in code
+  too so a config that skips schema validation still fails closed.
 
 ## §2 The compiler and the loader (`graph/model.py`)
 
@@ -109,9 +127,9 @@ Rules, all at parse time:
     §3's extension resolution, then `extensions.apply` as for a shipped loop. The cache
     key is `(resolved path, repo, declaration digest)`, as today.
   - Anything else → `GraphConfigError("… is neither a shipped loop nor declared in
-    routing.graph.graphs")` — instead of today's misleading "packaging fault".
+    the top-level graphs")` — instead of today's misleading "packaging fault".
   - `_warn_on_repo_graph(repo, extra=catalog.names)` warns for the shipped filenames and
-    the declared names, and the message names `routing.graph.graphs` (R8).
+    the declared names, and the message names the top-level `graphs` (R8).
 
 `compile_custom` in order: resolve the path; read (an `OSError` names the graph and the
 file); `yaml.safe_load`; require a mapping; if `name` is present require it equal the
@@ -146,8 +164,10 @@ missing node (R6.1). `Declaration.digest()` includes `loops`.
 
 - `ControlConfig` gains `bindings: Dict[str, str]` (word → custom loop, overrides and new
   words alike) and `loops: Tuple[str, …]` (every declared custom name).
-  `from_mapping(data, graph=None)` fills both from `read_catalog({"routing": {"graph":
-  graph}})` and adds `keywords[word] = "the-loop <word>"` for every **new** word.
+  `from_mapping(data, graphs=None)` fills both from `parse_catalog(graphs)` and
+  `read_bindings(data["commands"], catalog)`, and adds `keywords[word] = binding.keyword
+  or "the-loop <word>"` for every **new** word, refusing one that equals a configured
+  keyword.
 - `ControlResult` gains `loop: str = ""`.
 - `parse_command` scans `COMMANDS` then the new words, with the same boundary patterns.
   `found` holds the *words*, so `the-loop start` + `the-loop triage` is ambiguous (R3.4).
@@ -159,15 +179,15 @@ missing node (R6.1). `Declaration.digest()` includes `loops`.
 
 ## §6 The dispatcher and the graph coupling
 
-- `dispatcher.py`: `ControlConfig.from_mapping(data.get("control"), graph=data.get("graph"))`;
+- `dispatcher.py`: `ControlConfig.from_mapping(data.get("control"), graphs=data.get("_graphs"))`;
   `_apply_control(control.command, routed, loop=control.loop)`; its `record()` passes
   `loop`; the `control.command` event carries `loop` when set (R3.8). `review`'s PR
   binding keys on the command, so an overridden `review` still binds to the PR (R3.7).
 - The other `ControlConfig.from_mapping` builders that parse or select (`channels/inbound.py`,
-  `channels/commands.py`, `core/sessions.py`) pass the routing block's `graph` too, so
-  every surface recognises the same vocabulary; the Slack slash command resolves a new
-  word as a verb. (`channels/slack.py`'s buttons list only the built-in commands and are
-  unchanged.)
+  `channels/commands.py`, `core/sessions.py`) pass the declared graphs too, so every
+  surface recognises the same vocabulary; the Slack slash command resolves a new word as a
+  verb. (`channels/slack.py`'s buttons list only the built-in keywords and parse the
+  control block without its `commands`.)
 - `graphlink._outer_loop_name`: state first → `resolve_outer_loop(recorded,
   self.control.loops)`; then the control record → `resolve_outer_loop(record.loop,
   self.control.loops)` when `record.loop` is set, else the shipped
@@ -175,6 +195,8 @@ missing node (R6.1). `Declaration.digest()` includes `loops`.
   recorded loop — none recorded, no record, or one naming a graph no longer declared — the
   command's current binding applies (for no record, `start`'s), else its shipped loop. The
   control-record branch goes through the resolver too, closing the gap the survey noted.
+  A binding to the default loop itself (`do: {graph: pdlc-work-item-loop}`) selects the
+  default, never falling through to the command's shipped loop.
 
 ## §7 The runtime builder and the CLI
 
@@ -185,8 +207,9 @@ missing node (R6.1). `Declaration.digest()` includes `loops`.
   `read_declaration` has.
 - `core/graphs._recorded_loop`: resolves against the best-effort CLI config's catalog.
 - `the-loop graph loops [--format text|json]` (`commands/graph_cmd.py`): one row per
-  shipped loop (commands from `LOOP_FOR_CONTROL_COMMAND`, `start` for the default,
-  minus any overridden) and per declared graph (commands, guest, resolved path, status
+  shipped loop and per declared graph, with the keywords of the commands that select it
+  after `routing.control.commands` is applied (a re-pointed command moves to the row of
+  the graph it now selects), guest, resolved path, status
   `ok` / the compile error, referenced `x-` hooks). Exit 1 when any declared graph fails
   to compile or the catalog itself fails to parse. Local only, like `graph hooks` — it
   reads the operator's config, which the service API does not expose.
@@ -194,8 +217,9 @@ missing node (R6.1). `Declaration.digest()` includes `loops`.
 ## Data models
 
 - **CLI config schema** (`.the-loop/cli-config.schema.json` and the packaged copy):
-  `routing.graph.graphs` (array of `{name, path, commands?, guest?}`,
-  `additionalProperties: false`, patterns as §1) and
+  top-level `graphs` (array of `{name, path, guest?}`, `additionalProperties: false`,
+  patterns as §1), `routing.control.commands` (object of `{graph, keyword?}`,
+  `graph` required), and
   `routing.graph.hooks.attach[].loops` (array of strings).
 - **Control record** (`portable/<slug>.json`, `control` section): `loop` (string,
   optional). Additive; readers of older records see `""`.
@@ -206,7 +230,7 @@ missing node (R6.1). `Declaration.digest()` includes `loops`.
 
 | Failure | Where | Surfaced as |
 |---|---|---|
-| Malformed `routing.graph.graphs` | `read_catalog` (daemon start, `build_runtime`, `graph loops`) | `GraphConfigError` naming the entry; the daemon refuses to start |
+| Malformed `graphs` or `routing.control.commands` | `read_catalog` / `read_bindings` (daemon start, `build_runtime`, `graph loops`) | `GraphConfigError` naming the entry; the daemon refuses to start |
 | Custom YAML missing / invalid / wrong name / unknown phase / unknown hook | `compile_custom` / `load_graph` | `GraphConfigError` naming the graph and the file; on the daemon path, logged as `graph.link_failed` (the coupling's existing best-effort envelope) |
 | Recorded loop not declared | `resolve_outer_loop` | `""` → default loop; `build_runtime` logs the ignored name at `warning` |
 | `x-` hook referenced without modules | `load_graph` | `GraphConfigError` naming the hooks |
@@ -243,7 +267,7 @@ missing node (R6.1). `Declaration.digest()` includes `loops`.
 | 3. unauthorized new command | existing `unauthorized-actor` path (command is `START`) | `test_control_custom_commands.py::test_unauthorized_custom_command_is_refused` |
 | 4. new + built-in command | `found` holds words → ambiguous | `test_control_custom_commands.py::test_custom_and_builtin_command_is_ambiguous` |
 | 5. repo file shadowing a declared name | loader never reads the repo; warning | `test_graph_catalog.py::test_repo_file_for_declared_name_is_ignored` |
-| 6. rebinding `stop` etc., `pdlc-*` names | `read_catalog` refuses | `test_graph_catalog.py::test_catalog_refuses_*` |
+| 6. rebinding `stop` etc., `pdlc-*` names, a binding to an undeclared graph | `read_catalog` / `read_bindings` refuse | `test_graph_catalog.py::test_catalog_refuses_*`, `test_binding_refuses_*` |
 
 ## Testing strategy
 
@@ -263,7 +287,8 @@ The executable detail is `testing-plan.md`.
 | A new command **is `start` + a loop** | New entries in `COMMANDS` / `SPAWN_COMMANDS` | Every seam branching on the arming constants keeps working with no edits, and `ControlStore` needs no config to answer `start_requested` |
 | The loop is **recorded** on the control record | Re-derived from the command at spawn time | A new word has no constant to derive from; recording also freezes an override against a config edit between arming and spawn |
 | Phases **restricted** to the shipped vocabulary | Free phases | decision-123 D3 — one label vocabulary for every repository; `/the-loop:init` creates exactly those labels |
-| Keyword **derived** (`the-loop <word>`) | A per-command keyword key | Smallest surface; per-command text can follow if asked (out of scope) |
+| **Two declarations**: top-level `graphs` + `routing.control.commands` | One `routing.graph.graphs` list carrying each graph's `commands` (this PR's first shape) | The owner's call in the PR #425 review. A graph is a top-level fact like `critics[]`; the command vocabulary already lives in `routing.control`; and a command can be re-pointed at another *shipped* loop with no graph declared |
+| A new word's keyword **defaults** to `the-loop <word>`, overridable by `keyword` | Derived only | Per-command text is one optional key once commands live in `routing.control`; a built-in command's keyword stays in `routing.control.keywords`, so each keyword has one home |
 | `pdlc-` **reserved** | `x-` prefix required | Graph names are user-facing (they appear in the state file and `graph loops`); reserving the shipped family keeps them readable |
 | `attach[].loops` **opt-in** | Silently skip attachments whose node is absent | Silently skipping would turn a typo'd node into a check that never runs — the failure issue-248 exists to prevent |
 

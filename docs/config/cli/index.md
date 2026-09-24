@@ -265,6 +265,7 @@ Everything else takes its default. Build up from here with the option pages belo
 | [Instance options](/config/cli/instance-options) | `instance` — which instance of the-loop this config is, and the work items it manages |
 | [Webhook options](/config/cli/webhook-options) | `webhooks.ghWebhook` — bind address, path, HMAC secret, event filter |
 | [Routing options](/config/cli/routing-options) | `routing` — who may trigger, what spawns, how sessions are hosted |
+| [Graphs](/config/cli/graphs-options) | `graphs` — graphs of your own, which `routing.control.commands` binds commands to |
 | [Standing-session options](/config/cli/standing-sessions-options) | `standingSessions` — the sessions the-loop keeps for itself, which belong to no work item |
 | [Critic options](/config/cli/critics-options) | `critics` — the critic harnesses a session may hand its work to (moved here from the harness config in issue-352) |
 | [Polling options](/config/cli/polling-options) | `polling` — the pull-based ingress and its sources |

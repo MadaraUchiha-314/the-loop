@@ -1254,10 +1254,24 @@ class GraphLink:
         agent-writable, so an invented name reads as the default rather than
         choosing a graph (fail closed).
         """
-        from .graph.model import LOOP_FOR_CONTROL_COMMAND, resolve_outer_loop
+        from .graph.model import (
+            LOOP_FOR_CONTROL_COMMAND,
+            PDLC_WORK_ITEM_LOOP,
+            resolve_outer_loop,
+        )
         from .graph.state import WorkItemState
 
         declared = self.control.loops
+
+        def selectable(name: str) -> Optional[str]:
+            # A name that selects a loop: the default (as "") or a non-default
+            # outer-path loop the operator may choose; None when it selects
+            # nothing — empty, invented, or a graph no longer declared.
+            if name == PDLC_WORK_ITEM_LOOP:
+                return ""
+            chosen = resolve_outer_loop(name, declared)
+            return chosen or None
+
         try:
             state = WorkItemState.load(root / spec_dir / item_id, item_id)
             recorded = str(getattr(state, "loop", "") or "")
@@ -1274,8 +1288,8 @@ class GraphLink:
                     # The operator's own loop the arming command selected
                     # (issue-343), through the same fail-closed resolver the
                     # state file goes through.
-                    chosen = resolve_outer_loop(record.loop, declared)
-                    if chosen:
+                    chosen = selectable(record.loop)
+                    if chosen is not None:
                         return chosen
                     command = record.command
             except Exception as exc:  # noqa: BLE001
@@ -1284,8 +1298,10 @@ class GraphLink:
         # required, an older record, or a record naming a graph no longer
         # declared: the command's CURRENT binding (issue-343), else what it
         # selects when nobody bound it.
-        bound = resolve_outer_loop(self.control.bindings.get(command, ""), declared)
-        return bound or resolve_outer_loop(LOOP_FOR_CONTROL_COMMAND.get(command, ""))
+        bound = selectable(self.control.bindings.get(command, ""))
+        if bound is not None:
+            return bound
+        return resolve_outer_loop(LOOP_FOR_CONTROL_COMMAND.get(command, ""))
 
     def _spec_dir(self) -> str:
         """Where this daemon's work items keep their specs, as the operator declared.

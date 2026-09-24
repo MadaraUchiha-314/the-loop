@@ -117,7 +117,7 @@ def build_runtime(
     owns, or the ad-hoc loop (issue-225), for a tactical task that runs no PDLC
     process. Meaningless with ``pr_number`` (a pull request's loop is always
     ``pdlc-pr-loop``). Only ``OUTER_PATH_LOOPS`` names and the operator's own
-    declared graphs (``routing.graph.graphs``, issue-343) are honoured — the value
+    declared graphs (top-level ``graphs``, issue-343) are honoured — the value
     can originate in the agent-writable ``work-item-state.json``, so anything else
     falls back to the default outer loop with a warning rather than reaching
     ``load_graph``.

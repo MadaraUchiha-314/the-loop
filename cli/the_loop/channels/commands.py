@@ -463,14 +463,25 @@ def manifest_text() -> str:
 def _control_config(cli_config: Optional[Mapping]) -> ControlConfig:
     routing = (dict(cli_config or {}).get("routing") or {}) if cli_config else {}
     control = routing.get("control") if isinstance(routing, Mapping) else None
-    graph = routing.get("graph") if isinstance(routing, Mapping) else None
-    # `routing.graph` too (issue-343): the operator's own command words are
+    # The declared graphs too (issue-343): the operator's own command words are
     # control commands on every surface, or a Slack reply would forward one the
     # dispatcher executes.
     return ControlConfig.from_mapping(
         dict(control) if isinstance(control, Mapping) else {},
-        graph=dict(graph) if isinstance(graph, Mapping) else {},
+        graphs=_declared_graphs(cli_config),
     )
+
+
+def _declared_graphs(cli_config: Optional[Mapping]) -> Any:
+    """The top-level ``graphs`` list, or the ``routing._graphs`` copy the loader
+    fans it into (issue-343) — whichever this config object carries."""
+    if not cli_config:
+        return None
+    raw = dict(cli_config).get("graphs")
+    if raw is None:
+        routing = dict(cli_config).get("routing")
+        raw = routing.get("_graphs") if isinstance(routing, Mapping) else None
+    return raw
 
 
 def _drop(reason: str, actor: str, level: str = "info", **fields) -> Dict[str, Any]:

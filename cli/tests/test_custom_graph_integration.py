@@ -1,6 +1,7 @@
 """An operator's own graph, armed from a comment, end to end (issue-343).
 
-    cli-config.yaml declares routing.graph.graphs (a file, and the words that arm it)
+    cli-config.yaml declares top-level graphs (the files) and
+    routing.control.commands (the words that select them)
         → the dispatcher parses `the-loop triage` as `start` onto that loop
         → the control record keeps the loop
         → the spawn enters the graph through the real GraphLink and Runtime
@@ -23,6 +24,7 @@ from pathlib import Path
 import pytest
 
 from conftest import FakeTmux, StubInteractiveAdapter
+from the_loop.cli_config import load_cli_config
 from the_loop.control import ControlStore
 from the_loop.graph import extensions
 from the_loop.graph.state import WorkItemState
@@ -111,22 +113,22 @@ def _setup(tmp_path: Path, monkeypatch):
     (tmp_path / "graphs").mkdir()
     (tmp_path / "graphs" / "triage.yaml").write_text(TRIAGE.lstrip())
     (tmp_path / "graphs" / "quick.yaml").write_text(TRIAGE.lstrip())
-    graph_block = {
-        "graphs": [
-            {"name": NAME, "path": "graphs/triage.yaml", "commands": ["triage"]},
-            {"name": QUICK, "path": "graphs/quick.yaml", "commands": ["do"]},
-        ]
-    }
     config_path = tmp_path / "cli-config.yaml"
     config_path.write_text(
         'version: "0.10.0"\n'
+        "graphs:\n"
+        f"  - {{name: {NAME}, path: graphs/triage.yaml}}\n"
+        f"  - {{name: {QUICK}, path: graphs/quick.yaml}}\n"
         "routing:\n"
-        "  graph:\n"
-        "    graphs:\n"
-        f"      - {{name: {NAME}, path: graphs/triage.yaml, commands: [triage]}}\n"
-        f"      - {{name: {QUICK}, path: graphs/quick.yaml, commands: [do]}}\n"
+        "  control:\n"
+        "    commands:\n"
+        f"      triage: {{graph: {NAME}}}\n"
+        f"      do: {{graph: {QUICK}}}\n"
     )
     monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(config_path))
+    # The routing block exactly as the daemon's loader hands it over: the
+    # top-level `graphs` fanned in as `_graphs` (cli_config.apply_graphs).
+    routing = load_cli_config(config_path)["routing"]
     checkout = _checkout(tmp_path / "checkout")
     tmux = FakeTmux()
     dispatcher = Dispatcher(
@@ -139,7 +141,8 @@ def _setup(tmp_path: Path, monkeypatch):
                 "autoExecuteLabels": [LABEL],
                 "spawnWorkdir": str(checkout),
                 "authorizedUsers": [OWNER],
-                "graph": graph_block,
+                "control": routing["control"],
+                "_graphs": routing["_graphs"],
             },
             StateLayout(root=str(tmp_path / "state")),
         ),

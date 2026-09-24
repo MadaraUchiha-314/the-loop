@@ -44,14 +44,14 @@ flowchart LR
       _Test:_ testing-plan T2.
 
 - [x] **2 · The catalog.** `cli/the_loop/graph/catalog.py` — `CustomGraph`, `Catalog`,
-      `read_catalog`, `config_base`, `compile_custom`. Tests first in
+      `read_catalog`, `read_bindings`, `config_base`, `compile_custom`. Tests first in
       `cli/tests/test_graph_catalog.py`.
       _Requirements:_ R1.1–R1.5, R2.2, R2.3, R2.6, R3.1–R3.3.
       _Test:_ testing-plan T1, T2.
 
 - [x] **3 · Loading and resolving.** `load_graph(..., catalog=)`, the `x-` resolution,
       the unknown-name error, `resolve_outer_loop(name, declared)`, the repository-file
-      warning naming `routing.graph.graphs`.
+      warning naming the top-level `graphs`.
       _Requirements:_ R2.4, R4.2, R4.4, R8.
       _Test:_ testing-plan T2, T3, T8.
 
@@ -66,14 +66,14 @@ flowchart LR
       _Test:_ testing-plan T3.
 
 - [x] **6 · The control vocabulary.** `ControlConfig.bindings/loops`, `from_mapping(…,
-      graph=)`, `parse_command` for new and overridden words, `ControlResult.loop`,
+      graphs=)`, `parse_command` for new and overridden words, `ControlResult.loop`,
       `ControlRecord.loop`, `ControlStore.record(loop=)`. Tests first in
       `cli/tests/test_control_custom_commands.py`.
       _Requirements:_ R3.4–R3.6.
       _Test:_ testing-plan T4, T8.
 
 - [x] **7 · The daemon path.** The dispatcher records the loop and logs it; every
-      `ControlConfig` builder passes the graph block; `graphlink._outer_loop_name` reads
+      `ControlConfig` builder passes the declared graphs; `graphlink._outer_loop_name` reads
       the record's loop through the resolver.
       _Requirements:_ R3.5–R3.8, R4.1, R4.2.
       _Test:_ testing-plan T5.
@@ -101,3 +101,10 @@ flowchart LR
 
 - [x] **12 · Verify and record.** Run the plan, write `evidence/`, tick this list.
       _Test:_ testing-plan T10, all rows.
+
+- [x] **13 · The owner's shape (PR #425 review).** Top-level `graphs` (`name`, `path`,
+      `guest`) and `routing.control.commands` (`<word>: {graph, keyword?}`);
+      `cli_config.apply_graphs` fans the list into `routing._graphs`; both schema copies,
+      samples, docs (a new `graphs-options` page), decision-136 and this spec follow.
+      _Requirements:_ R1.1, R1.5, R3.1–R3.4, R8.
+      _Test:_ testing-plan T1, T4, T5, T7, T9, T10.

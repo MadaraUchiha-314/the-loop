@@ -54,3 +54,20 @@ The rest of `make check`: `uv run ruff check cli hooks` — all checks passed;
 - Nothing but the operator's current declaration can make a recorded name select a custom
   graph (T3, T8).
 - An operator who declares nothing sees no change (T10).
+
+## Re-run after the owner's reshape (PR #425 review)
+
+The declaration moved to top-level `graphs` plus `routing.control.commands`. The same
+matrix was re-run on the reshaped tree:
+
+| # | Command | Outcome |
+|---|---------|---------|
+| T1–T3, T7 | `cd cli && uv run python -m pytest -q tests/test_graph_catalog.py` | **pass**: 105 tests. New: binding validation (undeclared graph, `keyword` on a built-in, malformed entries), the loader's `routing._graphs` fan-in, a binding to the default loop, a new word's own keyword in `graph loops`, and a binding to an undeclared graph reported by `graph loops` |
+| T4 | `cd cli && uv run python -m pytest -q tests/test_control_custom_commands.py` | **pass**: 23 tests, including a new word's `keyword`, a clash with a built-in keyword, re-pointing at a shipped loop, and a new word onto a shipped loop |
+| T5 | `cd cli && uv run python -m pytest -q tests/test_custom_graph_integration.py` | **pass**: the 3 scenarios. The dispatcher is now built from `load_cli_config`'s output, so the fan-in is on the path |
+| T9 | `cd cli && uv run python -m pytest -q tests/test_config_schema_parity.py tests/test_configschema.py tests/test_docs_parity.py tests/test_onboarding_schema.py` | **pass**: the copies are identical, the new shape validates and `routing.graph.graphs` does not, every leaf has a heading, and `graphs` is in the `execution` onboarding group |
+| T10 | `cd cli && uv run python -m pytest -q` | **pass**: 4659 passed, 1 skipped, 185 s |
+| T12 | `npx markdownlint-cli2@0.18.1` over every changed page | **pass**: 0 errors |
+
+Also clean: `uv run ruff check cli hooks`, `uv run ruff format --check cli hooks` (358
+files) and `uv run pyright cli` (0 errors).

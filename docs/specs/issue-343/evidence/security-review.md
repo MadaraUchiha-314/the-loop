@@ -14,9 +14,10 @@ workItem: "github:MadaraUchiha-314/the-loop#343"
 
 ## What the change introduces
 
-1. A new operator-owned configuration list (`routing.graph.graphs`) naming YAML files on the
-   operator's machine.
-2. New control keywords (`the-loop <word>`) derived from that list.
+1. A new operator-owned configuration list (top-level `graphs`) naming YAML files on the
+   operator's machine, and a binding map (`routing.control.commands`) from command words to
+   loops — shipped or declared.
+2. New control keywords (`the-loop <word>`, or the binding's own `keyword`) from that map.
 3. A new field (`loop`) on the portable control record, and a wider set of names the
    state file's `loop` may resolve to.
 
@@ -30,8 +31,8 @@ No new network call, credential, secret, subprocess or permission.
 | 2 | A comment carries a keyword-shaped word the operator never declared | `parse_command` scans `COMMANDS` plus the declared words only | `test_undeclared_word_is_no_command`, `test_a_new_word_obeys_the_whole_token_boundary` |
 | 3 | An unauthorized user types a declared new command | It parses as `START`, so the existing named-actor check refuses it (`unauthorized-actor`) before anything is recorded | `test_unauthorized_custom_command_is_refused` (integration) |
 | 4 | A comment carries a new command and a built-in one | `found` holds words, so two different words are ambiguous: nothing executed, nothing forwarded | `test_custom_and_builtin_command_is_ambiguous` |
-| 5 | A repository ships `.the-loop/<declared-name>.yaml` to shadow the operator's graph | The loader never reads a repository file; the warning names it and points at `routing.graph.graphs` | `test_repo_file_for_declared_name_is_ignored` |
-| 6 | A declaration rebinds `stop`/`pause`/`resume`/`execute`/`cleanup`/an argument command, names a graph `pdlc-*`, or takes one of the-loop's own verbs as a new word | `read_catalog` refuses all three at parse | `test_catalog_refuses_binding_a_command_that_selects_no_loop`, `test_catalog_refuses_a_malformed_entry`, `test_a_new_word_may_not_be_one_of_the_loops_own_verbs` |
+| 5 | A repository ships `.the-loop/<declared-name>.yaml` to shadow the operator's graph | The loader never reads a repository file; the warning names it and points at the top-level `graphs` | `test_repo_file_for_declared_name_is_ignored` |
+| 6 | A declaration rebinds `stop`/`pause`/`resume`/`execute`/`cleanup`/an argument command, names a graph `pdlc-*`, or takes one of the-loop's own verbs as a new word | `read_catalog` and `read_bindings` refuse each at parse, as they refuse a binding to a graph nobody declared | `test_binding_refuses_a_command_that_selects_no_loop`, `test_catalog_refuses_a_malformed_entry`, `test_binding_refuses_a_malformed_entry`, `test_a_new_word_may_not_be_one_of_the_loops_own_verbs` |
 
 Further checks made over the diff:
 
@@ -77,3 +78,26 @@ and the set of selectable loops grows only by what the operator declares.
 
 No finding requiring a code change. **Named human security sign-off requested** (tier 4) on
 the pull request.
+
+## The reshape (PR #425 review)
+
+The owner moved the declaration into two parts: top-level `graphs` and
+`routing.control.commands`. Re-checked against the six abuse cases:
+
+- **No new selection path.** A binding names a graph; `read_bindings` accepts only a
+  shipped outer-path loop or a declared name, so the set a command can select is the same
+  set `resolve_outer_loop` already accepts. Every reader still resolves a recorded name
+  through it.
+- **A binding may point a command at another shipped loop** (`do: {graph:
+  pdlc-review-loop}`). That selects among loops any authorized user could already arm, and
+  it is the operator's own config. A binding to the default loop selects the default
+  (`test_a_command_bound_to_the_default_loop_selects_the_default`).
+- **A new word's `keyword`** is operator text in the operator's config. It is matched by
+  the same whole-token rule and cannot equal another configured keyword
+  (`test_a_new_words_keyword_may_not_reuse_a_builtin_ones`). A `keyword` on a built-in
+  command is refused, so a keyword has one place it can be set.
+- **The fan-in key** `routing._graphs` is written by the loader from the parsed file. The
+  schema validates the file before that key exists, and the key carries nothing a
+  comment or a checkout can reach.
+
+The tier-4 human sign-off request stands.

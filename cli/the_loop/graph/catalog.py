@@ -1,14 +1,19 @@
-"""Graphs of the operator's own, declared in the CLI config (issue-343).
+"""Graphs of the operator's own, and the commands that select them (issue-343).
 
 issue-109 shipped the process as data and deferred *"user-defined graphs and
 user-authored hooks"*; issue-248 delivered the hooks half. This module is the
-graphs half: ``routing.graph.graphs`` names YAML files the operator wrote, and the
-arming commands that select each one — an existing command (``do``), overriding
-the loop it selects, or a new word (``triage``), which then arms like ``start``.
+graphs half, in two declarations the owner asked to keep apart (PR #425 review):
+
+* **which graphs exist** — the top-level ``graphs`` list: a name, a YAML file the
+  operator wrote, and whether it walks as a guest;
+* **which command selects which graph** — ``routing.control.commands``: an
+  existing arming command re-pointed (``do: {graph: acme-quick-loop}``) or a new
+  word (``triage: {graph: acme-triage-loop}``), which then arms like ``start``.
+  A command with no entry keeps selecting what it always did.
 
 Four rules hold it together:
 
-* **Declared by the operator, never by a repository.** The list lives in the CLI
+* **Declared by the operator, never by a repository.** Both live in the CLI
   config, beside ``critics[]`` and ``routing.graph.hooks`` (decision-123); a path
   resolves against that file's directory, never against a work item's checkout,
   so no session can rewrite the gates of the graph it is walking.
@@ -19,8 +24,8 @@ Four rules hold it together:
   graph here only when the operator declares it now; anything else reads as the
   default, the rule the agent-writable state file already demanded.
 * **Fails at load.** A malformed entry, a reserved or colliding name, a command
-  that does not select a loop, an unreadable file — each raises, naming what did
-  it. Nothing degrades to "no custom graphs".
+  that does not select a loop, a binding to a graph nobody declared, an
+  unreadable file — each raises, naming what did it.
 
 Spec: docs/specs/issue-343/  ·  Decision: 136
 """
@@ -36,6 +41,7 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Tuple
 
 from .model import (
+    OUTER_PATH_LOOPS,
     PHASE_VOCABULARY,
     SHIPPED_LOOPS,
     Graph,
@@ -46,17 +52,24 @@ from .model import (
 from .registry import EXTENSION_PREFIX
 
 __all__ = [
+    "BINDINGS_KEY",
     "CATALOG_KEY",
     "RESERVED_PREFIX",
+    "Binding",
     "Catalog",
     "CustomGraph",
     "compile_custom",
     "config_base",
+    "parse_catalog",
+    "read_bindings",
     "read_catalog",
 ]
 
 #: Where the operator declares the graphs, for messages that have to name it.
-CATALOG_KEY = "routing.graph.graphs"
+CATALOG_KEY = "graphs"
+
+#: Where the operator binds commands to graphs.
+BINDINGS_KEY = "routing.control.commands"
 
 #: The shipped loops' family name. Reserved so the next loop the-loop ships can
 #: never collide with a graph an operator already runs under that name.
@@ -65,7 +78,8 @@ RESERVED_PREFIX = "pdlc-"
 #: A graph name, and a command word: lowercase, digits and hyphens.
 _NAME = re.compile(r"^[a-z][a-z0-9-]*$")
 
-_ENTRY_KEYS = frozenset({"name", "path", "commands", "guest"})
+_ENTRY_KEYS = frozenset({"name", "path", "guest"})
+_BINDING_KEYS = frozenset({"graph", "keyword"})
 
 
 def config_base() -> Path:
@@ -87,11 +101,10 @@ def config_base() -> Path:
 
 @dataclass(frozen=True)
 class CustomGraph:
-    """One ``routing.graph.graphs[]`` entry, parsed and validated."""
+    """One top-level ``graphs[]`` entry, parsed and validated."""
 
     name: str
     path: str
-    commands: Tuple[str, ...] = ()
     guest: bool = False
 
     def resolved_path(self, base: Optional[Path] = None) -> Path:
@@ -117,11 +130,6 @@ class Catalog:
     def names(self) -> Tuple[str, ...]:
         return tuple(entry.name for entry in self.entries)
 
-    @property
-    def bindings(self) -> Dict[str, str]:
-        """Command word → the loop it selects, overrides and new words alike."""
-        return {word: entry.name for entry in self.entries for word in entry.commands}
-
     def get(self, name: str) -> Optional[CustomGraph]:
         return next((entry for entry in self.entries if entry.name == name), None)
 
@@ -130,51 +138,57 @@ class Catalog:
         return bool(entry and entry.guest)
 
     def digest(self) -> str:
-        payload = [[e.name, e.path, list(e.commands), e.guest] for e in self.entries]
+        payload = [[e.name, e.path, e.guest] for e in self.entries]
         blob = json.dumps(payload, sort_keys=True).encode("utf-8")
         return hashlib.sha256(blob).hexdigest()[:16]
 
 
-# -- parsing ------------------------------------------------------------------
+@dataclass(frozen=True)
+class Binding:
+    """One ``routing.control.commands.<word>`` entry: the graph it selects and,
+    for a NEW word, the keyword a person types (``the-loop <word>`` unless set)."""
+
+    word: str
+    graph: str
+    keyword: str = ""
+
+
+# -- parsing: which graphs exist ----------------------------------------------
 
 
 def read_catalog(cli_config: Mapping[str, Any]) -> Catalog:
-    """Parse ``routing.graph.graphs`` out of an already-loaded CLI config.
+    """Parse the top-level ``graphs`` list out of an already-loaded CLI config.
 
-    An **absent** list is not malformed — it is every operator who has never
-    heard of this feature, and they get an empty catalog. A present one is
-    validated whole, and the first fault raises.
+    Falls back to ``routing._graphs`` — where the loader fans the list for the
+    readers that are handed the routing block alone (:func:`the_loop.cli_config.
+    apply_graphs`), exactly as the ``instance`` block travels as ``_instance``.
     """
     if not isinstance(cli_config, Mapping):
         return Catalog()
-    routing = cli_config.get("routing") or {}
-    if not isinstance(routing, Mapping):
-        raise GraphConfigError("CLI config: `routing` must be a mapping")
-    block = routing.get("graph") or {}
-    if not isinstance(block, Mapping):
-        raise GraphConfigError("CLI config: `routing.graph` must be a mapping")
-    raw = block.get("graphs")
+    raw = cli_config.get("graphs")
+    if raw is None:
+        routing = cli_config.get("routing")
+        if isinstance(routing, Mapping):
+            raw = routing.get("_graphs")
+    return parse_catalog(raw)
+
+
+def parse_catalog(raw: Any) -> Catalog:
+    """Validate a ``graphs`` list. An **absent** list (``None``) is not malformed —
+    it is every operator who has never heard of this feature, and they get an
+    empty catalog. A present one is validated whole, and the first fault raises.
+    """
     if raw is None:
         return Catalog()
     if not isinstance(raw, list):
         raise GraphConfigError(f"CLI config: `{CATALOG_KEY}` must be a list")
-
     entries: list[CustomGraph] = []
-    bound: Dict[str, str] = {}
     for item in raw:
         entry = _read_entry(item)
         if any(existing.name == entry.name for existing in entries):
             raise GraphConfigError(
                 f"CLI config: `{CATALOG_KEY}` declares {entry.name!r} twice"
             )
-        for word in entry.commands:
-            if word in bound:
-                raise GraphConfigError(
-                    f"CLI config: `{CATALOG_KEY}` binds the command {word!r} to "
-                    f"both {bound[word]!r} and {entry.name!r}; a command selects "
-                    "one loop"
-                )
-            bound[word] = entry.name
         entries.append(entry)
     return Catalog(entries=tuple(entries))
 
@@ -183,13 +197,18 @@ def _read_entry(item: Any) -> CustomGraph:
     if not isinstance(item, Mapping):
         raise GraphConfigError(
             f"CLI config: `{CATALOG_KEY}` entry {item!r} must be a mapping of "
-            "`name`, `path`, and optionally `commands` and `guest`"
+            "`name`, `path`, and optionally `guest`"
         )
     unknown = sorted(str(key) for key in item if key not in _ENTRY_KEYS)
     if unknown:
         raise GraphConfigError(
             f"CLI config: `{CATALOG_KEY}` entry {dict(item)!r} has unknown "
             f"key(s) {', '.join(unknown)}"
+            + (
+                " — a command selects a graph under `routing.control.commands`"
+                if "commands" in unknown
+                else ""
+            )
         )
     raw_name, raw_path = item.get("name"), item.get("path")
     if not isinstance(raw_name, str) or not isinstance(raw_path, str):
@@ -219,48 +238,82 @@ def _read_entry(item: Any) -> CustomGraph:
             f"CLI config: `{CATALOG_KEY}` entry {name!r} has a `guest` that is "
             "not true or false"
         )
-    return CustomGraph(
-        name=name, path=path, commands=_read_commands(name, item), guest=guest
-    )
+    return CustomGraph(name=name, path=path, guest=guest)
 
 
-def _read_commands(name: str, item: Mapping[str, Any]) -> Tuple[str, ...]:
-    """The words that select ``name``: an arming command it overrides, or a new
-    word that becomes one. A word that means something else is refused."""
+# -- parsing: which command selects which graph --------------------------------
+
+
+def read_bindings(block: Any, catalog: Catalog) -> Dict[str, Binding]:
+    """Parse ``routing.control.commands`` against the declared ``catalog``.
+
+    Each key is a command word: one of the arming commands that may spawn a
+    session (re-pointed), or a new word (which arms like ``start``). Each value
+    names the ``graph`` it selects — a shipped outer-path loop or a declared one —
+    and, for a new word only, an optional ``keyword``. A word that means
+    something else, a graph nobody declared, or a keyword on a built-in command
+    (those live in ``routing.control.keywords``) is refused.
+    """
     from ..control import COMMANDS, SPAWN_COMMANDS
 
-    raw = item.get("commands")
-    if raw is None:
-        return ()
-    if isinstance(raw, (str, Mapping)) or not isinstance(raw, list):
+    if block is None:
+        return {}
+    if not isinstance(block, Mapping):
         raise GraphConfigError(
-            f"CLI config: `{CATALOG_KEY}` entry {name!r}: `commands` must be a list"
+            f"CLI config: `{BINDINGS_KEY}` must be a mapping of command → "
+            "{graph, keyword}"
         )
-    words: list[str] = []
-    for value in raw:
-        word = str(value or "").strip()
+    known = (*OUTER_PATH_LOOPS, *catalog.names)
+    bindings: Dict[str, Binding] = {}
+    for raw_word, value in block.items():
+        word = str(raw_word or "").strip()
+        where = f"CLI config: `{BINDINGS_KEY}.{word}`"
         if not _NAME.match(word):
             raise GraphConfigError(
-                f"CLI config: `{CATALOG_KEY}` entry {name!r}: command {value!r} "
-                "must be lowercase letters, digits and hyphens, starting with a "
-                "letter"
-            )
-        if word not in COMMANDS and word in _reserved_words():
-            raise GraphConfigError(
-                f"CLI config: `{CATALOG_KEY}` entry {name!r}: {word!r} is one of "
-                "the-loop's own verbs (`the-loop " + word + " …`), so a comment "
-                "quoting that command would arm a work item; choose another word"
+                f"CLI config: `{BINDINGS_KEY}` command {raw_word!r} must be "
+                "lowercase letters, digits and hyphens, starting with a letter"
             )
         if word in COMMANDS and word not in SPAWN_COMMANDS:
             raise GraphConfigError(
-                f"CLI config: `{CATALOG_KEY}` entry {name!r}: {word!r} is a control "
-                "command that does not select a loop; only "
-                f"{', '.join(SPAWN_COMMANDS)} can be overridden, or name a new "
-                "command"
+                f"{where}: {word!r} is a control command that does not select a "
+                f"loop; only {', '.join(SPAWN_COMMANDS)} can be re-pointed, or "
+                "name a new command"
             )
-        if word not in words:
-            words.append(word)
-    return tuple(words)
+        if word not in COMMANDS and word in _reserved_words():
+            raise GraphConfigError(
+                f"{where}: {word!r} is one of the-loop's own verbs (`the-loop "
+                f"{word} …`), so a comment quoting that command would arm a work "
+                "item; choose another word"
+            )
+        if not isinstance(value, Mapping):
+            raise GraphConfigError(
+                f"{where} must be a mapping with a `graph` and, for a new "
+                "command, an optional `keyword`"
+            )
+        unknown = sorted(str(key) for key in value if key not in _BINDING_KEYS)
+        if unknown:
+            raise GraphConfigError(f"{where} has unknown key(s) {', '.join(unknown)}")
+        graph = value.get("graph")
+        if not isinstance(graph, str) or not graph.strip():
+            raise GraphConfigError(f"{where} needs a `graph`")
+        graph = graph.strip()
+        if graph not in known:
+            raise GraphConfigError(
+                f"{where} names graph {graph!r}, which is neither a shipped loop "
+                f"({', '.join(OUTER_PATH_LOOPS)}) nor declared under `{CATALOG_KEY}`"
+            )
+        keyword = value.get("keyword")
+        if keyword is not None:
+            if word in COMMANDS:
+                raise GraphConfigError(
+                    f"{where}: a built-in command's keyword is set under "
+                    f"`routing.control.keywords.{word}`, not here"
+                )
+            if not isinstance(keyword, str) or not keyword.strip():
+                raise GraphConfigError(f"{where}: `keyword` must be a non-empty string")
+            keyword = " ".join(keyword.split())
+        bindings[word] = Binding(word=word, graph=graph, keyword=keyword or "")
+    return bindings
 
 
 def _reserved_words() -> frozenset:

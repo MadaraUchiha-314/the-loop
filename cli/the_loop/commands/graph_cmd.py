@@ -708,7 +708,8 @@ def _strict_cli_config() -> Dict[str, Any]:
 
 def _declared_loops() -> Dict[str, Any]:
     """Every loop this machine can walk: the shipped ones and the operator's own
-    (``routing.graph.graphs``, issue-343), each with the keywords that arm it.
+    (the top-level ``graphs``, issue-343), each with the keywords that arm it —
+    the shipped bindings, re-pointed or extended by ``routing.control.commands``.
 
     Each declared graph is compiled and checked the way a load checks it — the
     compiler's rules, the phase vocabulary, every attachment that applies to it
@@ -737,7 +738,7 @@ def _declared_loops() -> Dict[str, Any]:
         catalog = read_catalog(cfg)
         declaration = read_declaration(cfg)
         control = ControlConfig.from_mapping(
-            routing.get("control") or {}, graph=(routing.get("graph") or {})
+            routing.get("control") or {}, graphs=cfg.get("graphs")
         )
     except Exception as exc:  # noqa: BLE001 — the report IS the error
         return {"loops": [], "error": str(exc)}
@@ -747,21 +748,21 @@ def _declared_loops() -> Dict[str, Any]:
         # a command the operator disabled.
         return [control.keyword(w) for w in words if control.keyword(w)]
 
-    bindings = catalog.bindings
-    shipped_commands: Dict[str, List[str]] = {PDLC_WORK_ITEM_LOOP: ["start"]}
-    for command, loop in LOOP_FOR_CONTROL_COMMAND.items():
-        shipped_commands.setdefault(loop, []).append(command)
+    # Which words select which loop, after the operator's bindings: the shipped
+    # mapping first, each binding then re-pointing a word or adding one.
+    selects: Dict[str, str] = {"start": PDLC_WORK_ITEM_LOOP}
+    selects.update(LOOP_FOR_CONTROL_COMMAND)
+    selects.update(control.bindings)
+    armed_by: Dict[str, List[str]] = {}
+    for word, loop in selects.items():
+        armed_by.setdefault(loop, []).append(word)
     rows: List[Dict[str, Any]] = []
     for name in SHIPPED_LOOPS:
         rows.append(
             {
                 "name": name,
                 "kind": "shipped",
-                # A shipped command the operator bound elsewhere no longer selects
-                # its shipped loop; say where it went rather than listing it twice.
-                "commands": keywords(
-                    [c for c in shipped_commands.get(name, []) if c not in bindings]
-                ),
+                "commands": keywords(armed_by.get(name, [])),
                 "guest": name in GUEST_LOOPS,
                 "inner": name == PDLC_PR_LOOP,
                 "status": "ok",
@@ -772,7 +773,7 @@ def _declared_loops() -> Dict[str, Any]:
         row: Dict[str, Any] = {
             "name": entry.name,
             "kind": "declared",
-            "commands": keywords(list(entry.commands)),
+            "commands": keywords(armed_by.get(entry.name, [])),
             "guest": entry.guest,
             "inner": False,
             "path": str(path),
@@ -811,9 +812,7 @@ def _report_loops(fmt: str) -> int:
         print(json.dumps(report, indent=2))
         return 1 if failed else 0
     if report["error"]:
-        print(
-            f"the CLI config's `routing.graph.graphs` cannot be read: {report['error']}"
-        )
+        print(f"the CLI config's graphs cannot be read: {report['error']}")
         return 1
     for row in report["loops"]:
         commands = ", ".join(row["commands"]) or "—"
@@ -839,9 +838,7 @@ def _report_loops(fmt: str) -> int:
             else:
                 print(f"  compiles: NO — {row['error']}")
     if not any(row["kind"] == "declared" for row in report["loops"]):
-        print(
-            "\nno graphs of your own declared (`routing.graph.graphs` in the CLI config)"
-        )
+        print("\nno graphs of your own declared (top-level `graphs` in the CLI config)")
     return 1 if failed else 0
 
 
@@ -969,7 +966,7 @@ class GraphCommand(Command):
             "loops",
             help=(
                 "list every loop this machine can walk — the shipped ones and "
-                "your own (routing.graph.graphs, issue-343) — with the commands "
+                "your own (top-level graphs, issue-343) — with the commands "
                 "that arm each, compiling your graphs without importing any hook "
                 "module; exits 1 when one does not compile"
             ),

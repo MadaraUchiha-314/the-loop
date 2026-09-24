@@ -23,12 +23,13 @@ workItem: "github:MadaraUchiha-314/the-loop#343"
 | [`docs/.vitepress/config.mts`](../../../.vitepress/config.mts) | The new page in the *Extending* sidebar, beside *Adding a hook* |
 | [`docs/cli/hooks.md`](../../../cli/hooks.md) | No longer says nobody declares loops; documents `attach[].loops`; links the new page |
 | [`docs/cli/commands/graph.md`](../../../cli/commands/graph.md) | A `loops` section: output, JSON shape, exit codes |
-| [`docs/config/cli/routing-options.md`](../../../config/cli/routing-options.md) | `graph.hooks.attach[].loops`, `graph.graphs` and each of its four keys (the docs-parity test requires a heading per schema leaf) |
+| [`docs/config/cli/graphs-options.md`](../../../config/cli/graphs-options.md) (new) | The top-level `graphs` and each of its keys (the docs-parity test requires a heading per schema leaf), in the *CLI config* sidebar and the options index |
+| [`docs/config/cli/routing-options.md`](../../../config/cli/routing-options.md) | `graph.hooks.attach[].loops` and `control.commands` |
 | [`docs/decisions/decision-136.md`](../../../decisions/decision-136.md) (new) + [`decisions.md`](../../../decisions/decisions.md) | The decision record and its index row |
 | [`skills/the-loop/SKILL.md`](../../../../skills/the-loop/SKILL.md) | The graph paragraph says an operator may declare graphs and that an armed session follows the graph's nodes; the CLI-config table gains a *graphs of the operator's own* row |
 | [`skills/the-loop/reference/workflow.md`](../../../../skills/the-loop/reference/workflow.md) | *A graph of the operator's own*: how to work inside one (follow its nodes, run a namespaced command or say it is missing, the non-gate rules still hold, never edit the graph) |
-| `.the-loop/cli-config.schema.json` + `cli/the_loop/schemas/cli-config.schema.json` | `routing.graph.graphs` and `attach[].loops`, described (identical copies, pinned by the parity test) |
-| `.the-loop/cli-config.yaml`, `skills/the-loop/templates/cli-config.yaml` | Commented samples of both keys |
+| `.the-loop/cli-config.schema.json` + `cli/the_loop/schemas/cli-config.schema.json` | Top-level `graphs`, `routing.control.commands` and `attach[].loops`, described (identical copies, pinned by the parity test) |
+| `.the-loop/cli-config.yaml`, `skills/the-loop/templates/cli-config.yaml` | Commented samples: top-level `graphs`, `routing.control.commands`, `attach[].loops` |
 | `cli/the_loop/eventlog.py` (`EVENT_TYPES`) | `control.command` documents its `loop` field |
 
 **Not affected**, checked rather than assumed:

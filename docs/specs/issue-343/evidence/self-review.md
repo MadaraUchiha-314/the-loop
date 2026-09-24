@@ -90,3 +90,31 @@ Slack verbs are reserved (`test_a_new_word_may_not_be_one_of_the_loops_own_verbs
 The reviewer found **nothing** in the two security categories that matter most: no path
 lets an agent-writable value select an undeclared graph or be used as a path, and no path
 lets comment text choose the loop other than through the operator's bindings.
+
+## Round 4 — the owner's shape (PR #425 review)
+
+The owner asked for a top-level `graphs` list with commands bound under
+`routing.control.commands`, and approved the proposal on the thread ("Yes"). Implemented,
+then re-read against the diff:
+
+- **One home per fact.** `graphs[]` entries refuse a `commands` key with a hint naming
+  `routing.control.commands`. A `keyword` on a built-in command is refused with a pointer
+  to `routing.control.keywords`.
+- **A binding may name a shipped loop.** This fell out of the reshape. `graphlink`'s
+  `selectable()` makes a binding to the default loop read as the default, so it does not
+  fall through to the command's shipped loop. Covered by
+  `test_a_command_bound_to_the_default_loop_selects_the_default`.
+- **The routing-only readers.** The dispatcher, the Slack command, inbound channels and
+  `core/sessions` get the routing block alone. The loader fans `graphs` into
+  `routing._graphs`, as `instance` travels as `_instance`, and each builder reads it there.
+  The integration scenarios build the dispatcher from `load_cli_config`'s output, so the
+  fan-in is on the tested path.
+- **Schema.** `propertyNames` was left out: the in-house validator does not implement it,
+  and the parser enforces the word grammar anyway. The retired `routing.graph.graphs` fails
+  validation (`test_the_schema_accepts_the_documented_shape_and_refuses_the_old_one`). It
+  was never released, so no `RETIRED` migration entry is needed.
+- **`graph loops`** lists a row's commands with the built-in words first, then the new
+  ones. A re-pointed built-in moves to the row of the loop it now selects, including
+  another shipped loop.
+
+No finding is left open.
