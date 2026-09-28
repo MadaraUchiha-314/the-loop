@@ -15,7 +15,7 @@ import urllib.request
 import pytest
 
 from the_loop import eventlog
-from the_loop.lifecycle.contract import PhaseChanged, WorkItemStart
+from the_loop.lifecycle.contract import PhaseChanged, WorkItemStart, WorkItem
 from the_loop.lifecycle.remote import (
     HookFailure,
     HookServer,
@@ -76,10 +76,14 @@ def test_a_remote_executor_answers_a_point_over_json_rpc(server):
     Requirement: docs/specs/issue-344/requirements.md R4.2
     """
     ex = _remote(server)
-    refused = Runner([ex]).run(WorkItemStart(work_item="github:o/r#1", actor="mallory"))
+    refused = Runner([ex]).run(
+        WorkItemStart(work_item=WorkItem.from_ref("github:o/r#1"), actor="mallory")
+    )
     assert refused.proceed is False and refused.reason == "not on the roster"
-    assert refused.work_item == "github:o/r#1"
-    allowed = Runner([ex]).run(WorkItemStart(work_item="github:o/r#1", actor="alice"))
+    assert refused.work_item.ref == "github:o/r#1"
+    allowed = Runner([ex]).run(
+        WorkItemStart(work_item=WorkItem.from_ref("github:o/r#1"), actor="alice")
+    )
     assert allowed.proceed is True
     seen = server.executor.seen  # type: ignore[attr-defined]
     assert seen[0].actor == "mallory"
@@ -97,7 +101,7 @@ def test_a_remote_error_is_a_recorded_failure_not_a_stop(server, events):
     Requirement: docs/specs/issue-344/requirements.md R6.1 (abuse case 3)
     """
     out = Runner([_remote(server)]).run(
-        PhaseChanged(work_item="github:o/r#1", to_phase="design")
+        PhaseChanged(work_item=WorkItem.from_ref("github:o/r#1"), to_phase="design")
     )
     assert out.notify is True
     (failed,) = [e for e in events() if e["event"] == "hooks.failed"]
@@ -108,7 +112,7 @@ def test_an_unreachable_remote_is_a_recorded_failure_not_a_stop(events):
     ex = RemoteExecutor(
         name="gone", url="http://127.0.0.1:9/hooks", on=(), required=False, timeout=1.0
     )
-    out = Runner([ex]).run(WorkItemStart(work_item="github:o/r#1"))
+    out = Runner([ex]).run(WorkItemStart(work_item=WorkItem.from_ref("github:o/r#1")))
     assert out.proceed is True
     (failed,) = [e for e in events() if e["event"] == "hooks.failed"]
     assert failed["hook"] == "gone"
@@ -118,7 +122,7 @@ def test_an_unreachable_required_remote_refuses_a_proceed_point():
     ex = RemoteExecutor(
         name="gate", url="http://127.0.0.1:9/hooks", on=(), required=True, timeout=1.0
     )
-    out = Runner([ex]).run(WorkItemStart(work_item="github:o/r#1"))
+    out = Runner([ex]).run(WorkItemStart(work_item=WorkItem.from_ref("github:o/r#1")))
     assert out.proceed is False and "gate" in out.reason
 
 
@@ -138,7 +142,10 @@ def test_a_timeout_is_bounded():
             name="slow", url=srv.url, on=(), required=False, timeout=0.3
         )
         with pytest.raises(HookFailure) as exc:
-            ex.call("work_item_start", WorkItemStart(work_item="github:o/r#1"))
+            ex.call(
+                "work_item_start",
+                WorkItemStart(work_item=WorkItem.from_ref("github:o/r#1")),
+            )
         assert "timed out" in str(exc.value)
     finally:
         release.set()
@@ -170,19 +177,29 @@ def test_the_bearer_token_travels_only_when_its_variable_is_set(monkeypatch):
             token_env="HOOKS_TOKEN",
         )
         assert (
-            ex.call("work_item_start", WorkItemStart(work_item="github:o/r#1")) is None
+            ex.call(
+                "work_item_start",
+                WorkItemStart(work_item=WorkItem.from_ref("github:o/r#1")),
+            )
+            is None
         )
         monkeypatch.delenv("HOOKS_TOKEN")
         before = len(srv.executor.seen)  # type: ignore[attr-defined]
         with pytest.raises(HookFailure) as exc:
-            ex.call("work_item_start", WorkItemStart(work_item="github:o/r#1"))
+            ex.call(
+                "work_item_start",
+                WorkItemStart(work_item=WorkItem.from_ref("github:o/r#1")),
+            )
         assert "HOOKS_TOKEN" in str(exc.value)
         assert len(srv.executor.seen) == before, "nothing was sent"  # type: ignore[attr-defined]
         monkeypatch.setenv("HOOKS_TOKEN", "wrong-on-the-client")
         monkeypatch.setenv("SERVER_TOKEN", "s3cret")
         srv.token_env = "SERVER_TOKEN"
         with pytest.raises(HookFailure) as exc:
-            ex.call("work_item_start", WorkItemStart(work_item="github:o/r#1"))
+            ex.call(
+                "work_item_start",
+                WorkItemStart(work_item=WorkItem.from_ref("github:o/r#1")),
+            )
         assert "401" in str(exc.value)
     finally:
         srv.shutdown()
@@ -206,7 +223,10 @@ def test_extra_headers_are_sent(server):
 
     remote_mod.urlopen = spy
     try:
-        ex.call("work_item_start", WorkItemStart(work_item="github:o/r#1"))
+        ex.call(
+            "work_item_start",
+            WorkItemStart(work_item=WorkItem.from_ref("github:o/r#1")),
+        )
     finally:
         remote_mod.urlopen = real
     assert seen["x-team"] == "platform"
@@ -218,7 +238,7 @@ def test_a_result_may_change_decisions_only(server):
 
     class Sneaky(LifecycleHooks):
         def work_item_start(self, ctx):
-            ctx.work_item = "github:evil/r#9"
+            ctx.work_item = WorkItem.from_ref("github:evil/r#9")
             ctx.loop = "acme-evil-loop"
             ctx.reason = "decided"
             return ctx
@@ -228,8 +248,12 @@ def test_a_result_may_change_decisions_only(server):
     try:
         out = Runner(
             [RemoteExecutor(name="s", url=srv.url, on=(), required=False, timeout=5.0)]
-        ).run(WorkItemStart(work_item="github:o/r#1", loop="pdlc-work-item-loop"))
-        assert out.work_item == "github:o/r#1" and out.loop == "pdlc-work-item-loop"
+        ).run(
+            WorkItemStart(
+                work_item=WorkItem.from_ref("github:o/r#1"), loop="pdlc-work-item-loop"
+            )
+        )
+        assert out.work_item.ref == "github:o/r#1" and out.loop == "pdlc-work-item-loop"
         assert out.reason == "decided"
     finally:
         srv.shutdown()
@@ -326,7 +350,10 @@ def test_the_client_refuses_a_response_that_is_not_its_own(monkeypatch):
             name="x", url="https://hooks.example/", on=(), required=False, timeout=1.0
         )
         with pytest.raises(HookFailure):
-            ex.call("work_item_start", WorkItemStart(work_item="github:o/r#1"))
+            ex.call(
+                "work_item_start",
+                WorkItemStart(work_item=WorkItem.from_ref("github:o/r#1")),
+            )
 
 
 def test_health_answers_without_a_token(server):

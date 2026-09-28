@@ -50,7 +50,7 @@ lifecycle points (6):
 
   work_item_start  (WorkItemStart)
     fires:     once per arming, when a start is accepted and before the workspace is prepared or any session exists
-    facts:     work_item, loop, command, actor, harness, instance, repository
+    facts:     work_item, loop, command, actor, harness, instance
     decisions: proceed, reason
   …
 ```

@@ -86,7 +86,7 @@ at start and **refuses to start** on one it cannot load. Every key is on the
 
 Fires **once per arming**, when an authorized start is accepted — before the workspace is
 prepared or any session exists. Facts: `work_item`, `loop`, `command`, `actor`, `harness`,
-`instance`, `repository`. Decisions: **`proceed`** (`false` disarms the work item, posts one
+`instance`. Decisions: **`proceed`** (`false` disarms the work item, posts one
 marked comment on the ticket with your `reason`, settles the event — nothing is retried),
 **`reason`**.
 
@@ -145,20 +145,36 @@ class LifecycleHooks:
 ```
 
 Every point hands its hook one of these. A field marked `# decision` is read back and
-applied; every other field is a **fact** the-loop ignores if changed. All fields are
-`str`, `bool` or `list[str]`, so a context travels as JSON unchanged. `work_item` is the
-work item's ref (`github:OWNER/REPO#N`) on every context.
+applied; every other field is a **fact** the-loop ignores if changed. Fields are `str`,
+`bool`, `list[str]` or a `WorkItem`, so a context travels as JSON unchanged.
+
+`work_item` is the work item the point is about — the-loop's core entity, modelled, on
+every context (and `endpoint` on the two spawn points is one too):
+
+```python
+@dataclass(frozen=True)
+class WorkItem:                          # on every context; built by the-loop, never by a hook
+    ref: str                             # github:[HOST/]OWNER/REPO#N — the-loop's name for it, keys everything; a bare issue-N when a graph verb was given one (the rest then empty)
+    provider: str                        # github (jira reserved)
+    host: str                            # github.com, or a GitHub Enterprise host
+    owner: str
+    repo: str
+    repository: str                      # owner/repo, host-qualified when the host is not the default
+    number: int
+    kind: str                            # issue | pull-request; "" when the point does not know
+    url: str                             # the browser link; "" when none derives
+    id: str                              # issue-N — the spec folder under docs/specs/
+```
 
 ```python
 @dataclass
 class WorkItemStart(Context):            # point: work_item_start
-    work_item: str                       # github:OWNER/REPO#N
+    work_item: WorkItem                  # the item this start is for (WorkItem, above)
     loop: str                            # the loop it will walk (pdlc-work-item-loop, pdlc-adhoc-loop, yours); "" if unresolved
     command: str                         # the arming word (start | contribute | do | review | an operator's); "" for a label-alone spawn
     actor: str                           # the login that armed it (the event's actor when no command was recorded)
     harness: str                         # claude | cursor
     instance: str                        # routing.instance.name; "" when unnamed
-    repository: str                      # OWNER/REPO (host-qualified on another GitHub)
     proceed: bool = True                 # decision — False refuses the start: disarmed, one marked comment, event settled
     reason: str = ""                     # decision — posted on the ticket with the refusal
 ```
@@ -166,8 +182,8 @@ class WorkItemStart(Context):            # point: work_item_start
 ```python
 @dataclass
 class SessionSpawn(Context):             # point: session_spawn
-    work_item: str
-    endpoint: str                        # the conversation launched: the work item's ref, or the pull request's
+    work_item: WorkItem
+    endpoint: WorkItem                   # the conversation launched: the work item itself, or one of its pull requests (kind = pull-request)
     harness: str                         # claude | cursor
     cwd: str                             # the checkout the session runs in
     model: str                           # the frozen model; "" when the work item chose none
@@ -183,8 +199,8 @@ class SessionSpawn(Context):             # point: session_spawn
 ```python
 @dataclass
 class SessionSpawned(Context):           # point: session_spawned
-    work_item: str
-    endpoint: str                        # the work item's ref, or the pull request's
+    work_item: WorkItem
+    endpoint: WorkItem                   # the work item itself, or one of its pull requests
     harness: str
     harness_session_id: str              # the harness conversation id (claude --resume <id>)
     tmux_target: str                     # loop-<slug>
@@ -199,7 +215,7 @@ class SessionSpawned(Context):           # point: session_spawned
 ```python
 @dataclass
 class WaitingForInput(Context):          # point: waiting_for_input
-    work_item: str
+    work_item: WorkItem
     kind: str                            # question (an agent's `the-loop ask`) | gate (a human node entered)
     node: str                            # the graph node, for a gate; "" for a question
     actor: str                           # who is asking, for a question; "" for a gate
@@ -211,7 +227,7 @@ class WaitingForInput(Context):          # point: waiting_for_input
 ```python
 @dataclass
 class PhaseChanged(Context):             # point: phase_changed
-    work_item: str
+    work_item: WorkItem
     loop: str
     from_node: str                       # "" when the graph is entered
     to_node: str
@@ -226,7 +242,7 @@ class PhaseChanged(Context):             # point: phase_changed
 ```python
 @dataclass
 class WorkItemComplete(Context):         # point: work_item_complete
-    work_item: str
+    work_item: WorkItem
     state: str                           # merged | closed
     kind: str                            # issue | pull-request
     reason: str                          # the dispatcher's reason (issue-closed, pr-merged, …)
@@ -276,7 +292,10 @@ is ignored, and a decision of the wrong type is the hook's failure.
 
 ```json
 → {"jsonrpc": "2.0", "id": 1, "method": "work_item_start",
-   "params": {"work_item": "github:acme/app#42", "actor": "mallory", "loop": "pdlc-work-item-loop", …}}
+   "params": {"work_item": {"ref": "github:acme/app#42", "provider": "github", "host": "github.com",
+                            "owner": "acme", "repo": "app", "repository": "acme/app", "number": 42,
+                            "kind": "issue", "url": "https://github.com/acme/app/issues/42", "id": "issue-42"},
+              "actor": "mallory", "loop": "pdlc-work-item-loop", …}}
 ← {"jsonrpc": "2.0", "id": 1, "result": {"proceed": false, "reason": "mallory is not on the delivery roster"}}
 ```
 

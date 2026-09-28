@@ -19,6 +19,8 @@ workItem: "github:MadaraUchiha-314/the-loop#344"
 | 2 | self (this session) — the tests, the docs and the spec re-read for parity with the code | new findings | 3 found, 3 fixed |
 | 3 | `make check`, twice — the whole suite under load | new findings | 1 found (a race the wiring introduced), 1 fixed |
 | 4 | self (this session) | zero (converged) | the fix re-read; the racy test 10/10 green, 0/8 red on the base before the fix was needed |
+| 5 | CI (`checks`), PR #432 | new finding | 1 found (issue-422 guard), 1 fixed |
+| 6 | MadaraUchiha-314, PR #432 review | new finding | 1 found (`work_item` a bare string), 1 fixed |
 | critic 1–3 | — | **unavailable** | no critic configured in this environment |
 
 ## Round 1 findings
@@ -103,6 +105,25 @@ offender could mask the next: the dispatcher builders of `test_eventlog_integrat
 and `test_dispatcher_without_workspace_uses_spawn_workdir`. **Fixed as the guard
 prescribes**: each gives its dispatcher `portable_dir=str(tmp_path / "portable")`. The
 suite was then re-run with the leaked tree removed, and leaves none behind.
+
+## Round 6 — the owner's review (PR #432, comment 4128062605)
+
+**O1 — `work_item` was a bare ref string on every context.** The owner expected the
+work item — the-loop's core entity — as a modelled object carrying its URL, its tracker
+and its kind, not `github:OWNER/REPO#N` to be parsed by every hook. **Fixed:** the
+contract gains `WorkItem`, a frozen dataclass built from the registry's `WorkItemRef`
+(`ref`, `provider`, `host`, `owner`, `repo`, `repository`, `number`, `kind`, `url`, `id`);
+`work_item` on every context and `endpoint` on the two spawn points are `WorkItem`s;
+`repository` left `WorkItemStart` for the entity; the dispatcher reads `kind` off the
+payload at a start (`_item_kind`) and off the closure stamp, and marks a pull request's
+endpoint as one (`_endpoint_item`). On the wire the item is one JSON object, each field
+type-checked inbound (a bare ref string is still accepted, for a hand-written client).
+Kept a stdlib dataclass rather than pydantic: every other core model (`WorkItemRef`, the
+graph's and the poller's `WorkItem`) is one, pydantic lives only in the API's request
+bodies, and a hook author's server should need no dependency. Pinned by
+`test_the_work_item_is_a_modelled_entity_not_a_string` and its neighbours, the nested
+round trip, the wrong-type refusals, and a field-for-field parity test of the `WorkItem`
+block on the lifecycle page and the design.
 
 ## What the reviewer looked for and did not find
 

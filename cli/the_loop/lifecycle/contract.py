@@ -28,13 +28,27 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass, field, fields
-from typing import Any, ClassVar, Dict, List, Mapping, Optional, Tuple, Type, TypeVar
+from typing import (
+    Any,
+    ClassVar,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
+
+from ..sessions.registry import WorkItemRef
 
 __all__ = [
     "POINTS",
     "Context",
     "DecisionTypeError",
     "LifecycleHooks",
+    "WorkItem",
     "PhaseChanged",
     "SessionSpawn",
     "SessionSpawned",
@@ -59,8 +73,104 @@ def decision(default: Any) -> Any:
     return field(default=default, metadata={"decision": True})
 
 
+#: ``kind`` of a :class:`WorkItem` that is a pull request (the dispatcher's vocabulary).
+KIND_PULL_REQUEST = "pull-request"
+KIND_ISSUE = "issue"
+
+
+@dataclass(frozen=True)
+class WorkItem:
+    """The work item a point is about — the-loop's core entity, as a hook sees it.
+
+    Built by the-loop from its provider-qualified ref (:class:`WorkItemRef`), never by a
+    hook: every field is a fact. ``ref`` is the machine's name and keys everything (the
+    registry, the state, the events); the rest is that name taken apart, plus what the
+    point knows of the item's shape. Travels as one JSON object inside the context.
+    """
+
+    #: ``<provider>:[<host>/]<owner>/<repo>#<number>`` — the-loop's name for the item.
+    ref: str = ""
+    #: The tracker: ``github`` today (``jira`` is reserved for the Jira follow-up).
+    provider: str = ""
+    #: The tracker's host — ``github.com``, or a GitHub Enterprise host.
+    host: str = ""
+    owner: str = ""
+    repo: str = ""
+    #: ``owner/repo``, host-qualified when the host is not the provider's default.
+    repository: str = ""
+    number: int = 0
+    #: ``issue`` | ``pull-request``; ``""`` when the point does not know.
+    kind: str = ""
+    #: The browser link, derived from the ref; ``""`` when none can be derived.
+    url: str = ""
+    #: The-loop's id for it — ``issue-<number>``, the spec folder under ``docs/specs/``.
+    id: str = ""
+
+    @classmethod
+    def from_ref(
+        cls, ref: Union[str, WorkItemRef], kind: str = "", id: str = ""
+    ) -> "WorkItem":
+        """The item a ref names, with what the caller knows of its ``kind`` and ``id``.
+
+        A string that is not a provider-qualified ref — the bare ``issue-N`` a graph verb
+        was given — yields an opaque item: ``ref`` and ``id`` kept, the rest empty. A fact
+        for the hooks is never a fault for the operation.
+        """
+        try:
+            parsed = ref if isinstance(ref, WorkItemRef) else WorkItemRef.parse(ref)
+        except ValueError:
+            return cls(ref=str(ref), kind=kind, id=id or str(ref))
+        url = parsed.url
+        if kind == KIND_PULL_REQUEST and url:
+            url = url.replace("/issues/", "/pull/", 1)
+        return cls(
+            ref=parsed.ref,
+            provider=parsed.provider,
+            host=parsed.host,
+            owner=parsed.owner,
+            repo=parsed.repo,
+            repository=parsed.path,
+            number=parsed.number,
+            kind=kind,
+            url=url,
+            id=id or f"issue-{parsed.number}",
+        )
+
+    def to_params(self) -> Dict[str, Any]:
+        return dataclasses.asdict(self)
+
+    @classmethod
+    def from_params(cls, params: Mapping[str, Any]) -> "WorkItem":
+        """A work item from its JSON object: known keys only, each of its declared type
+        (``number`` an ``int``, the rest ``str``); absent keys keep their defaults."""
+        known = {f.name for f in fields(cls)}
+        values: Dict[str, Any] = {}
+        for name, value in params.items():
+            if name not in known:
+                continue
+            if name == "number":
+                if isinstance(value, bool) or not isinstance(value, int):
+                    raise TypeError(
+                        f"work_item.number must be int, got {type(value).__name__}"
+                    )
+            elif not isinstance(value, str):
+                raise TypeError(
+                    f"work_item.{name} must be str, got {type(value).__name__}"
+                )
+            values[name] = value
+        return cls(**values)
+
+    def __bool__(self) -> bool:
+        return bool(self.ref)
+
+
 #: The Python type each declared field annotation admits.
-_TYPES: Dict[str, type] = {"str": str, "bool": bool, "List[str]": list}
+_TYPES: Dict[str, type] = {
+    "str": str,
+    "bool": bool,
+    "List[str]": list,
+    "WorkItem": WorkItem,
+}
 
 
 @dataclass
@@ -77,8 +187,8 @@ class Context:
     #: One sentence: when the point fires, for the report and the docs.
     FIRES: ClassVar[str] = ""
 
-    #: The work item's ref, ``github:OWNER/REPO#N`` — a fact every point carries.
-    work_item: str = ""
+    #: The work item the point is about — a fact every point carries, as one object.
+    work_item: WorkItem = field(default_factory=WorkItem)
 
     def __post_init__(self) -> None:
         if not type(self).POINT:
@@ -102,7 +212,10 @@ class Context:
         out: Dict[str, Any] = {}
         for f in fields(self):
             value = getattr(self, f.name)
-            out[f.name] = list(value) if isinstance(value, list) else value
+            if isinstance(value, WorkItem):
+                out[f.name] = value.to_params()
+            else:
+                out[f.name] = list(value) if isinstance(value, list) else value
         return out
 
     @classmethod
@@ -156,7 +269,17 @@ def _checked(name: str, declared: str, value: Any, error: type = TypeError) -> A
     expected = _TYPES.get(declared)
     if expected is None:  # pragma: no cover — every field is declared with a known type
         raise error(f"field {name!r} has an undeclared type {declared!r}")
-    if expected is bool:
+    if expected is WorkItem:
+        if isinstance(value, WorkItem):
+            return value
+        try:
+            if isinstance(value, Mapping):
+                return WorkItem.from_params(value)
+            if isinstance(value, str):
+                return WorkItem.from_ref(value)
+        except (TypeError, ValueError) as exc:
+            raise error(f"{name!r}: {exc}") from exc
+    elif expected is bool:
         if isinstance(value, bool):
             return value
     elif expected is str:
@@ -199,8 +322,6 @@ class WorkItemStart(Context):
     harness: str = ""
     #: This instance's name (``routing.instance.name``), ``""`` when unnamed.
     instance: str = ""
-    #: The repository the work item lives in (``OWNER/REPO``, host-qualified elsewhere).
-    repository: str = ""
     proceed: bool = decision(True)
     reason: str = decision("")
 
@@ -222,8 +343,8 @@ class SessionSpawn(Context):
         "respawn — with the prompt rendered"
     )
 
-    #: The conversation being launched: the work item's ref, or the pull request's.
-    endpoint: str = ""
+    #: The conversation being launched: the work item itself, or one of its pull requests.
+    endpoint: WorkItem = field(default_factory=WorkItem)
     harness: str = ""
     #: The checkout the session runs in.
     cwd: str = ""
@@ -253,7 +374,7 @@ class SessionSpawned(Context):
         "after the session is registered and before the-loop announces it on the ticket"
     )
 
-    endpoint: str = ""
+    endpoint: WorkItem = field(default_factory=WorkItem)
     harness: str = ""
     harness_session_id: str = ""
     tmux_target: str = ""

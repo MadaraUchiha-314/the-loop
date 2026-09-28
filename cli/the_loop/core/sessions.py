@@ -736,11 +736,11 @@ def ask_session(
     # (issue-344): `waiting_for_input` may reword it or its summary — a policy
     # adds its tag, an enterprise its template — and what they leave is what is
     # posted, on the ledger and on every channel alike.
-    from ..lifecycle import WaitingForInput
+    from ..lifecycle import WaitingForInput, WorkItem
 
     asked = lifecycle.run(
         WaitingForInput(
-            work_item=work_item.ref,
+            work_item=WorkItem.from_ref(work_item),
             kind="question",
             actor=actor,
             question=question,

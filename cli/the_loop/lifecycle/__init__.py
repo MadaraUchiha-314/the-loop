@@ -35,6 +35,7 @@ from .contract import (
     SessionSpawn,
     SessionSpawned,
     WaitingForInput,
+    WorkItem,
     WorkItemComplete,
     WorkItemStart,
 )
@@ -62,6 +63,7 @@ __all__ = [
     "SessionSpawn",
     "SessionSpawned",
     "WaitingForInput",
+    "WorkItem",
     "WorkItemComplete",
     "WorkItemStart",
     "configure",

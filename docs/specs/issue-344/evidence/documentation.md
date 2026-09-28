@@ -20,14 +20,14 @@ workItem: "github:MadaraUchiha-314/the-loop#344"
 
 | Page | What changed |
 |---|---|
-| [`docs/cli/lifecycle-hooks.md`](../../../cli/lifecycle-hooks.md) (new) | *Hooking the lifecycle*: what it is and is not (graph hooks, the event log), writing one, declaring it, the six points with facts and decisions, running it as a service, the wire format, the failure table, what to review before adopting one; *The context objects* — the `LifecycleHooks` signatures and the six contexts as class blocks, field for field, decisions marked (asked for on PR #432; `design.md` §1 carries the same blocks, and a parity test holds both to the dataclasses) |
+| [`docs/cli/lifecycle-hooks.md`](../../../cli/lifecycle-hooks.md) (new) | *Hooking the lifecycle*: what it is and is not (graph hooks, the event log), writing one, declaring it, the six points with facts and decisions, running it as a service, the wire format, the failure table, what to review before adopting one; *The context objects* — the `LifecycleHooks` signatures and the six contexts as class blocks, field for field, decisions marked (asked for on PR #432; `design.md` §1 carries the same blocks, and a parity test holds both to the dataclasses); the `WorkItem` entity block, after the owner's review |
 | [`docs/config/cli/hooks-options.md`](../../../config/cli/hooks-options.md) (new) | The top-level `hooks` and every key of an entry (the docs-parity test requires a heading per schema leaf) |
 | [`docs/cli/commands/hooks.md`](../../../cli/commands/hooks.md) (new) | `the-loop hooks` / `hooks points`: output, exit codes, JSON shape |
 | [`docs/.vitepress/config.mts`](../../../.vitepress/config.mts) | The three pages in the *Commands*, *Extending* and *CLI config* sidebars |
 | [`docs/cli/commands/index.md`](../../../cli/commands/index.md) | The `hooks` row in the repo-scoped table |
 | [`docs/config/cli/index.md`](../../../config/cli/index.md), [`docs/config/index.md`](../../../config/index.md) | The options-by-area row and the link |
 | [`docs/cli/hooks.md`](../../../cli/hooks.md) | A tip distinguishing graph hooks from lifecycle hooks, linking the new page |
-| [`docs/sdk/reference.md`](../../../sdk/reference.md), [`docs/sdk/index.md`](../../../sdk/index.md) | The `the_loop.sdk.hooks` section and the *Next* link |
+| [`docs/sdk/reference.md`](../../../sdk/reference.md), [`docs/sdk/index.md`](../../../sdk/index.md) | The `the_loop.sdk.hooks` section (with the `WorkItem` row) and the *Next* link |
 | [`docs/cli/state.md`](../../../cli/state.md) | The portable record's new `lifecycle` section |
 | [`docs/decisions/decision-137.md`](../../../decisions/decision-137.md) (new) + [`decisions.md`](../../../decisions/decisions.md) | The decision record and its index row |
 | [`skills/the-loop/SKILL.md`](../../../../skills/the-loop/SKILL.md) | The CLI-config table gains a *lifecycle hooks* row |

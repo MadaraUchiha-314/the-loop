@@ -64,15 +64,15 @@ returning `None`.
 
 | Point | Fires | Facts | Decisions and what the-loop does with them |
 |---|---|---|---|
-| `work_item_start` | once per arming, when a start is accepted and before the workspace is prepared (`Dispatcher._spawn_for`, after the adapter check) | `work_item`, `loop`, `command`, `actor`, `harness`, `instance`, `repository` | `proceed=True`, `reason=""` — `False` disarms the item, posts one marked comment (`⚠️ … <hook>: <reason>`), settles the event, records `hooks.refused` |
+| `work_item_start` | once per arming, when a start is accepted and before the workspace is prepared (`Dispatcher._spawn_for`, after the adapter check) | `work_item`, `loop`, `command`, `actor`, `harness`, `instance` | `proceed=True`, `reason=""` — `False` disarms the item, posts one marked comment (`⚠️ … <hook>: <reason>`), settles the event, records `hooks.refused` |
 | `session_spawn` | before every harness launch — first spawn, a pull request's own session, a respawn (before the resume attempt too) | `work_item`, `endpoint`, `harness`, `cwd`, `model`, `effort`, `harness_args`, `respawn`, `loop` | `prompt` — the text the harness boots on, replaced; `proceed`, `reason` — `False` prevents the launch: first spawn and respawn settle the event as refused with the comment; a PR endpoint falls back to delivery into the work item's session |
 | `session_spawned` | after the session is registered, before the announcement | `work_item`, `endpoint`, `harness`, `harness_session_id`, `tmux_target`, `cwd`, `model`, `effort`, `harness_args`, `respawn` | `announce=True` — `False` skips `SessionAnnouncer.announce` |
 | `waiting_for_input` | before an agent's question is published (`ask_session`); when a human node is entered (`Runtime.start` / `advance`, after its entry chain posted the request) | `work_item`, `kind` (`question` \| `gate`), `node`, `actor`, `loop`; for `question`: `question`, `summary` | `question`, `summary` — replace the text published for an agent's question; empty and ignored for a gate |
 | `phase_changed` | in `Runtime.start` (into the start node), and in `advance` when the phase label changes or a terminal node is reached — before the `phase.*` publishes | `work_item`, `loop`, `from_node`, `to_node`, `from_phase`, `to_phase`, `outcome`, `actor`, `terminal` | `notify=True` — `False` skips the `_lifecycle` publishes for that transition |
 | `work_item_complete` | in `Dispatcher._record_closure`, for the issue or pull request that *is* the work item, before the closure is announced | `work_item`, `state` (`merged` \| `closed`), `kind` (`issue` \| `pull-request`), `reason`, `source`, `actor`, `loop` | `announce=True` — `False` skips the `work-item.closed` publish |
 
-Field types are `str`, `bool` or `list[str]`. `Context.to_params()` serialises every
-field; `Context.apply(mapping)` copies **decision** fields only, refusing a wrong type with
+Field types are `str`, `bool`, `list[str]` or `WorkItem` — the work item as a modelled
+entity (below), never a bare string. `Context.to_params()` serialises every field; `Context.apply(mapping)` copies **decision** fields only, refusing a wrong type with
 `DecisionTypeError`; `Context.decisions()` names them. `POINTS` maps each name to its
 class; `LifecycleHooks.handles(point)` reports whether a subclass overrides that method.
 
@@ -102,21 +102,42 @@ class LifecycleHooks:
     def handles(self, point: str) -> bool: ...   # does this class override `point`?
 ```
 
+**The work item** — the core entity, as every context carries it (PR #432 review: not a
+bare ref string). Built by the-loop from the registry's `WorkItemRef` (`WorkItem.from_ref`),
+so the identity is the one the registry, the state and the events key on; `kind` is set
+where the point knows it (the payload at a start, the stamp at a closure, a pull request's
+endpoint at a launch) and `""` otherwise. A stdlib frozen dataclass like the rest of the
+contract — pydantic stays in `api/routes.py`'s request bodies, and a hook author's server
+needs no dependency:
+
+```python
+@dataclass(frozen=True)
+class WorkItem:                          # on every context; built by the-loop, never by a hook
+    ref: str                             # github:[HOST/]OWNER/REPO#N — the-loop's name for it, keys everything; a bare issue-N when a graph verb was given one (the rest then empty)
+    provider: str                        # github (jira reserved)
+    host: str                            # github.com, or a GitHub Enterprise host
+    owner: str
+    repo: str
+    repository: str                      # owner/repo, host-qualified when the host is not the default
+    number: int
+    kind: str                            # issue | pull-request; "" when the point does not know
+    url: str                             # the browser link; "" when none derives
+    id: str                              # issue-N — the spec folder under docs/specs/
+```
+
 **The six contexts.** A field marked `# decision` is read back and applied; every other
-field is a fact the-loop ignores if changed. Field types are `str`, `bool` or `list[str]`,
-so a context is its own JSON-RPC `params`; `work_item` is the work item's ref
-(`github:OWNER/REPO#N`) on every one.
+field is a fact the-loop ignores if changed. Field types are `str`, `bool`, `list[str]` or
+`WorkItem`, so a context is its own JSON-RPC `params`.
 
 ```python
 @dataclass
 class WorkItemStart(Context):            # point: work_item_start
-    work_item: str                       # github:OWNER/REPO#N
+    work_item: WorkItem                  # the item this start is for (WorkItem, above)
     loop: str                            # the loop it will walk (pdlc-work-item-loop, pdlc-adhoc-loop, yours); "" if unresolved
     command: str                         # the arming word (start | contribute | do | review | an operator's); "" for a label-alone spawn
     actor: str                           # the login that armed it (the event's actor when no command was recorded)
     harness: str                         # claude | cursor
     instance: str                        # routing.instance.name; "" when unnamed
-    repository: str                      # OWNER/REPO (host-qualified on another GitHub)
     proceed: bool = True                 # decision — False refuses the start: disarmed, one marked comment, event settled
     reason: str = ""                     # decision — posted on the ticket with the refusal
 ```
@@ -124,8 +145,8 @@ class WorkItemStart(Context):            # point: work_item_start
 ```python
 @dataclass
 class SessionSpawn(Context):             # point: session_spawn
-    work_item: str
-    endpoint: str                        # the conversation launched: the work item's ref, or the pull request's
+    work_item: WorkItem
+    endpoint: WorkItem                   # the conversation launched: the work item itself, or one of its pull requests (kind = pull-request)
     harness: str                         # claude | cursor
     cwd: str                             # the checkout the session runs in
     model: str                           # the frozen model; "" when the work item chose none
@@ -141,8 +162,8 @@ class SessionSpawn(Context):             # point: session_spawn
 ```python
 @dataclass
 class SessionSpawned(Context):           # point: session_spawned
-    work_item: str
-    endpoint: str                        # the work item's ref, or the pull request's
+    work_item: WorkItem
+    endpoint: WorkItem                   # the work item itself, or one of its pull requests
     harness: str
     harness_session_id: str              # the harness conversation id (claude --resume <id>)
     tmux_target: str                     # loop-<slug>
@@ -157,7 +178,7 @@ class SessionSpawned(Context):           # point: session_spawned
 ```python
 @dataclass
 class WaitingForInput(Context):          # point: waiting_for_input
-    work_item: str
+    work_item: WorkItem
     kind: str                            # question (an agent's `the-loop ask`) | gate (a human node entered)
     node: str                            # the graph node, for a gate; "" for a question
     actor: str                           # who is asking, for a question; "" for a gate
@@ -169,7 +190,7 @@ class WaitingForInput(Context):          # point: waiting_for_input
 ```python
 @dataclass
 class PhaseChanged(Context):             # point: phase_changed
-    work_item: str
+    work_item: WorkItem
     loop: str
     from_node: str                       # "" when the graph is entered
     to_node: str
@@ -184,7 +205,7 @@ class PhaseChanged(Context):             # point: phase_changed
 ```python
 @dataclass
 class WorkItemComplete(Context):         # point: work_item_complete
-    work_item: str
+    work_item: WorkItem
     state: str                           # merged | closed
     kind: str                            # issue | pull-request
     reason: str                          # the dispatcher's reason (issue-closed, pr-merged, …)
@@ -199,9 +220,11 @@ class WorkItemComplete(Context):         # point: work_item_complete
 
 ```json
 → {"jsonrpc": "2.0", "id": 1, "method": "work_item_start",
-   "params": {"work_item": "github:acme/app#42", "loop": "pdlc-work-item-loop", "command": "start",
-              "actor": "mallory", "harness": "claude", "instance": "", "repository": "acme/app",
-              "proceed": true, "reason": ""}}
+   "params": {"work_item": {"ref": "github:acme/app#42", "provider": "github", "host": "github.com",
+                            "owner": "acme", "repo": "app", "repository": "acme/app", "number": 42,
+                            "kind": "issue", "url": "https://github.com/acme/app/issues/42", "id": "issue-42"},
+              "loop": "pdlc-work-item-loop", "command": "start", "actor": "mallory",
+              "harness": "claude", "instance": "", "proceed": true, "reason": ""}}
 ← {"jsonrpc": "2.0", "id": 1, "result": {"proceed": false, "reason": "mallory is not on the delivery roster"}}
 ```
 
@@ -325,6 +348,11 @@ meaning); `docs/sdk/reference.md` gains a section pointing at the hooks page.
 
 ## Data models
 
+- **`WorkItem`** (`lifecycle/contract.py`) — the work item on every context: `ref`,
+  `provider`, `host`, `owner`, `repo`, `repository`, `number`, `kind`, `url`, `id`. Frozen;
+  built from a `WorkItemRef` by `WorkItem.from_ref(ref, kind="", id="")`; one JSON object on
+  the wire (`to_params` / `from_params`, each field type-checked; a bare ref string is also
+  accepted inbound).
 - **`Declaration`** — `entries: tuple[Entry]`; `Entry(name, kind, module, path, url,
   executor, params, token_env, headers, timeout, on, required, enabled)`; `Entry.target`.
 - **The portable record** gains a `lifecycle` section: `{"startedAt": "<utc>"}`. Written
@@ -437,3 +465,11 @@ Raised on the ticket and linked here.
 > comments (issue-109). Append-only and attributed: an approval never silently
 > discards a reviewer's suggestions, and the feedback travels with the document
 > it concerns rather than living in a side-channel tracker.
+
+- **MadaraUchiha-314, PR #432 review (comment 4128062605), on `work_item: str`:** "It's very
+  interesting that `work_item` is a string. I thought we will have a more detailed data model
+  (pydantic class) around `work_item` since that's a core entity for the-loop … attributes
+  like url, type (gh issue, jira) etc will be attributes of the work item that we have
+  modeled properly." **Disposition — adopted:** `work_item` (and `endpoint`) is now the
+  `WorkItem` entity above; `repository` left `WorkItemStart` for it. Kept a stdlib dataclass,
+  not pydantic, for the reason given with the model.

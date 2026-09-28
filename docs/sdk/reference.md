@@ -197,6 +197,7 @@ a hook author imports it without the control plane:
 |--------|---------|
 | `LifecycleHooks` | subclass it; one method per point (`work_item_start(ctx)`, `session_spawn(ctx)`, …) returning `None` or the context |
 | `WorkItemStart`, `SessionSpawn`, `SessionSpawned`, `WaitingForInput`, `PhaseChanged`, `WorkItemComplete` | the six contexts: facts plus decision fields; `Context` is their base |
+| `WorkItem` | the work item on every context — `ref`, `provider`, `host`, `owner`, `repo`, `repository`, `number`, `kind`, `url`, `id`; `WorkItem.from_ref(ref)` builds one |
 | `POINTS` | the catalog, point name → context class; `describe()` renders it |
 | `handle_request(executor, body) -> bytes` | the JSON-RPC 2.0 server half, for any HTTP framework |
 | `HookServer(executor, host, port, token_env)` | a stdlib server hosting one executor: `serve_forever()`, `serve_in_thread()`, `shutdown()`, `url` |

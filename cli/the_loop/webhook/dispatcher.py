@@ -92,7 +92,13 @@ from ..reactions import (
 from ..runner import SESSION_LIVE, TmuxRunner
 from ..graph.model import LOOP_FOR_CONTROL_COMMAND, PDLC_WORK_ITEM_LOOP
 from ..graph.state import WorkItemState
-from ..lifecycle import SessionSpawn, SessionSpawned, WorkItemComplete, WorkItemStart
+from ..lifecycle import (
+    SessionSpawn,
+    SessionSpawned,
+    WorkItem,
+    WorkItemComplete,
+    WorkItemStart,
+)
 from ..sessions import Session, SessionRegistry, WorkItemRef
 from ..state import LegacyLayout, StateLayout, layout_from_config, legacy_layout
 from ..workchannels import (
@@ -673,6 +679,28 @@ class _PendingClose:
     node: str
     since: float  # time.monotonic()
     deadline: float
+
+
+def _item_kind(work_item: WorkItemRef, routed: RoutedEvent) -> str:
+    """``issue`` | ``pull-request`` for the item the event's payload names; ``""`` when
+    the payload names another item (a linked issue found through a branch or a PR body).
+    A fact for the lifecycle hooks (issue-344) — read off the payload, never guessed."""
+    payload = routed.payload or {}
+    pull_request = payload.get("pull_request") or {}
+    issue = payload.get("issue") or {}
+    if pull_request.get("number") == work_item.number:
+        return "pull-request"
+    if issue.get("number") == work_item.number:
+        return "pull-request" if issue.get("pull_request") else "issue"
+    return ""
+
+
+def _endpoint_item(work_item: WorkItemRef, endpoint: WorkItemRef) -> WorkItem:
+    """The conversation a launch is for, as the hooks see it: the work item itself, or
+    one of its pull requests (issue-172) — the one case where the kind is known."""
+    if endpoint == work_item:
+        return WorkItem.from_ref(endpoint)
+    return WorkItem.from_ref(endpoint, kind="pull-request")
 
 
 class Dispatcher:
@@ -1978,7 +2006,7 @@ class Dispatcher:
         # carries the closure's own facts and decides whether it is announced.
         complete = lifecycle.run(
             WorkItemComplete(
-                work_item=work_item.ref,
+                work_item=WorkItem.from_ref(work_item, kind=stamp["kind"]),
                 state=stamp["state"],
                 kind=stamp["kind"],
                 reason=reason,
@@ -2046,14 +2074,15 @@ class Dispatcher:
         record = self.control_store.get(work_item)
         ctx = lifecycle.run(
             WorkItemStart(
-                work_item=work_item.ref,
+                work_item=WorkItem.from_ref(
+                    work_item, kind=_item_kind(work_item, routed)
+                ),
                 loop=self._loop_for_start(record),
                 command=record.command if record is not None else "",
                 actor=(record.actor if record is not None and record.actor else "")
                 or (event_actor(routed.event, routed.payload) or ""),
                 harness=self.config.default_harness,
                 instance=self.config.instance.name,
-                repository=work_item.path,
             )
         )
         if ctx.proceed:
@@ -2080,8 +2109,8 @@ class Dispatcher:
         """Run `session_spawn` with the launch as it is about to happen."""
         return lifecycle.run(
             SessionSpawn(
-                work_item=work_item.ref,
-                endpoint=endpoint.ref,
+                work_item=WorkItem.from_ref(work_item),
+                endpoint=_endpoint_item(work_item, endpoint),
                 harness=harness or self.config.default_harness,
                 cwd=cwd,
                 model=model,
@@ -2099,8 +2128,8 @@ class Dispatcher:
         """Run `session_spawned` for a registered session."""
         return lifecycle.run(
             SessionSpawned(
-                work_item=work_item.ref,
-                endpoint=session.work_item.ref,
+                work_item=WorkItem.from_ref(work_item),
+                endpoint=_endpoint_item(work_item, session.work_item),
                 harness=session.harness,
                 harness_session_id=session.harness_session_id,
                 tmux_target=session.tmux_target,

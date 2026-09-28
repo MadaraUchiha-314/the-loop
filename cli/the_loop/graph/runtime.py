@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from .. import eventlog, lifecycle
 from ..lifecycle import PhaseChanged, WaitingForInput
+from ..lifecycle import WorkItem as LifecycleWorkItem
 from .chain import ChainOutcome, run_chain
 from .contract import BLOCK, PASS, SKIP, WAIT, HookContext, WorkItem
 from .model import Graph, GraphConfigError, artifact_names, load_graph
@@ -476,7 +477,7 @@ class Runtime:
             actor = ""
         return lifecycle.run(
             PhaseChanged(
-                work_item=item.ref,
+                work_item=LifecycleWorkItem.from_ref(item.ref, id=item.id),
                 loop=self.graph.name or "",
                 from_node=from_node,
                 to_node=to_node,
@@ -495,7 +496,7 @@ class Runtime:
             return
         lifecycle.run(
             WaitingForInput(
-                work_item=item.ref,
+                work_item=LifecycleWorkItem.from_ref(item.ref, id=item.id),
                 kind="gate",
                 node=getattr(node, "id", ""),
                 loop=self.graph.name or "",

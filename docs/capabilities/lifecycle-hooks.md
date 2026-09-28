@@ -34,7 +34,9 @@ constraint this capability is built around ([decision-137](../decisions/decision
   published and when a human node is entered; `phase_changed` when the phase label changes
   or a terminal node is reached, before the channels are told; `work_item_complete` when
   the item's ticket or pull request closes, before the closure is announced.
-- Every context SHALL be facts plus marked decision fields with JSON types. The system
+- Every context SHALL be facts plus marked decision fields with JSON types, and SHALL carry
+  the work item as a modelled entity (`WorkItem`: ref, provider, host, owner, repo,
+  repository, number, kind, url, id), never as a bare string. The system
   SHALL read back decisions only, refuse a wrong-typed decision as that hook's failure, and
   ignore a changed fact.
 

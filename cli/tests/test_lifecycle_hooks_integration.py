@@ -9,7 +9,7 @@ Feature: lifecycle hooks run where the thing they decide is about to happen
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -237,9 +237,15 @@ def test_a_hook_refuses_a_start_and_the_work_item_is_disarmed_with_a_reason(
     assert registry.find_by_work_item(REF) is None
     assert store.get(REF) is None, "a refused start leaves nothing armed"
     (start,) = points(hooks, "work_item_start")
-    assert (start.work_item, start.command, start.actor) == (REF, "start", "octocat")
+    assert (start.work_item.ref, start.command, start.actor) == (
+        REF,
+        "start",
+        "octocat",
+    )
+    assert (start.work_item.kind, start.work_item.repository) == ("issue", "octo/repo")
+    assert start.work_item.url == "https://github.com/octo/repo/issues/15"
     assert start.loop == "pdlc-work-item-loop"
-    assert start.harness == "claude" and start.repository == "octo/repo"
+    assert start.harness == "claude"
     (ref, body) = comments[-1]
     assert (
         ref == REF
@@ -328,7 +334,7 @@ def test_a_hook_rewords_the_prompt_a_session_boots_on(tmp_path):
     (ref, prompt, cwd, resume) = tmux.spawns[0]
     assert ref == REF and prompt.startswith("HOUSE RULES FIRST\n\n")
     (spawn,) = points(hooks, "session_spawn")
-    assert (spawn.endpoint, spawn.harness, spawn.respawn) == (REF, "claude", False)
+    assert (spawn.endpoint.ref, spawn.harness, spawn.respawn) == (REF, "claude", False)
     assert spawn.cwd == cwd
     assert "GitHub webhook event" in spawn.prompt or spawn.prompt
 
@@ -577,7 +583,47 @@ def test_an_agents_question_is_reworded_before_it_is_posted(
     assert result["asked"] is True
     assert "[policy] Which auth mode?" in posted["body"]
     (asked,) = points(hooks, "waiting_for_input")
-    assert (asked.kind, asked.work_item) == ("question", REF)
+    assert (asked.kind, asked.work_item.ref) == ("question", REF)
     assert asked.actor
     (wait,) = events("session.awaiting_input")
     assert wait["question"] == "[policy] Which auth mode?"
+
+
+# ------------------------------------------------------------ the work item's kind
+
+
+def test_the_kind_is_read_off_the_payload_not_guessed():
+    """PR #432 review: the entity carries what the point knows. A start names the item
+    the payload is about — an issue, a pull request (even one GitHub delivers as an
+    ``issue`` with a ``pull_request`` key) — and says nothing for a linked item."""
+    from the_loop.sessions.registry import WorkItemRef
+    from the_loop.webhook.dispatcher import _endpoint_item, _item_kind
+
+    item = WorkItemRef.parse(REF)
+    other = WorkItemRef.parse("github:octo/repo#99")
+
+    class _Routed:
+        def __init__(self, payload):
+            self.payload = payload
+
+    def _routed(payload) -> RoutedEvent:
+        return cast(RoutedEvent, _Routed(payload))
+
+    assert _item_kind(item, _routed({"issue": {"number": 15}})) == "issue"
+    assert (
+        _item_kind(
+            item, _routed({"issue": {"number": 15, "pull_request": {"url": "x"}}})
+        )
+        == "pull-request"
+    )
+    assert _item_kind(item, _routed({"pull_request": {"number": 15}})) == "pull-request"
+    assert _item_kind(item, _routed({"pull_request": {"number": 99}})) == ""
+    assert _item_kind(item, _routed({})) == ""
+
+    assert _endpoint_item(item, item).kind == ""
+    pr = _endpoint_item(item, other)
+    assert (pr.kind, pr.ref, pr.url) == (
+        "pull-request",
+        "github:octo/repo#99",
+        "https://github.com/octo/repo/pull/99",
+    )

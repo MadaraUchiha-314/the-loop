@@ -61,7 +61,7 @@ class Runner:
                     point=point,
                     hook=executor.name,
                     changed=list(changed),
-                    work_item=ctx.work_item or None,
+                    work_item=ctx.work_item.ref or None,
                 )
 
     @staticmethod
@@ -100,7 +100,7 @@ class Runner:
             hook=executor.name,
             error=error,
             required=executor.required,
-            work_item=ctx.work_item or None,
+            work_item=ctx.work_item.ref or None,
         )
         if executor.required and "proceed" in ctx.decisions():
             changed = ctx.apply(
@@ -115,5 +115,5 @@ class Runner:
                     point=ctx.POINT,
                     hook=executor.name,
                     changed=list(changed),
-                    work_item=ctx.work_item or None,
+                    work_item=ctx.work_item.ref or None,
                 )

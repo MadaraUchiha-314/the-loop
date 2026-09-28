@@ -107,8 +107,9 @@ hook are written the same way and I can tell exactly what I am allowed to change
 
 #### Acceptance criteria (EARS)
 
-1. Each context SHALL be a dataclass of **facts** (read-only: the work item's ref, the
-   loop, the harness, the node…) and **decisions** (the fields the-loop reads back:
+1. Each context SHALL be a dataclass of **facts** (read-only: the work item as a modelled
+   entity — its ref, tracker, host, repository, number, kind, URL and id — the loop, the
+   harness, the node…) and **decisions** (the fields the-loop reads back:
    `proceed`, `reason`, `prompt`, `announce`, `question`, `summary`, `notify`). Every
    field SHALL carry a JSON-serialisable value (`str`, `bool`, `int`, a list of strings).
 2. An executor method SHALL receive the context and SHALL return `None` (pass through

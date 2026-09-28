@@ -10,6 +10,7 @@ from the_loop import cli_config, eventlog, lifecycle
 from the_loop.lifecycle.contract import (
     PhaseChanged,
     SessionSpawn,
+    WorkItem,
     WorkItemStart,
     LifecycleHooks,
 )
@@ -53,7 +54,9 @@ class _Stub(Executor):
 
 
 def _start(**kw):
-    return WorkItemStart(work_item="github:o/r#1", loop="pdlc-work-item-loop", **kw)
+    return WorkItemStart(
+        work_item=WorkItem.from_ref("github:o/r#1"), loop="pdlc-work-item-loop", **kw
+    )
 
 
 def test_executors_run_in_order_and_see_earlier_decisions():
@@ -69,14 +72,19 @@ def test_none_passes_through_a_returned_context_replaces_a_mapping_applies():
     ctx = _start()
     passthrough = _Stub("a", answer=None)
     returned = _Stub(
-        "b", answer=lambda c: WorkItemStart(work_item="github:x/y#9", proceed=False)
+        "b",
+        answer=lambda c: WorkItemStart(
+            work_item=WorkItem.from_ref("github:x/y#9"), proceed=False
+        ),
     )
     mapping = _Stub("c", answer={"reason": "mapped"})
     out = Runner([passthrough, returned, mapping]).run(ctx)
     assert out is ctx
     assert out.proceed is False
     assert out.reason == "mapped"
-    assert out.work_item == "github:o/r#1", "a returned context changes decisions only"
+    assert out.work_item.ref == "github:o/r#1", (
+        "a returned context changes decisions only"
+    )
 
 
 def test_an_executor_that_does_not_handle_the_point_is_skipped():
@@ -146,7 +154,7 @@ def test_a_required_hook_that_fails_refuses_a_proceed_point(events):
 
 
 def test_a_required_hook_that_fails_at_a_point_without_proceed_only_records(events):
-    ctx = PhaseChanged(work_item="github:o/r#1", to_phase="design")
+    ctx = PhaseChanged(work_item=WorkItem.from_ref("github:o/r#1"), to_phase="design")
     out = Runner(
         [
             _Stub(
@@ -176,7 +184,7 @@ def test_a_local_executor_calls_the_subclass_method():
             return ctx
 
     ex = LocalExecutor("reword", Reword(), on=())
-    ctx = SessionSpawn(work_item="github:o/r#1", prompt="hello")
+    ctx = SessionSpawn(work_item=WorkItem.from_ref("github:o/r#1"), prompt="hello")
     out = Runner([ex]).run(ctx)
     assert out.prompt == "PREFIX\nhello"
 
