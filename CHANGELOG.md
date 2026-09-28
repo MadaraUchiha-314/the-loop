@@ -1,3 +1,9 @@
+## v19.13.1 (2026-09-28)
+
+### Fix
+
+- **issue-429**: the stop gate never demands a node the work item has not entered (#430)
+
 ## v19.13.0 (2026-09-28)
 
 ### Feat
