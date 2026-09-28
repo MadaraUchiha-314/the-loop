@@ -80,8 +80,11 @@ def _recorded_loop(path: Path, work_item: str, spec_root: str) -> str:
     returned, because the state file is agent-writable and must not choose
     arbitrary graphs. This is what lets `the-loop check`/`graph` address a
     contribution or an ad-hoc item (issue-225) with no new flags: the recorded
-    fact travels with the checkout.
+    fact travels with the checkout. An operator's own graph (issue-343) is
+    returned when this machine's CLI config declares its name.
     """
+    from ..graph.bootstrap import load_cli_config_best_effort
+    from ..graph.catalog import read_catalog
     from ..graph.model import resolve_outer_loop
     from ..graph.state import WorkItemState
 
@@ -90,7 +93,14 @@ def _recorded_loop(path: Path, work_item: str, spec_root: str) -> str:
         recorded = str(getattr(state, "loop", "") or "")
     except Exception:  # noqa: BLE001 — an unreadable state reads as the default
         return ""
-    return resolve_outer_loop(recorded)
+    # The operator's own graphs (issue-343) are selectable by the names they
+    # declare, and by nothing else. A malformed declaration is not swallowed
+    # here: `build_runtime` parses the same block next and raises it.
+    try:
+        declared = read_catalog(load_cli_config_best_effort()).names
+    except Exception:  # noqa: BLE001 — reported by build_runtime, which follows
+        declared = ()
+    return resolve_outer_loop(recorded, declared)
 
 
 def _runtime(

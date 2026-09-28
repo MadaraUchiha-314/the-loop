@@ -655,6 +655,7 @@ def _declared_hooks() -> Dict[str, Any]:
                 "node": a.node,
                 "boundary": a.boundary,
                 "with": dict(a.params),
+                **({"loops": list(a.loops)} if a.loops else {}),
             }
             for a in declaration.attachments
         ],
@@ -680,6 +681,8 @@ def _report_hooks(root: Path, fmt: str) -> int:
         print(f"  module  {ref['path'] or ref['module']}")
     for entry in attach:
         suffix = f"  with: {entry['with']}" if entry["with"] else ""
+        if entry.get("loops"):
+            suffix += f"  in: {', '.join(entry['loops'])}"
         print(
             f"  attach  {entry['hook']} → {entry['node']} ({entry['boundary']}){suffix}"
         )
@@ -688,6 +691,155 @@ def _report_hooks(root: Path, fmt: str) -> int:
         "cannot load fails there rather than being skipped."
     )
     return 0
+
+
+def _strict_cli_config() -> Dict[str, Any]:
+    """The CLI config in effect, read STRICTLY: a file that cannot be parsed or
+    validated raises, rather than reading as "nothing declared" — the report's
+    whole job is to find a mistake before a work item does."""
+    from .. import cli_config
+
+    path = cli_config.default_cli_config_path()
+    if not path.is_file():
+        return {}
+    loaded = cli_config.load_cli_config(path, strict=True) or {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _declared_loops() -> Dict[str, Any]:
+    """Every loop this machine can walk: the shipped ones and the operator's own
+    (the top-level ``graphs``, issue-343), each with the keywords that arm it —
+    the shipped bindings, re-pointed or extended by ``routing.control.commands``.
+
+    Each declared graph is compiled and checked the way a load checks it — the
+    compiler's rules, the phase vocabulary, every attachment that applies to it
+    naming a node it declares, its ``x-`` hooks having a module to come from —
+    but **no hook module is imported**: whether a module really registers a name
+    is settled only when a work item loads the graph. A configuration that cannot
+    be read, a malformed declaration or a clashing keyword is reported as the one
+    error, with no rows.
+    """
+    from ..control import ControlConfig
+    from ..graph import hooks as _hooks  # noqa: F401 — registers the built-ins
+    from ..graph.catalog import compile_custom, read_catalog
+    from ..graph.extensions import read_declaration
+    from ..graph.model import (
+        GUEST_LOOPS,
+        LOOP_FOR_CONTROL_COMMAND,
+        PDLC_PR_LOOP,
+        PDLC_WORK_ITEM_LOOP,
+        SHIPPED_LOOPS,
+        extension_hook_names,
+    )
+
+    try:
+        cfg = _strict_cli_config()
+        routing = cfg.get("routing") or {}
+        catalog = read_catalog(cfg)
+        declaration = read_declaration(cfg)
+        control = ControlConfig.from_mapping(
+            routing.get("control") or {}, graphs=cfg.get("graphs")
+        )
+    except Exception as exc:  # noqa: BLE001 — the report IS the error
+        return {"loops": [], "error": str(exc)}
+
+    def keywords(words: List[str]) -> List[str]:
+        # What a person actually types: the configured keyword, and nothing for
+        # a command the operator disabled.
+        return [control.keyword(w) for w in words if control.keyword(w)]
+
+    # Which words select which loop, after the operator's bindings: the shipped
+    # mapping first, each binding then re-pointing a word or adding one.
+    selects: Dict[str, str] = {"start": PDLC_WORK_ITEM_LOOP}
+    selects.update(LOOP_FOR_CONTROL_COMMAND)
+    selects.update(control.bindings)
+    armed_by: Dict[str, List[str]] = {}
+    for word, loop in selects.items():
+        armed_by.setdefault(loop, []).append(word)
+    rows: List[Dict[str, Any]] = []
+    for name in SHIPPED_LOOPS:
+        rows.append(
+            {
+                "name": name,
+                "kind": "shipped",
+                "commands": keywords(armed_by.get(name, [])),
+                "guest": name in GUEST_LOOPS,
+                "inner": name == PDLC_PR_LOOP,
+                "status": "ok",
+            }
+        )
+    for entry in catalog.entries:
+        path = entry.resolved_path()
+        row: Dict[str, Any] = {
+            "name": entry.name,
+            "kind": "declared",
+            "commands": keywords(armed_by.get(entry.name, [])),
+            "guest": entry.guest,
+            "inner": False,
+            "path": str(path),
+        }
+        try:
+            graph = compile_custom(entry, path)
+            problems = [
+                f"`routing.graph.hooks.attach` puts {a.hook} on node {a.node!r}, "
+                "which this graph does not declare — scope the attachment with "
+                "`loops`"
+                for a in declaration.attachments
+                if a.applies_to(graph.name) and a.node not in graph.nodes
+            ]
+            named = extension_hook_names(graph)
+            if named and not declaration.modules:
+                problems.append(
+                    f"names {', '.join(named)} but `routing.graph.hooks.modules` "
+                    "declares no module to register them"
+                )
+            if problems:
+                raise ValueError("; ".join(problems))
+        except Exception as exc:  # noqa: BLE001 — a broken graph is a row, not a crash
+            row.update(status="error", error=str(exc))
+        else:
+            row.update(status="ok", extensionHooks=named)
+        rows.append(row)
+    return {"loops": rows, "error": ""}
+
+
+def _report_loops(fmt: str) -> int:
+    report = _declared_loops()
+    failed = bool(report["error"]) or any(
+        row["status"] != "ok" for row in report["loops"]
+    )
+    if fmt == "json":
+        print(json.dumps(report, indent=2))
+        return 1 if failed else 0
+    if report["error"]:
+        print(f"the CLI config's graphs cannot be read: {report['error']}")
+        return 1
+    for row in report["loops"]:
+        commands = ", ".join(row["commands"]) or "—"
+        traits = [row["kind"]]
+        if row["guest"]:
+            traits.append("guest")
+        if row["inner"]:
+            traits.append("inner loop, one per pull request")
+        print(f"{row['name']}  ({', '.join(traits)})")
+        print(f"  armed by: {commands}")
+        if row["kind"] == "declared":
+            print(f"  file:     {row['path']}")
+            if row["status"] == "ok":
+                hooks = ", ".join(row["extensionHooks"])
+                print(
+                    "  compiles: ok"
+                    + (
+                        f" — names {hooks} (bound when a work item loads it)"
+                        if hooks
+                        else ""
+                    )
+                )
+            else:
+                print(f"  compiles: NO — {row['error']}")
+    if not any(row["kind"] == "declared" for row in report["loops"]):
+        print("\nno graphs of your own declared (top-level `graphs` in the CLI config)")
+    return 1 if failed else 0
 
 
 @register
@@ -810,6 +962,16 @@ class GraphCommand(Command):
             ),
         ).add_argument("--format", choices=["text", "json"], default="text")
 
+        sub.add_parser(
+            "loops",
+            help=(
+                "list every loop this machine can walk — the shipped ones and "
+                "your own (top-level graphs, issue-343) — with the commands "
+                "that arm each, compiling your graphs without importing any hook "
+                "module; exits 1 when one does not compile"
+            ),
+        ).add_argument("--format", choices=["text", "json"], default="text")
+
         run = sub.add_parser(
             "run", help="drive a work item until it waits, escalates or completes"
         )
@@ -843,6 +1005,8 @@ class GraphCommand(Command):
             root = _resolve_root(args.repo)
         if args.action == "hooks":
             return _report_hooks(root, args.format)
+        if args.action == "loops":
+            return _report_loops(args.format)
 
         if args.action == "show":
             graph = _show(root, pr=args.pr, pr_repo=args.pr_repo, spec_dir=spec_dir)

@@ -49,7 +49,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from . import eventlog
 from .ghhost import repo_slug as _repo_slug
-from .control import ControlConfig, ControlStore
+from .control import START, ControlConfig, ControlStore
 from .sessions import WorkItemRef
 
 logger = logging.getLogger("the-loop.graph")
@@ -417,7 +417,9 @@ def render_graph_context(
     if verdict:
         lines.append(f"  this event was classified by the gate first: {verdict}")
     if ctx.next_command:
-        lines.append(f"  resume with: `/the-loop:{ctx.next_command} {item_id}`")
+        from .graph.model import slash_command
+
+        lines.append(f"  resume with: `{slash_command(ctx.next_command)} {item_id}`")
     claim_suffix = f" --pr {pr_number}" if pr_number is not None else ""
     if pr_number is not None and pr_repo:
         claim_suffix += f" --pr-repo {pr_repo}"
@@ -1246,12 +1248,29 @@ class GraphLink:
         control command cannot re-shape a walk in progress; before the first
         start, the arming command recorded in the portable control record is
         the declared intent (``contribute`` → the contribution loop, ``do`` →
-        the ad-hoc loop, issue-225). Only a shipped **outer-path** loop is ever
-        returned — the state file is agent-writable, so an invented name reads
-        as the default rather than choosing a graph (fail closed).
+        the ad-hoc loop, issue-225; any arming command the operator bound to a
+        graph of their own, issue-343). Only a shipped **outer-path** loop or a
+        loop the operator declares is ever returned — the state file is
+        agent-writable, so an invented name reads as the default rather than
+        choosing a graph (fail closed).
         """
-        from .graph.model import LOOP_FOR_CONTROL_COMMAND, resolve_outer_loop
+        from .graph.model import (
+            LOOP_FOR_CONTROL_COMMAND,
+            PDLC_WORK_ITEM_LOOP,
+            resolve_outer_loop,
+        )
         from .graph.state import WorkItemState
+
+        declared = self.control.loops
+
+        def selectable(name: str) -> Optional[str]:
+            # A name that selects a loop: the default (as "") or a non-default
+            # outer-path loop the operator may choose; None when it selects
+            # nothing — empty, invented, or a graph no longer declared.
+            if name == PDLC_WORK_ITEM_LOOP:
+                return ""
+            chosen = resolve_outer_loop(name, declared)
+            return chosen or None
 
         try:
             state = WorkItemState.load(root / spec_dir / item_id, item_id)
@@ -1260,15 +1279,29 @@ class GraphLink:
             logger.debug("could not read %s's recorded loop: %s", item_id, exc)
             recorded = ""
         if recorded:
-            return resolve_outer_loop(recorded)
+            return resolve_outer_loop(recorded, declared)
+        command = START
         if self.control_store is not None:
             try:
                 record = self.control_store.get(work_item)
                 if record is not None:
-                    return LOOP_FOR_CONTROL_COMMAND.get(record.command, "")
+                    # The operator's own loop the arming command selected
+                    # (issue-343), through the same fail-closed resolver the
+                    # state file goes through.
+                    chosen = selectable(record.loop)
+                    if chosen is not None:
+                        return chosen
+                    command = record.command
             except Exception as exc:  # noqa: BLE001
                 logger.debug("could not read %s's control record: %s", item_id, exc)
-        return ""
+        # No loop recorded — a CLI `sessions start`, a label spawn with no start
+        # required, an older record, or a record naming a graph no longer
+        # declared: the command's CURRENT binding (issue-343), else what it
+        # selects when nobody bound it.
+        bound = selectable(self.control.bindings.get(command, ""))
+        if bound is not None:
+            return bound
+        return resolve_outer_loop(LOOP_FOR_CONTROL_COMMAND.get(command, ""))
 
     def _spec_dir(self) -> str:
         """Where this daemon's work items keep their specs, as the operator declared.

@@ -30,6 +30,7 @@ from __future__ import annotations
 import logging
 
 from ..contract import HookContext, HookResult
+from ..model import slash_command
 from ..registry import hook
 
 logger = logging.getLogger("the-loop.graph")
@@ -87,7 +88,9 @@ def render_assignment(ctx: HookContext) -> str:
         lines.append(f"  produce: {', '.join(produces)}")
         lines.append(f"  iterate it on: {_surface(ctx, pr_number)}")
     if node.get("command"):
-        lines.append(f"  work it with: `/the-loop:{node.get('command')} {item_id}`")
+        lines.append(
+            f"  work it with: `{slash_command(str(node.get('command')))} {item_id}`"
+        )
     if node.get("actor") == "human":
         # A human gate is announced, never assigned: the work here is somebody
         # else's, and a session told to "report back when done" at one would

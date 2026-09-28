@@ -215,6 +215,26 @@ def apply_instance(config: dict) -> dict:
     return config
 
 
+def apply_graphs(config: dict) -> dict:
+    """Fan the top-level `graphs` list into `routing` (issue-343).
+
+    Which graphs exist is a top-level fact (the owner's shape on PR #425); which
+    command selects which is `routing.control.commands`. The dispatcher and the
+    control parser are handed the routing block alone, so the list travels under
+    a private key the way `instance` travels as `_instance`. Absent: the routing
+    mapping is left exactly as it was.
+    """
+    block = config.get("graphs")
+    if block is None:
+        return config
+    routing = config.get("routing")
+    if not isinstance(routing, dict):
+        routing = {}
+        config["routing"] = routing
+    routing["_graphs"] = list(block) if isinstance(block, list) else block
+    return config
+
+
 def load_cli_config(path: Path, strict: bool = False) -> dict:
     """Load the CLI config, refusing one that predates a breaking change.
 
@@ -232,6 +252,7 @@ def load_cli_config(path: Path, strict: bool = False) -> dict:
 
         _apply(data)
         _apply_instance(data)
+        apply_graphs(data)
     # Applied to the EMPTY document too (issue-339): a fresh install with no config file
     # would otherwise keep the cwd-relative default and keep this bug in the one
     # configuration nobody has customised yet.

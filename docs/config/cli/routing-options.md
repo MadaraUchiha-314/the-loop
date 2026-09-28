@@ -527,6 +527,48 @@ read per event and never cached in a running session. The conversation returns t
 central channel at the next update; the thread already open in the room stays bound, so
 replies in it still reach the work item.
 
+### `control.commands`
+
+- **Type:** `object` — command word → `{graph, keyword?}`
+- **Default:** `{}` — every arming command selects its shipped loop
+- **Related:** [bringing your own graph](/cli/graphs) · [top-level `graphs`](/config/cli/graphs-options) · [`the-loop graph loops`](/cli/commands/graph#loops) · [decision-136](/decisions/decision-136)
+
+Which graph each arming command selects
+([issue-343](https://github.com/MadaraUchiha-314/the-loop/issues/343)). A command with no
+entry keeps the loop it has always selected: `start` the work-item loop, `contribute` the
+contribution loop, `do` the ad-hoc loop, `review` the review loop. You need an entry only to
+change that.
+
+```yaml
+routing:
+  control:
+    commands:
+      triage: {graph: acme-triage-loop}                          # a new word
+      scan: {graph: acme-scan-loop, keyword: "@acme scan"}       # a new word, own keyword
+      do: {graph: acme-quick-loop}                               # re-pointed
+```
+
+A **key** is a command word: lowercase letters, digits and hyphens.
+
+- **One of `start`, `contribute`, `do` or `review`** is re-pointed. Everything else about
+  the command is unchanged, and `review` still binds to the pull request it was typed on.
+- **Any other word is a new command.** It arms exactly as `start` does — the same
+  authorization, the same spawn policy — and selects its graph.
+- **Refused:** `stop`, `pause`, `resume`, `execute`, `cleanup`, the collaborator and
+  channel commands (they select no loop), and the-loop's own CLI verbs (`graph`, `check`,
+  `sessions`, …), because a comment quoting `the-loop graph complete …` must never arm a
+  work item.
+
+Each value is a mapping:
+
+- **`graph`** (required) is a shipped outer-path loop (`pdlc-work-item-loop`,
+  `pdlc-contribution-loop`, `pdlc-adhoc-loop`, `pdlc-review-loop`) or a name declared
+  under the top-level [`graphs`](/config/cli/graphs-options). Anything else fails the load.
+- **`keyword`** (a new command only) is the text a person types. It defaults to
+  `the-loop <word>` and is matched like every other keyword. A keyword equal to one already
+  configured is refused. A built-in command's keyword is set under `control.keywords`
+  above, not here.
+
 Keywords match as **whole tokens, case-insensitively, anywhere** in a comment body.
 Setting one to an empty string disables that command. A comment carrying **two different**
 keywords is refused outright — nothing executed, nothing forwarded. Commands live in
@@ -662,6 +704,19 @@ on arrival.
 
 Typed parameters handed to the hook as `ctx.params`, exactly as a shipped chain entry's
 `with:` is.
+
+### `graph.hooks.attach[].loops`
+
+- **Type:** `string[]` — shipped loop names or your own from the top-level [`graphs`](/config/cli/graphs-options)
+- **Default:** none — the attachment applies to every loop
+- **Related:** [bringing your own graph](/cli/graphs) · [decision-136](/decisions/decision-136)
+
+The loops this attachment applies to
+([issue-343](https://github.com/MadaraUchiha-314/the-loop/issues/343)). Omitted, it applies
+to **every** loop, and a loop that does not declare the node fails to load — which is what
+you want for a typo, and not what you want for a hook on `design` once a graph without a
+`design` node is in use. Scope such an attachment: `loops: [pdlc-work-item-loop]`. A name
+that is neither shipped nor declared fails the load.
 
 ## Where sessions run
 

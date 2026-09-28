@@ -116,13 +116,15 @@ def build_runtime(
     (issue-185), for a work item the-loop joins as a contributor rather than
     owns, or the ad-hoc loop (issue-225), for a tactical task that runs no PDLC
     process. Meaningless with ``pr_number`` (a pull request's loop is always
-    ``pdlc-pr-loop``). Only ``OUTER_PATH_LOOPS`` names are honoured — the value
+    ``pdlc-pr-loop``). Only ``OUTER_PATH_LOOPS`` names and the operator's own
+    declared graphs (top-level ``graphs``, issue-343) are honoured — the value
     can originate in the agent-writable ``work-item-state.json``, so anything else
     falls back to the default outer loop with a warning rather than reaching
     ``load_graph``.
     """
     from ..ghhost import github_host
     from ..ghhost import origin_repo as origin_of
+    from .catalog import read_catalog
     from .extensions import read_declaration
     from .hooks.loops import inner_loop_state_dir
     from .model import (
@@ -135,12 +137,20 @@ def build_runtime(
     from .runtime import Runtime
 
     cli_cfg = load_cli_config_best_effort()
+    # The operator's own graphs (issue-343). Parsed strictly, like the hooks
+    # declaration below: a malformed list raises rather than reading as "none".
+    catalog = read_catalog(cli_cfg)
     chosen = loop or PDLC_WORK_ITEM_LOOP
-    if pr_number is None and chosen not in OUTER_PATH_LOOPS:
+    if (
+        pr_number is None
+        and chosen not in OUTER_PATH_LOOPS
+        and chosen not in catalog.names
+    ):
         # Fail closed to the default: `loop` can come from the agent-writable
         # state file, and an invented name must never choose the graph — nor
         # may the inner loop be addressed without the pr-loops state layout.
-        # `OUTER_PATH_LOOPS` says both in one membership test (issue-225).
+        # `OUTER_PATH_LOOPS` says both in one membership test (issue-225); the
+        # operator's declaration is the only thing that widens it (issue-343).
         logger.warning(
             "ignoring unknown outer loop %r; walking %s", chosen, PDLC_WORK_ITEM_LOOP
         )
@@ -156,7 +166,11 @@ def build_runtime(
         # repository offers no place to review a checked-in artifact. Until
         # issue-352 this was "has the repository adopted the-loop?", read from
         # its harness config — a file the CLI no longer opens.
-        "guestLoop": pr_number is None and chosen in GUEST_LOOPS,
+        # An operator's own graph is a guest when its declaration says so
+        # (issue-343) — how a replacement for `contribute` or `review` keeps the
+        # posture of the loop it replaces.
+        "guestLoop": pr_number is None
+        and (chosen in GUEST_LOOPS or catalog.is_guest(chosen)),
         # Which repository the ticket lives in (issue-183) — the origin
         # repository, where the outer loop runs and every inner loop's state is
         # kept. The caller's word first (the daemon knows the work item), the
@@ -290,7 +304,9 @@ def build_runtime(
         )
     return Runtime(
         root,
-        graph=load_graph(repo=root, name=chosen, declaration=declaration),
+        graph=load_graph(
+            repo=root, name=chosen, declaration=declaration, catalog=catalog
+        ),
         spec_root=resolved_spec_root,
         config=config,
     )

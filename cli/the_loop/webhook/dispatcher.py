@@ -536,7 +536,12 @@ class RoutingConfig:
             principals=list(principals),
             reactions=ReactionConfig.from_mapping(data.get("reactions") or {}),
             announce=AnnounceConfig.from_mapping(data.get("announce") or {}),
-            control=ControlConfig.from_mapping(data.get("control") or {}),
+            # The operator's own graphs travel as `_graphs` (issue-343,
+            # `cli_config.apply_graphs`): a `routing.control.commands` binding
+            # may name one of them.
+            control=ControlConfig.from_mapping(
+                data.get("control") or {}, graphs=data.get("_graphs")
+            ),
             graph=GraphLinkConfig.from_mapping(data.get("graph") or {}),
             interaction=InteractionConfig.from_mapping(data.get("interaction") or {}),
             instance=InstanceConfig.from_mapping(data.get("_instance") or {}),
@@ -1149,7 +1154,7 @@ class Dispatcher:
                 # the comment is the gate's own exit chain.
                 self._record_graph_command(control.command, routed, actor)
             else:
-                self._apply_control(control.command, routed)
+                self._apply_control(control.command, routed, loop=control.loop)
                 return
 
         # Matching is by **record** — the work item — not by endpoint (issue-172,
@@ -2233,12 +2238,17 @@ class Dispatcher:
             raise ValueError(f"not a channel: {ref!r}")
         return resolve_channel_ref(channel, self.cli_config)
 
-    def _apply_control(self, command: str, routed: RoutedEvent) -> None:
+    def _apply_control(self, command: str, routed: RoutedEvent, loop: str = "") -> None:
         """Execute a control command carried by an authorized user's comment.
 
         The command itself is one of four constants (never text from the body),
         and the work item it acts on is the router's own extraction — so nothing
         payload-derived reaches a session, a path or a harness invocation.
+
+        ``loop`` is the operator's own loop an arming command selected
+        (issue-343) — looked up from the operator's bindings by the matched
+        word, never read from the body — and is recorded with the command so the
+        spawn that follows walks it.
         """
         actor = event_actor(routed.event, routed.payload) or ""
         session = self._live_session_for(routed)
@@ -2265,6 +2275,7 @@ class Dispatcher:
                 actor=actor,
                 note=note,
                 instance=self.config.instance.name,
+                loop=loop,
             )
 
         # An **arming** command (start/resume/contribute/do) is recorded only when
@@ -2341,6 +2352,7 @@ class Dispatcher:
             source="comment",
             actor=actor or None,
             effect=effect,
+            loop=loop or None,
             delivery_id=routed.delivery_id or None,
         )
         # The comment WAS the instruction — executed here, never forwarded — so

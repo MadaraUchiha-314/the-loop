@@ -92,9 +92,10 @@
         "id": "execution",
         "title": "What happens when an event matches",
         "ask": "confirm",
-        "explain": "The rules the dispatcher follows once an event has arrived, shared verbatim by both ingresses — one dispatch stack, two front doors. Four answers carry the weight. `routing.autoExecuteLabels` is the list of labels EVERY ONE of which must be on a work item before anything spawns: it is what arms an item, and an operator sharing a repository adds one of their own. `routing.authorizedUsers` is who may drive the loop — start it, stop it, answer a gate — and it is EMPTY by default, so until you name someone here nobody can. `routing.workspace.root` is where spawned sessions get their checkout; the daemon runs independent of any repository, so without it there is nowhere to work. `harnesses`, `models` and `effort` are which agent runs, on which model, at what thinking effort.",
+        "explain": "The rules the dispatcher follows once an event has arrived, shared verbatim by both ingresses — one dispatch stack, two front doors. Four answers carry the weight. `routing.autoExecuteLabels` is the list of labels EVERY ONE of which must be on a work item before anything spawns: it is what arms an item, and an operator sharing a repository adds one of their own. `routing.authorizedUsers` is who may drive the loop — start it, stop it, answer a gate — and it is EMPTY by default, so until you name someone here nobody can. `routing.workspace.root` is where spawned sessions get their checkout; the daemon runs independent of any repository, so without it there is nowhere to work. `harnesses`, `models` and `effort` are which agent runs, on which model, at what thinking effort. `graphs` is optional and advanced: graphs of your own, which `routing.control.commands` binds commands to. Leave it empty unless you already have a graph YAML.",
         "keys": [
           "routing",
+          "graphs",
           "harnesses",
           "models",
           "effort"
@@ -624,6 +625,28 @@
                   ]
                 }
               }
+            },
+            "commands": {
+              "type": "object",
+              "description": "Which graph each arming command selects (issue-343). A command with no entry keeps selecting its shipped loop (`start` the work-item loop, `contribute` the contribution loop, `do` the ad-hoc loop, `review` the review loop), so this is needed only to change that. A key — lowercase letters, digits and hyphens — is either one of those four — re-pointed to another graph — or a NEW word, which arms exactly as `start` does and selects its graph. `stop`, `pause`, `resume`, `execute`, `cleanup`, the collaborator and channel commands, and the-loop's own CLI verbs are refused. The graph is a shipped outer-path loop or one declared under the top-level `graphs`; anything else fails the load.",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "graph"
+                ],
+                "properties": {
+                  "graph": {
+                    "type": "string",
+                    "description": "The graph this command selects: a shipped outer-path loop (`pdlc-work-item-loop`, `pdlc-contribution-loop`, `pdlc-adhoc-loop`, `pdlc-review-loop`) or a name declared under the top-level `graphs`."
+                  },
+                  "keyword": {
+                    "type": "string",
+                    "description": "For a NEW command only: the text a person types. Default `the-loop <word>`. Matched as whole tokens, case-insensitively, like every other keyword, and may not collide with another command's. A built-in command's keyword is set under `routing.control.keywords` instead."
+                  }
+                }
+              },
+              "default": {}
             }
           }
         },
@@ -716,6 +739,13 @@
                         "type": "object",
                         "description": "Typed parameters handed to the hook as `ctx.params`, exactly as a shipped chain entry's `with:` is.",
                         "default": {}
+                      },
+                      "loops": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "The loops this attachment applies to (issue-343) — shipped loop names or your own from the top-level `graphs`. Omitted, it applies to EVERY loop, and a loop without the named node fails to load: scope an attachment to the loops that have its node. A name that is neither shipped nor declared fails the load."
                       }
                     }
                   },
@@ -1056,6 +1086,35 @@
           }
         }
       }
+    },
+    "graphs": {
+      "type": "array",
+      "description": "Graphs of YOUR OWN (issue-343): each entry names a graph YAML you wrote. Declaring one selects nothing by itself — bind a command to it under `routing.control.commands`. Your graph is compiled by the same code as the shipped loops: every hook it names must be shipped or an `x-` hook a module in `routing.graph.hooks.modules` registers, every `phase` must be one of the-loop's phases (the `loop:<phase>` labels are one vocabulary), and a node's `command:` may name another plugin's slash command as `plugin:command`. Selection fails closed: a loop name in a work item's state selects your graph only while this list declares it. EXECUTABLE CONFIGURATION — a graph decides which gates a work item passes — so review it like code. `the-loop graph loops` lists every loop and checks each of yours compiles.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "path"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "description": "The loop's name — what `work-item-state.json` records. Not a shipped loop's name, and not `pdlc-*`: that prefix is reserved for the loops the-loop ships."
+          },
+          "path": {
+            "type": "string",
+            "description": "The graph YAML: absolute, `~/…`, or relative to the directory of THIS config file. Never resolved against a work item's checkout, so no session can edit the graph it walks."
+          },
+          "guest": {
+            "type": "boolean",
+            "default": false,
+            "description": "Walk this graph as a GUEST, as the shipped contribution and review loops do: the spec tree is kept out of the repository's git history and `publish-artifact` posts the plan to the thread. Set it on a graph that replaces `contribute` or `review`. It is the posture only: the session-prompt lines written for the shipped contribution and review loops (no outer loop; change no code) are not applied — put what your session must know in your graph's nodes."
+          }
+        }
+      },
+      "default": []
     },
     "standingSessions": {
       "type": "object",
