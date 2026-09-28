@@ -127,6 +127,108 @@ Fires when the ticket or pull request that *is* the work item closes or merges �
 the closure is announced. Facts: `work_item`, `state`, `kind`, `reason`, `source`, `actor`,
 `loop`. Decision: **`announce`** (`false` skips the `work-item.closed` publish).
 
+## The context objects
+
+Every point hands its hook one of these. A field marked `# decision` is read back and
+applied; every other field is a **fact** the-loop ignores if changed. All fields are
+`str`, `bool` or `list[str]`, so a context travels as JSON unchanged. `work_item` is the
+work item's ref (`github:OWNER/REPO#N`) on every context.
+
+```python
+@dataclass
+class WorkItemStart(Context):            # point: work_item_start
+    work_item: str                       # github:OWNER/REPO#N
+    loop: str                            # the loop it will walk (pdlc-work-item-loop, pdlc-adhoc-loop, yours); "" if unresolved
+    command: str                         # the arming word (start | contribute | do | review | an operator's); "" for a label-alone spawn
+    actor: str                           # the login that armed it (the event's actor when no command was recorded)
+    harness: str                         # claude | cursor
+    instance: str                        # routing.instance.name; "" when unnamed
+    repository: str                      # OWNER/REPO (host-qualified on another GitHub)
+    proceed: bool = True                 # decision — False refuses the start: disarmed, one marked comment, event settled
+    reason: str = ""                     # decision — posted on the ticket with the refusal
+```
+
+```python
+@dataclass
+class SessionSpawn(Context):             # point: session_spawn
+    work_item: str
+    endpoint: str                        # the conversation launched: the work item's ref, or the pull request's
+    harness: str                         # claude | cursor
+    cwd: str                             # the checkout the session runs in
+    model: str                           # the frozen model; "" when the work item chose none
+    effort: str                          # the frozen effort; "" when none
+    harness_args: list[str]              # the argv the launch adds
+    respawn: bool                        # True when this replaces a session found dead
+    loop: str                            # the loop recorded in the work item's state; "" if unknown
+    prompt: str = ""                     # decision — the text the harness boots on; what you leave is what it gets
+    proceed: bool = True                 # decision — False prevents the launch (a PR's session falls back to the work item's)
+    reason: str = ""                     # decision — posted on the ticket with the refusal
+```
+
+```python
+@dataclass
+class SessionSpawned(Context):           # point: session_spawned
+    work_item: str
+    endpoint: str                        # the work item's ref, or the pull request's
+    harness: str
+    harness_session_id: str              # the harness conversation id (claude --resume <id>)
+    tmux_target: str                     # loop-<slug>
+    cwd: str
+    model: str
+    effort: str
+    harness_args: list[str]
+    respawn: bool
+    announce: bool = True                # decision — False skips the "session exists, attach here" comment
+```
+
+```python
+@dataclass
+class WaitingForInput(Context):          # point: waiting_for_input
+    work_item: str
+    kind: str                            # question (an agent's `the-loop ask`) | gate (a human node entered)
+    node: str                            # the graph node, for a gate; "" for a question
+    actor: str                           # who is asking, for a question; "" for a gate
+    loop: str
+    question: str = ""                   # decision — the text posted for a question; empty and ignored for a gate
+    summary: str = ""                    # decision — the channels' one-line summary; same rule
+```
+
+```python
+@dataclass
+class PhaseChanged(Context):             # point: phase_changed
+    work_item: str
+    loop: str
+    from_node: str                       # "" when the graph is entered
+    to_node: str
+    from_phase: str                      # "" when the graph is entered
+    to_phase: str                        # the new loop:<phase> label
+    outcome: str                         # the outcome that routed the edge (pass, approved, …); "" at the start
+    actor: str                           # the entered node's actor: agent | human
+    terminal: bool                       # True when the terminal node was claimed — the loop is complete
+    notify: bool = True                  # decision — False skips the phase.* publish to the channels
+```
+
+```python
+@dataclass
+class WorkItemComplete(Context):         # point: work_item_complete
+    work_item: str
+    state: str                           # merged | closed
+    kind: str                            # issue | pull-request
+    reason: str                          # the dispatcher's reason (issue-closed, pr-merged, …)
+    source: str                          # webhook | poll
+    actor: str                           # who closed it; "" when the event names nobody
+    loop: str
+    announce: bool = True                # decision — False skips the work-item.closed publish
+```
+
+Three rules hold for every context:
+
+| Rule | What it means for a hook |
+|---|---|
+| **Decisions only** | Return the context (edited or rebuilt) or a JSON object of decision fields; a changed fact, an unknown key, is ignored. Over the wire, `result` is `null` or `{decision: value, …}`. |
+| **Types are kept** | A decision set to the wrong type (`proceed: "yes"`) is that hook's failure — nothing of its answer is applied. |
+| **Order is declaration order** | Each executor sees the decisions the ones before it made; the last one's stand. |
+
 ## Run it as a service
 
 The same class, hosted:

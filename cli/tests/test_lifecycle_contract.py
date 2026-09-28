@@ -224,3 +224,33 @@ def test_every_point_is_documented():
     headings = set(re.findall(r"^###\s+`([a-z_]+)`", text, re.M))
     missing = set(POINTS) - headings
     assert not missing, f"points without a `### `point`` heading: {sorted(missing)}"
+
+
+def test_every_context_object_is_documented_field_for_field():
+    """The reference section on the lifecycle page lists each context as a class block
+    (sherma's convention, asked for on PR #432): every field of every point, no field
+    the code does not have, and every decision marked as one."""
+    page = REPO_ROOT / "docs" / "cli" / "lifecycle-hooks.md"
+    if not page.is_file():
+        pytest.skip("documentation site not present (source distribution)")
+    text = page.read_text(encoding="utf-8")
+    for cls in POINTS.values():
+        start = text.find(f"class {cls.__name__}(Context):")
+        assert start != -1, f"{cls.__name__} has no class block on the lifecycle page"
+        block = text[start : text.find("```", start)]
+        documented = set(re.findall(r"^\s{4}([a-z_]+):", block, re.M))
+        actual = {f.name for f in dataclasses.fields(cls)}
+        assert documented == actual, (
+            f"{cls.__name__}: documented {sorted(documented - actual)} extra, "
+            f"missing {sorted(actual - documented)}"
+        )
+        for name in cls.decisions():
+            line = re.search(rf"^\s{{4}}{name}:.*$", block, re.M)
+            assert line and "# decision" in line.group(0), (
+                f"{cls.__name__}.{name} is a decision but its line does not say so"
+            )
+        for name in cls.facts():
+            line = re.search(rf"^\s{{4}}{name}:.*$", block, re.M)
+            assert line and "# decision" not in line.group(0), (
+                f"{cls.__name__}.{name} is a fact but its line says decision"
+            )
