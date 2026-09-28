@@ -1,3 +1,9 @@
+## v19.13.2 (2026-09-28)
+
+### Fix
+
+- **issue-426**: a work-item session is launched without Claude Code's question menu (#431)
+
 ## v19.13.1 (2026-09-28)
 
 ### Fix
