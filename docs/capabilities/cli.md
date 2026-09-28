@@ -210,7 +210,8 @@ self-learning/ML capabilities.
   **pure** — no network, no subprocess, no mutation — which is what lets the same code run
   on every harness turn *and* in CI, so the gate is the runtime rather than a
   reimplementation of it. `--recompute` ignores stored work-item state and derives the verdict
-  from the artifacts alone.
+  from the artifacts alone; the report still carries the recorded `pointer`, and the
+  `state:` line names it when it differs from the derived position (issue-429).
 - `the-loop graph show|hooks|status|advance|run|force` SHALL inspect and drive the process
   graph (see [process-graph](process-graph.md)). `hooks` reports the shipped hooks and the
   repository's own declarations **without importing any of them**. `run` is bounded by

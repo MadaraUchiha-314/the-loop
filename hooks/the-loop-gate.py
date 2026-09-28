@@ -56,11 +56,12 @@ def read_attempts(path: Path) -> int:
 def run_check(work_item: str) -> dict | None:
     """Ask the CLI where the work item stands. ``None`` means "cannot tell".
 
-    ``--recompute`` is not optional here. Work-item state is a **cache, not an
-    authority**, and this is a gate: trusting the cache would mean trusting a
-    file the agent being gated can write. It also fixes the inert case — a work
-    item whose pointer was never advanced sits at the start node, reports ``ok``,
-    and the gate never fires no matter how much is unmet downstream.
+    ``--recompute`` stays. Work-item state is a **cache, not an authority**, and
+    this is a gate: the state file is one the agent being gated can write. The
+    one thing the gate takes from it is *where* the item is — the report's
+    ``pointer`` — and :func:`blocking_node` walks the graph from its start up to
+    that position, so a pointer moved forward past a broken node still finds it
+    (issue-429). Every verdict is evaluated from the artifacts.
     """
     if not shutil.which("the-loop"):
         return None
@@ -82,22 +83,46 @@ def run_check(work_item: str) -> dict | None:
 
 
 def blocking_node(report: dict) -> dict | None:
-    """The current node, if it is something the agent should not stop on.
+    """The node the agent should not stop on, if there is one.
 
-    Two narrowings, both of which the first version got wrong:
+    The first node that is not satisfied, **at or before the node the work item
+    is at** — and only when that node is a ``block``. Each narrowing is a way an
+    earlier version got it wrong:
 
-    * Only the node the work item is actually *at* counts. A node further along
-      is not done yet, and treating that as a blocker would fire the gate on
-      every turn of every work item forever.
+    * Only nodes the work item has *reached* count. A node further along is not
+      done yet, and treating that as a blocker would fire the gate on every turn
+      of every work item forever.
+    * "Reached" is bounded by the report's ``pointer`` — the node work-item state
+      places the item at — not by ``currentNode``. Under ``--recompute``,
+      ``currentNode`` is the first node the *artifacts* leave unmet, which runs
+      ahead of the item whenever the nodes before it pass but the item has not
+      been advanced into it: a work item parked at ``phase-selection`` with its
+      selection recorded was ordered to write ``design.md`` (issue-429). Only the
+      position comes from state; every verdict is still the recomputed one.
+    * A report that cannot say where the item is — no ``currentNode``, a
+      ``pointer`` that is empty (no state file was found) or names no node in
+      the report — is **inconclusive**, and the turn ends. A gate that cannot
+      tell where the item is must not invent a requirement.
     * Only ``block`` counts, not ``wait``. ``wait`` means the node is parked on a
       human — a review that has not come back. Blocking the agent from ending its
       turn then would spin it against a person who is not there, which is the one
       thing an attempt cap exists to contain rather than to cause.
     """
+    nodes = report.get("nodes") or []
+    ids = [node.get("node") for node in nodes]
     current = report.get("currentNode")
-    for node in report.get("nodes") or []:
-        if node.get("node") == current:
+    if not current or current not in ids:
+        return None
+    # A CLI older than issue-429 sends no pointer; its `currentNode` is the only
+    # position there is.
+    reached = report.get("pointer") if "pointer" in report else current
+    if not reached or reached not in ids:
+        return None
+    for node in nodes:
+        if node.get("status") not in ("pass", "skip"):
             return node if node.get("status") == "block" else None
+        if node.get("node") == reached:
+            return None
     return None
 
 

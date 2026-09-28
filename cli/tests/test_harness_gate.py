@@ -96,6 +96,107 @@ class TestBlockingNode:
         assert found is not None and found["node"] == "design"
 
 
+def walked(pointer, statuses, current=None):
+    """A recomputed report with a ``pointer`` (issue-429).
+
+    ``statuses`` is the graph in order, ``(node, status)``. ``currentNode`` is
+    what ``--recompute`` puts there — the first node that is not satisfied —
+    unless given.
+    """
+    if current is None:
+        current = next(
+            (n for n, s in statuses if s not in ("pass", "skip")), statuses[-1][0]
+        )
+    return {
+        "workItem": "issue-1",
+        "currentNode": current,
+        "ok": False,
+        "pointer": pointer,
+        "nodes": [
+            {"node": n, "status": s, "messages": [f"{n} is {s}"]} for n, s in statuses
+        ],
+    }
+
+
+GRAPH = [
+    ("phase-selection", "pass"),
+    ("brainstorming", "skip"),
+    ("requirements-definition", "skip"),
+    ("design", "block"),
+    ("test-planning", "block"),
+]
+
+
+class TestThePointerBoundsTheGate:
+    """The gate never looks past the node the work item is at (issue-429).
+
+    Under ``--recompute`` ``currentNode`` is the first node the artifacts leave
+    unmet. That runs ahead of the item whenever the nodes before it pass but the
+    item was never advanced into it — and the gate then ordered the agent to
+    write an artifact for a phase that had not started, on every turn.
+    """
+
+    def test_a_node_the_item_never_entered_does_not_block(self, gate):
+        """The ticket's case: parked at phase-selection, told to write design.md."""
+        data = walked("phase-selection", GRAPH)
+        assert data["currentNode"] == "design", "the recomputed position runs ahead"
+        assert gate.blocking_node(data) is None
+
+    def test_a_node_the_item_is_at_still_blocks(self, gate):
+        found = gate.blocking_node(walked("design", GRAPH))
+        assert found is not None and found["node"] == "design"
+
+    def test_a_broken_node_behind_the_pointer_still_blocks(self, gate):
+        """The pointer bounds the gate; it never excuses what it walked past.
+
+        A pointer is agent-writable, so moving it FORWARD must hide nothing: the
+        first unmet node at or before it is still the finding.
+        """
+        found = gate.blocking_node(walked("test-planning", GRAPH))
+        assert found is not None and found["node"] == "design"
+
+    def test_waiting_on_a_human_before_the_pointer_does_not_block(self, gate):
+        graph = [("phase-selection", "pass"), ("approval", "wait"), ("design", "block")]
+        assert gate.blocking_node(walked("design", graph)) is None
+
+    def test_a_satisfied_walk_up_to_the_pointer_blocks_nothing(self, gate):
+        graph = [("phase-selection", "pass"), ("design", "pass"), ("later", "block")]
+        assert gate.blocking_node(walked("design", graph)) is None
+
+    @pytest.mark.parametrize("pointer", ["", None])
+    def test_no_recorded_position_is_inconclusive(self, gate, pointer):
+        """No state file was found: the gate cannot tell where the item is.
+
+        It lets the turn end rather than inventing a requirement.
+        """
+        assert gate.blocking_node(walked(pointer, GRAPH)) is None
+
+    def test_a_pointer_naming_no_node_in_the_report_is_inconclusive(self, gate):
+        """Not "walk every node": that would reach the downstream blocks."""
+        assert gate.blocking_node(walked("no-such-node", GRAPH)) is None
+
+    @pytest.mark.parametrize("current", ["", None, "no-such-node"])
+    def test_an_unresolved_current_node_is_inconclusive(self, gate, current):
+        """`currentNode: null` must not surface an arbitrary downstream block."""
+        data = walked("design", GRAPH, current=current)
+        data["currentNode"] = current
+        assert gate.blocking_node(data) is None
+        del data["pointer"]  # and not on a CLI that predates the pointer either
+        assert gate.blocking_node(data) is None
+
+    def test_an_unread_repository_is_inconclusive(self, gate):
+        """issue-238's position-unknown answer: no nodes, no pointer."""
+        data = {
+            "workItem": "issue-1",
+            "currentNode": "",
+            "ok": False,
+            "parked": None,
+            "nodes": [],
+            "repoResolved": False,
+        }
+        assert gate.blocking_node(data) is None
+
+
 class TestHarnessProtocols:
     def test_claude_blocks_the_stop_with_stderr(self, gate, capsys):
         code = gate.emit("claude", "please fix")
@@ -223,10 +324,10 @@ class TestMain:
 def test_the_gate_never_trusts_stored_graph_state(gate, monkeypatch):
     """`--recompute` is mandatory: this is a gate, and state is a cache.
 
-    Two failures ride on this. Trusting the cache means trusting a file the
-    agent being gated can write. And a work item whose pointer was never
-    advanced sits at the start node reporting `ok`, so the gate would be inert
-    no matter how much is unmet downstream.
+    The state file is one the agent being gated can write. The gate takes only
+    *where* the item is from it — the `pointer` that bounds which nodes it asks
+    about (issue-429) — and walks up to it from the start of the graph, so a
+    pointer moved forward still finds a broken node behind it.
     """
     seen = {}
 

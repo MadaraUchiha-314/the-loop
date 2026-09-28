@@ -437,7 +437,12 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         writes. Every resolving answer carries `statePath` — the
         `work-item-state.json` it was read from, or the path looked for — and
         `stateFound` (issue-396), so a report that fell back to the graph's
-        start node is distinguishable from a work item that sits there.
+        start node is distinguishable from a work item that sits there. It
+        also carries `pointer` (issue-429): the node that file records, `""`
+        when none was found. With `recompute`, `currentNode` is the first node
+        the artifacts leave unmet and can run ahead of `pointer`; a caller that
+        must not ask about a node the item never entered bounds itself by
+        `pointer`.
         """
         return core_graphs.check(
             body.repo,

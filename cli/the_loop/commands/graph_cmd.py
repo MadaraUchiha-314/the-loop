@@ -572,6 +572,13 @@ def _state_line(report: Dict[str, Any], recompute: bool = False) -> str:
     """
     path = str(report.get("statePath") or "")
     if report.get("stateFound"):
+        pointer = str(report.get("pointer") or "")
+        if recompute and pointer and pointer != report.get("currentNode"):
+            # The two answers to "where is it" disagree (issue-429): the
+            # artifacts place the item further along than it was ever
+            # advanced. Say both, or `check` and the stop gate read as if
+            # they contradict each other.
+            return f"state: {path} (pointer at {pointer}; position derived from the artifacts)"
         return f"state: {path}"
     parent = Path(path).parent
     if not parent.is_dir():

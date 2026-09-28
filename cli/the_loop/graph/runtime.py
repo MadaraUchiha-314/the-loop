@@ -188,6 +188,14 @@ class StatusReport:
     #: item that genuinely sits there; naming the file makes the miss visible.
     state_path: str = ""
     state_found: bool = False
+    #: The node work-item state places the item at — ``""`` when no state file
+    #: was found or the item was never entered (issue-429). Reported in BOTH
+    #: modes: under ``recompute`` ``current_node`` is the first node the
+    #: artifacts leave unmet, which runs ahead of the item whenever the nodes
+    #: before it pass but the item was never advanced into it, and a caller
+    #: that must not look past where the item *is* (the harness stop gate)
+    #: needs the other answer too. A position, never a verdict.
+    pointer: str = ""
 
     @property
     def ok(self) -> bool:
@@ -208,6 +216,7 @@ class StatusReport:
             "nodes": [n.as_dict() for n in self.nodes],
             "statePath": self.state_path,
             "stateFound": self.state_found,
+            "pointer": self.pointer,
         }
 
 
@@ -800,6 +809,7 @@ class Runtime:
             parked=None if recompute else state.parked,
             state_path=str(state_file or state_dir / STATE_FILENAME),
             state_found=state_file is not None,
+            pointer=state.current_node,
         )
 
     @staticmethod
