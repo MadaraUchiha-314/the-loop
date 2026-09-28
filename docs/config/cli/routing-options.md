@@ -1098,6 +1098,16 @@ custom template that omits the placeholder gets the directive **appended** rathe
 dropped, so the rule cannot be lost to a template edit. The mode also appears on
 `session.spawned` in [`the-loop events`](/cli/commands/events).
 
+In `work-item` mode the mode is also **enforced**, not just stated (issue-426). Every
+Claude Code session launched for a work item gets `--disallowedTools=AskUserQuestion`,
+placed after [`harnesses[].args`](/config/cli/harnesses-options#harnesses-args) and right
+before the prompt. That tool's multiple-choice menu renders only in the tmux pane and
+waits for a keypress. In a pane nobody watches, it froze the session with nothing on the
+ticket, while later messages were recorded as delivered and never read. Without the
+tool, the agent asks in text or through `the-loop ask` and its turn ends. **`cli` is the
+opt-out:** an operator who answers in the pane keeps the tool. A reload applies from the
+next launch, and standing sessions are not affected.
+
 ::: tip Why the default is `work-item`
 A tmux session is *attachable*, not *attended* — the-loop announces the `tmux attach`
 command precisely because nobody is there yet. So the default is the channel that reaches

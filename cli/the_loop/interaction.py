@@ -163,6 +163,16 @@ class InteractionConfig:
         """The prompt block that tells the agent which channel to use."""
         return directive_for(self.mode)
 
+    @property
+    def unattended(self) -> bool:
+        """Whether nobody answers the session's pane — every mode but ``cli``.
+
+        What the directive *says*, made true in the argv (issue-426): a harness
+        launched unattended is denied its interactive question tool, so a
+        question ends the turn instead of freezing a pane nobody watches.
+        """
+        return self.mode != "cli"
+
 
 def apply_directive(rendered: str, template_text: str, directive: str) -> str:
     """Guarantee the directive reached ``rendered`` (R2.4).

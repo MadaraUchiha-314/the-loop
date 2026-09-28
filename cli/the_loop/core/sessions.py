@@ -1514,9 +1514,14 @@ def _restart_adapter(session: Session, config: Optional[dict]):
     and nothing else, so a session must come back on the command line it went down
     on. Re-resolving the choice here would fold issue-410 into the separate
     frozen-launch-flags work item, silently.
+
+    The interaction mode is not a recorded argument: like the dispatcher's own
+    launches, the relaunch takes it from the config (issue-426), so a
+    ``work-item``-mode session never comes back able to open a question menu.
     """
     from ..harness import build_adapters
     from ..harness_plugins import PluginConfig
+    from ..interaction import InteractionConfig
     from ..trust import TrustConfig
 
     routing = _routing(config)
@@ -1525,7 +1530,11 @@ def _restart_adapter(session: Session, config: Optional[dict]):
         trust=TrustConfig.from_mapping(routing.get("harnessTrust") or {}),
         plugins=PluginConfig.from_mapping(routing.get("harnessPlugins") or {}),
     )
-    return adapters.get(session.harness)
+    adapter = adapters.get(session.harness)
+    if adapter is None:
+        return None
+    interaction = InteractionConfig.from_mapping(routing.get("interaction") or {})
+    return adapter.with_unattended(interaction.unattended)
 
 
 def _environment_row(

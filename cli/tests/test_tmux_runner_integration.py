@@ -992,3 +992,78 @@ def test_non_missing_delivery_failure_does_not_respawn(pipeline, monkeypatch):
     still = registry.find_by_work_item(REF)
     assert still is not None and still.harness_session_id == "uuid-1"
     assert "d-alive-1" not in still.recent_deliveries  # released for retry
+
+
+# -- nobody answers the pane: the question menu is denied (issue-426) ---------
+
+DENY = "--disallowedTools=AskUserQuestion"
+
+
+def harness_argv(calls):
+    """The harness argv of the one `new-session` issued (after tmux's `--`)."""
+    (spawn,) = [c for c in calls() if c[0] == "new-session"]
+    return spawn[spawn.index("--") + 1 :]
+
+
+def test_a_work_item_mode_spawn_cannot_open_the_question_menu(pipeline):
+    """
+    Feature: a work-item session cannot freeze on an interactive menu
+    Scenario: the default mode spawns Claude Code without AskUserQuestion
+      Given routing in the default interaction mode (work-item)
+      When a labeled issue spawns a session
+      Then the harness argv denies AskUserQuestion in one `=` token
+      And that token sits immediately before the positional prompt
+      And the registry records the operator's arguments without it
+    Requirement: docs/specs/issue-426/bugfix.md R1.1, R1.3, R2.4
+    """
+    deliver, registry, calls = pipeline
+    deliver("issues", issue_payload(), "d-deny-1")
+    assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
+
+    tail = harness_argv(calls)
+    assert tail[-2] == DENY
+    assert "issues" in tail[-1]  # the event is still the boot prompt
+    assert registry.find_by_work_item(REF).harness_args == []
+
+
+def test_a_cli_mode_spawn_keeps_the_question_menu(pipeline_factory):
+    """
+    Feature: a work-item session cannot freeze on an interactive menu
+    Scenario: an operator who sits in the pane keeps the tool
+      Given routing declares `interaction.mode: cli`
+      When a labeled issue spawns a session
+      Then the harness argv is exactly the pre-issue-426 argv
+    Requirement: docs/specs/issue-426/bugfix.md R2.1
+    """
+    deliver, registry, calls = pipeline_factory({"interaction": {"mode": "cli"}})
+    deliver("issues", issue_payload(), "d-cli-1")
+    assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
+
+    tail = harness_argv(calls)
+    assert not any("disallowedTools" in arg for arg in tail)
+    assert tail[1:3] == [
+        "--session-id",
+        registry.find_by_work_item(REF).harness_session_id,
+    ]
+
+
+def test_a_resumed_work_item_session_is_denied_the_menu_too(pipeline):
+    """
+    Feature: a work-item session cannot freeze on an interactive menu
+    Scenario: a dead session is respawned resuming its conversation
+      Given a registered session whose tmux session is gone
+      When an issue_comment for the work item arrives
+      Then the harness is relaunched with --resume and the deny token before the prompt
+    Requirement: docs/specs/issue-426/bugfix.md R1.2
+    """
+    deliver, registry, calls = pipeline
+    register_tmux_session(registry)
+    deliver("issue_comment", issue_payload(action="created"), "d-deny-resume-1")
+    assert wait_until(
+        lambda: "d-deny-resume-1" in registry.find_by_work_item(REF).recent_deliveries
+    )
+
+    tail = harness_argv(calls)
+    assert tail[1:3] == ["--resume", "uuid-1"]
+    assert tail[-2] == DENY
+    assert "issue_comment" in tail[-1]

@@ -168,6 +168,18 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     Both modes are valid: `cli` means a human attaches to the session's tmux pane and
     answers there.
   - WHEN a session is spawned THEN `session.spawned` SHALL carry the resolved mode.
+  - **The mode also reaches the argv** (issue-426). WHEN a work item's Claude Code
+    session is launched in `work-item` mode — a spawn, a resuming or fresh respawn, a
+    pull request's own session, or `the-loop sessions restart` — THEN the argv SHALL
+    carry `--disallowedTools=AskUserQuestion`, as one token placed after the operator's
+    `harnesses[].args` and immediately before the positional prompt. The tool's
+    multiple-choice menu renders only in the pane and blocks on a keypress, so an
+    unattended session that opened it froze with nothing on the ticket. The `=` form is
+    required: the flag is variadic, and the space-separated form swallows the prompt as
+    deny rules. WHEN the mode is `cli` THEN the argv SHALL be unchanged. The token is
+    derived from the mode at every launch and never recorded in the session's
+    `harness_args`, so a reloaded mode applies from the next launch and upgrading
+    relaunches nothing. Standing sessions and critic runs are not affected.
   - **Independently of the mode**, iteration on a generated artifact (`brainstorm.md`,
     `requirements.md`/`bugfix.md`, `design.md`, `tasks.md`) happens **only** in
     pull-request review on the PR carrying it — an invariant of the loop stated in the
@@ -926,6 +938,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-426 | **A `work-item`-mode session can no longer freeze on Claude Code's question menu** (2026-09-28): the prompt said "never block on an interactive prompt" and nothing enforced it, so `AskUserQuestion` rendered a menu in the tmux pane, emitted nothing, and every later message was pasted into a session waiting on a keypress. `Dispatcher._adapter_for` and `sessions restart` now launch the adapter `with_unattended(interaction.unattended)`, and the Claude adapter adds `--disallowedTools=AskUserQuestion` before the prompt; `cli` mode is the opt-out. The `=` spelling matters: the ticket's space-separated workaround turned the spawn prompt into deny rules | [spec](../specs/issue-426/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/426) |
 | issue-416 | **An attachment in a GitHub body reaches the session as a path** (2026-09-21): `_render_prompt` appends an Attachments section after the template for the asset URLs in the event's bodies, fetched with the daemon's token (GitHub's hosts only, redirects re-checked, 25 MiB, ten per event) into `<state.root>/local/attachments/<slug>/` and reused from disk; a failed fetch names the URL and the reason; the excerpt is untouched | [spec](../specs/issue-416/), [decision-135](../decisions/decision-135.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/416) |
 | issue-405 | The close branch **holds** a closure for a session at its endgame (2026-09-21): `_defer_close` reads the work item's `GraphContext` and parks the close when the pointer stands on an unexited terminal node; `sweep_closing` (the dispatcher's own sweeper thread, or an embedder's cycle) finishes it on the completion claim or at `routing.tmux.finishGraceSeconds`; `_record_reopen` cancels it; the poller's closure reconciliation skips a held ref; `session.autoclosed merged` reads the state file's merged pull requests | [spec](../specs/issue-405/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/405) |
 | issue-389 | A work-item collaborator can be known by **Slack member id** (2026-09-19): the roster entry gains an optional `slack` beside the optional `login` (at least one of the two, fail closed on neither or on a value that is not a member id), written by `add-collaborator slack:U…` on the ticket, by `@the-loop add-collaborator @member` in the work item's Slack room, or by the CLI's `--slack` (a member id or a handle). It buys the same thing issue-307's grant bought — input on that one work item — now on Slack too: their mentions there are context, replies and `help`, never a decision, a keyword or a room's listen switch, which stay `routing.authorizedUsers`'; a Slack-id-only collaborator is input on Slack only, since the ledger's ingress reads logins. `add-channel` gains `--listen` (`mentions`, the default, or `all`), an authorized user's switch recorded on the declaration | [spec](../specs/issue-389/), [decision-133](../decisions/decision-133.md), [channels](channels.md), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/389) |

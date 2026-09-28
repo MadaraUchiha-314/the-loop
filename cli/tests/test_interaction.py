@@ -101,6 +101,23 @@ def test_the_routing_config_carries_the_resolved_mode():
     assert declared.interaction.directive == directive_for("cli")
 
 
+# -- nobody answers the pane (issue-426) --------------------------------------
+
+
+@pytest.mark.parametrize(
+    "data,unattended",
+    [
+        ({}, True),  # the default is work-item
+        ({"mode": "work-item"}, True),
+        ({"mode": "cli"}, False),
+        ({"mode": "terminal"}, True),  # a typo fails closed, with the prompt (R2.2)
+    ],
+)
+def test_only_cli_mode_has_someone_at_the_pane(data, unattended):
+    """Spec: docs/specs/issue-426/bugfix.md R2.1, R2.2."""
+    assert InteractionConfig.from_mapping(data).unattended is unattended
+
+
 # -- the directive text (R2.2, R2.3, R3.4) ------------------------------------
 
 

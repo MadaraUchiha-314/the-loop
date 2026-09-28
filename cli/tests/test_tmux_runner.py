@@ -196,6 +196,111 @@ class TestInteractiveResumeArgv:
             CursorAgentAdapter().interactive_resume_argv("p", "id")
 
 
+DENY = "--disallowedTools=AskUserQuestion"
+
+
+class TestUnattendedArgv:
+    """Nobody answers the pane, so Claude's question menu is denied (issue-426).
+
+    Spec: docs/specs/issue-426/bugfix.md R1, R2.1, R3.
+    """
+
+    def test_an_unattended_spawn_denies_the_question_tool_before_the_prompt(self):
+        adapter = ClaudeCodeAdapter().with_unattended(True)
+        argv = adapter.interactive_argv("do the thing", "uuid-1")
+        assert argv == ["--session-id", "uuid-1", DENY, "do the thing"]
+
+    def test_an_unattended_resume_denies_it_too(self):
+        adapter = ClaudeCodeAdapter().with_unattended(True)
+        argv = adapter.interactive_resume_argv("do the thing", "uuid-1")
+        assert argv == ["--resume", "uuid-1", DENY, "do the thing"]
+
+    def test_the_deny_follows_the_operators_own_arguments(self):
+        adapter = ClaudeCodeAdapter(
+            extra_args=["--permission-mode", "acceptEdits"]
+        ).with_unattended(True)
+        argv = adapter.interactive_argv("p", "id")
+        assert argv == [
+            "--session-id",
+            "id",
+            "--permission-mode",
+            "acceptEdits",
+            DENY,
+            "p",
+        ]
+
+    def test_the_tickets_variadic_workaround_no_longer_eats_the_prompt(self):
+        # `--disallowedTools <tools...>` is variadic: written with a space it
+        # swallows every following word that does not start with `-`. The deny
+        # token is one `-`-prefixed word, so it closes the operator's flag and
+        # the prompt stays the positional argument (R1.4).
+        adapter = ClaudeCodeAdapter(
+            extra_args=["--disallowedTools", "AskUserQuestion"]
+        ).with_unattended(True)
+        argv = adapter.interactive_argv("p", "id")
+        assert argv[-2:] == [DENY, "p"]
+        assert argv.index("p") == len(argv) - 1
+
+    def test_the_token_is_one_word_so_it_takes_exactly_one_value(self):
+        adapter = ClaudeCodeAdapter().with_unattended(True)
+        (token,) = [a for a in adapter.interactive_argv("p", "id") if "disallowed" in a]
+        assert token.startswith("--disallowedTools=")
+
+    def test_an_attended_adapter_is_launched_exactly_as_before(self):
+        adapter = ClaudeCodeAdapter(extra_args=["--x"]).with_unattended(False)
+        assert adapter.interactive_argv("p", "id") == ["--session-id", "id", "--x", "p"]
+        assert adapter.interactive_resume_argv("p", "id") == [
+            "--resume",
+            "id",
+            "--x",
+            "p",
+        ]
+
+    def test_an_adapter_is_attended_until_told_otherwise(self):
+        # Standing sessions and critics build adapters and never set the flag
+        # (R3.1, R3.2), so the default must be the pre-issue-426 argv.
+        assert ClaudeCodeAdapter().unattended is False
+
+    def test_with_unattended_keeps_everything_else(self):
+        base = ClaudeCodeAdapter(binary="/opt/claude", extra_args=["--x"])
+        clone = base.with_unattended(True)
+        assert clone is not base
+        assert (clone.binary, clone.extra_args, clone.trust, clone.plugins) == (
+            base.binary,
+            base.extra_args,
+            base.trust,
+            base.plugins,
+        )
+        assert base.unattended is False  # the shared adapter is never mutated
+
+    def test_with_unattended_returns_self_when_nothing_changes(self):
+        adapter = ClaudeCodeAdapter()
+        assert adapter.with_unattended(False) is adapter
+        unattended = adapter.with_unattended(True)
+        assert unattended.with_unattended(True) is unattended
+
+    def test_a_work_items_model_keeps_the_deny(self):
+        # The dispatcher applies a model/effort choice with `with_args`; the
+        # flag must survive it whichever order the two are applied in.
+        adapter = ClaudeCodeAdapter().with_unattended(True).with_args(["--model", "m"])
+        assert adapter.interactive_argv("p", "id") == [
+            "--session-id",
+            "id",
+            "--model",
+            "m",
+            DENY,
+            "p",
+        ]
+
+    def test_a_critics_one_shot_run_is_untouched(self):
+        adapter = ClaudeCodeAdapter().with_unattended(True)
+        assert DENY not in adapter.oneshot_argv("review this")
+
+    def test_cursor_has_nothing_to_deny(self):
+        adapter = CursorAgentAdapter()
+        assert adapter.with_unattended(True) is adapter
+
+
 class TestTmuxSessionName:
     """tmux's own ``session_check_name`` rewrite, mirrored (issue-154)."""
 

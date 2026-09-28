@@ -202,3 +202,43 @@ def test_the_poller_honours_the_same_interaction_block(tmp_path, monkeypatch):
         _routed(), WorkItemRef.parse(REF), dispatcher._event_template
     )
     assert "interaction mode: `cli`" in prompt
+
+
+def test_a_reload_moves_the_question_menu_with_the_mode(tmp_path):
+    """
+    Scenario: The operator flips the mode and reloads; the next launch follows
+      Given a receiver in work-item mode with a Claude adapter
+      Then a launch argv denies AskUserQuestion
+      When the config is reloaded with `interaction.mode: cli`
+      Then the next launch argv keeps it
+      And the shared adapter itself was never changed
+    Requirement: docs/specs/issue-426/bugfix.md R2.1, R2.3
+    """
+    from the_loop.harness import ClaudeCodeAdapter
+
+    shared = ClaudeCodeAdapter()
+    dispatcher = Dispatcher(
+        registry=SessionRegistry(tmp_path / "sessions"),
+        adapters={"claude": shared},
+        config=RoutingConfig(control=ControlConfig(require_start_command=False)),
+    )
+    ref = WorkItemRef.parse(REF)
+
+    def launch_argv():
+        adapter = dispatcher._adapter_for(ref, "claude")
+        assert adapter is not None
+        return adapter.interactive_argv("p", "id")
+
+    before = launch_argv()
+    dispatcher.reload(
+        RoutingConfig(
+            interaction=InteractionConfig(mode="cli"),
+            control=ControlConfig(require_start_command=False),
+        )
+    )
+    after = launch_argv()
+    dispatcher.stop()
+
+    assert before == ["--session-id", "id", "--disallowedTools=AskUserQuestion", "p"]
+    assert after == ["--session-id", "id", "p"]
+    assert shared.unattended is False

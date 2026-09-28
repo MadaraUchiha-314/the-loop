@@ -32,6 +32,15 @@ class ClaudeCodeAdapter(HarnessAdapter):
     #: would be rejected. Filled in from ``claude --help`` when one exists, and
     #: validated by ``the-loop models check`` like any other claim about a CLI.
     _EFFORT_ARGS: dict = {}
+    #: Unattended, the session loses ``AskUserQuestion`` (issue-426): its
+    #: multiple-choice menu renders only in the pane and blocks on a keypress, so
+    #: in ``work-item`` mode it froze the session with nothing on the ticket.
+    #: ONE token, ``=``-joined, on purpose: ``--disallowedTools <tools...>`` is
+    #: variadic, and the space-separated spelling swallows every following word
+    #: not starting with ``-`` — here, the positional prompt, which Claude Code
+    #: then reads as deny rules. Being ``-``-prefixed, the token also closes any
+    #: variadic flag the operator's own arguments leave open.
+    _UNATTENDED_ARGS = ("--disallowedTools=AskUserQuestion",)
 
     def prepare_environment(self, cwd: str, root: Optional[str] = None) -> TrustResult:
         """Pre-trust ``cwd``, accept the bypass disclaimer, enable the plugin.
@@ -80,7 +89,7 @@ class ClaudeCodeAdapter(HarnessAdapter):
     def interactive_argv(self, prompt: str, session_id: str) -> List[str]:
         # Flags first, positional prompt last — parsers that stop option
         # processing at the first positional must still see extra_args.
-        return ["--session-id", session_id] + self.extra_args + [prompt]
+        return ["--session-id", session_id] + self._launch_args() + [prompt]
 
     def interactive_resume_argv(self, prompt: str, session_id: str) -> List[str]:
         # `--resume <id>` without `-p` keeps Claude Code in its TUI and
@@ -88,4 +97,4 @@ class ClaudeCodeAdapter(HarnessAdapter):
         # submitted into it (issue-89). Same flags-first ordering as above.
         # Resume lookup is scoped to the project directory, hence the tmux
         # session being spawned in the registry's recorded cwd.
-        return ["--resume", session_id] + self.extra_args + [prompt]
+        return ["--resume", session_id] + self._launch_args() + [prompt]

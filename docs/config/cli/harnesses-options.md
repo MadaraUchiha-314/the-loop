@@ -117,6 +117,19 @@ permission flag you did not. If your list already carries the same flag a choice
 append, `the-loop models list|check` warns — whether the appended one wins is the harness's own
 argument-parsing rule, not the-loop's to assert.
 
+In [`interaction.mode: work-item`](/config/cli/routing-options#interaction-mode) (the
+default), a Claude Code session also gets `--disallowedTools=AskUserQuestion`, after
+everything above and immediately before the prompt
+([issue-426](https://github.com/MadaraUchiha-314/the-loop/issues/426)). You don't need to
+add it yourself.
+
+**Write a variadic flag with `=`.** Claude Code's list-valued flags (`--disallowedTools`,
+`--allowedTools`, `--tools`, `--add-dir`, …) take every following word that does not start
+with `-`. The prompt is the argument after this list, so a list that *ends*
+`- --disallowedTools` / `- Bash` turns the prompt into more values, and the session starts
+without it. Write `--disallowedTools=Bash` as one entry instead. In `work-item` mode the
+appended token closes such a flag for you, but in `cli` mode nothing does.
+
 ## The models
 
 The `models` list declares the models a work item may be put on, in each provider's own

@@ -100,6 +100,15 @@ class HarnessAdapter:
     #: exposes an effort flag, and a mapping is filled in from a harness's own
     #: ``--help`` and then validated by the availability probe — never invented.
     _EFFORT_ARGS: Dict[str, Tuple[str, ...]] = {}
+    #: What this harness is launched with when nobody answers its pane
+    #: (issue-426): the arguments that take away its interactive prompts, so an
+    #: unattended session asks in text and ends its turn rather than blocking on
+    #: a keypress. Appended after ``extra_args``, immediately before the
+    #: positional prompt. Empty when the harness has nothing to take away.
+    _UNATTENDED_ARGS: Tuple[str, ...] = ()
+    #: Set per launch by :meth:`with_unattended`, never at construction: only
+    #: the seams that launch a work item's session know its interaction mode.
+    unattended: bool = False
 
     def __init__(
         self,
@@ -140,6 +149,26 @@ class HarnessAdapter:
         clone = copy.copy(self)
         clone.extra_args = [str(a) for a in extra_args]
         return clone
+
+    def with_unattended(self, unattended: bool) -> "HarnessAdapter":
+        """A copy launching with nobody at its pane, or ``self`` when unchanged.
+
+        :meth:`with_args`'s shape: the shared adapter is never mutated, and a
+        copy keeps the binary, the arguments, ``trust`` and ``plugins``. An
+        adapter with no :attr:`_UNATTENDED_ARGS` is returned as it is, since
+        there is nothing for the flag to change (issue-426).
+        """
+        if unattended == self.unattended or not self._UNATTENDED_ARGS:
+            return self
+        clone = copy.copy(self)
+        clone.unattended = unattended
+        return clone
+
+    def _launch_args(self) -> List[str]:
+        """``extra_args``, then :attr:`_UNATTENDED_ARGS` when launched unattended."""
+        if self.unattended:
+            return self.extra_args + list(self._UNATTENDED_ARGS)
+        return list(self.extra_args)
 
     def prepare_environment(self, cwd: str, root: Optional[str] = None) -> TrustResult:
         """Put whatever this harness needs on disk to start unattended in ``cwd``.

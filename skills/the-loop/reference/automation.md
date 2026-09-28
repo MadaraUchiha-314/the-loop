@@ -136,7 +136,10 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   attached to. The resolved mode is rendered into every event/spawn prompt through the
   `$interaction_directive` placeholder; a custom `promptTemplate` that omits the
   placeholder gets the directive **appended**, so a template edit cannot strip the rule,
-  and an unrecognised mode resolves to `work-item` with a warning (never to `cli`). The
+  and an unrecognised mode resolves to `work-item` with a warning (never to `cli`). In
+  `work-item` mode a Claude Code session is also launched with
+  `--disallowedTools=AskUserQuestion` (issue-426), so the rule is enforced rather than
+  only stated; `cli` keeps the tool. The
   behaviour it asks for — and the artifact-iteration invariant that rides along with it —
   is `reference/collaboration.md` § Where questions go. Decision:
   `docs/decisions/decision-052.md`.

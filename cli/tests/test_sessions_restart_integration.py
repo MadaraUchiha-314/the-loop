@@ -55,6 +55,7 @@ class ScriptedRunner:
         self.survives = survives
         self.respawned: List[str] = []
         self.handed: List[Dict[str, str]] = []
+        self.argvs: List[List[str]] = []
         self.env_provider = None
 
     def live_pane_pids(self, target: str) -> List[int]:
@@ -70,6 +71,7 @@ class ScriptedRunner:
         # every session straight back onto the retired credential.
         self.respawned.append(target)
         self.handed.append(dict(self.env_provider() if self.env_provider else {}))
+        self.argvs.append(adapter.interactive_resume_argv(prompt, session_id))
         return self.respawn_result
 
     def survived(self, target: str, delay: float) -> bool:
@@ -240,6 +242,50 @@ class TestSelection:
         )
         assert result["sessions"][0]["outcome"] == "skipped"
         assert "no session is registered" in result["sessions"][0]["detail"]
+
+
+class TestQuestionMenu:
+    """A relaunched work-item session is denied the question menu (issue-426)."""
+
+    def _relaunch(self, deployment, scripted, routing):
+        deployment["config"]["routing"] = routing
+        add_session(deployment, 15)
+        runner = scripted(
+            ScriptedRunner(
+                pids={"loop-github-octo-repo-15": [115]},
+                environs={115: {"SLACK_BOT_TOKEN": NEW_TOKEN}},
+            )
+        )
+        restart(deployment, runner)
+        (argv,) = runner.argvs
+        return argv
+
+    def test_the_default_mode_relaunches_without_the_menu(self, deployment, scripted):
+        """
+        Feature: a work-item session cannot freeze on an interactive menu
+          Scenario: `sessions restart` relaunches a session in the default mode
+            Given no interaction mode is declared (work-item)
+            When the operator restarts the session
+            Then the relaunch argv denies AskUserQuestion right before the prompt
+
+        Requirement: docs/specs/issue-426/bugfix.md R1.2
+        """
+        argv = self._relaunch(deployment, scripted, {})
+        assert argv[:2] == ["--resume", "uuid-15"]
+        assert argv[-2] == "--disallowedTools=AskUserQuestion"
+
+    def test_cli_mode_relaunches_with_it(self, deployment, scripted):
+        """
+        Feature: a work-item session cannot freeze on an interactive menu
+          Scenario: `sessions restart` in cli mode
+            Given `routing.interaction.mode: cli`
+            When the operator restarts the session
+            Then the relaunch argv is the pre-issue-426 argv
+
+        Requirement: docs/specs/issue-426/bugfix.md R2.1
+        """
+        argv = self._relaunch(deployment, scripted, {"interaction": {"mode": "cli"}})
+        assert not any("disallowedTools" in arg for arg in argv)
 
 
 class TestRefusals:
