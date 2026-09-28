@@ -79,7 +79,7 @@ from .authz import mark_self_authored
 from .collaborators import SLACK_TOKEN_PREFIX, parse_subjects
 from .sessions import WorkItemRef
 from .state import LegacyLayout
-from .workitem import CONTROL, ENDED, GRAPH, WorkItemStore
+from .workitem import CONTROL, ENDED, GRAPH, LIFECYCLE, WorkItemStore
 
 logger = logging.getLogger("the-loop.control")
 
@@ -681,6 +681,24 @@ class ControlStore:
         """
         section = self.store.section(work_item, ENDED)
         return section if isinstance(section, dict) else None
+
+    def mark_started(self, work_item: Union[str, WorkItemRef]) -> bool:
+        """Record that the ``work_item_start`` lifecycle hooks ran for this arming
+        (issue-344). True when this call made the mark — the caller runs the hooks
+        exactly then; False when the arming was already marked, so a spawn path
+        re-entered after a deferral asks nothing twice."""
+        if isinstance(self.store.section(work_item, LIFECYCLE), dict):
+            return False
+        self.store.write_section(work_item, LIFECYCLE, {"startedAt": _utcnow()})
+        return True
+
+    def clear_started(self, work_item: Union[str, WorkItemRef]) -> bool:
+        """Forget the ``work_item_start`` mark — the item ended, or a hook refused the
+        start — so the next arming asks the hooks again. False if there was none."""
+        if self.store.section(work_item, LIFECYCLE) is None:
+            return False
+        self.store.write_section(work_item, LIFECYCLE, None)
+        return True
 
     def clear_ended(self, work_item: Union[str, WorkItemRef]) -> bool:
         """Forget the closure stamp (the item was reopened). False if there was none.

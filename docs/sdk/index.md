@@ -128,3 +128,5 @@ The full contract — per binary, what it serves, and when it is required — is
   lifespan, MCP.
 - [Environment expectations](/sdk/environment) — what must be on `PATH`, and when.
 - [API reference](/sdk/reference) — every public symbol.
+- [Hooking the lifecycle](/cli/lifecycle-hooks) — `the_loop.sdk.hooks`: your code at the
+  moments a work item's delivery turns, in-process or as a service.

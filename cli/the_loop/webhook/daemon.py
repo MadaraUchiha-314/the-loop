@@ -26,7 +26,7 @@ import signal
 import threading
 from dataclasses import dataclass
 
-from .. import cli_config, eventlog
+from .. import cli_config, eventlog, lifecycle
 from ..runlock import RunLock
 from ..state import StateLayout, layout_from_config
 from . import serve
@@ -317,6 +317,12 @@ def run(options: ReceiverOptions | None = None) -> int:
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
     )
     eventlog.configure_from_file("gh-webhook")
+    # Lifecycle hooks (issue-344): loaded once at start, fatal when they cannot be.
+    try:
+        lifecycle.configure_from_file()
+    except Exception as exc:  # noqa: BLE001 — every load failure is fatal here
+        logger.error("lifecycle hooks: %s", exc)
+        return 1
 
     # At most one receiver per pidfile, and the pidfile is the flock — the
     # issue-159 discipline the poller has had all along (adopted here by

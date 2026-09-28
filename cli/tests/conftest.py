@@ -432,6 +432,24 @@ def _hermetic_reactor(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _hermetic_lifecycle_hooks():
+    """No lifecycle-hook runner leaks between tests (issue-344).
+
+    The process-wide runner configures itself lazily from the resolved CLI config the
+    first time a call site runs a point — under test that could be a developer's own
+    `~/.the-loop/cli-config.yaml`, hooks included. Every test starts on an EMPTY runner
+    instead (the same hermeticity `_hermetic_eventlog` gives the log); a test of the lazy
+    path, or one that declares hooks, resets or installs its own.
+    """
+    from the_loop import lifecycle
+    from the_loop.lifecycle.runner import Runner
+
+    lifecycle.configure(Runner(()))
+    yield
+    lifecycle.reset()
+
+
+@pytest.fixture(autouse=True)
 def _hermetic_eventlog(monkeypatch):
     """Keep the process-wide event log out of the real working tree.
 

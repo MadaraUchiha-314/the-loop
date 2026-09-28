@@ -1,6 +1,14 @@
 # Adding a hook
 
-A **hook** is the-loop's unit of work at a node boundary: one function, one signature, one
+::: tip Two kinds of hook
+This page is about **graph hooks** — a check at a node boundary of the process graph,
+answering "is this gate satisfied?". To run code of your own when a work item *starts*, a
+session *launches*, the loop *waits on a person*, the *phase changes* or the item *ends* —
+and to change what the-loop decides there — see [hooking the lifecycle](/cli/lifecycle-hooks)
+([issue-344](https://github.com/MadaraUchiha-314/the-loop/issues/344)).
+:::
+
+A **graph hook** is the-loop's unit of work at a node boundary: one function, one signature, one
 return type. Ten ship with the CLI ([process-graph](/capabilities/process-graph) § The hook
 contract). Since [issue-248](https://github.com/MadaraUchiha-314/the-loop/issues/248) an operator
 can bring their own — a licence-header check on `implementation`, an architecture

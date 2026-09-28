@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import sys
 
-from .. import eventlog
+from .. import eventlog, lifecycle
 from ..cli_config import default_cli_config_path, load_cli_config, load_env_file
 from ..runlock import RunLock
 from .config import cors_config, is_loopback, service_config, service_pidfile
@@ -64,6 +64,15 @@ def main() -> int:
         return 1
 
     eventlog.configure_from_file("service")
+    # Lifecycle hooks (issue-344): the service drives `ask` and the graph verbs
+    # for every client, so it loads them once at start and refuses to serve on a
+    # declaration that cannot load — as the daemons do.
+    try:
+        lifecycle.configure_from_file()
+    except Exception as exc:  # noqa: BLE001 — every load failure is fatal here
+        logger.error("lifecycle hooks: %s", exc)
+        lock.release()
+        return 1
 
     from .app import create_app
 

@@ -452,6 +452,7 @@ to it — the file is yours to read, the flags are yours to pass:
 | `customInstructions.docs` / `.onMissing` | `the-loop instructions --doc <path> … --on-missing <warn\|error\|ignore>`. A `--doc` may be a JSON object `{"path": …, "notes": …}` to carry the entry's notes. |
 | *(critics)* | Not in this file. Which critic harnesses exist is the operator's `critics[]` in `cli-config.yaml`, and how many rounds to run with them is the operator's `reviews` there too: `the-loop critic list` tells you what this machine has, `the-loop critic policy` the round counts and stop conditions (the defaults — 3 self, 3 critic, stop on no new findings, escalate on a repeat — when the operator set none, or when the CLI is not installed). |
 | *(graph hooks)* | Not in this file. The operator's `routing.graph.hooks` in `cli-config.yaml`; `the-loop graph hooks` prints what is declared. |
+| *(lifecycle hooks)* | Not in this file. The operator's top-level `hooks[]` in `cli-config.yaml` (issue-344) — code asked before a start, a launch, a wait, a phase change, an end; `the-loop hooks` prints what is declared. |
 | *(graphs of the operator's own)* | Not in this file. The operator's top-level `graphs` and `routing.control.commands` in `cli-config.yaml` (issue-343); `the-loop graph loops` lists every loop this machine can walk and the commands that arm each. |
 
 Two things this file **no longer** says, because they were never the repository's to

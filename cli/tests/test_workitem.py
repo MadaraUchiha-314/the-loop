@@ -13,6 +13,7 @@ What these pin, in order of how much they would hurt:
 """
 
 import json
+import threading
 
 from the_loop.control import ControlStore
 from the_loop.poller import PollState
@@ -346,3 +347,33 @@ def test_the_index_names_the_pull_requests_a_record_links(tmp_path):
     assert entry["ref"] == "github:octo/app#15"
     assert entry["pullRequests"] == ["github:octo/app#16", "github:octo/lib#7"]
     assert "pullRequests" in entry["sections"]
+
+
+def test_concurrent_section_writes_do_not_clobber_each_other(tmp_path):
+    """Two threads writing two sections of ONE record (issue-344): the dispatch
+    worker's lifecycle mark against the ingress thread's control command. Every
+    write is a read-modify-write of the whole file, so without the per-directory
+    lock the second writer carries the first one's stale copy of the other
+    section — a `stop` clobbered by an older `start`, as the issue-119 ordering
+    scenario showed 3 runs in 5. Each store is a separate instance, as the
+    dispatcher's and the poller's are."""
+    ref = "github:octo/repo#15"
+    first, second = WorkItemStore(tmp_path), WorkItemStore(tmp_path)
+    rounds = 200
+
+    def writer(store, section):
+        for i in range(rounds):
+            store.write_section(ref, section, {"n": i})
+
+    threads = [
+        threading.Thread(target=writer, args=(first, CONTROL)),
+        threading.Thread(target=writer, args=(second, "lifecycle")),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    record = first.read(ref)
+    assert record[CONTROL] == {"n": rounds - 1}
+    assert record["lifecycle"] == {"n": rounds - 1}

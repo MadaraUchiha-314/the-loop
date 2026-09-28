@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
-from .. import eventlog
+from .. import eventlog, lifecycle
+from ..lifecycle import PhaseChanged, WaitingForInput
 from .chain import ChainOutcome, run_chain
 from .contract import BLOCK, PASS, SKIP, WAIT, HookContext, WorkItem
 from .model import Graph, GraphConfigError, artifact_names, load_graph
@@ -457,6 +458,50 @@ class Runtime:
         except Exception:  # noqa: BLE001 — belt and braces over the publisher's own
             logger.exception("lifecycle %s for %s raised", event_type, item.ref)
 
+    def _phase_changed(
+        self,
+        item: WorkItem,
+        from_node: str,
+        to_node: str,
+        from_phase: str,
+        to_phase: str,
+        outcome: str,
+        terminal: bool = False,
+    ) -> PhaseChanged:
+        """Ask the lifecycle hooks about a phase transition (issue-344). Returns the
+        decided context; ``notify`` says whether the channels are told."""
+        try:
+            actor = self.graph.node(to_node).actor if to_node else ""
+        except GraphConfigError:
+            actor = ""
+        return lifecycle.run(
+            PhaseChanged(
+                work_item=item.ref,
+                loop=self.graph.name or "",
+                from_node=from_node,
+                to_node=to_node,
+                from_phase=from_phase,
+                to_phase=to_phase,
+                outcome=outcome,
+                actor=actor,
+                terminal=terminal,
+            )
+        )
+
+    def _gate_waiting(self, item: WorkItem, node: Any) -> None:
+        """A human node was entered — its entry chain has asked the person — so the
+        lifecycle hooks are told the loop is waiting (issue-344, ``kind = gate``)."""
+        if getattr(node, "actor", "") != "human":
+            return
+        lifecycle.run(
+            WaitingForInput(
+                work_item=item.ref,
+                kind="gate",
+                node=getattr(node, "id", ""),
+                loop=self.graph.name or "",
+            )
+        )
+
     def _note_degradations(
         self, report: NodeReport, item: WorkItem, node_id: str, outcome: ChainOutcome
     ) -> None:
@@ -887,7 +932,14 @@ class Runtime:
         )
         eventlog.emit("graph.started", work_item=item.ref, node=node_id)
         logger.info("%s entered the graph at %s", item.ref, node_id)
-        self._lifecycle(item, "phase.started", node_id, state.phase)
+        # The operator's hooks hear the first phase before the channels do
+        # (issue-344), and a human start node is a wait they are told about.
+        if (
+            not state.phase
+            or self._phase_changed(item, "", node_id, "", state.phase, "").notify
+        ):
+            self._lifecycle(item, "phase.started", node_id, state.phase)
+        self._gate_waiting(item, node)
         report = NodeReport(
             node=node_id,
             status=PASS,
@@ -1146,13 +1198,22 @@ class Runtime:
                 state.current_node = node_id
                 state.save(self.state_dir(item))
                 eventlog.emit("graph.completed", work_item=item.ref, node=node_id)
-                self._lifecycle(
+                if self._phase_changed(
                     item,
-                    "phase.completed",
+                    node_id,
                     node_id,
                     left_phase,
-                    outcome=outcome.outcome,
-                )
+                    left_phase,
+                    outcome.outcome,
+                    terminal=True,
+                ).notify:
+                    self._lifecycle(
+                        item,
+                        "phase.completed",
+                        node_id,
+                        left_phase,
+                        outcome=outcome.outcome,
+                    )
                 return report
             state.park(
                 node_id, f"no declared edge from {node_id} on {outcome.outcome!r}"
@@ -1216,19 +1277,25 @@ class Runtime:
         # checklist and the phase label are posted, and where issue-194's silence
         # was loudest: the work item parked on a question nobody was asked.
         self._note_degradations(report, item, target, entered)
+        self._gate_waiting(item, entry_node)
         # The lifecycle follows the label (issue-378): a phase completes and the
         # next starts only when the label changed — after the entry chain, so a
         # subscriber reading the ticket on the event finds the label already set.
         if entered_phase != left_phase:
-            self._lifecycle(
-                item,
-                "phase.completed",
-                node_id,
-                left_phase,
-                outcome=outcome.outcome,
-                to=target,
-            )
-            self._lifecycle(item, "phase.started", target, entered_phase)
+            # One `phase_changed` hook point per transition (issue-344), asked
+            # before the channels are told; `notify: false` silences both lines.
+            if self._phase_changed(
+                item, node_id, target, left_phase, entered_phase, outcome.outcome
+            ).notify:
+                self._lifecycle(
+                    item,
+                    "phase.completed",
+                    node_id,
+                    left_phase,
+                    outcome=outcome.outcome,
+                    to=target,
+                )
+                self._lifecycle(item, "phase.started", target, entered_phase)
         else:
             # A step WITHIN a phase (issue-393 R6.3): the graph moved to a new
             # node but the phase label did not change — the review chain walking

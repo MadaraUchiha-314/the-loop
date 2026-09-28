@@ -26,7 +26,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from .. import cli_config, envstate, eventlog
+from .. import cli_config, envstate, eventlog, lifecycle
 from ..authz import mark_self_authored
 from ..cleanup import SESSION, TMUX, WORKSPACE
 from ..comments import post_issue_comment, post_issue_comment_with_url
@@ -732,6 +732,22 @@ def ask_session(
             item, body, gh_binary=control.gh_binary
         ),
     )
+    # The operator's lifecycle hooks see the question before anyone else does
+    # (issue-344): `waiting_for_input` may reword it or its summary — a policy
+    # adds its tag, an enterprise its template — and what they leave is what is
+    # posted, on the ledger and on every channel alike.
+    from ..lifecycle import WaitingForInput
+
+    asked = lifecycle.run(
+        WaitingForInput(
+            work_item=work_item.ref,
+            kind="question",
+            actor=actor,
+            question=question,
+            summary=summary or "",
+        )
+    )
+    question, summary = asked.question or question, asked.summary
     channel_results = []
     ok, error, url = False, "", ""
     try:

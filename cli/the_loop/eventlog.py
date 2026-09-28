@@ -59,6 +59,34 @@ LEVELS = ("debug", "info", "warning", "error")
 # by `the-loop events --types` and mirrored in the observability reference.
 # Adding an instrumentation point means adding its type (and description) here.
 EVENT_TYPES: Dict[str, str] = {
+    # -- lifecycle hooks (issue-344; source: whichever process ran the chain) ---
+    "hooks.loaded": (
+        "The top-level `hooks` declaration was loaded into this process (hooks: the "
+        "names in order, count, config). Emitted only when at least one is declared."
+    ),
+    "hooks.load_failed": (
+        "The `hooks` declaration could not be loaded and this process runs WITHOUT "
+        "lifecycle hooks (error, strict=false). Warning-level: a one-shot command "
+        "(`the-loop ask`, `the-loop graph complete`) proceeds hookless; a daemon "
+        "started on the same config refuses to start instead."
+    ),
+    "hooks.decided": (
+        "A lifecycle hook changed a decision at a point (point, hook, changed: the "
+        "decision fields whose value changed, work_item). Also emitted when a "
+        "`required` hook's failure set proceed=false on its behalf."
+    ),
+    "hooks.failed": (
+        "A lifecycle hook raised, timed out, answered badly or could not be reached "
+        "(point, hook, error, required, work_item). Warning-level: the chain "
+        "continues with the context unchanged by that hook; a `required` hook at a "
+        "point carrying `proceed` refuses the operation instead (see hooks.decided)."
+    ),
+    "hooks.refused": (
+        "A `proceed: false` decision was applied: a start was refused "
+        "(work_item_start) or a session launch was prevented (session_spawn) — "
+        "point, reason, work_item, and the hook(s) that decided when known. The "
+        "event is settled, the ticket gets one marked comment, nothing is retried."
+    ),
     # -- webhook receiver (source: gh-webhook) --------------------------------
     "webhook.received": (
         "An inbound webhook POST was accepted for routing "

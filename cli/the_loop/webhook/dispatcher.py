@@ -22,7 +22,7 @@ from pathlib import Path
 from string import Template
 from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple
 
-from .. import envstate, eventlog
+from .. import envstate, eventlog, lifecycle
 from ..announce import AnnounceConfig, SessionAnnouncer
 from ..instance import (
     REFUSALS as SCOPE_REFUSALS,
@@ -50,6 +50,7 @@ from ..control import (
     STOP,
     TEARDOWN_COMMANDS,
     ControlConfig,
+    ControlRecord,
     ControlResult,
     ControlStore,
 )
@@ -89,7 +90,9 @@ from ..reactions import (
     ReactionConfig,
 )
 from ..runner import SESSION_LIVE, TmuxRunner
+from ..graph.model import LOOP_FOR_CONTROL_COMMAND, PDLC_WORK_ITEM_LOOP
 from ..graph.state import WorkItemState
+from ..lifecycle import SessionSpawn, SessionSpawned, WorkItemComplete, WorkItemStart
 from ..sessions import Session, SessionRegistry, WorkItemRef
 from ..state import LegacyLayout, StateLayout, layout_from_config, legacy_layout
 from ..workchannels import (
@@ -189,6 +192,13 @@ ACK_STATES = {
 # (or `spawn-policy`, whose text `_reject_control` already composes) posts no
 # extra comment, so the reaction remains the whole acknowledgement.
 CONTROL_REFUSAL_REMEDIES = {
+    # A lifecycle hook the operator declared said no (issue-344): the hook's own
+    # reason is the detail appended below, and the item is disarmed — an
+    # authorized `the-loop start` asks the hooks again.
+    "hook-refused": (
+        "A lifecycle hook declined this. The work item is disarmed; fix what the "
+        "hook names and start it again."
+    ),
     "missing-channel": (
         "I couldn't find that Slack channel. Check the spelling, invite me to "
         "the channel (once I'm a member its name resolves), or use its "
@@ -1964,11 +1974,26 @@ class Dispatcher:
             "source": source,
             "actor": actor,
         }
+        # The lifecycle hooks hear the end first (issue-344): `work_item_complete`
+        # carries the closure's own facts and decides whether it is announced.
+        complete = lifecycle.run(
+            WorkItemComplete(
+                work_item=work_item.ref,
+                state=stamp["state"],
+                kind=stamp["kind"],
+                reason=reason,
+                source=source,
+                actor=actor,
+                loop=self._loop_for_start(self.control_store.get(work_item)),
+            )
+        )
         # Announced BEFORE anything is cleared (issue-378 R3.1): the Slack
         # channel resolves the item's room from the declaration this method is
         # about to forget, and the closure is the room's last message.
-        self._announce_closed(work_item, stamp)
+        if complete.announce:
+            self._announce_closed(work_item, stamp)
         self.control_store.clear(work_item)
+        self.control_store.clear_started(work_item)
         self.collaborator_store.clear(work_item)
         # The room outlives the work item; the-loop's claim on it does not
         # (issue-375). Cleared with the roster, so the channel is free to back
@@ -1985,6 +2010,139 @@ class Dispatcher:
             actor=actor or None,
             delivery_id=routed.delivery_id or None,
         )
+
+    # -- lifecycle hooks (issue-344) ----------------------------------------------
+
+    def _loop_for_start(self, record: Optional[ControlRecord]) -> str:
+        """The loop a work item walks, as far as the control record says: the
+        operator's graph the arming command selected, the command's current
+        binding, or the shipped loop the command means. The state file is not
+        consulted — at `work_item_start` there is no checkout yet."""
+        command = record.command if record is not None else START
+        if record is not None and record.loop:
+            return record.loop
+        bound = self.config.control.bindings.get(command, "")
+        if bound:
+            return bound
+        return LOOP_FOR_CONTROL_COMMAND.get(command, PDLC_WORK_ITEM_LOOP)
+
+    def _loop_of(self, work_item: WorkItemRef, cwd: str) -> str:
+        """The loop recorded in the work item's state, when a checkout can say."""
+        try:
+            ctx = self.graphlink.context(work_item, cwd)
+        except Exception:  # noqa: BLE001 — a fact for the hooks, never a fault
+            return ""
+        return str(getattr(ctx, "loop", "") or "") if ctx is not None else ""
+
+    def _start_permitted(self, work_item: WorkItemRef, routed: RoutedEvent) -> bool:
+        """Run `work_item_start` once per arming; False when a hook refused it.
+
+        A refusal disarms the item (so the next event does not re-ask and re-refuse
+        forever), says why on the ticket in one marked comment, and settles the
+        event — a decision, not a failed delivery, so nothing is retried.
+        """
+        if not self.control_store.mark_started(work_item):
+            return True
+        record = self.control_store.get(work_item)
+        ctx = lifecycle.run(
+            WorkItemStart(
+                work_item=work_item.ref,
+                loop=self._loop_for_start(record),
+                command=record.command if record is not None else "",
+                actor=(record.actor if record is not None and record.actor else "")
+                or (event_actor(routed.event, routed.payload) or ""),
+                harness=self.config.default_harness,
+                instance=self.config.instance.name,
+                repository=work_item.path,
+            )
+        )
+        if ctx.proceed:
+            return True
+        self.control_store.clear(work_item)
+        self.control_store.clear_started(work_item)
+        self._record_refusal(WorkItemStart.POINT, work_item, ctx.reason)
+        self._explain_refusal(routed, "hook-refused", ctx.reason)
+        self._settle(routed, "hook-refused")
+        return False
+
+    def _before_launch(
+        self,
+        work_item: WorkItemRef,
+        endpoint: WorkItemRef,
+        adapter: HarnessAdapter,
+        prompt: str,
+        cwd: str,
+        model: str = "",
+        effort: str = "",
+        respawn: bool = False,
+        harness: str = "",
+    ) -> SessionSpawn:
+        """Run `session_spawn` with the launch as it is about to happen."""
+        return lifecycle.run(
+            SessionSpawn(
+                work_item=work_item.ref,
+                endpoint=endpoint.ref,
+                harness=harness or self.config.default_harness,
+                cwd=cwd,
+                model=model,
+                effort=effort,
+                harness_args=list(adapter.extra_args),
+                respawn=respawn,
+                loop=self._loop_of(work_item, cwd),
+                prompt=prompt,
+            )
+        )
+
+    def _after_launch(
+        self, work_item: WorkItemRef, session: Session, respawn: bool = False
+    ) -> SessionSpawned:
+        """Run `session_spawned` for a registered session."""
+        return lifecycle.run(
+            SessionSpawned(
+                work_item=work_item.ref,
+                endpoint=session.work_item.ref,
+                harness=session.harness,
+                harness_session_id=session.harness_session_id,
+                tmux_target=session.tmux_target,
+                cwd=session.cwd,
+                model=session.model,
+                effort=session.effort,
+                harness_args=list(session.harness_args),
+                respawn=respawn,
+            )
+        )
+
+    def _record_refusal(self, point: str, work_item: WorkItemRef, reason: str) -> None:
+        logger.warning(
+            "a lifecycle hook refused %s for %s: %s", point, work_item.ref, reason
+        )
+        eventlog.emit(
+            "hooks.refused",
+            level="warning",
+            point=point,
+            work_item=work_item.ref,
+            reason=reason or None,
+        )
+
+    def _refuse_launch(
+        self, work_item: WorkItemRef, routed: RoutedEvent, launch: SessionSpawn
+    ) -> bool:
+        """A `session_spawn` hook said no: nothing is launched, the ticket is told
+        once, the event is settled as decided. True — handled, never retried."""
+        self._record_refusal(SessionSpawn.POINT, work_item, launch.reason)
+        eventlog.emit(
+            "session.spawn_failed",
+            level="warning",
+            work_item=work_item.ref,
+            harness=launch.harness,
+            error=f"refused by a lifecycle hook: {launch.reason or 'no reason given'}",
+            will_retry=False,
+            gh_event=routed.event,
+            delivery_id=routed.delivery_id or None,
+        )
+        self._explain_refusal(routed, "hook-refused", launch.reason)
+        self._settle(routed, "hook-refused")
+        return True
 
     def _announce_closed(self, work_item: WorkItemRef, stamp: Dict[str, str]) -> None:
         """Publish ``work-item.closed`` on the bus (issue-378 R3) — fixed words
@@ -3327,6 +3485,13 @@ class Dispatcher:
                 will_retry=False,
             )
             return False
+        # The operator's lifecycle hooks are asked FIRST (issue-344): a start is
+        # accepted, and before a conversation opens or a checkout is made, a
+        # `work_item_start` hook may refuse it. Once per arming — the durable
+        # mark on the portable record is what keeps a spawn deferred at
+        # `phase-selection` from asking twice when it comes back through here.
+        if not self._start_permitted(work_item, routed):
+            return True
         # The start is accepted — every refusal lies behind us, the adapter
         # exists — so the work item's conversations open NOW (issue-317), before
         # the checkout that can take a minute and before the harness boots. A
@@ -3439,6 +3604,17 @@ class Dispatcher:
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
             return False
+        # From the checkout, like the adapter was (issue-377): the record must
+        # say what the argv says — and the lifecycle hooks are told the same.
+        model, effort = self._resolved_choice(
+            work_item, self.config.default_harness, cwd
+        )
+        launch = self._before_launch(
+            work_item, work_item, adapter, prompt, cwd, model, effort
+        )
+        if not launch.proceed:
+            return self._refuse_launch(work_item, routed, launch)
+        prompt = launch.prompt
         session_id = str(uuid.uuid4())
         result = self.tmux.spawn(
             work_item,
@@ -3492,11 +3668,6 @@ class Dispatcher:
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
             return False
-        # From the checkout, like the adapter was (issue-377): the record must
-        # say what the argv says.
-        model, effort = self._resolved_choice(
-            work_item, self.config.default_harness, cwd
-        )
         session = Session(
             work_item=work_item,
             harness=self.config.default_harness,
@@ -3550,8 +3721,10 @@ class Dispatcher:
             work_item, cwd, session_id=session_id, runner="tmux", routed=routed
         )
         # Tell the humans on the ticket that the session exists and how to
-        # attach (issue-86). Best-effort: never affects the dispatch outcome.
-        self.announcer.announce(session)
+        # attach (issue-86). Best-effort: never affects the dispatch outcome —
+        # and a `session_spawned` hook may say not to (issue-344).
+        if self._after_launch(work_item, session).announce:
+            self.announcer.announce(session)
         return True
 
     def _endpoint_cwd(
@@ -3689,6 +3862,21 @@ class Dispatcher:
         if cwd is None:
             return self._deliver_into(record, record, routed, prompt)
         self._prepare_environment(adapter, endpoint.work_item, cwd)
+        launch = self._before_launch(
+            record.work_item,
+            endpoint.work_item,
+            adapter,
+            prompt,
+            cwd,
+            harness=record.harness,
+        )
+        if not launch.proceed:
+            # No session for the pull request, by the hook's decision — the event
+            # goes where it goes when the PR has no checkout: the work item's own
+            # session (issue-253's fallback, issue-344 R2.6).
+            self._record_refusal(SessionSpawn.POINT, record.work_item, launch.reason)
+            return self._deliver_into(record, record, routed, prompt)
+        prompt = launch.prompt
         session_id = str(uuid.uuid4())
         result = self.tmux.spawn(
             endpoint.work_item,
@@ -3755,7 +3943,8 @@ class Dispatcher:
             session_id=session_id,
             runner="tmux",
         )
-        self.announcer.announce(endpoint)
+        if self._after_launch(record.work_item, endpoint).announce:
+            self.announcer.announce(endpoint)
         return True
 
     def _deliver_into(
@@ -3867,6 +4056,21 @@ class Dispatcher:
         # gets, so the one path that recovers a dead session is not the one
         # that stalls on a dialog (issue-90).
         self._prepare_environment(adapter, work_item, session.cwd)
+        model, effort = self._resolved_choice(work_item, session.harness, session.cwd)
+        launch = self._before_launch(
+            owner or work_item,
+            work_item,
+            adapter,
+            prompt,
+            session.cwd,
+            model,
+            effort,
+            respawn=True,
+            harness=session.harness,
+        )
+        if not launch.proceed:
+            return self._refuse_launch(work_item, routed, launch)
+        prompt = launch.prompt
         resumed_id = self._try_resume(session, adapter, prompt)
         session_id = resumed_id or str(uuid.uuid4())
         if resumed_id is None:
@@ -3908,7 +4112,6 @@ class Dispatcher:
                 if routed.delivery_id:
                     self.deduper.discard(routed.delivery_id)
                 return False
-        model, effort = self._resolved_choice(work_item, session.harness, session.cwd)
         respawned = Session(
             work_item=work_item,
             harness=session.harness,
@@ -3973,7 +4176,10 @@ class Dispatcher:
         )
         # No announcement here (owner decision, PR #87): a respawn reuses the
         # same loop-<slug> name, so the attach command already on the ticket is
-        # still correct and a second comment would only add noise.
+        # still correct and a second comment would only add noise. The hooks are
+        # still told a session exists (issue-344); their `announce` has nothing
+        # to gate here.
+        self._after_launch(owner_ref, respawned, respawn=True)
         return True
 
     def _deliver_into_occupant(

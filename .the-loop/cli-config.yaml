@@ -362,6 +362,33 @@ routing:
 #     path: graphs/acme-triage-loop.yaml    # relative to THIS file's directory
 #     guest: false                          # true keeps a contribution's posture
 
+# LIFECYCLE HOOKS (issue-344, decision-137): code of your own that the-loop asks at
+# the moments a work item's delivery turns — a start is accepted, a session is
+# about to launch, the loop waits on a person, the phase changes, the ticket
+# closes — BEFORE it acts. Not graph hooks (`routing.graph.hooks`, a check at a
+# node boundary) and not the event log (an event is a record; a hook point is a
+# decision). Each entry is one executor, run in this order: a `LifecycleHooks`
+# subclass imported into the-loop's process (`module`/`path`, relative to THIS
+# file) or a JSON-RPC server you host (`url`). It may change the point's DECISIONS
+# — refuse a start or a launch (`proceed`), reword the boot `prompt` or an agent's
+# `question`, silence an `announce`/`notify` — and nothing else. A failing hook is
+# recorded and skipped unless `required`. `the-loop hooks` prints the declaration
+# without importing or contacting any of it; `the-loop hooks points` lists the six
+# points. EXECUTABLE CONFIGURATION — review an entry like code. A daemon refuses to
+# start on a declaration it cannot load. Docs: /cli/lifecycle-hooks.
+hooks: []
+# - name: house-policy
+#   path: hooks/policy.py                  # a LifecycleHooks subclass, beside this file
+#   on: [work_item_start, session_spawn]   # optional: default = the methods it overrides
+#   required: true                         # its failure at a `proceed` point refuses
+# - name: telemetry
+#   module: acme_loop_hooks.telemetry      # or an installed dotted module
+#   with: {team: platform}                 # kwargs to the class
+# - name: compliance
+#   url: https://hooks.acme.example/the-loop
+#   tokenEnv: ACME_HOOKS_TOKEN             # the variable's NAME; Bearer <value> at call time
+#   timeoutSeconds: 10
+
 # CRITIC HARNESSES (issue-108, decision-043; declared HERE since issue-352,
 # decision-123). Each entry is RUNNABLE: `the-loop critic run <name> --prompt-file
 # <path>` spawns it — never through a shell — and prints its output as one JSON

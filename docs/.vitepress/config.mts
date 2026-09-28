@@ -120,6 +120,7 @@ const cliSidebar = [
       { text: "events", link: "/cli/commands/events" },
       { text: "check", link: "/cli/commands/check" },
       { text: "graph", link: "/cli/commands/graph" },
+      { text: "hooks", link: "/cli/commands/hooks" },
       { text: "critic", link: "/cli/commands/critic" },
       { text: "diagnose", link: "/cli/commands/diagnose" },
       { text: "scenarios", link: "/cli/commands/scenarios" },
@@ -135,6 +136,7 @@ const cliSidebar = [
     items: [
       { text: "Adding a command", link: "/cli/extending" },
       { text: "Adding a hook", link: "/cli/hooks" },
+      { text: "Hooking the lifecycle", link: "/cli/lifecycle-hooks" },
       { text: "Bringing your own graph", link: "/cli/graphs" },
     ],
   },
@@ -177,6 +179,7 @@ const configSidebar = [
       { text: "Webhook options", link: "/config/cli/webhook-options" },
       { text: "Routing options", link: "/config/cli/routing-options" },
       { text: "Graphs", link: "/config/cli/graphs-options" },
+      { text: "Lifecycle hooks", link: "/config/cli/hooks-options" },
       { text: "Standing-session options", link: "/config/cli/standing-sessions-options" },
       { text: "Critic options", link: "/config/cli/critics-options" },
       { text: "Polling options", link: "/config/cli/polling-options" },
