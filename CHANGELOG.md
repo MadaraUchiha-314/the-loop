@@ -1,3 +1,9 @@
+## v19.13.0 (2026-09-28)
+
+### Feat
+
+- **issue-343**: an operator can bring their own graphs and bind commands to them (#425)
+
 ## v19.12.4 (2026-09-22)
 
 ### Fix
