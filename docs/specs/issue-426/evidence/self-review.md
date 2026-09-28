@@ -52,5 +52,25 @@ workItem: "github:MadaraUchiha-314/the-loop#426"
 
 ## Critic review
 
-Pending: a critic on a different model is reviewing the branch; its findings and my
-replies are recorded here in the next commit.
+One critic round on a different model, reading the branch diff and the spec chain, and
+running the five targeted modules (245 passed). **No blocking or should-fix findings.**
+
+1. **Launch paths.** The critic traced every `self.tmux.spawn` in `dispatcher.py`: the
+   initial spawn, a PR's own session, the resuming respawn and its fresh fallback. Each
+   takes its adapter from `_adapter_for`, and `sessions restart` takes it from
+   `_restart_adapter`. Standing sessions, `models check` and critic one-shots never call
+   `with_unattended`, and cursor short-circuits. It found no bypass.
+2. **Drift.** `_choice_drifted` compares `extra_args`, never `_launch_args()`, so no
+   relaunch on upgrade.
+3. **Copy semantics.** Both `with_*` methods rebind rather than mutate, and
+   `_launch_args` builds a new list. No aliasing.
+4. **Tests.** Confirmed non-vacuous against `HEAD`. One nit: no dispatcher-level test
+   runs a work item's model/effort choice *together with* the unattended flag. **Left
+   as is:** order-independence is pinned at the adapter
+   (`test_a_work_items_model_keeps_the_deny`), and the choice path in `_adapter_for`
+   builds on the already-unattended adapter through `with_args`, which keeps the flag.
+5. **Docs.** Every statement in the six edited docs matches the implementation.
+
+The round produced no new findings, so the review loop stops here
+([`reference/reviewing.md`](../../../../skills/the-loop/reference/reviewing.md): stop on
+zero new findings).

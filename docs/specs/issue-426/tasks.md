@@ -39,5 +39,5 @@ riskTier: 3
 - [ ] **C1: real TUI evidence.** *Deps:* A2 · *Test:* T9. Blocked in this
       environment (the TUI stops at its login screen); T9b stands in, and
       `evidence/verification.md` § T9 has the commands to close it.
-- [ ] **D1: evidence.** `verification.md`, `self-review.md`, `security-review.md`,
+- [x] **D1: evidence.** `verification.md`, `self-review.md`, `security-review.md`,
       `documentation.md`, `reviewer-briefing.md`. *Deps:* A0–C1.
