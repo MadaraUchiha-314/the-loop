@@ -129,6 +129,21 @@ the closure is announced. Facts: `work_item`, `state`, `kind`, `reason`, `source
 
 ## The context objects
 
+The base class has one method per point. Each takes that point's context and returns
+`None` (pass through) or the context with its decisions changed:
+
+```python
+class LifecycleHooks:
+    def work_item_start(self, ctx: WorkItemStart) -> Optional[WorkItemStart]: ...
+    def session_spawn(self, ctx: SessionSpawn) -> Optional[SessionSpawn]: ...
+    def session_spawned(self, ctx: SessionSpawned) -> Optional[SessionSpawned]: ...
+    def waiting_for_input(self, ctx: WaitingForInput) -> Optional[WaitingForInput]: ...
+    def phase_changed(self, ctx: PhaseChanged) -> Optional[PhaseChanged]: ...
+    def work_item_complete(self, ctx: WorkItemComplete) -> Optional[WorkItemComplete]: ...
+
+    def handles(self, point: str) -> bool: ...   # does this class override `point`?
+```
+
 Every point hands its hook one of these. A field marked `# decision` is read back and
 applied; every other field is a **fact** the-loop ignores if changed. All fields are
 `str`, `bool` or `list[str]`, so a context travels as JSON unchanged. `work_item` is the

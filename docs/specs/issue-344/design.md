@@ -80,6 +80,137 @@ Two parity tests hold the catalog together: every `POINTS` entry has a method of
 name on `LifecycleHooks` whose annotation is that context type, and every point is
 documented in `docs/cli/lifecycle-hooks.md` under a heading of its own name.
 
+### The interface, field for field
+
+The interface a hook author programs against, in the convention of
+[sherma's context objects](https://madarauchiha-314.github.io/sherma/hooks.html#context-objects)
+(asked for on PR #432). `docs/cli/lifecycle-hooks.md` carries the same blocks; the parity
+test `test_every_context_object_is_documented_field_for_field` holds both pages to the
+dataclasses — every field, no field the code lacks, every decision marked.
+
+**The base class** — one method per point, `None` to pass through, the context to decide:
+
+```python
+class LifecycleHooks:
+    def work_item_start(self, ctx: WorkItemStart) -> Optional[WorkItemStart]: ...
+    def session_spawn(self, ctx: SessionSpawn) -> Optional[SessionSpawn]: ...
+    def session_spawned(self, ctx: SessionSpawned) -> Optional[SessionSpawned]: ...
+    def waiting_for_input(self, ctx: WaitingForInput) -> Optional[WaitingForInput]: ...
+    def phase_changed(self, ctx: PhaseChanged) -> Optional[PhaseChanged]: ...
+    def work_item_complete(self, ctx: WorkItemComplete) -> Optional[WorkItemComplete]: ...
+
+    def handles(self, point: str) -> bool: ...   # does this class override `point`?
+```
+
+**The six contexts.** A field marked `# decision` is read back and applied; every other
+field is a fact the-loop ignores if changed. Field types are `str`, `bool` or `list[str]`,
+so a context is its own JSON-RPC `params`; `work_item` is the work item's ref
+(`github:OWNER/REPO#N`) on every one.
+
+```python
+@dataclass
+class WorkItemStart(Context):            # point: work_item_start
+    work_item: str                       # github:OWNER/REPO#N
+    loop: str                            # the loop it will walk (pdlc-work-item-loop, pdlc-adhoc-loop, yours); "" if unresolved
+    command: str                         # the arming word (start | contribute | do | review | an operator's); "" for a label-alone spawn
+    actor: str                           # the login that armed it (the event's actor when no command was recorded)
+    harness: str                         # claude | cursor
+    instance: str                        # routing.instance.name; "" when unnamed
+    repository: str                      # OWNER/REPO (host-qualified on another GitHub)
+    proceed: bool = True                 # decision — False refuses the start: disarmed, one marked comment, event settled
+    reason: str = ""                     # decision — posted on the ticket with the refusal
+```
+
+```python
+@dataclass
+class SessionSpawn(Context):             # point: session_spawn
+    work_item: str
+    endpoint: str                        # the conversation launched: the work item's ref, or the pull request's
+    harness: str                         # claude | cursor
+    cwd: str                             # the checkout the session runs in
+    model: str                           # the frozen model; "" when the work item chose none
+    effort: str                          # the frozen effort; "" when none
+    harness_args: list[str]              # the argv the launch adds
+    respawn: bool                        # True when this replaces a session found dead
+    loop: str                            # the loop recorded in the work item's state; "" if unknown
+    prompt: str = ""                     # decision — the text the harness boots on; what you leave is what it gets
+    proceed: bool = True                 # decision — False prevents the launch (a PR's session falls back to the work item's)
+    reason: str = ""                     # decision — posted on the ticket with the refusal
+```
+
+```python
+@dataclass
+class SessionSpawned(Context):           # point: session_spawned
+    work_item: str
+    endpoint: str                        # the work item's ref, or the pull request's
+    harness: str
+    harness_session_id: str              # the harness conversation id (claude --resume <id>)
+    tmux_target: str                     # loop-<slug>
+    cwd: str
+    model: str
+    effort: str
+    harness_args: list[str]
+    respawn: bool
+    announce: bool = True                # decision — False skips the "session exists, attach here" comment
+```
+
+```python
+@dataclass
+class WaitingForInput(Context):          # point: waiting_for_input
+    work_item: str
+    kind: str                            # question (an agent's `the-loop ask`) | gate (a human node entered)
+    node: str                            # the graph node, for a gate; "" for a question
+    actor: str                           # who is asking, for a question; "" for a gate
+    loop: str
+    question: str = ""                   # decision — the text posted for a question; empty and ignored for a gate
+    summary: str = ""                    # decision — the channels' one-line summary; same rule
+```
+
+```python
+@dataclass
+class PhaseChanged(Context):             # point: phase_changed
+    work_item: str
+    loop: str
+    from_node: str                       # "" when the graph is entered
+    to_node: str
+    from_phase: str                      # "" when the graph is entered
+    to_phase: str                        # the new loop:<phase> label
+    outcome: str                         # the outcome that routed the edge (pass, approved, …); "" at the start
+    actor: str                           # the entered node's actor: agent | human
+    terminal: bool                       # True when the terminal node was claimed — the loop is complete
+    notify: bool = True                  # decision — False skips the phase.* publish to the channels
+```
+
+```python
+@dataclass
+class WorkItemComplete(Context):         # point: work_item_complete
+    work_item: str
+    state: str                           # merged | closed
+    kind: str                            # issue | pull-request
+    reason: str                          # the dispatcher's reason (issue-closed, pr-merged, …)
+    source: str                          # webhook | poll
+    actor: str                           # who closed it; "" when the event names nobody
+    loop: str
+    announce: bool = True                # decision — False skips the work-item.closed publish
+```
+
+**On the wire** (`url:` executors), `method` is the point, `params` the context's fields, and
+`result` is `null` or an object of decision fields — the same contract as the return value:
+
+```json
+→ {"jsonrpc": "2.0", "id": 1, "method": "work_item_start",
+   "params": {"work_item": "github:acme/app#42", "loop": "pdlc-work-item-loop", "command": "start",
+              "actor": "mallory", "harness": "claude", "instance": "", "repository": "acme/app",
+              "proceed": true, "reason": ""}}
+← {"jsonrpc": "2.0", "id": 1, "result": {"proceed": false, "reason": "mallory is not on the delivery roster"}}
+```
+
+Two judgement calls in the shape, raised for review on the PR: `waiting_for_input` carries
+`question` / `summary` as decisions that are empty and inert for `kind = gate` (the
+alternative is two points, `session_asked` and `gate_entered`); and `session_spawned` /
+`work_item_complete` expose only `announce`, the one thing the-loop does after each that a
+hook could sensibly stop.
+
 ## §2 The declaration (`lifecycle/declaration.py`)
 
 ```yaml

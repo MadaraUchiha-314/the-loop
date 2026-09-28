@@ -226,17 +226,24 @@ def test_every_point_is_documented():
     assert not missing, f"points without a `### `point`` heading: {sorted(missing)}"
 
 
-def test_every_context_object_is_documented_field_for_field():
-    """The reference section on the lifecycle page lists each context as a class block
+INTERFACE_PAGES = (
+    ("docs", "cli", "lifecycle-hooks.md"),
+    ("docs", "specs", "issue-344", "design.md"),
+)
+
+
+@pytest.mark.parametrize("parts", INTERFACE_PAGES, ids=lambda parts: "/".join(parts))
+def test_every_context_object_is_documented_field_for_field(parts):
+    """The lifecycle page and the design spec each list every context as a class block
     (sherma's convention, asked for on PR #432): every field of every point, no field
     the code does not have, and every decision marked as one."""
-    page = REPO_ROOT / "docs" / "cli" / "lifecycle-hooks.md"
+    page = REPO_ROOT.joinpath(*parts)
     if not page.is_file():
         pytest.skip("documentation site not present (source distribution)")
     text = page.read_text(encoding="utf-8")
     for cls in POINTS.values():
         start = text.find(f"class {cls.__name__}(Context):")
-        assert start != -1, f"{cls.__name__} has no class block on the lifecycle page"
+        assert start != -1, f"{cls.__name__} has no class block on {page.name}"
         block = text[start : text.find("```", start)]
         documented = set(re.findall(r"^\s{4}([a-z_]+):", block, re.M))
         actual = {f.name for f in dataclasses.fields(cls)}
@@ -254,3 +261,23 @@ def test_every_context_object_is_documented_field_for_field():
             assert line and "# decision" not in line.group(0), (
                 f"{cls.__name__}.{name} is a fact but its line says decision"
             )
+
+
+@pytest.mark.parametrize("parts", INTERFACE_PAGES, ids=lambda parts: "/".join(parts))
+def test_base_class_signatures_are_documented(parts):
+    """Both pages show ``LifecycleHooks`` with one method per point, typed as the code
+    types it, so an author reads the exact signature they override."""
+    page = REPO_ROOT.joinpath(*parts)
+    if not page.is_file():
+        pytest.skip("documentation site not present (source distribution)")
+    text = page.read_text(encoding="utf-8")
+    start = text.find("class LifecycleHooks:")
+    assert start != -1, f"no LifecycleHooks block on {page.name}"
+    block = text[start : text.find("```", start)]
+    for point, cls in POINTS.items():
+        name = cls.__name__
+        assert f"def {point}(self, ctx: {name}) -> Optional[{name}]" in block, (
+            f"{page.name}: LifecycleHooks.{point} is missing or its signature drifted"
+        )
+    documented = set(re.findall(r"^\s{4}def ([a-z_]+)\(self, ctx", block, re.M))
+    assert documented == set(POINTS), f"{page.name}: {sorted(documented ^ set(POINTS))}"
