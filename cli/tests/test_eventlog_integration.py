@@ -67,6 +67,9 @@ def stack(tmp_path):
         config = RoutingConfig(
             dispatch_timeout_seconds=30,
             spawn_workdir=str(tmp_path),
+            # A spawn marks the portable record (issue-344), so the record's root
+            # must be the test's, never the cwd's `.the-loop/` (issue-422).
+            portable_dir=str(tmp_path / "portable"),
             # Pre-issue-106 spawn behaviour (the start gate has its own tests).
             **{
                 "control": ControlConfig(require_start_command=False),

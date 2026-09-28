@@ -87,6 +87,23 @@ in the file fail under lag on the base too (`…opens_the_conversation_once_befo
 `…without_an_opener_opens_nothing`); they pass plainly and are left as they are — not this
 change's.
 
+## Round 5 — CI's finding (PR #432, the `checks` job)
+
+**C1 — a spawning test wrote the lifecycle mark into the checkout's own `.the-loop/`.**
+`test_spawn_and_session_lifecycle_are_recorded` builds its dispatcher with the default,
+cwd-relative `portable_dir`; before this change nothing on the spawn path wrote the
+portable record, so the default was never exercised there. `mark_started` is the first
+such write, and the issue-422 guard failed the test in CI (`wrote into a protected
+.the-loop/ state tree`). It passed locally because an earlier local run had already left
+that record in `cli/.the-loop/portable`, and an existing mark suppresses the write — which
+also hid every later spawning test on the default root. Found in one pass by re-running
+the suite with a throwaway plugin that dropped the leaked tree after each test, so no
+offender could mask the next: the dispatcher builders of `test_eventlog_integration`,
+`test_spawn_gate_integration`, `test_reactions_integration` and `test_trust_integration`,
+and `test_dispatcher_without_workspace_uses_spawn_workdir`. **Fixed as the guard
+prescribes**: each gives its dispatcher `portable_dir=str(tmp_path / "portable")`. The
+suite was then re-run with the leaked tree removed, and leaves none behind.
+
 ## What the reviewer looked for and did not find
 
 - **A path by which a session or a repository declares a hook.** `read_declaration` reads
