@@ -111,6 +111,20 @@ Use it to answer "is the recorded state still true?" — after a
 forging the bypassed gate's verdict. A forced work item reads as satisfied under `graph
 status` and still reports the real gate under `check --recompute`.
 
+Under `--recompute` the position is derived too: `(at <node>)` is the first node the
+artifacts leave unmet. That can be **ahead** of where the work item actually is — every
+node before it passes, but nothing has advanced the item into it yet. When the recorded
+pointer and the derived position disagree, the `state:` line names both
+([issue-429](https://github.com/MadaraUchiha-314/the-loop/issues/429)):
+
+```text
+issue-1: UNMET (at design)
+  state: …/docs/specs/issue-1/work-item-state.json (pointer at phase-selection; position derived from the artifacts)
+```
+
+The harness stop gate reads both for the same reason: it takes every verdict from the
+recomputed report, and never asks about a node past the pointer.
+
 ## Reading the output
 
 Nodes are split at the pointer, deliberately:
@@ -124,7 +138,9 @@ Nodes are split at the pointer, deliberately:
 `--all` prints one line per work item plus the first finding for each, and a
 `n/m work items satisfied` summary — and no `state:` lines: it is a drift summary.
 
-With `--format json` the report carries `statePath` and `stateFound` beside its nodes.
+With `--format json` the report carries `statePath` and `stateFound` beside its nodes,
+and `pointer` — the node that state file records, `""` when none was found. Without
+`--recompute` it equals `currentNode` whenever a state file was found.
 
 ## Exit codes
 

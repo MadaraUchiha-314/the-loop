@@ -957,6 +957,18 @@ reader.
   report on that checkout — where the daemon's runtime wrote the state — and SHALL print
   `repo: <checkout> (from the session registry)`; a given `--repo` SHALL be used verbatim,
   and the mutating verbs SHALL keep the working directory.
+- **The stop gate SHALL NOT ask about a node the work item never entered** (issue-429).
+  Every `check` report SHALL carry `pointer` — the node work-item state records, `""`
+  when no state file was found — beside `currentNode`, which under `--recompute` is the
+  first node the artifacts leave unmet and can run ahead of the pointer. The harness stop
+  gate (`hooks/the-loop-gate.py`) SHALL take every *verdict* from the recomputed report
+  and SHALL block only on the first unsatisfied node **at or before** the pointer, and
+  only when that node is `block`. A report with no `currentNode`, an empty `pointer`, or a
+  `pointer` that names no node in the report SHALL be inconclusive: the turn ends. The
+  position is the one fact the gate takes from agent-writable state; moving the pointer
+  forward hides nothing (the first unmet node before it is still the finding), and CI's
+  `check --recompute` — which reads no pointer — stays the backstop. The `check` table
+  under `--recompute` SHALL name the pointer on its `state:` line when the two differ.
 - **A gate that evaluated nothing SHALL NOT pass** (issue-238). Since the control-plane
   API answers a `repo` that does not resolve with a position-unknown report rather than an
   error — a checkout somebody cleaned up is expected state on that machine, see
@@ -978,6 +990,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-429 | The stop gate stops demanding a phase the work item never entered (2026-09-28): the `check` report carries `pointer` (the node work-item state records) beside `currentNode`, and `the-loop-gate.py` blocks only on the first unmet node at or before it — inconclusive when there is no position. Before, a work item parked at `phase-selection` with its selection recorded was told on every turn to write `design.md`, because `--recompute` places `currentNode` at the first node the artifacts leave unmet | [spec](../specs/issue-429/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/429) |
 | issue-343 | Graphs of the operator's own (2026-09-23): the top-level `graphs` in the CLI config declares a YAML file, and `routing.control.commands` binds the commands that select it — a re-pointed `start`/`contribute`/`do`/`review`, or a new word that parses as `start` with a loop. The control record keeps the loop; `resolve_outer_loop` accepts a declared name and nothing else; a custom graph is compiled by the shipped compiler, held to `PHASE_VOCABULARY`, and may name the operator's `x-` hooks; a node's `command:` is grammar-checked in every graph and may name another plugin's slash command; attachments may be scoped with `loops`; `the-loop graph loops` lists and checks every loop | [spec](../specs/issue-343/), [decision-136](../decisions/decision-136.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/343) |
 | issue-396 | `graph status` reads the state file the runtime wrote, and says which (2026-09-20, B7/O6 of the e2e run): every graph verb accepts a work-item **ref** and translates it to the daemon's `issue-<n>` directory (`core.graphs.work_item_id`, on `graphlink.spec_id_for`); the check report carries `statePath`/`stateFound` and the CLI prints a `state:` line, found or not; `graph status`/`check` with no `--repo` and a ref the working directory does not hold resolve the session's checkout through the session registry and say so (`repo: … (from the session registry)`). Before, `graph status github:…#1` addressed `docs/specs/github:…#1/` — never there — and reported the graph's start node in silence | [spec](../specs/issue-396/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/396) |
 | issue-378 | The runtime publishes `phase.started` / `phase.completed` on the channel bus at every transition of every graph (2026-09-18), following the label rather than the node: `WorkItemState.phase` records the phase the walk is in, an approval node inherits its author node's phase, a force publishes nothing, `cleanup` starts its phase and completes none. Nothing about the graphs' YAML, the verdicts or the pointer changed | [spec](../specs/issue-378/), [decision-130](../decisions/decision-130.md), [channels](channels.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/378) |

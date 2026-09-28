@@ -292,7 +292,8 @@ predictable via:
 
 - **Harness hooks** — force steps to run at lifecycle points. In Claude Code:
   `hooks/hooks.json` — a SessionStart reminder, a Stop gate (`the-loop-gate.py`, which
-  asks `the-loop check` whether the current node is complete), and a PostToolUse recorder
+  asks `the-loop check` whether the node the work item is at is complete — never one it
+  has not entered), and a PostToolUse recorder
   (`the-loop-link-pr.py`, which runs `sessions link-pr` for a pull request the session
   just created). A hook is how a step stops depending on the model remembering a rule;
   prefer one whenever the step is mechanical and its inputs are in the payload. In Cursor:

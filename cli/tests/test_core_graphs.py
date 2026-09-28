@@ -114,7 +114,8 @@ def test_a_resolving_repo_keeps_exactly_the_keys_it_always_had(tmp_path):
     report = graphs.check(repo_root, "issue-161")
 
     # issue-396 added exactly two keys — the state file the report was read
-    # from — so the pin moves with them; the next addition is again deliberate.
+    # from — and issue-429 one more, the pointer that file records, so the pin
+    # moves with them; the next addition is again deliberate.
     assert set(report) == {
         "workItem",
         "currentNode",
@@ -123,6 +124,7 @@ def test_a_resolving_repo_keeps_exactly_the_keys_it_always_had(tmp_path):
         "nodes",
         "statePath",
         "stateFound",
+        "pointer",
     }
     assert "repoResolved" not in report
 
