@@ -41,7 +41,9 @@ A session driven by the CLI daemon is **told** where its answers come from, via
   reaches it as the next event. Only if the CLI is unavailable, post the comment with
   `gh` and mark it yourself. Never block on an interactive prompt, and never read
   silence as consent — if genuinely blocked, log the conflict, escalate once, and move
-  to the next available work.
+  to the next available work. The daemon enforces the first half for Claude Code: a
+  `work-item`-mode session is launched without `AskUserQuestion` (issue-426), because
+  its menu waits on a keypress in a pane nobody watches.
 - **`cli`** — a human is attached to this session's terminal, so ask there. This does not
   waive the paper trail: the **outcome** of every human decision still lands on the work
   item as a comment.

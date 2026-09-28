@@ -1699,10 +1699,10 @@ class Dispatcher:
     ) -> Optional[HarnessAdapter]:
         """The operator's adapter with THIS work item's own model and effort applied.
 
-        :meth:`_tmux_for`'s shape, two fields over. The no-choice path returns the
-        shared adapter unchanged and allocates nothing, so a work item that chose
-        nothing is launched byte-identically to how it was before this feature
-        existed (R6.1) — which is most of them.
+        :meth:`_tmux_for`'s shape, two fields over. The no-choice path applies no
+        model or effort, so a work item that chose nothing is launched on exactly
+        the arguments it had before this feature existed (R6.1) — which is most
+        of them.
 
         The base of the choice path is the shared adapter's **own** arguments,
         never a second read of the config (issue-377): the two branches leave
@@ -1710,10 +1710,19 @@ class Dispatcher:
         the choice, by construction. ``cwd`` is the checkout a caller has just
         prepared — the post-gate spawn, whose registry record does not exist yet
         — so the choice the gate froze there is read from it rather than missed.
+
+        Every launch of a work item's session resolves its adapter here, so this
+        is also where the interaction mode reaches the argv (issue-426): in
+        ``work-item`` mode nobody answers the pane, and the adapter is launched
+        without its interactive question tool. Read from ``self.config`` at each
+        launch, so a reloaded mode applies from the next one. It is never part of
+        ``extra_args``, so the arguments recorded at launch — and the drift check
+        comparing them — are unchanged by it.
         """
         adapter = self.adapters.get(harness)
         if adapter is None:
             return None
+        adapter = adapter.with_unattended(self.config.interaction.unattended)
         model, effort = self._resolved_choice(work_item, harness, cwd)
         if not model and not effort:
             return adapter
