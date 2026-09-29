@@ -48,6 +48,13 @@ def main() -> int:
         return 2
     try:
         cors_config(cli_config)
+        # The role (issue-374 R1.5): a value outside worker/manager, or a manager
+        # with no name, is refused here — before the bind and the run lock, as the
+        # CORS pair is — rather than read as a worker that spawns sessions or a
+        # manager that manages nothing.
+        from ..instance import InstanceConfig
+
+        InstanceConfig.from_mapping(cli_config.get("instance"), strict=True)
     except ValueError as exc:
         # Beside the exposure guard on purpose, and for the same reason: a
         # configuration that must not be served is refused before anything is

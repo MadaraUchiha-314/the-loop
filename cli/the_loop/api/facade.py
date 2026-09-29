@@ -42,7 +42,7 @@ from ..core import sessions as core_sessions
 from ..core import standing as core_standing
 from ..core import workitems as core_workitems
 
-__all__ = ["LEFT_OUT", "PARTIAL_HEADER", "CoreFacade", "facade_for"]
+__all__ = ["LEFT_OUT", "PARTIAL_HEADER", "CoreFacade", "facade_for", "note_left_out"]
 
 #: The response header naming the members a list read could not include (R2.9).
 PARTIAL_HEADER = "The-Loop-Instances-Unreachable"
@@ -50,9 +50,27 @@ PARTIAL_HEADER = "The-Loop-Instances-Unreachable"
 #: The members left out of the operation being served, set by a manager facade and
 #: read by the route class after the handler returns. A context variable rather than an
 #: attribute so two requests in the anyio threadpool never see each other's list.
-LEFT_OUT: contextvars.ContextVar[List[str]] = contextvars.ContextVar(
-    "the_loop_left_out", default=[]
+LEFT_OUT: contextvars.ContextVar[Optional[List[str]]] = contextvars.ContextVar(
+    "the_loop_left_out", default=None
 )
+
+
+def note_left_out(names: List[str]) -> None:
+    """Record members a facade could not include, for the route class's header.
+
+    The route runs the handler in a worker thread with a *copy* of the context, so
+    a ``set`` there would not be seen back on the request; the list object the route
+    class set is shared, so it is **extended** in place. Outside a request (the SDK,
+    a test) there is no list, and the fact is dropped — it is carried by the
+    ``instances`` document there.
+    """
+    bucket = LEFT_OUT.get()
+    if bucket is None or not names:
+        return
+    for name in names:
+        if name not in bucket:
+            bucket.append(name)
+    bucket.sort()
 
 
 def _version() -> str:

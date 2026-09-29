@@ -336,7 +336,7 @@ def _core_route_class(holder: ConfigHolder):
                         status_code=400, content={"detail": str(exc)}
                     )
                 finally:
-                    left_out = list(LEFT_OUT.get())
+                    left_out = list(LEFT_OUT.get() or [])
                     LEFT_OUT.reset(token)
                 if left_out:
                     # The members a list read could not include (R2.9): a bare array
