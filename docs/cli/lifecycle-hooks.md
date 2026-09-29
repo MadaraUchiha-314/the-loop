@@ -18,7 +18,7 @@ to every boot prompt, a silenced announcement.
 
 And it is not the event log. The [first attempt](https://github.com/MadaraUchiha-314/the-loop/pull/357)
 attached hooks to every event type; an event is a record of something already done, so no
-hook on one can change it. The six points below are chosen by what delivery *is*.
+hook on one can change it. The seven points below are chosen by what delivery *is*.
 
 ## Write it
 
@@ -114,6 +114,19 @@ the graph enters a human gate (`kind = gate`). Facts: `work_item`, `kind`, `node
 question; for a gate the request text is the graph's, so both are empty and a change is
 ignored.
 
+### `input_received`
+
+Fires when a person's input reaches the loop — an answer to the session (`the-loop reply`,
+the API, a channel), a comment or review about to be delivered into the session, or a
+control command (`start`, `stop`, `execute`…) — **before** the-loop acts on it: before the
+delivery, before a human gate reads the comment, before the command runs. The counterpart
+of `waiting_for_input`. Facts: `work_item`, `kind` (`answer` | `comment` | `command`),
+`actor`, `source` (`comment` | `verb`), `command`, `event`, `endpoint`, `loop`. Decisions:
+**`text`** (what is delivered — an answer as-is, a comment's body as the session is shown
+it; ignored for a command), **`proceed`** (`false` drops it: an answer is refused to its
+caller, a comment is not delivered and the ticket gets one marked comment with your
+`reason`, a command is rejected with `input-refused`), **`reason`**.
+
 ### `phase_changed`
 
 Fires when the `loop:<phase>` label changes or a terminal node is reached — before the
@@ -138,6 +151,7 @@ class LifecycleHooks:
     def session_spawn(self, ctx: SessionSpawn) -> Optional[SessionSpawn]: ...
     def session_spawned(self, ctx: SessionSpawned) -> Optional[SessionSpawned]: ...
     def waiting_for_input(self, ctx: WaitingForInput) -> Optional[WaitingForInput]: ...
+    def input_received(self, ctx: InputReceived) -> Optional[InputReceived]: ...
     def phase_changed(self, ctx: PhaseChanged) -> Optional[PhaseChanged]: ...
     def work_item_complete(self, ctx: WorkItemComplete) -> Optional[WorkItemComplete]: ...
 
@@ -222,6 +236,22 @@ class WaitingForInput(Context):          # point: waiting_for_input
     loop: str
     question: str = ""                   # decision — the text posted for a question; empty and ignored for a gate
     summary: str = ""                    # decision — the channels' one-line summary; same rule
+```
+
+```python
+@dataclass
+class InputReceived(Context):            # point: input_received
+    work_item: WorkItem
+    kind: str                            # answer (a reply to the session) | comment (a comment or review to deliver) | command (a control word)
+    actor: str                           # the login that wrote it, or the actor the verb was given
+    source: str                          # comment (the ticket or PR, by webhook or poll) | verb (the-loop reply / control: CLI, API, a channel)
+    command: str                         # the control word, for a command (start, stop, pause, execute, …); "" otherwise
+    event: str                           # the GitHub event, for a comment (issue_comment, pull_request_review, …); "" otherwise
+    endpoint: WorkItem                   # the conversation the input lands in; empty for a command
+    loop: str
+    text: str = ""                       # decision — what is delivered: an answer as-is, a comment's body as the session is shown it; ignored for a command
+    proceed: bool = True                 # decision — False drops it: an answer is refused to its caller, a comment is not delivered (one marked comment, event settled), a command is rejected
+    reason: str = ""                     # decision — posted on the ticket with a refusal
 ```
 
 ```python

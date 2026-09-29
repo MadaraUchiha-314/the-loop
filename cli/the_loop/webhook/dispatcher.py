@@ -10,6 +10,8 @@ Spec: docs/specs/issue-15/design.md §4 (requirements R3.2/R3.3, R5).
 
 from __future__ import annotations
 
+import copy
+import dataclasses
 import logging
 import os
 import queue
@@ -93,6 +95,7 @@ from ..runner import SESSION_LIVE, TmuxRunner
 from ..graph.model import LOOP_FOR_CONTROL_COMMAND, PDLC_WORK_ITEM_LOOP
 from ..graph.state import WorkItemState
 from ..lifecycle import (
+    InputReceived,
     SessionSpawn,
     SessionSpawned,
     WorkItem,
@@ -204,6 +207,12 @@ CONTROL_REFUSAL_REMEDIES = {
     "hook-refused": (
         "A lifecycle hook declined this. The work item is disarmed; fix what the "
         "hook names and start it again."
+    ),
+    # A lifecycle hook refused a person's INPUT (issue-344, `input_received`): the
+    # comment was not delivered, or the command was not run; nothing else changed.
+    "input-refused": (
+        "A lifecycle hook declined this input — it was not delivered to the session "
+        "and nothing was run. The reason follows."
     ),
     "missing-channel": (
         "I couldn't find that Slack channel. Check the spelling, invite me to "
@@ -695,6 +704,17 @@ def _item_kind(work_item: WorkItemRef, routed: RoutedEvent) -> str:
     return ""
 
 
+def _with_body(routed: RoutedEvent, text: str) -> RoutedEvent:
+    """The same event with the person's text replaced by what an `input_received` hook
+    decided — on a copy of the payload, at the one place `event_body` reads it."""
+    payload = copy.deepcopy(routed.payload)
+    key = "review" if routed.event == "pull_request_review" else "comment"
+    entity = payload.get(key)
+    if isinstance(entity, dict):
+        entity["body"] = text
+    return dataclasses.replace(routed, payload=payload)
+
+
 def _endpoint_item(work_item: WorkItemRef, endpoint: WorkItemRef) -> WorkItem:
     """The conversation a launch is for, as the hooks see it: the work item itself, or
     one of its pull requests (issue-172) — the one case where the kind is known."""
@@ -1170,6 +1190,8 @@ class Dispatcher:
                 self._reject_control(
                     control.command, routed, actor or "", "unauthorized-actor"
                 )
+                return
+            if not self._command_permitted(control.command, routed, actor):
                 return
             if control.command in COLLABORATOR_COMMANDS:
                 # Neither the session registry nor the graph: these two write the
@@ -2092,6 +2114,66 @@ class Dispatcher:
         self._record_refusal(WorkItemStart.POINT, work_item, ctx.reason)
         self._explain_refusal(routed, "hook-refused", ctx.reason)
         self._settle(routed, "hook-refused")
+        return False
+
+    def _input_received(
+        self, record: Session, endpoint: Session, routed: RoutedEvent, loop: str = ""
+    ) -> Optional[RoutedEvent]:
+        """Run `input_received` for a person's comment or review; the event to deliver
+        (its body reworded if a hook said so), or None when a hook refused it.
+
+        Only a content-bearing event with a human author is input — a CI status, a
+        label, an open/close action carries no text of a person's and is not asked
+        about. A refusal is a decision, not a failed delivery: the ticket is told in
+        one marked comment, the event is settled, nothing is retried.
+        """
+        body = event_body(routed.event, routed.payload)
+        actor = event_actor(routed.event, routed.payload)
+        if body is None or not actor:
+            return routed
+        ctx = lifecycle.run(
+            InputReceived(
+                work_item=WorkItem.from_ref(record.work_item),
+                kind="comment",
+                actor=actor,
+                source="comment",
+                event=routed.event,
+                endpoint=_endpoint_item(record.work_item, endpoint.work_item),
+                loop=loop,
+                text=body,
+            )
+        )
+        if not ctx.proceed:
+            self._record_refusal(InputReceived.POINT, record.work_item, ctx.reason)
+            self._explain_refusal(routed, "input-refused", ctx.reason)
+            self._settle(routed, "input-refused")
+            return None
+        if ctx.text != body:
+            return _with_body(routed, ctx.text)
+        return routed
+
+    def _command_permitted(self, command: str, routed: RoutedEvent, actor: str) -> bool:
+        """Run `input_received` for a control command; False when a hook refused it
+        (recorded as `control.rejected`, reason `input-refused`, and explained)."""
+        target = self._target_work_item(routed)
+        ctx = lifecycle.run(
+            InputReceived(
+                work_item=WorkItem.from_ref(target)
+                if target is not None
+                else WorkItem(),
+                kind="command",
+                actor=actor,
+                source="comment",
+                command=command,
+                event=routed.event,
+                text=event_body(routed.event, routed.payload) or "",
+            )
+        )
+        if ctx.proceed:
+            return True
+        if target is not None:
+            self._record_refusal(InputReceived.POINT, target, ctx.reason)
+        self._reject_control(command, routed, actor, "input-refused", detail=ctx.reason)
         return False
 
     def _before_launch(
@@ -3354,6 +3436,15 @@ class Dispatcher:
             )
         else:
             ctx = self.graphlink.context(session.work_item, session.cwd)
+        # A person's comment or review is INPUT (issue-344, `input_received`): the
+        # operator's hooks read it before the gate does and before it is rendered —
+        # they may reword what the session is shown, or refuse it outright.
+        received = self._input_received(
+            session, endpoint, routed, str(getattr(ctx, "loop", "") or "")
+        )
+        if received is None:
+            return True
+        routed = received
         gate_report = None
         if ctx is not None and ctx.at_human_gate:
             gate_report = (

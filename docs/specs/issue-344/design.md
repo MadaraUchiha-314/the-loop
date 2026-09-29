@@ -17,9 +17,9 @@ riskTier: 4
 
 ## Overview
 
-**One new package, `the_loop.lifecycle`, holds the catalog of six points with their typed
+**One new package, `the_loop.lifecycle`, holds the catalog of seven points with their typed
 contexts, the `LifecycleHooks` base class, the declaration parser for the top-level
-`hooks`, the loader, the chain runner and the JSON-RPC remote executor; six call sites in
+`hooks`, the loader, the chain runner and the JSON-RPC remote executor; the call sites in
 the dispatcher, the graph runtime and `ask_session` build a context, hand it to
 `lifecycle.run`, and apply the decisions that come back.** No event, no queue, no thread:
 a hook runs where the thing it decides is about to happen, and the thing waits for it.
@@ -51,14 +51,14 @@ handy, and which grows with every debugging need. Making that the hook surface b
 hook API to the log's churn, made outcome changes impossible by construction, and buried
 the four moments the ticket names among `poll.cycle_started` and `channel.heartbeat`.
 
-Here the surface is the **lifecycle**: six moments, chosen by what a work item's delivery
+Here the surface is the **lifecycle**: seven moments, chosen by what a work item's delivery
 *is* (a start, a session, a wait, a phase, an end), each with the facts that moment has and
 the decisions that moment admits. The event log stays what it is — where these hooks leave
 their trail (`hooks.*`), not where they attach.
 
 ## §1 The catalog (`lifecycle/contract.py`)
 
-Six points. Each is a dataclass; **facts** are plain fields, **decisions** are fields
+Seven points. Each is a dataclass; **facts** are plain fields, **decisions** are fields
 marked `field(metadata={"decision": True})`. The base class has one method per point,
 returning `None`.
 
@@ -68,6 +68,7 @@ returning `None`.
 | `session_spawn` | before every harness launch — first spawn, a pull request's own session, a respawn (before the resume attempt too) | `work_item`, `endpoint`, `harness`, `cwd`, `model`, `effort`, `harness_args`, `respawn`, `loop` | `prompt` — the text the harness boots on, replaced; `proceed`, `reason` — `False` prevents the launch: first spawn and respawn settle the event as refused with the comment; a PR endpoint falls back to delivery into the work item's session |
 | `session_spawned` | after the session is registered, before the announcement | `work_item`, `endpoint`, `harness`, `harness_session_id`, `tmux_target`, `cwd`, `model`, `effort`, `harness_args`, `respawn` | `announce=True` — `False` skips `SessionAnnouncer.announce` |
 | `waiting_for_input` | before an agent's question is published (`ask_session`); when a human node is entered (`Runtime.start` / `advance`, after its entry chain posted the request) | `work_item`, `kind` (`question` \| `gate`), `node`, `actor`, `loop`; for `question`: `question`, `summary` | `question`, `summary` — replace the text published for an agent's question; empty and ignored for a gate |
+| `input_received` | when a person's input reaches the loop, before the-loop acts on it: a comment or review about to be delivered (`Dispatcher._dispatch_one`, before the gate reads it and before rendering), a control command from the ticket (the ingress, after the named-actor check), `reply_session` (the CLI, the API, a channel) and `control_session` (the CLI, the API) | `work_item`, `kind` (`answer` \| `comment` \| `command`), `actor`, `source` (`comment` \| `verb`), `command`, `event`, `endpoint`, `loop` | `text` — what is delivered (an answer as-is; a comment's body, replaced on a copy of the payload before rendering; ignored for a command); `proceed`, `reason` — `False` drops it: a comment is not delivered, explained in one marked comment (`input-refused`) and settled; a ticket command is `control.rejected` with reason `input-refused`; a reply or verb raises `ValueError` to its caller (HTTP 400) |
 | `phase_changed` | in `Runtime.start` (into the start node), and in `advance` when the phase label changes or a terminal node is reached — before the `phase.*` publishes | `work_item`, `loop`, `from_node`, `to_node`, `from_phase`, `to_phase`, `outcome`, `actor`, `terminal` | `notify=True` — `False` skips the `_lifecycle` publishes for that transition |
 | `work_item_complete` | in `Dispatcher._record_closure`, for the issue or pull request that *is* the work item, before the closure is announced | `work_item`, `state` (`merged` \| `closed`), `kind` (`issue` \| `pull-request`), `reason`, `source`, `actor`, `loop` | `announce=True` — `False` skips the `work-item.closed` publish |
 
@@ -96,6 +97,7 @@ class LifecycleHooks:
     def session_spawn(self, ctx: SessionSpawn) -> Optional[SessionSpawn]: ...
     def session_spawned(self, ctx: SessionSpawned) -> Optional[SessionSpawned]: ...
     def waiting_for_input(self, ctx: WaitingForInput) -> Optional[WaitingForInput]: ...
+    def input_received(self, ctx: InputReceived) -> Optional[InputReceived]: ...
     def phase_changed(self, ctx: PhaseChanged) -> Optional[PhaseChanged]: ...
     def work_item_complete(self, ctx: WorkItemComplete) -> Optional[WorkItemComplete]: ...
 
@@ -125,7 +127,7 @@ class WorkItem:                          # on every context; built by the-loop, 
     id: str                              # issue-N — the spec folder under docs/specs/
 ```
 
-**The six contexts.** A field marked `# decision` is read back and applied; every other
+**The seven contexts.** A field marked `# decision` is read back and applied; every other
 field is a fact the-loop ignores if changed. Field types are `str`, `bool`, `list[str]` or
 `WorkItem`, so a context is its own JSON-RPC `params`.
 
@@ -185,6 +187,22 @@ class WaitingForInput(Context):          # point: waiting_for_input
     loop: str
     question: str = ""                   # decision — the text posted for a question; empty and ignored for a gate
     summary: str = ""                    # decision — the channels' one-line summary; same rule
+```
+
+```python
+@dataclass
+class InputReceived(Context):            # point: input_received
+    work_item: WorkItem
+    kind: str                            # answer (a reply to the session) | comment (a comment or review to deliver) | command (a control word)
+    actor: str                           # the login that wrote it, or the actor the verb was given
+    source: str                          # comment (the ticket or PR, by webhook or poll) | verb (the-loop reply / control: CLI, API, a channel)
+    command: str                         # the control word, for a command (start, stop, pause, execute, …); "" otherwise
+    event: str                           # the GitHub event, for a comment (issue_comment, pull_request_review, …); "" otherwise
+    endpoint: WorkItem                   # the conversation the input lands in; empty for a command
+    loop: str
+    text: str = ""                       # decision — what is delivered: an answer as-is, a comment's body as the session is shown it; ignored for a command
+    proceed: bool = True                 # decision — False drops it: an answer is refused to its caller, a comment is not delivered (one marked comment, event settled), a command is rejected
+    reason: str = ""                     # decision — posted on the ticket with a refusal
 ```
 
 ```python
@@ -324,6 +342,10 @@ way the poller exits on an unknown provider.
 
 | Site | Change |
 |---|---|
+| `Dispatcher._dispatch_one` → `_input_received` | `input_received(kind=comment)` for a content event with a human author, after the endpoint is chosen and before the gate classifies it or anything is rendered; a reworded `text` is written onto a copy of the payload (`_with_body`) so the excerpt the session reads carries it; a refusal explains (`input-refused`), settles, delivers nothing |
+| the control ingress → `_command_permitted` | `input_received(kind=command)` after the named-actor check and before any of the four handlers; a refusal is `_reject_control(..., "input-refused", detail=reason)` |
+| `core.sessions.reply_session` | `input_received(kind=answer, source=verb)` after the session is resolved and before the frame is built; `text` replaces the answer; a refusal emits `hooks.refused` and raises `ValueError` |
+| `core.sessions.control_session` | `input_received(kind=command, source=verb)` before anything is recorded or said; a refusal emits `hooks.refused` and raises `ValueError` |
 | `Dispatcher._spawn_for` | after the adapter check: `if self.control_store.mark_started(work_item)` is *new* → build `WorkItemStart` from the control record (`command`, `actor`, `loop`; the event's actor when none) and run it; `proceed=False` → `control_store.clear(work_item)` + `unmark`, `_explain_refusal(routed, "hook-refused", detail)`, `hooks.refused`, `_settle(routed, "hook-refused")`, `return True`. The marker is a `lifecycle` section of the portable record (`ControlStore.mark_started` / `clear_started`), cleared with the control record at closure, so a reopened item starts again. |
 | `Dispatcher._spawn_tmux`, `_spawn_endpoint`, `_respawn_tmux` | `_before_launch(...) -> SessionSpawn` runs the point before `tmux.spawn` (respawn: before `_try_resume`); `prompt = ctx.prompt`; `proceed=False` → `_refuse_launch` (first/respawn: `session.spawn_failed` with `will_retry=False`, the comment, `hooks.refused`, settle, `True`; endpoint: `_deliver_into` the record). After registration: `_after_launch(...) -> SessionSpawned`; `announce` gates the announcer call (respawn announces nothing today and keeps not announcing). |
 | `core.sessions.ask_session` | before the bus publish: `WaitingForInput(kind="question", question=…, summary=…)`; the published `text`/`summary` are the decisions. |
@@ -341,7 +363,7 @@ loops` does) with no import and no request; `the-loop hooks points` prints the c
 from `POINTS` and the dataclass fields. Exit `1` naming the error when the config cannot be
 read or the declaration fails to parse.
 
-`the_loop.sdk.hooks` re-exports `LifecycleHooks`, the six contexts, `Context`, `POINTS`,
+`the_loop.sdk.hooks` re-exports `LifecycleHooks`, the seven contexts, `Context`, `POINTS`,
 `handle_request`, `HookServer`, `HookFailure`. `the_loop.sdk.__all__` gains nothing (the
 hooks surface is its own module so `test_p1_every_public_symbol_is_documented` keeps its
 meaning); `docs/sdk/reference.md` gains a section pointing at the hooks page.
@@ -431,7 +453,7 @@ whole existing suite proves R7.2. The plan is `testing-plan.md`.
 
 Recorded as [decision-137](../../decisions/decision-137.md).
 
-- **A curated catalog over the event catalog** (the owner's constraint). Six points can be
+- **A curated catalog over the event catalog** (the owner's constraint). Seven points can be
   wrong in a way 150 attach points cannot be — a point may be missing — and that is the
   intended failure mode: adding one is a small, reviewed change to one file, with a parity
   test, not a hope that the right event exists.
@@ -473,3 +495,11 @@ Raised on the ticket and linked here.
   modeled properly." **Disposition — adopted:** `work_item` (and `endpoint`) is now the
   `WorkItem` entity above; `repository` left `WorkItemStart` for it. Kept a stdlib dataclass,
   not pydantic, for the reason given with the model.
+
+- **MadaraUchiha-314, PR #432 review (comment 4128119644), on the catalog:** "Is there an
+  hook for `input_received`?? Any user input received should have a hook." **Disposition —
+  adopted:** a seventh point, `input_received`, the counterpart of `waiting_for_input`,
+  fired wherever a person's input reaches the loop and before the-loop acts on it — a
+  comment or review about to be delivered, a control command from the ticket, `the-loop
+  reply` and the control verbs (CLI, API, a channel) — with `text`, `proceed` and `reason`
+  as its decisions. Rows above; scenarios in `test_lifecycle_hooks_integration.py`.

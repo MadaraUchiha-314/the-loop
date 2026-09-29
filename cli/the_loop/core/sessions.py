@@ -950,6 +950,35 @@ def reply_session(
             f"the session for {work_item.ref} is paused and delivery is held; "
             "resume it first"
         )
+    # The operator's lifecycle hooks hear the answer first (issue-344,
+    # `input_received`): they may reword it, or refuse it to the caller.
+    from ..lifecycle import InputReceived, WorkItem
+
+    received = lifecycle.run(
+        InputReceived(
+            work_item=WorkItem.from_ref(work_item),
+            kind="answer",
+            actor=actor,
+            source="verb",
+            endpoint=WorkItem.from_ref(
+                session.work_item,
+                kind="pull-request" if session.work_item != work_item else "",
+            ),
+            text=text,
+        )
+    )
+    if not received.proceed:
+        eventlog.emit(
+            "hooks.refused",
+            level="warning",
+            point=InputReceived.POINT,
+            work_item=work_item.ref,
+            reason=received.reason or None,
+        )
+        raise ValueError(
+            f"a lifecycle hook refused the reply: {received.reason or 'no reason given'}"
+        )
+    text = received.text or text
     prompt = (
         framed_record(kind, work_item, text, actor, detail or {})
         if kind in FRAMES
@@ -1120,6 +1149,31 @@ def control_session(
     actor = _local_actor()
     messages: List[Dict[str, str]] = []
     instance = _instance(config)
+
+    # The operator's lifecycle hooks hear the verb first (issue-344,
+    # `input_received`): a refusal stops it before anything is recorded or said.
+    from ..lifecycle import InputReceived, WorkItem
+
+    received = lifecycle.run(
+        InputReceived(
+            work_item=WorkItem.from_ref(work_item),
+            kind="command",
+            actor=actor,
+            source="verb",
+            command=verb,
+        )
+    )
+    if not received.proceed:
+        eventlog.emit(
+            "hooks.refused",
+            level="warning",
+            point=InputReceived.POINT,
+            work_item=work_item.ref,
+            reason=received.reason or None,
+        )
+        raise ValueError(
+            f"a lifecycle hook refused {verb}: {received.reason or 'no reason given'}"
+        )
 
     # A start typed ON an instance is addressed to it (issue-322 R2.7) — except on
     # a locked one, whose only door is the config: refused before anything is

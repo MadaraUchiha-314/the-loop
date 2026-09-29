@@ -16,6 +16,7 @@ from the_loop.lifecycle.contract import (
     POINTS,
     Context,
     DecisionTypeError,
+    InputReceived,
     LifecycleHooks,
     PhaseChanged,
     SessionSpawn,
@@ -29,12 +30,13 @@ from the_loop.lifecycle.contract import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_the_catalog_is_the_six_lifecycle_points():
+def test_the_catalog_is_the_seven_lifecycle_points():
     assert list(POINTS) == [
         "work_item_start",
         "session_spawn",
         "session_spawned",
         "waiting_for_input",
+        "input_received",
         "phase_changed",
         "work_item_complete",
     ]
@@ -42,6 +44,7 @@ def test_the_catalog_is_the_six_lifecycle_points():
     assert POINTS["session_spawn"] is SessionSpawn
     assert POINTS["session_spawned"] is SessionSpawned
     assert POINTS["waiting_for_input"] is WaitingForInput
+    assert POINTS["input_received"] is InputReceived
     assert POINTS["phase_changed"] is PhaseChanged
     assert POINTS["work_item_complete"] is WorkItemComplete
 
@@ -84,6 +87,7 @@ def test_every_field_is_a_fact_or_a_decision_with_a_json_type():
         (SessionSpawn, ("prompt", "proceed", "reason")),
         (SessionSpawned, ("announce",)),
         (WaitingForInput, ("question", "summary")),
+        (InputReceived, ("text", "proceed", "reason")),
         (PhaseChanged, ("notify",)),
         (WorkItemComplete, ("announce",)),
     ],

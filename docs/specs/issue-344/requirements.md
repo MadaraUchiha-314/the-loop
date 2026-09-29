@@ -47,7 +47,7 @@ count are the log's concern and drift with it; and "every event" is not a lifecy
 a firehose in which the four moments the ticket names are indistinguishable from
 `poll.cycle_started`.
 
-This work item delivers what the ticket asks for as a **curated, typed lifecycle**: six
+This work item delivers what the ticket asks for as a **curated, typed lifecycle**: seven
 named hook points at the moments a work item's delivery actually turns, each with a
 context whose **facts** the hook reads and whose **decisions** the hook may change, run
 **synchronously in the path of the thing they decide**, by executors that are local Python
@@ -80,15 +80,17 @@ of the work, not on the shape of the-loop's log.
 
 1. The system SHALL define a fixed catalog of lifecycle **points**, each with a name, a
    typed **context** and a description, shipped in the CLI: `work_item_start`,
-   `session_spawn`, `session_spawned`, `waiting_for_input`, `phase_changed`,
-   `work_item_complete`. The catalog SHALL be listable (`the-loop hooks points`) and
+   `session_spawn`, `session_spawned`, `waiting_for_input`, `input_received`,
+   `phase_changed`, `work_item_complete`. The catalog SHALL be listable (`the-loop hooks points`) and
    SHALL be the only set of names a declaration may reference.
 2. A point SHALL fire **synchronously, in the code path of the thing it describes**, before
    that thing is done wherever the point carries a decision about it: `work_item_start`
    before the work item's workspace is prepared or any session exists; `session_spawn`
    before the harness process is launched; `session_spawned` after the session is
    registered and before the-loop announces it; `waiting_for_input` before the question is
-   posted (an agent's `the-loop ask`) and when a human gate is entered; `phase_changed`
+   posted (an agent's `the-loop ask`) and when a human gate is entered; `input_received`
+   when a person's input reaches the loop — an answer, a comment or review to deliver, a
+   control command — before it is delivered, read by a gate or run; `phase_changed`
    when the graph's phase label changes or a terminal node is reached, before the channels
    are told; `work_item_complete` when the ticket or pull request that *is* the work item
    closes, before the closure is announced.
@@ -354,7 +356,7 @@ described for others to use.
 
 Raised on the ticket as comments and linked here.
 
-- The timeout default (10 s) and the six points' names are the design's; the owner may
+- The timeout default (10 s) and the seven points' names are the design's; the owner may
   want other words or other moments — the catalog is the one place to change.
 
 ## Review comments

@@ -32,7 +32,7 @@ a firehose.
 
 | # | What was chosen | Why |
 |---|-----------------|-----|
-| D1 | **A curated catalog of six points** — `work_item_start`, `session_spawn`, `session_spawned`, `waiting_for_input`, `phase_changed`, `work_item_complete` — each a typed context, shipped in the CLI, listable, and the only names a declaration may use. `EVENT_TYPES` is not a source of points. | A lifecycle is a small set of moments chosen by what delivery *is*. A missing point is a small, reviewed addition with a parity test; a firehose cannot be curated after the fact. |
+| D1 | **A curated catalog of seven points** — `work_item_start`, `session_spawn`, `session_spawned`, `waiting_for_input`, `input_received`, `phase_changed`, `work_item_complete` — each a typed context, shipped in the CLI, listable, and the only names a declaration may use. `EVENT_TYPES` is not a source of points. | A lifecycle is a small set of moments chosen by what delivery *is*. A missing point is a small, reviewed addition with a parity test; a firehose cannot be curated after the fact. |
 | D2 | **Facts in, decisions out, synchronously.** A context has read-only facts and marked decision fields (`proceed`, `reason`, `prompt`, `announce`, `question`, `summary`, `notify`); an executor returns `None` or the modified context; executors chain in declared order; the-loop reads back decisions only and applies them *before* doing the thing. | The ticket's first requirement is changing the outcome; that needs the hook in the path, before the act. sherma's return-the-context shape makes the writable surface the dataclass itself. Decision-only read-back keeps a remote from redirecting the-loop through a fact. |
 | D3 | **Declared in the operator's CLI config**, top-level `hooks[]`, one entry per executor: `module` / `path` (relative to the config file's directory) / `url`, with `on`, `required`, `enabled`, and kind-specific keys. Read once per process. | decision-123: what runs with the operator's credentials is decided in the operator's file. A `path` against the config's directory, not a checkout, is decision-136's rule and closes the "a session plants a module" route. |
 | D4 | **Warn-and-continue by default; `required: true` refuses the operation at a `proceed` point when the hook fails.** A hook never raises into the-loop. | sherma's default keeps a telemetry outage from stopping work; a compliance gate needs the opposite; one flag on the entry gives both without a second mechanism. |
@@ -48,7 +48,7 @@ runs in-process or as a service. An operator who declares nothing sees no change
 
 **Costs.** Latency in the dispatch path, bounded per remote executor by `timeoutSeconds`.
 A hook can reword the prompt a session boots on — the operator's code on the operator's
-machine, audited by `hooks.decided`. Six points may not be the six someone needs; the
+machine, audited by `hooks.decided`. Seven points may not be the seven someone needs; the
 catalog is one file to grow.
 
 **What it does not change.** Graph hooks (`routing.graph.hooks`), the event log, the

@@ -26,6 +26,7 @@ from the_loop.lifecycle.executors import LocalExecutor
 from the_loop.lifecycle.runner import Runner
 from the_loop.sdk.hooks import LifecycleHooks
 from the_loop.sessions import SessionRegistry
+from the_loop.sessions.registry import Session, WorkItemRef
 from the_loop.webhook import dispatcher as dispatcher_mod
 from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
 from the_loop.webhook.router import RoutedEvent, extract_work_items
@@ -56,6 +57,7 @@ class Recorder(LifecycleHooks):
     session_spawn = _at
     session_spawned = _at
     waiting_for_input = _at
+    input_received = _at
     phase_changed = _at
     work_item_complete = _at
 
@@ -596,7 +598,6 @@ def test_the_kind_is_read_off_the_payload_not_guessed():
     """PR #432 review: the entity carries what the point knows. A start names the item
     the payload is about — an issue, a pull request (even one GitHub delivers as an
     ``issue`` with a ``pull_request`` key) — and says nothing for a linked item."""
-    from the_loop.sessions.registry import WorkItemRef
     from the_loop.webhook.dispatcher import _endpoint_item, _item_kind
 
     item = WorkItemRef.parse(REF)
@@ -627,3 +628,177 @@ def test_the_kind_is_read_off_the_payload_not_guessed():
         "github:octo/repo#99",
         "https://github.com/octo/repo/pull/99",
     )
+
+
+# --------------------------------------------------------------- input_received
+
+
+def _live(dispatcher, registry, tmux, store):
+    """A started work item with a live session, so the next comment is delivered."""
+    dispatcher.handle(comment("the-loop start", delivery="d-start"))
+    assert _wait(lambda: tmux.spawns)
+    assert registry.find_by_work_item(REF) is not None
+
+
+def test_a_hook_refuses_a_persons_comment_and_it_is_not_delivered(
+    tmp_path, events, comments
+):
+    """
+    Feature: lifecycle hooks run where the thing they decide is about to happen
+      Scenario: a hook refuses a person's comment
+        Given an input_received hook that refuses comments from outside the roster
+        And a work item with a live session
+        When someone outside the roster comments on the ticket
+        Then nothing is delivered into the session
+        And the ticket gets one marked comment with the reason, and the event is settled
+
+    Requirement: docs/specs/issue-344/requirements.md R1.2, R2.6
+    """
+    hooks = install(
+        input_received=lambda ctx: (
+            {"proceed": False, "reason": f"{ctx.actor} may not steer this session"}
+            if ctx.kind == "comment" and ctx.actor != "octocat"
+            else None
+        )
+    )
+    dispatcher, registry, tmux, store, *_ = _dispatcher(tmp_path)
+    _live(dispatcher, registry, tmux, store)
+    dispatcher.handle(
+        comment("please also refactor the billing module", "d-2", "mallory")
+    )
+    assert _wait(lambda: events("hooks.refused"))
+    dispatcher.stop()
+    assert tmux.delivers == [], "a refused comment never reaches the pane"
+    assert any("may not steer" in body for _, body in comments)
+    assert dispatcher.deduper.outcome("d-2") == "input-refused"
+    (refused,) = events("hooks.refused")
+    assert refused["point"] == "input_received" and refused["work_item"] == REF
+    seen = [c for c in points(hooks, "input_received") if c.kind == "comment"]
+    assert seen[-1].actor == "mallory" and seen[-1].event == "issue_comment"
+    assert seen[-1].text == "please also refactor the billing module"
+    assert seen[-1].endpoint.ref == REF and seen[-1].source == "comment"
+
+
+def test_a_hook_rewords_a_persons_comment_before_the_session_sees_it(tmp_path):
+    """
+    Feature: lifecycle hooks run where the thing they decide is about to happen
+      Scenario: a hook rewords a person's comment
+        Given an input_received hook that redacts a token pattern from comments
+        When a person's comment carrying one is delivered
+        Then the session is shown the redacted text, never the original
+
+    Requirement: docs/specs/issue-344/requirements.md R2.7
+    """
+    install(
+        input_received=lambda ctx: {
+            "text": ctx.text.replace("ghp_SECRET", "[redacted]")
+        }
+    )
+    dispatcher, registry, tmux, store, *_ = _dispatcher(tmp_path)
+    _live(dispatcher, registry, tmux, store)
+    dispatcher.handle(comment("use ghp_SECRET for the API", "d-3"))
+    assert _wait(lambda: tmux.delivers)
+    dispatcher.stop()
+    (_, prompt) = tmux.delivers[0][:2]
+    assert "[redacted]" in prompt and "ghp_SECRET" not in prompt
+
+
+def test_a_hook_refuses_a_control_command(tmp_path, events, comments):
+    """
+    Feature: lifecycle hooks run where the thing they decide is about to happen
+      Scenario: a hook refuses a control command
+        Given an input_received hook that refuses `stop` during a freeze
+        When an authorized person comments `the-loop stop`
+        Then the command is rejected with reason input-refused and explained on the ticket
+        And the session is still live
+
+    Requirement: docs/specs/issue-344/requirements.md R1.2, R2.6
+    """
+    hooks = install(
+        input_received=lambda ctx: (
+            {"proceed": False, "reason": "no stops during the release freeze"}
+            if ctx.kind == "command" and ctx.command == "stop"
+            else None
+        )
+    )
+    dispatcher, registry, tmux, store, *_ = _dispatcher(tmp_path)
+    _live(dispatcher, registry, tmux, store)
+    dispatcher.handle(comment("the-loop stop", "d-4"))
+    assert _wait(lambda: events("control.rejected"))
+    dispatcher.stop()
+    (rejected,) = events("control.rejected")
+    assert (rejected["command"], rejected["reason"]) == ("stop", "input-refused")
+    assert registry.find_by_work_item(REF) is not None, "the session was not stopped"
+    assert any("release freeze" in body for _, body in comments)
+    cmd = [c for c in points(hooks, "input_received") if c.kind == "command"]
+    assert cmd[-1].command == "stop" and cmd[-1].actor == "octocat"
+    assert cmd[-1].work_item.ref == REF and cmd[-1].source == "comment"
+
+
+def _registered(tmp_path):
+    config = {"state": {"root": str(tmp_path / ".the-loop")}}
+    registry = SessionRegistry(core_sessions._layout(config).local_dir)
+    registry.register(
+        Session(
+            work_item=WorkItemRef.parse(REF),
+            harness="claude",
+            harness_session_id="sess-1",
+            cwd=str(tmp_path),
+        )
+    )
+    return config
+
+
+def test_a_hook_refuses_an_answer_to_the_session(tmp_path, monkeypatch, events):
+    """
+    Feature: lifecycle hooks run where the thing they decide is about to happen
+      Scenario: a hook refuses an answer typed through `the-loop reply`
+        Given an input_received hook that refuses answers from unknown actors
+        When someone replies through the control plane
+        Then the reply is refused to its caller and nothing reaches the pane
+
+    Requirement: docs/specs/issue-344/requirements.md R1.2
+    """
+    install(input_received={"proceed": False, "reason": "answers come from the roster"})
+    config = _registered(tmp_path)
+    fake = FakeTmux()
+    monkeypatch.setattr(core_sessions, "TmuxRunner", lambda: fake)
+    with pytest.raises(ValueError, match="roster"):
+        core_sessions.reply_session(REF, "Use OAuth.", actor="mallory", config=config)
+    assert fake.delivers == []
+    (refused,) = events("hooks.refused")
+    assert refused["point"] == "input_received"
+
+
+def test_a_hook_rewords_an_answer_to_the_session(tmp_path, monkeypatch):
+    hooks = install(
+        input_received=lambda ctx: {"text": ctx.text + " (approved by policy)"}
+    )
+    config = _registered(tmp_path)
+    fake = FakeTmux()
+    monkeypatch.setattr(core_sessions, "TmuxRunner", lambda: fake)
+    monkeypatch.setattr(core_sessions, "post_issue_comment", lambda *a, **k: (True, ""))
+    result = core_sessions.reply_session(
+        REF, "Use OAuth.", actor="onika", config=config
+    )
+    assert result["delivered"] is True
+    (_, prompt) = fake.delivers[0][:2]
+    assert prompt.endswith("Use OAuth. (approved by policy)")
+    (answer,) = points(hooks, "input_received")
+    assert (answer.kind, answer.actor, answer.source) == ("answer", "onika", "verb")
+    assert answer.work_item.ref == REF and answer.endpoint.ref == REF
+
+
+def test_a_hook_refuses_a_control_verb_from_the_cli(tmp_path, events):
+    install(
+        input_received=lambda ctx: (
+            {"proceed": False, "reason": "no stops during the release freeze"}
+            if ctx.command == "stop"
+            else None
+        )
+    )
+    config = _registered(tmp_path)
+    with pytest.raises(ValueError, match="freeze"):
+        core_sessions.control_session(REF, "stop", comment=False, config=config)
+    (refused,) = events("hooks.refused")
+    assert refused["point"] == "input_received" and refused["work_item"] == REF

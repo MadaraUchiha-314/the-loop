@@ -83,7 +83,9 @@ EVENT_TYPES: Dict[str, str] = {
     ),
     "hooks.refused": (
         "A `proceed: false` decision was applied: a start was refused "
-        "(work_item_start) or a session launch was prevented (session_spawn) — "
+        "(work_item_start), a session launch was prevented (session_spawn), or a "
+        "person's input was dropped (input_received: an answer, a comment, a "
+        "control command) — "
         "point, reason, work_item, and the hook(s) that decided when known. The "
         "event is settled, the ticket gets one marked comment, nothing is retried."
     ),
@@ -202,7 +204,8 @@ EVENT_TYPES: Dict[str, str] = {
     "control.rejected": (
         "A control command was recognised but refused (work_items, command, "
         "source, actor, reason: spawn-policy | awaiting-start | "
-        "nothing-to-resume | unauthorized-actor | missing-collaborator) — e.g. a "
+        "nothing-to-resume | unauthorized-actor | missing-collaborator | "
+        "input-refused: a lifecycle hook said no, issue-344) — e.g. a "
         "start for a work item that is not armed for autonomous execution (which "
         "is refused without being remembered), a command with no named authorized "
         "actor, or an `add-collaborator` naming no valid `@login`."

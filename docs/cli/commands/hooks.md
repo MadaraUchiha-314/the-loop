@@ -46,7 +46,7 @@ may change.
 
 ```text
 $ the-loop hooks points
-lifecycle points (6):
+lifecycle points (7):
 
   work_item_start  (WorkItemStart)
     fires:     once per arming, when a start is accepted and before the workspace is prepared or any session exists

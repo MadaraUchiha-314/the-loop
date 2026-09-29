@@ -21,6 +21,7 @@ workItem: "github:MadaraUchiha-314/the-loop#344"
 | 4 | self (this session) | zero (converged) | the fix re-read; the racy test 10/10 green, 0/8 red on the base before the fix was needed |
 | 5 | CI (`checks`), PR #432 | new finding | 1 found (issue-422 guard), 1 fixed |
 | 6 | MadaraUchiha-314, PR #432 review | new finding | 1 found (`work_item` a bare string), 1 fixed |
+| 7 | MadaraUchiha-314, PR #432 review | new finding | 1 found (no point for a person's input), 1 fixed |
 | critic 1–3 | — | **unavailable** | no critic configured in this environment |
 
 ## Round 1 findings
@@ -124,6 +125,25 @@ bodies, and a hook author's server should need no dependency. Pinned by
 `test_the_work_item_is_a_modelled_entity_not_a_string` and its neighbours, the nested
 round trip, the wrong-type refusals, and a field-for-field parity test of the `WorkItem`
 block on the lifecycle page and the design.
+
+## Round 7 — the owner's review (PR #432, comment 4128119644)
+
+**O2 — the catalog had a point for the loop starting to wait on a person and none for the
+person's input arriving.** The owner: "Any user input received should have a hook."
+**Fixed:** a seventh point, `input_received`, the counterpart of `waiting_for_input`, run
+wherever a person's input reaches the loop and before the-loop acts on it — a comment or
+review about to be delivered into a session (`Dispatcher._input_received`, before the human
+gate reads it and before anything is rendered), a control command from the ticket
+(`_command_permitted`, after the named-actor check and before any handler), an answer
+through `reply_session` and a verb through `control_session` (the CLI, the API, a
+channel). Facts: `kind` (`answer` | `comment` | `command`), `actor`, `source`, `command`,
+`event`, `endpoint`, `loop`; decisions: `text` (what is delivered — for a comment written
+onto a copy of the payload so the excerpt the session reads carries it), `proceed`,
+`reason`. A refusal is a decision, never a failed delivery: a comment is explained in one
+marked comment (`input-refused`) and settled, a ticket command is `control.rejected` with
+that reason, a reply or verb raises to its caller. Six scenarios pin it
+(`test_lifecycle_hooks_integration.py`, from `input_received` down); the parity tests carry
+the seventh point through the base class, both documentation pages and `describe()`.
 
 ## What the reviewer looked for and did not find
 

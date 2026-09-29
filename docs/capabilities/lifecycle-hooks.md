@@ -6,7 +6,7 @@
 
 ## What it is
 
-A **curated catalog of six lifecycle points**, each with a typed context of facts a hook
+A **curated catalog of seven lifecycle points**, each with a typed context of facts a hook
 reads and decisions a hook may change, and one executor interface — a `LifecycleHooks`
 subclass — that the-loop runs synchronously in the path of the thing it decides. The
 operator declares executors under the top-level `hooks` of `cli-config.yaml`; each runs
@@ -25,7 +25,7 @@ constraint this capability is built around ([decision-137](../decisions/decision
 
 - The system SHALL define exactly these points, in this order, as the only names a
   declaration may reference: `work_item_start`, `session_spawn`, `session_spawned`,
-  `waiting_for_input`, `phase_changed`, `work_item_complete`. `the-loop hooks points` SHALL
+  `waiting_for_input`, `input_received`, `phase_changed`, `work_item_complete`. `the-loop hooks points` SHALL
   list them with their facts and decisions. `EVENT_TYPES` SHALL NOT be a source of points.
 - Each point SHALL fire synchronously, before the thing it decides: `work_item_start` once
   per arming before the workspace is prepared; `session_spawn` before every harness
@@ -42,6 +42,13 @@ constraint this capability is built around ([decision-137](../decisions/decision
 
 ### Decisions and their effects
 
+- `input_received` SHALL fire when a person's input reaches the loop — an answer through
+  `the-loop reply` (CLI, API, a channel), a comment or review about to be delivered into a
+  session, a control command from the ticket or a control verb — before the-loop delivers,
+  reads or runs it. Its `text` decision SHALL replace what is delivered (an answer, a
+  comment's body); `proceed: false` SHALL drop it: a comment is not delivered and the ticket
+  gets one marked comment (`input-refused`), a ticket command is rejected
+  (`control.rejected`, reason `input-refused`), a reply or verb is refused to its caller.
 - `proceed: false` at `work_item_start` SHALL disarm the work item, post one marked
   comment naming the reason, settle the event without retry, and record `hooks.refused`.
 - `proceed: false` at `session_spawn` SHALL prevent the launch (first spawn, respawn:
@@ -89,7 +96,7 @@ constraint this capability is built around ([decision-137](../decisions/decision
 - A remote executor SHALL send one JSON-RPC 2.0 `POST` per invocation (`method` the point,
   `params` the context, an integer `id`) and read `result: null` or an object of decisions;
   `error`, a non-2xx status, a timeout or a mismatched `id` SHALL be the hook's failure.
-- `the_loop.sdk.hooks` SHALL export `LifecycleHooks`, the six contexts, `POINTS`,
+- `the_loop.sdk.hooks` SHALL export `LifecycleHooks`, the seven contexts, `POINTS`,
   `handle_request` (the server half for any HTTP framework) and `HookServer` (a stdlib
   server with an optional bearer check and `GET /health`), importing no FastAPI, uvicorn or
   MCP.
@@ -108,4 +115,4 @@ constraint this capability is built around ([decision-137](../decisions/decision
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-344 | Capability minted: six lifecycle points with typed contexts (facts + decisions), the `LifecycleHooks` executor interface, the top-level `hooks[]` declaration (local `module`/`path`, remote `url` over JSON-RPC), the chain runner with warn-and-continue and `required`, the-loop's own announcements consulting the seam, `the-loop hooks`, and `the_loop.sdk.hooks`. Supersedes the event-centred attempt of PR #357 | [spec](../specs/issue-344/), [decision-137](../decisions/decision-137.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/344) |
+| issue-344 | Capability minted: seven lifecycle points with typed contexts (facts + decisions), the `LifecycleHooks` executor interface, the top-level `hooks[]` declaration (local `module`/`path`, remote `url` over JSON-RPC), the chain runner with warn-and-continue and `required`, the-loop's own announcements consulting the seam, `the-loop hooks`, and `the_loop.sdk.hooks`. Supersedes the event-centred attempt of PR #357 | [spec](../specs/issue-344/), [decision-137](../decisions/decision-137.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/344) |

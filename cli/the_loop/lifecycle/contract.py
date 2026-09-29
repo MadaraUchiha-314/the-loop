@@ -1,4 +1,4 @@
-"""The lifecycle hook contract (issue-344): six typed points a hook may change.
+"""The lifecycle hook contract (issue-344): seven typed points a hook may change.
 
 A **graph hook** (:mod:`the_loop.graph`) is a check at a node boundary — it answers
 "is this gate satisfied?". A **lifecycle hook** is something else: code the operator
@@ -17,7 +17,7 @@ it. Two things are the-loop's own:
   can change what the moment decides and cannot redirect what the moment is about.
 * **Not the event log.** The first attempt at this ticket (PR #357) made every
   event-log type an attach point. An event is a record of something already done; a
-  hook on one can never change it. These six points are chosen by what delivery *is*,
+  hook on one can never change it. These seven points are chosen by what delivery *is*,
   and adding one is a reviewed edit to this file, held together by a parity test
   against :class:`LifecycleHooks` and the documentation.
 
@@ -47,6 +47,7 @@ __all__ = [
     "POINTS",
     "Context",
     "DecisionTypeError",
+    "InputReceived",
     "LifecycleHooks",
     "WorkItem",
     "PhaseChanged",
@@ -290,7 +291,7 @@ def _checked(name: str, declared: str, value: Any, error: type = TypeError) -> A
     raise error(f"{name!r} must be {declared}, got {type(value).__name__} ({value!r})")
 
 
-# -- the six points -----------------------------------------------------------------
+# -- the seven points ----------------------------------------------------------------
 
 
 @dataclass
@@ -413,6 +414,48 @@ class WaitingForInput(Context):
 
 
 @dataclass
+class InputReceived(Context):
+    """A person's input reached the loop — an answer to the session (``the-loop reply``,
+    the API, a channel), a comment or review about to be delivered into the session, or
+    a control command (``start``, ``stop``, ``execute``…) — and the-loop is about to act
+    on it. The counterpart of ``waiting_for_input``: fires before the delivery, before a
+    human gate reads the comment, before the command runs.
+
+    Decisions: ``text`` — what is delivered: an answer as-is, a comment's body as the
+    session is shown it; ignored for a command. ``proceed`` — ``False`` drops the input:
+    an answer is refused to its caller, a comment is not delivered (one marked comment on
+    the ticket names the ``reason``, the event is settled), a command is rejected
+    (``control.rejected``, reason ``input-refused``).
+    """
+
+    POINT: ClassVar[str] = "input_received"
+    FIRES: ClassVar[str] = (
+        "when a person's input reaches the loop — an answer, a comment or review to "
+        "deliver, a control command — before the-loop acts on it"
+    )
+
+    #: ``answer`` (a reply to the session) | ``comment`` (a comment or review to deliver)
+    #: | ``command`` (a control word).
+    kind: str = ""
+    #: The login that wrote it, or the actor the verb was given.
+    actor: str = ""
+    #: ``comment`` (the ticket or pull request, by webhook or poll) | ``verb`` (the-loop's
+    #: own reply and control verbs: the CLI, the API, a channel).
+    source: str = ""
+    #: The control word, for a command (``start``, ``stop``, ``pause``, ``execute``…).
+    command: str = ""
+    #: The GitHub event, for a comment (``issue_comment``, ``pull_request_review``…).
+    event: str = ""
+    #: The conversation the input lands in: the work item's, or a pull request's; empty
+    #: for a command.
+    endpoint: WorkItem = field(default_factory=WorkItem)
+    loop: str = ""
+    text: str = decision("")
+    proceed: bool = decision(True)
+    reason: str = decision("")
+
+
+@dataclass
 class PhaseChanged(Context):
     """The graph moved the work item's phase — the ``loop:<phase>`` label changed, or a
     terminal node was reached. Fires before the channels are told.
@@ -476,6 +519,7 @@ POINTS: Dict[str, Type[Context]] = {
         SessionSpawn,
         SessionSpawned,
         WaitingForInput,
+        InputReceived,
         PhaseChanged,
         WorkItemComplete,
     )
@@ -506,6 +550,9 @@ class LifecycleHooks:
         return None
 
     def waiting_for_input(self, ctx: WaitingForInput) -> Optional[WaitingForInput]:
+        return None
+
+    def input_received(self, ctx: InputReceived) -> Optional[InputReceived]:
         return None
 
     def phase_changed(self, ctx: PhaseChanged) -> Optional[PhaseChanged]:

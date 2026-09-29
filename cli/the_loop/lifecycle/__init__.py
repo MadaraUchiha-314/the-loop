@@ -30,6 +30,7 @@ from .. import cli_config, eventlog
 from .contract import (
     POINTS,
     Context,
+    InputReceived,
     LifecycleHooks,
     PhaseChanged,
     SessionSpawn,
@@ -57,6 +58,7 @@ __all__ = [
     "Context",
     "Declaration",
     "HooksConfigError",
+    "InputReceived",
     "LifecycleHooks",
     "PhaseChanged",
     "Runner",
