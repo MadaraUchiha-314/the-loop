@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>issue-374 · Instances tab, instance pane, chip and filter</title>
+<!--
+  Self-contained prototype (design.uiArtifacts.selfContained: true): no network, no
+  fonts, no scripts from anywhere. Tokens are the Control Plane UI 3.0 set copied from
+  ui/src/styles/app.css (issue-327, decision-112); the markup mirrors the shapes the app
+  already ships (sidebar rows, ref-chip, the standing-sessions table, Card / Kicker).
+
+  Covers: R5.2 (instance chip on rows, the sidebar filter), R5.3 (the Instances tab:
+  fleet table, Register card, Open / Manage / Unregister, the worker view), R5.4 (the
+  instance pane: identity, daemons, config editor, restart, unregister — disabled with
+  the reason when not live), R5.5 (the health word folding the fleet in).
+
+  States are switched with the buttons in the top bar; the theme toggle is the app's.
+-->
+<style>
+  :root {
+    --background: oklch(98.4% 0.004 85);
+    --foreground: oklch(24% 0.012 265);
+    --surface: oklch(99.8% 0.002 85);
+    --surface-2: oklch(96.2% 0.006 85);
+    --primary: oklch(63% 0.15 48);
+    --primary-foreground: oklch(99% 0.005 85);
+    --muted-foreground: oklch(53% 0.014 265);
+    --accent: oklch(94% 0.02 60);
+    --accent-foreground: oklch(30% 0.03 48);
+    --border: oklch(90% 0.006 85);
+    --border-strong: oklch(84% 0.008 85);
+    --state-done: oklch(55% 0.11 155);
+    --state-active: oklch(63% 0.15 48);
+    --state-blocked: oklch(56% 0.19 25);
+    --state-skipped: oklch(68% 0.01 265);
+    --state-pending: oklch(80% 0.008 265);
+    --human: oklch(52% 0.13 265);
+    --radius: 0.625rem;
+    color-scheme: light;
+  }
+  .dark {
+    --background: oklch(16.5% 0.008 265);
+    --foreground: oklch(94% 0.006 85);
+    --surface: oklch(19.6% 0.009 265);
+    --surface-2: oklch(22.8% 0.01 265);
+    --primary: oklch(75% 0.14 55);
+    --primary-foreground: oklch(19% 0.03 48);
+    --muted-foreground: oklch(68% 0.012 265);
+    --accent: oklch(28% 0.03 55);
+    --accent-foreground: oklch(85% 0.08 65);
+    --border: oklch(100% 0 0 / 0.09);
+    --border-strong: oklch(100% 0 0 / 0.16);
+    --state-done: oklch(70% 0.13 158);
+    --state-active: oklch(78% 0.14 60);
+    --state-blocked: oklch(68% 0.18 25);
+    --state-skipped: oklch(50% 0.012 265);
+    --state-pending: oklch(40% 0.012 265);
+    --human: oklch(70% 0.12 268);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--background); color: var(--foreground);
+    font: 14px/1.45 "IBM Plex Sans", system-ui, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  .mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .display { font-family: "Space Grotesk", system-ui, sans-serif; }
+
+  /* — prototype top bar (not part of the product) — */
+  .proto {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    padding: 8px 12px; border-bottom: 1px dashed var(--border-strong);
+    background: var(--surface-2); font-size: 12px; color: var(--muted-foreground);
+  }
+  .proto button { font-size: 12px; }
+  .proto .on { background: var(--primary); color: var(--primary-foreground); border-color: transparent; }
+
+  /* — the shell: sidebar · main — */
+  .shell { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px 1fr; }
+  @media (max-width: 767px) { .shell { grid-template-columns: 1fr; } .sidebar { display: none; } }
+  .sidebar {
+    border-right: 1px solid var(--border); background: var(--surface);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .sidebar .head { padding: 12px 14px 8px; display: flex; flex-direction: column; gap: 8px; }
+  .sidebar .title { font-weight: 600; font-size: 13px; }
+  .sidebar input, .sidebar select, .field input {
+    width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--background); color: var(--foreground); font: inherit; font-size: 12px;
+  }
+  .sidebar .rows { flex: 1; overflow: auto; padding: 0 6px; }
+  .group { padding: 10px 8px 4px; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted-foreground); }
+  .row { display: grid; grid-template-columns: 10px 1fr auto; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 8px; }
+  .row:hover { background: var(--surface-2); }
+  .row.sel { background: var(--surface-2); }
+  .row .t { min-width: 0; }
+  .row .t b { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+  .row .t span { font-size: 11px; color: var(--muted-foreground); }
+  .row.pr { padding-left: 26px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; background: var(--state-pending); }
+  .dot.done { background: var(--state-done); } .dot.active { background: var(--state-active); }
+  .dot.blocked { background: var(--state-blocked); } .dot.pending { background: var(--state-pending); }
+  .chip {
+    display: inline-block; font-family: ui-monospace, monospace; font-size: 10px; padding: 1px 6px;
+    border: 1px solid var(--border-strong); border-radius: 999px; color: var(--muted-foreground);
+    background: var(--surface-2); white-space: nowrap;
+  }
+  .chip.inst { border-color: transparent; background: var(--accent); color: var(--accent-foreground); }
+  .foot { border-top: 1px solid var(--border); padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--muted-foreground); }
+  .foot .health { display: inline-flex; gap: 6px; align-items: center; font-family: ui-monospace, monospace; }
+  .foot .health.ok { color: var(--state-done); } .foot .health.bad { color: var(--state-blocked); }
+  .nav { display: flex; gap: 6px; padding: 8px 12px 0; }
+  .nav a { font-size: 12px; padding: 4px 8px; border-radius: 6px; color: var(--muted-foreground); text-decoration: none; }
+  .nav a.on { background: var(--surface-2); color: var(--foreground); }
+
+  main { min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+  .bar { display: flex; align-items: baseline; gap: 12px; padding: 14px 24px; border-bottom: 1px solid var(--border); }
+  .bar h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  .bar .meta { font-size: 12px; color: var(--muted-foreground); }
+  .content { padding: 20px 24px 40px; overflow: auto; }
+  .stack { display: flex; flex-direction: column; gap: 14px; max-width: 1080px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+  .kicker { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-foreground); margin-bottom: 8px; }
+  .note { font-size: 12px; color: var(--muted-foreground); }
+  .banner { border-left: 3px solid var(--state-blocked); background: var(--surface-2); padding: 8px 12px; border-radius: 6px; font-size: 12px; }
+  .banner.human { border-color: var(--human); }
+
+  .card { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td.mono { white-space: nowrap; }
+  th { text-align: left; font-weight: 500; font-size: 11px; color: var(--muted-foreground); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  td.state { white-space: nowrap; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .state .w { margin-left: 6px; }
+  .actions { display: flex; gap: 6px; justify-content: flex-end; }
+  button, .btn {
+    font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--border-strong); background: var(--surface); color: var(--foreground);
+  }
+  button.primary { background: var(--primary); color: var(--primary-foreground); border-color: transparent; }
+  button.danger { color: var(--state-blocked); }
+  button[disabled] { opacity: .5; cursor: not-allowed; }
+  .form { display: grid; grid-template-columns: 1fr 2fr auto; gap: 10px; align-items: end; }
+  @media (max-width: 767px) { .form { grid-template-columns: 1fr; } table thead { display: none; } td { display: block; } td.actions-cell .actions { justify-content: flex-start; } }
+  .field label { display: block; font-size: 11px; color: var(--muted-foreground); margin-bottom: 4px; }
+  .err { font-size: 12px; color: var(--state-blocked); margin-top: 6px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 900px) { .two { grid-template-columns: 1fr; } }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; font-size: 13px; }
+  dt { color: var(--muted-foreground); } dd { margin: 0; }
+  .daemon { display: grid; grid-template-columns: 10px 1fr auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .daemon:last-child { border-bottom: 0; }
+  .json { font-family: ui-monospace, monospace; font-size: 12px; background: var(--surface-2); border-radius: 8px; padding: 10px; white-space: pre; overflow: auto; }
+  .hidden { display: none !important; }
+  .pop { margin-top: 8px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--surface); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="proto">
+  <span>prototype · issue-374 · state:</span>
+  <button data-state="fleet" class="on">Instances (manager)</button>
+  <button data-state="manage">Manage · cloud-1 (unreachable)</button>
+  <button data-state="manage-live">Manage · laptop-a (live)</button>
+  <button data-state="work">Work board, filtered</button>
+  <button data-state="worker">Instances (worker)</button>
+  <span style="margin-left:auto">theme:</span>
+  <button id="theme">dark</button>
+</div>
+
+<div class="shell">
+  <aside class="sidebar">
+    <div class="nav">
+      <a href="#" data-nav="work" class="on">Work</a>
+      <a href="#" data-nav="standing">Standing</a>
+      <a href="#" data-nav="instances">Instances</a>
+    </div>
+    <div class="head">
+      <input placeholder="Search work items" aria-label="Search work items">
+      <select id="filter" aria-label="Instance filter">
+        <option value="">All instances (3)</option>
+        <option value="laptop-a">laptop-a</option>
+        <option value="ci-box">ci-box</option>
+        <option value="cloud-1">cloud-1 · unreachable</option>
+      </select>
+    </div>
+    <div class="rows" id="rows">
+      <div class="group">Needs you</div>
+      <div class="row" data-inst="laptop-a"><span class="dot blocked"></span><div class="t"><b>#374 · a manager instance</b><span>the-loop · design-approval · 2h</span></div><span class="chip inst">laptop-a</span></div>
+      <div class="row pr" data-inst="laptop-a"><span class="dot active"></span><div class="t"><b>#441</b><span>implementation · 40m</span></div><span class="chip inst">laptop-a</span></div>
+      <div class="group">In flight</div>
+      <div class="row" data-inst="ci-box"><span class="dot active"></span><div class="t"><b>#433 · flaky Slack probe</b><span>the-loop · verification · 12m</span></div><span class="chip inst">ci-box</span></div>
+      <div class="row" data-inst="laptop-a"><span class="dot active"></span><div class="t"><b>#15 · the dev server port</b><span>octo/repo · implementation · 5m</span></div><span class="chip inst">laptop-a</span></div>
+      <div class="row" data-inst="ci-box"><span class="dot pending"></span><div class="t"><b>#15 · the dev server port</b><span>octo/repo · declared on two instances · —</span></div><span class="chip inst">ci-box</span></div>
+      <div class="group">Idle</div>
+      <div class="row" data-inst="cloud-1"><span class="dot pending"></span><div class="t"><b>#402 · docs sweep</b><span>the-loop · last seen 3d</span></div><span class="chip inst">cloud-1</span></div>
+      <div class="group">Standing sessions <span style="font-weight:400">2</span></div>
+      <div class="row" data-inst="ci-box"><span class="dot done"></span><div class="t"><b>nightly-triage</b><span>claude · running</span></div><span class="chip inst">ci-box</span></div>
+      <div class="row" data-inst="laptop-a"><span class="dot done"></span><div class="t"><b>pr-shepherd</b><span>claude · running</span></div><span class="chip inst">laptop-a</span></div>
+    </div>
+    <div class="foot">
+      <span>Settings</span>
+      <span class="mono" id="foot-label">manager · hq:4114 · 3 instances</span>
+      <details>
+        <summary class="health bad" id="health"><span class="dot blocked"></span>degraded</summary>
+        <div class="pop">
+          <div>Stream live, connected 4m ago.</div>
+          <div style="margin-top:6px">manager — hosts no ingress</div>
+          <div><span class="dot done"></span> laptop-a · live · 19.14.1</div>
+          <div><span class="dot done"></span> ci-box · live · 19.14.1</div>
+          <div><span class="dot blocked"></span> cloud-1 · unreachable · connection refused</div>
+        </div>
+      </details>
+    </div>
+  </aside>
+
+  <main>
+    <!-- ——— state: fleet (manager) ——— -->
+    <section data-view="fleet">
+      <div class="bar"><h1 class="display">Instances</h1><span class="meta">hq · role manager · 3 registered · 2 live · probed 12s ago</span></div>
+      <div class="content"><div class="stack">
+        <div class="banner">One instance is not live: <b>cloud-1</b> — connection refused. Its rows are left off the board until it answers to its name.</div>
+        <div class="card">
+          <div class="kicker">Registered instances</div>
+          <table>
+            <thead><tr><th>Name</th><th>URL</th><th>State</th><th>Version</th><th>Mode</th><th class="num">Managed</th><th class="num">Sessions</th><th>Probed</th><th></th></tr></thead>
+            <tbody>
+              <tr><td class="mono">laptop-a</td><td class="mono">http://10.0.0.5:4114</td><td class="state"><span class="dot done"></span><span class="w">live</span></td><td class="mono">19.14.1</td><td>addressed</td><td class="num">4</td><td class="num">2</td><td class="note">12s ago</td><td class="actions-cell"><div class="actions"><button>Open</button><button>Manage</button><button class="danger">Unregister</button></div></td></tr>
+              <tr><td class="mono">ci-box</td><td class="mono">http://ci:4114</td><td class="state"><span class="dot done"></span><span class="w">live</span></td><td class="mono">19.14.1</td><td>locked</td><td class="num">2</td><td class="num">2</td><td class="note">12s ago</td><td class="actions-cell"><div class="actions"><button>Open</button><button>Manage</button><button class="danger">Unregister</button></div></td></tr>
+              <tr><td class="mono">cloud-1</td><td class="mono">http://10.0.0.9:4114</td><td class="state"><span class="dot blocked"></span><span class="w">unreachable</span><div class="note">connection refused</div></td><td class="mono">—</td><td>—</td><td class="num">—</td><td class="num">—</td><td class="note">12s ago</td><td class="actions-cell"><div class="actions"><button disabled title="not live">Open</button><button>Manage</button><button class="danger">Unregister</button></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="kicker">Register an instance</div>
+          <div class="form">
+            <div class="field"><label for="r-name">Name — the member's own <code>instance.name</code></label><input id="r-name" class="mono" placeholder="cloud-2"></div>
+            <div class="field"><label for="r-url">URL — its service address, as this manager reaches it</label><input id="r-url" class="mono" placeholder="http://10.0.0.10:4114"></div>
+            <button class="primary">Register</button>
+          </div>
+          <div class="err">Name must fit ^[a-z0-9][a-z0-9-]{0,39}$ and not already be registered; URL must be http(s). The member need not be up yet — it shows <i>unreachable</i> until it is.</div>
+          <div class="note" style="margin-top:8px">Writes <code>instance.manager.instances</code> in the manager's <code>cli-config.yaml</code> — the same edit you could make by hand; live on the next request.</div>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- ——— state: manage (cloud-1, unreachable) ——— -->
+    <section data-view="manage" class="hidden">
+      <div class="bar"><h1 class="display mono">cloud-1</h1><span class="meta"><span class="dot blocked"></span> unreachable · http://10.0.0.9:4114 · probed 12s ago</span></div>
+      <div class="content"><div class="stack">
+        <div class="banner">Not live: <b>connection refused</b>. Every control below is disabled until the instance answers to its name.</div>
+        <div class="two">
+          <div class="card">
+            <div class="kicker">Identity</div>
+            <dl><dt>name</dt><dd class="mono">cloud-1</dd><dt>url</dt><dd class="mono">http://10.0.0.9:4114</dd><dt>version</dt><dd>—</dd><dt>mode</dt><dd>—</dd><dt>managed</dt><dd>—</dd></dl>
+          </div>
+          <div class="card">
+            <div class="kicker">Daemons</div>
+            <div class="note">Unknown — the instance has not answered.</div>
+            <div class="actions" style="margin-top:10px"><button disabled title="not live">Restart instance</button></div>
+          </div>
+        </div>
+        <div class="card"><div class="kicker">Configuration</div><div class="note">The schema-driven editor mounts here, reading and writing with <code>instance=cloud-1</code>. Disabled: not live.</div></div>
+        <div class="card"><div class="kicker">Danger</div><div class="actions" style="justify-content:flex-start"><button class="danger">Unregister cloud-1</button></div><div class="note" style="margin-top:6px">Removes it from the registry only; nothing on the box changes.</div></div>
+      </div></div>
+    </section>
+
+    <!-- ——— state: manage (laptop-a, live) ——— -->
+    <section data-view="manage-live" class="hidden">
+      <div class="bar"><h1 class="display mono">laptop-a</h1><span class="meta"><span class="dot done"></span> live · http://10.0.0.5:4114 · 19.14.1 · probed 12s ago</span></div>
+      <div class="content"><div class="stack">
+        <div class="two">
+          <div class="card">
+            <div class="kicker">Identity</div>
+            <dl><dt>name</dt><dd class="mono">laptop-a</dd><dt>url</dt><dd class="mono">http://10.0.0.5:4114</dd><dt>version</dt><dd class="mono">19.14.1</dd><dt>mode</dt><dd>addressed</dd><dt>managed</dt><dd>4 — <span class="chip">github:MadaraUchiha-314/the-loop#374</span> <span class="chip">…#441</span> <span class="chip">github:octo/repo#15</span> <span class="chip">…#16</span></dd></dl>
+          </div>
+          <div class="card">
+            <div class="kicker">Daemons</div>
+            <div class="daemon"><span class="dot done"></span><span class="mono">poller</span><span class="actions"><button>stop</button></span></div>
+            <div class="daemon"><span class="dot done"></span><span class="mono">gh-webhook</span><span class="actions"><button>stop</button></span></div>
+            <div class="daemon"><span class="dot pending"></span><span class="mono">slack-listener <span class="note">disabled</span></span><span class="actions"><button disabled>start</button></span></div>
+            <div class="actions" style="margin-top:10px"><button>Restart instance</button></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="kicker">Configuration — laptop-a's cli-config.yaml</div>
+          <div class="note" style="margin-bottom:8px">The existing schema-driven editor, one section per top-level key, mounted with <code>instance=laptop-a</code>. Save sends only what changed; <code>restartRequired</code> is reported back.</div>
+          <div class="json">instance:
+  name: laptop-a
+  scope:
+    mode: addressed          ▾
+    workItems: [github:octo/repo#15, …]
+routing:
+  enabled: true              ☑
+  …</div>
+          <div class="actions" style="margin-top:10px; justify-content:flex-start"><button class="primary">Save</button><span class="note" style="align-self:center">last saved 3m ago · config.updated on laptop-a</span></div>
+        </div>
+        <div class="card"><div class="kicker">Danger</div><div class="actions" style="justify-content:flex-start"><button class="danger">Unregister laptop-a</button></div></div>
+      </div></div>
+    </section>
+
+    <!-- ——— state: work board, filtered to laptop-a ——— -->
+    <section data-view="work" class="hidden">
+      <div class="bar"><h1 class="display">#15 · the dev server port</h1><span class="chip">github:octo/repo#15</span><span class="chip inst">laptop-a</span><span class="meta">implementation · claude · laptop-a:~/w/octo-repo-15</span></div>
+      <div class="content"><div class="stack">
+        <div class="banner human">Filter: <b>laptop-a</b> — 2 work items, 1 standing session. Rows from ci-box and cloud-1 are hidden; <a href="#">show all</a>.</div>
+        <div class="card"><div class="kicker">Loop</div><div class="note mono">requirements ✓ · design ✓ · … · <b>implementation ●</b> · verification · needs-review</div></div>
+        <div class="card"><div class="kicker">Trace</div><div class="note">The readable transcript, fetched with <code>instance=laptop-a</code> — unchanged otherwise.</div></div>
+        <div class="card"><div class="kicker">Composer</div><div class="form" style="grid-template-columns:1fr auto"><input placeholder="Reply to the session on laptop-a…"><button class="primary">Send</button></div><div class="note" style="margin-top:6px">POST /sessions/reply with ref and instance.</div></div>
+      </div></div>
+    </section>
+
+    <!-- ——— state: worker view ——— -->
+    <section data-view="worker" class="hidden">
+      <div class="bar"><h1 class="display">Instances</h1><span class="meta">laptop-a · role worker</span></div>
+      <div class="content"><div class="stack">
+        <div class="card">
+          <div class="kicker">This instance</div>
+          <table>
+            <thead><tr><th>Name</th><th>URL</th><th>State</th><th>Version</th><th>Mode</th><th class="num">Managed</th><th class="num">Sessions</th><th></th></tr></thead>
+            <tbody><tr><td class="mono">laptop-a</td><td class="mono">http://127.0.0.1:4114</td><td class="state"><span class="dot done"></span><span class="w">live</span></td><td class="mono">19.14.1</td><td>addressed</td><td class="num">4</td><td class="num">2</td><td class="actions-cell"><div class="actions"><button>Manage</button></div></td></tr></tbody>
+          </table>
+        </div>
+        <div class="note">This service is a <b>worker</b> (<code>instance.role: worker</code>), so it manages no other instances and nothing can be registered here. Point this browser at a manager to see a fleet.</div>
+      </div></div>
+    </section>
+  </main>
+</div>
+
+<script>
+  // Prototype wiring only: state switching, the theme toggle, the sidebar filter.
+  const states = document.querySelectorAll(".proto [data-state]");
+  const views = document.querySelectorAll("main [data-view]");
+  const foot = document.getElementById("foot-label");
+  const health = document.getElementById("health");
+  const filter = document.getElementById("filter");
+  const nav = document.querySelectorAll(".nav a");
+  function show(name) {
+    states.forEach((b) => b.classList.toggle("on", b.dataset.state === name));
+    views.forEach((v) => v.classList.toggle("hidden", v.dataset.view !== name));
+    const worker = name === "worker";
+    foot.textContent = worker ? "service · 127.0.0.1:4114" : "manager · hq:4114 · 3 instances";
+    health.className = worker ? "health ok" : "health bad";
+    health.innerHTML = worker ? '<span class="dot done"></span>live' : '<span class="dot blocked"></span>degraded';
+    filter.parentElement.style.display = worker ? "none" : "";
+    document.querySelectorAll(".chip.inst").forEach((c) => (c.style.display = worker ? "none" : ""));
+    nav.forEach((a) => a.classList.toggle("on", (name === "work") ? a.dataset.nav === "work" : a.dataset.nav === "instances"));
+    if (name === "work") { filter.value = "laptop-a"; applyFilter(); } else { filter.value = ""; applyFilter(); }
+  }
+  states.forEach((b) => b.addEventListener("click", () => show(b.dataset.state)));
+  function applyFilter() {
+    const v = filter.value;
+    document.querySelectorAll("#rows .row").forEach((r) => (r.style.display = !v || r.dataset.inst === v ? "" : "none"));
+  }
+  filter.addEventListener("change", applyFilter);
+  const theme = document.getElementById("theme");
+  const prefersDark = matchMedia("(prefers-color-scheme: dark)").matches;
+  if (prefersDark) document.documentElement.classList.add("dark");
+  function syncTheme() { theme.textContent = document.documentElement.classList.contains("dark") ? "light" : "dark"; }
+  theme.addEventListener("click", () => { document.documentElement.classList.toggle("dark"); syncTheme(); });
+  syncTheme();
+  show("fleet");
+  nav.forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); show(a.dataset.nav === "instances" ? "fleet" : "work"); }));
+</script>
+</body>
+</html>
