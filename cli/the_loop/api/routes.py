@@ -23,6 +23,15 @@ attached to — and the SDK is forbidden from installing either on somebody else
 * records the operation in the event log as ``api.request``. ``health`` is exempt — it is
   the liveness probe the CLI's auto-start loop hammers — and the exemption is keyed on the
   *operation id* rather than the path, so it survives being mounted under a prefix.
+
+**The routes call a facade, not ``the_loop.core``** (issue-374, decision-138 D3). A
+worker's is :class:`~the_loop.api.facade.CoreFacade`; a manager's, which serves the same
+surface over its own state plus the registered instances', is
+:class:`the_loop.manager.facade.ManagerFacade`. Every keyed operation carries an optional
+``instance`` (R2.6) — a query parameter on a ``GET``, a body field on a ``POST`` — that
+a worker accepts only as its own name; two more mappings, ``Conflict`` → 409 and
+``MemberUnavailable`` → 502, are the manager's outcomes; and a list read that could not
+reach every member names them in ``The-Loop-Instances-Unreachable`` (R2.9).
 """
 
 from __future__ import annotations
@@ -37,21 +46,12 @@ from pydantic import BaseModel
 
 from .. import eventlog
 from ..cli_config import ConfigHolder
-from ..core import attention as core_attention
-from ..core import config as core_config
-from ..core import daemons as core_daemons
-from ..core import events as core_events
-from ..core import graphs as core_graphs
-from ..core import instance as core_instance
-from ..core import lifecycle as core_lifecycle
-from ..core import repo as core_repo
-from ..core import sessions as core_sessions
-from ..core import standing as core_standing
-from ..core import workitems as core_workitems
 from ..workitem import WorkItemRef
 from ..yamlpatch import SpliceError
 from . import stream as api_stream
 from .config import stream_config
+from .errors import Conflict, MemberUnavailable
+from .facade import LEFT_OUT, PARTIAL_HEADER, CoreFacade
 
 API_PREFIX = "/api/v1"
 
@@ -70,6 +70,8 @@ class ConfigUpdateBody(BaseModel):
     # field — the file this route may write is the one the process already reads
     # (requirements R1.4), so no request can name another.
     patch: Dict[str, Any]
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
 
 
 class GraphCheckBody(BaseModel):
@@ -82,6 +84,8 @@ class GraphCheckBody(BaseModel):
     pr: Optional[int] = None
     prRepo: str = ""
     specDir: str = ""
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
 
 
 class GraphCompleteBody(BaseModel):
@@ -93,6 +97,8 @@ class GraphCompleteBody(BaseModel):
     pr: Optional[int] = None
     prRepo: str = ""
     specDir: str = ""
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
 
 
 class GraphAdvanceBody(BaseModel):
@@ -102,6 +108,8 @@ class GraphAdvanceBody(BaseModel):
     pr: Optional[int] = None
     prRepo: str = ""
     specDir: str = ""
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
 
 
 class GraphForceBody(BaseModel):
@@ -114,6 +122,8 @@ class GraphForceBody(BaseModel):
     pr: Optional[int] = None
     prRepo: str = ""
     specDir: str = ""
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
 
 
 class GraphSkipBody(BaseModel):
@@ -126,6 +136,8 @@ class GraphSkipBody(BaseModel):
     pr: Optional[int] = None
     prRepo: str = ""
     specDir: str = ""
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
 
 
 class GraphReposBody(BaseModel):
@@ -137,12 +149,16 @@ class GraphReposBody(BaseModel):
     pr: Optional[int] = None
     prRepo: str = ""
     specDir: str = ""
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
 
 
 class SessionControlBody(BaseModel):
     ref: str
     verb: str
     comment: bool = True
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
 
 
 class SessionReplyBody(BaseModel):
@@ -152,6 +168,8 @@ class SessionReplyBody(BaseModel):
     # as authentication (decision-059: the gateway owns auth).
     actor: str = ""
     comment: bool = True
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
 
 
 class StandingControlBody(BaseModel):
@@ -161,6 +179,8 @@ class StandingControlBody(BaseModel):
     # recorded one" for stop; `restart` requires one.
     name: str = ""
     verb: str
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
 
 
 class StandingSayBody(BaseModel):
@@ -169,6 +189,8 @@ class StandingSayBody(BaseModel):
     # Recorded on the event for the audit trail; never trusted as
     # authentication (decision-059: the gateway owns auth).
     actor: str = ""
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
 
 
 class StandingCreateBody(BaseModel):
@@ -187,10 +209,14 @@ class StandingCreateBody(BaseModel):
     slackChannel: str = ""
     autoStart: bool = True
     start: bool = True
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
 
 
 class StandingDeleteBody(BaseModel):
     name: str
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
 
 
 class SessionRegisterBody(BaseModel):
@@ -199,21 +225,29 @@ class SessionRegisterBody(BaseModel):
     harnessSessionId: str
     cwd: str = "."
     force: bool = False
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
 
 
 class SessionLinkPrBody(BaseModel):
     ref: str
     pullRequest: str
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
 
 
 class SessionCloseBody(BaseModel):
     ref: str
     keepTmux: Optional[bool] = None
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
 
 
 class DaemonControlBody(BaseModel):
     daemon: str
     verb: str
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
 
 
 class RestartBody(BaseModel):
@@ -221,6 +255,19 @@ class RestartBody(BaseModel):
     # process is a fixed argv, and the config path it receives is the one this
     # process already reads — no request can name another.
     withUpgrade: bool = False
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
+
+
+class InstanceRegisterBody(BaseModel):
+    # The registry entry (issue-374 R4): the member's own name and its address as
+    # this manager reaches it. Validated by core exactly as the config reader does.
+    name: str
+    url: str
+
+
+class InstanceUnregisterBody(BaseModel):
+    name: str
 
 
 class CriticRunBody(BaseModel):
@@ -232,6 +279,8 @@ class CriticRunBody(BaseModel):
     specDir: str = ""
     timeout: Optional[float] = None
     cwd: str = ""
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
 
 
 def _core_route_class(holder: ConfigHolder):
@@ -249,6 +298,7 @@ def _core_route_class(holder: ConfigHolder):
 
             async def handler(request: Request) -> Response:
                 holder.refresh()
+                token = LEFT_OUT.set([])
                 try:
                     response = await original(request)
                 # SpliceError first: it is a RuntimeError today, but ordering
@@ -262,6 +312,21 @@ def _core_route_class(holder: ConfigHolder):
                     response = JSONResponse(
                         status_code=500, content={"detail": str(exc)}
                     )
+                except Conflict as exc:
+                    # Two instances answer for one key (issue-374 R2.4): refused,
+                    # never resolved by picking one; the candidates are named so the
+                    # caller can pick with `instance`.
+                    response = JSONResponse(
+                        status_code=409,
+                        content={"detail": str(exc), "candidates": list(exc.candidates)},
+                    )
+                except MemberUnavailable as exc:
+                    # A registered instance did not answer a keyed operation (R2.9):
+                    # 502 with the reason, never an empty 200.
+                    response = JSONResponse(
+                        status_code=502,
+                        content={"detail": str(exc), "instance": exc.instance},
+                    )
                 except LookupError as exc:
                     response = JSONResponse(
                         status_code=404, content={"detail": str(exc)}
@@ -270,6 +335,13 @@ def _core_route_class(holder: ConfigHolder):
                     response = JSONResponse(
                         status_code=400, content={"detail": str(exc)}
                     )
+                finally:
+                    left_out = list(LEFT_OUT.get())
+                    LEFT_OUT.reset(token)
+                if left_out:
+                    # The members a list read could not include (R2.9): a bare array
+                    # cannot carry the fact, so the header does.
+                    response.headers[PARTIAL_HEADER] = ", ".join(left_out)
                 if operation_id not in _UNAUDITED_OPERATIONS:
                     # Debug level (issue-283 B7): a dashboard polling every 15s
                     # emits ~25 of these per cycle, and at info they push the
@@ -283,6 +355,7 @@ def _core_route_class(holder: ConfigHolder):
                         method=request.method,
                         path=request.url.path,
                         status=response.status_code,
+                        instance=request.query_params.get("instance") or None,
                     )
                 return response
 
@@ -291,37 +364,9 @@ def _core_route_class(holder: ConfigHolder):
     return CoreRoute
 
 
-def _build_broker(holder: ConfigHolder):
-    """The stream's broker, pointed at this config's event log.
-
-    The transcript resolver is injected rather than imported by the broker, so
-    the path derivation stays in one place — ``core.sessions.transcript_path``,
-    which owns the fail-closed rules issue-209 wrote — and the broker stays
-    testable without a session registry.
-    """
-    from ..state import layout_from_config
-    from .config import stream_config
-    from .stream import StreamBroker
-
-    conf = stream_config(holder.current)
-
-    def resolve(ref: str):
-        # LookupError is the *normal* answer for a work item whose session has
-        # not registered a conversation yet, so it is not logged or raised: the
-        # broker retries, and the watch starts when the session does.
-        try:
-            return core_sessions.transcript_path(ref, config=holder.current)
-        except (LookupError, ValueError):
-            return None
-
-    return StreamBroker(
-        layout_from_config(holder.current or {}).event_log,
-        max_subscribers=conf["maxSubscribers"],
-        transcript_path=resolve,
-    )
-
-
-def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
+def build_router(
+    holder: ConfigHolder, *, facade: Any = None, **router_kwargs: Any
+) -> APIRouter:
     """Every ``/api/v1`` operation, as a router any FastAPI app can include.
 
     ``router_kwargs`` are passed to :class:`~fastapi.APIRouter` — an embedder uses
@@ -329,85 +374,76 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
     operation (issue-212 R3.2). The ``/api/v1`` prefix stays *inside* the router: the
     API's version is the API's, and any namespace an embedder wants is theirs to add at
     ``include_router`` time.
+
+    ``facade`` is the implementation behind every route (issue-374): the worker's
+    :class:`~the_loop.api.facade.CoreFacade` when omitted, a manager's otherwise.
     """
+    if facade is None:
+        facade = CoreFacade(holder)
     router = APIRouter(route_class=_core_route_class(holder), **router_kwargs)
 
-    # The stream's broker is owned by the ROUTER, not by the lifespan (issue-239).
-    # The router is the only thing that travels into an embedder's application
-    # (issue-212 R3.3) — a lifespan-owned broker would simply not exist for SDK
-    # consumers, and the stream would 500 for them and nobody would know why. It
-    # costs nothing to own it here: the tailer task starts with the first
-    # subscriber and stops with the last, so a service nobody is watching runs no
-    # task at all.
-    stream_broker = _build_broker(holder)
-
     @router.get(f"{API_PREFIX}/health", operation_id="health")
-    def health() -> Dict[str, Any]:
-        # Liveness, and whether this process is doing the job it was configured for
-        # (issue-339). `status` is `degraded` — not `ok` — when an ingress the config
-        # ENABLES holds no lock: a service whose whole job is polling reported
-        # {"status": "ok"} for 17 hours while its poller was absent, and that is the
-        # report being corrected. The status CODE stays 200 while degraded (R2.4): it
-        # answers "did the service answer", which is what `client.healthy` measures and
-        # what `ensure_service` loops on — a non-2xx would make every unrelated CLI
-        # command conclude there is no service and spawn another, forever, on a box
-        # whose only fault is a stopped poller. Health lives in the body.
-        # `configPath`/`stateRoot` name the files this process is actually using — the
-        # one `curl` that would have ended that outage — and escalate nothing:
-        # GET /api/v1/config already serves the whole document across this boundary.
-        from importlib.metadata import PackageNotFoundError, version
-
-        from ..state import layout_from_config
-
-        try:
-            v = version("the-loopy-one")
-        except PackageNotFoundError:  # pragma: no cover — source checkout
-            v = "unknown"
-        config = holder.current
-        ingresses = core_lifecycle.ingress_health(config)
-        degraded = any(row["enabled"] and not row["running"] for row in ingresses)
-        return {
-            "status": "degraded" if degraded else "ok",
-            "version": v,
-            "configPath": str(holder.path),
-            "stateRoot": str(layout_from_config(config).root),
-            "ingresses": ingresses,
-        }
+    def health(instance: str = Query("")) -> Dict[str, Any]:
+        return facade.health(instance=instance)
 
     @router.get(f"{API_PREFIX}/instance", operation_id="getInstance")
-    def get_instance() -> Dict[str, Any]:
+    def get_instance(instance: str = Query("")) -> Dict[str, Any]:
         # Which instance answered, and what it manages (issue-322): the seam a
-        # manager of several instances aggregates across (decision-110 D8).
-        return core_instance.describe_instance(holder.current)
+        # manager of several instances aggregates across (decision-110 D8). On a
+        # manager, `instance` proxies the read to that member (issue-374 R2.7).
+        return facade.get_instance(instance=instance)
+
+    @router.get(f"{API_PREFIX}/instances", operation_id="listInstances")
+    def list_instances() -> Dict[str, Any]:
+        # The fleet (issue-374 R3.1): one row per instance, itself included.
+        return facade.list_instances()
+
+    @router.post(
+        f"{API_PREFIX}/instances/register",
+        operation_id="registerInstance",
+    )
+    def register_instance(body: InstanceRegisterBody) -> Dict[str, Any]:
+        # A config write through the same splice `POST /config` uses (R4.2); a
+        # worker answers 400 naming instance.role (R4.4).
+        return facade.register_instance(body.name, body.url)
+
+    @router.post(
+        f"{API_PREFIX}/instances/unregister",
+        operation_id="unregisterInstance",
+    )
+    def unregister_instance(body: InstanceUnregisterBody) -> Dict[str, Any]:
+        return facade.unregister_instance(body.name)
 
     @router.get(
         f"{API_PREFIX}/work-items",
         operation_id="listWorkItems",
     )
     def list_work_items() -> List[Dict[str, Any]]:
-        return core_workitems.list_work_items(holder.current)
+        return facade.list_work_items()
 
     @router.get(
         f"{API_PREFIX}/work-items/one",
         operation_id="getWorkItem",
     )
-    def get_work_item(ref: str = Query(...)) -> Dict[str, Any]:
-        return core_workitems.get_work_item(ref, holder.current)
+    def get_work_item(
+        ref: str = Query(...), instance: str = Query("")
+    ) -> Dict[str, Any]:
+        return facade.get_work_item(ref, instance=instance)
 
     @router.get(f"{API_PREFIX}/config", operation_id="getConfig")
-    def get_config() -> Dict[str, Any]:
-        return core_config.get_config(holder.path)
+    def get_config(instance: str = Query("")) -> Dict[str, Any]:
+        return facade.get_config(instance=instance)
 
     @router.get(f"{API_PREFIX}/config/schema", operation_id="getConfigSchema")
-    def get_config_schema() -> Dict[str, Any]:
-        return core_config.get_schema()
+    def get_config_schema(instance: str = Query("")) -> Dict[str, Any]:
+        return facade.get_config_schema(instance=instance)
 
     @router.post(f"{API_PREFIX}/config", operation_id="updateConfig")
     def update_config(body: ConfigUpdateBody) -> Dict[str, Any]:
         # The holder picks the new file up on the *next* request through the route class,
         # which is what makes a saved change live without a restart. The response's
         # `config` is the document just written, so this response never lags the file.
-        return core_config.update_config(body.patch, holder.path)
+        return facade.update_config(body.patch, instance=body.instance)
 
     @router.get(f"{API_PREFIX}/graph", operation_id="graphShow")
     def graph_show(
@@ -415,8 +451,11 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         pr: Optional[int] = Query(None),
         prRepo: str = Query(""),
         specDir: str = Query(""),
+        instance: str = Query(""),
     ) -> Dict[str, Any]:
-        return core_graphs.show(repo, pr=pr, pr_repo=prRepo, spec_dir=specDir)
+        return facade.graph_show(
+            repo, pr=pr, pr_repo=prRepo, spec_dir=specDir, instance=instance
+        )
 
     @router.post(
         f"{API_PREFIX}/graph/check",
@@ -443,14 +482,18 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         the artifacts leave unmet and can run ahead of `pointer`; a caller that
         must not ask about a node the item never entered bounds itself by
         `pointer`.
+
+        `repo` is a path on the machine `instance` names — this one when it is
+        empty (issue-374 R2.5).
         """
-        return core_graphs.check(
+        return facade.graph_check(
             body.repo,
             body.workItem,
             recompute=body.recompute,
             pr=body.pr,
             pr_repo=body.prRepo,
             spec_dir=body.specDir,
+            instance=body.instance,
         )
 
     @router.post(
@@ -458,7 +501,7 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         operation_id="graphComplete",
     )
     def graph_complete(body: GraphCompleteBody) -> Dict[str, Any]:
-        return core_graphs.complete(
+        return facade.graph_complete(
             body.repo,
             body.workItem,
             node=body.node,
@@ -467,6 +510,7 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
             pr=body.pr,
             pr_repo=body.prRepo,
             spec_dir=body.specDir,
+            instance=body.instance,
         )
 
     @router.post(
@@ -474,13 +518,14 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         operation_id="graphAdvance",
     )
     def graph_advance(body: GraphAdvanceBody) -> Dict[str, Any]:
-        return core_graphs.advance(
+        return facade.graph_advance(
             body.repo,
             body.workItem,
             ref=body.ref,
             pr=body.pr,
             pr_repo=body.prRepo,
             spec_dir=body.specDir,
+            instance=body.instance,
         )
 
     @router.post(
@@ -488,7 +533,7 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         operation_id="graphForce",
     )
     def graph_force(body: GraphForceBody) -> Dict[str, Any]:
-        return core_graphs.force(
+        return facade.graph_force(
             body.repo,
             body.workItem,
             body.toNode,
@@ -498,6 +543,7 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
             pr=body.pr,
             pr_repo=body.prRepo,
             spec_dir=body.specDir,
+            instance=body.instance,
         )
 
     @router.post(
@@ -505,7 +551,7 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         operation_id="graphSkip",
     )
     def graph_skip(body: GraphSkipBody) -> Dict[str, Any]:
-        return core_graphs.skip(
+        return facade.graph_skip(
             body.repo,
             body.workItem,
             body.nodes,
@@ -515,6 +561,7 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
             pr=body.pr,
             pr_repo=body.prRepo,
             spec_dir=body.specDir,
+            instance=body.instance,
         )
 
     @router.post(
@@ -522,7 +569,7 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         operation_id="graphRepos",
     )
     def graph_repos(body: GraphReposBody) -> Dict[str, Any]:
-        return core_graphs.repos(
+        return facade.graph_repos(
             body.repo,
             body.workItem,
             body.repositories,
@@ -531,35 +578,36 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
             pr=body.pr,
             pr_repo=body.prRepo,
             spec_dir=body.specDir,
+            instance=body.instance,
         )
 
     @router.get(f"{API_PREFIX}/sessions", operation_id="listSessions")
     def list_sessions(status: Optional[str] = Query(None)) -> List[Dict[str, Any]]:
-        return core_sessions.list_sessions(status=status, config=holder.current)
+        return facade.list_sessions(status=status)
 
     @router.get(
         f"{API_PREFIX}/sessions/one",
         operation_id="getSession",
     )
-    def get_session(ref: str = Query(...)) -> Dict[str, Any]:
-        return core_sessions.get_session(ref, config=holder.current)
+    def get_session(ref: str = Query(...), instance: str = Query("")) -> Dict[str, Any]:
+        return facade.get_session(ref, instance=instance)
 
     @router.get(
         f"{API_PREFIX}/sessions/transcript",
         operation_id="sessionTranscript",
     )
     def session_transcript(
-        ref: str = Query(...), tail: int = Query(200, ge=0)
+        ref: str = Query(...), tail: int = Query(200, ge=0), instance: str = Query("")
     ) -> Dict[str, Any]:
-        return core_sessions.get_transcript(ref, tail=tail, config=holder.current)
+        return facade.session_transcript(ref, tail=tail, instance=instance)
 
     @router.post(
         f"{API_PREFIX}/sessions/control",
         operation_id="controlSession",
     )
     def control_session(body: SessionControlBody) -> Dict[str, Any]:
-        return core_sessions.control_session(
-            body.ref, body.verb, comment=body.comment, config=holder.current
+        return facade.control_session(
+            body.ref, body.verb, comment=body.comment, instance=body.instance
         )
 
     @router.post(
@@ -567,12 +615,12 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         operation_id="replySession",
     )
     def reply_session(body: SessionReplyBody) -> Dict[str, Any]:
-        return core_sessions.reply_session(
+        return facade.reply_session(
             body.ref,
             body.text,
             actor=body.actor,
             comment=body.comment,
-            config=holder.current,
+            instance=body.instance,
         )
 
     @router.post(
@@ -580,13 +628,13 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         operation_id="registerSession",
     )
     def register_session(body: SessionRegisterBody) -> Dict[str, Any]:
-        return core_sessions.register_session(
+        return facade.register_session(
             body.ref,
             body.harness,
             body.harnessSessionId,
             cwd=body.cwd,
             force=body.force,
-            config=holder.current,
+            instance=body.instance,
         )
 
     @router.post(
@@ -594,8 +642,8 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         operation_id="linkSessionPullRequest",
     )
     def link_session_pull_request(body: SessionLinkPrBody) -> Dict[str, Any]:
-        return core_sessions.link_pull_request(
-            body.ref, body.pullRequest, config=holder.current
+        return facade.link_session_pull_request(
+            body.ref, body.pullRequest, instance=body.instance
         )
 
     @router.post(
@@ -603,8 +651,8 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         operation_id="closeSession",
     )
     def close_session(body: SessionCloseBody) -> Dict[str, Any]:
-        return core_sessions.close_session(
-            body.ref, keep_tmux=body.keepTmux, config=holder.current
+        return facade.close_session(
+            body.ref, keep_tmux=body.keepTmux, instance=body.instance
         )
 
     @router.get(
@@ -612,21 +660,23 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         operation_id="listStandingSessions",
     )
     def list_standing_sessions() -> List[Dict[str, Any]]:
-        return core_standing.list_standing(config=holder.current)
+        return facade.list_standing_sessions()
 
     @router.get(
         f"{API_PREFIX}/standing-sessions/one",
         operation_id="getStandingSession",
     )
-    def get_standing_session(name: str = Query(...)) -> Dict[str, Any]:
-        return core_standing.get_standing(name, config=holder.current)
+    def get_standing_session(
+        name: str = Query(...), instance: str = Query("")
+    ) -> Dict[str, Any]:
+        return facade.get_standing_session(name, instance=instance)
 
     @router.post(
         f"{API_PREFIX}/standing-sessions/create",
         operation_id="createStandingSession",
     )
     def create_standing_session(body: StandingCreateBody) -> Dict[str, Any]:
-        return core_standing.create_standing(
+        return facade.create_standing_session(
             body.name,
             harness=body.harness,
             cwd=body.cwd,
@@ -637,7 +687,7 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
             slack_channel=body.slackChannel,
             auto_start=body.autoStart,
             start=body.start,
-            config=holder.current,
+            instance=body.instance,
         )
 
     @router.post(
@@ -645,15 +695,15 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         operation_id="deleteStandingSession",
     )
     def delete_standing_session(body: StandingDeleteBody) -> Dict[str, Any]:
-        return core_standing.delete_standing(body.name, config=holder.current)
+        return facade.delete_standing_session(body.name, instance=body.instance)
 
     @router.post(
         f"{API_PREFIX}/standing-sessions/control",
         operation_id="controlStandingSession",
     )
     def control_standing_session(body: StandingControlBody) -> Dict[str, Any]:
-        return core_standing.control_standing(
-            body.name, body.verb, config=holder.current
+        return facade.control_standing_session(
+            body.name, body.verb, instance=body.instance
         )
 
     @router.post(
@@ -661,8 +711,8 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         operation_id="sayToStandingSession",
     )
     def say_to_standing_session(body: StandingSayBody) -> Dict[str, Any]:
-        return core_standing.say_standing(
-            body.name, body.text, actor=body.actor, config=holder.current
+        return facade.say_to_standing_session(
+            body.name, body.text, actor=body.actor, instance=body.instance
         )
 
     # The response is declared rather than inferred: FastAPI would derive
@@ -682,7 +732,9 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
                 "description": (
                     "An open Server-Sent Events stream. Each frame is one of "
                     "`log` (an event-log record, with its byte offset as the SSE "
-                    "`id` — quote it back as `Last-Event-ID` to resume), "
+                    "`id` — quote it back as `Last-Event-ID` to resume; on a "
+                    "manager the id is one offset per instance, "
+                    "`name=offset,…`, and each record carries `instance`), "
                     "`transcript` (a watched session's transcript grew), or "
                     "`desync` (the cursor could not be honoured; refetch "
                     "everything). Interleaved with `: keep-alive` comments. "
@@ -769,12 +821,12 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
                 return JSONResponse(status_code=400, content={"detail": str(exc)})
 
         try:
-            cursor = api_stream.parse_cursor(last_event_id)
+            cursor = facade.parse_cursor(last_event_id)
         except ValueError as exc:
             eventlog.emit("stream.refused", reason="bad-cursor")
             return JSONResponse(status_code=400, content={"detail": str(exc)})
 
-        broker = stream_broker
+        broker = facade.stream_broker()
         broker.max_subscribers = conf["maxSubscribers"]
         try:
             subscriber = broker.subscribe(work_items=workItem, transcripts=transcript)
@@ -796,11 +848,11 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
             cursor=cursor,
         )
         return StreamingResponse(
-            api_stream.serve(
+            facade.serve_stream(
                 broker,
                 subscriber,
-                cursor=cursor,
-                keep_alive=conf["keepAliveSeconds"],
+                cursor,
+                conf["keepAliveSeconds"],
             ),
             media_type="text/event-stream",
             headers={
@@ -822,8 +874,7 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         since: Optional[str] = Query(None),
         limit: int = Query(50, ge=0),
     ) -> List[Dict[str, Any]]:
-        return core_events.query_events(
-            None,
+        return facade.query_events(
             types=type,
             work_item=workItem,
             delivery_id=deliveryId,
@@ -838,46 +889,43 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         operation_id="eventTypes",
     )
     def event_types() -> Dict[str, str]:
-        return core_events.event_types()
+        return facade.event_types()
 
     @router.get(f"{API_PREFIX}/daemons", operation_id="listDaemons")
     def list_daemons() -> List[Dict[str, Any]]:
-        return [
-            core_daemons.daemon_status(name, holder.current)
-            for name in core_daemons.DAEMONS
-        ]
+        return facade.list_daemons()
 
     @router.post(
         f"{API_PREFIX}/daemons/control",
         operation_id="controlDaemon",
     )
     def control_daemon(body: DaemonControlBody) -> Dict[str, Any]:
-        return core_daemons.control_daemon(body.daemon, body.verb, holder.current)
+        return facade.control_daemon(body.daemon, body.verb, instance=body.instance)
 
     @router.post(f"{API_PREFIX}/restart", operation_id="restart")
     def restart(body: RestartBody) -> Dict[str, Any]:
         # Scheduling, not doing (issue-228, R4.4): this process is among what a
         # restart stops, so the work happens in a detached `the-loop restart`
         # that outlives it, and the response only promises the spawn.
-        return core_lifecycle.schedule_restart(
-            holder.current, with_upgrade=body.withUpgrade, config_path=holder.path
-        )
+        return facade.restart(with_upgrade=body.withUpgrade, instance=body.instance)
 
     @router.get(
         f"{API_PREFIX}/attention",
         operation_id="listAttention",
     )
     def list_attention() -> List[Dict[str, Any]]:
-        return core_attention.list_attention(holder.current)
+        return facade.list_attention()
 
     @router.get(
         f"{API_PREFIX}/repo/scenarios",
         operation_id="repoScenarios",
     )
     def repo_scenarios(
-        repo: str = Query(...), glob: List[str] = Query(default=[])
+        repo: str = Query(...),
+        glob: List[str] = Query(default=[]),
+        instance: str = Query(""),
     ) -> Dict[str, Any]:
-        return core_repo.scenarios(repo, globs=glob)
+        return facade.repo_scenarios(repo, globs=glob, instance=instance)
 
     @router.get(
         f"{API_PREFIX}/repo/instructions",
@@ -887,29 +935,36 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         repo: str = Query(...),
         doc: List[str] = Query(default=[]),
         onMissing: str = Query("warn"),
+        instance: str = Query(""),
     ) -> Dict[str, Any]:
-        return core_repo.instructions(repo, docs=doc, on_missing=onMissing)
+        return facade.repo_instructions(
+            repo, docs=doc, on_missing=onMissing, instance=instance
+        )
 
     @router.get(
         f"{API_PREFIX}/repo/critics",
         operation_id="repoCritics",
     )
-    def repo_critics(repo: str = Query(...)) -> List[Dict[str, Any]]:
-        return core_repo.critics(repo)
+    def repo_critics(
+        repo: str = Query(...), instance: str = Query("")
+    ) -> List[Dict[str, Any]]:
+        return facade.repo_critics(repo, instance=instance)
 
     @router.get(
         f"{API_PREFIX}/repo/critics/policy",
         operation_id="repoReviewPolicy",
     )
-    def repo_review_policy(repo: str = Query(...)) -> Dict[str, Any]:
-        return core_repo.review_policy(repo)
+    def repo_review_policy(
+        repo: str = Query(...), instance: str = Query("")
+    ) -> Dict[str, Any]:
+        return facade.repo_review_policy(repo, instance=instance)
 
     @router.post(
         f"{API_PREFIX}/repo/critics/run",
         operation_id="repoCriticRun",
     )
     def repo_critic_run(body: CriticRunBody) -> Dict[str, Any]:
-        return core_repo.critic_run(
+        return facade.repo_critic_run(
             body.repo,
             body.name,
             body.prompt,
@@ -918,6 +973,7 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
             spec_dir=body.specDir,
             timeout=body.timeout,
             cwd=body.cwd,
+            instance=body.instance,
         )
 
     return router

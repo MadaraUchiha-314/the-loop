@@ -113,6 +113,7 @@ const cliSidebar = [
       { text: "restart", link: "/cli/commands/restart" },
       { text: "sessions", link: "/cli/commands/sessions" },
       { text: "standing", link: "/cli/commands/standing" },
+      { text: "instances", link: "/cli/commands/instances" },
       { text: "ask", link: "/cli/commands/ask" },
       { text: "add-collaborator", link: "/cli/commands/add-collaborator" },
       { text: "remove-collaborator", link: "/cli/commands/remove-collaborator" },

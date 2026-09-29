@@ -35,6 +35,7 @@ from ..core import daemons as core_daemons
 from ..core import events as core_events
 from ..core import graphs as core_graphs
 from ..core import instance as core_instance
+from ..core import instances as core_instances
 from ..core import lifecycle as core_lifecycle
 from ..core import repo as core_repo
 from ..core import sessions as core_sessions
@@ -419,6 +420,7 @@ class TheLoop:
         self._mcp_wanted = True
         self._host_ingresses: Optional[bool] = None
         self._lifespan_running = False
+        self._facade: Any = None
 
         self.work_items = WorkItems(self)
         self.sessions = Sessions(self)
@@ -487,6 +489,16 @@ class TheLoop:
         """
         return core_instance.describe_instance(self.config)
 
+    def instances(self) -> Dict[str, Any]:
+        """The fleet (issue-374): the document ``GET /api/v1/instances`` serves.
+
+        One row per instance — this one first, then every instance registered under
+        ``instance.manager.instances`` when this config is a manager — with its state,
+        version, mode and counts. Registering is a config write:
+        ``loop.settings.update({"instance": {"manager": {"instances": [...]}}})``.
+        """
+        return core_instances.list_instances(self.config, fleet=self._fleet())
+
     def status(self) -> Dict[str, Any]:
         """Per-service status of the *standalone* deployment this config describes.
 
@@ -498,6 +510,22 @@ class TheLoop:
         return core_lifecycle.status_all(self.config, config_path=self.config_path)
 
     # ---- the HTTP seam -------------------------------------------------------
+
+    def facade(self) -> Any:
+        """The implementation behind the HTTP seam, chosen by ``instance.role`` once.
+
+        A worker's :class:`~the_loop.api.facade.CoreFacade`, or a manager's fleet over
+        it (issue-374). Built on first use and cached, so the router and the MCP app
+        share one — and one probe cache, one stream broker.
+        """
+        if self._facade is None:
+            from ..api.facade import facade_for
+
+            self._facade = facade_for(self._holder)
+        return self._facade
+
+    def _fleet(self) -> Any:
+        return getattr(self.facade(), "fleet", None)
 
     def router(self, **kwargs: Any):
         """The ``/api/v1`` surface as a :class:`fastapi.APIRouter`.
@@ -512,7 +540,7 @@ class TheLoop:
         """
         from ..api.routes import build_router
 
-        return build_router(self._holder, **kwargs)
+        return build_router(self._holder, facade=self.facade(), **kwargs)
 
     def mcp_app(self, *, allowed_hosts: Optional[List[str]] = None) -> Any:
         """The MCP streamable-HTTP app, or ``None`` when ``service.mcp.enabled`` is false.
@@ -538,7 +566,7 @@ class TheLoop:
 
         self._mcp_allowed_hosts = list(allowed_hosts) if allowed_hosts else None
         self._mcp_app = build_mcp_app(
-            self.config, allowed_hosts=self._mcp_allowed_hosts
+            self.config, allowed_hosts=self._mcp_allowed_hosts, facade=self.facade()
         )
         return self._mcp_app
 

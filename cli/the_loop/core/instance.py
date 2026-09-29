@@ -31,7 +31,29 @@ def instance_config(config: Optional[dict] = None) -> InstanceConfig:
     doc = dict(config or {})
     doc["routing"] = dict(doc.get("routing") or {})
     apply_instance(doc)
-    return InstanceConfig.from_mapping(doc["routing"].get("_instance") or {})
+    from ..api.config import base_url
+
+    return InstanceConfig.from_mapping(
+        doc["routing"].get("_instance") or {}, own_url=base_url(config)
+    )
+
+
+def assert_self(instance: str, config: Optional[dict] = None) -> None:
+    """Refuse an ``instance`` parameter that names anyone but this instance (issue-374).
+
+    The worker half of R2.6: the parameter is part of the one contract, so a worker
+    accepts it — empty, or its own name — and answers ``404`` (a :class:`LookupError`)
+    for any other value, sending nothing anywhere. A manager resolves the same
+    parameter against its registry instead (``the_loop.manager``).
+    """
+    if not instance:
+        return
+    own = instance_config(config).name
+    if instance != own:
+        raise LookupError(
+            f"instance {instance!r} is not this instance"
+            + (f" ({own!r})" if own else " (unnamed)")
+        )
 
 
 def describe_instance(config: Optional[dict] = None) -> Dict[str, Any]:
@@ -55,8 +77,10 @@ def describe_instance(config: Optional[dict] = None) -> Dict[str, Any]:
 
     for ref in instance.declared:
         add(ref, DECLARED)
+    session_count = 0
     for session in SessionRegistry(registry_dir).list_sessions():
         if session.status != "closed":
+            session_count += 1
             add(session.work_item.ref, SESSION)
     store = ControlStore(layout.portable_dir, legacy=legacy_layout(layout))
     for ref in store.store.refs():
@@ -75,4 +99,7 @@ def describe_instance(config: Optional[dict] = None) -> Dict[str, Any]:
         managed.append(row)
     doc = instance.to_dict()
     doc["managed"] = managed
+    # Additive (issue-374): the fleet row's session count, so the Instances tab
+    # and this document cannot disagree.
+    doc["sessionCount"] = session_count
     return doc

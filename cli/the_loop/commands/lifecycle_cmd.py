@@ -160,6 +160,27 @@ def _print_instance(instance: dict) -> None:
     )
 
 
+def _print_instances(doc: dict) -> None:
+    """The fleet (issue-374): a headline and one row per instance, on a manager only.
+
+    A worker's document is its own row, which the instance line above already
+    says; printing it again would be noise on every lone instance.
+    """
+    if not doc or doc.get("role") != "manager":
+        return
+    from .instances_cmd import instance_lines
+
+    rows = doc.get("instances") or []
+    members = rows[1:]
+    live = sum(1 for row in members if row.get("state") == "live")
+    print(
+        f"{'instances':<11} {doc.get('name') or '(unnamed)'} [manager] — "
+        f"this instance + {len(members)} registered, {live} of {len(members)} live"
+    )
+    for line in instance_lines(doc):
+        print(f"  {line}")
+
+
 @register
 class StatusCommand(Command):
     name = "status"
@@ -180,6 +201,7 @@ class StatusCommand(Command):
             return 0 if report["ok"] else 1
         _print_provenance(report)
         _print_instance(report.get("instance") or {})
+        _print_instances(report.get("instances") or {})
         for row in report["services"]:
             flag = "enabled" if row["enabled"] else "disabled"
             liveness = (

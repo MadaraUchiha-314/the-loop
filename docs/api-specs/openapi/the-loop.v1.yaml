@@ -11,6 +11,18 @@ paths:
     get:
       summary: Health
       operationId: health
+      parameters:
+      - name: instance
+        in: query
+        required: false
+        description: |
+          Which instance this operation is for (issue-374). Empty: this one. On a
+          manager, a registered instance's name proxies the operation to it; on a
+          worker, only its own name is accepted (404 otherwise).
+        schema:
+          type: string
+          default: ''
+          title: Instance
       responses:
         '200':
           description: |
@@ -35,6 +47,18 @@ paths:
     get:
       summary: Get Instance
       operationId: getInstance
+      parameters:
+      - name: instance
+        in: query
+        required: false
+        description: |
+          Which instance this operation is for (issue-374). Empty: this one. On a
+          manager, a registered instance's name proxies the operation to it; on a
+          worker, only its own name is accepted (404 otherwise).
+        schema:
+          type: string
+          default: ''
+          title: Instance
       responses:
         '200':
           description: Successful Response
@@ -70,6 +94,17 @@ paths:
         schema:
           type: string
           title: Ref
+      - name: instance
+        in: query
+        required: false
+        description: |
+          Which instance this operation is for (issue-374). Empty: this one. On a
+          manager, a registered instance's name proxies the operation to it; on a
+          worker, only its own name is accepted (404 otherwise).
+        schema:
+          type: string
+          default: ''
+          title: Instance
       responses:
         '200':
           description: Successful Response
@@ -89,6 +124,18 @@ paths:
     get:
       summary: Get Config
       operationId: getConfig
+      parameters:
+      - name: instance
+        in: query
+        required: false
+        description: |
+          Which instance this operation is for (issue-374). Empty: this one. On a
+          manager, a registered instance's name proxies the operation to it; on a
+          worker, only its own name is accepted (404 otherwise).
+        schema:
+          type: string
+          default: ''
+          title: Instance
       responses:
         '200':
           description: Successful Response
@@ -126,6 +173,18 @@ paths:
     get:
       summary: Get Config Schema
       operationId: getConfigSchema
+      parameters:
+      - name: instance
+        in: query
+        required: false
+        description: |
+          Which instance this operation is for (issue-374). Empty: this one. On a
+          manager, a registered instance's name proxies the operation to it; on a
+          worker, only its own name is accepted (404 otherwise).
+        schema:
+          type: string
+          default: ''
+          title: Instance
       responses:
         '200':
           description: Successful Response
@@ -165,6 +224,17 @@ paths:
           default: ''
         description: The repository `pr` is in, when it is not the repository
           the ticket was created in (issue-183).
+      - name: instance
+        in: query
+        required: false
+        description: |
+          Which instance this operation is for (issue-374). Empty: this one. On a
+          manager, a registered instance's name proxies the operation to it; on a
+          worker, only its own name is accepted (404 otherwise).
+        schema:
+          type: string
+          default: ''
+          title: Instance
       responses:
         '200':
           description: Successful Response
@@ -392,6 +462,17 @@ paths:
         schema:
           type: string
           title: Ref
+      - name: instance
+        in: query
+        required: false
+        description: |
+          Which instance this operation is for (issue-374). Empty: this one. On a
+          manager, a registered instance's name proxies the operation to it; on a
+          worker, only its own name is accepted (404 otherwise).
+        schema:
+          type: string
+          default: ''
+          title: Instance
       responses:
         '200':
           description: Successful Response
@@ -439,6 +520,17 @@ paths:
           default: 200
           title: Tail
         description: Return only the last N entries; 0 means the whole file.
+      - name: instance
+        in: query
+        required: false
+        description: |
+          Which instance this operation is for (issue-374). Empty: this one. On a
+          manager, a registered instance's name proxies the operation to it; on a
+          worker, only its own name is accepted (404 otherwise).
+        schema:
+          type: string
+          default: ''
+          title: Instance
       responses:
         '200':
           description: Successful Response
@@ -623,6 +715,17 @@ paths:
         schema:
           type: string
           title: Name
+      - name: instance
+        in: query
+        required: false
+        description: |
+          Which instance this operation is for (issue-374). Empty: this one. On a
+          manager, a registered instance's name proxies the operation to it; on a
+          worker, only its own name is accepted (404 otherwise).
+        schema:
+          type: string
+          default: ''
+          title: Instance
       responses:
         '200':
           description: Successful Response
@@ -1140,6 +1243,17 @@ paths:
             type: string
           default: []
           title: Glob
+      - name: instance
+        in: query
+        required: false
+        description: |
+          Which instance this operation is for (issue-374). Empty: this one. On a
+          manager, a registered instance's name proxies the operation to it; on a
+          worker, only its own name is accepted (404 otherwise).
+        schema:
+          type: string
+          default: ''
+          title: Instance
       responses:
         '200':
           description: Successful Response
@@ -1166,6 +1280,17 @@ paths:
         schema:
           type: string
           title: Repo
+      - name: instance
+        in: query
+        required: false
+        description: |
+          Which instance this operation is for (issue-374). Empty: this one. On a
+          manager, a registered instance's name proxies the operation to it; on a
+          worker, only its own name is accepted (404 otherwise).
+        schema:
+          type: string
+          default: ''
+          title: Instance
       responses:
         '200':
           description: Successful Response
@@ -1192,6 +1317,17 @@ paths:
         schema:
           type: string
           title: Repo
+      - name: instance
+        in: query
+        required: false
+        description: |
+          Which instance this operation is for (issue-374). Empty: this one. On a
+          manager, a registered instance's name proxies the operation to it; on a
+          worker, only its own name is accepted (404 otherwise).
+        schema:
+          type: string
+          default: ''
+          title: Instance
       responses:
         '200':
           description: Successful Response
@@ -1220,6 +1356,17 @@ paths:
         schema:
           type: string
           title: Repo
+      - name: instance
+        in: query
+        required: false
+        description: |
+          Which instance this operation is for (issue-374). Empty: this one. On a
+          manager, a registered instance's name proxies the operation to it; on a
+          worker, only its own name is accepted (404 otherwise).
+        schema:
+          type: string
+          default: ''
+          title: Instance
       responses:
         '200':
           description: Successful Response
@@ -1260,10 +1407,97 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/instances:
+    get:
+      summary: List Instances
+      operationId: listInstances
+      responses:
+        '200':
+          description: |
+            The fleet (issue-374). `role` and `name` are this instance's; `instances`
+            is one row per instance — this one first (`state: live`), then, on a
+            manager, one per instance registered under `instance.manager.instances`
+            from a probe no older than `manager.probeIntervalSeconds`. Each row
+            carries `name`, `url`, `state` (`live` | `unreachable` | `mismatched`),
+            `version`, `mode`, `managedCount`, `sessionCount`, `probedAt` and, when
+            the state is not `live`, a `detail` sentence. A worker answers with its
+            one row, so the same client renders both roles.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Listinstances
+  /api/v1/instances/register:
+    post:
+      summary: Register Instance
+      operationId: registerInstance
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstanceRegisterBody'
+        required: true
+      responses:
+        '200':
+          description: |
+            Adds `{name, url}` to the manager's registry — a write of
+            `instance.manager.instances` in its CLI config through the same splice
+            `POST /api/v1/config` uses, so a hand edit, the dashboard, the CLI and
+            this route are one path. Validated as the config reader validates (the
+            name grammar, an http(s) URL without userinfo, not this manager's own
+            address, not a name already registered): 400 on a violation, nothing
+            written. The member need not be reachable yet. On a worker: 400 naming
+            `instance.role`. Not an MCP tool.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Registerinstance
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/instances/unregister:
+    post:
+      summary: Unregister Instance
+      operationId: unregisterInstance
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstanceUnregisterBody'
+        required: true
+      responses:
+        '200':
+          description: |
+            Removes the entry named `name` from the manager's registry, through the
+            same write as `register`. 404 when no such name is registered; on a
+            worker, 400 naming `instance.role`. Not an MCP tool.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Unregisterinstance
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
     ConfigUpdateBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
         patch:
           additionalProperties: true
           type: object
@@ -1274,6 +1508,11 @@ components:
       title: ConfigUpdateBody
     CriticRunBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
         repo:
           type: string
           title: Repo
@@ -1312,6 +1551,11 @@ components:
       title: CriticRunBody
     DaemonControlBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
         daemon:
           type: string
           title: Daemon
@@ -1325,6 +1569,11 @@ components:
       title: DaemonControlBody
     GraphAdvanceBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
         repo:
           type: string
           title: Repo
@@ -1358,6 +1607,11 @@ components:
       title: GraphAdvanceBody
     GraphCheckBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
         repo:
           type: string
           title: Repo
@@ -1391,6 +1645,11 @@ components:
       title: GraphCheckBody
     GraphCompleteBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
         repo:
           type: string
           title: Repo
@@ -1432,6 +1691,11 @@ components:
       title: GraphCompleteBody
     GraphForceBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
         repo:
           type: string
           title: Repo
@@ -1477,6 +1741,11 @@ components:
       title: GraphForceBody
     GraphReposBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
         repo:
           type: string
           title: Repo
@@ -1534,6 +1803,11 @@ components:
       title: GraphReposBody
     GraphSkipBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
         repo:
           type: string
           title: Repo
@@ -1595,6 +1869,11 @@ components:
       title: HTTPValidationError
     RestartBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
         withUpgrade:
           type: boolean
           title: Withupgrade
@@ -1603,6 +1882,11 @@ components:
       title: RestartBody
     StandingCreateBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
         name:
           type: string
           title: Name
@@ -1671,6 +1955,11 @@ components:
       title: StandingCreateBody
     StandingDeleteBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
         name:
           type: string
           title: Name
@@ -1680,6 +1969,11 @@ components:
       title: StandingDeleteBody
     StandingControlBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
         name:
           type: string
           title: Name
@@ -1698,6 +1992,11 @@ components:
       title: StandingControlBody
     StandingSayBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
         name:
           type: string
           title: Name
@@ -1717,6 +2016,11 @@ components:
       title: StandingSayBody
     SessionCloseBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
         ref:
           type: string
           title: Ref
@@ -1731,6 +2035,11 @@ components:
       title: SessionCloseBody
     SessionControlBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
         ref:
           type: string
           title: Ref
@@ -1748,6 +2057,11 @@ components:
       title: SessionControlBody
     SessionReplyBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
         ref:
           type: string
           title: Ref
@@ -1774,6 +2088,11 @@ components:
       title: SessionReplyBody
     SessionLinkPrBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
         ref:
           type: string
           title: Ref
@@ -1787,6 +2106,11 @@ components:
       title: SessionLinkPrBody
     SessionRegisterBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
         ref:
           type: string
           title: Ref
@@ -1836,3 +2160,27 @@ components:
       - msg
       - type
       title: ValidationError
+    InstanceRegisterBody:
+      properties:
+        name:
+          type: string
+          title: Name
+          description: The member's own `instance.name`; the manager's key for it.
+        url:
+          type: string
+          title: Url
+          description: The member's service address as this manager reaches it (http or https).
+      type: object
+      required:
+      - name
+      - url
+      title: InstanceRegisterBody
+    InstanceUnregisterBody:
+      properties:
+        name:
+          type: string
+          title: Name
+      type: object
+      required:
+      - name
+      title: InstanceUnregisterBody

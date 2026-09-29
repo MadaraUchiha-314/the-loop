@@ -30,6 +30,13 @@ session could stop the very one supervising it, and bringing a harness process
 into — or out of — existence is an operator's act. Reading them and *talking*
 to them are registered, because those are what an agent coordinating with a
 supervisor session actually needs.
+
+Since issue-374 every tool body calls the **facade** the REST routes call — the
+worker's :class:`~the_loop.api.facade.CoreFacade`, or a manager's — so the two roles
+serve one tool list, and the keyed tools take the same optional ``instance`` the
+routes do. ``list_instances`` is registered; ``register_instance`` and
+``unregister_instance`` are not (R4.5): they re-point the manager, which is the config
+write above with a longer reach.
 """
 
 from __future__ import annotations
@@ -39,27 +46,25 @@ from typing import Any, Dict, List, Optional
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
-from ..core import attention as core_attention
-from ..core import daemons as core_daemons
-from ..core import events as core_events
-from ..core import graphs as core_graphs
-from ..core import instance as core_instance
-from ..core import repo as core_repo
-from ..core import sessions as core_sessions
-from ..core import standing as core_standing
-from ..core import workitems as core_workitems
+from ..cli_config import ConfigHolder, default_cli_config_path
 from .config import service_config
+from .facade import CoreFacade
 
 #: The path the MCP endpoint answers on, exactly — no trailing-slash redirect.
 MCP_PATH = "/mcp"
 
 
-def build_server(cli_config: Optional[dict] = None) -> MCPServer:
-    """An :class:`MCPServer` whose tools are the core facade's operations.
+def build_server(
+    cli_config: Optional[dict] = None, *, facade: Any = None
+) -> MCPServer:
+    """An :class:`MCPServer` whose tools are the facade's operations.
 
-    Every tool body is a one-liner delegating to ``the_loop.core`` — the same
-    functions the REST routers call, so the two interfaces cannot drift.
+    Every tool body is a one-liner delegating to the facade — the same object the
+    REST routes call, so the two interfaces cannot drift. ``facade`` defaults to a
+    worker's over ``cli_config``.
     """
+    if facade is None:
+        facade = CoreFacade(ConfigHolder(cli_config, default_cli_config_path()))
     server = MCPServer(
         name="the-loop",
         title="the-loop control plane",
@@ -73,14 +78,16 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
 
     def list_work_items() -> List[Dict[str, Any]]:
         """Every work item's portable record (control + poll state)."""
-        return core_workitems.list_work_items(cli_config)
+        return facade.list_work_items()
 
-    def get_work_item(ref: str) -> Dict[str, Any]:
-        """One work item's portable record by ref (e.g. github:OWNER/REPO#7)."""
-        return core_workitems.get_work_item(ref, cli_config)
+    def get_work_item(ref: str, instance: str = "") -> Dict[str, Any]:
+        """One work item's portable record by ref (e.g. github:OWNER/REPO#7).
+        `instance` names the instance to read it from (a manager routes without
+        it; a worker accepts only its own name)."""
+        return facade.get_work_item(ref, instance=instance)
 
     def check_work_item(
-        repo: str, work_item: str, recompute: bool = False
+        repo: str, work_item: str, recompute: bool = False, instance: str = ""
     ) -> Dict[str, Any]:
         """Evaluate a work item's process-graph gates against its checked-in
         artifacts (pure read; the same report `the-loop check` prints).
@@ -97,43 +104,54 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         is the node that file records (`""` when none); with `recompute`,
         `currentNode` is the first node the artifacts leave unmet, and can be
         ahead of where the work item actually is."""
-        return core_graphs.check(repo, work_item, recompute=recompute)
+        return facade.graph_check(repo, work_item, recompute=recompute, instance=instance)
 
-    def graph_show(repo: str) -> Dict[str, Any]:
+    def graph_show(repo: str, instance: str = "") -> Dict[str, Any]:
         """The process graph this repo runs on: its nodes and edges."""
-        return core_graphs.show(repo)
+        return facade.graph_show(repo, instance=instance)
 
-    def graph_advance(repo: str, work_item: str, ref: str = "") -> Dict[str, Any]:
+    def graph_advance(
+        repo: str, work_item: str, ref: str = "", instance: str = ""
+    ) -> Dict[str, Any]:
         """Evaluate the current node's exit chain and take the matching edge."""
-        return core_graphs.advance(repo, work_item, ref=ref)
+        return facade.graph_advance(repo, work_item, ref=ref, instance=instance)
 
     def graph_complete(
-        repo: str, work_item: str, node: str = "", actor: str = "", ref: str = ""
+        repo: str,
+        work_item: str,
+        node: str = "",
+        actor: str = "",
+        ref: str = "",
+        instance: str = "",
     ) -> Dict[str, Any]:
         """File a completion claim for the current (or named) graph node."""
-        return core_graphs.complete(repo, work_item, node=node, actor=actor, ref=ref)
+        return facade.graph_complete(
+            repo, work_item, node=node, actor=actor, ref=ref, instance=instance
+        )
 
     def list_sessions(status: Optional[str] = None) -> List[Dict[str, Any]]:
         """Registered harness sessions with their last control command."""
-        return core_sessions.list_sessions(status=status, config=cli_config)
+        return facade.list_sessions(status=status)
 
-    def session_transcript(ref: str, tail: int = 200) -> Dict[str, Any]:
+    def session_transcript(
+        ref: str, tail: int = 200, instance: str = ""
+    ) -> Dict[str, Any]:
         """The tail of a session's own harness transcript (Claude Code JSONL),
         resolved from the registered cwd + session id and served fail-closed —
         only `<id>.jsonl` files inside the harness's projects directory. `tail`
         is the number of entries to return; 0 means the whole file."""
-        return core_sessions.get_transcript(ref, tail=tail, config=cli_config)
+        return facade.session_transcript(ref, tail=tail, instance=instance)
 
-    def control_session(ref: str, verb: str, comment: bool = True) -> Dict[str, Any]:
+    def control_session(
+        ref: str, verb: str, comment: bool = True, instance: str = ""
+    ) -> Dict[str, Any]:
         """Apply a session control verb (start | pause | resume | stop |
         cleanup) with the full paper trail. `cleanup` is destructive: it
         releases the work item's LOCAL resources — every endpoint's tmux
         session, the workspace checkout (uncommitted work in it is gone) and
         the machine-local session record — keeping the portable record and
         touching nothing remote."""
-        return core_sessions.control_session(
-            ref, verb, comment=comment, config=cli_config
-        )
+        return facade.control_session(ref, verb, comment=comment, instance=instance)
 
     def register_session(
         ref: str,
@@ -141,51 +159,58 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         harness_session_id: str,
         cwd: str = ".",
         force: bool = False,
+        instance: str = "",
     ) -> Dict[str, Any]:
         """Link a work item to the harness session working it, so ingress
         events route to that session."""
-        return core_sessions.register_session(
+        return facade.register_session(
             ref,
             harness,
             harness_session_id,
             cwd=cwd,
             force=force,
-            config=cli_config,
+            instance=instance,
         )
 
-    def link_pull_request(ref: str, pull_request: str) -> Dict[str, Any]:
+    def link_pull_request(
+        ref: str, pull_request: str, instance: str = ""
+    ) -> Dict[str, Any]:
         """Record a pull request as delivering a work item, so its comments,
         reviews and CI results route to that work item's session. Call this in
         the same step as opening the pull request: a pull request the-loop
         authored carries none of the linkages the router can otherwise infer.
         `pull_request` is its number in the work item's own repository, or a
         full ref (github:OWNER/REPO#16) for one in another repository."""
-        return core_sessions.link_pull_request(ref, pull_request, config=cli_config)
+        return facade.link_session_pull_request(ref, pull_request, instance=instance)
 
     def list_standing_sessions() -> List[Dict[str, Any]]:
         """The standing sessions (issue-277) — the long-lived sessions that
         belong to no work item, declared in the CLI config and addressed by
         name. `running` is tmux's answer now, not the record's."""
-        return core_standing.list_standing(config=cli_config)
+        return facade.list_standing_sessions()
 
-    def get_standing_session(name: str) -> Dict[str, Any]:
+    def get_standing_session(name: str, instance: str = "") -> Dict[str, Any]:
         """One standing session by name, or an error when it is neither
         declared nor recorded."""
-        return core_standing.get_standing(name, config=cli_config)
+        return facade.get_standing_session(name, instance=instance)
 
     def say_to_standing_session(
-        name: str, text: str, actor: str = ""
+        name: str, text: str, actor: str = "", instance: str = ""
     ) -> Dict[str, Any]:
         """Send a message to a running standing session — pasted into its
         terminal and submitted. A standing session owns no ticket, so nothing
         is posted anywhere; `standing.said` is the record. Fail-closed: a
         message never starts a session, so an unknown or stopped name is an
         error naming `the-loop standing start <name>`."""
-        return core_standing.say_standing(name, text, actor=actor, config=cli_config)
+        return facade.say_to_standing_session(
+            name, text, actor=actor, instance=instance
+        )
 
-    def close_session(ref: str, keep_tmux: Optional[bool] = None) -> Dict[str, Any]:
+    def close_session(
+        ref: str, keep_tmux: Optional[bool] = None, instance: str = ""
+    ) -> Dict[str, Any]:
         """Close a work item's registration and settle its tmux session."""
-        return core_sessions.close_session(ref, keep_tmux=keep_tmux, config=cli_config)
+        return facade.close_session(ref, keep_tmux=keep_tmux, instance=instance)
 
     def query_events(
         work_item: Optional[str] = None,
@@ -195,8 +220,7 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         limit: int = 50,
     ) -> List[Dict[str, Any]]:
         """Query the structured event log (routing, dispatch, sessions, API)."""
-        return core_events.query_events(
-            None,
+        return facade.query_events(
             work_item=work_item,
             source=source,
             min_level=level,
@@ -208,45 +232,57 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         """The ingress daemons (poller, gh-webhook): whether each is running, its
         pid, pidfile and logfile, and — for the poller — when it started and last
         completed a cycle. Liveness is the pidfile's lock, never the heartbeat."""
-        return [
-            core_daemons.daemon_status(name, cli_config)
-            for name in core_daemons.DAEMONS
-        ]
+        return facade.list_daemons()
 
-    def control_daemon(daemon: str, verb: str) -> Dict[str, Any]:
+    def control_daemon(daemon: str, verb: str, instance: str = "") -> Dict[str, Any]:
         """Start or stop an ingress daemon (poller | gh-webhook)."""
-        return core_daemons.control_daemon(daemon, verb, cli_config)
+        return facade.control_daemon(daemon, verb, instance=instance)
 
-    def get_instance() -> Dict[str, Any]:
-        """This instance of the-loop: its name, scope mode, declared work items
-        and the managed set (declared, live session, control record) — the
-        identity a manager of several instances reads (issue-322)."""
-        return core_instance.describe_instance(cli_config)
+    def get_instance(instance: str = "") -> Dict[str, Any]:
+        """This instance of the-loop: its name, role, scope mode, declared work
+        items and the managed set (declared, live session, control record) — the
+        identity a manager of several instances reads (issue-322). On a manager
+        the managed set spans the fleet, each row naming its instance;
+        `instance` reads one member's document instead."""
+        return facade.get_instance(instance=instance)
+
+    def list_instances() -> Dict[str, Any]:
+        """The fleet (issue-374): one row per instance — this one first, then
+        every instance registered with a manager — with its state (live |
+        unreachable | mismatched), version, mode and counts."""
+        return facade.list_instances()
 
     def list_attention() -> List[Dict[str, Any]]:
         """Work items needing attention: paused sessions, armed items with no
         live session, recent errors."""
-        return core_attention.list_attention(cli_config)
+        return facade.list_attention()
 
-    def repo_scenarios(repo: str, globs: Optional[List[str]] = None) -> Dict[str, Any]:
+    def repo_scenarios(
+        repo: str, globs: Optional[List[str]] = None, instance: str = ""
+    ) -> Dict[str, Any]:
         """Gherkin scenarios covered by a repo's integration tests, with the
         globs they were collected from."""
-        return core_repo.scenarios(repo, globs=globs)
+        return facade.repo_scenarios(repo, globs=globs, instance=instance)
 
     def repo_instructions(
-        repo: str, docs: Optional[List[str]] = None, on_missing: str = "warn"
+        repo: str,
+        docs: Optional[List[str]] = None,
+        on_missing: str = "warn",
+        instance: str = "",
     ) -> Dict[str, Any]:
         """Whether the instruction docs a repo's harness config registers
         (pass them as `docs`) resolve, graded by the onMissing policy."""
-        return core_repo.instructions(repo, docs=docs, on_missing=on_missing)
+        return facade.repo_instructions(
+            repo, docs=docs, on_missing=on_missing, instance=instance
+        )
 
-    def repo_critics(repo: str) -> List[Dict[str, Any]]:
+    def repo_critics(repo: str, instance: str = "") -> List[Dict[str, Any]]:
         """The critic harnesses the CLI config declares (critics[])."""
-        return core_repo.critics(repo)
+        return facade.repo_critics(repo, instance=instance)
 
-    def repo_review_policy(repo: str = "") -> Dict[str, Any]:
+    def repo_review_policy(repo: str = "", instance: str = "") -> Dict[str, Any]:
         """The review-round policy (the CLI config's reviews block), defaulted."""
-        return core_repo.review_policy(repo)
+        return facade.repo_review_policy(repo, instance=instance)
 
     def repo_critic_run(
         repo: str,
@@ -257,9 +293,10 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         spec_dir: str = "",
         timeout: Optional[float] = None,
         cwd: str = "",
+        instance: str = "",
     ) -> Dict[str, Any]:
         """Run ONE critic-review round and return its JSON envelope."""
-        return core_repo.critic_run(
+        return facade.repo_critic_run(
             repo,
             name,
             prompt,
@@ -268,6 +305,7 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
             spec_dir=spec_dir,
             timeout=timeout,
             cwd=cwd,
+            instance=instance,
         )
 
     for fn in (
@@ -289,6 +327,8 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         query_events,
         daemon_status,
         control_daemon,
+        get_instance,
+        list_instances,
         list_attention,
         repo_scenarios,
         repo_instructions,
@@ -302,7 +342,10 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
 
 
 def build_app(
-    cli_config: Optional[dict] = None, *, allowed_hosts: Optional[List[str]] = None
+    cli_config: Optional[dict] = None,
+    *,
+    allowed_hosts: Optional[List[str]] = None,
+    facade: Any = None,
 ):
     """The SDK's streamable-HTTP ASGI app, ready to mount at :data:`MCP_PATH`.
 
@@ -321,7 +364,7 @@ def build_app(
         allowed_hosts = [f"{host}:{port}", host]
         if host in ("127.0.0.1", "localhost"):
             allowed_hosts += [f"localhost:{port}", "localhost", f"127.0.0.1:{port}"]
-    server = build_server(cli_config)
+    server = build_server(cli_config, facade=facade)
     return server.streamable_http_app(
         streamable_http_path=MCP_PATH,
         transport_security=TransportSecuritySettings(
