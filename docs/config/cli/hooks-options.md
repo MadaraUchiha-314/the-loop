@@ -137,6 +137,11 @@ Listing narrows and never widens: a local method the class does not define is no
 whatever `on` says. A name outside the six points fails the load — an event-log type is not
 a hook point ([decision-137](/decisions/decision-137)). `the-loop hooks points` lists them.
 
+Write the key bare, as above, or quoted (`"on":`) — both load. YAML 1.1 reads an unquoted
+`on` as the boolean `true` (the trap GitHub Actions workflows share), and the loader undoes
+that; writing both spellings on one entry is refused
+([issue-433](https://github.com/MadaraUchiha-314/the-loop/issues/433)).
+
 ### `hooks[].required`
 
 - **Type:** `boolean`

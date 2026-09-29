@@ -178,11 +178,15 @@ def _read_entry(item: Any, index: int) -> Entry:
             f"(got {name!r})"
         )
     where = f"`{CONFIG_KEY}` entry {name!r}"
-    unknown = sorted(set(item) - _ALL_KEYS)
+    item = _normalise_keys(item, where)
+    # A key need not be a string (YAML admits `1:` and `null:`), so the refusal renders
+    # every key with repr rather than joining it as text (issue-433, bug 2).
+    unknown = sorted(set(item) - _ALL_KEYS, key=repr)
     if unknown:
         raise HooksConfigError(
-            f"CLI config: {where} has unknown key(s) {', '.join(unknown)}; the keys "
-            f"are {', '.join(sorted(_ALL_KEYS))}"
+            f"CLI config: {where} has unknown key(s) "
+            f"{', '.join(repr(k) for k in unknown)}; the keys are "
+            f"{', '.join(sorted(_ALL_KEYS))}"
         )
     kinds = [k for k in ("module", "path", "url") if item.get(k)]
     if len(kinds) != 1:
@@ -272,6 +276,23 @@ def _read_entry(item: Any, index: int) -> Entry:
         required=required,
         enabled=enabled,
     )
+
+
+def _normalise_keys(item: Mapping[Any, Any], where: str) -> Dict[Any, Any]:
+    """Undo YAML 1.1's boolean coercion of the bare key ``on``.
+
+    ``yaml.safe_load`` — the only loader the CLI config goes through — reads an
+    unquoted ``on:`` as the key ``True``, the trap GitHub Actions workflows share.
+    Every documented example writes the key bare, so the loader accepts both
+    spellings rather than making a quoted ``"on"`` a rule people discover from a
+    refusal (issue-433, bug 1) — the same allowance the graph loader makes for an
+    edge's ``on``. Every other key is kept exactly as loaded.
+    """
+    if True in item and "on" in item:
+        raise HooksConfigError(
+            f"CLI config: {where} sets `on` twice (once bare, once quoted); keep one"
+        )
+    return {("on" if key is True else key): value for key, value in item.items()}
 
 
 def _read_on(value: Any, where: str) -> Tuple[str, ...]:

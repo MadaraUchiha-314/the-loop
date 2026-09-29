@@ -114,6 +114,22 @@ def test_a_bad_declaration_exits_one_naming_the_error(tmp_path, monkeypatch, cap
     assert "session.spawned" in json.loads(capsys.readouterr().out)["error"]
 
 
+def test_the_documented_bare_on_key_is_reported_not_a_type_error(
+    tmp_path, monkeypatch, capsys
+):
+    """issue-433: the ticket's reproduction — the documented spelling, through the real
+    YAML loader (which reads the bare key ``on`` as ``True``) and the command."""
+    path = tmp_path / "cli-config.yaml"
+    path.write_text(
+        "hooks:\n  - name: acme\n    path: hooks/acme.py\n    on: [work_item_start]\n"
+    )
+    monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(path))
+    assert main(["hooks", "--format", "json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert "error" not in report
+    assert report["hooks"][0]["on"] == ["work_item_start"]
+
+
 def test_an_unparseable_config_is_an_error_not_nothing_declared(
     tmp_path, monkeypatch, capsys
 ):

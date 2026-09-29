@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 
 import pytest
+import yaml
 
 from the_loop.lifecycle import declaration as decl
 from the_loop.lifecycle.declaration import HooksConfigError, read_declaration
@@ -107,6 +108,64 @@ def test_an_unknown_key_is_refused():
     with pytest.raises(HooksConfigError) as exc:
         _read([{"name": "a", "module": "a.b", "bogus": 1}])
     assert "bogus" in str(exc.value)
+
+
+# The first entry of docs/config/cli/hooks-options.md, verbatim — the spelling every
+# operator copies (issue-433).
+DOCUMENTED_ENTRY = """\
+hooks:
+  - name: house-policy
+    path: hooks/policy.py                  # a LifecycleHooks subclass, beside this file
+    on: [work_item_start, session_spawn]   # optional: default = the methods it overrides
+    required: true                         # its failure at a `proceed` point refuses
+"""
+
+
+def test_a_bare_on_key_loads_as_the_docs_write_it():
+    """issue-433, bug 1: YAML 1.1 reads the unquoted key ``on`` as the boolean ``True``.
+
+    The first assertion pins that premise, so the test still says something if PyYAML
+    ever moves to YAML 1.2 and the coercion disappears.
+    """
+    loaded = yaml.safe_load(DOCUMENTED_ENTRY)
+    assert True in loaded["hooks"][0] and "on" not in loaded["hooks"][0]
+    d = read_declaration(loaded)
+    assert d.entries[0].on == ("work_item_start", "session_spawn")
+    assert d.entries[0].required is True
+    assert d.entries[0].as_dict()["on"] == ["work_item_start", "session_spawn"]
+
+
+def test_a_quoted_on_key_still_loads_and_both_spellings_together_are_refused():
+    d = _read([{"name": "a", "module": "a.b", "on": ["phase_changed"]}])
+    assert d.entries[0].on == ("phase_changed",)
+    with pytest.raises(HooksConfigError) as exc:
+        _read(
+            [
+                {
+                    "name": "a",
+                    "module": "a.b",
+                    "on": ["phase_changed"],
+                    True: ["session_spawn"],
+                }
+            ]
+        )
+    assert "entry 'a'" in str(exc.value) and "twice" in str(exc.value)
+
+
+@pytest.mark.parametrize("key", [1, None, False])
+def test_an_unknown_key_that_is_not_a_string_is_still_a_hooks_config_error(key):
+    """issue-433, bug 2: the refusal raised ``TypeError`` joining the keys, naming
+    neither the entry nor the key, and reached callers as the wrong class."""
+    with pytest.raises(HooksConfigError) as exc:
+        _read([{"name": "acme", "module": "a.b", key: 1}])
+    message = str(exc.value)
+    assert "entry 'acme'" in message and repr(key) in message and "module" in message
+
+
+def test_unknown_keys_of_mixed_types_are_all_named():
+    with pytest.raises(HooksConfigError) as exc:
+        _read([{"name": "acme", "module": "a.b", "bogus": 1, 2: 3}])
+    assert "'bogus'" in str(exc.value) and "2" in str(exc.value)
 
 
 @pytest.mark.parametrize(
