@@ -1,3 +1,9 @@
+## v19.14.0 (2026-09-29)
+
+### Feat
+
+- **issue-344**: lifecycle hooks — seven typed points a hook may change, local or over JSON-RPC (#432)
+
 ## v19.13.2 (2026-09-28)
 
 ### Fix
