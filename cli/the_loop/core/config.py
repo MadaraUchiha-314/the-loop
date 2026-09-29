@@ -62,6 +62,9 @@ MODELINE = (
 #: as is the MCP mount (``service.mcp``, issue-228). Everything else in the config is
 #: read per use, from the value the service refreshes.
 RESTART_REQUIRED = (
+    # The facade a manager serves is picked once, in ``create_app`` (issue-374 R1.4);
+    # the registry beneath it (``instance.manager.*``) is read per request.
+    "instance.role",
     "service.host",
     "service.port",
     "service.exposed",

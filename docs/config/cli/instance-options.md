@@ -15,11 +15,18 @@ new work items reach it, and a declared list of the ones it manages.
 ```yaml
 instance:
   name: laptop-b
+  role: worker
   scope:
     mode: addressed
     workItems:
       - github:octo/repo#15
       - https://github.com/octo/repo/pull/16
+  # manager:                    # read only when role is manager
+  #   instances:
+  #     - name: laptop-a
+  #       url: http://10.0.0.5:4114
+  #   timeoutSeconds: 10
+  #   probeIntervalSeconds: 15
 ```
 
 Unset, the block is an **unnamed, open** instance — exactly the behaviour before it
@@ -50,6 +57,78 @@ is warned about and treated as unset.
 
 Unnamed, nothing can address the instance, and `scope.mode: addressed` resolves to
 `locked`.
+
+### `role`
+
+- **Type:** `string` — `worker` \| `manager`
+- **Default:** `worker`
+
+What this instance is ([issue-374](https://github.com/MadaraUchiha-314/the-loop/issues/374),
+[decision-138](/decisions/decision-138)). A **worker** is every instance before the role
+existed. A **manager** keeps everything a worker does — its ingresses, its scope, its
+sessions — and also serves the instances registered under `manager.instances` through the
+same `/api/v1`: a list read is its own rows plus every member's, each stamped `instance`;
+an operation keyed by a work item routes to the instance that manages it; the dashboard's
+Instances tab and [`the-loop instances`](/cli/commands/instances) manage the registry.
+See [running a manager](/cli/instances#running-a-manager).
+
+A manager **must be named**: its own rows and events carry its name. `the-loop start`
+refuses to boot on a role outside the two values or on an unnamed manager, rather than
+guessing; every other reader (`status`, the daemons) warns and reads `worker`. The role is
+**boot-only** — a change through the dashboard or the API is reported as
+`restartRequired` — while everything under `manager` is hot.
+
+## The fleet
+
+### The registry — `manager.instances`
+
+An array of `{name, url}` objects, empty by default.
+
+The registered instances — the fleet a manager serves. `name` is the member's own
+`instance.name`; `url` is its service address as this manager reaches it (`http` or
+`https`, an optional path prefix, no userinfo). The manager **trusts a URL only once**
+`GET /api/v1/instance` there answers with the registered name and `role: worker`: until
+then the member shows as `unreachable` or `mismatched`, and nothing is served from it or
+sent to it. An entry outside the name grammar, a duplicate name, a non-`http(s)` URL or
+this manager's own address is warned about by position and skipped.
+
+The manager itself is the fleet's first member implicitly and is never listed here. Four
+ways write this key, and they are one path: a hand edit, `POST /api/v1/instances/register`
+/ `unregister`, the dashboard's Instances tab and `the-loop instances register` /
+`unregister` — the last three splice the file exactly as `POST /api/v1/config` does, so the
+comments survive and the change is live on the next request.
+
+### `manager.instances[].name`
+
+- **Type:** `string`, matching `^[a-z0-9][a-z0-9-]{0,39}$`
+- **Default:** none — required
+
+The member's own `instance.name`; the manager's key for it everywhere.
+
+### `manager.instances[].url`
+
+- **Type:** `string`, `http://` or `https://`
+- **Default:** none — required
+
+The member's service origin, optionally with a path prefix.
+
+### `manager.timeoutSeconds`
+
+- **Type:** `number` (seconds), at least 1
+- **Default:** `10`
+
+How long one request to a member may take. A list read leaves a member that exceeds it
+out of the answer (the response header `The-Loop-Instances-Unreachable` names it); a
+keyed operation to it fails with `502`. A value below 1 clamps up.
+
+### `manager.probeIntervalSeconds`
+
+- **Type:** `number` (seconds), at least 1
+- **Default:** `15`
+
+How long a probe of a member — `GET /api/v1/instance`, the name check — stays fresh
+before the next request re-probes it. `GET /api/v1/instances` and the Instances tab read
+the fleet at this freshness. A value below 1 clamps up.
 
 ## Scope
 
