@@ -69,6 +69,12 @@ constraint this capability is built around ([decision-137](../decisions/decision
   `timeoutSeconds` (default 10) on a remote one; `on` (a subset of the catalog), `required`
   (default false), `enabled` (default true). A malformed entry SHALL fail the load naming
   it.
+- The key `on` SHALL be accepted bare, as every documented example writes it, as well as
+  quoted: `yaml.safe_load` follows YAML 1.1 and reads the bare key as the boolean `True`,
+  and the loader SHALL map that key back to `on` before any other rule sees the entry.
+  An entry carrying both spellings SHALL be refused. A refusal for an unknown key SHALL
+  be a `HooksConfigError` naming the entry and every offending key whatever its type
+  (issue-433).
 - A `url` SHALL be `https`, or `http` to a loopback host; `http` elsewhere with a
   `tokenEnv` SHALL be refused at load. `tokenEnv` SHALL name a variable read at call time;
   an `Authorization` header in `headers` SHALL be refused.
@@ -115,4 +121,5 @@ constraint this capability is built around ([decision-137](../decisions/decision
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-433 | The declaration loader accepts the bare key `on` (2026-09-29): `yaml.safe_load` reads it as the boolean `True`, so a hook declared exactly as the docs show was refused as having an unknown key, and the refusal itself raised `TypeError` joining a non-string key instead of the `HooksConfigError` that names the entry. The key is normalised before the unknown-key check, both spellings on one entry are refused, and unknown keys are rendered with `repr` whatever their type | [spec](../specs/issue-433/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/433) |
 | issue-344 | Capability minted: seven lifecycle points with typed contexts (facts + decisions), the `LifecycleHooks` executor interface, the top-level `hooks[]` declaration (local `module`/`path`, remote `url` over JSON-RPC), the chain runner with warn-and-continue and `required`, the-loop's own announcements consulting the seam, `the-loop hooks`, and `the_loop.sdk.hooks`. Supersedes the event-centred attempt of PR #357 | [spec](../specs/issue-344/), [decision-137](../decisions/decision-137.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/344) |
