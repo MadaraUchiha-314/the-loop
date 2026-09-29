@@ -159,6 +159,9 @@ class StubWorkspace(Workspace):
 def make_dispatcher(tmp_path, adapter, tmux, workspace=None, **config_overrides):
     # Pre-issue-106 spawn behaviour (the start gate has its own tests).
     config_overrides.setdefault("control", ControlConfig(require_start_command=False))
+    # A spawn marks the portable record (issue-344): keep it under tmp_path,
+    # never the cwd's `.the-loop/` (issue-422).
+    config_overrides.setdefault("portable_dir", str(tmp_path / "portable"))
     config = RoutingConfig(spawn_on_unmatched="labeled", **config_overrides)
     return Dispatcher(
         registry=SessionRegistry(tmp_path / "sessions"),

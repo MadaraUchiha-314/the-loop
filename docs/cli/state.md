@@ -232,8 +232,10 @@ classified on exactly that reasoning.
 
 **One file per work item, whatever delivers it.** Named for its ref
 (`github:octo/repo#15` → `github-octo-repo-15.json`), with independent sections —
-`control`, `poll`, `pullRequests`, `collaborators`, `collaborationChannels`, `channels`
-and, once the item has ended, `ended` — and, since
+`control`, `poll`, `pullRequests`, `collaborators`, `collaborationChannels`, `channels`,
+`lifecycle` (when the operator's [lifecycle hooks](/cli/lifecycle-hooks) were asked about
+the current arming, so a spawn deferred at a gate does not ask twice — cleared with
+`control`) and, once the item has ended, `ended` — and, since
 [issue-130](https://github.com/MadaraUchiha-314/the-loop/issues/130), a link to the work
 item itself.
 

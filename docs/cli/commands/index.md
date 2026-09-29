@@ -49,6 +49,7 @@ bare checkout (`--spec-dir` when the specs are not under `docs/specs`).
 |---------|--------------|
 | [`check`](/cli/commands/check) | Evaluate a work item's nodes against its checked-in artifacts. Pure: no network, no subprocess, no mutation — so CI runs the same code the runtime does. |
 | [`graph`](/cli/commands/graph) | Inspect and drive the [process graph](/capabilities/process-graph): `show`, `status`, `advance`, `run`, `force`. |
+| [`hooks`](/cli/commands/hooks) | The [lifecycle hooks](/cli/lifecycle-hooks) your CLI config declares, importing nothing — and `points`, the catalog they can attach to. |
 | [`critic`](/cli/commands/critic) | Hand a review round to a **different** harness and read back what it said, as one JSON envelope. |
 | [`scenarios`](/cli/commands/scenarios) | The table of Gherkin scenarios the integration tests cover. |
 | [`instructions`](/cli/commands/instructions) | Which of the project's registered [custom instruction docs](/operating-model/reference/instructions) actually resolve — and `onMissing` as an exit code. |

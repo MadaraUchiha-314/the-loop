@@ -53,6 +53,9 @@ def make_dispatcher(tmp_path, tmux, monkeypatch, reactions=None, **config_overri
         "control",
         ControlConfig(require_start_command=False),
     )
+    # A spawn marks the portable record (issue-344): keep it under tmp_path,
+    # never the cwd's `.the-loop/` (issue-422).
+    config_overrides.setdefault("portable_dir", str(tmp_path / "portable"))
     config = RoutingConfig(
         reactions=reactions or ReactionConfig(enabled=True), **config_overrides
     )

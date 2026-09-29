@@ -187,6 +187,24 @@ The environment contract as data — one frozen `Requirement` per binary:
 Read it to render your own preflight, your own health check, or your own image
 documentation.
 
+## `the_loop.sdk.hooks`
+
+The authoring surface for [lifecycle hooks](/cli/lifecycle-hooks)
+([issue-344](https://github.com/MadaraUchiha-314/the-loop/issues/344)) — its own module, so
+a hook author imports it without the control plane:
+
+| Symbol | Meaning |
+|--------|---------|
+| `LifecycleHooks` | subclass it; one method per point (`work_item_start(ctx)`, `session_spawn(ctx)`, …) returning `None` or the context |
+| `WorkItemStart`, `SessionSpawn`, `SessionSpawned`, `WaitingForInput`, `InputReceived`, `PhaseChanged`, `WorkItemComplete` | the seven contexts: facts plus decision fields; `Context` is their base |
+| `WorkItem` | the work item on every context — `ref`, `provider`, `host`, `owner`, `repo`, `repository`, `number`, `kind`, `url`, `id`; `WorkItem.from_ref(ref)` builds one |
+| `POINTS` | the catalog, point name → context class; `describe()` renders it |
+| `handle_request(executor, body) -> bytes` | the JSON-RPC 2.0 server half, for any HTTP framework |
+| `HookServer(executor, host, port, token_env)` | a stdlib server hosting one executor: `serve_forever()`, `serve_in_thread()`, `shutdown()`, `url` |
+| `HookFailure`, `DecisionTypeError` | what a bad remote answer and a wrong-typed decision raise |
+
+Imports no FastAPI, uvicorn or MCP. The guide is [hooking the lifecycle](/cli/lifecycle-hooks).
+
 ## `DEFAULT_PREFIX`
 
 `"/the-loop"` — where `mount()` namespaces the-loop inside a host application. Not `""`: a

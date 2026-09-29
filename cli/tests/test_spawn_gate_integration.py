@@ -54,6 +54,9 @@ def _dispatcher(tmp_path, link, **overrides):
     registry = SessionRegistry(tmp_path / "sessions")
     overrides.setdefault("control", ControlConfig(require_start_command=False))
     overrides.setdefault("spawn_on_unmatched", "always")
+    # A spawn marks the portable record (issue-344): keep it under tmp_path
+    # (issue-422), never the cwd's `.the-loop/`.
+    overrides.setdefault("portable_dir", str(tmp_path / "portable"))
     tmux = FakeTmux()
     dispatcher = Dispatcher(
         registry=registry,

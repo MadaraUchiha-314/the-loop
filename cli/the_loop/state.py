@@ -702,6 +702,14 @@ ATTRIBUTES: Tuple[Attribute, ...] = (
     ),
     Attribute(
         OPERATOR_FILE,
+        "lifecycle",
+        "operator-ledger",
+        "the operator's lifecycle hooks were asked about this arming (issue-344): "
+        "when `work_item_start` ran, so a spawn deferred at a gate does not ask "
+        "twice; cleared with `control` when the item ends or a hook refuses",
+    ),
+    Attribute(
+        OPERATOR_FILE,
         "channels",
         "workspace-entity",
         "per channel type: the thread carrying this work item's conversation, "

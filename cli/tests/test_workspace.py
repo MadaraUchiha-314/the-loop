@@ -738,6 +738,9 @@ def test_dispatcher_without_workspace_uses_spawn_workdir(tmp_path):
     config = RoutingConfig(
         spawn_on_unmatched="always",
         spawn_workdir=str(tmp_path),
+        portable_dir=str(
+            tmp_path / "portable"
+        ),  # the spawn marks the record (issue-344)
         control=ControlConfig(require_start_command=False),
     )
     tmux = FakeTmux()

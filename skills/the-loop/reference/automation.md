@@ -46,6 +46,17 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
     harness config at all (issue-352, decision-123): the spec directory, the critic
     roster and the operator's graph hooks are CLI-config keys (`routing.graph.specDir`,
     `critics[]`, `routing.graph.hooks`).
+- **Lifecycle hooks** (issue-344, decision-137): the operator's own code, declared under
+  the top-level `hooks[]` of the CLI config, asked **before** the-loop acts at six points
+  of a work item's delivery — `work_item_start`, `session_spawn`, `session_spawned`,
+  `waiting_for_input`, `phase_changed`, `work_item_complete` — each a typed context of
+  facts and decisions (refuse a start or a launch, reword a boot prompt or an agent's
+  question, silence an announcement). Local (`module`/`path`) or remote (`url`, JSON-RPC)
+  executors, authored against `the_loop.sdk.hooks`; `the-loop hooks` reports them. Not
+  graph hooks (a check at a node boundary) and not the event log (a record). For a
+  session this means two things: the question `the-loop ask` posts may carry an
+  operator hook's rewording, and a start or launch an operator hook refused is explained
+  on the ticket in a marked comment, never retried.
 - **Webhook → session routing** (`routing.enabled`): a received
   event (PR/issue comment, `workflow_run` result, …) is matched to the registered
   session working that item and delivered by *resuming* that session through its

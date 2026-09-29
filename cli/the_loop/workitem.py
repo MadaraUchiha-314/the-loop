@@ -58,6 +58,7 @@ import json
 import logging
 import os
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -142,6 +143,14 @@ COLLABORATION_CHANNELS = "collaborationChannels"
 #: is the tracking that outlives the machine (decision-113).
 ENDED = "ended"
 
+#: What the lifecycle hooks have already been asked about this work item (issue-344):
+#: ``{"startedAt": "<utc>"}`` once ``work_item_start`` ran for the current arming.
+#: The dispatcher's spawn path runs more than once per arming (a spawn deferred at
+#: `phase-selection` comes back through it), and "once per arming" has to hold across
+#: processes and restarts — so it is a fact on the portable record, cleared with the
+#: control record when the item ends or a hook refuses the start.
+LIFECYCLE = "lifecycle"
+
 #: Every section a record may carry. A record with none of them is deleted
 #: rather than kept as an empty husk. ``GRAPH`` is still listed — it is no
 #: longer written, but a record that carries one from before issue-368 is a
@@ -156,6 +165,7 @@ SECTIONS = (
     ENDED,
     CHANNELS,
     PULL_REQUESTS,
+    LIFECYCLE,
 )
 
 #: The directory's index (issue-130) — one file listing every record beside it,
@@ -167,6 +177,29 @@ INDEX_FILE = "index.json"
 #: pre-issue-128 tree is still on disk. Without it, an ended work item would be
 #: re-armed from the old tree the next time anything asked about it.
 SEALED = "sealed"
+
+
+#: One lock per record directory, shared by every store built over it in this
+#: process (issue-344). ``write_section`` is a read-modify-write of a whole file,
+#: and the daemon writes the same record from more than one thread — a control
+#: command on the ingress thread, the lifecycle mark and the closure stamp on a
+#: dispatch worker — so two unserialised writers could each read the record, each
+#: set their section, and the second write would carry the first one's stale copy
+#: of the other section. Keyed by the resolved root rather than held per instance
+#: because the dispatcher, the poller and the tests each build their own store over
+#: one directory. Cross-process writers (the receiver and the poller as separate
+#: daemons) are not covered here, as they were not before.
+_ROOT_LOCKS: Dict[str, threading.RLock] = {}
+_ROOT_LOCKS_GUARD = threading.Lock()
+
+
+def _lock_for(root: Path) -> threading.RLock:
+    key = str(Path(root).resolve())
+    with _ROOT_LOCKS_GUARD:
+        lock = _ROOT_LOCKS.get(key)
+        if lock is None:
+            lock = _ROOT_LOCKS[key] = threading.RLock()
+        return lock
 
 
 def _as_ref(work_item: Union[str, WorkItemRef]) -> WorkItemRef:
@@ -296,12 +329,13 @@ class WorkItemStore:
         poller ledgers several pull requests of one work item in a cycle, and
         each must leave the others exactly as they are on disk.
         """
-        ledgers = dict(self.section(work_item, PULL_REQUESTS) or {})
-        if data is None:
-            ledgers.pop(ref, None)
-        else:
-            ledgers[ref] = dict(data)
-        self.write_section(work_item, PULL_REQUESTS, ledgers or None)
+        with _lock_for(self.root):
+            ledgers = dict(self.section(work_item, PULL_REQUESTS) or {})
+            if data is None:
+                ledgers.pop(ref, None)
+            else:
+                ledgers[ref] = dict(data)
+            self.write_section(work_item, PULL_REQUESTS, ledgers or None)
 
     def section(
         self, work_item: Union[str, WorkItemRef], name: str
@@ -378,15 +412,16 @@ class WorkItemStore:
         file would let the old tree resurrect state the-loop just ended.
         """
         ref = _as_ref(work_item)
-        record = self.read(ref)
-        record[name] = data  # None is a tombstone: "deliberately not recorded"
-        if not any(isinstance(record.get(s), dict) for s in SECTIONS):
-            if not self._legacy_holds(ref):
-                self.drop(ref)
-                return
-            record = {SEALED: True}
-        self._write_json(self.path_for(ref), _identified(ref, record))
-        self._write_index()
+        with _lock_for(self.root):
+            record = self.read(ref)
+            record[name] = data  # None is a tombstone: "deliberately not recorded"
+            if not any(isinstance(record.get(s), dict) for s in SECTIONS):
+                if not self._legacy_holds(ref):
+                    self.drop(ref)
+                    return
+                record = {SEALED: True}
+            self._write_json(self.path_for(ref), _identified(ref, record))
+            self._write_index()
 
     def _write_json(self, path: Path, payload: Dict[str, Any]) -> None:
         """Write ``payload`` to ``path`` atomically (``tempfile`` + ``os.replace``).

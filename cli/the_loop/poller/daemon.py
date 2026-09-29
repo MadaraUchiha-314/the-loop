@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, List, Mapping, Optional, Sequence
 
-from .. import cli_config, eventlog
+from .. import cli_config, eventlog, lifecycle
 from ..authz import resolve_authorized_users
 from ..channels.publishers import comment_publisher
 from ..ghhost import github_host
@@ -321,6 +321,14 @@ def run(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
     )
     eventlog.configure_from_file("poll")
+    # The operator's lifecycle hooks load once, here, and a declaration that
+    # cannot load stops the daemon (issue-344, R3.6) — the same posture as an
+    # unknown poll provider below: refuse to run rather than run without a gate.
+    try:
+        lifecycle.configure_from_file()
+    except Exception as exc:  # noqa: BLE001 — every load failure is fatal here
+        logger.error("lifecycle hooks: %s", exc)
+        return 1
 
     # Config validation happens BEFORE the lock. `the-loop start` proves a
     # daemon started by seeing its lock held, so a poller doomed by its own

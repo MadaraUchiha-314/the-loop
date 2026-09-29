@@ -1150,7 +1150,10 @@ def test_a_raising_opener_never_fails_the_spawn(tmp_path):
         dispatcher.handle(labeled_event())
         dispatcher.handle(comment_event(START_KEYWORD))
         assert _wait(lambda: len(tmux.spawns) == 1)
-        assert registry.find_by_work_item(REF) is not None
+        # The registration is the dispatch's OUTCOME, written after the spawn it
+        # follows (issue-251's shape): wait for it rather than read it the instant
+        # the attempt is seen.
+        assert _wait(lambda: registry.find_by_work_item(REF) is not None)
     finally:
         dispatcher.stop(timeout=5)
 

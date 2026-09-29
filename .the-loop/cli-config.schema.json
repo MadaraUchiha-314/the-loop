@@ -92,10 +92,11 @@
         "id": "execution",
         "title": "What happens when an event matches",
         "ask": "confirm",
-        "explain": "The rules the dispatcher follows once an event has arrived, shared verbatim by both ingresses — one dispatch stack, two front doors. Four answers carry the weight. `routing.autoExecuteLabels` is the list of labels EVERY ONE of which must be on a work item before anything spawns: it is what arms an item, and an operator sharing a repository adds one of their own. `routing.authorizedUsers` is who may drive the loop — start it, stop it, answer a gate — and it is EMPTY by default, so until you name someone here nobody can. `routing.workspace.root` is where spawned sessions get their checkout; the daemon runs independent of any repository, so without it there is nowhere to work. `harnesses`, `models` and `effort` are which agent runs, on which model, at what thinking effort. `graphs` is optional and advanced: graphs of your own, which `routing.control.commands` binds commands to. Leave it empty unless you already have a graph YAML.",
+        "explain": "The rules the dispatcher follows once an event has arrived, shared verbatim by both ingresses — one dispatch stack, two front doors. Four answers carry the weight. `routing.autoExecuteLabels` is the list of labels EVERY ONE of which must be on a work item before anything spawns: it is what arms an item, and an operator sharing a repository adds one of their own. `routing.authorizedUsers` is who may drive the loop — start it, stop it, answer a gate — and it is EMPTY by default, so until you name someone here nobody can. `routing.workspace.root` is where spawned sessions get their checkout; the daemon runs independent of any repository, so without it there is nowhere to work. `harnesses`, `models` and `effort` are which agent runs, on which model, at what thinking effort. `graphs` is optional and advanced: graphs of your own, which `routing.control.commands` binds commands to. Leave it empty unless you already have a graph YAML. `hooks` is optional and advanced too: lifecycle hooks of your own — code the-loop asks before a start, a session launch, a wait on a person, a phase change and the end, in-process or over JSON-RPC (issue-344). Leave it empty unless you have written one.",
         "keys": [
           "routing",
           "graphs",
+          "hooks",
           "harnesses",
           "models",
           "effort"
@@ -1111,6 +1112,88 @@
             "type": "boolean",
             "default": false,
             "description": "Walk this graph as a GUEST, as the shipped contribution and review loops do: the spec tree is kept out of the repository's git history and `publish-artifact` posts the plan to the thread. Set it on a graph that replaces `contribute` or `review`. It is the posture only: the session-prompt lines written for the shipped contribution and review loops (no outer loop; change no code) are not applied — put what your session must know in your graph's nodes."
+          }
+        }
+      },
+      "default": []
+    },
+    "hooks": {
+      "type": "array",
+      "description": "LIFECYCLE HOOKS of your own (issue-344, decision-137): code the-loop asks at the moments a work item's delivery turns — `work_item_start`, `session_spawn`, `session_spawned`, `waiting_for_input`, `phase_changed`, `work_item_complete` — before it acts. Each entry is one executor: a `LifecycleHooks` subclass imported into the-loop's process (`module` or `path`) or a JSON-RPC server you host (`url`). Executors run in this order, synchronously, and each may change the point's DECISIONS (refuse a start or a launch, reword a prompt or a question, silence an announcement) and nothing else. A hook that fails is recorded (`hooks.failed`) and skipped unless `required`. Not the event log: an event type is not a hook point. `the-loop hooks` prints what is declared without importing or contacting any of it; `the-loop hooks points` lists the points. EXECUTABLE CONFIGURATION — a local entry runs inside the-loop's process with your credentials — so review an entry like code, exactly as `critics[]` and `routing.graph.hooks`. A daemon refuses to start on a declaration it cannot load.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "description": "This hook's name — unique in the list; what `hooks.decided` / `hooks.failed` / `hooks.refused` and `the-loop hooks` call it."
+          },
+          "module": {
+            "type": "string",
+            "description": "An installed dotted module defining exactly one `LifecycleHooks` subclass (or several, with `executor` naming one) — how a team ships shared hooks as a package. Exactly one of `module`, `path` or `url` per entry."
+          },
+          "path": {
+            "type": "string",
+            "description": "A .py file defining the executor: absolute, `~/…`, or relative to the directory of THIS config file. Never resolved against a work item's checkout, so no session can plant a module where its daemon will import it. Exactly one of `module`, `path` or `url` per entry."
+          },
+          "url": {
+            "type": "string",
+            "description": "A remote executor: the-loop POSTs one JSON-RPC 2.0 request per point (`method` = the point, `params` = the context) and reads back `result: null` (pass through) or an object of decisions. `https://…`, or `http://` to a loopback host; plain `http://` elsewhere is refused when `tokenEnv` is set — a bearer token never travels in clear. Exactly one of `module`, `path` or `url` per entry."
+          },
+          "executor": {
+            "type": "string",
+            "description": "Local entries only. The attribute in the module to use — a `LifecycleHooks` subclass (constructed with `with`) or an instance of one. Omitted, the module must define exactly one subclass."
+          },
+          "with": {
+            "type": "object",
+            "default": {},
+            "description": "Local entries only. Keyword arguments to the class's constructor."
+          },
+          "tokenEnv": {
+            "type": "string",
+            "description": "Remote entries only. The NAME of an environment variable whose value is sent as `Authorization: Bearer <value>` on every request — read at call time, never written here, never logged. Unset or empty at call time, nothing is sent and the call is the hook's failure."
+          },
+          "headers": {
+            "type": "object",
+            "default": {},
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Remote entries only. Non-secret request headers. An `Authorization` header here is refused — name the variable under `tokenEnv` instead."
+          },
+          "timeoutSeconds": {
+            "type": "number",
+            "default": 10,
+            "description": "Remote entries only. A positive number: how long one request may take; past it the call is the hook's failure and the operation proceeds (or is refused, when `required`)."
+          },
+          "on": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "work_item_start",
+                "session_spawn",
+                "session_spawned",
+                "waiting_for_input",
+                "phase_changed",
+                "work_item_complete"
+              ]
+            },
+            "description": "The points this entry handles. Omitted: a local executor handles the points its class overrides, a remote one every point. Listing narrows and never widens; a name outside the six points fails the load — an event-log type is not a hook point."
+          },
+          "required": {
+            "type": "boolean",
+            "default": false,
+            "description": "When this hook fails (raises, times out, answers badly, cannot be reached) at a point that carries `proceed` — `work_item_start`, `session_spawn` — refuse the operation with a reason naming the hook, instead of proceeding without it. At other points a failure is recorded either way."
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "False keeps the entry in the file and loads nothing for it."
           }
         }
       },

@@ -80,6 +80,7 @@ prefer, and you lose completion while typing, nothing else.
   [webhook](/config/cli/webhook-options) ·
   [routing](/config/cli/routing-options) ·
   [critics](/config/cli/critics-options) ·
+  [lifecycle hooks](/config/cli/hooks-options) ·
   [polling](/config/cli/polling-options) ·
   [integrations](/config/cli/integrations-options) ·
   [channels](/config/cli/channels-options) ·
