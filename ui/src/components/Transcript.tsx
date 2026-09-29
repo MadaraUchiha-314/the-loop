@@ -330,11 +330,14 @@ export function ChatBar({
   state,
   onSent,
   tmuxTarget,
+  instance = "",
 }: {
   refFor: string;
   state: SessionState;
   onSent?: () => void;
   tmuxTarget?: string | undefined;
+  /** The instance the session is on (issue-374); `""` on a worker. */
+  instance?: string | undefined;
 }) {
   const { api } = useApi();
   const [text, setText] = useState("");
@@ -347,7 +350,7 @@ export function ChatBar({
     setBusy(true);
     setError(null);
     try {
-      await api.replySession(refFor, text);
+      await api.replySession(refFor, text, "", instance);
       setText("");
       onSent?.();
     } catch (cause) {
@@ -408,7 +411,10 @@ export function ChatBar({
             <span>{blocked}</span>
           ) : (
             <>
-              <span className="break-all">delivers to tmux{tmuxTarget ? ` · ${tmuxTarget}` : ""}</span>
+              <span className="break-all">
+                delivers to tmux{tmuxTarget ? ` · ${tmuxTarget}` : ""}
+                {instance ? ` · on ${instance}` : ""}
+              </span>
               <span aria-hidden="true">·</span>
               <span>bracketed paste + enter</span>
               <span aria-hidden="true">·</span>

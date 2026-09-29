@@ -16,7 +16,7 @@ import { relativeTime } from "../api/model.ts";
 import type { StandingSessionRecord, StandingVerb } from "../api/types.ts";
 import type { Chrome } from "../components/HeaderBar.tsx";
 import { HeaderBar } from "../components/HeaderBar.tsx";
-import { Card, ControlButton, Empty, FieldLabel, INPUT_CLASS, KV, Report } from "../components/primitives.tsx";
+import { Card, ControlButton, Empty, FieldLabel, INPUT_CLASS, InstanceChip, KV, Report } from "../components/primitives.tsx";
 import { StatusDot } from "../components/StatusDot.tsx";
 import { useApi } from "../state/ApiContext.tsx";
 import { useAsync } from "../state/useAsync.ts";
@@ -76,17 +76,29 @@ export function Standing({ chrome, onChanged }: { chrome: Chrome; onChanged?: ()
             </Empty>
           ) : null}
 
+          {/* Every verb carries the row's instance (issue-374, R5.1): on a
+              manager the name alone may be two sessions, one per member. */}
           {rows.map((session) => (
             <SessionCard
-              key={session.name}
+              key={`${session.instance ?? ""}:${session.name}`}
               session={session}
               busy={busy}
               onControl={(verb) =>
-                run(`${verb}:${session.name}`, () => api.controlStandingSession(session.name, verb), `${verb} ${session.name}.`)
+                run(
+                  `${verb}:${session.name}`,
+                  () => api.controlStandingSession(session.name, verb, session.instance),
+                  `${verb} ${session.name}.`,
+                )
               }
-              onDelete={() => run(`delete:${session.name}`, () => api.deleteStandingSession(session.name), `Deleted ${session.name}.`)}
+              onDelete={() =>
+                run(`delete:${session.name}`, () => api.deleteStandingSession(session.name, session.instance), `Deleted ${session.name}.`)
+              }
               onSay={(text) =>
-                run(`say:${session.name}`, () => api.sayToStandingSession(session.name, text), `Delivered into ${session.name}.`)
+                run(
+                  `say:${session.name}`,
+                  () => api.sayToStandingSession(session.name, text, "", session.instance),
+                  `Delivered into ${session.name}.`,
+                )
               }
             />
           ))}
@@ -222,6 +234,7 @@ function SessionCard({
       <div className="flex flex-wrap items-center gap-2">
         <StatusDot status={session.running ? "active" : "pending"} />
         <h3 className="font-mono text-sm text-foreground">{session.name}</h3>
+        {session.instance ? <InstanceChip instance={session.instance} /> : null}
         {/* Text, never a dot alone: the declared/created split decides whether
             `delete` is even offered, so it must survive being read without colour. */}
         <span className="rounded-md border border-border bg-surface-2 px-2 py-0.5 font-mono text-[0.68rem] text-muted-foreground">

@@ -17,7 +17,7 @@ import type { SessionVerb } from "../api/types.ts";
 import { useApi } from "../state/ApiContext.tsx";
 import { railLabel } from "./GraphStrip.tsx";
 import { CopyIcon, ExternalLinkIcon, PanelRightCloseIcon, TriangleAlertIcon } from "./Icons.tsx";
-import { ControlButton, KV, Notice, Section } from "./primitives.tsx";
+import { ControlButton, InstanceChip, KV, Notice, Section } from "./primitives.tsx";
 import { sessionLabel } from "./StatusDot.tsx";
 
 interface SessionAsideProps {
@@ -50,7 +50,7 @@ export function SessionAside({ view, viewed, note, onChanged, onClose }: Session
     setBusy(verb);
     setError(null);
     try {
-      await api.controlSession(view.ref, verb);
+      await api.controlSession(view.ref, verb, true, view.instance);
       onChanged();
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.advice : String(cause));
@@ -95,6 +95,11 @@ export function SessionAside({ view, viewed, note, onChanged, onClose }: Session
       ) : null}
 
       <Section title="Harness">
+        {view.instance ? (
+          <KV k="instance">
+            <InstanceChip instance={view.instance} />
+          </KV>
+        ) : null}
         <KV k="harness" v={session?.harness ?? "—"} />
         <KV k="session id" v={session?.harnessSessionId ?? "—"} title={session?.harnessSessionId} />
         <KV k="status" v={sessionLabel(state)} />

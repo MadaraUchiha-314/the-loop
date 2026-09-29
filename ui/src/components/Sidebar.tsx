@@ -9,18 +9,24 @@
  * Every row is an anchor on the hash: the hash is the one record of what the
  * main column shows, so a sidebar row and a session tab are the same
  * navigation and cannot disagree (issue-300).
+ *
+ * On a manager the board is a fleet (issue-374, R5.2): each row that a
+ * manager stamped carries an instance chip, a native `<select>` beside the
+ * search box filters the loaded rows to one instance, and a row's hash names
+ * its instance so a work item present on two instances is two rows, each
+ * addressable. A worker's rows carry no stamp and none of this renders.
  */
 
 import { useState } from "react";
 
 import { relativeTime, rowFlag, sessionTree, type SessionNode, type WorkItemView } from "../api/model.ts";
-import type { DaemonStatus, StandingSessionRecord } from "../api/types.ts";
-import { hrefFor } from "../state/route.ts";
+import type { DaemonStatus, InstancesDocument, StandingSessionRecord } from "../api/types.ts";
+import { hrefFor, itemHref, type Surface } from "../state/route.ts";
 import type { StreamState } from "../state/useStream.ts";
 import { filterViews, itemStatus, repoOf, SIDEBAR_GROUPS, sidebarGroup } from "../views/grouping.ts";
 import { GitPullRequestIcon, PanelLeftCloseIcon, RadioIcon, SearchIcon, SettingsIcon } from "./Icons.tsx";
 import { HealthDot } from "./Nav.tsx";
-import { IconButton, Kicker } from "./primitives.tsx";
+import { IconButton, InstanceChip, Kicker } from "./primitives.tsx";
 import { sessionDot, StatusDot, STATUS_TEXT } from "./StatusDot.tsx";
 
 interface SidebarProps {
@@ -29,15 +35,33 @@ interface SidebarProps {
   titleFor: (ref: string) => string | undefined;
   /** The ref the hash selects, resolved — a work item's or one of its PRs'. */
   activeRef: string;
-  /** Which non-work surface is current, if any. */
-  surface: "work" | "standing" | "settings";
+  /** The instance of the selected row (`""` on a worker), so only that row highlights. */
+  activeInstance?: string;
+  /** Which surface is current. */
+  surface: Surface;
   standingSessions: StandingSessionRecord[];
   daemons: DaemonStatus[];
   stream: StreamState;
+  /** The fleet (issue-374): decides whether the filter and the chips render. */
+  instances?: InstancesDocument | undefined;
+  /** The instance filter: `""` for all, else one instance's name. */
+  instanceFilter?: string;
+  onInstanceFilter?: ((instance: string) => void) | undefined;
   onRefresh: () => void;
   onCollapse: () => void;
   /** The footer's service line: the base URL's host, or the demo. */
   serviceLabel: string;
+}
+
+/** Whether the fleet is worth a filter: more than one row, or a manager (even one with no members yet). */
+export function showsFleet(instances: InstancesDocument | undefined): boolean {
+  return instances !== undefined && (instances.instances.length > 1 || instances.role === "manager");
+}
+
+/** The `<option>` text for one instance: its name, plus why it is worth knowing. */
+export function instanceOption(row: InstancesDocument["instances"][number], own: boolean): string {
+  if (own) return `${row.name} · this instance`;
+  return row.state === "live" ? row.name : `${row.name} · ${row.state}`;
 }
 
 export function Sidebar({
@@ -45,17 +69,37 @@ export function Sidebar({
   loading,
   titleFor,
   activeRef,
+  activeInstance = "",
   surface,
   standingSessions,
   daemons,
   stream,
+  instances,
+  instanceFilter = "",
+  onInstanceFilter,
   onRefresh,
   onCollapse,
   serviceLabel,
 }: SidebarProps) {
   const [query, setQuery] = useState("");
-  const shown = filterViews(views, query, titleFor);
+  const fleet = showsFleet(instances);
+  const byInstance = fleet && instanceFilter ? views.filter((view) => view.instance === instanceFilter) : views;
+  const shown = filterViews(byInstance, query, titleFor);
   const tree = sessionTree(shown);
+  const standing =
+    fleet && instanceFilter ? standingSessions.filter((session) => session.instance === instanceFilter) : standingSessions;
+
+  const navLink = (target: Surface, href: string, label: string) => (
+    <a
+      href={href}
+      aria-current={surface === target ? "page" : undefined}
+      className={`rounded-md px-2 py-1 text-xs transition-colors ${
+        surface === target ? "bg-surface-2 text-foreground" : "text-muted-foreground hover:bg-surface-2/60 hover:text-foreground"
+      }`}
+    >
+      {label}
+    </a>
+  );
 
   return (
     <aside
@@ -80,7 +124,13 @@ export function Sidebar({
         </button>
       </div>
 
-      <div className="space-y-2 px-3 pt-4">
+      <nav className="flex items-center gap-1 px-3 pt-3" aria-label="Surfaces">
+        {navLink("work", hrefFor({ name: "work" }), "Work")}
+        {navLink("standing", hrefFor({ name: "standing" }), "Standing")}
+        {navLink("instances", hrefFor({ name: "instances" }), "Instances")}
+      </nav>
+
+      <div className="space-y-2 px-3 pt-3">
         <label className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-1.5 focus-within:border-border-strong">
           <SearchIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <input
@@ -93,9 +143,27 @@ export function Sidebar({
             className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
         </label>
+        {/* The instance filter (R5.2): a native <select>, over the loaded rows
+            only — it asks the service for nothing. Present only when there is
+            a fleet to filter, so a worker's sidebar is the one it always was. */}
+        {fleet && instances ? (
+          <select
+            aria-label="Instance filter"
+            value={instanceFilter}
+            onChange={(event) => onInstanceFilter?.(event.target.value)}
+            className="w-full rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-[0.72rem] text-foreground outline-none focus:border-border-strong"
+          >
+            <option value="">All instances ({instances.instances.length})</option>
+            {instances.instances.map((row) => (
+              <option key={row.name} value={row.name}>
+                {instanceOption(row, row.name === instances.name)}
+              </option>
+            ))}
+          </select>
+        ) : null}
       </div>
 
-      <nav className="scroll-thin mt-4 flex-1 overflow-y-auto px-2 pb-4">
+      <nav className="scroll-thin mt-4 flex-1 overflow-y-auto px-2 pb-4" aria-label="Board">
         {loading && views.length === 0 ? <p className="px-2 py-4 text-xs text-muted-foreground">Loading…</p> : null}
         {!loading && views.length === 0 ? (
           <p className="px-2 py-4 text-xs leading-relaxed text-muted-foreground">
@@ -104,7 +172,11 @@ export function Sidebar({
           </p>
         ) : null}
         {views.length > 0 && shown.length === 0 ? (
-          <p className="px-2 py-4 text-xs text-muted-foreground">No work item matches “{query}”.</p>
+          <p className="px-2 py-4 text-xs text-muted-foreground">
+            {query
+              ? `No work item matches “${query}”${fleet && instanceFilter ? ` on ${instanceFilter}` : ""}.`
+              : `No work item on ${instanceFilter}.`}
+          </p>
         ) : null}
 
         {SIDEBAR_GROUPS.map((group) => {
@@ -118,18 +190,22 @@ export function Sidebar({
               </div>
               <ul className="space-y-0.5">
                 {items.map(({ view, inner }) => (
-                  <li key={view.ref}>
+                  <li key={view.key}>
                     <ItemRow
                       view={view}
                       title={titleFor(view.ref)}
-                      selected={activeRef === view.ref}
-                      owner={inner.some((pr) => pr.ref === activeRef)}
+                      selected={activeRef === view.ref && activeInstance === view.instance}
+                      owner={activeInstance === view.instance && inner.some((pr) => pr.ref === activeRef)}
                     />
                     {inner.length > 0 ? (
                       <ul className="mt-0.5 space-y-0.5 pl-[1.1rem]" aria-label={`Pull requests for ${view.shortRef}`}>
                         {inner.map((pr) => (
                           <li key={pr.ref}>
-                            <PullRequestRow node={pr} selected={activeRef === pr.ref} />
+                            <PullRequestRow
+                              node={pr}
+                              instance={view.instance}
+                              selected={activeRef === pr.ref && activeInstance === view.instance}
+                            />
                           </li>
                         ))}
                       </ul>
@@ -144,20 +220,22 @@ export function Sidebar({
         <div className="mb-4">
           <div className="flex items-center justify-between px-2 pb-1.5">
             <Kicker>Standing</Kicker>
-            <span className="text-[0.68rem] text-muted-foreground">{standingSessions.length}</span>
+            <span className="text-[0.68rem] text-muted-foreground">{standing.length}</span>
           </div>
           <ul className="space-y-0.5">
-            {standingSessions.map((session) => (
-              <li key={session.name}>
+            {standing.map((session) => (
+              <li key={`${session.instance ?? ""}:${session.name}`}>
                 <a
                   href={hrefFor({ name: "standing" })}
+                  data-row="standing"
                   className={`block w-full rounded-lg px-2 py-1.5 text-left transition-colors ${
                     surface === "standing" ? "bg-surface-2" : "hover:bg-surface-2/60"
                   }`}
                 >
                   <div className="flex items-center gap-2">
                     <StatusDot status={session.running ? "active" : "pending"} />
-                    <span className="truncate font-mono text-[0.75rem] text-foreground/85">{session.name}</span>
+                    <span className="min-w-0 truncate font-mono text-[0.75rem] text-foreground/85">{session.name}</span>
+                    {session.instance ? <InstanceChip instance={session.instance} className="ml-auto" /> : null}
                   </div>
                   {session.description ? (
                     <div className="mt-0.5 truncate pl-[1.1rem] text-[0.7rem] text-muted-foreground">{session.description}</div>
@@ -190,7 +268,7 @@ export function Sidebar({
             {serviceLabel}
           </div>
         </div>
-        <HealthDot daemons={daemons} stream={stream} onRefresh={onRefresh} />
+        <HealthDot daemons={daemons} stream={stream} instances={instances} onRefresh={onRefresh} />
       </div>
     </aside>
   );
@@ -212,10 +290,11 @@ function ItemRow({
   const status = itemStatus(view);
   return (
     <a
-      href={hrefFor({ name: "work", ref: view.ref })}
+      href={itemHref(view.ref, view.instance)}
       aria-current={selected ? "page" : undefined}
-      aria-label={`${view.shortRef}${title ? ` — ${title}` : ""}`}
+      aria-label={`${view.shortRef}${title ? ` — ${title}` : ""}${view.instance ? ` on ${view.instance}` : ""}`}
       data-row="item"
+      data-instance={view.instance || undefined}
       data-owner={owner ? "true" : undefined}
       className={`block w-full rounded-lg px-2 py-1.5 text-left transition-colors ${
         selected ? "bg-surface-2" : owner ? "bg-surface-2/40" : "hover:bg-surface-2/60"
@@ -224,9 +303,10 @@ function ItemRow({
       <div className="flex items-start gap-2">
         <StatusDot status={status} className="mt-2" />
         <span className="mt-[0.2rem] shrink-0 font-mono text-[0.7rem] text-muted-foreground">#{view.number}</span>
-        <span className={`line-clamp-2 min-w-0 break-words text-sm ${selected ? "text-foreground" : "text-foreground/85"}`}>
+        <span className={`line-clamp-2 min-w-0 flex-1 break-words text-sm ${selected ? "text-foreground" : "text-foreground/85"}`}>
           {title ?? positionLabel(view)}
         </span>
+        {view.instance ? <InstanceChip instance={view.instance} className="mt-[0.2rem]" /> : null}
       </div>
       {/* repo · what it is at · age. The flag ("needs input", "human gate",
           "blocked"…) is the more urgent fact, so it takes the node's slot. */}
@@ -249,15 +329,16 @@ function ItemRow({
 
 /**
  * One pull request under its work item: the PR's own session, selectable.
- * Quieter than the row above — icon, number, age, no title and no chip; the
- * nesting says which item it belongs to.
+ * Quieter than the row above — icon, number, age, no title; the nesting says
+ * which item it belongs to, and the chip which instance (R5.2).
  */
-function PullRequestRow({ node, selected }: { node: SessionNode; selected: boolean }) {
+function PullRequestRow({ node, instance, selected }: { node: SessionNode; instance: string; selected: boolean }) {
   return (
     <a
-      href={hrefFor({ name: "work", ref: node.ref })}
+      href={itemHref(node.ref, instance)}
       aria-current={selected ? "page" : undefined}
       data-row="pr"
+      data-instance={instance || undefined}
       className={`flex items-center gap-2 rounded-lg px-2 py-1 text-[0.75rem] transition-colors ${
         selected ? "bg-surface-2 text-foreground" : "text-foreground/85 hover:bg-surface-2/60"
       }`}
@@ -265,6 +346,7 @@ function PullRequestRow({ node, selected }: { node: SessionNode; selected: boole
       <StatusDot status={sessionDot(node.state)} />
       <GitPullRequestIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
       <span className="font-mono">{node.label}</span>
+      {instance ? <InstanceChip instance={instance} /> : null}
       <span className="ml-auto shrink-0 text-[0.7rem] text-muted-foreground" title={node.lastActivity || undefined}>
         {relativeTime(node.lastActivity)}
       </span>

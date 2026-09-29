@@ -21,6 +21,8 @@ import { useMemo, useState } from "react";
 import { ApiError } from "../api/client.ts";
 import { diff, getIn, isRecord, sectionsOf, setIn, type ConfigField, type ConfigGroup } from "../api/configModel.ts";
 import type { ConfigDocument, ConfigSaveResult, JsonSchema, RestartSchedule } from "../api/types.ts";
+import { useApi } from "../state/ApiContext.tsx";
+import { useAsync } from "../state/useAsync.ts";
 import { Card, ControlButton, FieldLabel, INPUT_CLASS, Kicker, Report } from "./primitives.tsx";
 
 type Saved =
@@ -41,9 +43,63 @@ interface ConfigEditorProps {
    * `restartRequired` keys offers a "Restart now" button beside the report.
    */
   onRestart?: () => Promise<RestartSchedule>;
+  /**
+   * Whose config this is (issue-374): a member's name when the editor is
+   * mounted from that instance's pane, `""` for the service this browser is
+   * pointed at. It changes the prose only — the calls are the caller's.
+   */
+  instance?: string | undefined;
 }
 
-export function ConfigEditor({ document, schema, onSave, onSaved, onRestart }: ConfigEditorProps) {
+/**
+ * The config load and the editor in one: `GET /config` + `GET /config/schema`,
+ * then {@link ConfigEditor} over them, every call carrying `instance` when one
+ * is named (issue-374, R5.4) — so the Settings screen and an instance's pane
+ * mount the same thing and differ by one prop.
+ *
+ * The two calls are loaded together and the editor is only mounted once both are in:
+ * the form is *derived* from the schema, so half of the pair is not a screen worth
+ * rendering. A failure says which of the two failed and offers a retry, because "the
+ * service is old enough not to have the route" and "the service is unreachable" want
+ * different things from the operator.
+ */
+export function ConfigSection({ instance = "" }: { instance?: string | undefined }) {
+  const { api } = useApi();
+  const [nonce, setNonce] = useState(0);
+  const loaded = useAsync(
+    async (signal) => ({
+      document: await api.config(signal, instance),
+      schema: await api.configSchema(signal, instance),
+    }),
+    [api, instance, nonce],
+  );
+
+  if (loaded.loading) return <p className="py-2 text-xs text-muted-foreground">Reading the CLI config…</p>;
+  if (loaded.error || !loaded.data) {
+    const advice = loaded.error instanceof ApiError ? loaded.error.advice : String(loaded.error);
+    return (
+      <Card>
+        <Kicker>CLI config</Kicker>
+        <Report tone="fail" role="alert">{advice}</Report>
+        <div>
+          <ControlButton onClick={() => setNonce((value) => value + 1)}>Retry</ControlButton>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <ConfigEditor
+      document={loaded.data.document}
+      schema={loaded.data.schema}
+      onSave={(patch) => api.saveConfig(patch, instance)}
+      onRestart={() => api.restart(false, instance)}
+      instance={instance}
+    />
+  );
+}
+
+export function ConfigEditor({ document, schema, onSave, onSaved, onRestart, instance = "" }: ConfigEditorProps) {
   // `baseline` is what the service last told us the file holds; the draft is measured
   // against it, not against the prop, so a save settles the form instead of leaving it
   // reporting a change that has already landed.
@@ -92,9 +148,16 @@ export function ConfigEditor({ document, schema, onSave, onSaved, onRestart }: C
   return (
     <>
       <Card>
-        <Kicker>CLI config</Kicker>
+        <Kicker>{instance ? `Configuration — ${instance}` : "CLI config"}</Kicker>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          The daemon&rsquo;s own configuration, read from{" "}
+          {instance ? (
+            <>
+              <code className="ref-chip">{instance}</code>&rsquo;s own configuration, read and written with{" "}
+              <code className="ref-chip">instance={instance}</code>, from{" "}
+            </>
+          ) : (
+            <>The daemon&rsquo;s own configuration, read from </>
+          )}
           <code className="ref-chip">{document.path}</code>
           {document.exists ? "" : " — which does not exist yet; saving creates it"}. A save changes only the
           fields you changed and leaves the file&rsquo;s comments alone, and the poller and receiver pick it up

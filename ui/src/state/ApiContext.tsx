@@ -14,7 +14,7 @@ interface ApiContextValue {
 
 const ApiContext = createContext<ApiContextValue | null>(null);
 
-export function ApiProvider({ children }: { children: ReactNode }) {
+export function ApiProvider({ children, api: override }: { children: ReactNode; api?: TheLoopApi | undefined }) {
   const [settings, setSettings] = useState<Settings>(() => loadSettings());
 
   const updateSettings = useCallback((patch: Partial<Settings>) => {
@@ -27,9 +27,11 @@ export function ApiProvider({ children }: { children: ReactNode }) {
 
   // Re-created only when the transport identity changes, so the board's polling
   // effect (keyed on `api`) restarts on a target change and on nothing else.
+  // `override` is for tests that need a transport the settings cannot name — a
+  // fixture answering as a manager, say; the app itself never passes one.
   const api = useMemo<TheLoopApi>(
-    () => (settings.mode === "demo" ? new DemoApi() : new HttpApi(settings.baseUrl)),
-    [settings.mode, settings.baseUrl],
+    () => override ?? (settings.mode === "demo" ? new DemoApi() : new HttpApi(settings.baseUrl)),
+    [override, settings.mode, settings.baseUrl],
   );
 
   const value = useMemo(() => ({ api, settings, updateSettings }), [api, settings, updateSettings]);

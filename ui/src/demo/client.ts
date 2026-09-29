@@ -7,7 +7,7 @@
  * screens, not to be a second implementation of the-loop.
  */
 
-import type { EventQuery, GraphQuery, StreamHandlers, StreamQuery, TheLoopApi } from "../api/client.ts";
+import { ApiError, type EventQuery, type GraphQuery, type StreamHandlers, type StreamQuery, type TheLoopApi } from "../api/client.ts";
 import type { StreamFrame } from "../state/stream.ts";
 import type {
   AttentionItem,
@@ -21,6 +21,8 @@ import type {
   GraphDefinition,
   GraphStatus,
   Health,
+  InstanceDocument,
+  InstancesDocument,
   JsonSchema,
   SessionEndpoint,
   SessionRecord,
@@ -96,6 +98,32 @@ function delay<T>(value: T, signal?: AbortSignal): Promise<T> {
   });
 }
 
+/**
+ * The fixture's instance name (issue-322): what `GET /instance` and
+ * `GET /instances` answer with, and the only `instance` a keyed call may name —
+ * the demo is a **worker**, so any other name is the worker's 404 (R2.6).
+ */
+export const DEMO_INSTANCE = "demo";
+
+/** A worker's answer to an `instance` that is not itself: 404, nothing done. */
+function notSelf(instance: string): Promise<never> {
+  return Promise.reject(
+    new ApiError("http", `unknown instance ${JSON.stringify(instance)}: this instance is ${JSON.stringify(DEMO_INSTANCE)}`, "demo://fixture", 404),
+  );
+}
+
+/** A worker's answer to a registry write: 400 naming `instance.role` (R4.4). */
+function notAManager(route: string): Promise<never> {
+  return Promise.reject(
+    new ApiError(
+      "http",
+      "instance.role is worker, so this instance manages no others and nothing can be registered here; set instance.role: manager on the instance that should",
+      `demo://fixture/api/v1/instances/${route}`,
+      400,
+    ),
+  );
+}
+
 const VERB_STATUS: Partial<Record<SessionVerb, SessionRecord["status"]>> = {
   pause: "paused",
   resume: "active",
@@ -117,8 +145,56 @@ export class DemoApi implements TheLoopApi {
   private configDocument: ConfigDocument = clone(DEMO_CONFIG);
   private inner: Record<string, GraphStatus> = clone(DEMO_INNER_GRAPHS);
 
-  health(signal?: AbortSignal): Promise<Health> {
-    return delay({ status: "ok", version: "demo" }, signal);
+  health(signal?: AbortSignal, instance = ""): Promise<Health> {
+    if (instance && instance !== DEMO_INSTANCE) return notSelf(instance);
+    return delay({ status: "ok", version: "demo", role: "worker" }, signal);
+  }
+
+  instance(signal?: AbortSignal, instance = ""): Promise<InstanceDocument> {
+    if (instance && instance !== DEMO_INSTANCE) return notSelf(instance);
+    const refs = new Set([...this.workItemRecords.map((item) => item.ref), ...this.sessionRecords.map((s) => s.ref)]);
+    return delay(
+      {
+        name: DEMO_INSTANCE,
+        role: "worker",
+        scope: { mode: "open", workItems: [] },
+        managed: [...refs].toSorted().map((ref) => ({ ref, sources: ["control"] })),
+        sessionCount: this.sessionRecords.filter((s) => s.status !== "closed").length,
+      },
+      signal,
+    );
+  }
+
+  /** One row, itself — what a worker serves (R5.6). */
+  instances(signal?: AbortSignal): Promise<InstancesDocument> {
+    const refs = new Set([...this.workItemRecords.map((item) => item.ref), ...this.sessionRecords.map((s) => s.ref)]);
+    return delay(
+      {
+        role: "worker",
+        name: DEMO_INSTANCE,
+        instances: [
+          {
+            name: DEMO_INSTANCE,
+            url: this.baseUrl,
+            state: "live",
+            version: "demo",
+            mode: "open",
+            managedCount: refs.size,
+            sessionCount: this.sessionRecords.filter((s) => s.status !== "closed").length,
+            probedAt: new Date().toISOString(),
+          },
+        ],
+      },
+      signal,
+    );
+  }
+
+  registerInstance(_name: string, _url: string): Promise<InstancesDocument> {
+    return notAManager("register");
+  }
+
+  unregisterInstance(_name: string): Promise<InstancesDocument> {
+    return notAManager("unregister");
   }
 
   workItems(signal?: AbortSignal): Promise<WorkItemRecord[]> {
@@ -149,7 +225,8 @@ export class DemoApi implements TheLoopApi {
     return delay(DEMO_DAEMONS, signal);
   }
 
-  graphDefinition(_repo: string, pr?: number, signal?: AbortSignal): Promise<GraphDefinition> {
+  graphDefinition(_repo: string, pr?: number, signal?: AbortSignal, instance = ""): Promise<GraphDefinition> {
+    if (instance && instance !== DEMO_INSTANCE) return notSelf(instance);
     const nodes = pr === undefined ? OUTER_NODES : INNER_NODES;
     return delay(
       {
@@ -164,7 +241,8 @@ export class DemoApi implements TheLoopApi {
     );
   }
 
-  graphCheck(query: GraphQuery, signal?: AbortSignal): Promise<GraphStatus> {
+  graphCheck(query: GraphQuery, signal?: AbortSignal, instance = ""): Promise<GraphStatus> {
+    if (instance && instance !== DEMO_INSTANCE) return notSelf(instance);
     const ref = this.refForSpec(query.workItem);
     const status =
       query.pr === undefined
@@ -176,7 +254,8 @@ export class DemoApi implements TheLoopApi {
     return delay(status, signal);
   }
 
-  graphComplete(query: GraphQuery & { node?: string; actor?: string }): Promise<CoreResult> {
+  graphComplete(query: GraphQuery & { node?: string; actor?: string }, instance = ""): Promise<CoreResult> {
+    if (instance && instance !== DEMO_INSTANCE) return notSelf(instance);
     const ref = this.refForSpec(query.workItem);
     const status = query.pr === undefined ? this.outer[ref] : undefined;
     if (status?.parked) {
@@ -197,7 +276,8 @@ export class DemoApi implements TheLoopApi {
     return delay({ messages: [{ stream: "out", text: `demo: ${query.workItem} advanced` }], exitCode: 0 });
   }
 
-  controlSession(ref: string, verb: SessionVerb, _comment = true): Promise<CoreResult> {
+  controlSession(ref: string, verb: SessionVerb, _comment = true, instance = ""): Promise<CoreResult> {
+    if (instance && instance !== DEMO_INSTANCE) return notSelf(instance);
     const status = VERB_STATUS[verb];
     this.sessionRecords = this.sessionRecords.map((session) =>
       session.ref === ref && status
@@ -219,7 +299,8 @@ export class DemoApi implements TheLoopApi {
     return delay({ messages: [{ stream: "out", text: `demo: ${verb} ${ref}` }], exitCode: 0 });
   }
 
-  replySession(ref: string, _text: string, _actor = ""): Promise<CoreResult> {
+  replySession(ref: string, _text: string, _actor = "", instance = ""): Promise<CoreResult> {
+    if (instance && instance !== DEMO_INSTANCE) return notSelf(instance);
     // Same convention as the control verbs: the demo behaves. The reply_sent
     // event is what closes the question card, exactly as the service's does.
     this.emit({ event: "session.reply_sent", level: "info", source: "service", work_item: ref, actor: "you" });
@@ -237,7 +318,8 @@ export class DemoApi implements TheLoopApi {
     return delay(this.standing, signal);
   }
 
-  createStandingSession(body: StandingCreateRequest): Promise<StandingResult> {
+  createStandingSession(body: StandingCreateRequest, instance = ""): Promise<StandingResult> {
+    if (instance && instance !== DEMO_INSTANCE) return notSelf(instance);
     const name = body.name.trim();
     if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(name)) {
       return Promise.reject(new Error(`invalid standing-session name ${JSON.stringify(name)}`));
@@ -270,7 +352,8 @@ export class DemoApi implements TheLoopApi {
     return delay({ sessions: [created], ok: true });
   }
 
-  deleteStandingSession(name: string): Promise<StandingResult> {
+  deleteStandingSession(name: string, instance = ""): Promise<StandingResult> {
+    if (instance && instance !== DEMO_INSTANCE) return notSelf(instance);
     const session = this.standing.find((candidate) => candidate.name === name);
     if (!session) return Promise.reject(new Error(`no standing session ${JSON.stringify(name)} has been created`));
     if (session.declared) {
@@ -286,7 +369,8 @@ export class DemoApi implements TheLoopApi {
     return delay({ sessions: [{ ...session, outcome: "deleted", running: false, status: "absent" }], ok: true });
   }
 
-  controlStandingSession(name: string, verb: StandingVerb): Promise<StandingResult> {
+  controlStandingSession(name: string, verb: StandingVerb, instance = ""): Promise<StandingResult> {
+    if (instance && instance !== DEMO_INSTANCE) return notSelf(instance);
     const running = verb !== "stop";
     let touched: StandingSessionRecord | undefined;
     this.standing = this.standing.map((session) => {
@@ -306,7 +390,8 @@ export class DemoApi implements TheLoopApi {
     return delay({ sessions: [touched], ok: true });
   }
 
-  sayToStandingSession(name: string, _text: string, _actor = ""): Promise<CoreResult> {
+  sayToStandingSession(name: string, _text: string, _actor = "", instance = ""): Promise<CoreResult> {
+    if (instance && instance !== DEMO_INSTANCE) return notSelf(instance);
     const session = this.standing.find((candidate) => candidate.name === name);
     if (!session?.running) {
       return Promise.reject(new Error(`standing session ${JSON.stringify(name)} has no live tmux pane to paste into`));
@@ -318,7 +403,8 @@ export class DemoApi implements TheLoopApi {
     return delay({ messages: [{ stream: "out", text: `demo: delivered into loop-standing-${name}` }], exitCode: 0 });
   }
 
-  transcript(ref: string, tail = 200, signal?: AbortSignal): Promise<TranscriptResponse> {
+  transcript(ref: string, tail = 200, signal?: AbortSignal, instance = ""): Promise<TranscriptResponse> {
+    if (instance && instance !== DEMO_INSTANCE) return notSelf(instance);
     // Same convention as the control verbs: the demo behaves. Any session on
     // the board (the work item's own or a PR endpoint's) answers with the
     // fixture transcript; a ref with none refuses the way the service does.
@@ -342,20 +428,24 @@ export class DemoApi implements TheLoopApi {
     );
   }
 
-  controlDaemon(daemon: string, verb: DaemonVerb): Promise<CoreResult> {
+  controlDaemon(daemon: string, verb: DaemonVerb, instance = ""): Promise<CoreResult> {
+    if (instance && instance !== DEMO_INSTANCE) return notSelf(instance);
     return delay({ messages: [{ stream: "out", text: `demo: ${verb} ${daemon}` }], exitCode: 0 });
   }
 
   /** The schedule the real route answers with; nothing restarts in the demo. */
-  restart(withUpgrade = false): Promise<RestartSchedule> {
+  restart(withUpgrade = false, instance = ""): Promise<RestartSchedule> {
+    if (instance && instance !== DEMO_INSTANCE) return notSelf(instance);
     return delay({ scheduled: true, pid: 4242, withUpgrade, logfile: ".the-loop/logs/restart.out" });
   }
 
-  config(signal?: AbortSignal): Promise<ConfigDocument> {
+  config(signal?: AbortSignal, instance = ""): Promise<ConfigDocument> {
+    if (instance && instance !== DEMO_INSTANCE) return notSelf(instance);
     return delay(this.configDocument, signal);
   }
 
-  configSchema(signal?: AbortSignal): Promise<JsonSchema> {
+  configSchema(signal?: AbortSignal, instance = ""): Promise<JsonSchema> {
+    if (instance && instance !== DEMO_INSTANCE) return notSelf(instance);
     return delay(DEMO_CONFIG_SCHEMA, signal);
   }
 
@@ -364,7 +454,8 @@ export class DemoApi implements TheLoopApi {
    * in-memory config and reported back with the same fields, so the editor's
    * saved/restart-required states are exercised without a workstation.
    */
-  saveConfig(patch: Record<string, unknown>): Promise<ConfigSaveResult> {
+  saveConfig(patch: Record<string, unknown>, instance = ""): Promise<ConfigSaveResult> {
+    if (instance && instance !== DEMO_INSTANCE) return notSelf(instance);
     const changed = paths(patch, this.configDocument.config);
     this.configDocument = { ...this.configDocument, config: merge(this.configDocument.config, patch) };
     return delay({

@@ -105,13 +105,43 @@ trail still renders as the trace's fallback, and legacy `#/events` hashes land o
 | Work sidebar | `GET /work-items` + `GET /sessions` + `GET /attention`, then one `POST /graph/check` per active loop — the rows' chips are the deduped, tiered attention (needs-input &gt; gate &gt; waits &gt; errors), and the nested PR rows are `sessionTree`'s inner level over the same `/sessions` records (a loop with no outer/inner split renders treeless). A labeled PR has a portable record of its own *and* a nested endpoint, so the join reconciles them and draws it once, under the item it delivers (issue-302) |
 | Work item canvas | the same, plus `GET /events?workItem=…` (the trace's fallback trail), `GET /sessions/transcript?ref=…` for the viewed trace (outer session or a PR endpoint's), `POST /graph/complete` from the parked-gate card, and `POST /sessions/reply` from the chat bar (issue-230 — the chat bar is also how an agent's question is answered) |
 | Standing (a sidebar section of Work) | `GET /standing-sessions`, plus `POST /standing-sessions/{create,delete,control,say}` — the sessions that belong to no work item (issue-277) |
-| Sidebar footer | `GET /daemons`, folded with the stream state into one health word + popover |
+| Sidebar footer | `GET /daemons`, folded with the stream state — and, on a manager, every row of `GET /instances` — into one health word + popover |
 | Settings | `GET /health`, plus `GET /config` + `GET /config/schema` and `POST /config` for the CLI-config editor (issue-222) |
+| Instances (`#/instances`) | `GET /instances` — the fleet, one row per instance with its probe state — plus `POST /instances/register` and `POST /instances/unregister` from the Register card and the per-row Unregister (issue-374). On a worker: the one row, no Register card, and the sentence naming `instance.role` |
+| Instance pane (`#/instances/<name>`) | The same `GET /instances` row, then `GET /instance`, `GET /health`, `GET /config` + `GET /config/schema`, `POST /config`, `POST /daemons/control` and `POST /restart`, every one with `instance=<name>` — the existing config editor mounted through `ConfigSection` with that one prop. Every control is disabled, naming the row's `detail`, while the instance is not `live` |
 
 The config editor is the one screen that renders itself: its sections, labels, prose,
 types, enums and defaults all come from the served schema, so it cannot drift from what
 the service accepts, and a subtree with no typed control (a list of poll sources, say) is
 edited as JSON rather than left unreachable. Save sends only the keys that changed.
+
+## One URL, many instances
+
+Since [issue-374](https://github.com/MadaraUchiha-314/the-loop/issues/374) the service
+this page points at may be a **manager**: an instance that serves the same `/api/v1` by
+aggregating its own state with every instance registered with it. Nothing in the board's
+join changes — a manager's list reads return the union, each row stamped with the
+`instance` it came from — but three things follow from the stamp:
+
+- **A row is `instance@ref`, not `ref`.** `buildWorkItemViews` keys by `boardKey` (the
+  bare ref when nothing is stamped, which is what a worker serves), so a work item
+  declared on two instances is two rows, each with its own session, graph report and
+  question. The hash addresses one of them: `#/item/<ref>@<instance>`; the form without
+  `@` keeps its meaning on a worker and picks the first row by ref on a manager.
+- **Every keyed call carries the row's instance.** The transcript, the composer's reply,
+  the session verbs, `graph/check` and `graph/complete` send `instance` — a query
+  parameter on a GET, a body field on a POST — **only when the row carries one**, so a
+  worker sees byte-identical requests. `TheLoopApi` takes it as the trailing parameter of
+  each keyed method.
+- **The sidebar shows it.** An instance chip on each stamped work-item, PR and standing
+  row, a native `<select>` beside the search box filtering the loaded rows (preset by
+  `#/?instance=<name>`, which the Instances tab's **Open** links to), and the footer's
+  health word folding the fleet in — any instance not `live` reads `degraded`, and the
+  popover lists each with its state beneath the manager's own daemons.
+
+The demo fixture is a worker (`GET /instances` answers with its one row), so the hosted
+page shows the Instances tab in its worker state; the fleet screens are exercised in the
+tests through a transport that answers as a manager (`src/test/manager.ts`).
 
 Two facts shape that:
 
@@ -179,11 +209,14 @@ Pages serves a single artifact per origin, so the two cannot each own a deploy �
 dashboard's `dist/` is copied into the docs output under `ui/` before upload. `UI_BASE`
 must match that path; Vite bakes it into every asset URL.
 
-Routing is **hash-based** (`#/item/github:octo/repo%2315`) because Pages 404s any path the
-build did not emit, so a history-API router would break every deep link on refresh. The
-hash is also the *only* record of what the canvas shows: its ref may name a work item or
-one of its PR sessions, and the sidebar's nested rows and the canvas's trace tabs are the
-same links onto it — so no pane-local state can disagree with the URL (issue-300).
+Routing is **hash-based** (`#/item/github:octo/repo%2315`, or
+`#/item/github:octo/repo%2315@laptop-a` for one instance's row of it) because Pages 404s
+any path the build did not emit, so a history-API router would break every deep link on
+refresh. The hash is also the *only* record of what the canvas shows: its ref may name a
+work item or one of its PR sessions, and the sidebar's nested rows and the canvas's trace
+tabs are the same links onto it — so no pane-local state can disagree with the URL
+(issue-300). `#/instances` and `#/instances/<name>` are the fleet and one instance's pane;
+`#/?instance=<name>` opens the board with the instance filter preset.
 
 ## Design system
 
@@ -213,7 +246,9 @@ src/
   components/ the design's pieces: Icons, StatusDot, primitives (chip, icon button, section,
               notice…), Sidebar, HeaderBar, GraphStrip, SessionTabs, Transcript (trace +
               composer), SessionAside, Banner, Nav (the health word)
-  views/      Work (the three columns) · WorkItemDetail · Standing · Settings · grouping
+  views/      Work (the three columns) · WorkItemDetail · Standing · Settings · Instances ·
+              InstanceDetail · grouping
+  test/       setup.ts · manager.ts (a transport answering as a manager, for the fleet tests)
   styles/     app.css — the tokens, the .dark theme, three custom utilities, Tailwind
   scripts/    screenshots.mjs — the browser evidence run (both themes, two viewports)
 ```

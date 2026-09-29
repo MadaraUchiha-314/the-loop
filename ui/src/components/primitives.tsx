@@ -213,6 +213,24 @@ export function renderInline(text: string): ReactNode[] {
     });
 }
 
+/**
+ * The instance chip (issue-374, R5.2): which instance served a row, in mono at
+ * the ref-chip's size but on the accent tint — the one warm surface the design
+ * keeps for "a human should notice" — so it reads apart from a ref. Rendered
+ * only when the row carries an instance, which a worker's rows never do.
+ */
+export function InstanceChip({ instance, className = "" }: { instance: string; className?: string | undefined }) {
+  return (
+    <span
+      data-instance={instance}
+      title={`served by ${instance}`}
+      className={`inline-block shrink-0 whitespace-nowrap rounded-full bg-accent px-1.5 py-px font-mono text-[0.62rem] leading-[1.1rem] text-accent-foreground ${className}`.trim()}
+    >
+      {instance}
+    </span>
+  );
+}
+
 /** The muted empty/loading sentence, centred in its column. */
 export function Empty({ children, className = "" }: { children: ReactNode; className?: string | undefined }) {
   return <p className={`py-6 text-center text-sm text-muted-foreground ${className}`.trim()}>{children}</p>;

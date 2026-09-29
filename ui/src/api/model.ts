@@ -67,6 +67,16 @@ export function parseRef(ref: string): ParsedRef | null {
 }
 
 /** `github:octo/loop-lab#214` → `loop-lab#214`; anything unparseable passes through. */
+/**
+ * The board's row key (issue-374): `<instance>@<ref>` when a manager stamped
+ * the row, else the bare ref. A work item declared on two instances is two
+ * rows, each addressed by its own key — and on a worker, where nothing is
+ * stamped, the key is the ref it always was.
+ */
+export function boardKey(ref: string, instance?: string): string {
+  return instance ? `${instance}@${ref}` : ref;
+}
+
 export function shortRef(ref: string): string {
   const parsed = parseRef(ref);
   return parsed ? `${parsed.repo}#${parsed.number}` : ref;
@@ -494,6 +504,10 @@ export interface PullRequestView {
 
 export interface WorkItemView {
   ref: string;
+  /** The instance that served this row (issue-374); `""` on a worker. */
+  instance: string;
+  /** `boardKey(ref, instance)` — what every map, selection and tab keys on. */
+  key: string;
   shortRef: string;
   number: number;
   url: string | undefined;
@@ -524,6 +538,7 @@ export interface WorkItemView {
   ended: EndedRecord | null;
 }
 
+/** Graph reports, keyed by board key (outer) and `innerKey(boardKey, prRef)` (inner). */
 export interface GraphReports {
   /** Keyed by work-item ref. */
   outer: Record<string, GraphStatus | undefined>;
@@ -555,8 +570,12 @@ export function awaitingInput(events: EventRecord[]): Record<string, EventRecord
   for (const event of events) {
     const ref = eventRef(event);
     if (!ref) continue;
-    if (event.event === "session.awaiting_input") open[ref] = event;
-    if (event.event === "session.reply_sent") answered[ref] = event.ts;
+    // Keyed like the board's rows: a manager stamps each record with the
+    // instance whose log it came from, so the same ref asked on two instances
+    // is two open questions, and a worker's unstamped log keys by ref alone.
+    const key = boardKey(ref, typeof event.instance === "string" ? event.instance : undefined);
+    if (event.event === "session.awaiting_input") open[key] = event;
+    if (event.event === "session.reply_sent") answered[key] = event.ts;
   }
   for (const [ref, asked] of Object.entries(open)) {
     const reply = answered[ref];
@@ -578,7 +597,7 @@ export interface BuildInput {
   sessions: SessionRecord[];
   attention: AttentionItem[];
   graphs?: GraphReports;
-  /** Open `the-loop ask` questions, keyed by work-item ref. */
+  /** Open `the-loop ask` questions, keyed by board key (`awaitingInput`). */
   awaiting?: Record<string, EventRecord>;
 }
 
@@ -590,28 +609,35 @@ export interface BuildInput {
  * attention list exists to surface, so dropping it here would hide it.
  */
 export function buildWorkItemViews(input: BuildInput): WorkItemView[] {
-  const sessionByRef = new Map(input.sessions.map((session) => [session.ref, session]));
-  const attentionByRef = new Map<string, AttentionItem[]>();
+  const sessionByKey = new Map(input.sessions.map((session) => [boardKey(session.ref, session.instance), session]));
+  const attentionByKey = new Map<string, AttentionItem[]>();
   for (const item of input.attention) {
-    const list = attentionByRef.get(item.workItem) ?? [];
+    const key = boardKey(item.workItem, item.instance);
+    const list = attentionByKey.get(key) ?? [];
     list.push(item);
-    attentionByRef.set(item.workItem, list);
+    attentionByKey.set(key, list);
   }
 
   // A session with no portable record still belongs on the board: `sessions
-  // register` can create one for an item the poller has never seen.
-  const refs = new Set<string>([...input.workItems.map((i) => i.ref), ...input.sessions.map((s) => s.ref)]);
-  const recordByRef = new Map(input.workItems.map((item) => [item.ref, item]));
-  const claimed = pullRequestClaims(input.sessions, recordByRef, sessionByRef);
+  // register` can create one for an item the poller has never seen. Rows are
+  // keyed by instance and ref (issue-374): the same ref served by two
+  // instances is two rows, never one.
+  const rows = new Map<string, { ref: string; instance: string }>();
+  for (const item of input.workItems) rows.set(boardKey(item.ref, item.instance), { ref: item.ref, instance: item.instance ?? "" });
+  for (const session of input.sessions) {
+    rows.set(boardKey(session.ref, session.instance), { ref: session.ref, instance: session.instance ?? "" });
+  }
+  const recordByKey = new Map(input.workItems.map((item) => [boardKey(item.ref, item.instance), item]));
+  const claimed = pullRequestClaims(input.sessions, recordByKey, sessionByKey);
 
   const views: WorkItemView[] = [];
-  for (const ref of refs) {
+  for (const [key, { ref, instance }] of rows) {
     // Somebody else's pull request is not a work item of its own (issue-302).
-    if (claimed.has(ref)) continue;
-    const record = recordByRef.get(ref) ?? { ref };
-    const session = sessionByRef.get(ref) ?? null;
+    if (claimed.has(key)) continue;
+    const record = recordByKey.get(key) ?? { ref };
+    const session = sessionByKey.get(key) ?? null;
     const parsed = parseRef(ref);
-    const status = input.graphs?.outer[ref] ?? null;
+    const status = input.graphs?.outer[key] ?? null;
     // A report with no nodes is not a position, it is the absence of one — the
     // shape `/graph/check` answers with when the checkout is gone (issue-238).
     // Belt and braces: `fetchGraphs` already drops those, and this keeps any
@@ -625,6 +651,8 @@ export function buildWorkItemViews(input: BuildInput): WorkItemView[] {
 
     views.push({
       ref,
+      instance,
+      key,
       shortRef: shortRef(ref),
       number: parsed?.number ?? 0,
       url: record.url ?? session?.url,
@@ -640,63 +668,40 @@ export function buildWorkItemViews(input: BuildInput): WorkItemView[] {
       progress: railProgress(rail),
       currentNode: status?.currentNode ?? "",
       parked: ended ? null : (status?.parked ?? null),
-      pullRequests: buildPullRequests(ref, session, input, recordByRef, attentionByRef, claimed),
-      attention: attentionByRef.get(ref) ?? [],
+      pullRequests: buildPullRequests(key, ref, instance, session, input, recordByKey, attentionByKey, claimed),
+      attention: attentionByKey.get(key) ?? [],
       lastActivity: session?.lastEventAt ?? record.poll?.lastPolledAt ?? "",
-      question: ended ? null : (input.awaiting?.[ref] ?? null),
+      question: ended ? null : (input.awaiting?.[key] ?? null),
       ended,
     });
   }
 
-  // Newest activity first, then by ref so an idle board has a stable order.
-  return views.toSorted((a, b) => b.lastActivity.localeCompare(a.lastActivity) || a.ref.localeCompare(b.ref));
+  // Newest activity first, then by key so an idle board has a stable order —
+  // and two instances' rows for one ref sit together, in instance order.
+  return views.toSorted((a, b) => b.lastActivity.localeCompare(a.lastActivity) || a.ref.localeCompare(b.ref) || a.instance.localeCompare(b.instance));
 }
 
 /**
- * Which refs are somebody else's pull request: PR ref -> the work item whose
- * sidebar row draws it as a nested child.
- *
- * A labeled pull request has two identities on this machine, and both are
- * written on purpose. The poller flushes a portable record keyed by the PR's
- * own ref (`state.flush(item.ref)` in `poller/poller.py`) because that ledger
- * is what stops the next cycle re-reading the same comments; the registry
- * appends a session endpoint for the same PR to the record of the work item it
- * delivers (`link_pull_request`, one level deep by design). Unioned without
- * reconciliation, the board draws one PR twice — once live under its parent,
- * once as a top-level shell whose session is somewhere else (issue-302). The
- * nested row wins, because that is where the PR's session, rail and transcript
- * actually are.
- *
- * Only a claim that is really *drawn* counts. A loop with no outer/inner split
- * renders treeless, so its linked endpoint never becomes a row: honouring that
- * claim would delete the pull request from the board rather than move it. And a
- * PR **no** session claims — one linked to no issue, which `extract_work_items`
- * deliberately routes as its own work item — is nobody's child and stays where
- * it is.
- *
- * Neither does a PR that has a **session record of its own**: it was worked
- * standalone before it was linked, so the top-level record is the live one and
- * the nested endpoint is the stub `link_pull_request` writes (no tmux target,
- * no conversation id). `SessionRegistry.record_owning` resolves that ref to its
- * own record for the same reason, and folding it away would hide a running
- * session behind a row that cannot reach it. An extra row is the cheaper wrong
- * answer.
+ * Which pull requests are drawn under a work item rather than as rows of their
+ * own (issue-302): `claimedKey → ownerKey`, both board keys, so a claim on one
+ * instance never erases a record served by another (issue-374).
  */
 function pullRequestClaims(
   sessions: SessionRecord[],
-  recordByRef: Map<string, WorkItemRecord>,
-  sessionByRef: Map<string, SessionRecord>,
+  recordByKey: Map<string, WorkItemRecord>,
+  sessionByKey: Map<string, SessionRecord>,
 ): Map<string, string> {
   const claims = new Map<string, string>();
   for (const session of sessions) {
-    if (treeless(recordByRef.get(session.ref))) continue;
+    const owner = boardKey(session.ref, session.instance);
+    if (treeless(recordByKey.get(owner))) continue;
     for (const endpoint of session.pullRequests ?? []) {
-      const ref = endpoint.workItem.ref;
+      const key = boardKey(endpoint.workItem.ref, session.instance);
       // A work item does not deliver itself. `link_pull_request` refuses to
       // record such an entry; a record that carries one anyway must not be able
       // to erase its own row.
-      if (ref === session.ref || sessionByRef.has(ref)) continue;
-      if (!claims.has(ref)) claims.set(ref, session.ref);
+      if (key === owner || sessionByKey.has(key)) continue;
+      if (!claims.has(key)) claims.set(key, owner);
     }
   }
   // The registry nests exactly one level — `Session.from_dict` drops a nested
@@ -704,8 +709,8 @@ function pullRequestClaims(
   // hand-edited record. Fail closed to "top-level" rather than drop both rows.
   // Decided against the *snapshot*, never the map being edited: a mutual pair
   // resolved in map order would delete one claim and then honour the other.
-  const claimedRefs = new Set(claims.keys());
-  for (const [ref, owner] of claims) if (claimedRefs.has(owner)) claims.delete(ref);
+  const claimedKeys = new Set(claims.keys());
+  for (const [key, owner] of claims) if (claimedKeys.has(owner)) claims.delete(key);
   return claims;
 }
 
@@ -715,25 +720,28 @@ function treeless(record: WorkItemRecord | undefined): boolean {
 }
 
 function buildPullRequests(
+  workItemKey: string,
   workItemRef: string,
+  instance: string,
   session: SessionRecord | null,
   input: BuildInput,
-  recordByRef: Map<string, WorkItemRecord>,
-  attentionByRef: Map<string, AttentionItem[]>,
+  recordByKey: Map<string, WorkItemRecord>,
+  attentionByKey: Map<string, AttentionItem[]>,
   claimed: Map<string, string>,
 ): PullRequestView[] {
   const parent = parseRef(workItemRef);
   return (session?.pullRequests ?? []).map((endpoint) => {
     const ref = endpoint.workItem.ref;
+    const key = boardKey(ref, instance);
     const parsed = parseRef(ref);
-    const status = input.graphs?.inner[innerKey(workItemRef, ref)] ?? null;
-    const record = recordByRef.get(ref) ?? { ref };
+    const status = input.graphs?.inner[innerKey(workItemKey, ref)] ?? null;
+    const record = recordByKey.get(key) ?? { ref };
     // Whether *this* row is the only one the PR gets. It is not when the claim
     // was refused — a treeless owner draws no nested rows, a hand-edited
     // two-level claim is discarded — and the PR keeps a top-level row of its
     // own. Reporting its wait in both places would be the duplicate this work
     // item removes, wearing different clothes (issue-302).
-    const sole = claimed.get(ref) === workItemRef;
+    const sole = claimed.get(key) === workItemKey;
     // `prRepo` qualifies the number only when the PR is somewhere else; sending
     // it needlessly would point the graph call at `pr-loops/<owner>__<repo>/`
     // for an item whose state lives at `pr-loops/pr-<n>/` (issue-183).
@@ -751,8 +759,8 @@ function buildPullRequests(
       rail: railFromStatus(status),
       status,
       record,
-      attention: sole ? (attentionByRef.get(ref) ?? []) : [],
-      question: sole ? (input.awaiting?.[ref] ?? null) : null,
+      attention: sole ? (attentionByKey.get(key) ?? []) : [],
+      question: sole ? (input.awaiting?.[key] ?? null) : null,
       // The same fallback a work item's own row uses, so a PR whose endpoint
       // has never recorded an event still shows the age its top-level row did.
       lastActivity: endpoint.lastEventAt ?? record.poll?.lastPolledAt ?? "",

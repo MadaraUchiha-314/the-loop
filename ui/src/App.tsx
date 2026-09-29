@@ -2,12 +2,16 @@
  * The shell (issue-327): the two notices above the columns, the theme, the
  * side panels' open state, and the one board the whole page reads from.
  *
- * Every hash lands on the Work surface — `#/standing` and `#/settings` swap
- * what the main column shows, and the legacy pre-283 routes and `#/events`
- * land on the work column as they did (issue-298). The theme is the stored
- * choice or the browser's preference (state/theme.ts); the side panels start
- * open on a wide viewport and closed on a narrow one, and can be toggled from
- * the header either way.
+ * Every hash lands on the Work surface — `#/standing`, `#/settings`,
+ * `#/instances` and `#/instances/<name>` swap what the main column shows, and
+ * the legacy pre-283 routes and `#/events` land on the work column as they
+ * did (issue-298). The theme is the stored choice or the browser's preference
+ * (state/theme.ts); the side panels start open on a wide viewport and closed
+ * on a narrow one, and can be toggled from the header either way.
+ *
+ * On a manager (issue-374) the board is the fleet's: the sidebar's instance
+ * filter lives here so `#/?instance=<name>` — the Instances tab's **Open** —
+ * can preset it, and the footer names the role and the fleet's size.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -16,10 +20,10 @@ import { ConnectionBanner, DemoBanner } from "./components/Banner.tsx";
 import type { Chrome } from "./components/HeaderBar.tsx";
 import { DEMO_TITLES } from "./demo/fixture.ts";
 import { useApi } from "./state/ApiContext.tsx";
-import { navigate, useRoute } from "./state/route.ts";
+import { navigate, useRoute, type Surface } from "./state/route.ts";
 import { applyTheme, browserPrefersDark, otherTheme, resolveTheme } from "./state/theme.ts";
 import { useControlPlane } from "./state/useControlPlane.ts";
-import { Work, type Surface } from "./views/Work.tsx";
+import { Work } from "./views/Work.tsx";
 
 /** Whether the viewport is at least `px` wide; true where `matchMedia` is missing. */
 function wideEnough(px: number): boolean {
@@ -37,9 +41,22 @@ export function App() {
   // the detail column: the column comes and goes with the route. A legacy
   // `#/events/<ref>` permalink names a work item, so it lands on that item.
   const selectedRef = (route.name === "work" || route.name === "events") && route.ref ? route.ref : "";
+  const selectedInstance = route.name === "work" && route.ref ? (route.instance ?? "") : "";
   const board = useControlPlane(api, { mode: settings.refreshMode, pollSeconds: settings.pollSeconds }, selectedRef);
 
-  const surface: Surface = route.name === "settings" ? "settings" : route.name === "standing" ? "standing" : "work";
+  const surface: Surface =
+    route.name === "settings" || route.name === "standing" || route.name === "instances" || route.name === "instance"
+      ? route.name
+      : "work";
+  const instanceName = route.name === "instance" ? route.instance : "";
+
+  // The sidebar's instance filter (issue-374, R5.2): the viewer's pick, which a
+  // `#/?instance=<name>` hash presets — the Instances tab's Open lands here.
+  const [instanceFilter, setInstanceFilter] = useState(() => (route.name === "work" ? (route.filter ?? "") : ""));
+  const presetFilter = route.name === "work" ? route.filter : undefined;
+  useEffect(() => {
+    if (presetFilter !== undefined) setInstanceFilter(presetFilter);
+  }, [presetFilter]);
 
   // The theme: the stored choice, else the browser's preference (issue-327 R2).
   const theme = resolveTheme(settings.theme, browserPrefersDark());
@@ -71,7 +88,11 @@ export function App() {
   }, [board.views]);
   const titleFor = (ref: string) => titles.get(ref) ?? (api.isDemo ? DEMO_TITLES[ref] : undefined);
 
-  const serviceLabel = api.isDemo ? "demo fixture · nothing leaves the browser" : `service · ${hostOf(api.baseUrl)}`;
+  const serviceLabel = api.isDemo
+    ? "demo fixture · nothing leaves the browser"
+    : board.instances.role === "manager"
+      ? `manager · ${hostOf(api.baseUrl)} · ${board.instances.instances.length} instance${board.instances.instances.length === 1 ? "" : "s"}`
+      : `service · ${hostOf(api.baseUrl)}`;
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
@@ -92,10 +113,15 @@ export function App() {
         loading={board.loading}
         titleFor={titleFor}
         selectedRef={selectedRef}
+        selectedInstance={selectedInstance}
         surface={surface}
+        instanceName={instanceName}
         onChanged={board.refresh}
         transcriptTick={board.transcriptTick}
         daemons={board.daemons}
+        instances={board.instances}
+        instanceFilter={instanceFilter}
+        onInstanceFilter={setInstanceFilter}
         stream={board.stream}
         chrome={chrome}
         panels={{ sidebarOpen, asideOpen, setSidebarOpen, setAsideOpen }}

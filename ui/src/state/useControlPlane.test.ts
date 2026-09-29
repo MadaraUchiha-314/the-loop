@@ -108,6 +108,32 @@ describe("fetchGraphs", () => {
   });
 });
 
+describe("fetchGraphs · on a fleet (issue-374)", () => {
+  const status: GraphStatus = { workItem: "issue-7", currentNode: "design", ok: true, nodes: [{ node: "design", status: "pass", outcome: "pass" }] };
+
+  it("passes each session's instance on its graph check and keys the report by board key", async () => {
+    const { api, graphCheck } = apiAnswering(status);
+    const reports = await fetchGraphs(
+      api,
+      [{ ...WORK_ITEM, instance: "laptop-a" }, { ...WORK_ITEM, instance: "ci-box" }],
+      [{ ...SESSION, status: "active", instance: "laptop-a" }, { ...SESSION, status: "active", instance: "ci-box", cwd: "/ci/checkout" }],
+      new AbortController().signal,
+    );
+    expect(graphCheck).toHaveBeenCalledTimes(2);
+    const calls = graphCheck.mock.calls as unknown as [unknown, AbortSignal, string][];
+    expect(calls.map(([, , instance]) => instance).toSorted()).toEqual(["ci-box", "laptop-a"]);
+    expect(Object.keys(reports.outer).toSorted()).toEqual([`ci-box@${REF}`, `laptop-a@${REF}`]);
+  });
+
+  it("sends no instance for a worker's unstamped rows, and keys by ref", async () => {
+    const { api, graphCheck } = apiAnswering(status);
+    const reports = await fetchGraphs(api, [WORK_ITEM], [{ ...SESSION, status: "active" }], new AbortController().signal);
+    const calls = graphCheck.mock.calls as unknown as [unknown, AbortSignal, string][];
+    expect(calls[0]![2]).toBe("");
+    expect(Object.keys(reports.outer)).toEqual([REF]);
+  });
+});
+
 describe("mergeReports (issue-239)", () => {
   const a: GraphStatus = { workItem: "issue-1", currentNode: "design", ok: true, nodes: [] };
   const b: GraphStatus = { workItem: "issue-2", currentNode: "tasks-breakdown", ok: true, nodes: [] };

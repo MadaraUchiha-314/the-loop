@@ -8,7 +8,7 @@
  */
 
 import type { WorkItemView } from "../api/model.ts";
-import { hrefFor } from "../state/route.ts";
+import { itemHref } from "../state/route.ts";
 import { GitPullRequestIcon, PauseIcon, SquareTerminalIcon } from "./Icons.tsx";
 
 export function SessionTabs({ view, viewed }: { view: WorkItemView; viewed: string }) {
@@ -20,7 +20,7 @@ export function SessionTabs({ view, viewed }: { view: WorkItemView; viewed: stri
   return (
     <div className="scroll-thin flex items-center gap-1 overflow-x-auto border-b border-border px-6" role="navigation" aria-label="Sessions">
       <a
-        href={hrefFor({ name: "work", ref: view.ref })}
+        href={itemHref(view.ref, view.instance)}
         aria-label={view.shortRef}
         aria-current={viewed === view.ref ? "page" : undefined}
         className={`${tab} ${viewed === view.ref ? on : off}`}
@@ -32,7 +32,7 @@ export function SessionTabs({ view, viewed }: { view: WorkItemView; viewed: stri
       {prs.map((pr) => (
         <a
           key={pr.ref}
-          href={hrefFor({ name: "work", ref: pr.ref })}
+          href={itemHref(pr.ref, view.instance)}
           aria-label={pr.shortRef}
           aria-current={viewed === pr.ref ? "page" : undefined}
           className={`${tab} ${viewed === pr.ref ? on : off}`}

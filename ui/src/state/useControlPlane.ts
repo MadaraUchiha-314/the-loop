@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ApiError, TheLoopApi } from "../api/client.ts";
 import {
   awaitingInput,
+  boardKey,
   buildWorkItemViews,
   innerKey,
   railFromStatus,
@@ -32,6 +33,7 @@ import type {
   DaemonStatus,
   EventRecord,
   GraphStatus,
+  InstancesDocument,
   SessionRecord,
   WorkItemRecord,
 } from "../api/types.ts";
@@ -50,9 +52,19 @@ const QUESTION_EVENTS = ["session.awaiting_input", "session.reply_sent"];
 /** Simultaneous graph checks. Reads are cheap but not free — they build a runtime. */
 const GRAPH_CONCURRENCY = 4;
 
+/**
+ * What a service too old for `GET /instances` amounts to: a worker with no
+ * fleet to show. The board never fails over it — every row still draws, and
+ * nothing that reads the document (the filter, the health word, the tab)
+ * renders a control the service could not back.
+ */
+export const NO_INSTANCES: InstancesDocument = { role: "worker", name: "", instances: [] };
+
 export interface Board {
   views: WorkItemView[];
   daemons: DaemonStatus[];
+  /** The fleet (issue-374): one row on a worker; `NO_INSTANCES` when the route is missing. */
+  instances: InstancesDocument;
   /** Set when round one failed — the screens have nothing to draw. */
   error: ApiError | Error | null;
   /** True only for the first load; a background refresh does not blank the page. */
@@ -84,6 +96,7 @@ export function useControlPlane(
 ): Board {
   const [views, setViews] = useState<WorkItemView[]>([]);
   const [daemons, setDaemons] = useState<DaemonStatus[]>([]);
+  const [instances, setInstances] = useState<InstancesDocument>(NO_INSTANCES);
   const [error, setError] = useState<ApiError | Error | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchedAt, setFetchedAt] = useState<number | null>(null);
@@ -174,7 +187,7 @@ export function useControlPlane(
       const { signal } = controller;
 
       try {
-        const [workItems, sessions, attention, daemonList, questionEvents] = await Promise.all([
+        const [workItems, sessions, attention, daemonList, questionEvents, fleet] = await Promise.all([
           api.workItems(signal),
           api.sessions(signal),
           api.attention(signal),
@@ -182,11 +195,15 @@ export function useControlPlane(
           // board over; both degrade to "nothing to show".
           api.daemons(signal).catch(() => [] as DaemonStatus[]),
           api.events({ type: QUESTION_EVENTS, limit: 200 }, signal).catch(() => [] as EventRecord[]),
+          // Nor is the fleet (issue-374): a service without the route is a
+          // worker with no members, which is the empty document.
+          api.instances(signal).catch(() => NO_INSTANCES),
         ]);
         if (cancelled || signal.aborted) return;
 
         const awaiting = awaitingInput(questionEvents);
         setDaemons(daemonList);
+        setInstances(fleet);
         // Draw the board before the graph round so a slow checkout does not
         // hold back the rows that are already answerable.
         setViews(buildWorkItemViews({ workItems, sessions, attention, awaiting }));
@@ -229,7 +246,7 @@ export function useControlPlane(
     };
   }, [api, pollSeconds, nonce]);
 
-  return { views, daemons, error, loading, fetchedAt, refresh, stream, transcriptTick };
+  return { views, daemons, instances, error, loading, fetchedAt, refresh, stream, transcriptTick };
 }
 
 /**
@@ -257,7 +274,7 @@ export function mergeReports(base: GraphReports, incoming: GraphReports): GraphR
  */
 function applyGraphs(views: WorkItemView[], graphs: GraphReports): WorkItemView[] {
   return views.map((view) => {
-    const status = graphs.outer[view.ref];
+    const status = graphs.outer[view.key];
     // A report with no nodes is the absence of a position, not a position — the
     // shape `/graph/check` answers with when the checkout is gone (issue-238).
     // Keeping the frozen rail is strictly more informative than blanking it.
@@ -293,15 +310,23 @@ export async function fetchGraphs(
   signal: AbortSignal,
   cached?: GraphReports,
 ): Promise<GraphReports> {
-  const sessionByRef = new Map(sessions.map((session) => [session.ref, session]));
-  const recordByRef = new Map(workItems.map((item) => [item.ref, item]));
+  // Keyed like the board's rows (issue-374): the same ref on two instances is
+  // two loops, each checked on the machine that holds its checkout.
+  const sessionByKey = new Map(sessions.map((session) => [boardKey(session.ref, session.instance), session]));
+  const recordByKey = new Map(workItems.map((item) => [boardKey(item.ref, item.instance), item]));
+  const refByKey = new Map<string, string>();
+  for (const item of workItems) refByKey.set(boardKey(item.ref, item.instance), item.ref);
+  for (const session of sessions) refByKey.set(boardKey(session.ref, session.instance), session.ref);
   const jobs: GraphJob[] = [];
   const held: GraphReports = { outer: {}, inner: {} };
 
-  for (const ref of new Set([...recordByRef.keys(), ...sessionByRef.keys()])) {
-    const session = sessionByRef.get(ref);
+  for (const [key, ref] of refByKey) {
+    const session = sessionByKey.get(key);
     const repo = session?.cwd;
-    const spec = specId(recordByRef.get(ref) ?? { ref });
+    // The member the checkout is on: a manager proxies the check there, a
+    // worker's rows carry no instance and the call is the one it always was.
+    const instance = session?.instance ?? "";
+    const spec = specId(recordByKey.get(key) ?? { ref });
     // No checkout on this machine means no work-item state to read. The row still
     // renders — `railFromFrozen` covers it — so this is a skip, not a failure.
     if (!repo || !spec) continue;
@@ -311,27 +336,27 @@ export async function fetchGraphs(
     // is reused instead of re-checked every poll cycle (issue-283, feature #9).
     // The first load — no cache — still reads it once.
     const dormant = session !== undefined && session.status !== "active" && session.status !== "paused";
-    const cachedOuter = cached?.outer[ref];
+    const cachedOuter = cached?.outer[key];
     if (dormant && cachedOuter) {
-      held.outer[ref] = cachedOuter;
+      held.outer[key] = cachedOuter;
       for (const pr of session.pullRequests ?? []) {
-        const key = innerKey(ref, pr.workItem.ref);
-        const cachedInner = cached?.inner[key];
-        if (cachedInner) held.inner[key] = cachedInner;
+        const inner = innerKey(key, pr.workItem.ref);
+        const cachedInner = cached?.inner[inner];
+        if (cachedInner) held.inner[inner] = cachedInner;
       }
       continue;
     }
 
-    jobs.push({ key: ref, outer: true, run: (s) => api.graphCheck({ repo, workItem: spec }, s) });
+    jobs.push({ key, outer: true, run: (s) => api.graphCheck({ repo, workItem: spec }, s, instance) });
 
     for (const pr of session?.pullRequests ?? []) {
       const number = pr.workItem.number;
       const sameRepo = pr.workItem.owner === session?.workItem.owner && pr.workItem.repo === session?.workItem.repo;
       const prRepo = sameRepo ? "" : `${pr.workItem.owner}/${pr.workItem.repo}`;
       jobs.push({
-        key: innerKey(ref, pr.workItem.ref),
+        key: innerKey(key, pr.workItem.ref),
         outer: false,
-        run: (s) => api.graphCheck({ repo, workItem: spec, pr: number, prRepo }, s),
+        run: (s) => api.graphCheck({ repo, workItem: spec, pr: number, prRepo }, s, instance),
       });
     }
   }
