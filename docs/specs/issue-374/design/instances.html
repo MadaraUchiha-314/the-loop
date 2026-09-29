@@ -182,7 +182,8 @@
     <div class="head">
       <input placeholder="Search work items" aria-label="Search work items">
       <select id="filter" aria-label="Instance filter">
-        <option value="">All instances (3)</option>
+        <option value="">All instances (4)</option>
+        <option value="hq">hq · this instance</option>
         <option value="laptop-a">laptop-a</option>
         <option value="ci-box">ci-box</option>
         <option value="cloud-1">cloud-1 · unreachable</option>
@@ -190,6 +191,7 @@
     </div>
     <div class="rows" id="rows">
       <div class="group">Needs you</div>
+      <div class="row" data-inst="hq"><span class="dot blocked"></span><div class="t"><b>#436 · specs for the manager</b><span>the-loop · needs-review · 20m</span></div><span class="chip inst">hq</span></div>
       <div class="row" data-inst="laptop-a"><span class="dot blocked"></span><div class="t"><b>#374 · a manager instance</b><span>the-loop · design-approval · 2h</span></div><span class="chip inst">laptop-a</span></div>
       <div class="row pr" data-inst="laptop-a"><span class="dot active"></span><div class="t"><b>#441</b><span>implementation · 40m</span></div><span class="chip inst">laptop-a</span></div>
       <div class="group">In flight</div>
@@ -204,12 +206,14 @@
     </div>
     <div class="foot">
       <span>Settings</span>
-      <span class="mono" id="foot-label">manager · hq:4114 · 3 instances</span>
+      <span class="mono" id="foot-label">manager · hq:4114 · 4 instances</span>
       <details>
         <summary class="health bad" id="health"><span class="dot blocked"></span>degraded</summary>
         <div class="pop">
           <div>Stream live, connected 4m ago.</div>
-          <div style="margin-top:6px">manager — hosts no ingress</div>
+          <div style="margin-top:6px"><span class="dot done"></span> poller · running · last cycle 20s ago</div>
+          <div><span class="dot done"></span> gh-webhook · running</div>
+          <div style="margin-top:6px"><span class="dot done"></span> hq · this instance · 3 managed</div>
           <div><span class="dot done"></span> laptop-a · live · 19.14.1</div>
           <div><span class="dot done"></span> ci-box · live · 19.14.1</div>
           <div><span class="dot blocked"></span> cloud-1 · unreachable · connection refused</div>
@@ -221,7 +225,7 @@
   <main>
     <!-- ——— state: fleet (manager) ——— -->
     <section data-view="fleet">
-      <div class="bar"><h1 class="display">Instances</h1><span class="meta">hq · role manager · 3 registered · 2 live · probed 12s ago</span></div>
+      <div class="bar"><h1 class="display">Instances</h1><span class="meta">hq · role manager · this instance + 3 registered · 2 of 3 live · probed 12s ago</span></div>
       <div class="content"><div class="stack">
         <div class="banner">One instance is not live: <b>cloud-1</b> — connection refused. Its rows are left off the board until it answers to its name.</div>
         <div class="card">
@@ -229,6 +233,7 @@
           <table>
             <thead><tr><th>Name</th><th>URL</th><th>State</th><th>Version</th><th>Mode</th><th class="num">Managed</th><th class="num">Sessions</th><th>Probed</th><th></th></tr></thead>
             <tbody>
+              <tr><td class="mono">hq <span class="note">this instance</span></td><td class="mono">http://127.0.0.1:4114</td><td class="state"><span class="dot done"></span><span class="w">live</span></td><td class="mono">19.14.1</td><td>addressed</td><td class="num">3</td><td class="num">1</td><td class="note">now</td><td class="actions-cell"><div class="actions"><button>Open</button><button>Manage</button></div></td></tr>
               <tr><td class="mono">laptop-a</td><td class="mono">http://10.0.0.5:4114</td><td class="state"><span class="dot done"></span><span class="w">live</span></td><td class="mono">19.14.1</td><td>addressed</td><td class="num">4</td><td class="num">2</td><td class="note">12s ago</td><td class="actions-cell"><div class="actions"><button>Open</button><button>Manage</button><button class="danger">Unregister</button></div></td></tr>
               <tr><td class="mono">ci-box</td><td class="mono">http://ci:4114</td><td class="state"><span class="dot done"></span><span class="w">live</span></td><td class="mono">19.14.1</td><td>locked</td><td class="num">2</td><td class="num">2</td><td class="note">12s ago</td><td class="actions-cell"><div class="actions"><button>Open</button><button>Manage</button><button class="danger">Unregister</button></div></td></tr>
               <tr><td class="mono">cloud-1</td><td class="mono">http://10.0.0.9:4114</td><td class="state"><span class="dot blocked"></span><span class="w">unreachable</span><div class="note">connection refused</div></td><td class="mono">—</td><td>—</td><td class="num">—</td><td class="num">—</td><td class="note">12s ago</td><td class="actions-cell"><div class="actions"><button disabled title="not live">Open</button><button>Manage</button><button class="danger">Unregister</button></div></td></tr>
@@ -343,7 +348,7 @@ routing:
     states.forEach((b) => b.classList.toggle("on", b.dataset.state === name));
     views.forEach((v) => v.classList.toggle("hidden", v.dataset.view !== name));
     const worker = name === "worker";
-    foot.textContent = worker ? "service · 127.0.0.1:4114" : "manager · hq:4114 · 3 instances";
+    foot.textContent = worker ? "service · 127.0.0.1:4114" : "manager · hq:4114 · 4 instances";
     health.className = worker ? "health ok" : "health bad";
     health.innerHTML = worker ? '<span class="dot done"></span>live' : '<span class="dot blocked"></span>degraded';
     filter.parentElement.style.display = worker ? "none" : "";

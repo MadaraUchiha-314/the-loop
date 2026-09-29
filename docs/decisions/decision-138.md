@@ -27,9 +27,9 @@ manager would be a client of N base URLs.
 | # | What was chosen | Why |
 |---|-----------------|-----|
 | D1 | **The role is `instance.role` in `cli-config.yaml`**, and the registry is `instance.manager.instances[] {name, url}` in the same block. | Decision-110 D1: an instance *is* a running CLI config, so the file that names it names its role. The registry is three keys away from the name it qualifies. |
-| D2 | **A manager does no work**: it hosts no ingress, spawns no session, starts no standing session, and is not its own member. | The ask: "spawned just to manage". A manager that also worked would need a rule for which identity a request means, and would hold GitHub and Slack credentials it never needs. |
+| D2 | **A manager is also a worker, and its own first member**: `role: manager` adds the fleet beside the worker's responsibilities and removes none; the manager's own state is served in-process under its own name, never registered as a URL. | The owner's call at the spec gate (PR #436): an instance that becomes a manager keeps its worker responsibilities. It also keeps the config small and the fleet flat — a box that both manages and works runs one instance, not two. |
 | D3 | **One router, two facades**: `routes.build_router(holder, facade=…)` and `mcp.build_server(…, facade=…)`; the worker's facade is `the_loop.core`, the manager's is `the_loop.manager.facade` with the same function names and signatures. | "Exactly the same API surface" becomes a property of construction, and the contract parity test proves it for both applications. A second router would drift; a reverse proxy could not aggregate. |
-| D4 | **The registry is a config key written through the config route**: `POST /instances/register` and `/unregister` call `core.config.update_config` with a sparse patch; the file is the only store. | The ask's "both should converge to the same code path": a hand edit and a dashboard edit are indistinguishable in the file, reach the service through the one per-request refresh, and inherit the splice's comment preservation, validation and atomic write. |
+| D4 | **The registry is a config key written through the config route**: `POST /instances/register` and `/unregister` — and the CLI's `the-loop instances register` and `unregister`, thin clients of them — call `core.config.update_config` with a sparse patch; the file is the only store. | The ask's "both should converge to the same code path": a hand edit and a dashboard edit are indistinguishable in the file, reach the service through the one per-request refresh, and inherit the splice's comment preservation, validation and atomic write. |
 | D5 | **A member is trusted by its name, checked at probe**: `GET /instance` must answer with the registered `name` and `role: worker` before anything is served from or sent to it; an unnamed worker cannot be a member. | A URL is an address, not an identity. A re-used port, a wrong host or a redirect must not hand another box's sessions to the board or the board's commands to another box. |
 | D6 | **Ambiguity refuses**: a key that resolves to two members is `409` naming them, never first-registered-wins, unless `instance` names one. | Issue-322 allows a work item declared on two instances; a `stop` sent to the first, or to both, is the two-daemons-steering-one-item failure decision-110 D6 avoided. |
 | D7 | **The `instance` parameter is part of the one contract**, optional on every keyed operation; a worker accepts only its own name. | A client need not know which role it talks to; the same dashboard bundle drives a worker and a manager, and "manage one instance individually" is one parameter, not a second surface. |
@@ -45,7 +45,7 @@ saying which instance owns it; an operator adds a box from the tab or the file a
 the same result; one instance is managed on its own with one parameter; a member that
 answers wrongly is never trusted; the surface cannot drift because there is one of it.
 
-**Costs, accepted.** One more process to run; a keyed operation costs a cached probe plus
+**Costs, accepted.** A manager's box serves two kinds of load; a keyed operation costs a cached probe plus
 a call; 30 operations gain an optional parameter; a worker describes itself on a route a
 lone operator will not need; the dashboard's row key becomes `instance@ref`; whoever
 reaches the manager reaches every member's config and restart — the reach is the point,
@@ -56,7 +56,7 @@ and the guide names it.
 | Alternative | Why not |
 |-------------|---------|
 | A top-level `manager` block, or a separate `fleet.yaml` | A second place for what the `instance` block already qualifies; a second file outside the reload and the config route (D1, D4) |
-| A manager that is also a worker (its own member) | Two identities per request; credentials it does not need (D2) |
+| A manager that does no work (a pure aggregator) | The owner's decision at the gate: a manager keeps its worker responsibilities (D2); a pure aggregator would also mean a second process on any box that both manages and works |
 | A second router for the manager | Drift; the parity test would prove only that the files matched on the day they were written (D3) |
 | A reverse proxy in front of N instances | Cannot aggregate a list read or route a keyed one; every path would need a prefix, which is the second surface the ask forbids |
 | An in-memory registry with a `register` API, persisted separately | Two stores to reconcile; the ask's convergence would be a synchronisation problem (D4) |

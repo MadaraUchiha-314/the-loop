@@ -18,8 +18,8 @@ overrides: {}
 The manager is not a second API. It is the **same `APIRouter`** the worker serves, built
 over a **different facade**: where the worker's routes call `the_loop.core.*`, the
 manager's call `the_loop.manager.facade.*`, a module set with the same function names
-and signatures that answers each call by fanning out to, or routing to, the registered
-members. Identity of surface is then a property of construction, and the contract parity
+and signatures that answers each call by fanning out to, or routing among, the manager's own
+core and the registered members. Identity of surface is then a property of construction, and the contract parity
 test proves it for both applications.
 
 Seven moves, in the order a request meets them:
@@ -49,6 +49,7 @@ flowchart TD
   R -->|"role: worker"| CF["core facade<br/>the_loop.core.*"]
   R -->|"role: manager"| MF["manager facade<br/>the_loop.manager.facade.*"]
   CF --> FS["this box: registry, portable state,<br/>event log, tmux"]
+  MF -->|"own state, in-process"| CF
   MF --> FL["Fleet<br/>registry · probe cache · resolvers"]
   FL -->|"fan-out (list reads)"| A["laptop-a /api/v1"]
   FL -->|"route (keyed ops)"| B["ci-box /api/v1"]
@@ -151,9 +152,10 @@ keyword, ignored when empty and `LookupError` when it names anything but this in
 name — the worker half of R2.6, three lines in a shared helper `core.instance.assert_self`.
 
 `create_app` resolves the facade once, at boot, from `InstanceConfig.role` (R1.4:
-boot-only): `facade = manager_facade(holder) if role == MANAGER else CORE`. A manager also
-gets `host_ingresses=False` regardless of `service.hostIngresses`, and `lifecycle.start_all`
-skips the standing sessions and warns per enabled block (R1.3). `TheLoop(config_path=...)`
+boot-only): `facade = manager_facade(holder) if role == MANAGER else CORE`. Nothing else
+at boot changes: a manager hosts its ingresses and starts its standing sessions exactly as
+a worker does (R1.3) — the manager facade wraps `CORE` for the manager's own state and adds
+the fleet beside it. `TheLoop(config_path=...)`
 in the SDK reads the same role and builds the same router, so an embedded manager is one
 line of config away.
 
@@ -179,7 +181,8 @@ class Fleet:
     def __init__(self, holder: ConfigHolder, transport: Transport = urllib_transport): ...
     @property
     def config(self) -> ManagerConfig            # re-read from holder.current each call (hot, R1.4)
-    def members(self) -> Tuple[Member, ...]
+    def members(self) -> Tuple[Member, ...]      # the registered ones
+    local: Member                                 # the manager itself, answered by CORE
     def probe(self, member, *, fresh=False) -> Probe   # cached for probe_interval_seconds
     def live(self) -> List[Probe]                 # every member whose probe is LIVE
     def call(self, member, method, path, *, query=None, body=None) -> Any   # one request, checked
@@ -195,6 +198,13 @@ and builds `ManagerConfig` through `InstanceConfig.from_mapping(strict=False)`; 
 class already refreshed the holder before the operation ran, so a registration written a
 moment ago is the registry now (R1.4, R4.1). The probe cache is keyed by `(name, url)`, so
 a re-registered name at a new URL is a fresh probe.
+
+**The manager is its own first member, in-process** (R1.3). `Fleet.local` is
+`Member(name=<own name>, url="")`, answered not by the transport but by `CORE` directly:
+`fan_out` calls the core function for it and `call` dispatches to core when `member is
+fleet.local`. Its probe is always `LIVE` — `describe_instance(config)` read locally, no name
+check needed, it is this process — and it is first in every list. Registering the manager's
+own address is refused (§ 1), so the same state is never counted twice.
 
 **The probe is the trust check** (R6.1). `probe` calls `GET <url>/api/v1/instance` and
 `GET <url>/api/v1/health` (for `version`), with the fleet's timeout. `LIVE` requires a
@@ -227,16 +237,15 @@ answer, translated below), and the operation still answers (R2.9).
 
 | resolver | reads | one match | none | several |
 |----------|-------|-----------|------|---------|
-| `by_instance(name)` | the registry | the member; `LookupError` if its probe is not `LIVE` → `502` via `MemberUnavailable` | `LookupError` → 404 | — (names are unique) |
-| `by_ref(ref, instance)` | `instance` if given, else every live probe's `document["managed"]` | the member | `LookupError` → 404 | `Conflict` → 409 naming the candidates |
+| `by_instance(name)` | `fleet.local` when `name` is the manager's own, else the registry | the member; `LookupError` if its probe is not `LIVE` → `502` via `MemberUnavailable` | `LookupError` → 404 | — (names are unique) |
+| `by_ref(ref, instance)` | `instance` if given, else the local managed set plus every live probe's `document["managed"]` | the member | `LookupError` → 404 | `Conflict` → 409 naming the candidates |
 | `by_standing_name(name, instance)` | `instance` if given, else `fan_out("GET", "/standing-sessions")` | the member | `LookupError` → 404 | `Conflict` → 409 |
 
 `by_ref` reads the managed sets from the **probe documents**, so a keyed read costs no
 extra round trip while the probes are fresh, and a stale probe is refreshed first (`fresh`
-when older than the interval). A member whose managed set does not yet hold a ref the
-caller is about to `sessions/register` for is the `instance`-required case: the facade's
-`register_session` demands `instance` (a registration creates the managed-set entry; nothing
-can resolve it before it exists).
+when older than the interval). A `sessions/register` creates the managed-set entry, so
+nothing can resolve its ref beforehand: without `instance` it registers on the manager
+itself (the worker behaviour), with `instance` on that member.
 
 **A member's error is the manager's error.** `call` maps a member's `400` to `ValueError`,
 `404` to `LookupError`, `409` to `Conflict`, any other non-2xx to `MemberError` → `502`
@@ -251,18 +260,18 @@ check every row against the requirement it cites.
 
 | operationId | kind | manager behaviour |
 |-------------|------|-------------------|
-| `health` | self-or-instance | own: `status` `ok` iff every member `LIVE`, `instances: [{name, url, state, detail}]`, `ingresses: []`, `role: manager`; with `instance`: proxied (R2.7, R2.9) |
-| `getInstance` | self-or-instance | own: `{name, role: manager, scope: {mode: locked, workItems: []}, managed: union of live members' rows, each + instance}`; with `instance`: proxied (R2.7) |
+| `health` | self-or-instance | own: the worker's document (`ingresses` as today) plus `role: manager` and `instances: [{name, url, state, detail}]`; `status` `ok` iff every own enabled ingress holds its lock and every member is `LIVE`; with `instance`: proxied (R2.7, R2.9) |
+| `getInstance` | self-or-instance | own: `{name, role: manager, scope: <its own>, managed: own rows ∪ live members' rows, each + instance}`; with `instance`: proxied (R2.7) |
 | `listInstances` | self | § 6 (R3.1) |
 | `registerInstance` / `unregisterInstance` | self | § 6 (R4) |
-| `listWorkItems`, `listSessions`, `listStandingSessions`, `listAttention`, `listDaemons` | fan-out | union, each row `+ instance` (overwriting any present, R6.3), sorted as the worker sorts with `instance` as tie-break; left-out members in the header (R2.2, R2.9) |
+| `listWorkItems`, `listSessions`, `listStandingSessions`, `listAttention`, `listDaemons` | fan-out | own rows (via `CORE`) ∪ members', each row `+ instance` (overwriting any present, R6.3), sorted as the worker sorts with `instance` as tie-break; left-out members in the header (R2.2, R2.9) |
 | `queryEvents` | fan-out | union merged by `ts` (stable, `instance` tie-break), each `+ instance`; `limit` applied after the merge; the manager's own log included under its own name |
 | `eventTypes` | fan-out | union of maps |
 | `getWorkItem`, `getSession`, `sessionTranscript`, `controlSession`, `replySession`, `linkSessionPullRequest`, `closeSession` | by ref | `by_ref(ref, instance)` then one call; the answer `+ instance` (R2.3) |
-| `registerSession` | by instance | requires `instance` (§ 3), else `400` |
-| `getStandingSession`, `deleteStandingSession`, `controlStandingSession`, `sayToStandingSession` | by standing name | `by_standing_name(name, instance)`; `controlStandingSession` with an empty name (every session) requires `instance` |
-| `createStandingSession` | by instance | requires `instance` |
-| `graphShow`, `graphCheck`, `graphComplete`, `graphAdvance`, `graphForce`, `graphSkip`, `graphRepos`, `repoScenarios`, `repoInstructions`, `repoCritics`, `repoReviewPolicy`, `repoCriticRun`, `controlDaemon` | by instance | require `instance` (R2.5), else `400` naming the parameter |
+| `registerSession` | by instance | `instance` absent or own name → `CORE` (the worker behaviour, § 3); a member's name → proxied |
+| `getStandingSession`, `deleteStandingSession`, `controlStandingSession`, `sayToStandingSession` | by standing name | `by_standing_name(name, instance)`; `controlStandingSession` with an empty name (every session) acts on the manager's own without `instance` |
+| `createStandingSession` | by instance | `instance` absent or own name → `CORE`; a member's name → proxied |
+| `graphShow`, `graphCheck`, `graphComplete`, `graphAdvance`, `graphForce`, `graphSkip`, `graphRepos`, `repoScenarios`, `repoInstructions`, `repoCritics`, `repoReviewPolicy`, `repoCriticRun`, `controlDaemon` | by instance | `instance` absent or own name → `CORE` (the worker behaviour, R2.5); a member's name → proxied |
 | `getConfig`, `getConfigSchema`, `updateConfig`, `restart` | self-or-instance | own without `instance` (the manager's file, the manager's process); proxied with it (R2.7) |
 | `streamEvents` | fan-in | § 5 (R2.8) |
 
@@ -347,7 +356,7 @@ def unregister_instance(config, name, *, config_path=None) -> Dict[str, Any]
 
 The **self row** on a worker is `{name, url: base_url(config), state: live, version,
 mode, managedCount, sessionCount, probedAt: now}` — the same shape a manager reports for
-a member, so the Instances tab has one renderer (R3.1). The manager's rows come from
+a member, so the Instances tab has one renderer (R3.1). The manager's rows are its own self row first, then
 `Fleet.probe` for every registered member (a stale probe refreshed on this read), with
 `managedCount = len(document["managed"])` and `sessionCount` from the probe's document —
 `describe_instance` gains `sessionCount` (additive) so the count is one read.
@@ -364,11 +373,20 @@ naming `instance.role` (R4.4). The routes are `GET /api/v1/instances`
 MCP registry lists `list_instances` only (R4.5; `mcp.py`'s tool list is explicit, so the
 two writers are simply not added). The SDK gains `loop.instances()`.
 
+**The CLI** (R4.6): `commands/instances.py` — `the-loop instances list [--json]`,
+`register <name> <url>` and `unregister <name>` — each a `client.routing.routed` call to
+the route above with the core function as the test-seam local path, rendering the
+`messages` / `exitCode` the core returns (`register` on a worker: exit 2 naming
+`instance.role`; a validation failure: exit 2 with the reason; an unknown name on
+`unregister`: exit 1). `list` prints the table `status` prints. Documented at
+`docs/cli/commands/instances.md` and in the CLI capability doc.
+
 `the-loop status` (`core.lifecycle.status_all`) adds `instances: list_instances(config)`
 on a manager and renders one line per member (R3.3):
 
 ```
-instances   hq [manager] — 3 registered, 2 live
+instances   hq [manager] — this instance + 3 registered, 2 of 3 live
+  hq        (this instance)          live         19.14.1   3 managed
   laptop-a  http://10.0.0.5:4114     live         19.14.1   4 managed
   ci-box    http://ci:4114           live         19.14.1   1 managed
   cloud-1   http://10.0.0.9:4114     unreachable  —         connection refused
@@ -379,13 +397,10 @@ instances   hq [manager] — 3 registered, 2 live
 - `serve.main` calls `InstanceConfig.from_mapping(block, strict=True)` before the CORS
   check; `InstanceConfigError` is printed and the process exits `2`, before the bind and
   the run lock (R1.5).
-- `create_app`: `facade`, `host_ingresses=False` on a manager, and `app.state.fleet` for
-  the stream route and tests.
-- `lifecycle.start_all` on a manager: starts the service only; for each of `polling`,
-  `webhooks.ghWebhook`, `channels.slack`, `standingSessions` and `routing` that is enabled,
-  one warning `instance.role is manager; <key> is ignored — a manager hosts no ingress and
-  spawns nothing` (R1.3). `status_all` reports the three ingress rows as `enabled: false,
-  hosted: false` with `detail: "manager"`.
+- `create_app`: `facade` and `app.state.fleet` for the stream route and tests;
+  `host_ingresses` is read as on a worker (R1.3).
+- `lifecycle.start_all` and `status_all` are unchanged for the manager's own services;
+  `status_all` adds the `instances` document (§ 6).
 - `core.config._restart_required`: `instance.role` joins the boot-only list (R1.4).
 
 ## 8. The dashboard — `ui/`
@@ -413,15 +428,16 @@ ref, instance}`; without `@` it is today's route (R5.2). `#/instances` and
 and standing row when `view.instance` is set; a `<select>` beside the search box with
 `All instances` and one option per `InstancesDocument` row, filtering the loaded rows
 (R5.2); the footer's `serviceLabel` reads `manager · <host> · N instances` on a manager.
-`healthTone` folds the fleet in: any non-`live` row is `degraded`, the popover lists each
-member with its state (R5.5); the daemons list on a manager is replaced by the sentence
-"manager — hosts no ingress".
+`healthTone` folds the fleet in: any stopped own daemon or any non-`live` member is
+`degraded`; the popover keeps the own-daemons rows and lists each member with its state
+beneath them (R5.5).
 
 **Instances view** (`views/Instances.tsx`, R5.3): the fleet table (name, URL, state dot +
 word, version, mode, managed, sessions, probed), a Register card (name, URL, validated
 client-side against the same grammar, the server's `400` shown verbatim), and per row
 `Open` (→ `#/?instance=<name>` — the Work surface with the filter preset), `Manage` (→
-`#/instances/<name>`) and `Unregister` (a confirm, then the call). On a worker: one row,
+`#/instances/<name>`) and `Unregister` (a confirm, then the call) — the manager's own row
+has no `Unregister`. On a worker: one row,
 no Register card, one sentence naming `instance.role`.
 
 **Instance pane** (`views/InstanceDetail.tsx`, R5.4): identity (name, URL, version, mode,
@@ -440,9 +456,9 @@ state's `detail` when the row is not `live`.
 `### manager.timeoutSeconds`, `### manager.probeIntervalSeconds`); `docs/cli/instances.md`
 (a *Running a manager* section: role, registry, what it does not do, reaching members,
 the name check, the `instance` parameter, the two edits that are one); `docs/cli/state.md`;
-`docs/cli/commands/status.md`; the template and this repository's `cli-config.yaml`; the
+`docs/cli/commands/status.md`; `docs/cli/commands/instances.md` (new); the template and this repository's `cli-config.yaml`; the
 OpenAPI contract; `docs/sdk/` (`loop.instances()`); the capability docs `instances.md`
-(a *The manager* section and a history row) and `control-plane.md` (the facade seam, the
+(a *The manager* section and a history row), `cli.md` (the `instances` command) and `control-plane.md` (the facade seam, the
 `instances` family, the `instance` parameter, the stream fan-in, the Instances tab);
 `docs/capabilities/capabilities.md`'s row for `instances`; `ui/README.md`;
 [decision-138](../../decisions/decision-138.md).
@@ -532,8 +548,9 @@ Nothing else is written: the manager keeps no copy of any member's records.
 - **Secrets handling:** none stored or moved. A member URL may carry a userinfo part in
   theory; the schema pattern does not forbid it, so `register` and the reader **refuse** a
   URL with `@` before the host, and no URL is written to the event log (only names).
-- **Least privilege:** the manager hosts no ingress and holds no GitHub or Slack token in
-  use (R1.3); its process needs only outbound HTTP to the registered URLs.
+- **Least privilege:** the manager's worker half runs with exactly the credentials and
+  scope it had as a worker (R1.3); the manager half adds outbound HTTP to the registered
+  URLs and no credential.
 - **Fail-closed behaviour:** § Error handling — every unresolved state refuses or omits,
   none guesses.
 - **Abuse-case coverage:**
@@ -547,7 +564,7 @@ Nothing else is written: the manager keeps no copy of any member's records.
 | A5 | a ref two members manage, a mutating verb | `by_ref` → `Conflict` → `409`; sent to neither | `test_an_ambiguous_ref_is_refused_not_sent_twice` |
 | A6 | `instance` names an unregistered member / a foreign name on a worker | `by_instance` → `LookupError`; `assert_self` | `test_an_unknown_instance_sends_nothing`, `test_a_worker_refuses_a_foreign_instance` |
 | A7 | a proxied config write / restart | `api.request` with target on the manager; the member's own events | `test_a_proxied_write_is_audited_on_both_sides` |
-| A8 | a manager configured with ingresses / standing sessions / routing | `create_app` forces `host_ingresses=False`; `start_all` skips and warns | `test_a_manager_hosts_nothing` |
+| A8 | `role: manager` widening what an instance takes on | the worker half is `CORE`, untouched: the scope seam, the actor guard and the ingresses never read the role | `test_a_managers_worker_half_is_unchanged` |
 | A9 | a member's row or record carries its own `instance` | the stamp overwrites | `test_the_registered_name_overwrites_a_members_claim` |
 
 ## Testing strategy
@@ -558,7 +575,8 @@ resolvers, error translation) and `manager/facade.py` (one test per row of the �
 table) with an injected transport that answers from a `TestClient` per member;
 `manager/stream.py` with a fake upstream (cursor grammar, stamping, `desync`, backoff);
 `core/instances.py` (the self row, register/unregister writing through
-`update_config`, the worker's refusal); integration scenarios with **two worker
+`update_config`, the worker's refusal) and `commands/instances.py` (the three verbs'
+rendering and exit codes); integration scenarios with **two worker
 applications and one manager application** in one process (Gherkin docstrings:
 a list read is the union, a keyed read routes, an ambiguous ref is refused, a member
 going away degrades and recovers, a registration from the API equals a hand edit) and one
@@ -570,7 +588,7 @@ prototype's states. The executable detail is `testing-plan.md`.
 ## Trade-offs & decisions
 
 [decision-138](../../decisions/decision-138.md): the role lives in `cli-config.yaml`
-(decision-110 D1 continued); a manager does no work; one router over two facades rather
+(decision-110 D1 continued); a manager is also a worker and its own first member; one router over two facades rather
 than a second router or a reverse proxy; the registry is a config key written through the
 config route, not a second store; a member is trusted by its name, checked at probe;
 ambiguity refuses; the stream is a fan-in of member streams with a per-member cursor, not
@@ -584,9 +602,9 @@ dashboard's row key changes from `ref` to `instance@ref`.
 
 ## Open questions
 
-Q1–Q3 of `requirements.md`, on the ticket for the owner. This design assumes the proposed
-answers: a manager does not work; `instance.role` / `instance.manager.instances`; `409`
-on ambiguity.
+Q1 of `requirements.md` is answered — the owner, on PR #436: a manager also works — and
+this design reflects it. Q2 and Q3 carry the proposed answers the design assumes:
+`instance.role` / `instance.manager.instances`; `409` on ambiguity.
 
 ## Review comments
 
