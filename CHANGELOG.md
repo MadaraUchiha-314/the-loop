@@ -1,3 +1,9 @@
+## v19.14.1 (2026-09-29)
+
+### Fix
+
+- **issue-433**: the hooks[] loader accepts the bare `on` key and never raises on its own refusal (#434)
+
 ## v19.14.0 (2026-09-29)
 
 ### Feat
