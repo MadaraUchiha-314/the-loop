@@ -414,7 +414,10 @@ contract SHALL carry the new routes and the `instance` parameter; the SDK docs S
   if a deployment needs them.
 - **A manager of managers.** A manager is its own first member implicitly (1.3), never a
   registered one; a *registered* member whose `role` is `manager` is `mismatched` (6.1).
-  The fleet is flat.
+  The fleet is flat. Nesting is detectable today (`role` is in the instance document) and
+  is filed as [issue #438](https://github.com/MadaraUchiha-314/the-loop/issues/438): the
+  `instance` stamp and parameter become a path, the cursor nests, and cycles need a hop
+  limit — a second grammar this work item does not carry.
 - **Discovery or self-registration.** A member does not announce itself to a manager; the
   operator registers it.
 - **Moving or claiming work items between instances**, and any instance-to-instance
