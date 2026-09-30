@@ -10,9 +10,10 @@ activity of `testing-plan.md`; raw summaries as the runner printed them.
 $ uv run --project cli python -m pytest -q cli/tests/test_instance_role.py cli/tests/test_instance.py \
     cli/tests/test_manager_fleet.py cli/tests/test_manager_stream.py cli/tests/test_instances_core.py \
     cli/tests/test_instances_cmd.py cli/tests/test_lifecycle_cmd.py cli/tests/test_api_config_integration.py
-147 passed in 9.44s
+164 passed in 11.34s
 ```
 
+Re-run after self-review round 3 (`0b2cd86`), which added six regression tests here.
 Red → green: `test_instance_role.py` was written first and failed on import
 (`ImportError: MANAGER`); `test_manager_fleet.py` went red on the fan-out's unbounded
 wait and the probe's detail text before the implementation was corrected;
@@ -24,7 +25,7 @@ reconcile loop were fixed. Outcome: **pass**.
 ```text
 $ uv run --project cli python -m pytest -q cli/tests/test_manager_integration.py \
     cli/tests/test_api_instances_integration.py cli/tests/test_manager_stream_integration.py
-15 passed, 1 warning in 9.11s
+15 passed in 9.37s
 ```
 
 Ten Gherkin scenarios over two worker apps and a manager app joined in-process; four on
@@ -79,11 +80,15 @@ four subscribers hold exactly one upstream per live member. Outcome: **pass**.
 ```text
 $ uv run --project cli python -m pytest -q cli/tests -k "foreign_url or mismatched_member or malformed_member \
     or hung_member or ambiguous_ref or unknown_instance or foreign_instance or proxied_config \
-    or overwrites_a_members_claim or nothing_of_the_caller or refuses_to_boot"
-13 passed, 4954 deselected in 6.62s
+    or overwrites_a_members_claim or nothing_of_the_caller or refuses_to_boot \
+    or stamp_origin or hand_edited_entry"
+16 passed, 4968 deselected in 6.47s
 ```
 
-One negative test per abuse case A1–A9; the mapping is in `security-review.md`.
+One negative test per abuse case A1–A9; the mapping is in `security-review.md`. The two
+selectors added last cover self-review round 3's C9 (the subject of a fleet event is
+kept, never confused with its origin) and C14 (a hand-edited registry entry is refused by
+index before a write). Re-run after round 3 (`0b2cd86`).
 Outcome: **pass**.
 
 ## T10 — migration / upgrade
@@ -122,7 +127,8 @@ VALID   skills/the-loop/templates/collaborators.yaml
 VALID   .the-loop/cli-config.yaml
 VALID   skills/the-loop/templates/cli-config.yaml
 $ cd cli && uv run python -m pytest -q          # the CI form of `make test`
-4965 passed, 1 skipped, 2 warnings in 189.92s (0:03:09)
+4965 passed, 1 skipped, 2 warnings in 189.92s (0:03:09)     # before the review rounds
+4983 passed, 1 skipped, 1 warning in 196.41s (0:03:16)      # after self-review round 3
 $ uv run --project cli python -m pytest -q cli/tests   # from the repository root
 4965 passed, 1 skipped, 1 warning in 213.81s (0:03:33)
 ```

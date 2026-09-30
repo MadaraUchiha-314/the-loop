@@ -2,8 +2,8 @@
 type: requirements
 phase: requirements-definition
 workItem: "issue-374"
-status: draft
-approvedBy: []
+status: approved
+approvedBy: [MadaraUchiha-314]   # PR #436 review, 2026-09-29: "go ahead with implementation."
 collaborators: [architect, engineer, designer, approver]
 riskTier: 4                  # a block in `cli-config.schema.json` (a sensitive path), an outbound HTTP client in the service, and a config write and a restart proxied to another machine
 overrides: {}

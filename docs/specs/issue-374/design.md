@@ -2,8 +2,8 @@
 type: design
 phase: design
 workItem: "issue-374"
-status: draft
-approvedBy: []
+status: approved
+approvedBy: [MadaraUchiha-314]   # PR #436 review, 2026-09-29: "go ahead with implementation."
 overrides: {}
 ---
 
