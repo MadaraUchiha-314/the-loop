@@ -72,6 +72,7 @@ __all__ = [
     "InstanceConfigError",
     "ManagerConfig",
     "Member",
+    "member_problem",
     "ADDRESSED_ELSEWHERE",
     "AMBIGUOUS_ADDRESS",
     "CLAIMABLE",
@@ -250,7 +251,7 @@ class ManagerConfig:
         seen: set = set()
         own = own_url.rstrip("/") if isinstance(own_url, str) else ""
         for index, entry in enumerate(entries):
-            reason = _member_problem(entry, seen, own, own_name)
+            reason = member_problem(entry, seen, own, own_name)
             if reason:
                 logger.warning(
                     "instance.manager.instances[%d] %s; skipped", index, reason
@@ -284,8 +285,12 @@ class ManagerConfig:
         }
 
 
-def _member_problem(entry: Any, seen: set, own_url: str, own_name: str = "") -> str:
-    """Why ``entry`` is not a member, as a phrase for the warning; ``""`` when it is."""
+def member_problem(entry: Any, seen: set, own_url: str, own_name: str = "") -> str:
+    """Why ``entry`` is not a member, as a phrase for the warning; ``""`` when it is.
+
+    The one rule the reader (:class:`ManagerConfig`) and the writers
+    (``core.instances.register_instance`` / ``unregister_instance``) share.
+    """
     if not isinstance(entry, Mapping):
         return "is not a mapping with `name` and `url`"
     name = entry.get("name")

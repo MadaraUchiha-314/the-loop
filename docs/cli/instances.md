@@ -145,7 +145,7 @@ true` behind *your* VPN, tunnel or gateway, and the manager sits inside the same
 
 | Operation | On a manager |
 |-----------|--------------|
-| a list read (`work-items`, `sessions`, `standing-sessions`, `attention`, `daemons`, `events`) | its own rows plus every live member's, each stamped `instance`; a member it could not reach is named in the `The-Loop-Instances-Unreachable` header and `health` is `degraded` |
+| a list read (`work-items`, `sessions`, `standing-sessions`, `attention`, `daemons`, `events`) | its own rows plus every live member's, each stamped `instance` (an event about another instance keeps its subject as `about`); a member it could not reach is named in the `The-Loop-Instances-Unreachable` header and `health` is `degraded` |
 | an operation keyed by a work item or a standing session | routed to the one instance that manages it; none is `404`, two is `409` naming both — say `instance=<name>` to pick |
 | an operation keyed by a checkout path or a daemon (`graph/*`, `repo/*`, `daemons/control`) | the manager's own machine without `instance`, exactly as on a worker; a member's with it |
 | `config`, `restart`, `health`, `instance` | the manager's own without `instance`; proxied to a member with it — how one instance is managed on its own |

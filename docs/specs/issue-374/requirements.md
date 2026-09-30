@@ -300,7 +300,10 @@ instance is the precondition of registering it, and the guide SHALL say so.
 
 6.3 The `instance` stamped on a row or a frame SHALL be the **registered** name, never a
 value from the member's response, and a member's own `instance` field on a row (a member
-that is itself misconfigured as a manager, say) SHALL be overwritten.
+that is itself misconfigured as a manager, say) SHALL be overwritten. WHEN the value
+overwritten differs from the registered name THEN it SHALL be kept on the row as `about`
+(if the row has none), so an event record whose *subject* is an instance — a fleet event
+about a member, an `api.request` proxied to one — still says what it was about.
 
 6.4 A member's response SHALL be read within `manager.timeoutSeconds` and within a fixed
 byte bound; a response that exceeds either, is not JSON, or is not the shape the contract
@@ -399,8 +402,8 @@ contract SHALL carry the new routes and the `instance` parameter; the SDK docs S
      unchanged, so `role: manager` never makes an instance take on a work item, post a
      comment or spawn a session it would not have as a worker.
   9. WHEN a member's event record or row carries an `instance` value of its own THEN the
-     manager SHALL overwrite it with the registered name: a member cannot claim to be
-     another.
+     manager SHALL overwrite it with the registered name (the prior value kept as
+     `about`, never as `instance`): a member cannot claim to be another.
 - **Fail closed:** an unknown role or an unnamed manager refuses to boot; an unvalidated
   registry entry is skipped; a member that has not answered to its name is not served or
   sent to; an ambiguous key is refused; a missing `instance` where one is required is

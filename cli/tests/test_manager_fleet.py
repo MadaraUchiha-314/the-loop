@@ -27,6 +27,7 @@ from the_loop.manager.fleet import (
     UNREACHABLE,
     Fleet,
     TransportError,
+    stamp_origin,
 )
 
 A = "http://a:1"
@@ -475,3 +476,78 @@ def test_a_one_shot_fleet_announces_nothing(quiet):
     fleet.rows()
     fleet.rows()
     assert quiet == []
+
+
+# -- self-review round 3 --------------------------------------------------------------------
+
+
+def test_stamp_origin_keeps_an_events_subject_as_about():
+    """R3-1/2: a fleet event about `ci-box` served from `hq` is still about ci-box."""
+    row = stamp_origin({"event": "instance.unreachable", "instance": "ci-box"}, "hq")
+    assert row == {"event": "instance.unreachable", "instance": "ci-box"} or row == {
+        "event": "instance.unreachable",
+        "instance": "hq",
+        "about": "ci-box",
+    }
+    assert row["instance"] == "hq" and row["about"] == "ci-box"
+    # A worker naming itself is unchanged; a row without a subject is only stamped.
+    assert stamp_origin({"instance": "laptop-a"}, "laptop-a") == {
+        "instance": "laptop-a"
+    }
+    assert stamp_origin({"ref": "r1"}, "laptop-a") == {
+        "ref": "r1",
+        "instance": "laptop-a",
+    }
+    # An `about` the member already set is not overwritten.
+    assert stamp_origin({"instance": "x", "about": "y"}, "hq")["about"] == "y"
+
+
+def test_a_fleet_wider_than_the_pool_gets_one_timeout_per_wave(quiet, monkeypatch):
+    """R3-3: the second wave is not 'timed out' before it ever ran."""
+    monkeypatch.setattr(fleet_mod, "MAX_WORKERS", 1)
+    transport = FakeTransport()
+    members = []
+    for i in range(4):
+        url = f"http://m{i}:1"
+        transport.member(url, f"m{i}")
+
+        def slow(method, url, body, timeout, i=i):
+            time.sleep(0.6)
+            return 200, [{"ref": f"r{i}"}]
+
+        transport.routes[url]["/api/v1/work-items"] = slow
+        members.append((f"m{i}", url))
+    fleet = _fleet(transport, members, timeout=1)
+    answers, left_out = fleet.fan_out("GET", "/api/v1/work-items", expect=list)
+    assert left_out == []
+    assert sorted(answers) == ["m0", "m1", "m2", "m3"]
+
+
+def test_by_ref_falls_back_to_the_work_item_lists_for_a_polled_item(quiet):
+    """R3-4: a work item a member reached by polling alone is in its list, not `managed`."""
+    transport = FakeTransport().member(A, "laptop-a", managed=[]).member(B, "ci-box")
+    transport.routes[A]["/api/v1/work-items"] = (200, [{"ref": "github:octo/repo#7"}])
+    transport.routes[B]["/api/v1/work-items"] = (200, [])
+    config = _config([("laptop-a", A), ("ci-box", B)])
+    fleet = Fleet(
+        lambda: config,
+        transport=transport,
+        local_refs=lambda: [],
+        local_records=lambda: ["github:octo/repo#8"],
+    )
+    assert fleet.by_ref("github:octo/repo#7") == Member("laptop-a", A)
+    assert fleet.by_ref("github:octo/repo#8").name == "hq"  # own polled record
+    with pytest.raises(LookupError):
+        fleet.by_ref("github:octo/repo#9")
+
+
+def test_a_broken_health_endpoint_leaves_the_member_live_without_a_version(quiet):
+    """R3-5: /instance answered as itself; a refused /health is not a raised probe."""
+    transport = FakeTransport().member(A, "laptop-a")
+    transport.routes[A]["/api/v1/health"] = (500, {"detail": "boom"})
+    fleet = _fleet(transport, [("laptop-a", A)])
+    probe = fleet.probe(Member("laptop-a", A))
+    assert probe.state == LIVE and probe.version == ""
+    transport.routes[A]["/api/v1/health"] = (200, "not a document")
+    fleet2 = _fleet(transport, [("laptop-a", A)])
+    assert fleet2.probe(Member("laptop-a", A)).state == LIVE

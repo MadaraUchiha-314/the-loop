@@ -52,6 +52,7 @@ __all__ = [
     "LIVE",
     "MAX_MEMBER_BODY",
     "MAX_WORKERS",
+    "stamp_origin",
     "MISMATCHED",
     "UNREACHABLE",
     "Fleet",
@@ -166,6 +167,22 @@ def _utcnow() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+def stamp_origin(row: Dict[str, Any], name: str) -> Dict[str, Any]:
+    """``instance`` on ``row`` = the instance it came from (R6.3).
+
+    A row that already names an instance as its *subject* — a fleet event about a
+    member (``instance.unreachable`` with ``instance: ci-box``), an ``api.request``
+    the manager proxied to one — keeps that subject as ``about`` when it differs
+    from the origin, so stamping never erases what the row was about. A row whose
+    ``instance`` is already the origin (a worker naming itself) is unchanged.
+    """
+    prior = row.get("instance")
+    if isinstance(prior, str) and prior and prior != name and "about" not in row:
+        row["about"] = prior
+    row["instance"] = name
+    return row
+
+
 class Fleet:
     """The registry, the probe cache and the resolvers over one live config.
 
@@ -173,7 +190,8 @@ class Fleet:
     refreshed the holder before the operation ran, so a registration written a moment
     ago is the registry now. ``local_refs`` and ``local_standing`` answer, for the
     manager's own state, the two questions the resolvers ask (which refs, which
-    standing names); they are the core facade's, injected so this module imports
+    standing names), and ``local_records`` the refs of every work item it holds a
+    record for; they are the core facade's, injected so this module imports
     nothing of the stores.
     """
 
@@ -184,6 +202,7 @@ class Fleet:
         transport: Transport = urllib_transport,
         local_refs: Optional[Callable[[], Sequence[str]]] = None,
         local_standing: Optional[Callable[[], Sequence[str]]] = None,
+        local_records: Optional[Callable[[], Sequence[str]]] = None,
         clock: Callable[[], float] = time.monotonic,
         announce: bool = True,
     ) -> None:
@@ -192,6 +211,9 @@ class Fleet:
         self._transport = transport
         self._local_refs = local_refs or (lambda: ())
         self._local_standing = local_standing or (lambda: ())
+        # The refs of the manager's own work-item records (`managed` covers only
+        # the addressed ones); defaults to the addressed set when not injected.
+        self._local_records = local_records or self._local_refs
         self._clock = clock
         self._probes: Dict[Tuple[str, str], Probe] = {}
         self._lock = threading.Lock()
@@ -314,7 +336,10 @@ class Fleet:
         try:
             health = self._get(member, "/api/v1/health", expect=dict)
             version = str(health.get("version") or "")
-        except MemberUnavailable:
+        except (MemberUnavailable, ValueError, LookupError, Conflict):
+            # The member answered /instance as itself; a health endpoint that is
+            # missing, malformed or refused leaves the version blank, never the
+            # probe raised (the row is live, its version unknown).
             version = ""
         return Probe(
             member=member,
@@ -535,7 +560,11 @@ class Fleet:
         pool = ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(live)))
         try:
             futures = {member.name: pool.submit(one, member) for member in live}
-            deadline = time.monotonic() + timeout + 1
+            # The members are served MAX_WORKERS at a time: a fleet wider than the
+            # pool queues, so the deadline is one timeout per wave, not one in all
+            # — otherwise the second wave is "timed out" before it ever ran.
+            waves = -(-len(live) // MAX_WORKERS)
+            deadline = time.monotonic() + (timeout + 1) * waves
             for name, future in futures.items():
                 try:
                     answer = future.result(
@@ -617,12 +646,30 @@ class Fleet:
                     names.append(probe.member.name)
             return names
 
+        def holders_from_records() -> List[str]:
+            # `managed` is the scope's answer: what a member is *addressed* for.
+            # A work item that reached a member by polling alone (`poll` source
+            # only, `managed` empty in `open` mode) is a row of its work-items
+            # list and nowhere else, so the lists are the last word.
+            names: List[str] = []
+            if ref in set(self._local_records()):
+                names.append(self.own_name)
+            answers, _ = self.fan_out(
+                "GET", "/api/v1/work-items", expect=list, operation="workItems"
+            )
+            for member_name, rows in answers.items():
+                if any(isinstance(row, dict) and row.get("ref") == ref for row in rows):
+                    names.append(member_name)
+            return names
+
         def holders() -> List[str]:
             names = holders_from(self.probes())
             if not names and self.members():
                 # A cached probe may predate the member taking the work item: one
                 # fresh round before answering "nobody manages it".
                 names = holders_from(self.probes(fresh=True))
+            if not names:
+                names = holders_from_records()
             return names
 
         return self._resolve(ref, instance, holders, "work item")

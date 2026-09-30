@@ -70,7 +70,7 @@ from ..api.stream import (
     matches,
 )
 from ..instance import Member
-from .fleet import Fleet
+from .fleet import Fleet, stamp_origin
 
 logger = logging.getLogger("the-loop.manager")
 
@@ -314,7 +314,7 @@ class _Upstream:
             cursor = int(event_id)
             self.last_id = cursor
         if kind == "log":
-            data["instance"] = self.member.name
+            stamp_origin(data, self.member.name)
         elif kind == "desync":
             # The member could not honour our resume; every subscriber refetches.
             pass
@@ -485,7 +485,7 @@ class FleetBroker:
             self._offer(
                 Frame(
                     kind="log",
-                    data=dict(record.data, instance=self.own_name),
+                    data=stamp_origin(dict(record.data), self.own_name),
                     cursor=encode_cursor(offsets),
                 ),
                 by_work_item=True,
@@ -601,7 +601,7 @@ def _replay_member(
             continue
         if not isinstance(data, dict):
             continue
-        data["instance"] = name
+        stamp_origin(data, name)
         yield Frame(kind="log", data=data, cursor=cursor)
         if cursor == boundary:
             break
@@ -650,7 +650,9 @@ async def serve_fleet(
                             replay.append(
                                 Frame(
                                     kind="log",
-                                    data=dict(record.data, instance=broker.own_name),
+                                    data=stamp_origin(
+                                        dict(record.data), broker.own_name
+                                    ),
                                     cursor=record.cursor,
                                 )
                             )

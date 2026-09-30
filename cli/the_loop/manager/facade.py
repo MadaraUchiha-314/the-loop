@@ -29,21 +29,20 @@ from ..api.facade import CoreFacade, note_left_out, note_target
 from ..cli_config import ConfigHolder
 from ..core import instances as core_instances
 from ..instance import Member
-from .fleet import Fleet, Transport, urllib_transport
+from .fleet import Fleet, Transport, stamp_origin, urllib_transport
 from .stream import urllib_opener
 
 __all__ = ["ManagerFacade"]
 
 
 def _stamp(rows: Any, name: str) -> Any:
-    """``instance`` on every row (overwriting one a member sent, R6.3)."""
+    """``instance`` on every row = where it came from (R6.3, ``stamp_origin``)."""
     if isinstance(rows, dict):
-        rows["instance"] = name
-        return rows
+        return stamp_origin(rows, name)
     if isinstance(rows, list):
         for row in rows:
             if isinstance(row, dict):
-                row["instance"] = name
+                stamp_origin(row, name)
         return rows
     return rows
 
@@ -68,6 +67,7 @@ class ManagerFacade:
             transport=transport,
             local_refs=self._local_refs,
             local_standing=self._local_standing,
+            local_records=self._local_records,
         )
 
     # -- helpers ------------------------------------------------------------------------
@@ -79,6 +79,13 @@ class ManagerFacade:
     def _local_refs(self) -> List[str]:
         doc = self.core.get_instance()
         return [row["ref"] for row in doc.get("managed") or [] if isinstance(row, dict)]
+
+    def _local_records(self) -> List[str]:
+        return [
+            str(row.get("ref"))
+            for row in self.core.list_work_items()
+            if isinstance(row, dict) and row.get("ref")
+        ]
 
     def _local_standing(self) -> List[str]:
         return [

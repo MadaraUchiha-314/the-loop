@@ -215,7 +215,9 @@ def test_frames_are_stamped_and_carry_the_per_member_cursor(tmp_path, quiet):
     kinds = [(f.kind, f.data.get("instance")) for f in frames]
     assert ("log", "laptop-a") in kinds and ("log", "hq") in kinds
     member = next(f for f in frames if f.data.get("instance") == "laptop-a")
-    assert member.data["event"] == "graph.advanced"  # R6.3: the stamp overwrote "liar"
+    assert member.data["event"] == "graph.advanced"
+    # R6.3: `instance` is the origin; the subject the member named is kept as `about`.
+    assert member.data["about"] == "liar"
     assert "laptop-a=4120" in member.cursor and "hq=" in member.cursor
     own = next(f for f in frames if f.data.get("instance") == "hq")
     assert _cursor(own.cursor).offsets["hq"] == log.stat().st_size

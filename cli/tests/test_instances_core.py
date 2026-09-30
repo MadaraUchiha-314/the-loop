@@ -181,3 +181,50 @@ def test_assert_self_accepts_empty_and_own_name_and_refuses_a_foreign_one():
     assert "ci-box" in str(excinfo.value)
     with pytest.raises(LookupError):
         core_instance.assert_self("anyone", {})
+
+
+HAND_EDITED = """version: "0.10.0"
+instance:
+  name: hq
+  role: manager
+  manager:
+    instances:
+      - name: laptop-a
+        url: http://a:1
+      - name: Bad Name
+        url: http://b:1
+"""
+
+
+def test_a_writer_names_a_hand_edited_entry_it_will_not_copy_back(tmp_path):
+    """Self-review round 3: the reader narrows a bad entry; a writer must not splice
+    it back (the schema would refuse the whole write naming nothing)."""
+    path = tmp_path / "cli-config.yaml"
+    path.write_text(HAND_EDITED)
+    before = path.read_text()
+    for call in (
+        lambda: core_instances.register_instance(
+            _config(path), "ci-box", "http://c:1", config_path=path
+        ),
+        lambda: core_instances.unregister_instance(
+            _config(path), "laptop-a", config_path=path
+        ),
+    ):
+        with pytest.raises(ValueError) as excinfo:
+            call()
+        assert "instance.manager.instances[1]" in str(excinfo.value)
+        assert "name outside" in str(excinfo.value)
+        assert path.read_text() == before
+
+
+def test_register_refuses_a_url_already_registered_under_another_name(manager_file):
+    core_instances.register_instance(
+        _config(manager_file), "a", "http://a:1", config_path=manager_file
+    )
+    before = manager_file.read_text()
+    with pytest.raises(ValueError) as excinfo:
+        core_instances.register_instance(
+            _config(manager_file), "b", "http://a:1/", config_path=manager_file
+        )
+    assert "already registered as 'a'" in str(excinfo.value)
+    assert manager_file.read_text() == before

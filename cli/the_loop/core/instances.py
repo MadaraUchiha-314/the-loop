@@ -22,7 +22,7 @@ from pathlib import Path
 
 from .. import eventlog
 from ..api.config import base_url
-from ..instance import NAME_RE, parse_member_url
+from ..instance import NAME_RE, member_problem, parse_member_url
 from . import config as core_config
 from .instance import describe_instance, instance_config
 
@@ -108,6 +108,29 @@ def _raw_registry(config: Optional[dict]) -> List[Any]:
     return list(entries) if isinstance(entries, list) else []
 
 
+def _checked_registry(config: Optional[dict]) -> List[Any]:
+    """The registry as written, refused when a hand-edited entry is not a member.
+
+    The reader narrows a bad entry with a warning and serves the rest; a writer
+    must not copy it back through the splice — the schema would refuse the whole
+    write and the operator would see a validation error naming nothing. Name the
+    entry by index instead, before anything is written (self-review round 3).
+    """
+    entries = _raw_registry(config)
+    own_url = base_url(config).rstrip("/")
+    own_name = instance_config(config).name
+    seen: set = set()
+    for index, entry in enumerate(entries):
+        reason = member_problem(entry, seen, own_url, own_name)
+        if reason:
+            raise ValueError(
+                f"instance.manager.instances[{index}] {reason}; fix the entry in "
+                "cli-config.yaml before registering or unregistering through the API"
+            )
+        seen.add(entry["name"])
+    return entries
+
+
 def _write_registry(
     entries: List[Any], config_path: Optional[Union[str, Path]]
 ) -> Dict[str, Any]:
@@ -156,10 +179,14 @@ def register_instance(
             f"name {name!r} is this manager's own; a manager is its own first member "
             "and is never registered"
         )
-    entries = _raw_registry(config)
+    entries = _checked_registry(config)
     for entry in entries:
-        if isinstance(entry, dict) and entry.get("name") == name:
+        if entry.get("name") == name:
             raise ValueError(f"an instance named {name!r} is already registered")
+        if parse_member_url(entry.get("url")) == normalised:
+            raise ValueError(
+                f"url {normalised!r} is already registered as {entry.get('name')!r}"
+            )
     entries.append({"name": name, "url": normalised})
     result = _write_registry(entries, config_path)
     eventlog.emit("instance.registered", instance=name)
@@ -175,12 +202,8 @@ def unregister_instance(
 ) -> Dict[str, Any]:
     """Remove the entry named ``name`` (R4.3); :class:`LookupError` (404) when absent."""
     _require_manager(config)
-    entries = _raw_registry(config)
-    kept = [
-        entry
-        for entry in entries
-        if not (isinstance(entry, dict) and entry.get("name") == name)
-    ]
+    entries = _checked_registry(config)
+    kept = [entry for entry in entries if entry.get("name") != name]
     if len(kept) == len(entries):
         raise LookupError(f"no instance named {name!r} is registered")
     result = _write_registry(kept, config_path)

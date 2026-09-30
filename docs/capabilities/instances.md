@@ -121,7 +121,8 @@ flowchart LR
 - A manager SHALL serve exactly the surface a worker serves — the same `APIRouter` over a
   second facade, the contract parity test run for both roles, one MCP tool list (D3).
   A list read is its own rows ∪ every live member's, each stamped `instance` with the
-  registered name (a member's own claim overwritten); an operation keyed by a work-item
+  registered name (a member's own claim overwritten, a differing one kept as `about` so
+  an event about an instance still names its subject); an operation keyed by a work-item
   ref or a standing-session name routes to the one instance that manages it — none
   `404`, several `409` naming them, unless `instance` names one (D6); an operation keyed
   by a checkout path or a daemon, and `config`, `restart`, `health` and `instance`, are
@@ -151,7 +152,7 @@ flowchart LR
   is an MCP tool.
 - The manager's stream SHALL fan every live member's `log` and `transcript` frames into
   its own over one upstream connection per member however many subscribers it has, each
-  `log` record stamped `instance`, the frame id one offset per instance
+  `log` record stamped `instance` (a differing subject kept as `about`), the frame id one offset per instance
   (`name=offset,…`) resumed member by member, one `desync` when any part cannot be
   honoured (D8), bounded reconnection (`1…30 s`), `maxSubscribers` unchanged.
 - The dashboard SHALL read a manager as one board: an instance chip on every row, a

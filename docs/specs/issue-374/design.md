@@ -266,7 +266,7 @@ check every row against the requirement it cites.
 | `getInstance` | self-or-instance | own: `{name, role: manager, scope: <its own>, managed: own rows ∪ live members' rows, each + instance}`; with `instance`: proxied (R2.7) |
 | `listInstances` | self | § 6 (R3.1) |
 | `registerInstance` / `unregisterInstance` | self | § 6 (R4) |
-| `listWorkItems`, `listSessions`, `listStandingSessions`, `listAttention`, `listDaemons` | fan-out | own rows (via `CORE`) ∪ members', each row `+ instance` (overwriting any present, R6.3), sorted as the worker sorts with `instance` as tie-break; left-out members in the header (R2.2, R2.9) |
+| `listWorkItems`, `listSessions`, `listStandingSessions`, `listAttention`, `listDaemons` | fan-out | own rows (via `CORE`) ∪ members', each row `+ instance` (overwriting any present, the prior value kept as `about` when it differs, R6.3), sorted as the worker sorts with `instance` as tie-break; left-out members in the header (R2.2, R2.9) |
 | `queryEvents` | fan-out | union merged by `ts` (stable, `instance` tie-break), each `+ instance`; `limit` applied after the merge; the manager's own log included under its own name |
 | `eventTypes` | fan-out | union of maps |
 | `getWorkItem`, `getSession`, `sessionTranscript`, `controlSession`, `replySession`, `linkSessionPullRequest`, `closeSession` | by ref | `by_ref(ref, instance)` then one call; the answer `+ instance` (R2.3) |
@@ -317,7 +317,10 @@ the member threads fill; `size()`/`seek_to_end()` answer in the composite cursor
 <url>/api/v1/stream` for each live probe on its own thread — `urllib` with no read
 timeout on the body (an SSE body never ends) and the connect timeout of the fleet — and
 parses `id:` / `event:` / `data:` lines. A `log` frame's data is stamped `instance` (the
-registered name, overwriting, R6.3); a `transcript` frame's is stamped the same; a
+registered name, overwriting; a differing prior value — the subject of a fleet event, of
+an `api.request` the member proxied — moves to `about`, R6.3; one helper,
+`fleet.stamp_origin`, is the rule for rows and frames alike); a `transcript` frame's is
+stamped the same; a
 `desync` from a member is re-emitted as the manager's `desync`. The upstream `retry:` is
 ignored; the manager's own `RETRY_MS` governs its subscribers. The manager's **own** event
 log is the (N+1)-th source, read by a `LogTail` under the manager's name, so
@@ -543,7 +546,7 @@ Nothing else is written: the manager keeps no copy of any member's records.
   is joined with fixed paths only (`/api/v1/<route>`), never with caller text. (2) the
   `instance` parameter — compared with registered names, never interpolated; unknown →
   `404`. (3) member responses — bounded read, `json.loads`, shape check, `instance`
-  overwritten (R6.3, R6.4). (4) the composite cursor — a fixed grammar, names checked
+  overwritten with the prior value demoted to `about` (R6.3, R6.4). (4) the composite cursor — a fixed grammar, names checked
   against the registry, offsets non-negative integers; anything else → `desync`. (5) the
   stream's SSE parser — line-bounded (`MAX_PARTIAL_BYTES`, the existing tailer bound),
   ignores unknown fields. No shell, no path, no SQL is built from any of it.
