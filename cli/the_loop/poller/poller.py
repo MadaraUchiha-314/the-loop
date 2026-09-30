@@ -35,7 +35,6 @@ docs/specs/issue-159/design.md.
 from __future__ import annotations
 
 import logging
-import subprocess
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -45,6 +44,7 @@ from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Sequence, Tupl
 from .. import __version__, eventlog
 from ..authz import is_authorized, is_self_authored, mark_self_authored
 from ..comments import post_issue_comment
+from ..ghapi import GitHubClient
 from ..control import ControlConfig, ControlStore, parse_command
 from ..pollclocks import CLOCK_KEYS, PollClockStore
 from ..reload import Reloader
@@ -685,7 +685,7 @@ class Poller:
         control_store: Optional[ControlStore] = None,
         collaborator_store: Optional["CollaboratorStore"] = None,
         heartbeat: Optional[Callable[["PollSummary"], None]] = None,
-        comment_runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+        comment_client: Optional[GitHubClient] = None,
         publisher: Optional[Callable[[str, str, str, str, str], None]] = None,
     ):
         # The bus (issue-309): a comment this ingress drops as the agent's own, or
@@ -738,9 +738,9 @@ class Poller:
         self._attempted: Dict[str, tuple] = {}
         # How the give-up notice reaches GitHub (issue-240). Injectable for the
         # same reason `SessionAnnouncer`/`GitHubReactor` are: tests drive the
-        # notice without a real `gh`.
-        self._comment_runner = comment_runner
-        self._warned_missing_gh = False
+        # notice without a network.
+        self._comment_client = comment_client
+        self._warned_missing_token = False
 
     @property
     def control(self) -> ControlConfig:
@@ -1707,8 +1707,8 @@ class Poller:
                     comment_url=comment.url,
                     attempts=attempts,
                 ),
-                gh_binary=self.dispatcher.config.announce.gh_binary,
-                runner=self._comment_runner,
+                api=self.dispatcher.config.announce.github,
+                client=self._comment_client,
             )
         except Exception as exc:  # noqa: BLE001 — a notice never ends a cycle
             logger.warning(
@@ -1733,14 +1733,14 @@ class Poller:
                 attempts=attempts,
             )
             return
-        if error.endswith("not found on PATH"):
-            # One warning per process, then silence — a machine without `gh`
+        if error.startswith("no GitHub token"):
+            # One warning per process, then silence — a machine without a token
             # would otherwise log this on every give-up.
-            if not self._warned_missing_gh:
-                self._warned_missing_gh = True
+            if not self._warned_missing_token:
+                self._warned_missing_token = True
                 logger.warning("%s — abandoned comments cannot be reported", error)
         elif "is not a GitHub one" in error or "unusable repo coordinates" in error:
-            # A Jira (or other) provider has no `gh` endpoint. Not an error.
+            # A Jira (or other) provider has no GitHub endpoint. Not an error.
             logger.debug("%s; not reporting the abandoned comment", error)
         else:
             logger.warning(

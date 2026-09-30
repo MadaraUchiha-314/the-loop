@@ -14,7 +14,7 @@ each **new** failure in an isolated agent one-shot, and posts the findings as an
 on the-loop's own repository, labeled `the-loop: self-diagnosed`.
 
 **Strictly opt-in, off by default.** Enabling it means this machine may post redacted
-failure reports publicly, with your own `gh` credentials. Before opting in, run
+failure reports publicly, under the daemon's GitHub token. Before opting in, run
 [`the-loop diagnose --dry-run`](/cli/commands/diagnose) — it prints exactly what would
 leave the machine, and works while the feature is disabled.
 

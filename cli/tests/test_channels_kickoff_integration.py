@@ -112,7 +112,7 @@ def env(tmp_path, monkeypatch):
                 self.state_path, ChannelStores.beside(self.state_path)
             )
 
-        def create_issue(self, repo, title, body, labels, gh_binary="gh"):
+        def create_issue(self, repo, title, body, labels, api=None):
             self.created.append({"repo": repo, "title": title, "body": body})
             number = len(self.created)
             return (

@@ -12,7 +12,7 @@ some-tool | the-loop ask --work-item github:OWNER/REPO#N --question-file -
 
 One verb, three effects — in this order:
 
-1. **Posts the question** as a comment on the work item through your own `gh`
+1. **Posts the question** as a comment on the work item under the daemon's GitHub token
    (the issues endpoint serves PR conversations too), with the visible
    attribution line and the loop-prevention marker appended **centrally**. That
    stamping is the point ([issue-208](https://github.com/MadaraUchiha-314/the-loop/issues/208)):
@@ -28,7 +28,7 @@ One verb, three effects — in this order:
    via `POST /api/v1/sessions/reply`, which emits the `session.reply_sent` that
    closes the wait.
 
-If `gh` fails, the exit code is 1 and the failure is printed — but the wait is
+If the post fails, the exit code is 1 and the failure is printed — but the wait is
 **still recorded** (`comment_posted: false`, level `warning`): the agent is
 waiting whether or not GitHub was reachable, and the reply route can still carry
 the answer.

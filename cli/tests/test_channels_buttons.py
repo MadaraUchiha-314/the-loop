@@ -579,7 +579,7 @@ def test_a_press_report_event_carries_the_action_never_text(tmp_path, monkeypatc
 def _wire(monkeypatch, records, deliveries=None, record_ok=True):
     monkeypatch.setattr(
         "the_loop.comments.post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": (
+        lambda item, body, api=None: (
             records.append((item.ref, body))
             or ((True, "", "https://x/c9") if record_ok else (False, "gh exited 1", ""))
         ),

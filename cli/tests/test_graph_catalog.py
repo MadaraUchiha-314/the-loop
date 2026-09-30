@@ -114,7 +114,7 @@ def _graph_file(tmp_path: Path, body: str = TRIAGE, name: str = "triage.yaml") -
 
 def _cli_config(tmp_path: Path, monkeypatch, body: str) -> Path:
     path = tmp_path / "cli-config.yaml"
-    path.write_text('version: "0.10.0"\n' + body)
+    path.write_text('version: "0.11.0"\n' + body)
     monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(path))
     return path
 
@@ -638,7 +638,7 @@ def test_graph_loops_compiles_in_a_fresh_process(tmp_path):
 
     _graph_file(tmp_path)
     config = tmp_path / "cli-config.yaml"
-    config.write_text('version: "0.10.0"\n' + TRIAGE_DECLARED)
+    config.write_text('version: "0.11.0"\n' + TRIAGE_DECLARED)
     env = dict(os.environ, THE_LOOP_CLI_CONFIG=str(config))
     proc = subprocess.run(
         [sys.executable, "-m", "the_loop", "graph", "loops"],
@@ -831,7 +831,7 @@ def test_the_schema_accepts_the_documented_shape_and_refuses_the_old_one():
     from the_loop.configschema import validate
 
     good = {
-        "version": "0.10.0",
+        "version": "0.11.0",
         "graphs": [{"name": NAME, "path": "graphs/triage.yaml", "guest": False}],
         "routing": {
             "control": {
@@ -844,12 +844,12 @@ def test_the_schema_accepts_the_documented_shape_and_refuses_the_old_one():
     }
     assert not validate(good)
     old = {
-        "version": "0.10.0",
+        "version": "0.11.0",
         "routing": {"graph": {"graphs": [{"name": NAME, "path": "a.yaml"}]}},
     }
     assert validate(old)
     missing_graph = {
-        "version": "0.10.0",
+        "version": "0.11.0",
         "routing": {"control": {"commands": {"triage": {"keyword": "x"}}}},
     }
     assert validate(missing_graph)

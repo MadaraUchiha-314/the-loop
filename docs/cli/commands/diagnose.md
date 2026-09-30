@@ -20,7 +20,7 @@ deployments running neither daemon, and for previewing.
 
 Without `--dry-run`, the command refuses unless `selfDiagnosis.enabled: true` is set in
 the [CLI config](/config/cli/self-diagnosis-options) — self-diagnosis posts publicly with
-your own `gh` credentials, so nothing short of that explicit opt-in posts anything.
+the daemon's GitHub token, so nothing short of that explicit opt-in posts anything.
 
 ## What a run does
 
@@ -28,7 +28,7 @@ For each new failure fingerprint in the log: build the redacted dossier (field
 allow-list, free text scrubbed), run the configured harness (`claude` | `cursor`) as a
 one-shot subprocess in a private temporary directory, compose the issue (summary, root
 cause hypothesis, suggested fix, trigger evidence, environment), and create it via your
-`gh` CLI with the `the-loop: self-diagnosed` label requested. Every outcome is printed
+GitHub client with the `the-loop: self-diagnosed` label requested. Every outcome is printed
 and recorded — in the event log (`diagnosis.*` events) and in the
 [self-diagnosis ledger](/cli/state#self-diagnosis-ledger-rootself-diagnosisjson), which
 maps each fingerprint to the issue it produced.

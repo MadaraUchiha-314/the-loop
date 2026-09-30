@@ -8,11 +8,11 @@ Requirement: docs/specs/issue-242/requirements.md
 """
 
 import json
-import subprocess
 import threading
 import time
 
 import pytest
+from ghfakes import FakeGitHubClient
 
 from the_loop import eventlog
 from the_loop.authz import is_self_authored
@@ -46,22 +46,18 @@ class FakeAgent:
         return CriticResult(critic="self-diagnosis", ok=True, output=self.output)
 
 
-class FakeGh:
-    def __init__(self, returncode=0):
-        self.calls = []
-        self.returncode = returncode
+class FakeGh(FakeGitHubClient):
+    """The daemon's GitHub client, in memory: issue #999 on the-loop's repository."""
 
-    def __call__(self, cmd, capture_output=True, text=True, timeout=None, **kwargs):
-        self.calls.append(list(cmd))
-        stdout = json.dumps(
-            {"html_url": "https://github.com/MadaraUchiha-314/the-loop/issues/999"}
-        )
-        return subprocess.CompletedProcess(cmd, self.returncode, stdout, "denied")
+    def __init__(self):
+        super().__init__(next_issue_number=999)
 
 
 @pytest.fixture
 def gh_present(monkeypatch):
-    monkeypatch.setattr(sd.shutil, "which", lambda _: "/usr/bin/gh")
+    """The token the real client would read; the double ignores it, the
+    contract (a credential, not a binary) is what the fixture documents."""
+    monkeypatch.setenv("GH_TOKEN", "test-token")
 
 
 def write_log(path, records):
@@ -98,7 +94,7 @@ def scan(tmp_path, cfg=None, agent=None, gh=None, records=None, **kwargs):
         log_path=log,
         state_path=tmp_path / "self-diagnosis.json",
         agent=agent if agent is not None else FakeAgent(),
-        runner=gh if gh is not None else FakeGh(),
+        client=gh if gh is not None else FakeGh(),
         now=NOW,
         **kwargs,
     )
@@ -126,13 +122,11 @@ class TestPipeline:
         assert [o["action"] for o in outcomes] == ["posted"]
         assert outcomes[0]["url"].endswith("/issues/999")
 
-        argv = gh.calls[0]
-        assert argv[1:4] == ["api", "--method", "POST"]
-        assert argv[4] == "repos/MadaraUchiha-314/the-loop/issues"
-        assert "labels[]=the-loop: self-diagnosed" in argv
-        assert not any("auto-execute" in part for part in argv)
+        (owner, repo, title, body, labels, host) = gh.created[0]
+        assert (owner, repo, host) == ("MadaraUchiha-314", "the-loop", "")
+        assert labels == ["the-loop: self-diagnosed"]
+        assert "auto-execute" not in " ".join([title, body, *labels])
 
-        body = next(p for p in argv if p.startswith("body=")).removeprefix("body=")
         assert is_self_authored(body)
         assert "private-repo" not in body
         assert "/home/loopuser" not in body
@@ -276,7 +270,7 @@ class TestFailureAndBudget:
             log_path=tmp_path / "events.jsonl",
             state_path=tmp_path / "self-diagnosis.json",
             agent=FakeAgent(),
-            runner=gh,
+            client=gh,
             now=NOW + 90000,
         )
         assert [o["action"] for o in later] == ["posted"]

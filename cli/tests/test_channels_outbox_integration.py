@@ -64,7 +64,7 @@ def ticket(monkeypatch):
     """Every ledger write lands here; the ticket is never the thing that fails."""
     written = []
 
-    def write(item, body, gh_binary="gh"):
+    def write(item, body, api=None):
         written.append((item.ref, body))
         return True, "", f"https://gh/c/{len(written)}"
 

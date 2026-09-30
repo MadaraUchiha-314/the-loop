@@ -296,10 +296,10 @@ class ScenarioRun:
         #: `implementation` (R1.3) — None until then.
         self.locks_at_implementation: Optional[Dict[str, str]] = None
 
-    # -- the gh layer the ask/reply verbs post through -------------------------
+    # -- the GitHub layer the ask/reply verbs post through ---------------------
 
     def _post_comment_with_url(
-        self, work_item: Any, body: str, gh_binary: str = "gh"
+        self, work_item: Any, body: str, api: Any = None
     ) -> Tuple[bool, str, str]:
         try:
             self.integration.call("add-comment", ref=work_item.ref, body=body)
@@ -308,9 +308,9 @@ class ScenarioRun:
         return True, "", f"https://example.invalid/{work_item.ref}"
 
     def _post_comment(
-        self, work_item: Any, body: str, gh_binary: str = "gh"
+        self, work_item: Any, body: str, api: Any = None
     ) -> Tuple[bool, str]:
-        ok, error, _ = self._post_comment_with_url(work_item, body, gh_binary)
+        ok, error, _ = self._post_comment_with_url(work_item, body, api)
         return ok, error
 
     # -- execution --------------------------------------------------------------

@@ -79,7 +79,7 @@ def slack(monkeypatch):
 def _ledger_writer(monkeypatch, sink):
     """Every ledger write lands in ``sink`` — the pipeline's writer and the ask's."""
 
-    def write(item, body, gh_binary="gh"):
+    def write(item, body, api=None):
         sink.append((item.ref, body))
         return True, "", f"https://gh/c/{len(sink)}"
 
@@ -115,7 +115,7 @@ def test_an_asked_question_is_one_ledger_comment_and_one_slack_post(
     monkeypatch.setattr(
         core_sessions,
         "post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": (
+        lambda item, body, api=None: (
             records.append((item.ref, body)) or (True, "", "https://gh/c/1")
         ),
     )
@@ -374,7 +374,7 @@ def test_a_top_level_dm_becomes_a_labelled_issue_bound_to_its_thread(
     """
     created = []
 
-    def create(repo, title, body, labels, gh_binary="gh"):
+    def create(repo, title, body, labels, api=None):
         created.append((repo, title, labels))
         return True, "", "github:o/r#42", "https://gh/o/r/issues/42"
 

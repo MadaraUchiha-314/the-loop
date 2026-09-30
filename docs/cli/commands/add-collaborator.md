@@ -39,7 +39,7 @@ Three effects, in this order:
    when, and through which surface.
 2. **Posts the same keyword** — `the-loop add-collaborator @dana` — back on the work
    item, carrying the loop-prevention marker, so the thread reads identically whether
-   the grant came from the terminal or from a comment. Best-effort: a failing `gh` is
+   the grant came from the terminal or from a comment. Best-effort: a failing post is
    reported and the grant stands.
 3. **Records `control.command`** with the work item, the login, the actor and the
    effect (`granted` / `already-granted`).

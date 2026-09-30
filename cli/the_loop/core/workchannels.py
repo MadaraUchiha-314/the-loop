@@ -265,7 +265,7 @@ def _announce(
             invocation=f"the-loop {verb}",
             listen=listen if (verb == ADD_CHANNEL and listen != DEFAULT_LISTEN) else "",
         )
-        ok, error = post_issue_comment(work_item, body, gh_binary=config.gh_binary)
+        ok, error = post_issue_comment(work_item, body, api=config.github)
         if ok:
             messages.append(
                 {

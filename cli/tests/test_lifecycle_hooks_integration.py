@@ -88,9 +88,7 @@ def comments(monkeypatch):
     monkeypatch.setattr(
         dispatcher_mod,
         "post_issue_comment",
-        lambda item, body, gh_binary="gh": (
-            posted.append((item.ref, body)) or (True, "")
-        ),
+        lambda item, body, api=None: posted.append((item.ref, body)) or (True, ""),
     )
     return posted
 
@@ -575,7 +573,7 @@ def test_an_agents_question_is_reworded_before_it_is_posted(
     )
     posted = {}
 
-    def fake_post(item, body, gh_binary="gh"):
+    def fake_post(item, body, api=None):
         posted["ref"], posted["body"] = item.ref, body
         return True, "", "https://github.com/octo/repo/issues/15#issuecomment-3"
 

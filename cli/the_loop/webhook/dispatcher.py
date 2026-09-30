@@ -832,13 +832,11 @@ class Dispatcher:
         # "Does this work item exist?" for refs a branch name invented
         # (issue-269). Built before the announcer, which reports into it: the
         # announcement's own 404 is the one piece of direct evidence the daemon
-        # gets after a spawn. One `gh` binary for the whole daemon — the
-        # operator declares it once under `integrations.github.cli.binary`, and
+        # gets after a spawn. One token config for the whole daemon — the
+        # operator declares it once under `integrations.github.api`, and
         # `control` is where routing decisions already read it from.
         self._verifier_override = verifier is not None
-        self.verifier = verifier or WorkItemVerifier(
-            gh_binary=self.config.control.gh_binary
-        )
+        self.verifier = verifier or WorkItemVerifier(api=self.config.control.github)
         # Same override-survives-reload pattern for the session announcer.
         self._announcer_override = announcer is not None
         self.announcer = announcer or SessionAnnouncer(
@@ -938,7 +936,7 @@ class Dispatcher:
         if not self._reactor_override:
             self.reactor = GitHubReactor(config.reactions)
         if not self._verifier_override:
-            self.verifier = WorkItemVerifier(gh_binary=config.control.gh_binary)
+            self.verifier = WorkItemVerifier(api=config.control.github)
         if not self._announcer_override:
             self.announcer = SessionAnnouncer(
                 config.announce,
@@ -2751,10 +2749,10 @@ class Dispatcher:
             return
         body = remedy if not detail else f"{remedy}\n\n> {detail}"
         marked = mark_self_authored(f"⚠️ {body}")
-        gh_binary = self.config.control.gh_binary or "gh"
+        api = self.config.control.github
         for item in routed.work_items:
             try:
-                ok, error = post_issue_comment(item, marked, gh_binary=gh_binary)
+                ok, error = post_issue_comment(item, marked, api=api)
                 if not ok:
                     logger.debug(
                         "slack: could not post the refusal explanation on %s (%s)",

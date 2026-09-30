@@ -89,7 +89,7 @@ class Sink:
         self.delivered.append({"ref": ref, "text": text, "actor": actor, **extra})
         return {"delivered": True}
 
-    def create_issue(self, repo, title, body, labels=(), gh_binary="gh"):
+    def create_issue(self, repo, title, body, labels=(), api=None):
         self.created.append((repo, title))
         return True, "", "github:octo/repo#999", "https://x/999"
 

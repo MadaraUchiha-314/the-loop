@@ -61,11 +61,12 @@ def test_from_mapping_reads_the_switches():
     assert config.require_start_command is False
 
 
-def test_the_binary_now_comes_from_the_integrations_block(tmp_path):
-    """issue-109: `ghBinary` was removed; one `integrations` block replaces it.
+def test_the_token_config_now_comes_from_the_integrations_block(tmp_path):
+    """issue-109: `ghBinary` was removed; one `integrations` block replaces it —
+    and since issue-442 that block names where the token is, not a binary.
 
-    The removed key is not quietly honoured here — a config that still declares
-    it never reaches this code, because `load_cli_config` refuses it outright.
+    The removed keys are not quietly honoured here — a config that still declares
+    them never reaches this code, because `load_cli_config` refuses it outright.
     """
     import yaml
 
@@ -76,7 +77,7 @@ def test_the_binary_now_comes_from_the_integrations_block(tmp_path):
         yaml.safe_dump(
             {
                 "version": CURRENT_CONFIG_VERSION,
-                "integrations": {"github": {"cli": {"binary": "/usr/bin/gh"}}},
+                "integrations": {"github": {"api": {"tokenEnv": ["LOOP_TOKEN"]}}},
                 "routing": {"control": {"enabled": True}},
             }
         ),
@@ -84,7 +85,7 @@ def test_the_binary_now_comes_from_the_integrations_block(tmp_path):
     )
     data = cli_config.load_cli_config(path)
     section = data["routing"]["control"]
-    assert ControlConfig.from_mapping(section).gh_binary == "/usr/bin/gh"
+    assert ControlConfig.from_mapping(section).github.token_envs == ("LOOP_TOKEN",)
 
 
 def test_an_empty_keyword_disables_only_that_command():

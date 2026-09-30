@@ -44,7 +44,7 @@ Three effects, in this order:
 2. **Posts the same keyword** — `the-loop add-channel slack@C0TMP375` — back on the
    work item, carrying the loop-prevention marker, so the thread reads identically
    whether the declaration came from the terminal or from a comment. Best-effort: a
-   failing `gh` is reported and the declaration stands.
+   failing post is reported and the declaration stands.
 3. **Records `control.command`** with the work item, the channel, the actor and the
    effect (`declared` / `already-declared`), plus the channel it replaced if any.
 

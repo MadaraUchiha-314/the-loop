@@ -1075,7 +1075,7 @@
             "enabled": {
               "type": "boolean",
               "default": true,
-              "description": "Default true (owner decision, PR #85 — out-of-box visibility is the feature's point). Reacting is the daemon's one WRITE to GitHub, posted with the operator's own gh credentials and reaction-only (no text); it degrades to a silent no-op when gh is absent. Set false to opt out."
+              "description": "Default true (owner decision, PR #85 — out-of-box visibility is the feature's point). Reacting is the daemon's one WRITE to GitHub, posted with the daemon's token (`integrations.github.api.tokenEnv`) and reaction-only (no text); it degrades to a silent no-op when the token is unset. Set false to opt out."
             },
             "started": {
               "type": "string",
@@ -1135,7 +1135,7 @@
             "enabled": {
               "type": "boolean",
               "default": true,
-              "description": "Default true (the point of issue-86 is that the attach command reaches the human; matches the `reactions` precedent). This posts TEXT to GitHub with the operator's own gh credentials — set false to opt out."
+              "description": "Default true (the point of issue-86 is that the attach command reaches the human; matches the `reactions` precedent). This posts TEXT to GitHub with the daemon's token (`integrations.github.api.tokenEnv`) — set false to opt out."
             }
           }
         }
@@ -1545,7 +1545,7 @@
                 "repo": {
                   "type": "string",
                   "default": "",
-                  "description": "The `[host/]owner/repo` a kickoff opens its issue in when the message does not name one — gh's own --repo grammar, the host present for GitHub Enterprise (issue-311). Since issue-341 this is the FALLBACK, not the requirement: a message may start with `<repo>: ` to pick any repository declared in `kickoff.repo` or `polling.sources[].repos`, and an unresolvable or ambiguous prefix is refused in the thread rather than guessed. Empty = every kickoff must name its repository."
+                  "description": "The `[host/]owner/repo` a kickoff opens its issue in when the message does not name one — `[HOST/]OWNER/REPO`, the host present for GitHub Enterprise (issue-311). Since issue-341 this is the FALLBACK, not the requirement: a message may start with `<repo>: ` to pick any repository declared in `kickoff.repo` or `polling.sources[].repos`, and an unresolvable or ambiguous prefix is refused in the thread rather than guessed. Empty = every kickoff must name its repository."
                 },
                 "labels": {
                   "type": "array",
@@ -1645,26 +1645,16 @@
     },
     "integrations": {
       "type": "object",
-      "description": "How the-loop's OWN calls reach external services (issue-109). This governs the control plane only — what the AGENT does from inside its session is unconstrained (CLI, MCP, API, whatever the harness has). Transport is a choice, not a mandate: `auto` resolves token -> binary and fails closed naming both remedies; an explicit transport is honoured verbatim and fails rather than silently degrading.",
+      "description": "How the-loop's OWN calls reach external services (issue-109). This governs the control plane only — what the AGENT does from inside its session is unconstrained (CLI, MCP, API, whatever the harness has). GitHub is reached through PyGithub under ONE token (issue-442, decision-139): the first set variable of `github.api.tokenEnv`, read from the daemon's environment at call time (`env.file` can hold it). There is no `gh` transport any more — `github.transport` and `github.cli` were retired and `the-loop migrate-config` removes them; a missing token is reported by every writer, by the poller's pre-flight and by the graph's integration, never silently worked around.",
       "additionalProperties": false,
       "properties": {
         "github": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "transport": {
-              "type": "string",
-              "enum": [
-                "auto",
-                "api",
-                "cli"
-              ],
-              "default": "auto",
-              "description": "auto | api (stdlib HTTP + token) | cli (the operator's authenticated gh, inheriting enterprise/SSO)"
-            },
             "host": {
               "type": "string",
-              "description": "Which GitHub the-loop is on (issue-311): the host every link it posts and every gh call it makes name, for a work item whose ref was minted from configuration rather than from an event. A dotted name or one with a port, no scheme or path (e.g. ghe.corp.example). Unset, it resolves from api.baseUrl (an enterprise base), then $GH_HOST, then the checkout's origin remote (in-session only), then github.com. A value that is not the shape of a host is skipped with a warning."
+              "description": "Which GitHub the-loop is on (issue-311): the host every link it posts and every API call it makes name, for a work item whose ref was minted from configuration rather than from an event. A dotted name or one with a port, no scheme or path (e.g. ghe.corp.example). Unset, it resolves from api.baseUrl (an enterprise base), then $GH_HOST (kept as a plain environment convention), then the checkout's origin remote (in-session only), then github.com. A value that is not the shape of a host is skipped with a warning."
             },
             "api": {
               "type": "object",
@@ -1675,21 +1665,11 @@
                   "items": {
                     "type": "string"
                   },
-                  "description": "Env vars holding a token, in order. Never the token itself."
+                  "description": "Environment variables holding the daemon's GitHub token, tried in order (default GH_TOKEN, then GITHUB_TOKEN). Variable NAMES, never the token itself. A fine-grained token needs Issues: read and write, Pull requests: read and Metadata: read on every repository this instance works with (a classic token: `repo`)."
                 },
                 "baseUrl": {
                   "type": "string",
-                  "description": "API base, e.g. an enterprise host."
-                }
-              }
-            },
-            "cli": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "binary": {
-                  "type": "string",
-                  "default": "gh"
+                  "description": "API base URL. Unset or the public API (`https://api.github.com`) means each work item is addressed at its own host — `https://<host>/api/v3` for GitHub Enterprise (issue-311); an explicit enterprise base is honoured verbatim for every call."
                 }
               }
             }
@@ -1877,7 +1857,7 @@
     },
     "selfDiagnosis": {
       "type": "object",
-      "description": "Self-diagnosis (issue-242): when the-loop's own machinery fails — an error-level event or a terminal give-up in the event log — debug it in an isolated agent one-shot and file the findings as an issue on the-loop's own repository, labeled `the-loop: self-diagnosed`. STRICTLY OPT-IN and off by default: enabling it means this machine may post redacted failure reports publicly, using your own `gh` credentials. Everything posted is built from a field allow-list with free text scrubbed (paths, usernames, hostnames, e-mails, tokens, sensitive env values), and a self-filed issue is never armed: no auto-execute label, no control-keyword comment, and the self-authored marker so the-loop's own ingress drops it. Preview what would leave the machine with `the-loop diagnose --dry-run` before opting in.",
+      "description": "Self-diagnosis (issue-242): when the-loop's own machinery fails — an error-level event or a terminal give-up in the event log — debug it in an isolated agent one-shot and file the findings as an issue on the-loop's own repository, labeled `the-loop: self-diagnosed`. STRICTLY OPT-IN and off by default: enabling it means this machine may post redacted failure reports publicly, under the daemon's GitHub token (`integrations.github.api.tokenEnv`). Everything posted is built from a field allow-list with free text scrubbed (paths, usernames, hostnames, e-mails, tokens, sensitive env values), and a self-filed issue is never armed: no auto-execute label, no control-keyword comment, and the self-authored marker so the-loop's own ingress drops it. Preview what would leave the machine with `the-loop diagnose --dry-run` before opting in.",
       "additionalProperties": false,
       "properties": {
         "enabled": {

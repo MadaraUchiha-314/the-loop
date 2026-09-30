@@ -16,10 +16,10 @@ set ``enabled: false`` to opt out of the daemon's one write surface to GitHub.
 
 Everything is best-effort by design: a reaction must never fail, delay or drop
 the dispatch itself, so every failure inside this module degrades to a logged
-no-op. Reactions post through the operator's own ``gh`` CLI (the poller's auth
-posture — no token of the-loop's own); a missing ``gh`` no-ops with a single
-warning so the CLI's zero-required-dependency guarantee holds. Events from a
-non-GitHub provider, or with no reactable target in their payload, no-op too.
+no-op. Reactions post through the daemon's GitHub client (issue-442: the token
+``integrations.github.api.tokenEnv`` names); a missing token no-ops with a
+single warning. Events from a non-GitHub provider, or with no reactable target
+in their payload, no-op too.
 
 Spec: docs/specs/issue-84/design.md.
 """
@@ -28,12 +28,12 @@ from __future__ import annotations
 
 import logging
 import re
-import shutil
-import subprocess
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Optional
 
 from . import eventlog
+from .comments import resolve_client
+from .ghapi import REACTION_CONTENTS, GitHubApiConfig, GitHubApiError, GitHubClient
 from .sessions import DEFAULT_GITHUB_HOST
 from .webhook.router import RoutedEvent
 
@@ -43,28 +43,13 @@ STATE_STARTED = "started"
 STATE_COMPLETED = "completed"
 STATE_ERROR = "error"
 
-# GitHub's fixed reaction palette: REST `content` value -> GraphQL
-# ReactionContent enum member. The config accepts exactly these names (or "").
-REACTION_CONTENTS = {
-    "+1": "THUMBS_UP",
-    "-1": "THUMBS_DOWN",
-    "laugh": "LAUGH",
-    "confused": "CONFUSED",
-    "heart": "HEART",
-    "hooray": "HOORAY",
-    "rocket": "ROCKET",
-    "eyes": "EYES",
-}
-
-_ADD_REACTION_MUTATION = (
-    "mutation($subjectId: ID!, $content: ReactionContent!) "
-    "{ addReaction(input: {subjectId: $subjectId, content: $content}) "
-    "{ clientMutationId } }"
-)
+# GitHub's fixed reaction palette lives in `ghapi.REACTION_CONTENTS` (REST
+# `content` value -> GraphQL ReactionContent member); the config accepts exactly
+# those names (or "").
 
 # Defensive validation of payload-derived API coordinates (the payloads are
-# HMAC-verified / gh-sourced and authz-gated already, but they are still
-# external data placed into a gh argv).
+# HMAC-verified / poll-sourced and authz-gated already, but they are still
+# external data placed into a URL path or a GraphQL variable).
 _NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")  # owner / repo path segments
 _NODE_ID_RE = re.compile(r"^[A-Za-z0-9_=+/-]+$")  # GraphQL node ids
 
@@ -77,7 +62,9 @@ class ReactionConfig:
     started: str = "eyes"
     completed: str = "hooray"
     error: str = "confused"
-    gh_binary: str = "gh"
+    #: Where the token is (issue-442) — fanned in under the private `_github`
+    #: key by `cli_config.apply_integrations`, the way `_ghBinary` once was.
+    github: GitHubApiConfig = GitHubApiConfig()
 
     @classmethod
     def from_mapping(cls, data: dict) -> "ReactionConfig":
@@ -87,7 +74,7 @@ class ReactionConfig:
             started=str(data.get("started", "eyes")),
             completed=str(data.get("completed", "hooray")),
             error=str(data.get("error", "confused")),
-            gh_binary=str(data.get("_ghBinary", "gh")),
+            github=GitHubApiConfig.from_mapping(data.get("_github")),
         )
 
     def content_for(self, state: str) -> str:
@@ -99,13 +86,21 @@ class ReactionConfig:
         }.get(state, "")
 
 
+#: The REST targets, by the endpoint each reaches (`ghapi.REACTION_KINDS`).
+KIND_ISSUE = "issue"  # POST repos/o/r/issues/{n}/reactions — an issue or a PR
+KIND_ISSUE_COMMENT = "issue-comment"  # POST repos/o/r/issues/comments/{id}/reactions
+KIND_REVIEW_COMMENT = "review-comment"  # POST repos/o/r/pulls/comments/{id}/reactions
+
+
 @dataclass(frozen=True)
 class ReactionTarget:
-    """Where a reaction lands: a REST reactions endpoint or a GraphQL subject."""
+    """Where a reaction lands: a REST target by kind and numeric id, or a
+    GraphQL subject by node id."""
 
     owner: str
     repo: str
-    rest_path: str = ""  # relative REST path, when the target has a numeric id
+    kind: str = ""  # one of the three REST kinds, when the target has a numeric id
+    id: int = 0  # that numeric id
     node_id: str = ""  # GraphQL subject id, when that's what the payload has
     description: str = ""  # human-readable, for logs/eventlog only
     host: str = ""  # the work item's GitHub when not github.com (issue-311)
@@ -148,16 +143,22 @@ def target_from_event(routed: RoutedEvent) -> Optional[ReactionTarget]:
         comment_id = str(raw_id)
         if comment_id.isdigit():
             # Review comments live under /pulls, conversation comments /issues.
-            base = (
-                "pulls" if routed.event == "pull_request_review_comment" else "issues"
+            kind = (
+                KIND_REVIEW_COMMENT
+                if routed.event == "pull_request_review_comment"
+                else KIND_ISSUE_COMMENT
             )
-            path = f"repos/{owner}/{repo}/{base}/comments/{comment_id}/reactions"
             return ReactionTarget(
-                owner, repo, rest_path=path, description="comment", host=host
+                owner,
+                repo,
+                kind=kind,
+                id=int(comment_id),
+                description="comment",
+                host=host,
             )
         if _NODE_ID_RE.match(comment_id):
             # Poll-path comments carry the GraphQL node id in `id`
-            # (GhClient._comment_from_json).
+            # (the client's conversation read keeps node ids, issue-246).
             return ReactionTarget(
                 owner, repo, node_id=comment_id, description="comment", host=host
             )
@@ -166,30 +167,31 @@ def target_from_event(routed: RoutedEvent) -> Optional[ReactionTarget]:
     entity = payload.get("issue") or payload.get("pull_request") or {}
     number = str(entity.get("number") or "")
     if number.isdigit():
-        path = f"repos/{owner}/{repo}/issues/{number}/reactions"
         kind = "issue" if payload.get("issue") else "pull-request"
-        return ReactionTarget(owner, repo, rest_path=path, description=kind, host=host)
+        return ReactionTarget(
+            owner, repo, kind=KIND_ISSUE, id=int(number), description=kind, host=host
+        )
     return None
 
 
 class GitHubReactor:
-    """Posts dispatch-lifecycle reactions through the operator's ``gh`` CLI.
+    """Posts dispatch-lifecycle reactions through the daemon's GitHub client.
 
     Never raises: every failure path is a logged no-op returning ``False`` —
-    the dispatch outcome must not depend on a decoration. ``runner`` is
-    injectable so tests drive it without a real ``gh`` (mirrors ``GhClient``).
+    the dispatch outcome must not depend on a decoration. ``client`` is
+    injectable so tests drive it without a network.
     """
 
     def __init__(
         self,
         config: Optional[ReactionConfig] = None,
-        runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+        client: Optional[GitHubClient] = None,
         timeout: Optional[float] = 30.0,
     ):
         self.config = config or ReactionConfig()
-        self._runner = runner
         self.timeout = timeout
-        self._warned_missing_gh = False
+        self._client = resolve_client(self.config.github, client, timeout)
+        self._warned_missing_token = False
 
     def react(self, routed: RoutedEvent, state: str) -> bool:
         """Add the configured reaction for ``state`` to the event's entity."""
@@ -215,29 +217,34 @@ class GitHubReactor:
                 state,
             )
             return False
-        if shutil.which(config.gh_binary) is None:
-            if not self._warned_missing_gh:
-                self._warned_missing_gh = True
-                logger.warning(
-                    "gh CLI %r not found on PATH — dispatch reactions are a "
-                    "no-op (install gh or set routing.reactions.enabled: false)",
-                    config.gh_binary,
-                )
-            return False
-
         work_item = routed.work_items[0].ref if routed.work_items else ""
-        cmd = [config.gh_binary] + self._argv(target, content)
         try:
-            proc = self._runner(
-                cmd, capture_output=True, text=True, timeout=self.timeout
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
+            if target.node_id:
+                self._client.add_reaction_by_node(
+                    target.node_id, content, host=target.host
+                )
+            else:
+                self._client.add_reaction(
+                    target.owner,
+                    target.repo,
+                    target.kind,
+                    target.id,
+                    content,
+                    host=target.host,
+                )
+        except GitHubApiError as exc:
+            if exc.missing_token:
+                if not self._warned_missing_token:
+                    self._warned_missing_token = True
+                    logger.warning(
+                        "%s — dispatch reactions are a no-op (set the token or "
+                        "routing.reactions.enabled: false)",
+                        exc,
+                    )
+                return False
             return self._failed(work_item, state, content, str(exc))
-        if proc.returncode != 0:
-            detail = (proc.stderr or proc.stdout or "").strip()
-            return self._failed(
-                work_item, state, content, f"gh exited {proc.returncode}: {detail}"
-            )
+        except Exception as exc:  # noqa: BLE001 — a decoration never raises
+            return self._failed(work_item, state, content, str(exc))
         logger.debug(
             "reacted %s (%s) on %s for %s",
             content,
@@ -254,32 +261,6 @@ class GitHubReactor:
             target=target.description,
         )
         return True
-
-    @staticmethod
-    def _argv(target: ReactionTarget, content: str) -> list:
-        from .comments import gh_host_args
-
-        if target.rest_path:
-            return [
-                "api",
-                *gh_host_args(target.host),
-                "--method",
-                "POST",
-                target.rest_path,
-                "-f",
-                f"content={content}",
-            ]
-        return [
-            "api",
-            *gh_host_args(target.host),
-            "graphql",
-            "-f",
-            f"query={_ADD_REACTION_MUTATION}",
-            "-f",
-            f"subjectId={target.node_id}",
-            "-f",
-            f"content={REACTION_CONTENTS[content]}",
-        ]
 
     def _failed(self, work_item: str, state: str, content: str, error: str) -> bool:
         logger.warning(

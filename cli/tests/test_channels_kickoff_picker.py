@@ -133,7 +133,7 @@ class creator:
         self.ref = ref
         self.calls: list = []
 
-    def __call__(self, repo, title, body, labels, gh_binary="gh"):
+    def __call__(self, repo, title, body, labels, api=None):
         self.calls.append(
             {"repo": repo, "title": title, "body": body, "labels": labels}
         )

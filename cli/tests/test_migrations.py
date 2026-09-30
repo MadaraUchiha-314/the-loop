@@ -75,7 +75,13 @@ def test_migration_moves_the_key_and_bumps_the_version():
     assert "ghBinary" not in routing["control"]
     assert "ghBinary" not in routing["reactions"]
     assert "ghBinary" not in routing["announce"]
-    assert report.config["integrations"]["github"]["cli"]["binary"] == "gh"
+    # issue-109 gathered the binaries under `integrations.github.cli`; issue-442
+    # retired that key in turn, so one pass over a very old file reports both
+    # moves and leaves no `gh` behind.
+    assert "integrations" not in report.config
+    assert any(
+        "integrations.github.cli" in move and "retired" in move for move in report.moves
+    )
     assert report.config["version"] == CURRENT_CONFIG_VERSION
     assert_current(report.config)  # the migrated config is accepted
 
@@ -131,7 +137,7 @@ class TestMigrateConfigCommand:
         assert code == 0
         migrated = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert migrated["version"] == CURRENT_CONFIG_VERSION
-        assert migrated["integrations"]["github"]["cli"]["binary"] == "gh"
+        assert "integrations" not in migrated  # the `gh` keys retired (issue-442)
         # The migrated file is one the runtime will actually accept.
         assert_current(migrated)
         # A breaking migration you cannot walk back from is the worse trade.
@@ -334,7 +340,9 @@ def test_migration_removes_the_slack_integration_and_points_at_the_bot():
     report = migrate_cli_config(WITH_SLACK_INTEGRATION)
     assert report.changed is True
     assert "slack" not in report.config.get("integrations", {})
-    assert report.config["integrations"]["github"] == {"transport": "auto"}
+    # `github: {transport: auto}` is retired in the same pass (issue-442), so
+    # nothing of the block survives.
+    assert "integrations" not in report.config
     assert any("channels.slack" in move for move in report.moves)
     assert any("bot" in note for note in report.notes)
     assert_current(report.config)
@@ -606,9 +614,9 @@ WITH_POLL_REPOS = {
 }
 
 
-def test_the_current_config_version_is_0_10_0():
-    """The version the break is gated on (issue-348, then issue-381)."""
-    assert CURRENT_CONFIG_VERSION == "0.10.0"
+def test_the_current_config_version_is_0_11_0():
+    """The version the break is gated on (issue-348, issue-381, then issue-442)."""
+    assert CURRENT_CONFIG_VERSION == "0.11.0"
 
 
 def test_the_repository_lists_move_up():
@@ -735,7 +743,7 @@ def test_the_label_keys_become_lists():
         {"provider": "github"},
         {"provider": "jira", "label": "PROJ"},
     ]
-    assert report.config["version"] == "0.10.0"
+    assert report.config["version"] == "0.11.0"
     assert WITH_ONE_LABEL == before  # the input is never mutated
     assert any(
         "autoExecuteLabel" in m and "autoExecuteLabels" in m for m in report.moves
@@ -815,3 +823,87 @@ def test_another_providers_label_key_is_neither_migrated_nor_refused():
     }
     assert needs_migration(config) is False
     assert_current(config)
+
+
+# --- integrations.github.transport / .cli retired (issue-442, decision-139) -----
+
+WITH_CLI_TRANSPORT = {
+    "version": "0.10.0",
+    "integrations": {"github": {"transport": "cli", "cli": {"binary": "/opt/gh"}}},
+}
+WITH_API_TRANSPORT = {
+    "version": "0.10.0",
+    "integrations": {
+        "github": {
+            "transport": "api",
+            "host": "ghe.corp.example",
+            "api": {
+                "tokenEnv": ["LOOP_TOKEN"],
+                "baseUrl": "https://ghe.corp.example/api/v3",
+            },
+        }
+    },
+}
+
+
+def test_a_config_still_declaring_the_gh_transport_is_detected():
+    assert needs_migration(WITH_CLI_TRANSPORT) is True
+    assert needs_migration(
+        {"version": CURRENT_CONFIG_VERSION, "integrations": {"github": {"cli": {}}}}
+    )
+    assert needs_migration(
+        {
+            "version": CURRENT_CONFIG_VERSION,
+            "integrations": {"github": {"transport": "auto"}},
+        }
+    )
+
+
+def test_the_runtime_refuses_the_gh_transport_and_names_the_token():
+    """R4.2 — a transport you chose that is silently served another way is worse
+    than an error; the refusal names the keys, the token and the command."""
+    with pytest.raises(ConfigTooOld) as exc:
+        assert_current(
+            {
+                "version": CURRENT_CONFIG_VERSION,
+                **{"integrations": WITH_CLI_TRANSPORT["integrations"]},
+            }
+        )
+    message = str(exc.value)
+    assert "integrations.github.transport" in message
+    assert "integrations.github.cli" in message
+    assert "integrations.github.api.tokenEnv" in message
+    assert "/the-loop:upgrade-the-loop" in message
+
+
+def test_migration_retires_both_keys_and_notes_the_token_after_a_cli_transport():
+    report = migrate_cli_config(WITH_CLI_TRANSPORT)
+    assert report.changed is True
+    assert "integrations" not in report.config  # nothing of the block was left
+    assert report.config["version"] == CURRENT_CONFIG_VERSION
+    moves = [m for m in report.moves if "retired" in m]
+    assert len(moves) == 2 and any("'cli'" in m for m in moves)
+    assert any(
+        "GH_TOKEN" in note and "Issues: read and write" in note for note in report.notes
+    )
+    assert_current(report.config)
+
+
+def test_migration_keeps_the_token_block_and_stays_quiet_when_a_token_is_named():
+    report = migrate_cli_config(WITH_API_TRANSPORT)
+    assert report.config["integrations"]["github"] == {
+        "host": "ghe.corp.example",
+        "api": {
+            "tokenEnv": ["LOOP_TOKEN"],
+            "baseUrl": "https://ghe.corp.example/api/v3",
+        },
+    }
+    assert [m for m in report.moves if "retired" in m]  # the transport key, reported
+    assert not any("GH_TOKEN" in note for note in report.notes)  # a token is named
+    assert_current(report.config)
+
+
+def test_the_gh_transport_migration_is_idempotent():
+    once = migrate_cli_config(WITH_CLI_TRANSPORT)
+    twice = migrate_cli_config(once.config)
+    assert twice.changed is False and twice.config == once.config

@@ -14,10 +14,13 @@ Spec: docs/specs/issue-34/design.md §2.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Type, TypeVar
+from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Type, TypeVar
 
 from ..sessions import WorkItemRef, host_from_url
 from ..webhook.router import RoutedEvent
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ..ghapi import GitHubApiConfig
 
 
 #: The ``kind`` of a listed item that is a pull request. Named here rather than
@@ -194,6 +197,7 @@ class PollProvider:
         default_labels: Sequence[str],
         default_host: str = "",
         repositories: Sequence[str] = (),
+        api: Optional["GitHubApiConfig"] = None,
     ) -> "PollProvider":
         """Build a bound provider from one ``polling.sources`` config entry.
 
@@ -208,6 +212,9 @@ class PollProvider:
         source's to declare: one list bounds every ingress, and a source describes
         how to poll, not what. A provider whose scopes are not repositories ignores
         it.
+
+        ``api`` is where the daemon's GitHub token is (``integrations.github.api``,
+        issue-442); a provider that does not read GitHub ignores it.
         """
         raise NotImplementedError
 
@@ -313,10 +320,11 @@ def build_provider(
     default_labels: Sequence[str],
     default_host: str = "",
     repositories: Sequence[str] = (),
+    api: Optional["GitHubApiConfig"] = None,
 ) -> PollProvider:
     """Resolve a ``polling.sources`` entry to a bound :class:`PollProvider`.
 
-    ``default_host`` and ``repositories`` are handed to
+    ``default_host``, ``repositories`` and ``api`` are handed to
     :meth:`PollProvider.from_source` as is.
     """
     name = str((source or {}).get("provider") or "").strip()
@@ -336,4 +344,5 @@ def build_provider(
         default_labels=default_labels,
         default_host=default_host,
         repositories=repositories,
+        api=api,
     )

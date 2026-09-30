@@ -88,7 +88,7 @@ to do something had no way to learn it was never told. The poller now posts one 
 naming the abandoned comment, the attempts, and the recovery: **post the instruction
 again**, since a new comment carries a full retry budget and nothing on disk needs
 editing. It is marked as the-loop's own, so the poller never reads its own notice back.
-Best-effort in one direction only — no `gh` on PATH, a non-GitHub provider or an API error
+Best-effort in one direction only — no GitHub token, a non-GitHub provider or an API error
 logs `poll.giveup_report_failed` and the give-up stands regardless; a notice can never
 make an undelivered comment count as delivered.
 
@@ -133,9 +133,9 @@ Which poll provider handles this source.
 
 Labels gating what this source polls — **every one required** on an item (issue-381).
 Empty reuses [`routing.autoExecuteLabels`](/config/cli/routing-options#autoexecutelabels),
-so one list drives both ingresses. Each label is passed to `gh` as its own `--label`, and
+so one list drives both ingresses. Every label is passed to GitHub's listing filter, and
 the provider drops any listed item that does not carry the whole set, so what is tracked
-never depends on `gh`'s filter semantics. The single-string `label` this replaces is
+never depends on the filter's semantics. The single-string `label` this replaces is
 refused and migrated by [`the-loop migrate-config`](/cli/commands/migrate-config).
 
 ### Which repositories are polled
@@ -156,13 +156,13 @@ then pull requests — and one that cannot be listed costs exactly that: the oth
 repositories are polled as if it were not declared, the failure is recorded per
 repository (`poll.scope_error`, retried next cycle), and nothing in the failing repository
 is reconciled as closed, because a listing that did not happen proves nothing ended. It
-used to be the whole source: the first `gh` failure aborted the pass, and thirteen
+used to be the whole source: the first listing failure aborted the pass, and thirteen
 repositories stopped delivering because one had Issues turned off.
 
 That one condition is classified as **permanent** — configuration drift, not a fault.
-A repository whose Issues are disabled (`gh`'s own *has disabled issues*) is surfaced
+A repository whose Issues are disabled (GitHub's own *Issues are disabled for this repo*) is surfaced
 once, as a warning (`poll.scope_degraded`), and then simply not asked for issues; its
-**pull requests are still polled**, since `gh pr list` does not need Issues. It is
+**pull requests are still polled**, since the pull-request listing does not need Issues. It is
 re-probed every 60 cycles (one hour at the default interval), on a config edit that
 reloads the sources, and on restart; a re-probe that answers logs
 `poll.scope_recovered` and the repository is polled normally again. Every other failure
@@ -194,16 +194,16 @@ comment arrives with the file and line it is anchored to.
 
 Two reviews carry no instruction and are not forwarded: an **approval with an empty body**,
 and a **`PENDING`** review its author has not submitted. A polled **issue** costs exactly
-the one request it always did; a polled pull request costs two more (`gh api
-repos/…/pulls/<n>/reviews` and `…/comments`, both paginated).
+the one request it always did; a polled pull request costs two more (the REST
+`pulls/<n>/reviews` and `…/comments` endpoints, every page).
 :::
 
-::: tip Where the `gh` binary comes from
-GitHub reads use your existing `gh auth` — the daemon holds no token. The binary is
-configured once at
-[`integrations.github.cli.binary`](/config/cli/integrations-options#github-cli-binary), not
-per source. (It was a per-feature `ghBinary` before issue-109; that key is now refused, and
-[`the-loop migrate-config`](/cli/commands/migrate-config) moves it.)
+::: tip Where the credential comes from
+GitHub reads use the daemon's own token — the first set variable of
+[`integrations.github.api.tokenEnv`](/config/cli/integrations-options#github-api-tokenenv)
+(default `GH_TOKEN`, then `GITHUB_TOKEN`), configured once, not per source. A missing token
+is named by `the-loop start`'s pre-flight. (Before issue-442 the reads went through the
+operator's `gh`; that binary is no longer used anywhere in the daemon.)
 :::
 
 ## Hot reload

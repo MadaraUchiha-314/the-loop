@@ -704,7 +704,7 @@ def ask_session(
     # IS the question comment, marked and enveloped — and then every subscribed
     # channel gets it, best-effort by contract (R1.2): the result computed below
     # never depends on what any channel did. The ledger is built over this
-    # verb's own writer so a `gh` binary chosen here is the one used.
+    # verb's own writer so the token config resolved here is the one used.
     from ..channels.base import Event, load_channels
     from ..channels.bus import publish as bus_publish
     from ..channels.github import GitHubLedger
@@ -728,8 +728,8 @@ def ask_session(
 
     ledger = GitHubLedger(
         dict(config or {}),
-        post_comment=lambda item, body, gh_binary="gh": post_issue_comment_with_url(
-            item, body, gh_binary=control.gh_binary
+        post_comment=lambda item, body, api=None: post_issue_comment_with_url(
+            item, body, api=control.github
         ),
     )
     # The operator's lifecycle hooks see the question before anyone else does
@@ -775,7 +775,7 @@ def ask_session(
         logger.warning("channel broadcast failed: %s", exc)
         if not ok:
             ok, error, url = post_issue_comment_with_url(
-                work_item, mark_self_authored(question), gh_binary=control.gh_binary
+                work_item, mark_self_authored(question), api=control.github
             )
     # How many channels took the question (issue-409). `ok` is still the record's
     # answer alone — a channel outage must not fail the ask (R4.4) — but a count
@@ -1019,7 +1019,7 @@ def reply_session(
         posted, error = post_issue_comment(
             work_item,
             _reply_report(text, actor),
-            gh_binary=_control_config(config).gh_binary,
+            api=_control_config(config).github,
         )
         if posted:
             messages.append(
@@ -1523,7 +1523,7 @@ def _announce(
     ok, error = post_issue_comment(
         work_item,
         command_comment(verb, config, actor=actor, address=_instance(cli_conf).name),
-        gh_binary=config.gh_binary,
+        api=config.github,
     )
     if ok:
         messages.append(

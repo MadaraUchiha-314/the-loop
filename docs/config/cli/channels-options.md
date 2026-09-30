@@ -314,7 +314,7 @@ with the event-type/ref header. The escape hatch, and the compatibility baseline
 - **Default:** `""`
 
 The `[host/]owner/repo` a top-level message becomes an issue in **when the message does
-not name one** — `gh`'s own `--repo` grammar, so a GitHub Enterprise deployment names
+not name one** — the `[HOST/]OWNER/REPO` grammar, so a GitHub Enterprise deployment names
 its host and the bound ref carries it (issue-311).
 
 Since [issue-341](https://github.com/MadaraUchiha-314/the-loop/issues/341) this is the

@@ -88,7 +88,7 @@ def test_ask_lands_on_the_work_item_and_fans_out(tmp_path, monkeypatch):
     monkeypatch.setattr(
         core_sessions,
         "post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": (
+        lambda item, body, api=None: (
             order.append("work-item")
             or (True, "", "https://github.com/o/r/issues/7#c1")
         ),
@@ -130,7 +130,7 @@ def test_channel_outage_never_fails_the_ask(tmp_path, monkeypatch):
     monkeypatch.setattr(
         core_sessions,
         "post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": (True, "", "url"),
+        lambda item, body, api=None: (True, "", "url"),
     )
 
     result = core_sessions.ask_session(
@@ -180,9 +180,7 @@ def test_thread_reply_is_mirrored_and_delivered(tmp_path, monkeypatch):
     mirrors, deliveries = [], []
     monkeypatch.setattr(
         "the_loop.comments.post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": (
-            mirrors.append((item.ref, body)) or (True, "", "")
-        ),
+        lambda item, body, api=None: mirrors.append((item.ref, body)) or (True, "", ""),
     )
     monkeypatch.setattr(
         core_sessions,
@@ -224,7 +222,7 @@ def test_reply_with_no_session_still_lands_on_the_ticket(tmp_path, monkeypatch):
     mirrors = []
     monkeypatch.setattr(
         "the_loop.comments.post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": mirrors.append(body) or (True, "", ""),
+        lambda item, body, api=None: mirrors.append(body) or (True, "", ""),
     )
 
     def no_session(ref, text, actor="", comment=True, config=None):
@@ -253,7 +251,7 @@ def test_unauthorized_reply_is_neither_mirrored_nor_delivered(tmp_path, monkeypa
     mirrors, deliveries = [], []
     monkeypatch.setattr(
         "the_loop.comments.post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": mirrors.append(body) or (True, "", ""),
+        lambda item, body, api=None: mirrors.append(body) or (True, "", ""),
     )
     monkeypatch.setattr(
         core_sessions,
@@ -284,7 +282,7 @@ def test_socket_event_reaches_the_same_pipeline(tmp_path, monkeypatch):
     mirrors, deliveries = [], []
     monkeypatch.setattr(
         "the_loop.comments.post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": mirrors.append(body) or (True, "", ""),
+        lambda item, body, api=None: mirrors.append(body) or (True, "", ""),
     )
     monkeypatch.setattr(
         core_sessions,
@@ -441,7 +439,7 @@ def test_every_message_about_a_work_item_is_a_reply_in_its_one_thread(
     monkeypatch.setattr(
         core_sessions,
         "post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": (True, "", "https://gh/o/r/issues/7#c1"),
+        lambda item, body, api=None: (True, "", "https://gh/o/r/issues/7#c1"),
     )
     core_sessions.ask_session("github:o/r#7", "A or B?", config=config)
     publish(
@@ -540,7 +538,7 @@ def test_a_kickoff_thread_is_the_work_items_conversation(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         "the_loop.comments.create_issue",
-        lambda repo, title, body, labels, gh_binary="gh": (
+        lambda repo, title, body, labels, api=None: (
             True,
             "",
             "github:o/r#42",
@@ -639,7 +637,7 @@ def test_channels_threads_lists_the_conversation(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(
         core_sessions,
         "post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": (True, "", "https://gh/o/r/issues/7#c1"),
+        lambda item, body, api=None: (True, "", "https://gh/o/r/issues/7#c1"),
     )
     core_sessions.ask_session("github:o/r#7", "A or B?", config=config)
     monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(tmp_path / "cli-config.yaml"))
@@ -776,7 +774,7 @@ def test_a_start_opens_the_work_items_thread_before_any_event(tmp_path, monkeypa
     monkeypatch.setattr(
         core_sessions,
         "post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": (True, "", "https://gh/c/1"),
+        lambda item, body, api=None: (True, "", "https://gh/c/1"),
     )
     result = core_sessions.ask_session(START_REF, "A or B?", config=config)
     assert result["asked"] is True
@@ -891,7 +889,7 @@ def test_a_channel_outage_never_fails_the_spawn(tmp_path, monkeypatch):
     monkeypatch.setattr(
         core_sessions,
         "post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": (True, "", "https://gh/c/1"),
+        lambda item, body, api=None: (True, "", "https://gh/c/1"),
     )
     core_sessions.ask_session(START_REF, "A or B?", config=config)
     assert len(client.posted) == 2  # the root, then the ask as its first reply
@@ -919,7 +917,7 @@ def test_an_accepted_reply_is_acknowledged_on_the_reply_itself(tmp_path, monkeyp
     mirrors, deliveries = [], []
     monkeypatch.setattr(
         "the_loop.comments.post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": mirrors.append(body) or (True, "", ""),
+        lambda item, body, api=None: mirrors.append(body) or (True, "", ""),
     )
     monkeypatch.setattr(
         core_sessions,
@@ -961,7 +959,7 @@ def test_a_socket_message_and_a_button_press_are_acknowledged(tmp_path, monkeypa
     thread = seeded_thread(tmp_path, monkeypatch, client, config)
     monkeypatch.setattr(
         "the_loop.comments.post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": (True, "", ""),
+        lambda item, body, api=None: (True, "", ""),
     )
     monkeypatch.setattr(
         core_sessions,
@@ -1034,7 +1032,7 @@ def test_a_slack_that_refuses_the_reaction_never_fails_the_delivery(
     mirrors, deliveries = [], []
     monkeypatch.setattr(
         "the_loop.comments.post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": mirrors.append(body) or (True, "", ""),
+        lambda item, body, api=None: mirrors.append(body) or (True, "", ""),
     )
     monkeypatch.setattr(
         core_sessions,
@@ -1115,7 +1113,7 @@ def test_a_slash_command_start_records_what_a_thread_keyword_records(
     records, deliveries, answers = [], [], []
     monkeypatch.setattr(
         "the_loop.comments.post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": (
+        lambda item, body, api=None: (
             records.append((item.ref, body)) or (True, "", "https://x/c1")
         ),
     )
@@ -1286,7 +1284,7 @@ def test_a_socket_listener_catches_up_after_downtime(tmp_path, monkeypatch):
     mirrors, deliveries = [], []
     monkeypatch.setattr(
         "the_loop.comments.post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": mirrors.append(body) or (True, "", ""),
+        lambda item, body, api=None: mirrors.append(body) or (True, "", ""),
     )
     monkeypatch.setattr(
         core_sessions,
@@ -1421,7 +1419,7 @@ def test_an_execute_press_records_what_a_typed_execute_records(tmp_path, monkeyp
     records, deliveries = [], []
     monkeypatch.setattr(
         "the_loop.comments.post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": (
+        lambda item, body, api=None: (
             records.append((item.ref, body)) or (True, "", "https://x/c9")
         ),
     )
@@ -1498,7 +1496,7 @@ def test_a_kickoff_reply_carries_start_and_its_press_records_the_keyword(
     records = []
     monkeypatch.setattr(
         "the_loop.comments.create_issue",
-        lambda repo, title, body, labels, gh_binary="gh": (
+        lambda repo, title, body, labels, api=None: (
             True,
             "",
             "github:o/r#42",
@@ -1507,7 +1505,7 @@ def test_a_kickoff_reply_carries_start_and_its_press_records_the_keyword(
     )
     monkeypatch.setattr(
         "the_loop.comments.post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": (
+        lambda item, body, api=None: (
             records.append((item.ref, body)) or (True, "", "https://x/c1")
         ),
     )
@@ -1567,7 +1565,7 @@ def test_an_unlisted_members_press_leaves_the_message_untouched(tmp_path, monkey
     records = []
     monkeypatch.setattr(
         "the_loop.comments.post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": records.append(body) or (True, "", ""),
+        lambda item, body, api=None: records.append(body) or (True, "", ""),
     )
     message = _checklist_through_the_channel(client, config)
     outcome = inbound.handle_socket_action(
@@ -1601,7 +1599,7 @@ def test_a_press_whose_record_was_refused_keeps_its_button(tmp_path, monkeypatch
     )
     monkeypatch.setattr(
         "the_loop.comments.post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": (False, "gh exited 1: rate limited", ""),
+        lambda item, body, api=None: (False, "gh exited 1: rate limited", ""),
     )
     monkeypatch.setattr(inbound, "_at_human_gate", lambda ref, cfg: False)
     message = _checklist_through_the_channel(client, config)
@@ -1653,7 +1651,7 @@ def test_a_long_agent_comment_reaches_slack_as_a_digest(tmp_path, monkeypatch):
     records = []
     monkeypatch.setattr(
         "the_loop.comments.post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": records.append(body) or (True, "", ""),
+        lambda item, body, api=None: records.append(body) or (True, "", ""),
     )
 
     publish_comment(
@@ -1767,7 +1765,7 @@ def _kickoff_config(tmp_path, monkeypatch, *, kickoff_repo, polled, created=None
     config["repositories"] = ([kickoff_repo] if kickoff_repo else []) + list(polled)
     calls = created if created is not None else []
 
-    def create_issue(repo, title, body, labels, gh_binary="gh"):
+    def create_issue(repo, title, body, labels, api=None):
         calls.append({"repo": repo, "title": title, "body": body, "labels": labels})
         return True, "", "github:o/r#42", "https://gh/o/r/issues/42"
 

@@ -415,29 +415,16 @@ def _listen_of(record: dict, stores: ChannelStores) -> str:
 
 def _ledger_comments(config: dict, work_item: str) -> tuple:
     """The ticket's comments as ``records_from_comments`` reads them — one
-    ``gh`` listing through the poller's read-only client, tried as an issue
-    and, when the ledger says the number is a pull request, as one."""
-    from ..channels.github import gh_binary
-    from ..poller.github import GhClient, GhError
+    conversation read through the daemon's GitHub client, which answers for an
+    issue and a pull request alike (issue-442)."""
+    from ..channels.github import github_api
+    from ..ghapi import GitHubClient
     from ..sessions import WorkItemRef
 
     ref = WorkItemRef.parse(work_item)
-    gh = GhClient(binary=gh_binary(config))
+    gh = GitHubClient.shared(github_api(config))
     login = gh.viewer_login(ref.host)
-    try:
-        comments = gh.list_comments(
-            ref.owner, ref.repo, ref.number, is_pr=False, host=ref.host
-        )
-    except GhError as first:
-        # `gh issue view` rejects a pull request's number; the ref does not
-        # say which it is, so the PR read is the second try, and the first
-        # error is the one reported when both fail.
-        try:
-            comments = gh.list_comments(
-                ref.owner, ref.repo, ref.number, is_pr=True, host=ref.host
-            )
-        except GhError:
-            raise first from None
+    comments = gh.list_issue_comments(ref.owner, ref.repo, ref.number, host=ref.host)
     return login, [
         {
             "id": c.id,
@@ -455,16 +442,16 @@ def _records(config: dict, work_item: str, types: list, fmt: str) -> int:
     enveloped ``context.added`` / ``decision.recorded`` comment the ledger
     credential itself posted on its ticket, as JSON rows or as markdown.
     Read-only; exit 1 when the ledger cannot be read or the ref is not one."""
-    from ..poller.github import GhError
+    from ..ghapi import GitHubApiError
 
     try:
         login, comments = _ledger_comments(config, work_item)
-    except (ValueError, GhError) as exc:
+    except (ValueError, GitHubApiError) as exc:
         print(f"could not read the records of {work_item}: {exc}", file=sys.stderr)
         return 1
     if not login:
         print(
-            "warning: could not read the gh login, so the records are listed by "
+            "warning: could not read the GitHub login, so the records are listed by "
             "their marker alone — check each row's author before trusting it",
             file=sys.stderr,
         )

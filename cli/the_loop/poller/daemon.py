@@ -85,7 +85,7 @@ def _build_providers(
 
     The one loaded config answers all three questions: what to poll (the top-level
     ``repositories`` — the same list that bounds the webhook receiver), how to poll it
-    (``polling.sources``: provider, labels, monitor, binary), and where a bare
+    (``polling.sources``: provider, labels, monitor), and where a bare
     ``OWNER/REPO`` is — ``ghhost.github_host`` over that same mapping and ``$GH_HOST``,
     with no checkout to consult: a daemon runs outside any. The pre-flight, the first
     plan and every hot reload come through here, so an edit to ``repositories`` takes
@@ -93,19 +93,23 @@ def _build_providers(
     :class:`ProviderError` as ``build_provider`` does.
 
     Each entry is passed as the operator **declared** it, not normalized: what reaches
-    ``gh --repo`` stays their own grammar (issue-311).
+    the listing stays their own grammar (issue-311). ``integrations.github.api`` —
+    where the token is (issue-442) — travels with them.
     """
+    from ..ghapi import GitHubApiConfig
     from ..repos import declared_repositories
     from . import PollConfig, build_provider
 
     default_host = github_host(data)
     repositories = [entry.declared for entry in declared_repositories(data)]
+    api = GitHubApiConfig.from_cli_config(data)
     return [
         build_provider(
             source,
             default_labels=default_labels,
             default_host=default_host,
             repositories=repositories,
+            api=api,
         )
         for source in PollConfig.from_mapping(data.get("polling") or {}).sources
     ]

@@ -1,4 +1,4 @@
-"""Integration tests: gh poll → GitHub provider → dispatcher → tmux session.
+"""Integration tests: poll → GitHub provider → dispatcher → tmux session.
 
 Unlike ``test_poller.py`` (which asserts on synthesised events via doubles),
 these drive the *real* GitHub provider and the *real* Dispatcher — a poll cycle
@@ -14,19 +14,25 @@ Requirement: docs/specs/issue-34/requirements.md#R1
 """
 
 import json
-import subprocess
 import threading
 import time
 
 from conftest import FakeTmux, StubInteractiveAdapter
-from the_loop import comments as comments_mod
+from ghfakes import FakeGitHubClient
 from the_loop import eventlog
 from the_loop.authz import is_self_authored
 from the_loop.control import ControlConfig
 from the_loop.announce import announcement_body
 from the_loop.authz import mark_self_authored
+from the_loop.ghapi import (
+    GhComment,
+    GhItem,
+    GhItemState,
+    GitHubApiConfig,
+    GitHubApiError,
+    GitHubClient,
+)
 from the_loop.poller import (
-    GhClient,
     GitHubPollProvider,
     PollConfig,
     Poller,
@@ -52,10 +58,13 @@ def wait_until(predicate, timeout=5.0, interval=0.01):
     return predicate()
 
 
-class GhState:
-    """Mutable canned gh responses shared across poll cycles."""
+class GhState(GitHubClient):
+    """Mutable canned GitHub answers shared across poll cycles — the client
+    double the provider reads through (issue-442), keeping the row shapes the
+    old ``gh --json`` fixtures used so the scenarios read unchanged. A subclass
+    of the real client for the type checker; nothing of the base is reached."""
 
-    def __init__(self):
+    def __init__(self):  # noqa: D107 — the base's HTTP machinery is never used
         self.issues = [
             {
                 "number": 15,
@@ -69,50 +78,129 @@ class GhState:
         self.prs = []
         self.pr_comments = []
         # The other two surfaces a PR carries instructions on (issue-246):
-        # `gh api repos/…/pulls/<n>/{reviews,comments}`.
+        # the REST rows for `/pulls/<n>/{reviews,comments}`.
         self.pr_reviews = []
         self.pr_review_comments = []
-        # `gh api repos/…/issues/<n>` — the closure question (issue-94).
-        self.item_state = {"number": 15, "state": "open"}
+        # The issues document — the closure question (issue-94).
+        self.item_document = {"number": 15, "state": "open"}
         self.list_fails = False
         self.state_fails = False
-        self.api_calls = []
-        self.argv = []
+        self.api_calls = []  # the issues-document reads, by path
+        self.hosts = []  # the host every read was addressed at
+        self.config = GitHubApiConfig()
 
-    def runner(self, cmd, **kwargs):
-        self.argv.append(list(cmd))
-        if cmd[1] == "api":
-            path = cmd[2]
-            self.api_calls.append(path)
-            if "/pulls/" in path:
-                rows = (
-                    self.pr_reviews
-                    if path.split("?")[0].endswith("/reviews")
-                    else self.pr_review_comments
+    # -- the client surface the provider uses ----------------------------------
+
+    def has_token(self):
+        return True
+
+    @staticmethod
+    def _item(row, is_pr):
+        return GhItem(
+            number=int(row["number"]),
+            title=str(row.get("title") or ""),
+            labels=[lab["name"] for lab in row.get("labels") or []],
+            updated_at=str(row.get("updatedAt") or ""),
+            url=str(row.get("url") or ""),
+            is_pr=is_pr,
+            author=str((row.get("author") or {}).get("login") or ""),
+            head_ref=str(row.get("headRefName") or ""),
+            body=str(row.get("body") or ""),
+            linked_issues=[
+                ref["number"] for ref in row.get("closingIssuesReferences") or []
+            ],
+        )
+
+    def list_labeled_issues(self, owner, repo, labels, host=""):
+        self.hosts.append(host)
+        if self.list_fails:
+            raise GitHubApiError("exploded", status=500)
+        return [self._item(row, False) for row in self.issues]
+
+    def list_labeled_prs(self, owner, repo, labels, host=""):
+        self.hosts.append(host)
+        if self.list_fails:
+            raise GitHubApiError("exploded", status=500)
+        return [self._item(row, True) for row in self.prs]
+
+    def list_comments(self, owner, repo, number, is_pr, host=""):
+        self.hosts.append(host)
+        rows = self.pr_comments if is_pr else self.comments
+        out = [
+            GhComment(
+                id=str(r["id"]),
+                body=str(r.get("body") or ""),
+                author=str((r.get("author") or {}).get("login") or ""),
+                created_at=str(r.get("createdAt") or ""),
+                url=str(r.get("url") or ""),
+            )
+            for r in rows
+        ]
+        if not is_pr:
+            return out
+        for r in self.pr_reviews:
+            state = str(r.get("state") or "").upper()
+            if state == "PENDING" or not str(r.get("body") or "").strip():
+                continue
+            out.append(
+                GhComment(
+                    id=str(r.get("node_id") or ""),
+                    body=str(r.get("body") or ""),
+                    author=str((r.get("user") or {}).get("login") or ""),
+                    created_at=str(r.get("submitted_at") or ""),
+                    url=str(r.get("html_url") or ""),
+                    kind="review",
+                    state=state,
                 )
-                return subprocess.CompletedProcess(cmd, 0, json.dumps(rows), "")
-            if self.state_fails:
-                return subprocess.CompletedProcess(cmd, 1, "", "HTTP 502")
-            return subprocess.CompletedProcess(cmd, 0, json.dumps(self.item_state), "")
-        sub = (cmd[1], cmd[2])
-        if sub in (("issue", "list"), ("pr", "list")):
-            if self.list_fails:
-                return subprocess.CompletedProcess(cmd, 1, "", "gh exploded")
-            out = json.dumps(self.issues if sub[0] == "issue" else self.prs)
-        elif sub == ("pr", "view"):
-            out = json.dumps({"comments": self.pr_comments})
-        else:  # issue view --json comments
-            out = json.dumps({"comments": self.comments})
-        return subprocess.CompletedProcess(cmd, 0, out, "")
+            )
+        for r in self.pr_review_comments:
+            line = r.get("line")
+            if not isinstance(line, int):
+                line = r.get("original_line")
+            out.append(
+                GhComment(
+                    id=str(r.get("node_id") or ""),
+                    body=str(r.get("body") or ""),
+                    author=str((r.get("user") or {}).get("login") or ""),
+                    created_at=str(r.get("created_at") or ""),
+                    url=str(r.get("html_url") or ""),
+                    kind="review-thread",
+                    path=str(r.get("path") or ""),
+                    line=line if isinstance(line, int) else None,
+                )
+            )
+        return sorted(out, key=lambda c: c.created_at)
+
+    def item_state(self, owner, repo, number, host=""):
+        self.hosts.append(host)
+        self.api_calls.append(f"repos/{owner}/{repo}/issues/{number}")
+        if self.state_fails:
+            raise GitHubApiError("upstream", status=502)
+        data = self.item_document
+        pull_request = data.get("pull_request")
+        return GhItemState(
+            number=int(data.get("number") or number),
+            state=str(data.get("state") or ""),
+            is_pr=isinstance(pull_request, dict),
+            merged=bool((pull_request or {}).get("merged_at")),
+            title=str(data.get("title") or ""),
+            url=str(data.get("html_url") or ""),
+            closed_by=str(((data.get("closed_by") or {}).get("login")) or ""),
+        )
+
+    def viewer_login(self, host=""):
+        return ""
+
+    # -- scenario controls ------------------------------------------------------
 
     def close_issue(self, merged=None, closed_by=""):
         """Close issue #15 upstream: it leaves the listing and reports closed."""
         self.issues = []
-        self.item_state = {"number": 15, "state": "closed"}
+        self.item_document = {"number": 15, "state": "closed"}
         if closed_by:
-            self.item_state["closed_by"] = {"login": closed_by}
+            self.item_document["closed_by"] = {"login": closed_by}
         if merged is not None:
-            self.item_state["pull_request"] = {
+            self.item_document["pull_request"] = {
                 "merged_at": "2026-07-25T00:00:00Z" if merged else None
             }
 
@@ -147,7 +235,7 @@ def _make(
     authorized=("octocat",),
     control=None,
     max_retries=3,
-    comment_runner=None,
+    comment_client=None,
     verifier=None,
     default_host="",
     labels=None,
@@ -171,7 +259,7 @@ def _make(
         list(labels) if labels is not None else [LABEL],
         monitor_issues=monitor_issues,
         monitor_prs=monitor_prs,
-        gh=GhClient(runner=gh_state.runner),
+        api=gh_state,
     )
     poller = Poller(
         providers=[provider],
@@ -180,7 +268,7 @@ def _make(
         config=PollConfig(max_retries=max_retries),
         state=PollState(WorkItemStore(tmp_path / "portable")),
         authorized_users=list(authorized),  # default: the fixture author (authz guard)
-        **({"comment_runner": comment_runner} if comment_runner else {}),
+        **({"comment_client": comment_client} if comment_client else {}),
     )
     return registry, tmux, dispatcher, poller
 
@@ -930,7 +1018,7 @@ def test_a_reopened_item_spawns_a_fresh_session(tmp_path):
             "author": {"login": "octocat"},
         }
     ]
-    gh.item_state = {"number": 15, "state": "open"}
+    gh.item_document = {"number": 15, "state": "open"}
     poller.poll_once()
     assert wait_until(lambda: len(tmux.spawns) == 2)
     dispatcher.stop()
@@ -1018,23 +1106,18 @@ def test_an_abandoned_dispatch_is_retried_with_a_full_budget(tmp_path):
     assert reread.comment_attempts(REF, "IC_3") == 0
 
 
-class _RecordingGh:
-    """A `gh` double for the give-up notice's `post_issue_comment` runner."""
+class _RecordingGh(FakeGitHubClient):
+    """The client double for the give-up notice's `post_issue_comment`."""
 
-    def __init__(self):
-        self.bodies = []
-        self.endpoints = []
+    @property
+    def bodies(self):
+        return [body for (_o, _r, _n, body, _h) in self.posted]
 
-    def __call__(self, cmd, **kwargs):
-        self.endpoints.append(next((a for a in cmd if a.startswith("repos/")), ""))
-        self.bodies.extend(a[5:] for a in cmd if a.startswith("body="))
-
-        class Proc:
-            returncode = 0
-            stdout = "{}"
-            stderr = ""
-
-        return Proc()
+    @property
+    def endpoints(self):
+        return [
+            f"repos/{o}/{r}/issues/{n}/comments" for (o, r, n, _b, _h) in self.posted
+        ]
 
 
 def test_an_abandoned_comment_is_reported_on_the_work_item(tmp_path, monkeypatch):
@@ -1047,12 +1130,11 @@ def test_an_abandoned_comment_is_reported_on_the_work_item(tmp_path, monkeypatch
     And the notice carries the-loop's own marker, so the poller never reads it back
     Requirement: docs/specs/issue-240/bugfix.md#requirement-2--an-abandoned-comment-is-reported-to-the-human-who-wrote-it
     """
-    monkeypatch.setattr(comments_mod.shutil, "which", lambda _: "/usr/bin/gh")
     gh = GhState()
     gh.comments = [_comment("IC_1", "old")]
     poster = _RecordingGh()
     registry, tmux, dispatcher, poller = _make(
-        tmp_path, gh, max_retries=1, comment_runner=poster
+        tmp_path, gh, max_retries=1, comment_client=poster
     )
     poller.poll_once()  # spawn + baseline IC_1
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
@@ -1245,7 +1327,7 @@ def test_a_pre_start_comment_is_refused_once_and_never_counted_again(tmp_path):
         gh,
         control=ControlConfig(),  # requireStartCommand: the shipped default
         max_retries=1,  # a pre-fix run would give up on the very next cycle
-        comment_runner=poster,
+        comment_client=poster,
     )
 
     try:
@@ -1322,7 +1404,7 @@ def test_a_ledger_left_pending_by_an_older_version_settles_on_the_next_cycle(tmp
     )
     poster = _RecordingGh()
     registry, tmux, dispatcher, poller = _make(
-        tmp_path, gh, control=ControlConfig(), max_retries=3, comment_runner=poster
+        tmp_path, gh, control=ControlConfig(), max_retries=3, comment_client=poster
     )
 
     poller.poll_once()
@@ -1350,7 +1432,7 @@ class TwoRepoGh(GhState):
     quarantined repository's issues were not asked while its pull requests were.
     """
 
-    ISSUES_OFF = "the 'octo/repo-m' repository has disabled issues"
+    ISSUES_OFF = "Issues are disabled for this repo"  # GitHub's own sentence (410)
 
     def __init__(self):
         super().__init__()
@@ -1367,18 +1449,17 @@ class TwoRepoGh(GhState):
             }
         ]
 
-    def runner(self, cmd, **kwargs):
-        sub = (cmd[1], cmd[2])
-        if sub in (("issue", "list"), ("pr", "list")):
-            repo = cmd[4]
-            self.listings.append((repo, sub[0]))
-            if repo == "octo/repo-m":
-                if sub[0] == "issue":
-                    return subprocess.CompletedProcess(cmd, 1, "", self.ISSUES_OFF)
-                return subprocess.CompletedProcess(
-                    cmd, 0, json.dumps(self.repo_m_prs), ""
-                )
-        return super().runner(cmd, **kwargs)
+    def list_labeled_issues(self, owner, repo, labels, host=""):
+        self.listings.append((f"{owner}/{repo}", "issue"))
+        if repo == "repo-m":
+            raise GitHubApiError(self.ISSUES_OFF, status=410)
+        return super().list_labeled_issues(owner, repo, labels, host)
+
+    def list_labeled_prs(self, owner, repo, labels, host=""):
+        self.listings.append((f"{owner}/{repo}", "pr"))
+        if repo == "repo-m":
+            return [self._item(row, True) for row in self.repo_m_prs]
+        return super().list_labeled_prs(owner, repo, labels, host)
 
 
 def test_one_repository_with_issues_disabled_does_not_blind_the_others(tmp_path):
@@ -1412,7 +1493,7 @@ def test_one_repository_with_issues_disabled_does_not_blind_the_others(tmp_path)
         parse_repos(["octo/repo", "octo/repo-m"]),
         [LABEL],
         monitor_prs=True,
-        gh=GhClient(runner=gh.runner),
+        api=gh,
     )
     poller = Poller(
         providers=[provider],
@@ -1482,7 +1563,7 @@ def test_a_closed_item_on_a_bare_enterprise_source_is_reconciled(tmp_path):
     ended = dispatcher.control_store.ended(WorkItemRef.parse(REF_GHE))
     assert ended is not None and ended["source"] == "poll"
     # The closure question went to the enterprise host, like the listing did.
-    assert any(c[1:4] == ["api", "--hostname", GHE] for c in gh.argv)
+    assert gh.hosts and all(host == GHE for host in gh.hosts)
 
 
 # -- a set of labels, every one required (issue-381) ---------------------------

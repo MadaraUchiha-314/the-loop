@@ -24,11 +24,14 @@ def test_a_config_that_routes_nothing_requires_no_binary():
     assert report["ok"] is True
 
 
-def test_routing_requires_the_harness_tmux_git_and_gh():
-    """R5.1: turning routing on is what makes the four binaries load-bearing."""
+def test_routing_requires_the_harness_tmux_and_git():
+    """R5.1: turning routing on is what makes the three binaries load-bearing.
+
+    `gh` left the table with issue-442: GitHub is a token now, not a binary.
+    """
     report = check_environment(ROUTING_ON)
     required = {check["binary"] for check in report["checks"] if check["required"]}
-    assert required == {"gh", "claude", "tmux", "git"}
+    assert required == {"claude", "tmux", "git"}
 
 
 def test_the_harness_binary_follows_defaultharness():
@@ -46,13 +49,26 @@ def test_the_web_terminal_is_what_requires_ttyd():
     assert _by_binary(report, "ttyd")["required"] is True
 
 
-def test_the_operators_gh_override_is_honoured():
+def test_the_operators_git_override_is_honoured():
     """R5.4: resolve by the name the runtime uses, not by the default."""
-    config = {"integrations": {"github": {"cli": {"binary": "gh-enterprise"}}}}
+    config = {"routing": {"workspace": {"gitBinary": "/opt/git/bin/git"}}}
     report = check_environment(config)
-    assert _by_binary(report, "gh-enterprise")["configKey"] == (
-        "integrations.github.cli.binary"
+    assert _by_binary(report, "/opt/git/bin/git")["configKey"] == (
+        "routing.workspace.gitBinary"
     )
+
+
+def test_github_is_a_credential_not_a_binary(monkeypatch):
+    """issue-442: no requirement row names `gh`; the token is checked elsewhere."""
+    assert all(req.default_binary != "gh" for req in REQUIREMENTS)
+    from the_loop.poller import check_github_credentials
+
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    (message,) = check_github_credentials()
+    assert "GH_TOKEN" in message
+    monkeypatch.setenv("GITHUB_TOKEN", "x")
+    assert check_github_credentials() == []
 
 
 def test_a_missing_required_binary_makes_the_report_not_ok(monkeypatch):

@@ -702,7 +702,7 @@ A record written before issue-368 — identity and handles at the top level, a
 next save. Nothing is migrated in bulk, and nothing is lost.
 
 **Why the PRs are in here.** Which work item a PR delivers used to be recomputed from
-`gh`'s `closingIssuesReferences` on every single event — so unlinking the PR in GitHub's
+GitHub's `closingIssuesReferences` on every single event — so unlinking the PR in GitHub's
 Development panel, editing out the closing keyword, or one transient GraphQL failure
 silently re-pointed routing at the PR itself, past a session that was still running. The
 record is now the answer: everything about a work item — every PR delivering it and every
@@ -781,7 +781,7 @@ started, when it last finished a cycle, and what that cycle did.
     "closures": 0, "failures": 0, "errors": 1, "interrupted": false,
     "scopesPolled": 12,
     "scopesFailed": [
-      {"scope": "octo/repo-m", "error": "gh issue list --repo exited 1: the 'octo/repo-m' repository has disabled issues", "permanent": true}
+      {"scope": "octo/repo-m", "error": "issues of octo/repo-m: GitHub 410: Issues are disabled for this repo", "permanent": true}
     ],
     "scopesSkipped": []
   }

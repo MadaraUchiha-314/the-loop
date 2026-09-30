@@ -14,11 +14,12 @@ Two call planes, and only one of them is governed here (issue-109, decision-042)
   police it, because the agent is already trusted to write code and policing it
   would break the session-takeover property the tmux runner exists for.
 
-Transport is a choice, not a mandate: ``api`` and ``cli`` where both are
-meaningful. Providers **declare the operations they implement**, and the
-runtime checks that declaration at load time — a graph needing an operation
-the configured transport lacks fails at startup, naming the operation and both
-fixes, not three nodes deep.
+GitHub has one transport since issue-442 — PyGithub under the token
+``integrations.github.api.tokenEnv`` names (the ``cli`` transport over the
+operator's ``gh`` was retired; decision-139). Providers **declare the
+operations they implement**, and the runtime checks that declaration at load
+time — a graph needing an operation the configured provider lacks fails at
+startup, naming the operation, not three nodes deep.
 """
 
 from .base import (  # noqa: F401

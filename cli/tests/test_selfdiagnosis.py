@@ -200,14 +200,14 @@ def test_non_boolean_enabled_fails_closed():
     assert config.enabled is False
 
 
-def test_gh_binary_comes_from_the_integrations_block():
+def test_the_token_config_comes_from_the_integrations_block():
     config = sd.SelfDiagnosisConfig.from_mapping(
         {
             "selfDiagnosis": {"enabled": True},
-            "integrations": {"github": {"cli": {"binary": "/opt/gh"}}},
+            "integrations": {"github": {"api": {"tokenEnv": ["LOOP_TOKEN"]}}},
         }
     )
-    assert config.gh_binary == "/opt/gh"
+    assert config.github.token_envs == ("LOOP_TOKEN",)
 
 
 def test_configured_control_keywords_are_carried_for_defanging():

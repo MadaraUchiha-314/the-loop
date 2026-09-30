@@ -1,35 +1,44 @@
-"""GitHub poll provider: a ``gh`` CLI wrapper + the GitHub :class:`PollProvider`.
+"""GitHub poll provider: the GitHub :class:`PollProvider`, over the daemon's client.
 
 This is the *only* place in the polling stack that knows about GitHub. The
 poller core (``poller.py``) speaks the provider-agnostic contract in
 ``base.py``; GitHub is reached solely because a ``polling.sources`` config entry
 selects ``provider: github``.
 
-Polling reads GitHub through the user's own ``gh`` CLI (already authenticated),
-exactly as the-loop uses ``gh`` elsewhere — so the poller needs no token of its
-own and inherits ``gh``'s auth/enterprise config. ``gh`` is a native binary a
-Python wheel cannot carry, so its presence is verified up front (mirrors the
-tmux/ttyd preflight in ``runner.check_dependencies``).
+Polling reads GitHub through :class:`~the_loop.ghapi.GitHubClient` (issue-442,
+decision-139) — PyGithub under one token the CLI config names
+(``integrations.github.api.tokenEnv``) — so the poller needs no ``gh`` binary and
+no interactive login on the box. The token's presence is verified up front
+(mirrors the tmux/ttyd preflight in ``runner.check_dependencies``), and every
+read the client cannot make is a :class:`GhError`, the provider's own failure
+type, so the core's per-scope isolation (issue-315) is unchanged.
 
-Everything shells out to ``gh ... --json`` and parses stdout, with an injectable
-``runner`` so tests drive it with canned JSON instead of a real ``gh``. The
-provider maps ``gh``'s shapes onto the neutral :class:`WorkItem`/:class:`Comment`
-and builds the shared ``RoutedEvent`` the dispatcher already consumes.
+The client is injectable so tests drive the provider with canned items instead
+of a network. The provider maps the client's shapes onto the neutral
+:class:`WorkItem`/:class:`Comment` and builds the shared ``RoutedEvent`` the
+dispatcher already consumes.
 
-Spec: docs/specs/issue-34/design.md §2.
+Spec: docs/specs/issue-34/design.md §2; docs/specs/issue-442/design.md §4.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import shutil
-import subprocess
 import uuid
-from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Sequence
+from dataclasses import dataclass
+from typing import Callable, Dict, List, Optional, Sequence, TypeVar
 
-from ..comments import gh_host_args
+from ..ghapi import (  # noqa: F401 — re-exported for the poller package
+    KIND_CONVERSATION,
+    KIND_REVIEW,
+    KIND_REVIEW_THREAD,
+    GhComment,
+    GhItem,
+    GhItemState,
+    GitHubApiConfig,
+    GitHubApiError,
+    GitHubClient,
+)
 from ..sessions import DEFAULT_GITHUB_HOST, WorkItemRef, is_github_host
 from ..webhook.router import (
     POLL_CLOSURE_DELIVERY_PREFIX,
@@ -52,52 +61,31 @@ from .base import (
 
 logger = logging.getLogger("the-loop.poll")
 
-_GH_INSTALL_HINT = (
-    "macOS: `brew install gh` · Debian/Ubuntu: `apt install gh` · "
-    "others: https://github.com/cli/cli#installation — then `gh auth login`"
-)
-
-# Upper bound on items fetched per repo per kind; a labelled backlog larger than
-# this is pathological and the newest still get through on later polls.
-_LIST_LIMIT = 200
+_T = TypeVar("_T")
 
 # Item kinds this provider emits (provider-local vocabulary).
 _KIND_ISSUE = "issue"
 _KIND_PR = "pull-request"
 
-# JSON fields the PR listing asks for. ``closingIssuesReferences`` is GitHub's
-# own PR→issue linkage (the Development panel as well as the closing keywords it
-# parses); asking for it here keeps the linkage free — it rides the listing call
-# the poller already makes each cycle (issue-93). It is a relatively recent
-# ``gh`` field, so an older binary rejects it and the listing degrades to
-# ``_PR_FIELDS_LEGACY`` (branch/keyword conventions only).
-_PR_LINK_FIELD = "closingIssuesReferences"
-_PR_FIELDS_LEGACY = "number,title,labels,updatedAt,url,headRefName,body,author"
-_PR_FIELDS = f"{_PR_FIELDS_LEGACY},{_PR_LINK_FIELD}"
-
 # The three surfaces a pull request carries instructions on (issue-246). GitHub
-# files them under three different objects, and the poller used to read only the
-# first — so a human's instruction left as a review was never forwarded, while
-# the webhook ingress had handled all three since issue-15.
-_KIND_CONVERSATION = "conversation"  # IssueComment (IC_) — `gh pr view --json comments`
-_KIND_REVIEW = "review"  # PullRequestReview (PRR_) — a review body
-_KIND_REVIEW_THREAD = "review-thread"  # PullRequestReviewComment (PRRC_) — inline
+# files them under three different objects; the client reads all three and the
+# provider builds, per surface, the event GitHub itself would have delivered.
+_KIND_CONVERSATION = KIND_CONVERSATION
+_KIND_REVIEW = KIND_REVIEW
+_KIND_REVIEW_THREAD = KIND_REVIEW_THREAD
 
-# A review a human has written but not submitted. Visible only to its author, so
-# forwarding it would deliver words nobody has sent.
-_REVIEW_PENDING = "PENDING"
+#: How long one poll read may take (seconds) — the client's per-request bound.
+READ_TIMEOUT = 60.0
 
-# Page size for the REST reads below. `--paginate` walks every page, so this
-# only decides how many round trips a long thread costs.
-_REST_PAGE_SIZE = 100
-
-# What `gh issue list` says about a repository whose GitHub Issues are turned
-# off — the ONE condition this provider classifies as permanent (issue-315). It
-# is configuration drift, not a fault: retrying it every cycle can only fail
-# the same way, and it used to take the whole source down with it. If GitHub
-# ever rewords the message the failure degrades to transient — retried,
-# isolated, visible — never to silence.
-_ISSUES_DISABLED = "has disabled issues"
+# What GitHub says about a repository whose Issues are turned off — the ONE
+# condition this provider classifies as permanent (issue-315). It is
+# configuration drift, not a fault: retrying it every cycle can only fail the
+# same way, and it used to take the whole source down with it. The client
+# raises it as a 410 carrying GitHub's REST sentence; both the status and the
+# words are matched (belt and braces), so a rewording degrades to transient —
+# retried, isolated, visible — never to silence.
+_ISSUES_DISABLED = "issues are disabled"
+_ISSUES_DISABLED_STATUS = 410
 _ISSUES_OFF_REASON = (
     "issues are disabled on this repository; its issues are skipped and "
     f"re-probed every {REPROBE_EVERY_CYCLES} cycles, its pull requests are "
@@ -106,441 +94,34 @@ _ISSUES_OFF_REASON = (
 
 
 class GhError(ProviderError):
-    """A ``gh`` invocation failed (non-zero exit, bad JSON, or gh missing)."""
+    """A GitHub read failed (an HTTP error, a transport failure, no token).
 
-
-@dataclass(frozen=True)
-class GhComment:
-    """One comment on an issue/PR — conversation, review, or review thread.
-
-    The first five fields are what every surface has in common, and all the
-    poller core reads. ``kind`` and the fields under it are how the provider
-    later builds the event GitHub itself would have delivered for this object
-    (issue-246); they are empty for a conversation comment.
+    ``status`` is the HTTP status when GitHub answered one, else ``None``.
     """
 
-    id: str  # stable node id, used for cross-poll dedup
-    body: str
-    author: str
-    created_at: str
-    url: str
-    kind: str = _KIND_CONVERSATION
-    state: str = ""  # reviews: APPROVED | CHANGES_REQUESTED | COMMENTED
-    path: str = ""  # review threads: the file the comment is anchored to
-    line: Optional[int] = None  # review threads: the line, or None if unknown
+    def __init__(self, message: str, status: Optional[int] = None):
+        super().__init__(message)
+        self.status = status
 
 
-@dataclass(frozen=True)
-class GhItemState:
-    """The lifecycle state of one issue/PR (``/issues/{n}`` REST shape).
-
-    One endpoint answers for both kinds: on GitHub's REST API a pull request
-    *is* an issue, and the response carries a ``pull_request`` object whose
-    ``merged_at`` separates a merged PR from a closed one.
-    """
-
-    number: int
-    state: str  # "open" | "closed"
-    is_pr: bool = False
-    merged: bool = False
-    title: str = ""
-    url: str = ""
-    #: ``closed_by.login`` — who closed the item, or "" (issue-329).
-    closed_by: str = ""
-
-    @property
-    def open(self) -> bool:
-        return self.state == "open"
+def check_github_credentials(api: Optional[GitHubApiConfig] = None) -> List[str]:
+    """Missing-dependency messages for the GitHub token (empty when set)."""
+    api = api or GitHubApiConfig()
+    if api.token():
+        return []
+    return [
+        f"missing credential: {api.missing_token_reason} — the daemon reads GitHub "
+        "with a token now (issue-442); a fine-grained token needs Issues: read and "
+        "write, Pull requests: read, Metadata: read on every polled repository"
+    ]
 
 
-@dataclass(frozen=True)
-class GhItem:
-    """A labelled issue or PR returned by ``gh issue/pr list``."""
-
-    number: int
-    title: str
-    labels: List[str]
-    updated_at: str
-    url: str
-    is_pr: bool
-    author: str = ""  # login that opened the issue/PR (authorization guard)
-    head_ref: str = ""  # PRs only (links a PR to its issue-<n> branch)
-    body: str = ""  # PRs only (closing keywords live here)
-    # PRs only: issue numbers GitHub itself reports the PR as closing (issue-93)
-    linked_issues: List[int] = field(default_factory=list)
-
-
-def check_gh_dependency(binary: str = "gh") -> List[str]:
-    """Missing-dependency messages for ``gh`` (empty when present)."""
-    if shutil.which(binary) is None:
-        return [f"missing dependency: {binary} — install it ({_GH_INSTALL_HINT})"]
-    return []
-
-
-class GhClient:
-    """Read-only ``gh`` wrapper: list labelled issues/PRs and their comments."""
-
-    def __init__(
-        self,
-        binary: str = "gh",
-        runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
-        timeout: Optional[float] = 60.0,
-    ):
-        self.binary = binary
-        self._runner = runner
-        self.timeout = timeout
-        # Latched once an old gh rejects _PR_LINK_FIELD, so later cycles skip
-        # the attempt that is known to fail (issue-93).
-        self._no_link_field = False
-
-    def is_available(self) -> bool:
-        return shutil.which(self.binary) is not None
-
-    # -- primitives -------------------------------------------------------------
-
-    @staticmethod
-    def _repo_flag(owner: str, repo: str, host: str = "") -> str:
-        """``[HOST/]OWNER/REPO`` — ``gh``'s own ``--repo`` grammar (issue-311).
-
-        The host is written exactly when it is not github.com, so every argv a
-        github.com source ever produced is unchanged.
-        """
-        if host and host != DEFAULT_GITHUB_HOST:
-            return f"{host}/{owner}/{repo}"
-        return f"{owner}/{repo}"
-
-    def _run_json(self, argv: Sequence[str]):
-        """Run ``gh <argv>`` and parse its stdout as JSON."""
-        cmd = [self.binary] + list(argv)
-        logger.debug("running %s", " ".join(cmd))
-        try:
-            proc = self._runner(
-                cmd, capture_output=True, text=True, timeout=self.timeout
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise GhError(f"gh {argv[0]} timed out after {self.timeout}s") from exc
-        except OSError as exc:
-            raise GhError(f"could not run gh: {exc}") from exc
-        if proc.returncode != 0:
-            raise GhError(
-                f"gh {' '.join(argv[:3])} exited {proc.returncode}: "
-                f"{(proc.stderr or proc.stdout or '').strip()}"
-            )
-        try:
-            return json.loads(proc.stdout or "null")
-        except json.JSONDecodeError as exc:
-            raise GhError(f"gh {argv[0]} returned invalid JSON: {exc}") from exc
-
-    # -- listing ---------------------------------------------------------------
-
-    @staticmethod
-    def _label_flags(labels: Sequence[str]) -> List[str]:
-        """One ``--label`` per label (issue-381). GitHub's list filter returns the
-        items carrying every named label; the provider re-checks the listing
-        regardless, so tracking never rides on the filter's semantics."""
-        flags: List[str] = []
-        for label in labels:
-            flags += ["--label", label]
-        return flags
-
-    def list_labeled_issues(
-        self, owner: str, repo: str, labels: Sequence[str], host: str = ""
-    ) -> List[GhItem]:
-        """Open issues in ``owner/repo`` carrying every label (PRs excluded)."""
-        data = self._run_json(
-            [
-                "issue",
-                "list",
-                "--repo",
-                self._repo_flag(owner, repo, host),
-                *self._label_flags(labels),
-                "--state",
-                "open",
-                "--limit",
-                str(_LIST_LIMIT),
-                "--json",
-                "number,title,labels,updatedAt,url,author",
-            ]
-        )
-        return [self._item_from_json(row, is_pr=False) for row in data or []]
-
-    def list_labeled_prs(
-        self, owner: str, repo: str, labels: Sequence[str], host: str = ""
-    ) -> List[GhItem]:
-        """Open PRs in ``owner/repo`` carrying every label, with their linked issues.
-
-        Degrades (once, then latched) to the legacy field list when the installed
-        ``gh`` does not know ``closingIssuesReferences`` — routing then falls back
-        to the head-branch/closing-keyword conventions, exactly as before
-        issue-93. Any other ``gh`` failure still propagates: a downgrade must not
-        mask an auth or network fault.
-        """
-        fields = _PR_FIELDS_LEGACY if self._no_link_field else _PR_FIELDS
-        try:
-            data = self._list_prs(owner, repo, labels, fields, host)
-        except GhError as exc:
-            if self._no_link_field or _PR_LINK_FIELD.lower() not in str(exc).lower():
-                raise
-            logger.warning(
-                "this gh does not support the '%s' JSON field, so a PR linked to "
-                "an issue only through GitHub's Development panel cannot be "
-                "matched to that issue's session; upgrade gh to restore it (%s). "
-                "Falling back to head-branch / closing-keyword conventions.",
-                _PR_LINK_FIELD,
-                _GH_INSTALL_HINT,
-            )
-            self._no_link_field = True
-            data = self._list_prs(owner, repo, labels, _PR_FIELDS_LEGACY, host)
-        return [self._item_from_json(row, is_pr=True) for row in data or []]
-
-    def _list_prs(
-        self,
-        owner: str,
-        repo: str,
-        labels: Sequence[str],
-        fields: str,
-        host: str = "",
-    ):
-        return self._run_json(
-            [
-                "pr",
-                "list",
-                "--repo",
-                self._repo_flag(owner, repo, host),
-                *self._label_flags(labels),
-                "--state",
-                "open",
-                "--limit",
-                str(_LIST_LIMIT),
-                "--json",
-                fields,
-            ]
-        )
-
-    def viewer_login(self, host: str = "") -> str:
-        """The login ``gh`` is authenticated as — the ledger credential's own
-        name, which is the author of every comment the-loop wrote. ``""`` when
-        it cannot be read (not logged in, no network); callers fail closed on
-        that, or say so."""
-        from ..comments import gh_host_args
-
-        argv = ["api", *gh_host_args(host), "user"]
-        try:
-            data = self._run_json(argv)
-        except GhError as exc:
-            logger.debug("could not read the gh login: %s", exc)
-            return ""
-        return str((data or {}).get("login") or "") if isinstance(data, dict) else ""
-
-    def list_comments(
-        self, owner: str, repo: str, number: int, is_pr: bool, host: str = ""
-    ) -> List[GhComment]:
-        """Every comment on an issue/PR, whichever surface GitHub filed it under.
-
-        For an **issue** this is exactly the call it always was: one
-        ``gh issue view --json comments``. ``gh issue view`` rejects PR numbers
-        and vice-versa, so the kind picks the sub-command.
-
-        For a **pull request** it is that call plus the two REST reads that
-        answer for the other two surfaces (issue-246), merged into one
-        chronological list. ``gh pr view --json`` cannot supply them: it exposes
-        no review-thread connection at all, so at least one call has to go
-        elsewhere, and REST costs a documented endpoint and ``--paginate``
-        rather than a hand-written GraphQL query with three cursors. The
-        conversation call is deliberately left alone — moving it to REST would
-        change its ids from GraphQL node ids to numeric ones and re-forward every
-        operator's already-baselined thread on upgrade.
-
-        Ordering is chronological, not per-source: the first-sight control path
-        forwards commands "in thread order (so the last command wins)"
-        (issue-119), which a merge that simply appended reviews would break.
-        """
-        sub = "pr" if is_pr else "issue"
-        data = self._run_json(
-            [
-                sub,
-                "view",
-                str(number),
-                "--repo",
-                self._repo_flag(owner, repo, host),
-                "--json",
-                "comments",
-            ]
-        )
-        comments = [
-            self._comment_from_json(c) for c in ((data or {}).get("comments") or [])
-        ]
-        if not is_pr:
-            return comments
-        comments += self.list_reviews(owner, repo, number, host)
-        comments += self.list_review_comments(owner, repo, number, host)
-        # Stable sort: same-timestamp items keep their source order.
-        return sorted(comments, key=lambda c: c.created_at)
-
-    def list_reviews(
-        self, owner: str, repo: str, number: int, host: str = ""
-    ) -> List[GhComment]:
-        """Submitted PR reviews that carry an instruction (issue-246).
-
-        Two are dropped here rather than downstream, because "carries no
-        instruction" is a fact about the GitHub object and not a policy the
-        poller core should hold: a review with an **empty body** (an Approve with
-        no words), and a **PENDING** one (a draft its author has not submitted).
-        Everything else — who may be obeyed, what has already been delivered —
-        stays where it is, so the new stream passes the guards conversation
-        comments pass, unchanged.
-        """
-        reviews: List[GhComment] = []
-        for row in self._run_rest_list(
-            f"repos/{owner}/{repo}/pulls/{number}/reviews", host
-        ):
-            state = str(row.get("state") or "").upper()
-            body = str(row.get("body") or "")
-            if state == _REVIEW_PENDING or not body.strip():
-                continue
-            reviews.append(
-                GhComment(
-                    id=str(row.get("node_id") or ""),
-                    body=body,
-                    author=str((row.get("user") or {}).get("login") or ""),
-                    created_at=str(row.get("submitted_at") or ""),
-                    url=str(row.get("html_url") or ""),
-                    kind=_KIND_REVIEW,
-                    state=state,
-                )
-            )
-        return reviews
-
-    def list_review_comments(
-        self, owner: str, repo: str, number: int, host: str = ""
-    ) -> List[GhComment]:
-        """Inline review-thread comments, each with the file/line it is on.
-
-        The anchor is part of the instruction — "this is wrong" means nothing
-        without it — so it travels with the comment. ``line`` is null once the
-        diff has moved past an outdated comment, and GitHub keeps the line it was
-        written against in ``original_line``; that is the honest anchor to carry,
-        because it is where the reviewer was looking.
-
-        The ``diff_hunk`` GitHub also returns is deliberately **not** carried:
-        the forwarded payload is capped (``_PAYLOAD_EXCERPT_MAX_CHARS``), and up
-        to thirty lines of diff would truncate the instruction it was meant to
-        contextualise. The session can read the diff; it cannot read a comment it
-        was never told about.
-        """
-        inline: List[GhComment] = []
-        for row in self._run_rest_list(
-            f"repos/{owner}/{repo}/pulls/{number}/comments", host
-        ):
-            line = row.get("line")
-            if not isinstance(line, int):
-                line = row.get("original_line")
-            inline.append(
-                GhComment(
-                    id=str(row.get("node_id") or ""),
-                    body=str(row.get("body") or ""),
-                    author=str((row.get("user") or {}).get("login") or ""),
-                    created_at=str(row.get("created_at") or ""),
-                    url=str(row.get("html_url") or ""),
-                    kind=_KIND_REVIEW_THREAD,
-                    path=str(row.get("path") or ""),
-                    line=line if isinstance(line, int) else None,
-                )
-            )
-        return inline
-
-    def _run_rest_list(self, path: str, host: str = "") -> List[dict]:
-        """Every page of a REST array endpoint, as dicts.
-
-        ``--paginate`` matters rather than being a nicety: REST returns reviews
-        oldest-first, so a single capped page would permanently hide the newest
-        ones on a heavily-reviewed PR — the exact silence issue-246 is about.
-
-        Failures propagate as :class:`GhError`. Nothing here catches and returns
-        an empty list: a read that breaks must look broken, never like a quiet
-        pull request.
-        """
-        data = self._run_json(
-            [
-                "api",
-                *gh_host_args(host),
-                f"{path}?per_page={_REST_PAGE_SIZE}",
-                "--paginate",
-            ]
-        )
-        if data is None:
-            return []
-        if not isinstance(data, list):
-            raise GhError(
-                f"gh api {path} returned {type(data).__name__}, expected a list"
-            )
-        return [row for row in data if isinstance(row, dict)]
-
-    def fetch_item_state(
-        self, owner: str, repo: str, number: int, host: str = ""
-    ) -> GhItemState:
-        """Lifecycle state of one issue/PR — the closure question (issue-94).
-
-        Uses the REST ``issues`` endpoint deliberately: the session registry
-        records a bare ``#<number>`` with no kind, and ``gh issue view`` refuses
-        PR numbers (and vice-versa), while this one endpoint answers for both.
-        """
-        data = self._run_json(
-            ["api", *gh_host_args(host), f"repos/{owner}/{repo}/issues/{number}"]
-        )
-        if not isinstance(data, dict) or not data:
-            raise GhError(
-                f"gh api repos/{owner}/{repo}/issues/{number} returned no object"
-            )
-        pull_request = data.get("pull_request")
-        return GhItemState(
-            number=int(data.get("number") or number),
-            state=str(data.get("state") or ""),
-            is_pr=isinstance(pull_request, dict),
-            merged=bool((pull_request or {}).get("merged_at")),
-            title=str(data.get("title") or ""),
-            url=str(data.get("html_url") or ""),
-            closed_by=str(((data.get("closed_by") or {}).get("login")) or ""),
-        )
-
-    # -- parsing ---------------------------------------------------------------
-
-    @staticmethod
-    def _item_from_json(row: dict, is_pr: bool) -> GhItem:
-        labels = [
-            (lab or {}).get("name", "")
-            for lab in (row.get("labels") or [])
-            if (lab or {}).get("name")
-        ]
-        return GhItem(
-            number=int(row["number"]),
-            title=str(row.get("title") or ""),
-            labels=labels,
-            updated_at=str(row.get("updatedAt") or ""),
-            url=str(row.get("url") or ""),
-            is_pr=is_pr,
-            author=str((row.get("author") or {}).get("login") or ""),
-            head_ref=str(row.get("headRefName") or ""),
-            body=str(row.get("body") or ""),
-            linked_issues=[
-                number
-                for number in (
-                    (ref or {}).get("number") for ref in (row.get(_PR_LINK_FIELD) or [])
-                )
-                if isinstance(number, int)
-            ],
-        )
-
-    @staticmethod
-    def _comment_from_json(row: dict) -> GhComment:
-        author = (row.get("author") or {}).get("login") or ""
-        return GhComment(
-            id=str(row.get("id") or ""),
-            body=str(row.get("body") or ""),
-            author=str(author),
-            created_at=str(row.get("createdAt") or ""),
-            url=str(row.get("url") or ""),
-        )
+def _read(what: str, fn: Callable[[], _T]) -> _T:
+    """Run one client call, re-raising its failure as the provider's :class:`GhError`."""
+    try:
+        return fn()
+    except GitHubApiError as exc:
+        raise GhError(f"{what}: {exc}", status=exc.status) from None
 
 
 @dataclass
@@ -634,9 +215,10 @@ def parse_repos(values: Sequence[str], default_host: str = "") -> List[RepoSpec]
 class GitHubPollProvider(PollProvider):
     """GitHub implementation of the poll-provider contract.
 
-    Discovers labelled issues/PRs via ``gh``, and maps them onto the neutral
-    ``WorkItem``/``Comment`` and the shared ``RoutedEvent`` shape. All GitHub
-    payload synthesis lives here so the poller core stays provider-agnostic.
+    Discovers labelled issues/PRs through the daemon's GitHub client, and maps
+    them onto the neutral ``WorkItem``/``Comment`` and the shared ``RoutedEvent``
+    shape. All GitHub payload synthesis lives here so the poller core stays
+    provider-agnostic.
     """
 
     name = "github"
@@ -647,7 +229,7 @@ class GitHubPollProvider(PollProvider):
         labels: Sequence[str],
         monitor_issues: bool = True,
         monitor_prs: bool = True,
-        gh: Optional[GhClient] = None,
+        api: Optional[GitHubClient] = None,
     ):
         self.repos = repos
         # Every one of these must be on an item for this source to track it
@@ -655,7 +237,9 @@ class GitHubPollProvider(PollProvider):
         self.labels = normalize_labels(labels)
         self.monitor_issues = monitor_issues
         self.monitor_prs = monitor_prs
-        self.gh = gh or GhClient()
+        # The client (issue-442): one HTTP session per host for the whole
+        # provider, bounded by the poll read timeout.
+        self.api = api or GitHubClient(GitHubApiConfig(), timeout=READ_TIMEOUT)
         # Repositories whose Issues are off (issue-315): scope -> the cycle the
         # condition was last seen. In memory on purpose — a hot reload rebuilds
         # the provider and a restart starts fresh, and both are exactly the
@@ -671,8 +255,10 @@ class GitHubPollProvider(PollProvider):
         default_labels: Sequence[str],
         default_host: str = "",
         repositories: Sequence[str] = (),
+        api: Optional[GitHubApiConfig] = None,
     ) -> "GitHubPollProvider":
-        """The source says *how* to poll; ``repositories`` says *what* (issue-348).
+        """The source says *how* to poll; ``repositories`` says *what* (issue-348);
+        ``api`` says where the token is (issue-442, `integrations.github.api`).
 
         A source that still carries its own ``repos`` is refused rather than read:
         the config gate (``migrations.assert_current``) stops a daemon long before
@@ -700,7 +286,7 @@ class GitHubPollProvider(PollProvider):
             labels=normalize_labels(source.get("labels")) or list(default_labels),
             monitor_issues=bool(monitor.get("issues", True)),
             monitor_prs=bool(monitor.get("pullRequests", True)),
-            gh=GhClient(binary=str(source.get("ghBinary", "gh"))),
+            api=GitHubClient(api or GitHubApiConfig(), timeout=READ_TIMEOUT),
         )
 
     def describe(self) -> str:
@@ -709,7 +295,7 @@ class GitHubPollProvider(PollProvider):
         return f"github {', '.join(s.gh_repo for s in self.repos) or '(no repos)'}"
 
     def check_dependencies(self) -> List[str]:
-        return check_gh_dependency(self.gh.binary)
+        return check_github_credentials(self.api.config)
 
     # -- discovery -------------------------------------------------------------
 
@@ -771,8 +357,11 @@ class GitHubPollProvider(PollProvider):
             answered = self._list_issues(spec, scope, out)
         if self.monitor_prs:
             try:
-                prs = self.gh.list_labeled_prs(
-                    spec.owner, spec.repo, self.labels, host=spec.host
+                prs = _read(
+                    f"pull requests of {spec.gh_repo}",
+                    lambda: self.api.list_labeled_prs(
+                        spec.owner, spec.repo, self.labels, host=spec.host
+                    ),
                 )
             except GhError as exc:
                 out.failures.append(ScopeFailure(scope, str(exc)))
@@ -803,11 +392,14 @@ class GitHubPollProvider(PollProvider):
             out.skipped.append(ScopeFailure(scope, _ISSUES_OFF_REASON, permanent=True))
             return False
         try:
-            issues = self.gh.list_labeled_issues(
-                spec.owner, spec.repo, self.labels, host=spec.host
+            issues = _read(
+                f"issues of {spec.gh_repo}",
+                lambda: self.api.list_labeled_issues(
+                    spec.owner, spec.repo, self.labels, host=spec.host
+                ),
             )
         except GhError as exc:
-            if _ISSUES_DISABLED not in str(exc).lower():
+            if not self._issues_disabled(exc):
                 out.failures.append(ScopeFailure(scope, str(exc)))
             elif since is None:  # first sighting: surfaced, then quarantined
                 self._issues_off[scope] = self._cycles
@@ -828,23 +420,34 @@ class GitHubPollProvider(PollProvider):
         )
         return True
 
+    @staticmethod
+    def _issues_disabled(exc: GhError) -> bool:
+        """GitHub's *Issues are disabled* — by status or by its words (issue-315)."""
+        return (
+            exc.status == _ISSUES_DISABLED_STATUS
+            or _ISSUES_DISABLED in str(exc).lower()
+        )
+
     def _carries_every_label(self, gh_item: GhItem) -> bool:
         """Whether a listed item carries every configured label (issue-381, R2.1).
 
-        ``gh`` is asked for items carrying all of them, and GitHub's filter
-        answers that way — but the tracking decision is this provider's, so it
-        is taken on the labels the listing actually returned, not on a CLI's
-        filter semantics. An empty list keeps nothing, as the gate arms nothing.
+        GitHub is asked for items carrying all of them, and its filter answers
+        that way — but the tracking decision is this provider's, so it is taken
+        on the labels the listing actually returned, not on the filter's
+        semantics. An empty list keeps nothing, as the gate arms nothing.
         """
         return bool(self.labels) and set(self.labels) <= set(gh_item.labels)
 
     def list_comments(self, item: WorkItem) -> List[Comment]:
-        gh_comments = self.gh.list_comments(
-            item.owner,
-            item.repo,
-            item.number,
-            is_pr=item.kind == _KIND_PR,
-            host=item.host,
+        gh_comments = _read(
+            f"comments of {item.ref}",
+            lambda: self.api.list_comments(
+                item.owner,
+                item.repo,
+                item.number,
+                is_pr=item.kind == _KIND_PR,
+                host=item.host,
+            ),
         )
         return [
             Comment(
@@ -971,7 +574,10 @@ class GitHubPollProvider(PollProvider):
 
     def closure(self, ref: WorkItemRef) -> Optional[Closure]:
         """Whether ``ref`` has ended, and how (``None`` while it is still open)."""
-        state = self.gh.fetch_item_state(ref.owner, ref.repo, ref.number, host=ref.host)
+        state = _read(
+            f"state of {ref.ref}",
+            lambda: self.api.item_state(ref.owner, ref.repo, ref.number, host=ref.host),
+        )
         if state.open or not state.state:
             return None
         return Closure(

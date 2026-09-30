@@ -73,7 +73,7 @@ $ the-loop status
 poller      running (pid 24913) [enabled]
             started:    2026-09-02T20:41:12Z (3h ago)
             last cycle: 2026-09-02T23:43:02Z (10s ago) — 24 item(s), 0 spawn(s), 1 comment(s) forwarded, 1 error(s)
-            degraded:   octo/repo-b — listing failed, retried next cycle: gh issue list --repo exited 1: HTTP 502
+            degraded:   octo/repo-b — listing failed, retried next cycle: issues of octo/repo-b: GitHub 502: upstream
             degraded:   octo/repo-m — issues are disabled on this repository; its issues are skipped and re-probed every 60 cycles, its pull requests are still polled
 ```
 

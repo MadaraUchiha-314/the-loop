@@ -336,7 +336,7 @@ the **same keyword** back to the work item, so the ticket stays the full record 
 for what. That comment carries the loop-prevention marker, so the daemon never reads its own
 action back and re-applies it.
 
-Posting is best-effort: `--no-comment` skips it, and a missing or failing `gh` only warns —
+Posting is best-effort: `--no-comment` skips it, and a missing token or a failing post only warns —
 it never undoes the local action.
 
 ## `cleanup`

@@ -27,7 +27,7 @@ level and pointed all four readers at it.
 - **Type:** `string[]`
 - **Default:** `[]` — **unset bounds nothing**; see below
 
-Every GitHub repository this instance works with, as `[HOST/]OWNER/REPO` — `gh`'s own
+Every GitHub repository this instance works with, as `[HOST/]OWNER/REPO` — the
 `--repo` grammar. A bare `OWNER/REPO` is on the GitHub the-loop resolves (issue-331):
 [`integrations.github.host`](/config/cli/integrations-options#github-host), else an
 enterprise `github.api.baseUrl`, else `$GH_HOST`, else github.com. Write the host in front
@@ -35,7 +35,7 @@ for a repository on another GitHub (`ghe.corp.example/octo/repo`, issue-311) —
 part of the identity, so a github.com repository with the same `OWNER/REPO` is a
 *different* repository and neither admits the other.
 
-Each entry is kept **as you wrote it**. What reaches `gh --repo` is your own string, never
+Each entry is kept **as you wrote it**. What reaches the GitHub listing is your own string, never
 a normalisation; the comparison the ingresses do happens on a `host/owner/repo` key
 derived from it.
 

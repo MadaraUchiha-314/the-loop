@@ -13,7 +13,9 @@ Spec: docs/specs/issue-228/design.md §D2 (R2.2: relocated, not reimplemented).
 import os
 from pathlib import Path
 
+from ghfakes import FakeGitHubClient
 from the_loop import daemon_entry
+from the_loop.ghapi import GitHubApiConfig
 from the_loop import runner as runner_mod
 from the_loop.poller import daemon as poller_daemon
 from the_loop.poller import github as gh_mod
@@ -56,20 +58,11 @@ class FakePopen:
         pass
 
 
-class FakeGhClient:
-    """Stand-in for GhClient: no `gh` binary needed, no items discovered."""
+class FakeGhClient(FakeGitHubClient):
+    """Stand-in for the GitHub client the provider builds: no network, no items."""
 
-    def __init__(self, binary="gh", **_kwargs):
-        self.binary = binary
-
-    def is_available(self):
-        return True
-
-    def list_labeled_issues(self, owner, repo, label):
-        return []
-
-    def list_labeled_prs(self, owner, repo, label):
-        return []
+    def __init__(self, config=None, **_kwargs):
+        super().__init__(config=config or GitHubApiConfig())
 
 
 def _configure(tmp_path, monkeypatch):
@@ -84,8 +77,10 @@ def _configure(tmp_path, monkeypatch):
     FakePopen.instances = []
     monkeypatch.setattr(runner_mod.subprocess, "Popen", FakePopen)
     monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/x")
-    monkeypatch.setattr(gh_mod.shutil, "which", lambda _: "/usr/bin/gh")
-    monkeypatch.setattr(gh_mod, "GhClient", FakeGhClient)
+    # The daemon's GitHub credential (issue-442): the pre-flight wants a token
+    # set, and the provider's client is the in-memory double.
+    monkeypatch.setenv("GH_TOKEN", "test-token")
+    monkeypatch.setattr(gh_mod, "GitHubClient", FakeGhClient)
 
 
 def _run_once():

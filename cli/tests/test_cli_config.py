@@ -174,16 +174,23 @@ def test_the_accessor_resolves_the_config_path_per_call(monkeypatch, isolated_cw
     assert cli_config.load_routing_config() == {"spawnOnUnmatched": "always"}
 
 
-def test_the_gh_binary_reaches_the_promoted_block(tmp_path):
-    """`integrations.github.cli.binary` still fans out to the three features."""
+def test_the_token_config_reaches_the_promoted_block(tmp_path):
+    """`integrations.github.api` fans out to the three features (issue-442)."""
     config = cli_config.apply_integrations(
         {
-            "integrations": {"github": {"cli": {"binary": "gh-enterprise"}}},
+            "integrations": {
+                "github": {
+                    "api": {"tokenEnv": ["LOOP_TOKEN"], "baseUrl": "https://ghe/api/v3"}
+                }
+            },
             "routing": {"control": {}, "reactions": {}, "announce": {}},
         }
     )
     for feature in ("control", "reactions", "announce"):
-        assert config["routing"][feature]["_ghBinary"] == "gh-enterprise"
+        assert config["routing"][feature]["_github"] == {
+            "tokenEnv": ["LOOP_TOKEN"],
+            "baseUrl": "https://ghe/api/v3",
+        }
 
 
 def test_the_poller_and_sessions_no_longer_read_routing_through_the_receiver():

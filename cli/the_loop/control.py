@@ -77,6 +77,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from .authz import mark_self_authored
 from .collaborators import SLACK_TOKEN_PREFIX, parse_subjects
+from .ghapi import GitHubApiConfig
 from .sessions import WorkItemRef
 from .state import LegacyLayout
 from .workitem import CONTROL, ENDED, GRAPH, LIFECYCLE, WorkItemStore
@@ -252,7 +253,9 @@ class ControlConfig:
     enabled: bool = True
     require_start_command: bool = True
     keywords: Dict[str, str] = field(default_factory=lambda: dict(DEFAULT_KEYWORDS))
-    gh_binary: str = "gh"
+    #: Where the daemon's GitHub token is (issue-442): `integrations.github.api`,
+    #: fanned in under the private `_github` key by `cli_config.apply_integrations`.
+    github: GitHubApiConfig = GitHubApiConfig()
     #: Command word → the loop it selects (issue-343, ``routing.control.commands``):
     #: an arming command re-pointed, or a new word, which then arms exactly as
     #: ``start`` does. The loop may be a shipped one or the operator's own.
@@ -314,7 +317,7 @@ class ControlConfig:
             enabled=bool(data.get("enabled", True)),
             require_start_command=bool(data.get("requireStartCommand", True)),
             keywords=keywords,
-            gh_binary=str(data.get("_ghBinary", "gh")),
+            github=GitHubApiConfig.from_mapping(data.get("_github")),
             bindings=bindings,
             loops=loops,
         )

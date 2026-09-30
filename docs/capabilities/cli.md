@@ -55,13 +55,13 @@ self-learning/ML capabilities.
   so its thread stays the full record of who asked for what. That comment SHALL carry
   the loop-prevention marker (`authz.mark_self_authored`), because the action has
   already been applied locally and neither ingress path may read it back and re-apply
-  it. Posting is best-effort — `--no-comment` skips it, and a missing/failing `gh`
+  it. Posting is best-effort — `--no-comment` skips it, and a missing token or a failing post
   warns without undoing the local action. `sessions list` SHALL show each session's
   status (including `paused`) and its last control command.
 - `the-loop ask --work-item <ref> --question <text>|--question-file <path>` SHALL post
   an agent's question on its work item with the loop-prevention marker stamped
   **centrally** and SHALL record the wait as a `session.awaiting_input` event —
-  emitted (as a warning, `comment_posted: false`) even when `gh` fails, since the agent
+  emitted (as a warning, `comment_posted: false`) even when the post fails, since the agent
   is waiting either way (issue-208, [decision-078](../decisions/decision-078.md)). It
   SHALL execute in-process rather than through the service: the escalation path must
   not depend on anything else of the-loop running. The answer arrives as a forwarded
@@ -75,7 +75,7 @@ self-learning/ML capabilities.
   command, no spawn, no arming, no human gate (see
   [webhook-triggers](webhook-triggers.md)). Each SHALL apply the local effect **first**
   and post the same keyword and login back to the work item after, self-marked, so a
-  failing `gh` never leaves the thread claiming a grant that was not made and never
+  failing post never leaves the thread claiming a grant that was not made and never
   loses one that was. Every login SHALL be validated before anything is written, so one
   typo refuses the whole call rather than half-applying it; a login already on (or
   absent from) the roster SHALL be reported as unchanged and SHALL NOT be announced.
@@ -175,8 +175,9 @@ self-learning/ML capabilities.
   derived from `ticketing.github`, an inner loop's pull-request ref — SHALL carry the host
   one resolver answers (issue-311, decision-104): `integrations.github.host`, else the
   host of an enterprise `github.api.baseUrl`, else `$GH_HOST`, else the checkout's
-  `origin` remote (in-session only), else github.com. Every outbound `gh` call SHALL read
-  the host back off the ref through one spelling — `--hostname <host>` for `gh api`,
+  `origin` remote (in-session only), else github.com. Every outbound GitHub call SHALL read
+  the host back off the ref through one spelling — the client's per-host base (issue-442;
+  before it, `--hostname <host>` for `gh api`,
   `[<host>/]<owner>/<repo>` for `--repo` — written exactly when the host is not
   github.com, so a github.com deployment's argvs, refs and URLs are unchanged. A poll
   source's `repos` entry SHALL accept `[HOST/]OWNER/REPO` and SHALL claim only refs on
@@ -438,6 +439,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-442 | The daemon reaches GitHub through PyGithub, never through `gh` (2026-09-30): one client (`ghapi.GitHubClient`) under one token (`integrations.github.api.tokenEnv`, read from the environment at call time) behind every write and read — the paper trail, `ask`, `add-channel`/`add-collaborator`, `channels records`, the announcement, reactions, the existence check, the poller, the process graph's labels and comments, the self-diagnosis issue; `integrations.github.transport` and `.cli` retired at config `0.11.0` with a migration that names the token; `gh` left the environment table; a missing token is one warning per writer, the poller's pre-flight and the graph's refusal | [spec](../specs/issue-442/), [decision-139](../decisions/decision-139.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/442) |
 | issue-374 | `the-loop instances list\|register\|unregister` (2026-09-30): the fleet a manager serves, listed on any instance and edited on a manager by writing `instance.manager.instances` through the config splice — thin clients of the `instances` routes; `the-loop status` carries the fleet document as `instances` and prints a headline and one row per instance on a manager; `the-loop start` refuses an unknown `instance.role` or an unnamed manager | [spec](../specs/issue-374/), [decision-138](../decisions/decision-138.md), [instances](instances.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/374) |
 | issue-396 | `check` and `graph status` accept a work-item ref, print the `work-item-state.json` they read (`state:`), and — with no `--repo`, from a directory that does not hold the work item — report on the checkout the session registry records for the ref (`repo: … (from the session registry)`), where the daemon actually wrote the state (2026-09-20) | [spec](../specs/issue-396/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/396) |
 | issue-370 | `sessions link-pr` became the single writer of a work item's tracked pull requests (2026-09-16), and stopped depending on an agent remembering to run it: a `PostToolUse` hook records the pull request a session just created, and the tmux runner exports `THE_LOOP_WORK_ITEM` so the plugin's hooks can tell which work item they are in. The inference that covered the gap — the poller filing a labelled pull request under whichever issue GitHub's linkage named — is gone | [spec](../specs/issue-370/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/370) |

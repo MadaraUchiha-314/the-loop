@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 import pytest
+from ghreplay import github_replay  # noqa: F401 — the PyGithub replay fixture
 
 from the_loop import eventlog
 from the_loop.announce import SessionAnnouncer
@@ -22,6 +23,56 @@ from the_loop.sessions import SessionRegistry
 from the_loop.trust import TrustResult
 from the_loop.webhook import dispatcher as dispatcher_mod
 from the_loop.webhook.router import Deduper
+
+
+class _NoNetworkConnection:
+    """The connection PyGithub gets while the suite runs: it refuses.
+
+    Every GitHub call in the-loop goes through :class:`the_loop.ghapi.GitHubClient`
+    (issue-442). A test that means to exercise the real client installs
+    ``ghreplay.github_replay``; a caller test injects a ``ghfakes`` double. A
+    call that reaches this class is a test that forgot either — it fails
+    loudly here instead of hanging on, or leaking to, api.github.com.
+    """
+
+    def __init__(self, host, port=None, *args, **kwargs):
+        self.host = host
+
+    def request(self, verb, url, input, headers, *args):
+        raise AssertionError(
+            f"a test reached the network: {verb} https://{self.host}{url} — inject a "
+            "ghfakes.FakeGitHubClient, or use the github_replay fixture"
+        )
+
+    def getresponse(self):  # pragma: no cover - request() already raised
+        raise AssertionError("a test reached the network")
+
+    def close(self):
+        pass
+
+
+@pytest.fixture(autouse=True)
+def _github_is_never_ambient(monkeypatch):
+    """No token from the machine, no socket to GitHub (issue-442).
+
+    The daemon reads its token from ``GH_TOKEN``/``GITHUB_TOKEN``; a developer's
+    shell or a CI runner may carry one, and a suite whose outcome depends on it
+    is a suite that passes on one machine. Tests that need a token set one.
+    """
+    from github.Requester import Requester
+
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    from the_loop.ghapi import GitHubClient
+
+    GitHubClient._shared.clear()
+    Requester.injectConnectionClasses(_NoNetworkConnection, _NoNetworkConnection)  # type: ignore[arg-type]
+    try:
+        yield
+    finally:
+        Requester.resetConnectionClasses()
+        GitHubClient._shared.clear()
+
 
 #: Every write the dispatcher makes **after** the spawn or delivery it was asked
 #: for — the outcome of a dispatch, as opposed to the attempt that `FakeTmux`
@@ -429,6 +480,35 @@ def _hermetic_reactor(monkeypatch):
     monkeypatch.setattr(dispatcher_mod, "GitHubReactor", _NoopReactor)
     monkeypatch.setattr(dispatcher_mod, "SessionAnnouncer", _NoopAnnouncer)
     monkeypatch.setattr(dispatcher_mod, "WorkItemVerifier", _NoopVerifier)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_graph_integration(monkeypatch):
+    """The process graph's GitHub hooks reach an in-memory provider (issue-442).
+
+    ``set-phase-label`` and its siblings resolve the GitHub integration at call
+    time (`sideeffects._integration`). Left alone, that resolution depends on
+    the machine — a token in the shell, a `gh` on PATH — and a raised hook blocks
+    the chain, so a graph test passed or failed by environment. Every graph test
+    now gets a provider over ``ghfakes.FakeGitHubClient``; a test about the
+    resolution itself patches ``the_loop.graph.integrations.resolve`` on its own
+    or calls the function it imported directly, which this leaves untouched.
+    """
+    from ghfakes import FakeGitHubClient
+
+    from the_loop.graph import integrations as integrations_mod
+    from the_loop.graph.integrations.github import GitHubProvider
+
+    real_resolve = integrations_mod.resolve
+    provider = GitHubProvider(client=FakeGitHubClient())
+
+    def resolve(target, config):
+        if target == "github":
+            return provider
+        return real_resolve(target, config)
+
+    monkeypatch.setattr(integrations_mod, "resolve", resolve)
+    return provider
 
 
 @pytest.fixture(autouse=True)

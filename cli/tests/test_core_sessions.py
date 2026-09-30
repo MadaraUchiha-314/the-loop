@@ -187,7 +187,7 @@ def test_ask_stamps_the_marker_centrally_and_records_the_wait(tmp_path, monkeypa
 
     posted = {}
 
-    def fake_post(item, body, gh_binary="gh"):
+    def fake_post(item, body, api=None):
         posted["ref"], posted["body"] = item.ref, body
         return True, "", "https://github.com/octo/repo/issues/5#issuecomment-1"
 
@@ -219,7 +219,7 @@ def test_ask_does_not_double_stamp_an_already_marked_question(tmp_path, monkeypa
 
     posted = {}
 
-    def fake_post(item, body, gh_binary="gh"):
+    def fake_post(item, body, api=None):
         posted["body"] = body
         return True, "", ""
 
@@ -238,7 +238,7 @@ def test_ask_still_records_the_wait_when_gh_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(
         core_sessions,
         "post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": (False, "gh exited 1: boom", ""),
+        lambda item, body, api=None: (False, "gh exited 1: boom", ""),
     )
     events = _events(monkeypatch)
 
@@ -327,7 +327,7 @@ def test_reply_report_comment_is_marked_and_quotes_the_reply(
     monkeypatch.setattr(
         core_sessions,
         "post_issue_comment",
-        lambda item, body, gh_binary="gh": posted.update(body=body) or (True, ""),
+        lambda item, body, api=None: posted.update(body=body) or (True, ""),
     )
     _events(monkeypatch)
 

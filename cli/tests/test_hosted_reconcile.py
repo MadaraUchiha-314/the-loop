@@ -25,7 +25,7 @@ from the_loop.runlock import RunLock
 
 def _write(path: Path, root: Path, *, mode="socket", slack=True, extra="") -> None:
     path.write_text(
-        'version: "0.10.0"\n'
+        'version: "0.11.0"\n'
         f"state:\n  root: {root}\n"
         "channels:\n"
         "  slack:\n"
@@ -254,7 +254,7 @@ def test_a_disabled_poller_is_stopped_too(tmp_path, monkeypatch, emitted):
 
     def write(enabled: bool) -> None:
         path.write_text(
-            'version: "0.10.0"\n'
+            'version: "0.11.0"\n'
             f"state:\n  root: {root}\n"
             "repositories: [octo/repo]\n"
             "polling:\n"

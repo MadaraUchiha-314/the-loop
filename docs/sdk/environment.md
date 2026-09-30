@@ -1,9 +1,12 @@
 # Environment expectations
 
-the-loop drives other people's programs. It spawns a harness CLI inside `tmux`, it reads and
-writes tickets through `gh`, it clones with `git`. None of that is a Python dependency, so
-none of it arrives with `pip install the-loopy-one` — and a container image that is missing
-one finds out at the first dispatch, in production.
+the-loop drives other people's programs. It spawns a harness CLI inside `tmux`, it clones
+with `git`, it serves a terminal with `ttyd`. None of that is a Python dependency, so none
+of it arrives with `pip install the-loopy-one` — and a container image that is missing one
+finds out at the first dispatch, in production. GitHub is the exception since issue-442: the
+daemon reads and writes tickets through [PyGithub](https://github.com/pygithub/pygithub/),
+which *does* arrive with the wheel, under a token you name — a credential to provide, not a
+binary to install (see [Credentials](#credentials-not-just-binaries)).
 
 This page is the contract. `loop.check_environment()` is the same contract, executable.
 
@@ -11,7 +14,6 @@ This page is the contract. `loop.check_environment()` is the same contract, exec
 
 | Binary | Renamed by | Required when | What it serves |
 |--------|-----------|---------------|----------------|
-| `gh` | [`integrations.github.cli.binary`](/config/cli/integrations-options) | `routing.enabled`, `polling.enabled` or `webhooks.ghWebhook.enabled` | GitHub ticket reads and writes: comments and the paper trail, reactions, announcements, polling, and the process graph's GitHub integration |
 | `claude` | — | `routing.enabled` and `routing.defaultHarness: claude` (the default) | spawning, resuming and one-shot critic runs of Claude Code sessions |
 | `cursor-agent` | — | `routing.enabled` and `routing.defaultHarness: cursor` | the same, for Cursor |
 | `tmux` | — | `routing.enabled` | hosting harness sessions — the only runner since issue-156, and what makes a session attachable |
@@ -22,12 +24,12 @@ Two readings of that table are worth stating plainly.
 
 **Nothing is required unconditionally.** `routing.enabled` defaults to **false** — verify
 and log only — so a service that mounts the-loop to *read* work items, events and session
-state needs none of these binaries. Turning routing on is what makes four of them
+state needs none of these binaries. Turning routing on is what makes three of them
 load-bearing at once.
 
-**`gh` is the one an operator renames.** Enterprise installs and wrapper scripts are common,
-so the check resolves whatever `integrations.github.cli.binary` names rather than the literal
-`gh`.
+**`git` is the one an operator renames.** Wrapper scripts and vendored builds are common,
+so the check resolves whatever `routing.workspace.gitBinary` names rather than the literal
+`git`.
 
 ## Checking it
 
@@ -43,12 +45,12 @@ if not report["ok"]:
   "ok": false,
   "checks": [
     {
-      "binary": "gh",
+      "binary": "tmux",
       "present": false,
       "path": "",
       "required": true,
-      "capability": "GitHub ticket reads and writes: …",
-      "configKey": "integrations.github.cli.binary"
+      "capability": "hosting harness sessions — …",
+      "configKey": ""
     },
     // … one per row of the table above, in that order
   ]
@@ -73,13 +75,10 @@ Two properties are deliberate:
 FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        git tmux ca-certificates curl gnupg \
-    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-         -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] \
-         https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
-    && apt-get update && apt-get install -y --no-install-recommends gh \
+        git tmux ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+# No `gh`: the daemon reaches GitHub through PyGithub (a dependency of the wheel) under
+# the token in GH_TOKEN — pass it at run time, never bake it into the image.
 
 # The harness CLI: Claude Code (npm) or cursor-agent (vendor installer). Only the one
 # `routing.defaultHarness` names is required.
@@ -89,18 +88,22 @@ RUN pip install the-loopy-one
 ```
 
 Install hints per platform: `tmux` and `ttyd` are in every major package manager
-(`brew install tmux` · `apt install tmux` · `dnf install tmux`); `gh` follows
-[cli.github.com](https://cli.github.com); the harness CLIs follow their vendors'
-instructions.
+(`brew install tmux` · `apt install tmux` · `dnf install tmux`); the harness CLIs follow
+their vendors' instructions.
 
 ## Credentials, not just binaries
 
 A present binary is not an authenticated one. Beyond the executables:
 
-- **`gh` must be authenticated** as the identity the-loop posts as — `gh auth login`, or
-  `GH_TOKEN`/`GITHUB_TOKEN` in the process environment. the-loop posts with the operator's
-  own credentials, which is exactly why every comment it writes carries the
-  `<!-- the-loop:agent-comment -->` marker.
+- **A GitHub token must be in the environment** — the first set variable of
+  [`integrations.github.api.tokenEnv`](/config/cli/integrations-options#github-api-tokenenv)
+  (default `GH_TOKEN`, then `GITHUB_TOKEN`); an `env.file` can carry it. A fine-grained
+  token needs *Issues: read and write*, *Pull requests: read* and *Metadata: read* on every
+  repository the instance works with (a classic token: `repo`). the-loop posts as that
+  token's login, which is exactly why every comment it writes carries the
+  `<!-- the-loop:agent-comment -->` marker. Without it, every writer says
+  `no GitHub token: set GH_TOKEN or GITHUB_TOKEN` and does nothing else, and
+  `the-loop start`'s pre-flight names the variables.
 - **The harness CLI must be logged in** with a plan or key that permits non-interactive
   runs.
 - **State must persist.** `state.root` holds the session registry, the portable work-item

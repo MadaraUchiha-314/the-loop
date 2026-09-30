@@ -1,13 +1,17 @@
 """What the-loop expects to find on the host, stated once (issue-212 R5).
 
-the-loop drives other people's programs: it spawns a harness CLI in tmux, it reads and
-writes tickets through ``gh``, it clones with ``git``. Which of those a given deployment
-actually needs depends on that deployment's CLI config — a service that only reads work
-items and events needs none of them; one with routing enabled needs four.
+the-loop drives other people's programs: it spawns a harness CLI in tmux, it clones with
+``git``, it serves a terminal with ``ttyd``. Which of those a given deployment actually
+needs depends on that deployment's CLI config — a service that only reads work items and
+events needs none of them; one with routing enabled needs three. (GitHub is **not** a
+binary since issue-442: the daemon reads and writes tickets through PyGithub under the
+token ``integrations.github.api.tokenEnv`` names — a credential, checked by
+``the_loop.poller.check_github_credentials`` and reported by every writer, not a program
+on ``PATH``.)
 
 That dependency was knowable only by reading the source, which is a poor way to discover
-that a container image is missing ``gh`` on the day it goes to production. This module is
-the table, in code:
+that a container image is missing ``tmux`` on the day it goes to production. This module
+is the table, in code:
 
 * :data:`REQUIREMENTS` — one record per binary: what it is called, which config key can
   rename it, which capability it serves, and the predicate deciding whether *this*
@@ -50,13 +54,6 @@ def _routing_on(config: Optional[dict]) -> bool:
     return bool(_dig(config, "routing.enabled", False))
 
 
-def _ingress_on(config: Optional[dict]) -> bool:
-    return bool(
-        _dig(config, "polling.enabled", False)
-        or _dig(config, "webhooks.ghWebhook.enabled", False)
-    )
-
-
 @dataclass(frozen=True)
 class Requirement:
     """One external binary the-loop may invoke, and when it may invoke it."""
@@ -78,17 +75,6 @@ class Requirement:
 
 #: The contract, in declaration order — the order the report and the docs both use.
 REQUIREMENTS: List[Requirement] = [
-    Requirement(
-        default_binary="gh",
-        config_key="integrations.github.cli.binary",
-        capability=(
-            "GitHub ticket reads and writes: comments and the paper trail, reactions, "
-            "announcements, polling, and the process graph's GitHub integration"
-        ),
-        # Anything that touches a ticket goes through `gh`: the dispatcher's paper
-        # trail, the poller's issue reads, the graph's transition comments.
-        required=lambda config: _routing_on(config) or _ingress_on(config),
-    ),
     Requirement(
         default_binary="claude",
         config_key="",

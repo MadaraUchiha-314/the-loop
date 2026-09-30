@@ -21,14 +21,13 @@ from .base import (  # noqa: F401
     register_provider,
 )
 from .github import (  # noqa: F401
-    GhClient,
     GhComment,
     GhError,
     GhItem,
     GhItemState,
     GitHubPollProvider,
     RepoSpec,
-    check_gh_dependency,
+    check_github_credentials,
     parse_repos,
 )
 from .heartbeat import (  # noqa: F401
@@ -47,7 +46,6 @@ from .poller import (  # noqa: F401
 __all__ = [
     "Closure",
     "Comment",
-    "GhClient",
     "GhComment",
     "GhError",
     "GhItem",
@@ -69,7 +67,7 @@ __all__ = [
     "ScopeFailure",
     "WorkItem",
     "build_provider",
-    "check_gh_dependency",
+    "check_github_credentials",
     "parse_repos",
     "provider_names",
     "register_provider",

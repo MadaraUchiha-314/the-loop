@@ -1576,9 +1576,8 @@ def _say_on_ticket(
         from ..sessions import WorkItemRef
 
         item = WorkItemRef.parse(reply.work_item)
-        gh_binary = _control_config(cli_config).gh_binary or "gh"
         ok, error, _ = post_issue_comment_with_url(
-            item, mark_self_authored(text), gh_binary=gh_binary
+            item, mark_self_authored(text), api=_control_config(cli_config).github
         )
         if not ok:
             logger.debug(
