@@ -235,7 +235,7 @@ def test_status_prints_the_instance_line(tmp_path, monkeypatch, capsys):
         lifecycle, "status_all", lambda config, config_path=None: report
     )
     assert main(["status"]) == 0
-    first = capsys.readouterr().out.splitlines()[0]
+    first = capsys.readouterr().out.splitlines()[1]
     assert first == "instance    laptop-b [addressed] — 1 declared, 2 managed"
 
     report["instance"] = {
@@ -244,7 +244,7 @@ def test_status_prints_the_instance_line(tmp_path, monkeypatch, capsys):
         "managed": [],
     }
     assert main(["status"]) == 0
-    first = capsys.readouterr().out.splitlines()[0]
+    first = capsys.readouterr().out.splitlines()[1]
     assert first == "instance    (unnamed) [open] — 0 declared, 0 managed"
 
 
@@ -317,3 +317,29 @@ def test_status_never_prints_running_beside_disabled(tmp_path, monkeypatch, caps
         "running (hosted in the service, pid 7) [disabled in config — still running; "
         "the service stops it on its next config check]"
     ) in lines["slack-listener"]
+
+
+def test_start_and_status_print_the_version(tmp_path, monkeypatch, capsys):
+    """
+    Feature: version visibility (issue-439)
+    Scenario: `start` and `status` name the running the-loop version
+        When `the-loop start` and `the-loop status` run
+        Then the text output carries the version and status JSON has a `version` key
+    """
+    import the_loop
+
+    monkeypatch.chdir(tmp_path)
+    _quiet_eventlog(monkeypatch)
+    monkeypatch.setattr(lifecycle, "start_all", lambda config: _report())
+    main(["start"])
+    assert f"the-loop {the_loop.__version__}" in capsys.readouterr().out
+
+    monkeypatch.setattr(
+        lifecycle,
+        "status_all",
+        lambda config, config_path=None: {"services": [], "ok": True},
+    )
+    main(["status"])
+    assert the_loop.__version__ in capsys.readouterr().out
+    main(["status", "--format", "json"])
+    assert json.loads(capsys.readouterr().out)["version"] == the_loop.__version__
