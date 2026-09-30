@@ -1,3 +1,9 @@
+## v19.19.0 (2026-09-30)
+
+### Feat
+
+- **issue-447**: the coding harness reaches GitHub through the-loop's verbs, never through gh (#448)
+
 ## v19.18.0 (2026-09-30)
 
 ### Feat
