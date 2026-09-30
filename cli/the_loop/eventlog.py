@@ -768,6 +768,35 @@ EVENT_TYPES: Dict[str, str] = {
         "again (work_item, source: webhook — a `reopened` event — or poll — "
         "the item was listed) (issue-329)."
     ),
+    # -- the harness's GitHub verbs (issue-447) --------------------------------
+    "work_item.commented": (
+        "The agent's comment was posted on a work item through `the-loop "
+        "comment` (work_item, comment_url, comment_posted, channels_posted) — "
+        "marked and enveloped by the ledger, so no ingress re-publishes it. "
+        "`warning` when the post failed."
+    ),
+    "work_item.pr_opened": (
+        "`the-loop pr create` opened a pull request for a work item "
+        "(work_item, pull_request, url); the link that follows is its own "
+        "`session.pr_linked`."
+    ),
+    "work_item.pr_merged": (
+        "`the-loop pr merge` merged a pull request (pull_request, method)."
+    ),
+    "work_item.ticket_closed": (
+        "`the-loop ticket close` closed a registered work item's ticket "
+        "(work_item, reason: completed | not_planned)."
+    ),
+    "work_item.thread_resolved": (
+        "`the-loop pr resolve-thread` resolved one review thread of a pull "
+        "request recorded against a registered work item (pull_request, thread)."
+    ),
+    "work_item.merge_refused": (
+        "`the-loop pr merge` refused to merge (pull_request, reason): the "
+        "executing process's `routing.mergeOnApproval` is false — a person "
+        "merges this repository's pull requests — or the pull request is not "
+        "recorded against a work item registered on this instance."
+    ),
     "cleanup.deferred": (
         "A work item closed but was NOT cleaned up, because the close event "
         "named no actor or an unauthorized one (work_item, reason: no-actor | "

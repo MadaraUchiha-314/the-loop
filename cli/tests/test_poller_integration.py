@@ -193,7 +193,7 @@ class GhState(GitHubClient):
 
     # -- scenario controls ------------------------------------------------------
 
-    def close_issue(self, merged=None, closed_by=""):
+    def close_upstream(self, merged=None, closed_by=""):
         """Close issue #15 upstream: it leaves the listing and reports closed."""
         self.issues = []
         self.item_document = {"number": 15, "state": "closed"}
@@ -688,7 +688,7 @@ def test_a_closed_issue_closes_its_session(tmp_path):
     poller.poll_once()
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
 
-    gh.close_issue()
+    gh.close_upstream()
     summary = poller.poll_once()
     dispatcher.stop()
 
@@ -712,7 +712,7 @@ def test_a_merged_pr_closes_its_session(tmp_path):
     poller.poll_once()
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
 
-    gh.close_issue(merged=True)
+    gh.close_upstream(merged=True)
     assert poller.poll_once().closures == 1
     dispatcher.stop()
     assert registry.find_by_work_item(REF) is None
@@ -735,7 +735,7 @@ def test_a_paused_sessions_closed_item_is_detected_and_stamped(tmp_path):
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
     registry.pause(REF)
 
-    gh.close_issue()
+    gh.close_upstream()
     summary = poller.poll_once()
     dispatcher.stop()
 
@@ -794,7 +794,7 @@ def test_a_closed_ledger_only_item_is_stamped_after_the_window(tmp_path):
     assert summary.ledger_checks == 0
     assert gh.api_calls.count("repos/octo/repo/issues/15") == 1
 
-    gh.close_issue(closed_by="octocat")
+    gh.close_upstream(closed_by="octocat")
     age("2020-01-01T00:00:00Z")
     summary = poller.poll_once()
     dispatcher.stop()
@@ -862,7 +862,7 @@ def test_a_polled_closure_by_an_authorized_closer_releases_the_item(tmp_path):
         poller.poll_once()
         assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
 
-        gh.close_issue(closed_by="octocat")
+        gh.close_upstream(closed_by="octocat")
         assert poller.poll_once().closures == 1
         dispatcher.stop()
 
@@ -893,7 +893,7 @@ def test_a_polled_closure_by_an_unlisted_closer_is_deferred(tmp_path):
         poller.poll_once()
         assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
 
-        gh.close_issue(closed_by="stranger")
+        gh.close_upstream(closed_by="stranger")
         assert poller.poll_once().closures == 1
         dispatcher.stop()
 
@@ -1006,7 +1006,7 @@ def test_a_reopened_item_spawns_a_fresh_session(tmp_path):
     registry, tmux, dispatcher, poller = _make(tmp_path, gh)
     poller.poll_once()
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
-    gh.close_issue()
+    gh.close_upstream()
     assert poller.poll_once().closures == 1
 
     gh.issues = [
@@ -1554,7 +1554,7 @@ def test_a_closed_item_on_a_bare_enterprise_source_is_reconciled(tmp_path):
     poller.poll_once()
     assert wait_until(lambda: registry.find_by_work_item(REF_GHE) is not None)
 
-    gh.close_issue()
+    gh.close_upstream()
     summary = poller.poll_once()
     dispatcher.stop()
 

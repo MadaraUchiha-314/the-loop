@@ -12,6 +12,7 @@ import logging
 from typing import List
 
 from ...authz import mark_self_authored
+from ...cli_config import merge_on_approval
 from ..contract import HookContext, HookResult
 from ..integrations import IntegrationError
 from ..registry import hook
@@ -309,8 +310,7 @@ def _merge_on_approval(ctx: HookContext) -> bool:
     the-loop stops at approved and leaves the merge to a person; the session
     reads the same knob to decide whether to run the merge, and the PR-review
     message states which is in effect so the reviewer is not surprised."""
-    routing = (dict(ctx.config or {}).get("routing") or {}) if ctx.config else {}
-    return bool(routing.get("mergeOnApproval", True))
+    return merge_on_approval(dict(ctx.config or {}))
 
 
 @hook("notify")

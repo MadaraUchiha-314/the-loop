@@ -1,10 +1,11 @@
-"""The PostToolUse hook that records a pull request the session opened (issue-370).
+"""The PostToolUse hook that records the pull requests a session opened
+(issue-370, made trigger-agnostic by issue-447).
 
 The hook replaces a prose rule with a guarantee, so what it has to prove is
 mostly about *not* acting: every degraded input is a silent exit 0 that runs
-nothing. The one thing it must do, it must do from the tool's **response** — the
-URL the creation returned — never from the command string, which cannot tell a
-successful `gh pr create` from a failed one.
+nothing. What it does do it does by **asking** — `sessions link-pr --discover`
+lists the branch's open pull requests on GitHub — so it parses no tool's output
+and knows nothing of `gh`.
 
 Loaded by path like `the-loop-gate.py`, and for the same reason: it ships with
 the plugin, not with the CLI.
@@ -47,7 +48,7 @@ def runs(hook, monkeypatch):
         stdout = "[]"
         stderr = ""
 
-    def fake_run(argv):
+    def fake_run(argv, cwd=None):
         calls.append(list(argv))
         return _Proc()
 
@@ -86,25 +87,80 @@ def run_main(hook, monkeypatch, payload, capsys):
 # -- T9: it records what was created -------------------------------------------
 
 
-def test_the_stated_work_item_is_linked_to_the_created_pull_request(
+DISCOVER = ["the-loop", "sessions", "link-pr", "--work-item", WORK_ITEM, "--discover"]
+
+
+def test_the_stated_work_item_discovers_its_pull_requests(
     hook, runs, monkeypatch, capsys
 ):
-    """T9, R4.1/R4.3 — `THE_LOOP_WORK_ITEM` is the first and best answer."""
+    """T9, R4.1/R4.3; issue-447 R4.3 — `THE_LOOP_WORK_ITEM` is the first and
+    best answer, and the hook asks GitHub rather than reading `gh`'s output."""
     monkeypatch.setenv("THE_LOOP_WORK_ITEM", WORK_ITEM)
-    code, out = run_main(hook, monkeypatch, bash_payload(), capsys)
+    code, _ = run_main(hook, monkeypatch, bash_payload(), capsys)
     assert code == 0
-    assert runs == [
-        [
-            "the-loop",
-            "sessions",
-            "link-pr",
-            "--work-item",
-            WORK_ITEM,
-            "--pull-request",
-            "412",
-        ]
-    ]
-    assert "412" in out and WORK_ITEM in out
+    assert runs == [DISCOVER]
+
+
+def test_a_recorded_link_is_told_to_the_agent(hook, monkeypatch, capsys):
+    """issue-447 R4.3 — the CLI's own `recorded …` line reaches the transcript."""
+    monkeypatch.setenv("THE_LOOP_WORK_ITEM", WORK_ITEM)
+    monkeypatch.setattr(hook.shutil, "which", lambda _: "/usr/bin/the-loop")
+    seen = {}
+
+    def fake_run(argv, cwd=None):
+        seen["cwd"] = cwd
+        return type(
+            "_P",
+            (),
+            {
+                "returncode": 0,
+                "stdout": "recorded github:octo/app#412 as delivering "
+                + WORK_ITEM
+                + "\n",
+                "stderr": "",
+            },
+        )()
+
+    monkeypatch.setattr(hook, "_run", fake_run)
+    code, out = run_main(hook, monkeypatch, bash_payload(cwd="/"), capsys)
+    assert code == 0 and "the-loop: recorded github:octo/app#412" in out
+    assert seen["cwd"] == "/"  # the branch is the session's checkout's
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param(
+            bash_payload(command="git push -u origin claude/x"), id="git-push"
+        ),
+        pytest.param(
+            bash_payload(command="git add -A && git commit -m x && git push"),
+            id="push-in-a-chain",
+        ),
+        pytest.param(bash_payload(command="gh pr create --fill"), id="gh-pr-create"),
+        pytest.param(bash_payload(command="hub pull-request -m x"), id="hub"),
+        pytest.param(
+            bash_payload(command="gh pr create --fill", stdout="no URL at all"),
+            id="no-url-needed",
+        ),
+        pytest.param(
+            {
+                "session_id": "sess-1",
+                "tool_name": "mcp__github__create_pull_request",
+                "tool_input": {"title": "x"},
+                "tool_response": {"html_url": "https://github.com/octo/lib/pull/7"},
+            },
+            id="mcp",
+        ),
+    ],
+)
+def test_anything_that_can_open_a_pull_request_triggers_discovery(
+    hook, runs, monkeypatch, capsys, payload
+):
+    """issue-447 R4.3 — trigger-agnostic: a push, any `pr create`, an MCP tool."""
+    monkeypatch.setenv("THE_LOOP_WORK_ITEM", WORK_ITEM)
+    run_main(hook, monkeypatch, payload, capsys)
+    assert runs == [DISCOVER]
 
 
 def test_the_registry_answers_when_the_environment_does_not(
@@ -162,36 +218,6 @@ def test_a_closed_session_record_never_claims_the_pull_request(
     assert runs == []
 
 
-# -- T11: the cross-repository shape -------------------------------------------
-
-
-def test_a_pull_request_in_another_repository_is_named_by_its_full_ref(
-    hook, runs, monkeypatch, capsys
-):
-    """T11, R4.1 — a number alone cannot say which repository it is in."""
-    monkeypatch.setenv("THE_LOOP_WORK_ITEM", WORK_ITEM)
-    payload = {
-        "session_id": "sess-1",
-        "cwd": "/checkout",
-        "tool_name": "mcp__github__create_pull_request",
-        "tool_input": {"title": "x"},
-        "tool_response": {"html_url": "https://github.com/octo/lib/pull/7"},
-    }
-    run_main(hook, monkeypatch, payload, capsys)
-    assert runs[-1][-1] == "github:octo/lib#7"
-
-
-def test_an_enterprise_host_is_carried_into_the_ref(hook):
-    """R4.1 — github.com stays unwritten; anything else does not."""
-    assert (
-        hook.pull_request_argument(WORK_ITEM, ("ghe.corp.example", "octo", "lib", 7))
-        == "github:ghe.corp.example/octo/lib#7"
-    )
-    assert (
-        hook.pull_request_argument(WORK_ITEM, ("github.com", "octo", "app", 9)) == "9"
-    )
-
-
 # -- T10: everything else is a silent no-op ------------------------------------
 
 
@@ -199,12 +225,14 @@ def test_an_enterprise_host_is_carried_into_the_ref(hook):
     "payload",
     [
         pytest.param(bash_payload(command="ls -la"), id="not-a-pr-command"),
+        pytest.param(bash_payload(command="git status"), id="git-but-no-push"),
         pytest.param(bash_payload(command="gh pr create --dry-run"), id="dry-run"),
         pytest.param(
-            bash_payload(command="gh pr create --fill --draft=false", stdout="nope"),
-            id="no-url-on-a-real-flag",
+            bash_payload(
+                command="the-loop pr create --work-item github:octo/app#370 --title x"
+            ),
+            id="the-loops-own-verb-links-itself",
         ),
-        pytest.param(bash_payload(stdout="failed: no commits"), id="no-url-returned"),
         pytest.param({"tool_name": "Read"}, id="unrelated-tool"),
         pytest.param({}, id="empty-payload"),
     ],
@@ -212,7 +240,8 @@ def test_an_enterprise_host_is_carried_into_the_ref(hook):
 def test_a_tool_call_that_created_nothing_runs_nothing(
     hook, runs, monkeypatch, capsys, payload
 ):
-    """T10, R4.2/R4.4 — the hook reads the result, so intent alone never links."""
+    """T10, R4.2/R4.4; issue-447 R4.4 — nothing that cannot open a PR, and
+    not the-loop's own verb, which links the PR it opens."""
     monkeypatch.setenv("THE_LOOP_WORK_ITEM", WORK_ITEM)
     assert run_main(hook, monkeypatch, payload, capsys) == (0, "")
     assert runs == []
@@ -227,11 +256,11 @@ def test_dry_run_is_a_flag_not_a_word_in_the_title(hook, runs, monkeypatch, caps
         bash_payload(command='gh pr create --title "support --dry-run"'),
         capsys,
     )
-    assert runs and runs[-1][-1] == "412"
+    assert runs == [DISCOVER]
 
 
 def test_an_interrupted_creation_links_nothing(hook, runs, monkeypatch, capsys):
-    """T10, R4.2 — an interrupted tool call's output is not an outcome."""
+    """T10, R4.2 — an interrupted tool call is not an outcome."""
     monkeypatch.setenv("THE_LOOP_WORK_ITEM", WORK_ITEM)
     payload = bash_payload()
     payload["tool_response"]["interrupted"] = True
@@ -255,7 +284,7 @@ def test_a_missing_cli_is_a_no_op(hook, monkeypatch, capsys):
     monkeypatch.setenv("THE_LOOP_WORK_ITEM", WORK_ITEM)
     monkeypatch.setattr(hook.shutil, "which", lambda _: None)
     calls: list[list[str]] = []
-    monkeypatch.setattr(hook, "_run", lambda argv: calls.append(list(argv)))
+    monkeypatch.setattr(hook, "_run", lambda argv, cwd=None: calls.append(list(argv)))
     assert run_main(hook, monkeypatch, bash_payload(), capsys) == (0, "")
     assert calls == []
 
@@ -267,7 +296,7 @@ def test_a_failing_link_is_reported_by_saying_nothing(hook, monkeypatch, capsys)
     monkeypatch.setattr(
         hook,
         "_run",
-        lambda argv: type(
+        lambda argv, cwd=None: type(
             "_P", (), {"returncode": 1, "stdout": "", "stderr": "nope"}
         )(),
     )
@@ -285,15 +314,17 @@ def test_the_hook_is_stdlib_only_so_it_survives_a_missing_cli():
     assert "shell=True" not in source
 
 
-def test_a_payload_can_never_reach_a_shell(hook, runs, monkeypatch, capsys):
-    """T15 — the extracted coordinates are validated before they reach an argv."""
+def test_abuse_447_a6_no_response_text_reaches_the_argv(
+    hook, runs, monkeypatch, capsys
+):
+    """T15; issue-447 A6 — the argv is fixed words plus a validated ref, so
+    nothing a tool printed can reach it, let alone a shell."""
     monkeypatch.setenv("THE_LOOP_WORK_ITEM", WORK_ITEM)
     payload = bash_payload(
-        stdout="https://github.com/octo/app;rm -rf ~/pull/412 https://github.com/octo/app/pull/412"
+        stdout="https://github.com/octo/app;rm -rf ~/pull/412 $(evil) `x`"
     )
     run_main(hook, monkeypatch, payload, capsys)
-    assert runs[-1][-1] == "412"
-    assert all(";" not in part for part in runs[-1])
+    assert runs == [DISCOVER]
 
 
 def test_an_injected_work_item_ref_is_refused(hook, runs, monkeypatch, capsys):
@@ -312,3 +343,53 @@ def test_the_plugin_declares_the_hook():
     assert any("the-loop-link-pr.py" in command for command in commands)
     assert any("create_pull_request" in entry["matcher"] for entry in entries)
     assert HOOK.exists()
+
+
+# -- issue-447 review: segments, and the MCP call's own scope --------------------
+
+
+@pytest.mark.parametrize(
+    "command, expected",
+    [
+        ('git commit -m "add the-loop pr create" && git push', True),
+        ("git push -u origin loop/447-the-loop-pr-create", True),
+        ('git push origin HEAD && gh pr create --title "the-loop pr create"', True),
+        ("the-loop --config c.yaml pr create --title t", False),
+        ("echo git push", False),
+        ("git pushx", False),
+        ("GIT_TRACE=1 git -C /x push", True),
+    ],
+)
+def test_the_trigger_is_decided_per_segment(hook, command, expected):
+    """issue-447 R4.3/R4.4 — a message or branch that merely mentions the verb
+    neither suppresses a real push nor triggers on its own."""
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+    assert hook.should_discover(payload) is expected
+
+
+def test_an_mcp_creation_is_discovered_on_its_own_head_and_repository(
+    hook, runs, monkeypatch, capsys
+):
+    """issue-447 R4.3 — the PR an MCP tool opened need not be the checkout's."""
+    monkeypatch.setenv("THE_LOOP_WORK_ITEM", WORK_ITEM)
+    payload = {
+        "tool_name": "mcp__github__create_pull_request",
+        "tool_input": {"owner": "octo", "repo": "lib", "head": "me:feat/x"},
+    }
+    run_main(hook, monkeypatch, payload, capsys)
+    assert runs == [
+        DISCOVER
+        + ["--branch", "feat/x", "--head-owner", "me", "--repository", "octo/lib"]
+    ]
+
+
+def test_abuse_447_a6_hostile_mcp_input_never_reaches_the_argv(
+    hook, runs, monkeypatch, capsys
+):
+    monkeypatch.setenv("THE_LOOP_WORK_ITEM", WORK_ITEM)
+    payload = {
+        "tool_name": "mcp__github__create_pull_request",
+        "tool_input": {"owner": "octo;rm", "repo": "lib", "head": "--exec=x"},
+    }
+    run_main(hook, monkeypatch, payload, capsys)
+    assert runs == [DISCOVER]

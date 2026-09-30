@@ -39,7 +39,7 @@ A session driven by the CLI daemon is **told** where its answers come from, via
   question (`attention`, the dashboard's card) and answer it straight into the session
   (`POST /api/v1/sessions/reply`). The session then **stops and waits**: the reply
   reaches it as the next event. Only if the CLI is unavailable, post the comment with
-  `gh` and mark it yourself. Never block on an interactive prompt, and never read
+  `gh` (or a GitHub MCP server) and mark it yourself. Never block on an interactive prompt, and never read
   silence as consent — if genuinely blocked, log the conflict, escalate once, and move
   to the next available work. The daemon enforces the first half for Claude Code: a
   `work-item`-mode session is launched without `AskUserQuestion` (issue-426), because
@@ -220,6 +220,11 @@ metadata to a comment or review — the body text is the only channel available.
   question travels through the verb, the marker and attribution are appended
   centrally and idempotently — the by-hand rule above is the fallback for when the
   CLI is unavailable, not the primary path.
+- **Every other comment goes through `the-loop comment`, which stamps for you too**
+  (issue-447): spec-gate replies, the completion summary, the reviewer briefing, a
+  decision record. The verb appends the marker and an event envelope centrally, and
+  channels subscribed to the agent's comments mirror it once — the ingress sees the
+  envelope and never re-publishes it.
 - **Only ever mark text the-loop composed.** `mark_self_authored` asserts authorship
   and the trigger paths silently drop whatever carries the marker — never apply it to
   payload-derived text or another author's words.
@@ -347,6 +352,9 @@ fixed — the `userInteraction` block left the harness config in issue-352.
 ## Working with other tools (MCP / CLIs / plugins)
 
 the-loop is allowed to freely interact with the MCP tools, skills and plugins available
-in the harness — Jira via MCP, GitHub via `gh`, plugins such as superpowers. Nothing
+in the harness — Jira via MCP, plugins such as superpowers. GitHub is reached through
+the-loop's own verbs (`the-loop comment`, `ticket`, `pr`, `ask` — issue-447, see
+`automation.md` § Reaching GitHub), with `gh` or a GitHub MCP server only as the
+fallback when the CLI is not installed. Nothing
 declares them in the config: discover what the harness offers (its MCP servers,
 plugins, skills and CLIs) and check before assuming a capability is or isn't available.

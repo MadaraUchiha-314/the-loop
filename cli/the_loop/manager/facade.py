@@ -380,18 +380,214 @@ class ManagerFacade:
         )
 
     def link_session_pull_request(
-        self, ref: str, pull_request: str, instance: str = ""
+        self,
+        ref: str,
+        pull_request: str,
+        instance: str = "",
+        *,
+        discover: bool = False,
+        branch: str = "",
+        repository: str = "",
+        head_owner: str = "",
     ) -> Dict[str, Any]:
         member = self.fleet.by_ref(ref, instance)
         if self.fleet.is_local(member):
             return _stamp(
-                self.core.link_session_pull_request(ref, pull_request), self.own_name
+                self.core.link_session_pull_request(
+                    ref,
+                    pull_request,
+                    discover=discover,
+                    branch=branch,
+                    repository=repository,
+                    head_owner=head_owner,
+                ),
+                self.own_name,
+            )
+        body: Dict[str, Any] = {"ref": ref, "pullRequest": pull_request}
+        if discover:
+            body.update(
+                discover=True,
+                branch=branch,
+                repository=repository,
+                headOwner=head_owner,
+            )
+        return self._proxy(member, "POST", "/api/v1/sessions/link-pr", body=body)
+
+    # -- the harness's GitHub verbs (issue-447): by instance -------------------
+    #
+    # A GitHub operation needs a token, not the member that manages the work
+    # item — and `ticket show`/`create` may name an item no member manages — so
+    # these are the manager's own unless `instance` names a member.
+
+    def post_work_item_comment(
+        self, ref: str, body: str, instance: str = ""
+    ) -> Dict[str, Any]:
+        member = self._target(instance)
+        if self.fleet.is_local(member):
+            return self.core.post_work_item_comment(ref, body)
+        return self._proxy(
+            member,
+            "POST",
+            "/api/v1/work-items/comments",
+            body={"ref": ref, "body": body},
+        )
+
+    def get_ticket(self, ref: str, instance: str = "") -> Dict[str, Any]:
+        member = self._target(instance)
+        if self.fleet.is_local(member):
+            return self.core.get_ticket(ref)
+        return self._proxy(
+            member, "GET", "/api/v1/work-items/ticket", query={"ref": ref}
+        )
+
+    def create_ticket(
+        self,
+        repository: str,
+        title: str,
+        body: str,
+        labels: Optional[Sequence[str]] = None,
+        instance: str = "",
+    ) -> Dict[str, Any]:
+        member = self._target(instance)
+        if self.fleet.is_local(member):
+            return self.core.create_ticket(repository, title, body, labels=labels)
+        return self._proxy(
+            member,
+            "POST",
+            "/api/v1/work-items/tickets",
+            body={
+                "repository": repository,
+                "title": title,
+                "body": body,
+                "labels": list(labels or []),
+            },
+        )
+
+    def create_pull_request(
+        self,
+        ref: str,
+        title: str,
+        body: str,
+        head: str,
+        base: str = "",
+        repository: str = "",
+        draft: bool = False,
+        instance: str = "",
+    ) -> Dict[str, Any]:
+        member = self._acting_member(ref, "", instance)
+        if self.fleet.is_local(member):
+            return self.core.create_pull_request(
+                ref, title, body, head, base=base, repository=repository, draft=draft
             )
         return self._proxy(
             member,
             "POST",
-            "/api/v1/sessions/link-pr",
-            body={"ref": ref, "pullRequest": pull_request},
+            "/api/v1/work-items/pull-requests",
+            body={
+                "ref": ref,
+                "title": title,
+                "body": body,
+                "head": head,
+                "base": base,
+                "repository": repository,
+                "draft": draft,
+            },
+        )
+
+    def get_pull_request_status(
+        self, ref: str, work_item: str = "", instance: str = ""
+    ) -> Dict[str, Any]:
+        member = self._target(instance)
+        if self.fleet.is_local(member):
+            return self.core.get_pull_request_status(ref, work_item)
+        return self._proxy(
+            member,
+            "GET",
+            "/api/v1/pull-requests/status",
+            query={"ref": ref, "workItem": work_item},
+        )
+
+    def list_pull_request_threads(
+        self,
+        ref: str,
+        work_item: str = "",
+        include_resolved: bool = False,
+        instance: str = "",
+    ) -> Dict[str, Any]:
+        member = self._target(instance)
+        if self.fleet.is_local(member):
+            return self.core.list_pull_request_threads(
+                ref, work_item, include_resolved=include_resolved
+            )
+        return self._proxy(
+            member,
+            "GET",
+            "/api/v1/pull-requests/threads",
+            query={
+                "ref": ref,
+                "workItem": work_item,
+                "all": "true" if include_resolved else "",
+            },
+        )
+
+    # The registered-work-item rule (R1.10) reads the registry of the instance
+    # that executes, so a lifecycle act (open, merge, close, resolve) runs where
+    # its work item is registered — by ref, like every session operation — and
+    # on the manager itself when no member manages it (where the rule refuses
+    # it unless the manager registered it).
+
+    def _acting_member(self, ref: str, work_item: str, instance: str) -> Member:
+        try:
+            return self.fleet.by_ref(work_item or ref, instance)
+        except LookupError:
+            return self._target(instance)
+
+    def close_ticket(
+        self,
+        ref: str,
+        reason: str = "completed",
+        work_item: str = "",
+        instance: str = "",
+    ) -> Dict[str, Any]:
+        member = self._acting_member(ref, work_item, instance)
+        if self.fleet.is_local(member):
+            return self.core.close_ticket(ref, reason, work_item)
+        return self._proxy(
+            member,
+            "POST",
+            "/api/v1/work-items/tickets/close",
+            body={"ref": ref, "reason": reason, "workItem": work_item},
+        )
+
+    def resolve_review_thread(
+        self, ref: str, thread: str, work_item: str = "", instance: str = ""
+    ) -> Dict[str, Any]:
+        member = self._acting_member(ref, work_item, instance)
+        if self.fleet.is_local(member):
+            return self.core.resolve_review_thread(ref, thread, work_item)
+        return self._proxy(
+            member,
+            "POST",
+            "/api/v1/pull-requests/threads/resolve",
+            body={"ref": ref, "thread": thread, "workItem": work_item},
+        )
+
+    def merge_pull_request(
+        self,
+        ref: str,
+        work_item: str = "",
+        method: str = "merge",
+        instance: str = "",
+        sha: str = "",
+    ) -> Dict[str, Any]:
+        member = self._acting_member(ref, work_item, instance)
+        if self.fleet.is_local(member):
+            return self.core.merge_pull_request(ref, work_item, method, sha=sha)
+        return self._proxy(
+            member,
+            "POST",
+            "/api/v1/pull-requests/merge",
+            body={"ref": ref, "workItem": work_item, "method": method, "sha": sha},
         )
 
     def close_session(

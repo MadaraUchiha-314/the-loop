@@ -307,14 +307,44 @@ class SessionsCommand(Command):
             required=True,
             help="Work-item ref, e.g. github:OWNER/REPO#15",
         )
-        link.add_argument(
+        which = link.add_mutually_exclusive_group(required=True)
+        which.add_argument(
             "--pull-request",
-            required=True,
             metavar="REF|N",
             help=(
                 "The pull request that delivers it: its number in the work "
                 "item's own repository, or a full ref for one in another "
                 "repository (github:OWNER/REPO#16)."
+            ),
+        )
+        which.add_argument(
+            "--discover",
+            action="store_true",
+            help=(
+                "Ask GitHub instead (issue-447): link every open pull request "
+                "whose head is this checkout's branch, in its origin repository."
+            ),
+        )
+        link.add_argument(
+            "--branch",
+            default="",
+            help="With --discover: the head branch (default: the checked-out one).",
+        )
+        link.add_argument(
+            "--head-owner",
+            default="",
+            help=(
+                "With --discover: the owner of the head branch, when it is a "
+                "fork's (default: the repository's owner)."
+            ),
+        )
+        link.add_argument(
+            "--repository",
+            default="",
+            metavar="[HOST/]OWNER/REPO",
+            help=(
+                "With --discover: where to look (default: the checkout's origin, "
+                "else the work item's repository)."
             ),
         )
         link.add_argument("--registry-dir", default=registry_dir)
@@ -514,6 +544,8 @@ class SessionsCommand(Command):
         the-loop authored carries none of the inferences — so without this the
         review comments its own phase gate asks for never reach it.
         """
+        if args.discover:
+            return self._discover_prs(args)
         try:
             result = routed(
                 lambda connection: connection.post(
@@ -524,6 +556,51 @@ class SessionsCommand(Command):
                     args.work_item,
                     args.pull_request,
                     config=_cli_config(),
+                    registry_dir=args.registry_dir,
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001 — mapped, or re-raised below
+            return self._report(exc)
+        return _render(result)
+
+    def _discover_prs(self, args: argparse.Namespace) -> int:
+        """``link-pr --discover`` (issue-447): the pull requests are asked of
+        GitHub, not parsed out of a tool's output. The branch and the repository
+        are the checkout's, read here — the service does not run in it."""
+        from ..core import github_ops
+        from ..ghhost import current_branch, origin_github_repo
+
+        cwd = Path.cwd()
+        branch = args.branch or current_branch(cwd)
+        if not branch:
+            print(
+                "error: no branch is checked out here (detached HEAD?); pass --branch",
+                file=sys.stderr,
+            )
+            return 2
+        # The origin only when it is on a GitHub host this instance trusts;
+        # otherwise the work item's own repository (core's default for "").
+        repository = args.repository or origin_github_repo(
+            cwd, github_ops.trusted_hosts(_cli_config())
+        )
+        try:
+            result = routed(
+                lambda connection: connection.post(
+                    "/sessions/link-pr",
+                    {
+                        "ref": args.work_item,
+                        "discover": True,
+                        "branch": branch,
+                        "repository": repository,
+                        "headOwner": args.head_owner,
+                    },
+                ),
+                lambda: github_ops.discover_pull_requests(
+                    args.work_item,
+                    branch,
+                    repository,
+                    _cli_config(),
+                    head_owner=args.head_owner,
                     registry_dir=args.registry_dir,
                 ),
             )

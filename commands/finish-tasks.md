@@ -23,8 +23,9 @@ of the loop; the cleanup set is intentionally **extensible** (more may be added 
 2. **Mark complete.** Set the ticket phase label to `loop:complete`; the outcome and its
    evidence are already recorded where each gate left them, under `evidence/`.
 
-3. **Post the completion summary — first, and promptly.** One comment on the ticket
-   (it reaches the room through the mirror): what shipped, the evidence links, the
+3. **Post the completion summary — first, and promptly.** One comment on the ticket,
+   posted with `the-loop comment --work-item <ref> --body-file -` (it stamps the marker
+   and reaches the room through the mirror; issue-447): what shipped, the evidence links, the
    accepted gaps. This is the endgame's one message a reader most wants, and it is
    **raced by the close** (issue-405 P2): when the merge's `Closes #N` has already
    closed the ticket, the daemon holds the session for `routing.tmux.finishGraceSeconds`
@@ -39,8 +40,10 @@ of the loop; the cleanup set is intentionally **extensible** (more may be added 
 
 5. **Cleanup (extensible):**
    - **Close the ticket(s)** for this work item (GitHub issue / Jira) **if still open**,
-     referencing the merged PR(s) / evidence. A ticket a merge's `Closes #N` already
-     closed is expected — say so in the summary and move on; do not reopen it. Closing
+     with `the-loop ticket close <ref>` (issue-447; `--reason not_planned` for work
+     that was dropped), after a `the-loop comment` that references the merged PR(s)
+     and evidence. A ticket a merge's `Closes #N` already closed is expected — say so
+     in the summary and move on; do not reopen it. Closing
      the ticket is also what ends the work item's harness session — one of its PRs
      merging does not (see `reference/automation.md`).
    - _Future cleanup steps are added here_ (e.g. archiving branches, releasing artifacts,

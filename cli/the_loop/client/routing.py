@@ -20,6 +20,7 @@ command.
 from __future__ import annotations
 
 import os
+import sys
 from typing import Any, Callable, Optional, Tuple
 
 #: Env var marking an invocation that must execute core in-process (tests).
@@ -47,6 +48,61 @@ def routed(
     from .. import client
 
     return remote(client.connect(config))
+
+
+#: What a harness verb says when it runs in-process (issue-447, R2.2): the
+#: fallback is never silent.
+IN_PROCESS_NOTE = (
+    "note: no control-plane service is reachable; running in-process on this "
+    "session's GitHub token (integrations.github.api.tokenEnv)"
+)
+
+
+#: What a harness verb says when the running service predates it.
+STALE_SERVICE_NOTE = (
+    "note: the running control-plane service does not serve this verb yet "
+    "(restart it with `the-loop restart`); running in-process on this "
+    "session's GitHub token"
+)
+
+
+def harness_routed(
+    remote: Callable[[Any], Any],
+    local: Callable[[], Any],
+    config: Optional[dict] = None,
+) -> Any:
+    """``remote`` through a **running** service, else ``local()`` — and say so.
+
+    The harness's GitHub verbs (issue-447, decision-140 D2) differ from every
+    other core verb in one way: their only state is on GitHub, and all a
+    service adds is the daemon's token. So they prefer the service when one
+    answers ``/health`` — the session then never holds a token — and otherwise
+    run in-process on the session's own, as ``ask`` does, rather than failing.
+    They never auto-start a service: in a cloud checkout that would only move the
+    session's token into a second process. The fallback prints
+    :data:`IN_PROCESS_NOTE` on stderr every time (A5).
+    """
+    if not via_service():
+        return local()
+    from .. import client
+
+    resolved = client.resolved_config(config)
+    if client.healthy(resolved):
+        try:
+            return remote(client.Client(resolved))
+        except client.ApiError as exc:
+            # A service older than the verb answers `/health` but not the route
+            # (FastAPI's bare 404/405). Run it here rather than fail, and say
+            # why — a restart picks the route up.
+            if exc.status not in (404, 405) or exc.detail not in (
+                "Not Found",
+                "Method Not Allowed",
+            ):
+                raise
+            print(STALE_SERVICE_NOTE, file=sys.stderr)
+            return local()
+    print(IN_PROCESS_NOTE, file=sys.stderr)
+    return local()
 
 
 def service_error(exc: Exception) -> Optional[Tuple[str, int]]:

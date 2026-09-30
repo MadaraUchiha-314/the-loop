@@ -11,16 +11,18 @@ harness works on must have a ticket — this command creates it and wires the sp
 
 **Read the `the-loop` skill, `reference/collaboration.md` and `reference/workflow.md`.**
 Load `.the-loop/harness-config.yaml`. The ticketing system is whatever the repository's
-remote and the available integration are (GitHub via `gh`/MCP, Jira via MCP) — it is no
-longer a harness-config key (issue-352).
+remote and the available integration are (GitHub via `the-loop ticket create`, Jira via
+MCP) — it is no longer a harness-config key (issue-352).
 
 ## Steps
 
 1. **Read the requirements** at `$ARGUMENTS`. Use its introduction/user-stories to form
    the ticket title and body.
 
-2. **Create the ticket** in the project's ticketing system using the available
-   integration (GitHub via `gh`/GitHub MCP, or Jira via MCP):
+2. **Create the ticket** in the project's ticketing system (GitHub: `the-loop ticket
+   create --repository OWNER/REPO --title … --body-file … --label
+   loop:requirements-definition`, which needs no `gh` — issue-447; `gh` only when the CLI
+   is not installed. Jira: via MCP):
    - Title from the requirement's summary; body links to the spec (do not paste the whole
      file — reference it, single source of truth).
    - Apply the initial phase label `loop:requirements-definition`
@@ -32,9 +34,9 @@ longer a harness-config key (issue-352).
    artifact) along with it. Update the front-matter of every promoted file (`brainstorm.md`
    included): `workItem: <id>`, `status` as appropriate.
 
-4. **Reference on the ticket.** Post/confirm a comment or description link pointing to
-   the checked-in `docs/specs/<id>/requirements.md` (single source of truth; later
-   changes are edits to the file, not new comments).
+4. **Reference on the ticket.** Post (`the-loop comment`) or confirm a comment or
+   description link pointing to the checked-in `docs/specs/<id>/requirements.md` (single
+   source of truth; later changes are edits to the file, not new comments).
 
 5. **Report** the ticket id/URL and the next step:
    `/the-loop:create-design <id>`.

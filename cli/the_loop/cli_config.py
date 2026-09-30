@@ -382,3 +382,19 @@ def load_routing_config(path: Optional[Union[str, Path]] = None) -> dict:
     """
     resolved = Path(path) if path is not None else default_cli_config_path()
     return load_cli_config(resolved, strict=False).get("routing") or {}
+
+
+def merge_on_approval(config: Optional[Mapping]) -> bool:
+    """``routing.mergeOnApproval`` — whether an approval merges the PR (issue O9).
+
+    Default ``True``, the pre-O9 behaviour. One reader for the two places that
+    act on it (issue-447): the graph's ``notify`` hook, which words the
+    pr-review-pending message by it, and ``the-loop pr merge``, which refuses to
+    merge when it is ``false``. Both read the config of the process they run in,
+    so a verb routed through the service obeys the daemon's policy, not one a
+    session brought along.
+    """
+    routing = config.get("routing") if isinstance(config, Mapping) else None
+    if not isinstance(routing, Mapping):
+        return True
+    return bool(routing.get("mergeOnApproval", True))

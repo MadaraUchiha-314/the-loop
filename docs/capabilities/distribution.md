@@ -35,8 +35,9 @@ validating a config, never copied into the projects the-loop is run on.
 - WHERE Claude Code uses the SessionStart hook (`hooks/hooks.json`) the Cursor package
   SHALL use the always-applied rule `rules/the-loop.mdc` instead. `hooks/hooks.json`
   SHALL also declare the Stop gate (`the-loop-gate.py`) and, since issue-370, the
-  `PostToolUse` recorder (`the-loop-link-pr.py`, which runs `sessions link-pr` for a pull
-  request the session just created); Cursor has a hook surface for the first and none for
+  `PostToolUse` recorder (`the-loop-link-pr.py`, which runs `sessions link-pr --discover`
+  after a `git push` or a pull-request-creating call — issue-447, no `gh` output parsed);
+  Cursor has a hook surface for the first and none for
   the second, so there the skill's prose rule is what records a pull request.
 - Work-item and process templates SHALL be internal to the plugin, shipped under
   `skills/the-loop/templates/` (`manifest.templatesDir`) and read from
@@ -147,6 +148,7 @@ validating a config, never copied into the projects the-loop is run on.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-447 | The plugin's `PostToolUse` recorder became trigger-agnostic — a push or any pull-request-creating call runs `sessions link-pr --discover` — and the skill and slash commands send the harness's GitHub acts through `the-loop` verbs instead of `gh` | [spec](../specs/issue-447/), [decision-140](../decisions/decision-140.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/447) |
 | issue-415 | The onboarding covers what people install the-loop for: `cli-config.schema.json` gained its own `x-onboarding` block (seven groups, every block covered), an **autonomy ladder** turns "how much should it do unattended?" into one question with three rungs that provably cannot reach a human gate, init establishes the deployment shape before proposing an ingress, walks and probes the Slack setup, and preflights every credential the configs name — presence only, never a value | [spec](../specs/issue-415/), [onboarding guide](https://madarauchiha-314.github.io/the-loop/guide/onboarding), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/415) |
 | issue-220 | Config schemas made internal to the plugin (`manifest.schemasDir`); init stops copying up to 118 KB of them into each project, upgrade deletes the copies already there, and scaffolded configs carry a `# yaml-language-server: $schema=` modeline instead | [spec](../specs/issue-220/), [decision-080](../decisions/decision-080.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/220) |
 | issue-152 | The **Claude Code** plugin became installable and upgradable from the CLI (`the-loop install` / `upgrade`), at user or project scope, without opening a session — the terminal-side counterpart to the marketplace routes. Cursor stays in-editor-only, split out as issue-157 | [spec](../specs/issue-152/), [decision-057](../decisions/decision-057.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/152) |

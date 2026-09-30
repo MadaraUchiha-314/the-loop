@@ -228,6 +228,26 @@ package — there are no install extras (owner decision, PR #162).
   in-process, because the escalation path must not depend on the service being up.
   The `work-item` interaction directive names the verb; manual `gh` + marker
   remains only as the stated fallback.
+- The harness's GitHub acts SHALL be work-item and pull-request scoped routes, never a
+  generic GitHub proxy (issue-447): `POST /work-items/comments`
+  (`postWorkItemComment`), `GET /work-items/ticket` (`getTicket`), `POST
+  /work-items/tickets` (`createTicket`), `POST /work-items/pull-requests`
+  (`createPullRequest`), `GET /pull-requests/status` (`getPullRequestStatus`), `GET
+  /pull-requests/threads` (`listPullRequestThreads`), `POST /pull-requests/merge`
+  (`mergePullRequest`), `POST /work-items/tickets/close` (`closeTicket`), `POST
+  /pull-requests/threads/resolve` (`resolveReviewThread`), and `discover` on `POST
+  /sessions/link-pr` — each with its MCP
+  tool (`post_comment`, `get_ticket`, `create_ticket`, `create_pull_request`,
+  `pull_request_status`, `pull_request_threads`, `merge_pull_request`, `close_ticket`,
+  `resolve_review_thread`). The lifecycle acts require a work item registered on the
+  executing instance (decision-140 D8), so a manager routes them to the member that
+  manages the work item. Each executes
+  core with **this process's** config, so the token and the merge policy
+  (`routing.mergeOnApproval`) are the daemon's; a manager serves them by instance. The
+  `comment`, `ticket` and `pr` verbs route here when a service answers `/health`, and
+  otherwise run in-process with a stderr note, never auto-starting one (decision-140
+  D2) — the one other exception to "the service is the only execution path" besides
+  `ask`.
 - An operator's answer SHALL travel through **`POST /api/v1/sessions/reply`**
   (issue-208): the text is bracketed-pasted into the session's tmux pane under a
   provenance header, `session.reply_sent` is emitted, and a **marked** report
@@ -478,6 +498,7 @@ package — there are no install extras (owner decision, PR #162).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-447 | Seven routes and seven MCP tools for the harness's GitHub acts — comment, ticket read and create, pull request open, status, threads and merge — plus `discover` on `sessions/link-pr`, all over `core.github_ops` with the executing process's token and merge policy; `harness_routed` sends the CLI verbs to a running service and otherwise runs them in-process, loudly | [spec](../specs/issue-447/), [decision-140](../decisions/decision-140.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/447) |
 | issue-374 | The manager (2026-09-30): the router calls a facade — `CoreFacade` on a worker, `ManagerFacade` on a manager — so one `APIRouter` serves both roles; the `instance` parameter on every keyed operation; `409` and `502` on the route class; the `The-Loop-Instances-Unreachable` header; the `instances` family; the stream fanned in from every member with a per-member cursor; the dashboard's Instances tab, instance pane, chip and filter | [spec](../specs/issue-374/), [decision-138](../decisions/decision-138.md), [instances](instances.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/374) |
 | issue-419 | The work-item trace stopped burying the conversation in its own bookkeeping: the *Tool calls* switch became one **Verbose** switch over the whole stream, **defaulting off**. Quiet, the panel drops the tool groups, raw tool output, the empty `system (system)` meta rows and the trail's plumbing families, and drops an assistant turn whose only content was tool calls rather than leaving a header over an empty body; verbose renders everything exactly as before. Two pure predicates in `model.ts` — `isReadable` over a projected row, `isBookkeeping` over an event's family — carry the classification, and both fail open: `level=error` is never hidden and a family nobody classified renders. The trail's 40-row budget now runs after the filter, so a `graph.parked` is no longer buried behind forty `poll.*` rows, and a view the filter emptied names its hidden count and the switch. Presentation only: no route, payload, stored setting or event type changed | [spec](../specs/issue-419/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/419) |
 | issue-395 | The hosted ingress set follows the config (2026-09-20, B5 of the e2e run): `HostedIngresses` in `api/ingress.py` composes the set as `the-loop start` did, then re-hashes the config file every five seconds on a supervisor thread and reconciles membership on change — an ingress no longer enabled is stopped (`ingress.hosted_stopped reason=config`, lock released, no restart), one newly enabled is started through the same starter, lock and refusals as at boot (`ingress.hosted reason=config`), and one `config.reloaded` names both. So `channels.slack.read.mode: off` now ends the hosted listener's Socket Mode connection instead of leaving it consuming events until a restart. `the-loop status` no longer prints `running … [disabled]`: a running row the config disables says so and names what ends it. Membership only — a running ingress's own config keeps reloading as before; `service.hostIngresses` stays boot-only. No config key, schema, state or event type change | [spec](../specs/issue-395/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/395) |

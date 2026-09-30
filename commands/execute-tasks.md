@@ -54,8 +54,10 @@ spec files read from disk, not the drafting conversation (plan-mode style).
    directly** and
    register against the PR's own ref (`github:OWNER/REPO#<pr-number>`), so PR activity
    still resumes this session. **Every PR you open is recorded against the work item in
-   the same step as opening it** — `the-loop sessions link-pr --work-item
-   github:OWNER/REPO#N --pull-request <pr-number>` — because a PR the-loop authored
+   the same step as opening it** — open it with `the-loop pr create --work-item
+   github:OWNER/REPO#N --title … --body-file …`, which records it in the same act (or run
+   `the-loop sessions link-pr --work-item github:OWNER/REPO#N --pull-request
+   <pr-number>` for one opened another way) — because a PR the-loop authored
    carries none of the linkages the router can infer, and without the binding its review
    comments reach no session at all. **If the item takes more than one PR**, label
    **every** one of them, record every one of them, and list them all in the execution
@@ -77,7 +79,9 @@ spec files read from disk, not the drafting conversation (plan-mode style).
    `the-loop critic policy` (`selfReviewCount`, `criticReviewCount`, the stop
    conditions; defaults 3/3 when unset or when the CLI is not installed), then run up
    to that many self-reviews and critic reviews (configured critics) BEFORE escalating
-   to a human. Then run the **security review gate** (built-in security-review skill when
+   to a human — reading the PR's CI with `the-loop pr status <pr>` and its open review
+   threads with `the-loop pr threads <pr>`, and posting each review with `the-loop
+   comment` (never `gh`, issue-447). Then run the **security review gate** (built-in security-review skill when
    available, else the-loop's checklist in `reference/security.md`); risk tier 4 or
    above waits for a named human security sign-off. Record every review as a
    PR/ticket comment and

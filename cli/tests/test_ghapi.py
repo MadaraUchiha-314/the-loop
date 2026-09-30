@@ -805,3 +805,255 @@ def test_the_shared_client_reuses_one_github_per_host_across_writers(
     client.post_comment(OWNER, REPO, 15, "two")
     assert client.github() is client.github()
     assert len(github_replay.exchanges) == 2
+
+
+# -- issue-447: the harness's pull-request verbs ------------------------------------
+
+
+def test_repository_is_one_get(client, github_replay):
+    github_replay.on("GET", "/repos/octo/repo", 200, {"default_branch": "trunk"})
+    assert client.repository(OWNER, REPO)["default_branch"] == "trunk"
+    assert [e.path for e in github_replay.exchanges] == ["/repos/octo/repo"]
+
+
+def test_create_pull_is_one_post_with_the_whole_request(client, github_replay):
+    github_replay.on(
+        "POST",
+        "/repos/octo/repo/pulls",
+        201,
+        {"number": 12, "html_url": "https://github.com/octo/repo/pull/12"},
+    )
+    assert client.create_pull(OWNER, REPO, "T", "B", "feat/x", "main", draft=True) == (
+        12,
+        "https://github.com/octo/repo/pull/12",
+    )
+    (exchange,) = github_replay.exchanges
+    assert exchange.json == {
+        "title": "T",
+        "body": "B",
+        "head": "feat/x",
+        "base": "main",
+        "draft": True,
+    }
+
+
+def test_a_duplicate_pull_request_is_githubs_refusal(client, github_replay):
+    github_replay.on(
+        "POST",
+        "/repos/octo/repo/pulls",
+        422,
+        {
+            "message": "Validation Failed",
+            "errors": [{"message": "A pull request already exists"}],
+        },
+    )
+    with pytest.raises(GitHubApiError) as exc:
+        client.create_pull(OWNER, REPO, "T", "B", "feat/x", "main")
+    assert exc.value.status == 422
+
+
+@pytest.mark.parametrize(
+    "head, base",
+    [
+        ("feat x", "main"),
+        ("-x", "main"),
+        ("a..b", "main"),
+        ("feat/x", "main;rm"),
+        ("x@{1}", "main"),
+        ("evil owner:feat", "main"),
+        ("", "main"),
+    ],
+)
+def test_abuse_447_a3_hostile_branches_are_refused_before_a_request(
+    client, github_replay, head, base
+):
+    with pytest.raises(GitHubApiError, match="unusable"):
+        client.create_pull(OWNER, REPO, "T", "B", head, base)
+    assert github_replay.exchanges == []
+
+
+def test_a_fork_head_is_owner_colon_branch(client, github_replay):
+    github_replay.on("POST", "/repos/octo/repo/pulls", 201, {"number": 3})
+    client.create_pull(OWNER, REPO, "T", "B", "someone:feat/x", "main")
+    assert github_replay.exchanges[0].json["head"] == "someone:feat/x"
+
+
+def test_pr_status_reads_are_bounded_at_three_exchanges(client, github_replay):
+    github_replay.on(
+        "GET", "/repos/octo/repo/pulls/12", 200, {"head": {"sha": "a" * 40}}
+    )
+    github_replay.on(
+        "GET",
+        f"/repos/octo/repo/commits/{'a' * 40}/check-runs",
+        200,
+        {"total_count": 1, "check_runs": [{"name": "test", "status": "completed"}]},
+    )
+    github_replay.on(
+        "GET",
+        f"/repos/octo/repo/commits/{'a' * 40}/status",
+        200,
+        {"state": "success", "statuses": [{"context": "ci", "state": "success"}]},
+    )
+    pull = client.get_pull(OWNER, REPO, 12)
+    runs, statuses = client.commit_checks(OWNER, REPO, pull["head"]["sha"])
+    assert runs == [{"name": "test", "status": "completed"}]
+    assert statuses == [{"context": "ci", "state": "success"}]
+    assert len(github_replay.exchanges) == 3
+    assert github_replay.exchanges[1].query == "per_page=100"
+
+
+def test_abuse_447_a3_a_hostile_sha_is_refused(client, github_replay):
+    with pytest.raises(GitHubApiError, match="unusable commit sha"):
+        client.commit_checks(OWNER, REPO, "../../etc")
+    assert github_replay.exchanges == []
+
+
+def test_merge_pull_is_one_put_with_the_method(client, github_replay):
+    github_replay.on(
+        "PUT", "/repos/octo/repo/pulls/12/merge", 200, {"merged": True, "sha": "abc"}
+    )
+    assert client.merge_pull(OWNER, REPO, 12, "squash") == {
+        "merged": True,
+        "sha": "abc",
+    }
+    assert github_replay.exchanges[0].json == {"merge_method": "squash"}
+
+
+def test_a_pull_request_github_will_not_merge_is_a_405(client, github_replay):
+    github_replay.on(
+        "PUT",
+        "/repos/octo/repo/pulls/12/merge",
+        405,
+        {"message": "Pull Request is not mergeable"},
+    )
+    with pytest.raises(GitHubApiError) as exc:
+        client.merge_pull(OWNER, REPO, 12, "merge")
+    assert exc.value.status == 405
+    assert "not mergeable" in str(exc.value)
+
+
+def test_abuse_447_a3_an_unknown_merge_method_is_refused(client, github_replay):
+    with pytest.raises(GitHubApiError, match="merge method"):
+        client.merge_pull(OWNER, REPO, 12, "octopus")
+    assert github_replay.exchanges == []
+
+
+def _thread(n, resolved=False):
+    return {
+        "id": f"PRRT_{n}",
+        "isResolved": resolved,
+        "isOutdated": False,
+        "path": "cli/x.py",
+        "line": n,
+        "comments": {
+            "nodes": [
+                {
+                    "id": f"PRRC_{n}",
+                    "body": "fix this",
+                    "createdAt": "2026-09-30T10:00:00Z",
+                    "url": f"https://github.com/octo/repo/pull/12#r{n}",
+                    "author": {"login": "alice"},
+                }
+            ]
+        },
+    }
+
+
+def test_review_threads_walk_the_cursor_with_values_as_variables(client, github_replay):
+    def page(exchange):
+        after = exchange.json["variables"]["after"]
+        nodes = [_thread(1)] if after is None else [_thread(2, resolved=True)]
+        return {
+            "repository": {
+                "pullRequest": {
+                    "reviewThreads": {
+                        "pageInfo": _page_info(after is None, "c1"),
+                        "nodes": nodes,
+                    }
+                }
+            }
+        }
+
+    github_replay.graphql("reviewThreads", page)
+    threads = client.review_threads(OWNER, REPO, 12)
+    assert [t["id"] for t in threads] == ["PRRT_1", "PRRT_2"]
+    assert threads[1]["isResolved"] is True
+    assert threads[0]["comments"][0]["author"] == "alice"
+    calls = github_replay.graphql_calls()
+    assert len(calls) == 2
+    assert calls[0].json["variables"] == {
+        "owner": OWNER,
+        "name": REPO,
+        "number": 12,
+        "first": PAGE_SIZE,
+        "after": None,
+    }
+    assert "octo" not in calls[0].json["query"]  # A6 of issue-442, kept
+
+
+def test_review_threads_of_a_missing_pull_request_are_a_404(client, github_replay):
+    github_replay.graphql("reviewThreads", {"repository": {"pullRequest": None}})
+    with pytest.raises(GitHubApiError) as exc:
+        client.review_threads(OWNER, REPO, 12)
+    assert exc.value.not_found
+
+
+def test_open_pulls_for_head_filters_by_owner_and_branch(client, github_replay):
+    github_replay.on(
+        "GET", "/repos/octo/repo/pulls", 200, [{"number": 7, "html_url": "u"}]
+    )
+    assert client.open_pulls_for_head(OWNER, REPO, "claude/x") == [
+        {"number": 7, "html_url": "u"}
+    ]
+    query = github_replay.exchanges[0].query
+    assert "state=open" in query and "head=octo%3Aclaude%2Fx" in query
+
+
+def test_abuse_447_a1_the_token_never_reaches_a_verb_error(
+    client, github_replay, token
+):
+    github_replay.on(
+        "PUT", "/repos/octo/repo/pulls/12/merge", 401, {"message": "Bad credentials"}
+    )
+    with pytest.raises(GitHubApiError) as exc:
+        client.merge_pull(OWNER, REPO, 12, "merge")
+    assert token not in str(exc.value)
+
+
+def test_merge_pull_sends_the_reviewed_head(client, github_replay):
+    github_replay.on("PUT", "/repos/octo/repo/pulls/12/merge", 200, {"merged": True})
+    client.merge_pull(OWNER, REPO, 12, "merge", sha="a" * 40)
+    assert github_replay.exchanges[0].json == {"merge_method": "merge", "sha": "a" * 40}
+
+
+def test_close_issue_is_one_patch_with_the_reason(client, github_replay):
+    github_replay.on("PATCH", "/repos/octo/repo/issues/5", 200, {"state": "closed"})
+    client.close_issue(OWNER, REPO, 5, "not_planned")
+    assert github_replay.exchanges[0].json == {
+        "state": "closed",
+        "state_reason": "not_planned",
+    }
+    with pytest.raises(GitHubApiError, match="close reason"):
+        client.close_issue(OWNER, REPO, 5, "duplicate")
+
+
+def test_resolve_review_thread_is_the_mutation_with_the_id_as_a_variable(
+    client, github_replay
+):
+    github_replay.graphql(
+        "resolveReviewThread",
+        {"resolveReviewThread": {"thread": {"id": "PRRT_1", "isResolved": True}}},
+    )
+    assert client.resolve_review_thread("PRRT_1") is True
+    (call,) = github_replay.graphql_calls()
+    assert call.json["variables"] == {"threadId": "PRRT_1"}
+    with pytest.raises(GitHubApiError, match="thread id"):
+        client.resolve_review_thread("x y")
+
+
+def test_open_pulls_for_head_asks_for_a_forks_head(client, github_replay):
+    github_replay.on("GET", "/repos/octo/repo/pulls", 200, [])
+    client.open_pulls_for_head(OWNER, REPO, "feat/x", head_owner="me")
+    assert "head=me%3Afeat%2Fx" in github_replay.exchanges[0].query
+    with pytest.raises(GitHubApiError, match="head owner"):
+        client.open_pulls_for_head(OWNER, REPO, "feat/x", head_owner="a b")

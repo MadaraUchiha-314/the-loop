@@ -1,31 +1,34 @@
 #!/usr/bin/env python3
-"""Record the pull request this session just opened (issue-370).
+"""Record the pull requests this session opened (issue-370, issue-447).
 
 `the-loop sessions link-pr` is how a work item's tracking learns that a pull
-request delivers it (issue-274, issue-368). Until now the only thing that ran it
-was a **prose rule** — `reference/automation.md`, `/work-on` and
-`/execute-tasks` all tell the agent to run it right after `gh pr create` — and a
-rule a language model has to remember is not a guarantee. What covered the gap
-was inference: the poller and the dispatcher reconstructed the linkage from
-GitHub's closing references, an `issue-<n>` branch name or a closing keyword.
-Issue-370 removed that, because it tracked pull requests nobody stated. So the
-recording has to actually happen, which means a hook does it.
+request delivers it (issue-274, issue-368). Until issue-370 the only thing that
+ran it was a **prose rule**, and a rule a language model has to remember is not
+a guarantee — so a hook does it.
 
-**PostToolUse, and it reads the result rather than the intent.** The pull
-request's number comes from what the tool *returned* — the URL `gh pr create`
-prints, or the GitHub MCP tool's response — never from the command string. A
-command that failed, was interrupted, or was `gh pr create --dry-run` returns no
-URL and links nothing; a regex over the argv could not tell those apart.
+**It asks GitHub; it reads no tool's output** (issue-447). This hook used to
+look for `gh pr create` in the agent's shell and parse the pull request's URL out
+of what `gh` printed — a heuristic tied to one tool, which is exactly the `gh`
+dependency issue-447 removes from the harness. Now it is trigger-agnostic: after
+a `git push`, anything that creates a pull request (`gh pr create`, `hub
+pull-request`, a GitHub MCP server's `create_pull_request`), it runs `the-loop
+sessions link-pr --discover`, which lists the open pull requests whose head is
+the checkout's branch and links each one. Linking is idempotent, so a push that
+opened nothing costs one request and writes nothing. `the-loop pr create` links
+the PR it opens itself, so it is not a trigger; this hook is the safety net for
+pull requests opened by hand or by MCP.
 
 **Every path exits 0.** `PostToolUse` exit 2 feeds stderr back to the model and
 interrupts the work; this is bookkeeping, best-effort by contract like
 `sessions register` beside it, and it must never be the reason a session stops.
-Unknown work item, no `the-loop` on PATH, an unreadable payload, a `gh` failure:
-all silent no-ops.
+Unknown work item, no `the-loop` on PATH, an unreadable payload, a failing
+discovery: all silent no-ops.
 
 **Stdlib only, and it imports nothing from ``the_loop``** — the same contract as
 `the-loop-gate.py`, for the same reason: the plugin has to survive the CLI not
-being installed, so it talks to the CLI over its JSON interface.
+being installed, so it talks to the CLI over its JSON interface. And it holds no
+GitHub credential and runs no `gh`: the CLI does the asking, through the service
+when one runs.
 """
 
 from __future__ import annotations
@@ -36,36 +39,37 @@ import re
 import shutil
 import subprocess
 import sys
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 #: How long either subprocess may take. Short: this runs between the agent's tool
-#: calls, and a hung `gh` must not be felt as a hung session.
+#: calls, and a slow GitHub must not be felt as a hung session.
 CLI_TIMEOUT_SECONDS = 20
 
-#: The tools that can create a pull request. `Bash` is narrowed further by the
-#: command it ran; a tool whose name ends in `create_pull_request` is a GitHub
-#: MCP server's, whatever prefix the deployment gave it.
+#: A tool whose name ends in `create_pull_request` is a GitHub MCP server's,
+#: whatever prefix the deployment gave it.
 _MCP_CREATE_RE = re.compile(r"create_pull_request$")
-_GH_PR_CREATE_RE = re.compile(r"\bgh\b[^\n|;&]*\bpr\b[^\n|;&]*\bcreate\b")
-#: `--dry-run` as a flag, not as the text of a `--title`. Belt to the braces of the
-#: URL check below, which a dry run does not produce either.
-_DRY_RUN_RE = re.compile(r"(?:^|\s)--dry-run(?:[\s=]|$)")
-
-#: A pull request URL in a tool's output: `https://<host>/<owner>/<repo>/pull/<n>`.
-#: Deliberately the only way a number is ever extracted — see the module
-#: docstring. The name shapes are GitHub's own, which is also what keeps the
-#: captured text safe to put in an argv.
-_PR_URL_RE = re.compile(
-    r"https?://([A-Za-z0-9.-]+)/([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)/pull/(\d+)\b"
+#: The `Bash` commands that can make a pull request exist: a push (the PR may be
+#: opened by a person, or be about to be), and any `pr create` / `pull-request`.
+#: Each is matched against ONE segment of the command (split on `&&`, `||`, `;`,
+#: `|` and newlines), from the segment's start, so a commit message or a branch
+#: name that merely mentions `the-loop pr create` neither triggers nor suppresses.
+_SEGMENT_SPLIT_RE = re.compile(r"&&|\|\||[;|\n]")
+_GIT_PUSH_RE = re.compile(r"^\s*(?:\S+=\S*\s+)*git\b(?:\s+-\S+(?:\s+\S+)?)*\s+push\b")
+_PR_CREATE_RE = re.compile(
+    r"^\s*(?:\S+=\S*\s+)*(?:gh\s+pr\s+create\b|hub\s+pull-request\b)"
 )
+#: the-loop's own verb links the PR it opens (R4.4): not a trigger.
+_OWN_VERB_RE = re.compile(
+    r"^\s*(?:\S+=\S*\s+)*the-loop\s+(?:--?\S+\s+\S+\s+)*pr\s+create\b"
+)
+#: `--dry-run` as a flag, not as the text of a `--title`.
+_DRY_RUN_RE = re.compile(r"(?:^|\s)--dry-run(?:[\s=]|$)")
 
 #: `github:[host/]owner/repo#n`, the-loop's spelling of a work item.
 _REF_RE = re.compile(
     r"^(?P<provider>[a-z]+):(?:(?P<host>[A-Za-z0-9.-]+)/)?"
     r"(?P<owner>[A-Za-z0-9._-]+)/(?P<repo>[A-Za-z0-9._-]+)#(?P<number>\d+)$"
 )
-
-_PUBLIC_HOSTS = ("github.com", "www.github.com", "api.github.com")
 
 
 def read_payload() -> Dict[str, Any]:
@@ -77,49 +81,59 @@ def read_payload() -> Dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def _response_text(payload: Dict[str, Any]) -> str:
-    """Everything the tool returned, as one searchable string.
+def should_discover(payload: Dict[str, Any]) -> bool:
+    """Whether this tool call may have made a pull request exist.
 
-    ``tool_response`` is a dict for `Bash` (``stdout``/``stderr``) and shaped by
-    the server for an MCP tool, so it is serialized whole rather than reached
-    into: the URL is looked for, not parsed out of a schema this hook would then
-    have to track.
-    """
-    response = payload.get("tool_response")
-    if response is None:
-        return ""
-    if isinstance(response, str):
-        return response
-    try:
-        return json.dumps(response)
-    except (TypeError, ValueError):
-        return str(response)
-
-
-def created_pull_request(
-    payload: Dict[str, Any],
-) -> Optional[Tuple[str, str, str, int]]:
-    """``(host, owner, repo, number)`` for a pull request this tool created.
-
-    ``None`` unless the tool is one that creates pull requests **and** its
-    response carries a pull request URL. Both halves matter: the first keeps the
-    hook off every other `Bash` call, the second is what makes a failed or
-    dry-run creation link nothing.
+    Decided from the tool and its command alone — never from its output — and
+    cheap to get wrong in the permissive direction: a discovery after a push that
+    opened nothing links nothing.
     """
     tool = str(payload.get("tool_name") or "")
     if tool == "Bash":
         command = str((payload.get("tool_input") or {}).get("command") or "")
-        if not _GH_PR_CREATE_RE.search(command) or _DRY_RUN_RE.search(command):
-            return None
+        if not any(_triggers(segment) for segment in _SEGMENT_SPLIT_RE.split(command)):
+            return False
     elif not _MCP_CREATE_RE.search(tool):
-        return None
-    if _interrupted(payload):
-        return None
-    match = _PR_URL_RE.search(_response_text(payload))
-    if match is None:
-        return None
-    host, owner, repo, number = match.groups()
-    return host, owner, repo, int(number)
+        return False
+    return not _interrupted(payload)
+
+
+def _triggers(segment: str) -> bool:
+    """Whether one command segment can have made a pull request exist."""
+    if _OWN_VERB_RE.search(segment):
+        return False  # links its own PR
+    if _PR_CREATE_RE.search(segment):
+        return not _DRY_RUN_RE.search(segment)
+    return bool(_GIT_PUSH_RE.search(segment))
+
+
+#: What an MCP `create_pull_request` names, checked before it reaches an argv.
+_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
+_BRANCH_RE = re.compile(r"^(?![-/])(?!.*\.\.)(?!.*//)[A-Za-z0-9._/-]{1,255}(?<![./])$")
+
+
+def discovery_scope(payload: Dict[str, Any]) -> List[str]:
+    """``--branch``/``--repository`` for a PR an MCP tool opened (issue-447).
+
+    The tool's own input says which head and repository it used, which need not
+    be the checkout's; a `Bash` push is the checkout's own, so it adds nothing.
+    Values that are not GitHub's name shapes are dropped, never passed on.
+    """
+    if payload.get("tool_name") == "Bash":
+        return []
+    given = payload.get("tool_input")
+    if not isinstance(given, dict):
+        return []
+    extra: List[str] = []
+    head_owner, _, head = str(given.get("head") or "").rpartition(":")
+    if _BRANCH_RE.match(head):
+        extra += ["--branch", head]
+        if head_owner and _NAME_RE.match(head_owner):
+            extra += ["--head-owner", head_owner]  # a fork's branch
+    owner, repo = str(given.get("owner") or ""), str(given.get("repo") or "")
+    if _NAME_RE.match(owner) and _NAME_RE.match(repo):
+        extra += ["--repository", f"{owner}/{repo}"]
+    return extra
 
 
 def _interrupted(payload: Dict[str, Any]) -> bool:
@@ -127,10 +141,16 @@ def _interrupted(payload: Dict[str, Any]) -> bool:
     return bool(isinstance(response, dict) and response.get("interrupted"))
 
 
-def _run(argv: List[str]) -> Optional[subprocess.CompletedProcess]:
+def _run(
+    argv: List[str], cwd: Optional[str] = None
+) -> Optional[subprocess.CompletedProcess]:
     try:
         return subprocess.run(
-            argv, capture_output=True, text=True, timeout=CLI_TIMEOUT_SECONDS
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=CLI_TIMEOUT_SECONDS,
+            cwd=cwd,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -177,34 +197,21 @@ def work_item_for(payload: Dict[str, Any]) -> str:
     return by_cwd
 
 
-def pull_request_argument(work_item: str, pr: Tuple[str, str, str, int]) -> str:
-    """How to name the pull request to ``sessions link-pr``.
-
-    Its bare number when it lives in the work item's own repository — the common
-    case, and the spelling the command documents — and a full ref otherwise, which
-    is the only way to name a pull request in a contributing repository. The host
-    is carried over only when it is not github.com, the way `WorkItemRef` spells
-    it.
-    """
-    host, owner, repo, number = pr
-    item = _REF_RE.match(work_item)
-    if item is not None and (owner, repo) == (item.group("owner"), item.group("repo")):
-        return str(number)
-    prefix = "" if host.lower() in _PUBLIC_HOSTS else f"{host}/"
-    return f"github:{prefix}{owner}/{repo}#{number}"
+def _checkout(payload: Dict[str, Any]) -> Optional[str]:
+    """The session's working directory — where the branch and origin are read."""
+    cwd = str(payload.get("cwd") or "")
+    return cwd if cwd and os.path.isdir(cwd) else None
 
 
 def main() -> int:
     payload = read_payload()
-    pr = created_pull_request(payload)
-    if pr is None:
+    if not should_discover(payload):
         return 0
     if not shutil.which("the-loop"):
         return 0
     work_item = work_item_for(payload)
     if not work_item:
         return 0
-    argument = pull_request_argument(work_item, pr)
     proc = _run(
         [
             "the-loop",
@@ -212,15 +219,18 @@ def main() -> int:
             "link-pr",
             "--work-item",
             work_item,
-            "--pull-request",
-            argument,
-        ]
+            "--discover",
+            *discovery_scope(payload),
+        ],
+        cwd=_checkout(payload),
     )
     if proc is not None and proc.returncode == 0:
         # PostToolUse stdout is transcript-only, which is the whole intent: the
-        # agent is told the bookkeeping is done so it does not repeat it, and is
-        # never interrupted when it is not.
-        print(f"the-loop: recorded {argument} against {work_item}")
+        # agent is told a link was recorded so it does not repeat it, and is
+        # never interrupted when nothing was.
+        for line in (proc.stdout or "").splitlines():
+            if line.startswith("recorded "):
+                print(f"the-loop: {line}")
     return 0
 
 

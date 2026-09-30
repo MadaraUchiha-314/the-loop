@@ -120,6 +120,288 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/work-items/comments:
+    post:
+      summary: Post Work Item Comment
+      operationId: postWorkItemComment
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkItemCommentBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Postworkitemcomment
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/work-items/ticket:
+    get:
+      summary: Get Ticket
+      operationId: getTicket
+      parameters:
+      - name: ref
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Ref
+      - name: instance
+        in: query
+        required: false
+        schema:
+          type: string
+          default: ''
+          title: Instance
+        description: |
+          Which instance this operation is for (issue-374). Empty: this one. On a
+          manager, a registered instance's name proxies the operation to it; on a
+          worker, only its own name is accepted (404 otherwise).
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Getticket
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/work-items/tickets:
+    post:
+      summary: Create Ticket
+      operationId: createTicket
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TicketCreateBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Createticket
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/work-items/pull-requests:
+    post:
+      summary: Create Pull Request
+      operationId: createPullRequest
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PullRequestCreateBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Createpullrequest
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/pull-requests/status:
+    get:
+      summary: Get Pull Request Status
+      operationId: getPullRequestStatus
+      parameters:
+      - name: ref
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Ref
+      - name: workItem
+        in: query
+        required: false
+        schema:
+          type: string
+          default: ''
+          title: Workitem
+      - name: instance
+        in: query
+        required: false
+        schema:
+          type: string
+          default: ''
+          title: Instance
+        description: |
+          Which instance this operation is for (issue-374). Empty: this one. On a
+          manager, a registered instance's name proxies the operation to it; on a
+          worker, only its own name is accepted (404 otherwise).
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Getpullrequeststatus
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/pull-requests/threads:
+    get:
+      summary: List Pull Request Threads
+      operationId: listPullRequestThreads
+      parameters:
+      - name: ref
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Ref
+      - name: workItem
+        in: query
+        required: false
+        schema:
+          type: string
+          default: ''
+          title: Workitem
+      - name: all
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: All
+      - name: instance
+        in: query
+        required: false
+        schema:
+          type: string
+          default: ''
+          title: Instance
+        description: |
+          Which instance this operation is for (issue-374). Empty: this one. On a
+          manager, a registered instance's name proxies the operation to it; on a
+          worker, only its own name is accepted (404 otherwise).
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Listpullrequestthreads
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/pull-requests/merge:
+    post:
+      summary: Merge Pull Request
+      operationId: mergePullRequest
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PullRequestMergeBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Mergepullrequest
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/work-items/tickets/close:
+    post:
+      summary: Close Ticket
+      operationId: closeTicket
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TicketCloseBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Closeticket
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/pull-requests/threads/resolve:
+    post:
+      summary: Resolve Review Thread
+      operationId: resolveReviewThread
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThreadResolveBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Resolvereviewthread
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/config:
     get:
       summary: Get Config
@@ -2086,23 +2368,194 @@ components:
       - ref
       - text
       title: SessionReplyBody
-    SessionLinkPrBody:
+    WorkItemCommentBody:
       properties:
+        ref:
+          type: string
+          title: Ref
+        body:
+          type: string
+          title: Body
         instance:
           type: string
           title: Instance
           default: ''
           description: Which instance this operation is for (issue-374); empty means this one.
+      type: object
+      required:
+      - ref
+      - body
+      title: WorkItemCommentBody
+    TicketCreateBody:
+      properties:
+        repository:
+          type: string
+          title: Repository
+        title:
+          type: string
+          title: Title
+        body:
+          type: string
+          title: Body
+          default: ''
+        labels:
+          items:
+            type: string
+          type: array
+          title: Labels
+          default: []
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
+      type: object
+      required:
+      - repository
+      - title
+      title: TicketCreateBody
+    PullRequestCreateBody:
+      properties:
+        ref:
+          type: string
+          title: Ref
+        title:
+          type: string
+          title: Title
+        body:
+          type: string
+          title: Body
+          default: ''
+        head:
+          type: string
+          title: Head
+        base:
+          type: string
+          title: Base
+          default: ''
+        repository:
+          type: string
+          title: Repository
+          default: ''
+        draft:
+          type: boolean
+          title: Draft
+          default: false
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
+      type: object
+      required:
+      - ref
+      - title
+      - head
+      title: PullRequestCreateBody
+    PullRequestMergeBody:
+      properties:
+        ref:
+          type: string
+          title: Ref
+        workItem:
+          type: string
+          title: Workitem
+          default: ''
+        method:
+          type: string
+          title: Method
+          default: merge
+        sha:
+          type: string
+          title: Sha
+          default: ''
+          description: The head commit the caller reviewed; GitHub refuses the merge if the branch has moved since.
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
+      type: object
+      required:
+      - ref
+      title: PullRequestMergeBody
+    TicketCloseBody:
+      properties:
+        ref:
+          type: string
+          title: Ref
+        reason:
+          type: string
+          title: Reason
+          default: completed
+        workItem:
+          type: string
+          title: Workitem
+          default: ''
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
+      type: object
+      required:
+      - ref
+      title: TicketCloseBody
+    ThreadResolveBody:
+      properties:
+        ref:
+          type: string
+          title: Ref
+        thread:
+          type: string
+          title: Thread
+        workItem:
+          type: string
+          title: Workitem
+          default: ''
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
+      type: object
+      required:
+      - ref
+      - thread
+      title: ThreadResolveBody
+    SessionLinkPrBody:
+      properties:
         ref:
           type: string
           title: Ref
         pullRequest:
           type: string
           title: Pullrequest
+          default: ''
+        discover:
+          type: boolean
+          title: Discover
+          default: false
+        branch:
+          type: string
+          title: Branch
+          default: ''
+        repository:
+          type: string
+          title: Repository
+          default: ''
+        headOwner:
+          type: string
+          title: Headowner
+          default: ''
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
       type: object
       required:
       - ref
-      - pullRequest
       title: SessionLinkPrBody
     SessionRegisterBody:
       properties:
