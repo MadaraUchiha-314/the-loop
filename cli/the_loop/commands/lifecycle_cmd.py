@@ -24,7 +24,7 @@ import sys
 from typing import Optional
 
 from .base import Command, register
-from .. import cli_config, eventlog
+from .. import __version__, cli_config, eventlog
 from ..core import lifecycle
 from ..core.daemons import SLACK_LISTENER
 from ..poller.heartbeat import PollHeartbeat
@@ -101,6 +101,7 @@ class StartCommand(Command):
         if config is None:
             return 2
         eventlog.configure_from_file("cli")
+        print(f"the-loop {__version__}")
         report = lifecycle.start_all(config)
         _print_rows(report["services"])
         _print_standing(report.get("standingSessions") or [])
@@ -196,9 +197,11 @@ class StatusCommand(Command):
         report = lifecycle.status_all(
             config, config_path=cli_config.default_cli_config_path()
         )
+        report["version"] = __version__
         if args.format == "json":
             print(json.dumps(report, indent=2))
             return 0 if report["ok"] else 1
+        print(f"{'version':<11} {__version__}")
         _print_provenance(report)
         _print_instance(report.get("instance") or {})
         _print_instances(report.get("instances") or {})

@@ -366,6 +366,9 @@ self-learning/ML capabilities.
 - The poller's pidfile SHALL be written by the surviving process under the
   single-instance lock, and a pidfile no live poller holds SHALL be
   reported as stale and removed by the next poller start rather than left for the operator.
+- **`the-loop start` and `the-loop status` SHALL print the running the-loop version**
+  (issue-439): `start` as its first line (`the-loop <version>`), `status` as a `version` row
+  above the provenance lines and as a `version` key in `--format json`.
 - **`the-loop status` SHALL answer "is each service running, and is the poller making
   progress"** in one command: per service enabled/running/pid (plus the service's URL,
   health and MCP exposure), and for the poller `startedAt`, `lastCycleAt`
