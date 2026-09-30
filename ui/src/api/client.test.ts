@@ -71,6 +71,102 @@ describe("HttpApi", () => {
     });
   });
 
+  /**
+   * The `instance` parameter (issue-374, R2.6 / R5.1): sent only when named —
+   * a query parameter on a GET, a body field on a POST — so a worker that
+   * became a manager sees byte-identical requests from a browser that names
+   * nothing, and a manager routes what a browser does name.
+   */
+  describe("the instance parameter", () => {
+    it("is absent from a GET when not named, and a query parameter when it is", async () => {
+      const calls = stubFetch(() => Promise.resolve(jsonResponse({})));
+      const api = new HttpApi("http://h:1");
+
+      await api.transcript("github:o/r#1", 50);
+      await api.transcript("github:o/r#1", 50, undefined, "laptop-a");
+      await api.config();
+      await api.config(undefined, "ci-box");
+      await api.health(undefined, "");
+      await api.instance(undefined, "cloud-1");
+
+      expect(calls.urlOf(0).searchParams.has("instance")).toBe(false);
+      expect(calls.urlOf(0).searchParams.get("ref")).toBe("github:o/r#1");
+      expect(calls.urlOf(1).searchParams.get("instance")).toBe("laptop-a");
+      expect(calls.urlOf(2).searchParams.has("instance")).toBe(false);
+      expect(calls.urlOf(3).pathname).toBe("/api/v1/config");
+      expect(calls.urlOf(3).searchParams.get("instance")).toBe("ci-box");
+      expect(calls.urlOf(4).searchParams.has("instance")).toBe(false);
+      expect(calls.urlOf(5).pathname).toBe("/api/v1/instance");
+      expect(calls.urlOf(5).searchParams.get("instance")).toBe("cloud-1");
+    });
+
+    it("is absent from a POST body when not named, and a body field when it is", async () => {
+      const calls = stubFetch(() => Promise.resolve(jsonResponse({})));
+      const api = new HttpApi("http://h:1");
+
+      await api.controlSession("github:o/r#1", "pause");
+      await api.controlSession("github:o/r#1", "pause", true, "laptop-a");
+      await api.replySession("github:o/r#1", "yes", "", "laptop-a");
+      await api.graphCheck({ repo: "/c", workItem: "issue-1" }, undefined, "laptop-a");
+      await api.graphComplete({ repo: "/c", workItem: "issue-1", node: "design" }, "laptop-a");
+      await api.controlDaemon("poller", "stop", "ci-box");
+      await api.saveConfig({ routing: { enabled: false } }, "ci-box");
+      await api.restart(false, "ci-box");
+      await api.controlStandingSession("triage", "stop", "ci-box");
+      await api.sayToStandingSession("triage", "hi", "", "ci-box");
+      await api.deleteStandingSession("triage", "ci-box");
+      await api.createStandingSession({ name: "n" }, "ci-box");
+      await api.restart();
+
+      const body = (call: number) => JSON.parse(String(calls.initOf(call).body)) as Record<string, unknown>;
+      expect(body(0)).toEqual({ ref: "github:o/r#1", verb: "pause", comment: true });
+      expect(body(1)).toEqual({ ref: "github:o/r#1", verb: "pause", comment: true, instance: "laptop-a" });
+      expect(body(2)).toMatchObject({ ref: "github:o/r#1", text: "yes", instance: "laptop-a" });
+      expect(body(3)).toMatchObject({ repo: "/c", workItem: "issue-1", recompute: false, instance: "laptop-a" });
+      expect(body(4)).toMatchObject({ node: "design", instance: "laptop-a" });
+      expect(body(5)).toEqual({ daemon: "poller", verb: "stop", instance: "ci-box" });
+      expect(body(6)).toEqual({ patch: { routing: { enabled: false } }, instance: "ci-box" });
+      expect(body(7)).toEqual({ withUpgrade: false, instance: "ci-box" });
+      expect(body(8)).toEqual({ name: "triage", verb: "stop", instance: "ci-box" });
+      expect(body(9)).toMatchObject({ name: "triage", text: "hi", instance: "ci-box" });
+      expect(body(10)).toEqual({ name: "triage", instance: "ci-box" });
+      expect(body(11)).toEqual({ name: "n", instance: "ci-box" });
+      expect(body(12)).toEqual({ withUpgrade: false });
+      expect("instance" in body(12)).toBe(false);
+    });
+  });
+
+  describe("the instances family (issue-374, R3.1 / R4.2)", () => {
+    it("reads the fleet from GET /instances", async () => {
+      const calls = stubFetch(() => Promise.resolve(jsonResponse({ role: "worker", name: "a", instances: [] })));
+      const document = await new HttpApi("http://h:1").instances();
+      expect(calls.urlOf().pathname).toBe("/api/v1/instances");
+      expect(calls.initOf().method).toBeUndefined();
+      expect(document.role).toBe("worker");
+    });
+
+    it("registers and unregisters through the two POST routes with the documented bodies", async () => {
+      const calls = stubFetch(() => Promise.resolve(jsonResponse({ role: "manager", name: "hq", instances: [] })));
+      const api = new HttpApi("http://h:1");
+      await api.registerInstance("cloud-2", "http://10.0.0.10:4114");
+      await api.unregisterInstance("cloud-2");
+      expect(calls.urlOf(0).pathname).toBe("/api/v1/instances/register");
+      expect(JSON.parse(String(calls.initOf(0).body))).toEqual({ name: "cloud-2", url: "http://10.0.0.10:4114" });
+      expect(calls.urlOf(1).pathname).toBe("/api/v1/instances/unregister");
+      expect(JSON.parse(String(calls.initOf(1).body))).toEqual({ name: "cloud-2" });
+    });
+
+    it("surfaces a worker's 400 naming instance.role verbatim", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(() => Promise.resolve(jsonResponse({ detail: "instance.role is worker: nothing can be registered here" }, { status: 400 }))),
+      );
+      const error = (await new HttpApi("http://h:1").registerInstance("x", "http://x").catch((cause: unknown) => cause)) as ApiError;
+      expect(error.status).toBe(400);
+      expect(error.message).toMatch(/instance\.role/);
+    });
+  });
+
   it("reports an unreachable service as `network`, advising the base URL, CORS and the tunnel", async () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new TypeError("Failed to fetch"))));
 

@@ -585,6 +585,10 @@ def status_all(
         # Which instance this is and what it manages (issue-322) — the same
         # document `GET /api/v1/instance` serves.
         "instance": core_instance.describe_instance(config),
+        # The fleet (issue-374): this instance's row, and — on a manager — one per
+        # registered member from a probe. The same document `GET /api/v1/instances`
+        # serves, so `status` and the Instances tab cannot disagree.
+        "instances": _instances(config),
         # Which files this answer is ABOUT (issue-339, R4). A `status` that reads one
         # candidate root and names neither it nor the config it came from is how a
         # live poller was reported dead off another root's two-day-old heartbeat.
@@ -656,6 +660,27 @@ def _slack_split(config: Optional[dict]) -> Dict[str, Any]:
     except Exception:  # noqa: BLE001 — never fails the status it decorates
         logger.debug("could not read the slack split state", exc_info=True)
         return {}
+
+
+def _instances(config: Optional[dict]) -> Dict[str, Any]:
+    """The fleet document for `status` (issue-374).
+
+    A manager probes its members here, from this process — `status` is a bootstrap
+    command that must answer with no service running — through the same
+    :class:`~the_loop.manager.fleet.Fleet` the service uses, so the states are the
+    ones the API reports. A worker's document is its one row.
+    """
+    from . import instances as core_instances
+
+    fleet = None
+    if core_instance.instance_config(config).is_manager:
+        try:
+            from ..manager.fleet import Fleet
+
+            fleet = Fleet.from_config(config)
+        except ImportError:  # pragma: no cover — the package always ships it
+            fleet = None
+    return core_instances.list_instances(config, fleet=fleet)
 
 
 def split_lines(doc: Mapping[str, Any]) -> List[str]:

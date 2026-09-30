@@ -12,6 +12,7 @@ from . import events  # noqa: F401,E402
 from . import graph_cmd  # noqa: F401,E402
 from . import hooks_cmd  # noqa: F401,E402
 from . import install_cmd  # noqa: F401,E402
+from . import instances_cmd  # noqa: F401,E402
 from . import instructions_cmd  # noqa: F401,E402
 from . import lifecycle_cmd  # noqa: F401,E402  (start/stop/status/restart)
 from . import migrate_cmd  # noqa: F401,E402

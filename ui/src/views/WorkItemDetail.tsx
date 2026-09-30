@@ -32,7 +32,7 @@ import type { EventRecord } from "../api/types.ts";
 import { GraphStrip } from "../components/GraphStrip.tsx";
 import { HeaderBar, type Chrome } from "../components/HeaderBar.tsx";
 import { CheckIcon, CopyIcon, ExternalLinkIcon, GitBranchIcon, TriangleAlertIcon } from "../components/Icons.tsx";
-import { ControlButton, Empty, IconButton, Notice, PhaseChip } from "../components/primitives.tsx";
+import { ControlButton, Empty, IconButton, InstanceChip, Notice, PhaseChip } from "../components/primitives.tsx";
 import { SessionTabs } from "../components/SessionTabs.tsx";
 import { ChatBar, EventTrail, TranscriptView, VERBOSE_LABEL } from "../components/Transcript.tsx";
 import { useApi } from "../state/ApiContext.tsx";
@@ -85,11 +85,23 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
   const [verbose, setVerbose] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const events = useAsync((signal) => api.events({ workItem: view.ref, limit: 200 }, signal), [api, view.ref]);
+  // On a manager `/events` is the union with each record stamped (issue-374),
+  // so the trail keeps this row's instance's records — and a worker's
+  // unstamped records, which carry no `instance` to disagree with.
+  const events = useAsync(
+    async (signal) =>
+      (await api.events({ workItem: view.ref, limit: 200 }, signal)).filter(
+        (event) => !view.instance || typeof event.instance !== "string" || event.instance === view.instance,
+      ),
+    [api, view.ref, view.instance],
+  );
   // `transcriptTick` in the deps is the whole of the live update: the frame
   // carries a line count and no content, so the panel refetches through the
   // route that owns the path validation (issue-209).
-  const transcript = useAsync((signal) => api.transcript(viewed, 200, signal), [api, viewed, transcriptTick]);
+  const transcript = useAsync(
+    (signal) => api.transcript(viewed, 200, signal, view.instance),
+    [api, viewed, view.instance, transcriptTick],
+  );
 
   const traceSession = viewed === view.ref ? view.session : (view.pullRequests.find((pr) => pr.ref === viewed)?.session ?? null);
   const traceState = sessionState(traceSession);
@@ -135,6 +147,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
         meta={
           <>
             <span className="ref-chip">{view.ref}</span>
+            {view.instance ? <InstanceChip instance={view.instance} /> : null}
             <PhaseChip phase={view.currentNode || (view.rail.length > 0 ? "planned" : "no graph")} status={itemStatus(view)} />
             <span className="inline-flex items-center gap-1">
               <GitBranchIcon className="h-3 w-3" />
@@ -264,7 +277,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
           </div>
         ) : null}
 
-        <ChatBar refFor={viewed} state={traceState} onSent={onChanged} tmuxTarget={tmux} />
+        <ChatBar refFor={viewed} state={traceState} onSent={onChanged} tmuxTarget={tmux} instance={view.instance} />
       </div>
     </>
   );
@@ -294,7 +307,7 @@ function GateBanner({ view, onChanged }: { view: WorkItemView; onChanged: () => 
     setBusy(true);
     setError(null);
     try {
-      await api.graphComplete({ repo: view.repoPath, workItem: view.specId ?? "", node: parked?.node ?? "" });
+      await api.graphComplete({ repo: view.repoPath, workItem: view.specId ?? "", node: parked?.node ?? "" }, view.instance);
       onChanged();
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.advice : String(cause));

@@ -30,6 +30,7 @@ that item's own checkout, the same way the repo-scoped commands do.
 |---------|--------------|
 | [`sessions`](/cli/commands/sessions) | The work-item ↔ session registry, execution control (`start`/`pause`/`resume`/`stop`), and `reset` — forget a work item's state so it starts over. |
 | [`standing`](/cli/commands/standing) | The sessions the-loop keeps for itself — no work item, addressed by name: `list`, `start`, `stop`, `restart`, and `say` to talk to one. |
+| [`instances`](/cli/commands/instances) | The fleet a manager serves: `list` on any instance; `register` / `unregister` on a manager, writing the registry through the same splice as the Settings tab. |
 | [`ask`](/cli/commands/ask) | Post an agent's question on its work item — marker stamped centrally, wait recorded as `session.awaiting_input`. |
 | [`add-collaborator`](/cli/commands/add-collaborator) | Give one GitHub login a voice on **one** work item: their comments become input for its session, and nothing else. |
 | [`remove-collaborator`](/cli/commands/remove-collaborator) | Take that voice back; it lapses on the next event. |

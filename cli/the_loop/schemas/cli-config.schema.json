@@ -171,13 +171,66 @@
     "instance": {
       "type": "object",
       "additionalProperties": false,
-      "description": "This instance of the-loop: its identity and the work items it manages (issue-322). Several instances can watch one repository, each in its own environment (a machine, a container, a checkout root — the-loop's concern stops at the session); this block says which one THIS config is and how new work items reach it. Unset: an unnamed, open instance, which behaves exactly as before the block existed. Hot-reloaded with the rest of the config, so a scope edit is live without a restart. The managed set is derived, never kept: the declared list below, plus every work item this instance holds a live session record or a control record for.",
+      "description": "This instance of the-loop: its identity and the work items it manages (issue-322). Several instances can watch one repository, each in its own environment (a machine, a container, a checkout root — the-loop's concern stops at the session); this block says which one THIS config is and how new work items reach it. Unset: an unnamed, open instance, which behaves exactly as before the block existed. Hot-reloaded with the rest of the config, so a scope edit is live without a restart. Since issue-374 the block also carries the instance's `role` and, for a manager, the registry of instances it manages (`manager.instances`). The managed set is derived, never kept: the declared list below, plus every work item this instance holds a live session record or a control record for.",
       "properties": {
         "name": {
           "type": "string",
           "default": "",
           "pattern": "^$|^[a-z0-9][a-z0-9-]{0,39}$",
           "description": "The instance's name: lowercase letters, digits and hyphens, not starting with a hyphen, at most 40 characters (the standing-session grammar) — narrow because it is interpolated into a tmux argv (`-e THE_LOOP_INSTANCE=<name>`, so a spawned session can derive a port or a container name from it) and into the comments the CLI posts (`the-loop start instance:<name>`). Empty: unnamed — nothing can address it, and `scope.mode: addressed` resolves to `locked`. A name outside the grammar is warned about and treated as unset."
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "worker",
+            "manager"
+          ],
+          "default": "worker",
+          "description": "What this instance is (issue-374). `worker` (default): every instance before the role existed. `manager`: keeps everything a worker does and ALSO serves the fleet registered under `manager.instances` through the same /api/v1 \u2014 list reads are its own rows plus every member's, each stamped `instance`; a keyed operation routes to the instance that manages the ref; the Instances tab and `the-loop instances` manage the registry. A manager must be named (`name`), and `the-loop start` refuses an unknown role or an unnamed manager rather than guessing. Boot-only: a change is reported as `restartRequired`."
+        },
+        "manager": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The fleet a manager serves (issue-374). Read only when `role` is `manager`; hot-reloaded, so a registration is live on the next request \u2014 whether it was written by hand, by `POST /api/v1/instances/register`, by the dashboard's Instances tab or by `the-loop instances register`, which all write this key through the same splice. The manager itself is the fleet's first member implicitly and is never listed here.",
+          "properties": {
+            "instances": {
+              "type": "array",
+              "default": [],
+              "description": "The registered instances, each `{name, url}`. `name` is the member's own `instance.name` \u2014 the manager trusts a URL only once `GET /api/v1/instance` there answers with this name and `role: worker`; until then the member is `unreachable` or `mismatched` and nothing is served from it or sent to it. `url` is the member's service address as this manager reaches it (`http` or `https`, no userinfo). An entry outside the grammar, a duplicate name, a non-http(s) URL or this manager's own address is warned about by position and skipped.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "url"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{0,39}$",
+                    "description": "The member's own `instance.name`."
+                  },
+                  "url": {
+                    "type": "string",
+                    "pattern": "^https?://",
+                    "description": "The member's service origin, optionally with a path prefix; no trailing slash needed."
+                  }
+                }
+              }
+            },
+            "timeoutSeconds": {
+              "type": "number",
+              "default": 10,
+              "minimum": 1,
+              "description": "How long one request to a member may take before that member is left out of the answer (a list read) or the request fails with 502 (a keyed one). A value below 1 clamps up."
+            },
+            "probeIntervalSeconds": {
+              "type": "number",
+              "default": 15,
+              "minimum": 1,
+              "description": "How long a probe of a member (`GET /api/v1/instance`, the name check) stays fresh before the next request re-probes it. A value below 1 clamps up."
+            }
+          }
         },
         "scope": {
           "type": "object",

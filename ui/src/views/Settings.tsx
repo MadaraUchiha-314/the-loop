@@ -14,14 +14,13 @@ import { useState } from "react";
 
 import { ApiError, HttpApi, normalizeBaseUrl } from "../api/client.ts";
 import type { RestartSchedule } from "../api/types.ts";
-import { ConfigEditor } from "../components/ConfigEditor.tsx";
+import { ConfigSection } from "../components/ConfigEditor.tsx";
 import type { Chrome } from "../components/HeaderBar.tsx";
 import { HeaderBar } from "../components/HeaderBar.tsx";
 import { Card, ControlButton, FieldLabel, INPUT_CLASS, Kicker, LearnMore, Report } from "../components/primitives.tsx";
 import { StatusDot, type DotStatus } from "../components/StatusDot.tsx";
 import { useApi } from "../state/ApiContext.tsx";
 import { POLL_CHOICES, type DataMode, type RefreshMode } from "../state/settings.ts";
-import { useAsync } from "../state/useAsync.ts";
 
 type Probe = { state: "idle" } | { state: "checking" } | { state: "ok"; version: string } | { state: "fail"; advice: string };
 
@@ -113,7 +112,7 @@ export function Settings({ chrome }: { chrome: Chrome }) {
 
       <RestartSection />
 
-      <CliConfigSection />
+      <ConfigSection />
       </div>
       </div>
     </>
@@ -269,50 +268,6 @@ function RestartSection() {
         </p>
       </LearnMore>
     </Card>
-  );
-}
-
-/**
- * The daemon's own config (issue-222).
- *
- * The two calls are loaded together and the editor is only mounted once both are in:
- * the form is *derived* from the schema, so half of the pair is not a screen worth
- * rendering. A failure says which of the two failed and offers a retry, because "the
- * service is old enough not to have the route" and "the service is unreachable" want
- * different things from the operator.
- */
-function CliConfigSection() {
-  const { api } = useApi();
-  const [nonce, setNonce] = useState(0);
-  const loaded = useAsync(
-    async (signal) => ({
-      document: await api.config(signal),
-      schema: await api.configSchema(signal),
-    }),
-    [api, nonce],
-  );
-
-  if (loaded.loading) return <p className="py-2 text-xs text-muted-foreground">Reading the CLI config…</p>;
-  if (loaded.error || !loaded.data) {
-    const advice = loaded.error instanceof ApiError ? loaded.error.advice : String(loaded.error);
-    return (
-      <Card>
-        <Kicker>CLI config</Kicker>
-        <Report tone="fail" role="alert">{advice}</Report>
-        <div>
-          <ControlButton onClick={() => setNonce((value) => value + 1)}>Retry</ControlButton>
-        </div>
-      </Card>
-    );
-  }
-
-  return (
-    <ConfigEditor
-      document={loaded.data.document}
-      schema={loaded.data.schema}
-      onSave={(patch) => api.saveConfig(patch)}
-      onRestart={() => api.restart()}
-    />
   );
 }
 

@@ -177,6 +177,15 @@ the conversation through this machine's session registry now. A block left on di
 older release is ignored on read and gone on the next save; it is never resumed.
 :::
 
+::: tip A manager keeps only its own
+A [manager](/cli/instances#running-a-manager) (issue-374) serves other instances' work
+items, sessions and events through its API but **stores none of them**: its state root
+holds its own records, its own event log and its own pidfiles, exactly as a worker's
+does. What it knows about a member is a probe held in memory for
+`manager.probeIntervalSeconds`; the registry itself is the `instance.manager.instances`
+key of its `cli-config.yaml`.
+:::
+
 ## Two kinds of state
 
 The layout is the answer to one question, so it is worth stating the question. Everything

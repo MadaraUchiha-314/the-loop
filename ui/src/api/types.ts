@@ -16,6 +16,49 @@
 export interface Health {
   status: string;
   version: string;
+  /** `worker` | `manager` — absent on a service older than issue-374. */
+  role?: string;
+  /** On a manager: each registered member's probe state beside the ingresses. */
+  instances?: Pick<InstanceRow, "name" | "url" | "state" | "detail">[];
+  [key: string]: unknown;
+}
+
+/**
+ * `GET /api/v1/instance` — this instance's identity and the work items it
+ * manages (issue-322), plus `role` and `sessionCount` since issue-374.
+ */
+export interface InstanceDocument {
+  name: string;
+  role?: string;
+  scope?: { mode?: string; workItems?: string[] };
+  managed: { ref: string; url?: string; sources?: string[]; instance?: string }[];
+  sessionCount?: number;
+  [key: string]: unknown;
+}
+
+/** One row of `GET /api/v1/instances` (issue-374, R3.1): an instance as its manager last probed it. */
+export interface InstanceRow {
+  name: string;
+  url: string;
+  /** `live` | `unreachable` | `mismatched`. */
+  state: "live" | "unreachable" | "mismatched" | (string & {});
+  version: string;
+  mode: string;
+  managedCount: number;
+  sessionCount: number;
+  probedAt: string;
+  /** A sentence saying why, when `state` is not `live`. */
+  detail?: string;
+}
+
+/**
+ * `GET /api/v1/instances` — the fleet, served by every role. A worker answers
+ * with one row (itself); a manager with its own row first, then every member.
+ */
+export interface InstancesDocument {
+  role: "worker" | "manager" | (string & {});
+  name: string;
+  instances: InstanceRow[];
 }
 
 /** The parsed identity of a work item or pull request. */
@@ -70,6 +113,8 @@ export interface EndedRecord {
  */
 export interface WorkItemRecord {
   ref: string;
+  /** The instance that served this row — stamped by a manager (issue-374), absent on a worker. */
+  instance?: string;
   /** Absent for refs whose URL cannot be derived (a `jira:` ref, say). */
   url?: string;
   control?: ControlRecord | null;
@@ -118,6 +163,8 @@ export interface SessionEndpoint {
 export interface SessionRecord extends SessionEndpoint {
   ref: string;
   control?: ControlRecord | null;
+  /** The instance that served this row — stamped by a manager (issue-374), absent on a worker. */
+  instance?: string;
 }
 
 /**
@@ -211,6 +258,8 @@ export interface EventRecord {
   harness?: string;
   harness_session_id?: string;
   delivery_id?: string;
+  /** The instance whose log this came from — stamped by a manager (issue-374). */
+  instance?: string;
   [key: string]: unknown;
 }
 
@@ -222,6 +271,8 @@ export interface AttentionItem {
   detail: string;
   /** The raw event timestamp behind a `recent-error`, so age is renderable. */
   at?: string;
+  /** The instance that served this row — stamped by a manager (issue-374). */
+  instance?: string;
 }
 
 /** `GET /api/v1/daemons`. */
@@ -233,6 +284,8 @@ export interface DaemonStatus {
   logfile: string;
   startedAt: string;
   lastCycleAt: string;
+  /** The instance whose daemon this is — stamped by a manager (issue-374). */
+  instance?: string;
 }
 
 /** Core's uniform "what I would have printed" envelope on the control verbs. */
@@ -268,6 +321,8 @@ export interface StandingSessionRecord {
   /** Present only on the rows a control verb returns. */
   outcome?: string;
   detail?: string;
+  /** The instance that served this row — stamped by a manager (issue-374). */
+  instance?: string;
 }
 
 export type StandingVerb = "start" | "stop" | "restart";

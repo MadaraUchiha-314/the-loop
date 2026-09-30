@@ -1055,6 +1055,42 @@ EVENT_TYPES: Dict[str, str] = {
         "people, hosts and binaries, and this trail is as readable as the event "
         "log is. issue-222."
     ),
+    # -- the fleet a manager serves (source: service) — issue-374 --------------
+    "instance.registered": (
+        "An instance was added to this manager's registry (instance: its name) — "
+        "through the API, the dashboard's Instances tab or `the-loop instances "
+        "register`, all of which write `instance.manager.instances` through the "
+        "same splice a hand edit would. The URL is not recorded: names only."
+    ),
+    "instance.unregistered": (
+        "An instance was removed from this manager's registry (instance)."
+    ),
+    "instance.unreachable": (
+        "A registered instance stopped answering (instance, reason) — a transport "
+        "failure or a timeout on its probe. Once per transition, at level error; "
+        "its rows are left out of every list read until `instance.recovered`."
+    ),
+    "instance.recovered": (
+        "A registered instance answers to its name again (instance) after being "
+        "unreachable or mismatched."
+    ),
+    "instance.mismatched": (
+        "The host at a registered URL answers as a different instance (instance: "
+        "the registered name, reported: the name it gave, role: the role it gave). "
+        "Fail closed: nothing is served from it or sent to it until it answers to "
+        "its name as a worker. At level error."
+    ),
+    "instance.malformed": (
+        "A member's answer was dropped (instance, operation, reason): oversized, "
+        "not JSON, or not the shape the contract promises. The manager answers "
+        "from the rest and never passes the body on."
+    ),
+    "aggregate.partial": (
+        "A list read on a manager answered without every member (operation, "
+        "left_out). Debug level: the response header "
+        "`The-Loop-Instances-Unreachable` and `GET /api/v1/instances` carry the "
+        "same fact for clients."
+    ),
     # -- the server-push stream (source: service) — issue-239 ------------------
     "stream.subscribed": (
         "A client opened GET /api/v1/stream (subscribers: how many are now open, "

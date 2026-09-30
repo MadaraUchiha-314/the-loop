@@ -32,6 +32,7 @@ from starlette.middleware.cors import CORSMiddleware
 from ..cli_config import default_cli_config_path
 from .config import cors_config
 from .lifespan import build_lifespan
+from .facade import facade_for
 from .routes import API_PREFIX, ConfigHolder, build_router
 
 __all__ = ["API_PREFIX", "create_app"]
@@ -102,12 +103,16 @@ def create_app(cli_config: Optional[dict] = None, *, config_path=None) -> FastAP
     # (issue-228, decision-084): a REST-only deployment gets no /mcp route at
     # all (404), no SDK session manager, and a no-op lifespan. Resolved at
     # boot, like the bind and CORS — `restartRequired` covers a change to it.
+    holder = ConfigHolder(cli_config, config_path or default_cli_config_path())
+    # The implementation behind every route (issue-374, decision-138 D3): a worker's
+    # core, or a manager's fleet over it. Resolved once, here — `instance.role` is
+    # boot-only, and `restartRequired` says so to whoever changes it.
+    facade = facade_for(holder)
     mcp_app = None
     if service_config(cli_config)["mcpEnabled"]:
         from .mcp import build_app as build_mcp_app
 
-        mcp_app = build_mcp_app(cli_config)
-    holder = ConfigHolder(cli_config, config_path or default_cli_config_path())
+        mcp_app = build_mcp_app(cli_config, facade=facade)
 
     # issue-231 (`service.hostIngresses`, default true): the one process this
     # app runs in also hosts the enabled ingresses — the poller and the webhook
@@ -133,13 +138,14 @@ def create_app(cli_config: Optional[dict] = None, *, config_path=None) -> FastAP
 
     # Error mapping, the config refresh and the `api.request` audit ride on the router's
     # route class (issue-212 D2), so they apply here and equally to an embedded mount.
-    app.include_router(build_router(holder))
+    app.include_router(build_router(holder, facade=facade))
 
     _install_cors(app, cli_config)
 
     # The live config, reachable without closing over this function: it is what the
     # routes read, so a test (or a future route) can ask the app what it is running on.
     app.state.config_holder = holder
+    app.state.facade = facade
 
     # Mounted last, at the root, so the MCP app owns exactly ``/mcp`` and every
     # /api/v1 route above still wins. Mounting it *at* ``/mcp`` instead would

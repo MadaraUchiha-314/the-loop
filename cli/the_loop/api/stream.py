@@ -135,11 +135,15 @@ class Record:
 
 @dataclass(frozen=True)
 class Frame:
-    """One SSE frame. ``kind`` becomes the ``event:`` field, ``data`` the payload."""
+    """One SSE frame. ``kind`` becomes the ``event:`` field, ``data`` the payload.
+
+    ``cursor`` is a byte offset on a worker and, on a manager, the composite
+    ``name=offset,…`` string (issue-374); either is written verbatim as ``id:``.
+    """
 
     kind: str
     data: Dict[str, Any]
-    cursor: Optional[int] = None
+    cursor: Optional[Union[int, str]] = None
 
 
 def encode_frame(frame: Frame) -> str:

@@ -60,11 +60,27 @@ env:
 # A work item it already manages is handled in every mode as before; an
 # address to another instance is authoritative; every drop is in the event
 # log with its reason and leaves no mark on the thread.
+#   role       worker (default) | manager. A MANAGER keeps everything a worker
+#              does and also serves the instances registered under `manager`
+#              through the same /api/v1 (issue-374): the dashboard pointed at it
+#              sees the fleet as one instance, each row naming its instance. A
+#              manager must be named; `the-loop start` refuses an unknown role.
+#   manager.instances  the registry: `{name, url}` per member — the member's own
+#              `instance.name` and its service address. Written by hand, by the
+#              dashboard's Instances tab, by `the-loop instances register` or by
+#              POST /api/v1/instances/register — all the same key, hot-reloaded.
 instance:
   name: ""
+  role: worker
   scope:
     mode: open
     workItems: []
+  # manager:
+  #   instances:
+  #     - name: laptop-a
+  #       url: http://10.0.0.5:4114
+  #   timeoutSeconds: 10
+  #   probeIntervalSeconds: 15
 
 # WHICH GITHUB REPOSITORIES this instance works with (issue-348). ONE list, read
 # by EVERY ingress: the gh-webhook receiver drops a delivery from a repository

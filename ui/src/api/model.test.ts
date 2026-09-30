@@ -9,6 +9,7 @@ import {
   attentionByItem,
   attentionEntries,
   awaitingInput,
+  boardKey,
   buildWorkItemViews,
   innerKey,
   isBookkeeping,
@@ -1056,5 +1057,88 @@ describe("isBookkeeping", () => {
     expect(isBookkeeping(trailEvent("invented.thing"))).toBe(false);
     expect(isBookkeeping(trailEvent("noseparator"))).toBe(false);
     expect(isBookkeeping(trailEvent(""))).toBe(false);
+  });
+});
+
+/**
+ * The board key (issue-374, R5.2): a manager stamps every row with the
+ * instance that served it, and the same ref on two instances is two rows —
+ * each with its own session, graph report, attention and question. A
+ * worker's rows carry no stamp and key by ref, exactly as before.
+ */
+describe("buildWorkItemViews · one row per instance (issue-374)", () => {
+  const REF = "github:octo/lab#15";
+  const stamped = (instance: string, overrides: Partial<SessionRecord> = {}): SessionRecord => ({
+    ...session(REF),
+    instance,
+    tmuxTarget: `tmux-${instance}`,
+    ...overrides,
+  });
+
+  it("keys a worker's rows by ref, with `instance` empty", () => {
+    const [view] = buildWorkItemViews({ workItems: [record(REF, "pdlc-work-item-loop")], sessions: [session(REF)], attention: [] });
+    expect(view).toMatchObject({ ref: REF, instance: "", key: REF });
+    expect(boardKey(REF)).toBe(REF);
+    expect(boardKey(REF, "")).toBe(REF);
+  });
+
+  it("makes a ref present on two instances two rows, each joined to its own instance's records", () => {
+    const views = buildWorkItemViews({
+      workItems: [
+        { ...record(REF, "pdlc-work-item-loop"), instance: "laptop-a" },
+        { ...record(REF, "pdlc-work-item-loop"), instance: "ci-box" },
+      ],
+      sessions: [stamped("laptop-a", { status: "active" }), stamped("ci-box", { status: "paused" })],
+      attention: [{ workItem: REF, kind: "session-paused", detail: "paused on ci-box", instance: "ci-box" }],
+      graphs: {
+        outer: {
+          [boardKey(REF, "laptop-a")]: { workItem: "issue-15", currentNode: "implementation", ok: true, nodes: [{ node: "implementation", status: "pass", outcome: "pass" }] },
+        },
+        inner: {},
+      },
+    });
+
+    expect(views).toHaveLength(2);
+    expect(views.map((view) => view.key)).toEqual([`ci-box@${REF}`, `laptop-a@${REF}`]);
+    const laptop = views.find((view) => view.instance === "laptop-a")!;
+    const ci = views.find((view) => view.instance === "ci-box")!;
+    expect(laptop.tmuxTarget).toBe("tmux-laptop-a");
+    expect(laptop.currentNode).toBe("implementation");
+    expect(laptop.attention).toEqual([]);
+    expect(ci.tmuxTarget).toBe("tmux-ci-box");
+    expect(ci.sessionState).toBe("paused");
+    expect(ci.currentNode).toBe("");
+    expect(ci.attention).toHaveLength(1);
+  });
+
+  it("keys open questions by the instance that logged them", () => {
+    const asked = (instance: string, ts: string): EventRecord => ({ ts, event: "session.awaiting_input", work_item: REF, instance, question: `from ${instance}` });
+    const awaiting = awaitingInput([asked("laptop-a", "2026-09-29T10:00:00Z"), asked("ci-box", "2026-09-29T10:01:00Z")]);
+    expect(Object.keys(awaiting).toSorted()).toEqual([`ci-box@${REF}`, `laptop-a@${REF}`]);
+
+    const views = buildWorkItemViews({
+      workItems: [],
+      sessions: [stamped("laptop-a"), stamped("ci-box")],
+      attention: [],
+      awaiting,
+    });
+    expect(views.find((view) => view.instance === "laptop-a")?.question?.["question"]).toBe("from laptop-a");
+    expect(views.find((view) => view.instance === "ci-box")?.question?.["question"]).toBe("from ci-box");
+  });
+
+  it("nests a PR under its owner on the same instance only — a claim on one box erases nothing on another", () => {
+    const pr = "github:octo/lab#16";
+    const views = buildWorkItemViews({
+      workItems: [
+        { ...record(REF, "pdlc-work-item-loop"), instance: "laptop-a" },
+        { ref: pr, instance: "laptop-a" },
+        { ref: pr, instance: "ci-box" },
+      ],
+      sessions: [{ ...session(REF, [pr]), instance: "laptop-a" }],
+      attention: [],
+    });
+    // laptop-a: the PR is drawn under #15. ci-box: the PR is a row of its own.
+    expect(views.map((view) => view.key).toSorted()).toEqual([`ci-box@${pr}`, `laptop-a@${REF}`]);
+    expect(views.find((view) => view.key === `laptop-a@${REF}`)?.pullRequests.map((p) => p.ref)).toEqual([pr]);
   });
 });

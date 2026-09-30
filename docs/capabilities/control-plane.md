@@ -84,6 +84,21 @@ package — there are no install extras (owner decision, PR #162).
   host application's cross-origin policy rather than the-loop's. `/mcp` SHALL keep the
   SDK's DNS-rebinding protection with its own origin allowlist, so no CORS setting makes
   the MCP endpoint drivable from a page.
+- The router SHALL call a **facade** with one method per operation, never
+  `the_loop.core` directly (issue-374, [decision-138](../decisions/decision-138.md) D3):
+  the worker's `CoreFacade`, or a manager's `ManagerFacade` over it. So a manager
+  (`instance.role: manager`) serves the identical surface — the contract parity test
+  runs against both roles and asserts one MCP tool list — while a list read on it is its
+  own rows plus every registered member's, each stamped `instance`, and a keyed
+  operation routes to the instance that manages the key. Every keyed operation carries
+  an optional `instance` (a query parameter on a `GET`, a body field on a `POST`) that a
+  worker accepts only as its own name (`404` otherwise); two more mappings on the route
+  class — `Conflict` → `409` (a key two instances manage) and `MemberUnavailable` →
+  `502` (a member that did not answer) — are the manager's outcomes; and a list read
+  that could not reach every member names them in `The-Loop-Instances-Unreachable`. The
+  `instances` family — `GET /api/v1/instances`, `POST /api/v1/instances/register` and
+  `/unregister` — is served by every role: a worker lists itself and refuses the writers
+  naming `instance.role`. See [instances](instances.md).
 - The `/api/v1` surface SHALL be **one `APIRouter`** (`the_loop.api.routes`) consumed by
   both the standalone app and the [SDK](sdk.md), and the per-request behaviour — the CLI
   config refresh, the `ValueError`/`LookupError`/`SpliceError` translation and the
@@ -463,6 +478,7 @@ package — there are no install extras (owner decision, PR #162).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-374 | The manager (2026-09-30): the router calls a facade — `CoreFacade` on a worker, `ManagerFacade` on a manager — so one `APIRouter` serves both roles; the `instance` parameter on every keyed operation; `409` and `502` on the route class; the `The-Loop-Instances-Unreachable` header; the `instances` family; the stream fanned in from every member with a per-member cursor; the dashboard's Instances tab, instance pane, chip and filter | [spec](../specs/issue-374/), [decision-138](../decisions/decision-138.md), [instances](instances.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/374) |
 | issue-419 | The work-item trace stopped burying the conversation in its own bookkeeping: the *Tool calls* switch became one **Verbose** switch over the whole stream, **defaulting off**. Quiet, the panel drops the tool groups, raw tool output, the empty `system (system)` meta rows and the trail's plumbing families, and drops an assistant turn whose only content was tool calls rather than leaving a header over an empty body; verbose renders everything exactly as before. Two pure predicates in `model.ts` — `isReadable` over a projected row, `isBookkeeping` over an event's family — carry the classification, and both fail open: `level=error` is never hidden and a family nobody classified renders. The trail's 40-row budget now runs after the filter, so a `graph.parked` is no longer buried behind forty `poll.*` rows, and a view the filter emptied names its hidden count and the switch. Presentation only: no route, payload, stored setting or event type changed | [spec](../specs/issue-419/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/419) |
 | issue-395 | The hosted ingress set follows the config (2026-09-20, B5 of the e2e run): `HostedIngresses` in `api/ingress.py` composes the set as `the-loop start` did, then re-hashes the config file every five seconds on a supervisor thread and reconciles membership on change — an ingress no longer enabled is stopped (`ingress.hosted_stopped reason=config`, lock released, no restart), one newly enabled is started through the same starter, lock and refusals as at boot (`ingress.hosted reason=config`), and one `config.reloaded` names both. So `channels.slack.read.mode: off` now ends the hosted listener's Socket Mode connection instead of leaving it consuming events until a restart. `the-loop status` no longer prints `running … [disabled]`: a running row the config disables says so and names what ends it. Membership only — a running ingress's own config keeps reloading as before; `service.hostIngresses` stays boot-only. No config key, schema, state or event type change | [spec](../specs/issue-395/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/395) |
 | issue-339 | The plane stopped reporting `ok` for a job it was not doing (2026-09-11): `GET /api/v1/health` carries the enabled ingresses with a reason for each one that is down, plus the `configPath` and `stateRoot` this process resolved — at HTTP 200 still, because the code is what the CLI's auto-start loop reads. An enabled ingress that fails to start records `ingress.hosted_failed` instead of only a logfile line. Both spawns of the service now carry `THE_LOOP_CLI_CONFIG` so the service and everything it hosts read the operator's config rather than re-resolving one from the working directory they inherited | [spec](../specs/issue-339/), [decision-119](../decisions/decision-119.md), [supervision](../cli/supervision.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/339) |

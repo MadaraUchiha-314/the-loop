@@ -43,6 +43,13 @@ The next line is the [instance](/cli/instances) this config is (issue-322): its 
 all. `--format json` carries the whole document as `instance` — the same one
 `GET /api/v1/instance` serves.
 
+On a **manager** ([issue-374](https://github.com/MadaraUchiha-314/the-loop/issues/374))
+the fleet follows: a headline —
+`instances   hq [manager] — this instance + 3 registered, 2 of 3 live` — and one row per
+instance, the manager's own first, as [`the-loop instances list`](/cli/commands/instances)
+prints them; the members are probed from this process, so the states are the ones the
+API reports. `--format json` carries the document as `instances` on every role.
+
 An ingress running [inside the service](/config/cli/service-options#hostingresses)
 (issue-231) says so — same lock-based liveness, its lock is simply held by the
 service's pid — and the JSON rows carry it as `"hosted": true`:

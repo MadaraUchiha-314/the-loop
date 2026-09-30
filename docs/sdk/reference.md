@@ -40,6 +40,8 @@ unparseable one raises `ValueError` naming it.
 | `check_environment()` | `dict` | which external binaries this config needs, and which are present — see [environment](/sdk/environment) |
 | `status()` | `dict` | per-service status of the **standalone** deployment this config describes |
 | `instance()` | `dict` | this instance's name, scope mode, declared work items and managed set — the document `GET /api/v1/instance` serves ([instances](/cli/instances)) |
+| `instances()` | `dict` | the fleet — this instance's row and, on a manager, one per registered instance from a probe — the document `GET /api/v1/instances` serves ([running a manager](/cli/instances#running-a-manager)); registering is a config write through `settings.update` |
+| `facade()` | object | the implementation behind the HTTP seam, chosen once by `instance.role`: a worker's core, or a manager's fleet over it (issue-374) |
 | `host_ingresses()` | `bool` | whether this process runs the enabled ingresses |
 
 `start`, `stop` and `restart` are deliberately absent: they spawn and kill the-loop's own

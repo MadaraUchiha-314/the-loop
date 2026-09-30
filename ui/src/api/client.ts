@@ -29,6 +29,8 @@ import type {
   GraphDefinition,
   GraphStatus,
   Health,
+  InstanceDocument,
+  InstancesDocument,
   JsonSchema,
   SessionRecord,
   SessionVerb,
@@ -116,26 +118,43 @@ export interface EventQuery {
   limit?: number;
 }
 
-/** Everything the control plane reads or does, independent of transport. */
+/**
+ * Everything the control plane reads or does, independent of transport.
+ *
+ * Every keyed operation takes a trailing `instance` (issue-374, R2.6): the
+ * member the call is for, when the service is a manager. It is sent only when
+ * non-empty — a query parameter on a GET, a body field on a POST — so a worker
+ * sees byte-identical requests and a client pointed at either role needs no
+ * knowledge of which it talks to. A list read takes none: a manager returns
+ * the union, each row stamped with the `instance` it came from.
+ */
 export interface TheLoopApi {
   readonly baseUrl: string;
   readonly isDemo: boolean;
-  health(signal?: AbortSignal): Promise<Health>;
+  health(signal?: AbortSignal, instance?: string): Promise<Health>;
+  /** This instance's identity and managed set (issue-322); a member's with `instance`. */
+  instance(signal?: AbortSignal, instance?: string): Promise<InstanceDocument>;
+  /** The fleet (issue-374, R3.1): one row on a worker, own row + members on a manager. */
+  instances(signal?: AbortSignal): Promise<InstancesDocument>;
+  /** Add a member to the manager's registry. A worker answers 400 naming `instance.role`. */
+  registerInstance(name: string, url: string): Promise<InstancesDocument>;
+  /** Remove a member from the registry; 404 when it is not registered. */
+  unregisterInstance(name: string): Promise<InstancesDocument>;
   workItems(signal?: AbortSignal): Promise<WorkItemRecord[]>;
   sessions(signal?: AbortSignal): Promise<SessionRecord[]>;
   attention(signal?: AbortSignal): Promise<AttentionItem[]>;
   events(query?: EventQuery, signal?: AbortSignal): Promise<EventRecord[]>;
   daemons(signal?: AbortSignal): Promise<DaemonStatus[]>;
-  graphDefinition(repo: string, pr?: number, signal?: AbortSignal): Promise<GraphDefinition>;
-  graphCheck(query: GraphQuery, signal?: AbortSignal): Promise<GraphStatus>;
-  graphComplete(query: GraphQuery & { node?: string; actor?: string }): Promise<CoreResult>;
-  controlSession(ref: string, verb: SessionVerb, comment?: boolean): Promise<CoreResult>;
+  graphDefinition(repo: string, pr?: number, signal?: AbortSignal, instance?: string): Promise<GraphDefinition>;
+  graphCheck(query: GraphQuery, signal?: AbortSignal, instance?: string): Promise<GraphStatus>;
+  graphComplete(query: GraphQuery & { node?: string; actor?: string }, instance?: string): Promise<CoreResult>;
+  controlSession(ref: string, verb: SessionVerb, comment?: boolean, instance?: string): Promise<CoreResult>;
   /**
    * Deliver an answer into a waiting session's tmux pane (issue-208). The
    * service refuses fail-closed — 404 when no session/pane, 400 when paused —
    * and never spawns one to answer.
    */
-  replySession(ref: string, text: string, actor?: string): Promise<CoreResult>;
+  replySession(ref: string, text: string, actor?: string, instance?: string): Promise<CoreResult>;
   /**
    * The harness's own transcript for a work item's (or PR endpoint's) session,
    * resolved server-side from the registered `cwd` + session id (issue-209).
@@ -143,33 +162,33 @@ export interface TheLoopApi {
    * location is undocumented (Cursor) — the trace panel falls back to the
    * event trail with the reason.
    */
-  transcript(ref: string, tail?: number, signal?: AbortSignal): Promise<TranscriptResponse>;
+  transcript(ref: string, tail?: number, signal?: AbortSignal, instance?: string): Promise<TranscriptResponse>;
   /** Every standing session — declared in the config, or created here (issue-277). */
   standingSessions(signal?: AbortSignal): Promise<StandingSessionRecord[]>;
   /** Create one and start it. The service refuses a name already in use. */
-  createStandingSession(body: StandingCreateRequest): Promise<StandingResult>;
+  createStandingSession(body: StandingCreateRequest, instance?: string): Promise<StandingResult>;
   /** Stop a **created** session and forget it. Refused for a declared one. */
-  deleteStandingSession(name: string): Promise<StandingResult>;
-  controlStandingSession(name: string, verb: StandingVerb): Promise<StandingResult>;
+  deleteStandingSession(name: string, instance?: string): Promise<StandingResult>;
+  controlStandingSession(name: string, verb: StandingVerb, instance?: string): Promise<StandingResult>;
   /** Paste a message into a running standing session's pane. */
-  sayToStandingSession(name: string, text: string, actor?: string): Promise<CoreResult>;
-  controlDaemon(daemon: string, verb: DaemonVerb): Promise<CoreResult>;
+  sayToStandingSession(name: string, text: string, actor?: string, instance?: string): Promise<CoreResult>;
+  controlDaemon(daemon: string, verb: DaemonVerb, instance?: string): Promise<CoreResult>;
   /** The CLI config the service is running on, and the path it lives at (issue-222). */
-  config(signal?: AbortSignal): Promise<ConfigDocument>;
+  config(signal?: AbortSignal, instance?: string): Promise<ConfigDocument>;
   /** Its JSON Schema, `$ref`s already resolved — what the Settings form renders from. */
-  configSchema(signal?: AbortSignal): Promise<JsonSchema>;
+  configSchema(signal?: AbortSignal, instance?: string): Promise<JsonSchema>;
   /**
    * Save a **sparse** patch: only the keys that changed. The service merges it into the
    * file, splicing rather than rewriting, so the operator's comments survive; an invalid
    * result is refused with 400 and nothing is written.
    */
-  saveConfig(patch: Record<string, unknown>): Promise<ConfigSaveResult>;
+  saveConfig(patch: Record<string, unknown>, instance?: string): Promise<ConfigSaveResult>;
   /**
    * Schedule a whole-system restart (issue-228): the service spawns a detached
    * `the-loop restart` and answers at once, then goes down and comes back —
    * expect a few failed polls before /health answers again.
    */
-  restart(withUpgrade?: boolean): Promise<RestartSchedule>;
+  restart(withUpgrade?: boolean, instance?: string): Promise<RestartSchedule>;
   /**
    * Hold `GET /api/v1/stream` open and deliver frames as they arrive (issue-239).
    * Returns the unsubscribe. Reconnection is the transport's business — the
@@ -267,12 +286,33 @@ export class HttpApi implements TheLoopApi {
     return body as T;
   }
 
-  private post<T>(path: string, body: unknown): Promise<T> {
-    return this.request<T>(path, { method: "POST", body: JSON.stringify(body) });
+  /**
+   * A POST whose body carries `instance` only when one was named (issue-374,
+   * R2.6): the key is absent, not empty, so a worker's request is byte-identical
+   * to what it received before the parameter existed.
+   */
+  private post<T>(path: string, body: Record<string, unknown>, instance = ""): Promise<T> {
+    return this.request<T>(path, { method: "POST", body: JSON.stringify(withInstance(body, instance)) });
   }
 
-  health(signal?: AbortSignal): Promise<Health> {
-    return this.request<Health>("/health", {}, signal);
+  health(signal?: AbortSignal, instance = ""): Promise<Health> {
+    return this.request<Health>("/health", { params: { instance } }, signal);
+  }
+
+  instance(signal?: AbortSignal, instance = ""): Promise<InstanceDocument> {
+    return this.request<InstanceDocument>("/instance", { params: { instance } }, signal);
+  }
+
+  instances(signal?: AbortSignal): Promise<InstancesDocument> {
+    return this.request<InstancesDocument>("/instances", {}, signal);
+  }
+
+  registerInstance(name: string, url: string): Promise<InstancesDocument> {
+    return this.post<InstancesDocument>("/instances/register", { name, url });
+  }
+
+  unregisterInstance(name: string): Promise<InstancesDocument> {
+    return this.post<InstancesDocument>("/instances/unregister", { name });
   }
 
   workItems(signal?: AbortSignal): Promise<WorkItemRecord[]> {
@@ -308,81 +348,88 @@ export class HttpApi implements TheLoopApi {
     return this.request<DaemonStatus[]>("/daemons", {}, signal);
   }
 
-  graphDefinition(repo: string, pr?: number, signal?: AbortSignal): Promise<GraphDefinition> {
-    return this.request<GraphDefinition>("/graph", { params: { repo, pr } }, signal);
+  graphDefinition(repo: string, pr?: number, signal?: AbortSignal, instance = ""): Promise<GraphDefinition> {
+    return this.request<GraphDefinition>("/graph", { params: { repo, pr, instance } }, signal);
   }
 
-  graphCheck(query: GraphQuery, signal?: AbortSignal): Promise<GraphStatus> {
+  graphCheck(query: GraphQuery, signal?: AbortSignal, instance = ""): Promise<GraphStatus> {
     // A read, but a POST: `repo` is a filesystem path and `workItem` a ref, and
     // the contract keeps both out of path segments (they contain `/` and `#`).
     return this.request<GraphStatus>(
       "/graph/check",
-      { method: "POST", body: JSON.stringify({ ...query, prRepo: query.prRepo ?? "", recompute: false }) },
+      {
+        method: "POST",
+        body: JSON.stringify(withInstance({ ...query, prRepo: query.prRepo ?? "", recompute: false }, instance)),
+      },
       signal,
     );
   }
 
-  graphComplete(query: GraphQuery & { node?: string; actor?: string }): Promise<CoreResult> {
-    return this.post<CoreResult>("/graph/complete", {
-      repo: query.repo,
-      workItem: query.workItem,
-      node: query.node ?? "",
-      actor: query.actor ?? "",
-      pr: query.pr,
-      prRepo: query.prRepo ?? "",
-    });
+  graphComplete(query: GraphQuery & { node?: string; actor?: string }, instance = ""): Promise<CoreResult> {
+    return this.post<CoreResult>(
+      "/graph/complete",
+      {
+        repo: query.repo,
+        workItem: query.workItem,
+        node: query.node ?? "",
+        actor: query.actor ?? "",
+        pr: query.pr,
+        prRepo: query.prRepo ?? "",
+      },
+      instance,
+    );
   }
 
-  controlSession(ref: string, verb: SessionVerb, comment = true): Promise<CoreResult> {
-    return this.post<CoreResult>("/sessions/control", { ref, verb, comment });
+  controlSession(ref: string, verb: SessionVerb, comment = true, instance = ""): Promise<CoreResult> {
+    return this.post<CoreResult>("/sessions/control", { ref, verb, comment }, instance);
   }
 
-  replySession(ref: string, text: string, actor = ""): Promise<CoreResult> {
-    return this.post<CoreResult>("/sessions/reply", { ref, text, actor });
+  replySession(ref: string, text: string, actor = "", instance = ""): Promise<CoreResult> {
+    return this.post<CoreResult>("/sessions/reply", { ref, text, actor }, instance);
   }
 
   standingSessions(signal?: AbortSignal): Promise<StandingSessionRecord[]> {
     return this.request<StandingSessionRecord[]>("/standing-sessions", {}, signal);
   }
 
-  createStandingSession(body: StandingCreateRequest): Promise<StandingResult> {
-    return this.post<StandingResult>("/standing-sessions/create", body);
+  createStandingSession(body: StandingCreateRequest, instance = ""): Promise<StandingResult> {
+    return this.post<StandingResult>("/standing-sessions/create", { ...body }, instance);
   }
 
-  deleteStandingSession(name: string): Promise<StandingResult> {
-    return this.post<StandingResult>("/standing-sessions/delete", { name });
+  deleteStandingSession(name: string, instance = ""): Promise<StandingResult> {
+    return this.post<StandingResult>("/standing-sessions/delete", { name }, instance);
   }
 
-  controlStandingSession(name: string, verb: StandingVerb): Promise<StandingResult> {
-    return this.post<StandingResult>("/standing-sessions/control", { name, verb });
+  controlStandingSession(name: string, verb: StandingVerb, instance = ""): Promise<StandingResult> {
+    return this.post<StandingResult>("/standing-sessions/control", { name, verb }, instance);
   }
 
-  sayToStandingSession(name: string, text: string, actor = ""): Promise<CoreResult> {
-    return this.post<CoreResult>("/standing-sessions/say", { name, text, actor });
+  sayToStandingSession(name: string, text: string, actor = "", instance = ""): Promise<CoreResult> {
+    return this.post<CoreResult>("/standing-sessions/say", { name, text, actor }, instance);
   }
 
-  transcript(ref: string, tail = 200, signal?: AbortSignal): Promise<TranscriptResponse> {
-    return this.request<TranscriptResponse>("/sessions/transcript", { params: { ref, tail } }, signal);
+  transcript(ref: string, tail = 200, signal?: AbortSignal, instance = ""): Promise<TranscriptResponse> {
+    return this.request<TranscriptResponse>("/sessions/transcript", { params: { ref, tail, instance } }, signal);
   }
 
-  controlDaemon(daemon: string, verb: DaemonVerb): Promise<CoreResult> {
-    return this.post<CoreResult>("/daemons/control", { daemon, verb });
+  controlDaemon(daemon: string, verb: DaemonVerb, instance = ""): Promise<CoreResult> {
+    return this.post<CoreResult>("/daemons/control", { daemon, verb }, instance);
   }
 
-  config(signal?: AbortSignal): Promise<ConfigDocument> {
-    return this.request<ConfigDocument>("/config", {}, signal);
+  config(signal?: AbortSignal, instance = ""): Promise<ConfigDocument> {
+    return this.request<ConfigDocument>("/config", { params: { instance } }, signal);
   }
 
-  configSchema(signal?: AbortSignal): Promise<JsonSchema> {
-    return this.request<JsonSchema>("/config/schema", {}, signal);
+  configSchema(signal?: AbortSignal, instance = ""): Promise<JsonSchema> {
+    return this.request<JsonSchema>("/config/schema", { params: { instance } }, signal);
   }
 
-  restart(withUpgrade = false): Promise<RestartSchedule> {
-    return this.post<RestartSchedule>("/restart", { withUpgrade });
+  restart(withUpgrade = false, instance = ""): Promise<RestartSchedule> {
+    return this.post<RestartSchedule>("/restart", { withUpgrade }, instance);
   }
 
-  saveConfig(patch: Record<string, unknown>): Promise<ConfigSaveResult> {
-    return this.post<ConfigSaveResult>("/config", { patch });
+  saveConfig(patch: Record<string, unknown>, instance = ""): Promise<ConfigSaveResult> {
+    return this.post<ConfigSaveResult>("/config", { patch }, instance);
   }
 
   /**
@@ -466,6 +513,11 @@ export class HttpApi implements TheLoopApi {
       source.close();
     };
   }
+}
+
+/** The body with `instance` added only when one was named — never an empty key. */
+function withInstance(body: Record<string, unknown>, instance: string): Record<string, unknown> {
+  return instance ? { ...body, instance } : body;
 }
 
 /** The `MessageEvent` an SSE listener receives, or `null` for anything else. */

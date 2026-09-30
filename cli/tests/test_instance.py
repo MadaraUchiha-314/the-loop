@@ -505,6 +505,8 @@ def test_describe_instance_for_an_unset_block_is_unnamed_open_and_empty(tmp_path
     doc = describe_instance({"state": {"root": str(tmp_path)}})
     assert doc == {
         "name": "",
+        "role": "worker",
         "scope": {"mode": "open", "workItems": []},
         "managed": [],
+        "sessionCount": 0,
     }
