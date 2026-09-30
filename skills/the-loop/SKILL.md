@@ -152,7 +152,8 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   upstream one whose gate has not yet approved it.
 - **What a `human-approval` approval does is the operator's choice** (issue O9).
   `routing.mergeOnApproval` in the operator's `cli-config.yaml` governs it: **`true`
-  (default)** — once the gate is satisfied, merge the pull request and let its
+  (default)** — once the gate is satisfied, merge the pull request (`the-loop pr merge
+  <pr>`, which reads the same knob and refuses on its own when it is `false`) and let its
   merge/close carry the work item to `finish-tasks`, the pre-O9 behaviour; **`false`** —
   stop at approved and **do not merge**: leave the merge to a person, which is what a
   repository with branch protection or required reviews needs (an auto-merge there is
@@ -267,7 +268,9 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   review, or reply — not just review findings — append `<!-- the-loop:agent-comment -->`
   (exact string, invisible) plus a short visible attribution line. This applies at
   every point above that posts a comment (paper trail, reviews, escalations, the PR
-  briefing). See `reference/collaboration.md` § loop prevention.
+  briefing). **`the-loop comment` and `the-loop ask` stamp it for you** (issue-447,
+  issue-208) — post through them; the by-hand rule is the fallback when the CLI is not
+  installed. See `reference/collaboration.md` § loop prevention.
 - **Self-check continuously.** Keep `tasks.md` checkmarks and the phase label in sync,
   and run tests at logical checkpoints. **Write no progress log**: the harness already
   keeps a transcript of what happened and `work-item-state.json` holds where the work stands,
@@ -543,6 +546,20 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
 the-loop may freely use the MCP servers, CLIs, skills and plugins available in the
 harness. Nothing registers them: discover what the harness actually offers, and check
 before assuming a capability is available.
+
+**GitHub is the exception: reach it through the-loop's own verbs**, not `gh` and not a
+GitHub MCP server of the harness's (issue-447). They need no `gh` login and, where a
+daemon runs, no token in the session at all — the service holds it. `the-loop ticket
+show <ref>` reads the ticket (body, comments, attachment links) at session start;
+`the-loop comment` posts the paper trail (spec-gate replies, the completion summary, the
+reviewer briefing, decision records); `the-loop ask` asks and waits; `the-loop ticket
+create` opens a ticket; `the-loop pr create` opens a pull request **and** records it
+against the work item; `the-loop pr status` / `pr threads` read CI and open review
+threads during `needs-review`; `the-loop pr merge` merges under `routing.mergeOnApproval`.
+The same operations are tools on the service's `/mcp` endpoint. `gh` (or a GitHub MCP
+server) remains only the fallback when the CLI is not installed. `git` itself — clone,
+push — is unchanged: that is a git credential, not a GitHub API token. See
+`reference/automation.md` § Reaching GitHub.
 
 ## Custom instructions the loop honors
 

@@ -8,6 +8,7 @@ reset that forgets a work item entirely.
 the-loop sessions register --work-item github:OWNER/REPO#N --harness claude \
     --harness-session-id "$CLAUDE_SESSION_ID" [--cwd .] [--force]
 the-loop sessions link-pr --work-item github:OWNER/REPO#N --pull-request REF|N
+the-loop sessions link-pr --work-item github:OWNER/REPO#N --discover [--branch B] [--repository R]
 the-loop sessions list   [--status active|paused|closed] [--format table|json]
 the-loop sessions attach --work-item github:OWNER/REPO#N [--read-only]
 the-loop sessions close  --work-item github:OWNER/REPO#N [--keep-tmux|--kill-tmux]
@@ -74,7 +75,10 @@ results route back to that work item's session.
 | Flag | Required | Meaning |
 |------|----------|---------|
 | `--work-item` | yes | Work-item ref, e.g. `github:OWNER/REPO#15`. |
-| `--pull-request` | yes | The pull request that delivers it: its number in the work item's own repository (`16`, `#16`), or a full ref for one in another repository (`github:OWNER/OTHER#16`). |
+| `--pull-request` | one of these two | The pull request that delivers it: its number in the work item's own repository (`16`, `#16`), or a full ref for one in another repository (`github:OWNER/OTHER#16`). |
+| `--discover` | one of these two | Ask GitHub instead ([issue-447](https://github.com/MadaraUchiha-314/the-loop/issues/447)): list the **open** pull requests whose head is this checkout's branch, and record each one. None found is exit 0. |
+| `--branch` | no | With `--discover`: the head branch. Default: the checked-out branch; a detached HEAD needs the flag. |
+| `--repository` | no | With `--discover`: `[HOST/]OWNER/REPO` to look in. Default: the checkout's `origin`, else the work item's repository. |
 
 Run it in the **same step as opening the pull request**. Routing normally infers which
 work item a PR delivers from GitHub's `closingIssuesReferences`, an `issue-<n>` head
@@ -89,15 +93,21 @@ event is delivered, and nothing else, so a pull request nobody recorded is not p
 work item's tracking and is not in a work-item review's scope.
 
 ```bash
-gh pr create --title 'Spec PR — Phase 1 (requirements) for #15' --body '…'
+# opened some other way (by hand, by a GitHub MCP server):
 the-loop sessions link-pr --work-item github:octo/repo#15 --pull-request 16
+the-loop sessions link-pr --work-item github:octo/repo#15 --discover
 ```
 
+[`the-loop pr create`](/cli/commands/pr) opens the pull request **and** records it, so a
+session that opens its PRs with it never runs this.
+
 ::: tip In Claude Code, the plugin runs this for you
-the-loop's `PostToolUse` hook (`hooks/the-loop-link-pr.py`) records the pull request when
-a session creates one, reading its number from what the tool returned and the work item
-from `THE_LOOP_WORK_ITEM` or this registry. Running the command yourself afterwards is
-harmless — it is idempotent — and is still the way in a harness with no such hook.
+the-loop's `PostToolUse` hook (`hooks/the-loop-link-pr.py`) runs `link-pr --discover`
+after a `git push` or anything that opens a pull request (`gh pr create`, a GitHub MCP
+server's `create_pull_request`), with the work item from `THE_LOOP_WORK_ITEM` or this
+registry. It parses no tool's output (issue-447). Running the command yourself
+afterwards is harmless, since it is idempotent, and it is still the way in a harness
+with no such hook.
 :::
 
 Idempotent: a pull request already recorded is reported and exits 0. Exit 1 when the work

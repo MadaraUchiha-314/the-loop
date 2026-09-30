@@ -106,6 +106,7 @@ def test_a_pull_request_opened_by_the_verb_is_linked_in_the_same_act(fake, tmp_p
     )
     assert result["linked"] is True
     record = registry.find_by_work_item(REF)
+    assert record is not None
     assert [pr.work_item.ref for pr in record.pull_requests] == ["github:octo/repo#12"]
 
 

@@ -242,7 +242,7 @@ def comment(
             item, mark_self_authored(text), api=api, client=client
         )
     eventlog.emit(
-        "work-item.commented",
+        "work_item.commented",
         level="info" if ok else "warning",
         work_item=item.ref,
         comment_url=url or None,
@@ -420,7 +420,7 @@ def create_pull_request(
     pr = replace(target, number=number)
     data.update(pullRequest=pr.ref, url=url, base=base, head=head)
     eventlog.emit(
-        "work-item.pr_opened", work_item=item.ref, pull_request=pr.ref, url=url or None
+        "work_item.pr_opened", work_item=item.ref, pull_request=pr.ref, url=url or None
     )
     lines = [f"opened {pr.ref}" + (f" — {url}" if url else "")]
     try:
@@ -568,7 +568,7 @@ def merge_pull_request(
     data: Dict[str, Any] = {"pullRequest": target.ref, "merged": False}
     if not merge_on_approval(config):
         eventlog.emit(
-            "work-item.merge_refused",
+            "work_item.merge_refused",
             level="warning",
             pull_request=target.ref,
             reason="routing.mergeOnApproval is false",
@@ -588,7 +588,7 @@ def merge_pull_request(
     data.update(
         merged=bool(result.get("merged", True)), sha=str(result.get("sha") or "")
     )
-    eventlog.emit("work-item.pr_merged", pull_request=target.ref, method=method)
+    eventlog.emit("work_item.pr_merged", pull_request=target.ref, method=method)
     return _done(data, f"merged {target.ref} ({method})")
 
 

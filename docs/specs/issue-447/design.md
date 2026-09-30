@@ -121,11 +121,14 @@ The in-process path reads the operator's CLI config the way every other command 
 
 ### 4. The CLI commands
 
-| Command | Module | Output |
-|---|---|---|
-| `comment --work-item R (--body T \| --body-file P)` | `commands/comment_cmd.py` | the URL line |
-| `ticket show R` · `ticket create --repository S --title T (--body \| --body-file) [--label L]…` | `commands/ticket_cmd.py` | JSON · the ref and URL |
-| `pr create …` · `pr status P [--work-item R]` · `pr threads P [--work-item R] [--all]` · `pr merge P [--work-item R] [--method M]` | `commands/pr_cmd.py` | the ref and URL · JSON · JSON · the merge line |
+All three live in `commands/github_cmd.py`, which shares the body reading, the
+routing and the rendering between them.
+
+| Command | Output |
+|---|---|
+| `comment --work-item R (--body T \| --body-file P)` | the URL line |
+| `ticket show R` · `ticket create --repository S --title T (--body \| --body-file) [--label L]…` | JSON · the ref and URL |
+| `pr create …` · `pr status P [--work-item R]` · `pr threads P [--work-item R] [--all]` · `pr merge P [--work-item R] [--method M]` | the ref and URL · JSON · JSON · the merge line |
 
 `--body-file -` reads stdin, as `ask --question-file` does. `pr create` resolves
 `--head` on the **CLI side** from `git symbolic-ref --short HEAD` in the working

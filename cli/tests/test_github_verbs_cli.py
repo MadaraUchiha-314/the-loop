@@ -16,6 +16,7 @@ import pytest
 import yaml
 
 from ghfakes import FakeGitHubClient
+from the_loop import cli_config
 from the_loop.authz import SELF_COMMENT_MARKER
 from the_loop.cli import main
 from the_loop.client import routing
@@ -24,6 +25,13 @@ from the_loop.migrations import CURRENT_CONFIG_VERSION
 
 REF = "github:octo/repo#5"
 SHA = "b" * 40
+
+
+@pytest.fixture(autouse=True)
+def _no_config_override_leaks():
+    """`main(["--config", …])` sets a process-wide override; clear it after."""
+    yield
+    cli_config.set_override(None)
 
 
 @pytest.fixture

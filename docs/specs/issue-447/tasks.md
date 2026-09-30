@@ -37,7 +37,7 @@ overrides: {}
   - _Depends on:_ 3
   - _Requirements:_ R4.3, R4.4
   - _Test:_ T6, T7 (A6)
-- [ ] 5. The documentation: `docs/cli/commands/{comment,ticket,pr}.md` and
+- [x] 5. The documentation: `docs/cli/commands/{comment,ticket,pr}.md` and
   `sessions.md`; the skill (`SKILL.md`, `reference/{automation,collaboration,workflow,reviewing}.md`);
   the slash commands (`work-on`, `execute-tasks`, `finish-tasks`, `create-ticket`); the
   capability docs; `decision-140` and its row

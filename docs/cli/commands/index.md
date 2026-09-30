@@ -32,6 +32,9 @@ that item's own checkout, the same way the repo-scoped commands do.
 | [`standing`](/cli/commands/standing) | The sessions the-loop keeps for itself — no work item, addressed by name: `list`, `start`, `stop`, `restart`, and `say` to talk to one. |
 | [`instances`](/cli/commands/instances) | The fleet a manager serves: `list` on any instance; `register` / `unregister` on a manager, writing the registry through the same splice as the Settings tab. |
 | [`ask`](/cli/commands/ask) | Post an agent's question on its work item — marker stamped centrally, wait recorded as `session.awaiting_input`. |
+| [`comment`](/cli/commands/comment) | Post the agent's comment on its work item — marked, enveloped, mirrored to subscribed channels. |
+| [`ticket`](/cli/commands/ticket) | `show` a ticket (body, comments, attachment links) as JSON, or `create` one. |
+| [`pr`](/cli/commands/pr) | `create` a pull request and link it in one act; `status`, `threads`, and `merge` (gated by `routing.mergeOnApproval`). |
 | [`add-collaborator`](/cli/commands/add-collaborator) | Give one GitHub login a voice on **one** work item: their comments become input for its session, and nothing else. |
 | [`remove-collaborator`](/cli/commands/remove-collaborator) | Take that voice back; it lapses on the next event. |
 | [`channels`](/cli/commands/channels) | Operate the conversation channels (the Slack bot): `status`, `threads`, one `poll` cycle, the Socket Mode `listen`er (replies, buttons, the `/the-loop` command), or the app `manifest` to import. |

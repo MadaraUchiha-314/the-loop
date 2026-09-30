@@ -38,6 +38,19 @@ self-learning/ML capabilities.
   opening the pull request, because a pull request the-loop authored carries none of the
   linkages the router can otherwise infer. It is idempotent, refuses a work item linked
   to itself, and writes nothing when the work item has no session record on this machine.
+  `link-pr --discover` (issue-447) SHALL ask GitHub instead of taking a number: every
+  **open** pull request whose head is the checkout's branch, in the checkout's `origin`
+  (else the work item's repository), is linked; none found is exit 0.
+- The coding harness SHALL reach GitHub through `the-loop` verbs, never `gh` (issue-447):
+  `the-loop comment` (a marked, enveloped comment, mirrored to channels subscribed to
+  `comment.agent`), `the-loop ticket show|create`, and `the-loop pr
+  create|status|threads|merge`. `pr create` SHALL open the pull request **and** link it
+  in one act, exiting 0 with a stderr note when only the link failed; `pr merge` SHALL
+  refuse, merging nothing, when the executing process's `routing.mergeOnApproval` is
+  `false`. Each SHALL run through the control-plane service when one answers `/health`
+  (the daemon's token; the session holds none), and otherwise in-process on
+  `integrations.github.api.tokenEnv` with a note on stderr — never auto-starting a
+  service (decision-140).
   Since issue-370 it is the **only** writer of the work item's `pullRequests[]`, and the
   plugin's `PostToolUse` hook runs it when a session creates a pull request, so the record
   does not depend on the agent remembering the step.
@@ -439,6 +452,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-447 | The coding harness reaches GitHub through `the-loop`'s verbs (2026-09-30): `comment`, `ticket show\|create` and `pr create\|status\|threads\|merge` over `ghapi.GitHubClient`, routed through a running service and otherwise in-process with a stderr note (`harness_routed`, never an auto-start); `pr create` links what it opens; `pr merge` obeys `routing.mergeOnApproval`; `sessions link-pr --discover` asks GitHub for the branch's open pull requests. The skill and the slash commands name the verbs, `gh` only as the fallback | [spec](../specs/issue-447/), [decision-140](../decisions/decision-140.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/447) |
 | issue-442 | The daemon reaches GitHub through PyGithub, never through `gh` (2026-09-30): one client (`ghapi.GitHubClient`) under one token (`integrations.github.api.tokenEnv`, read from the environment at call time) behind every write and read — the paper trail, `ask`, `add-channel`/`add-collaborator`, `channels records`, the announcement, reactions, the existence check, the poller, the process graph's labels and comments, the self-diagnosis issue; `integrations.github.transport` and `.cli` retired at config `0.11.0` with a migration that names the token; `gh` left the environment table; a missing token is one warning per writer, the poller's pre-flight and the graph's refusal | [spec](../specs/issue-442/), [decision-139](../decisions/decision-139.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/442) |
 | issue-374 | `the-loop instances list\|register\|unregister` (2026-09-30): the fleet a manager serves, listed on any instance and edited on a manager by writing `instance.manager.instances` through the config splice — thin clients of the `instances` routes; `the-loop status` carries the fleet document as `instances` and prints a headline and one row per instance on a manager; `the-loop start` refuses an unknown `instance.role` or an unnamed manager | [spec](../specs/issue-374/), [decision-138](../decisions/decision-138.md), [instances](instances.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/374) |
 | issue-396 | `check` and `graph status` accept a work-item ref, print the `work-item-state.json` they read (`state:`), and — with no `--repo`, from a directory that does not hold the work item — report on the checkout the session registry records for the ref (`repo: … (from the session registry)`), where the daemon actually wrote the state (2026-09-20) | [spec](../specs/issue-396/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/396) |

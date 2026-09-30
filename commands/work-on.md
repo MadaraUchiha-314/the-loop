@@ -57,6 +57,13 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
 2. **Identify collaborators up-front** from the work item + `collaborators.yaml`. Not
    every task needs every persona (a bug fix needs the engineer; a content fix may not).
 
+   **Reach GitHub through the-loop's verbs, never `gh`** (issue-447; the skill's
+   `reference/automation.md` § Reaching GitHub): `the-loop ticket show <ref>` to read the
+   ticket now, `the-loop comment` for every comment the loop posts, `the-loop ask` for a
+   question, `the-loop pr create|status|threads|merge` for the pull request. They need no
+   `gh` login, and where a daemon runs no token in this session; `gh` is only the
+   fallback when the CLI is not installed.
+
    **Stay monitorable (auto-execute labels + session registration).** So the-loop's CLI
    (webhook receiver / poller) can route the item's later activity back to this session:
    - **GitHub ticketing:** add **every** auto-execute label to the issue (create each if
@@ -76,10 +83,12 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
    - **A work item may be delivered by several PRs** (a spec PR then an implementation
      PR, a stacked series, a follow-up after review, one PR per repository). Label
      **every** PR you open for the item, **record every one of them against the work
-     item as you open it** (`the-loop sessions link-pr --work-item github:OWNER/REPO#N
-     --pull-request <pr-number>` — a PR the-loop authored carries none of the linkages
-     the router can infer, so its comments and reviews reach nothing without this; see
-     the skill's `reference/automation.md`), record **all** of them in
+     item as you open it** — open it with `the-loop pr create --work-item
+     github:OWNER/REPO#N …`, which records it in the same act, or run `the-loop sessions
+     link-pr --work-item github:OWNER/REPO#N --pull-request <pr-number>` for one opened
+     another way (a PR the-loop authored carries none of the linkages the router can
+     infer, so its comments and reviews reach nothing without this; see the skill's
+     `reference/automation.md`), record **all** of them in
      `evidence/pull-requests.md`, and keep working the item in the same session: with
      GitHub ticketing each PR routes back to the issue's session, and one PR merging
      does **not** end the work item — closing the **ticket** does.

@@ -499,12 +499,14 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     refused as unstarted, and — since issue-270 — was settled and never re-evaluated, so
     repairing the linkage afterwards recovered nothing. Recording the binding is
     best-effort for the session: a failure is reported and the work carries on. Since
-    issue-370 the harness SHALL run that step itself: a `PostToolUse` hook
-    (`hooks/the-loop-link-pr.py`) records the pull request when the session creates one,
-    reading the number from what the tool **returned**, resolving the work item from
-    `THE_LOOP_WORK_ITEM` or the session registry, and exiting 0 on every path. The prose
-    rule remains the fallback for a harness that runs no such hook (Cursor has no
-    `PostToolUse` event).
+    issue-370 the harness SHALL run that step itself, and since issue-447 without reading
+    any tool's output: `the-loop pr create` records the pull request it opens, and a
+    `PostToolUse` hook (`hooks/the-loop-link-pr.py`) runs `sessions link-pr --discover`
+    after a `git push` or any pull-request-creating call (`gh pr create`, a GitHub MCP
+    `create_pull_request`), which asks GitHub for the branch's open pull requests,
+    resolving the work item from `THE_LOOP_WORK_ITEM` or the session registry and
+    exiting 0 on every path. The prose rule remains the fallback for a harness that runs
+    no such hook (Cursor has no `PostToolUse` event).
   - **Which pull requests deliver a work item is a fact the-loop recorded, never one it
     inferred** (issue-370). Routing and tracking asked the same three inference sources
     and only one of them should have: routing is re-decided on every event and wrong only
@@ -938,6 +940,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-447 | The `PostToolUse` recorder stopped parsing `gh` output (2026-09-30): it fires on a `git push` or any pull-request-creating call and runs `sessions link-pr --discover`, which asks GitHub for the open pull requests of the checkout's branch; `the-loop pr create` links what it opens, so the hook is the safety net for PRs opened by hand or by MCP. Routing is unchanged | [spec](../specs/issue-447/), [decision-140](../decisions/decision-140.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/447) |
 | issue-442 | Every GitHub read and write of both ingresses moved from the operator's `gh` to the daemon's own client on PyGithub (2026-09-30): the poller's listings are the GraphQL queries `gh` ran (so `closingIssuesReferences`, node-id comment ids and every baselined thread survive the upgrade), the three pull-request surfaces are read over REST, the existence check, reactions, announcement, paper trail and give-up notice post under the token `integrations.github.api.tokenEnv` names; *Issues disabled* is classified from GitHub's 410; no rate-limit sleep, the caller's timeout on every request | [spec](../specs/issue-442/), [decision-139](../decisions/decision-139.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/442) |
 | issue-426 | **A `work-item`-mode session can no longer freeze on Claude Code's question menu** (2026-09-28): the prompt said "never block on an interactive prompt" and nothing enforced it, so `AskUserQuestion` rendered a menu in the tmux pane, emitted nothing, and every later message was pasted into a session waiting on a keypress. `Dispatcher._adapter_for` and `sessions restart` now launch the adapter `with_unattended(interaction.unattended)`, and the Claude adapter adds `--disallowedTools=AskUserQuestion` before the prompt; `cli` mode is the opt-out. The `=` spelling matters: the ticket's space-separated workaround turned the spawn prompt into deny rules | [spec](../specs/issue-426/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/426) |
 | issue-416 | **An attachment in a GitHub body reaches the session as a path** (2026-09-21): `_render_prompt` appends an Attachments section after the template for the asset URLs in the event's bodies, fetched with the daemon's token (GitHub's hosts only, redirects re-checked, 25 MiB, ten per event) into `<state.root>/local/attachments/<slug>/` and reused from disk; a failed fetch names the URL and the reason; the excerpt is untouched | [spec](../specs/issue-416/), [decision-135](../decisions/decision-135.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/416) |
