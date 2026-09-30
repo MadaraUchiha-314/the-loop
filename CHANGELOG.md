@@ -1,3 +1,9 @@
+## v19.18.0 (2026-09-30)
+
+### Feat
+
+- **issue-442**: the daemon reaches GitHub through PyGithub, never through `gh` (#446)
+
 ## v19.17.0 (2026-09-30)
 
 ### Feat
