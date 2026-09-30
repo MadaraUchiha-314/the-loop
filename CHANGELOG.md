@@ -1,3 +1,9 @@
+## v19.15.0 (2026-09-30)
+
+### Feat
+
+- **issue-374**: a manager instance — one control plane over many instances of the-loop (#436)
+
 ## v19.14.1 (2026-09-29)
 
 ### Fix
