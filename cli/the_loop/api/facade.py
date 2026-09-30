@@ -488,11 +488,16 @@ class CoreFacade:
         )
 
     def merge_pull_request(
-        self, ref: str, work_item: str = "", method: str = "merge", instance: str = ""
+        self,
+        ref: str,
+        work_item: str = "",
+        method: str = "merge",
+        instance: str = "",
+        sha: str = "",
     ) -> Dict[str, Any]:
         self._self(instance)
         return core_github.merge_pull_request(
-            ref, work_item, method, config=self.config
+            ref, work_item, method, config=self.config, sha=sha
         )
 
     def close_session(

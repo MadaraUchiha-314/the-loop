@@ -6,7 +6,7 @@ Open, inspect and merge a work item's pull request, without `gh`.
 the-loop pr create --work-item github:OWNER/REPO#N --title "feat: …" --body-file briefing.md
 the-loop pr status  github:OWNER/REPO#16            # or its URL, or: 16 --work-item …
 the-loop pr threads github:OWNER/REPO#16 [--all]
-the-loop pr merge   github:OWNER/REPO#16 [--method squash]
+the-loop pr merge   github:OWNER/REPO#16 [--method squash] [--sha <reviewed-head>]
 ```
 
 A `PR` argument is a ref (`github:[HOST/]OWNER/REPO#16`), the pull request's URL, or
@@ -63,6 +63,10 @@ repository's PRs. The knob is read from the config of the process that runs the
 merge, which is the daemon's when a service is running. No flag overrides it.
 GitHub still enforces branch protection and required reviews (exit 1, with
 GitHub's message).
+
+Pass `--sha` with the head commit you reviewed (`headSha` from `pr status`): if the
+branch has moved since, GitHub refuses the merge instead of shipping unreviewed code. A
+merge GitHub reports as not done is exit 1.
 
 ## Notes
 

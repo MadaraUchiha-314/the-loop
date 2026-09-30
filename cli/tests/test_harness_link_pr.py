@@ -343,3 +343,50 @@ def test_the_plugin_declares_the_hook():
     assert any("the-loop-link-pr.py" in command for command in commands)
     assert any("create_pull_request" in entry["matcher"] for entry in entries)
     assert HOOK.exists()
+
+
+# -- issue-447 review: segments, and the MCP call's own scope --------------------
+
+
+@pytest.mark.parametrize(
+    "command, expected",
+    [
+        ('git commit -m "add the-loop pr create" && git push', True),
+        ("git push -u origin loop/447-the-loop-pr-create", True),
+        ('git push origin HEAD && gh pr create --title "the-loop pr create"', True),
+        ("the-loop --config c.yaml pr create --title t", False),
+        ("echo git push", False),
+        ("git pushx", False),
+        ("GIT_TRACE=1 git -C /x push", True),
+    ],
+)
+def test_the_trigger_is_decided_per_segment(hook, command, expected):
+    """issue-447 R4.3/R4.4 — a message or branch that merely mentions the verb
+    neither suppresses a real push nor triggers on its own."""
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+    assert hook.should_discover(payload) is expected
+
+
+def test_an_mcp_creation_is_discovered_on_its_own_head_and_repository(
+    hook, runs, monkeypatch, capsys
+):
+    """issue-447 R4.3 — the PR an MCP tool opened need not be the checkout's."""
+    monkeypatch.setenv("THE_LOOP_WORK_ITEM", WORK_ITEM)
+    payload = {
+        "tool_name": "mcp__github__create_pull_request",
+        "tool_input": {"owner": "octo", "repo": "lib", "head": "me:feat/x"},
+    }
+    run_main(hook, monkeypatch, payload, capsys)
+    assert runs == [DISCOVER + ["--branch", "feat/x", "--repository", "octo/lib"]]
+
+
+def test_abuse_447_a6_hostile_mcp_input_never_reaches_the_argv(
+    hook, runs, monkeypatch, capsys
+):
+    monkeypatch.setenv("THE_LOOP_WORK_ITEM", WORK_ITEM)
+    payload = {
+        "tool_name": "mcp__github__create_pull_request",
+        "tool_input": {"owner": "octo;rm", "repo": "lib", "head": "--exec=x"},
+    }
+    run_main(hook, monkeypatch, payload, capsys)
+    assert runs == [DISCOVER]

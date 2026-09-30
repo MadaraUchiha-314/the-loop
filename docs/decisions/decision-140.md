@@ -27,6 +27,7 @@ output to learn which pull request had been opened.
 | D4 | **`pr merge` is gated by `routing.mergeOnApproval`, read from the executing process's config.** It checks no approval of its own. | The policy lives in one place, and routed through the service it is the daemon's. A session cannot bring a policy along. The graph's `human-approval` node decides approval, which GitHub's `reviewDecision` does not capture: this repository's owner approves by comment. |
 | D5 | **`comment` publishes `comment.agent` with `record: true`.** | The ledger stamps the marker and the envelope centrally. The room hears the comment once, and the ingress drops the enveloped copy. A new event type would split one stream subscribers already understand. |
 | D6 | **`pr create` links what it opens. The hook becomes trigger-agnostic** (a push or any PR-creating call runs `link-pr --discover`) and parses no output. | The owner's scope addition on the ticket. The primary path needs no hook, and the hook becomes a safety net that knows nothing of `gh`. |
+| D7 | **A verb addresses github.com and the operator's own host only** (`ghhost.github_host`); any other host is a caller mistake, refused before a request. | A host-shaped string in a ref or URL would otherwise make the service send the daemon's token to that host (`base_for` derives `https://<host>/api/v3` against the public default). Found in self-review. |
 
 ## Consequences
 

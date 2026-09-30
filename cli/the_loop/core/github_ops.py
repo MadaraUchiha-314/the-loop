@@ -98,6 +98,35 @@ def _github_ref(ref: str) -> WorkItemRef:
     return item
 
 
+def trusted_hosts(config: Optional[Mapping[str, Any]]) -> List[str]:
+    """The GitHub hosts a verb may address: github.com and the operator's own.
+
+    The operator's host is :func:`~the_loop.ghhost.github_host` — the configured
+    ``integrations.github.host``, an enterprise ``baseUrl``'s host, ``$GH_HOST``.
+    Nothing a caller names can add to it (issue-447 A3): a token sent to
+    ``https://<any host>/api/v3`` would be a token handed to whoever runs it.
+    """
+    from ..ghhost import github_host
+
+    hosts = [DEFAULT_GITHUB_HOST]
+    own = github_host(dict(config or {}))
+    if own and own not in hosts:
+        hosts.append(own)
+    return hosts
+
+
+def _trusted(ref: WorkItemRef, config: Optional[Mapping[str, Any]]) -> WorkItemRef:
+    """``ref``, if its host is one the operator trusts; else a caller mistake."""
+    hosts = trusted_hosts(config)
+    if ref.host.lower() not in [h.lower() for h in hosts]:
+        raise ValueError(
+            f"{ref.ref} is on {ref.host}, which is not a GitHub host this "
+            f"instance is configured for ({', '.join(hosts)}); set "
+            "integrations.github.host to use it"
+        )
+    return ref
+
+
 def _failed(data: Dict[str, Any], text: str) -> Dict[str, Any]:
     data.update(exitCode=1, messages=[{"stream": "err", "text": f"error: {text}"}])
     return data
@@ -170,18 +199,25 @@ def resolve_pull_request(pr: str, work_item: str = "") -> WorkItemRef:
         host = match.group("host")
         if host.lower() in ("github.com", "www.github.com"):
             host = ""
+        if int(match.group("number")) <= 0:
+            raise ValueError(f"a pull-request number must be positive, not {text}")
         return _github_ref(
             f"github:{host + '/' if host else ''}{match.group('owner')}/"
             f"{match.group('repo')}#{match.group('number')}"
         )
     if text.lstrip("#").isdigit():
+        if int(text.lstrip("#")) <= 0:
+            raise ValueError(f"a pull-request number must be positive, not {text}")
         if not work_item:
             raise ValueError(
                 f"a bare pull-request number ({text}) needs --work-item to say "
                 "which repository it is in"
             )
         return core_sessions.pull_request_ref(_github_ref(work_item), text)
-    return _github_ref(text)
+    resolved = _github_ref(text)
+    if resolved.number <= 0:
+        raise ValueError(f"a pull-request number must be positive, not {text}")
+    return resolved
 
 
 # ------------------------------------------------------------------ comment
@@ -203,7 +239,7 @@ def comment(
     enveloped comment, so nothing re-publishes it. A bus fault falls back to
     posting the marked body directly: the ticket is the record either way.
     """
-    item = _github_ref(ref)
+    item = _trusted(_github_ref(ref), config)
     text = _text(body, "comment")
     cli_config = dict(config or {})
     api = _api(cli_config)
@@ -275,7 +311,7 @@ def show_ticket(
     links in them — links only; nothing is fetched (A7). The text is the
     ticket's, and the skill treats it as data, never as instructions.
     """
-    item = _github_ref(ref)
+    item = _trusted(_github_ref(ref), config)
     gh = _client(config, client)
     host = _host(item)
     data: Dict[str, Any] = {"ref": item.ref}
@@ -343,6 +379,8 @@ def create_ticket(
     """
     title = _text(title, "title")
     target = _slug(repository)
+    if target.count("/") == 2:
+        _trusted(_github_ref(f"github:{target}#1"), config)
     ok, error, ref, url = create_issue(
         target,
         title,
@@ -382,13 +420,13 @@ def create_pull_request(
     failure: the pull request exists, and saying otherwise would invite a second
     one (R1.5).
     """
-    item = _github_ref(ref)
+    item = _trusted(_github_ref(ref), config)
     title = _text(title, "title")
     if not is_branch_name(str(head or "").rpartition(":")[2]):
         raise ValueError(f"unusable head branch {head!r}")
     if base and not is_branch_name(base):
         raise ValueError(f"unusable base branch {base!r}")
-    target = _repository(repository, item)
+    target = _trusted(_repository(repository, item), config)
     gh = _client(config, client)
     host = _host(target)
     data: Dict[str, Any] = {"workItem": item.ref, "linked": False}
@@ -417,7 +455,9 @@ def create_pull_request(
         )
     except GitHubApiError as exc:
         return _failed(data, f"could not open the pull request: {exc}")
-    pr = replace(target, number=number)
+    # The repository's own spelling, as GitHub returned it: the ref keys the
+    # registry, and a caller's lower-cased --repository must not become the key.
+    pr = _pull_ref({"number": number, "html_url": url}, target)
     data.update(pullRequest=pr.ref, url=url, base=base, head=head)
     eventlog.emit(
         "work_item.pr_opened", work_item=item.ref, pull_request=pr.ref, url=url or None
@@ -494,7 +534,7 @@ def pull_request_status(
     client: Optional[GitHubClient] = None,
 ) -> Dict[str, Any]:
     """State, mergeability and one checks verdict — three requests (R1.6)."""
-    target = resolve_pull_request(pr, work_item)
+    target = _trusted(resolve_pull_request(pr, work_item), config)
     gh = _client(config, client)
     host = _host(target)
     data: Dict[str, Any] = {"pullRequest": target.ref}
@@ -531,7 +571,7 @@ def pull_request_threads(
     client: Optional[GitHubClient] = None,
 ) -> Dict[str, Any]:
     """The review threads still open on a pull request (R1.7)."""
-    target = resolve_pull_request(pr, work_item)
+    target = _trusted(resolve_pull_request(pr, work_item), config)
     gh = _client(config, client)
     data: Dict[str, Any] = {"pullRequest": target.ref}
     try:
@@ -550,21 +590,27 @@ def merge_pull_request(
     method: str = "merge",
     config: Optional[Mapping[str, Any]] = None,
     *,
+    sha: str = "",
     client: Optional[GitHubClient] = None,
 ) -> Dict[str, Any]:
     """Merge the pull request — only where the operator's policy says so (R1.8).
+
+    ``sha`` pins the head the caller reviewed: a commit pushed after the review
+    makes GitHub refuse the merge rather than ship unreviewed code.
 
     ``routing.mergeOnApproval: false`` means a person merges; the verb then
     refuses and merges nothing (A2). The knob is read from ``config`` — the
     executing process's, never an argument — and GitHub itself still enforces
     branch protection and required reviews.
     """
-    target = resolve_pull_request(pr, work_item)
+    target = _trusted(resolve_pull_request(pr, work_item), config)
     if method not in MERGE_METHODS:
         raise ValueError(
             f"unknown merge method {method!r}; expected one of "
             + ", ".join(MERGE_METHODS)
         )
+    if sha and not re.fullmatch(r"[0-9a-fA-F]{7,40}", sha):
+        raise ValueError(f"unusable head sha {sha!r}")
     data: Dict[str, Any] = {"pullRequest": target.ref, "merged": False}
     if not merge_on_approval(config):
         eventlog.emit(
@@ -581,13 +627,23 @@ def merge_pull_request(
     gh = _client(config, client)
     try:
         result = gh.merge_pull(
-            target.owner, target.repo, target.number, method, host=_host(target)
+            target.owner,
+            target.repo,
+            target.number,
+            method,
+            host=_host(target),
+            sha=sha,
         )
     except GitHubApiError as exc:
         return _failed(data, f"could not merge {target.ref}: {exc}")
-    data.update(
-        merged=bool(result.get("merged", True)), sha=str(result.get("sha") or "")
-    )
+    merged = bool(result.get("merged", True))
+    data.update(merged=merged, sha=str(result.get("sha") or ""))
+    if not merged:
+        return _failed(
+            data,
+            f"GitHub did not merge {target.ref}: "
+            + str(result.get("message") or "no reason given"),
+        )
     eventlog.emit("work_item.pr_merged", pull_request=target.ref, method=method)
     return _done(data, f"merged {target.ref} ({method})")
 
@@ -625,10 +681,10 @@ def discover_pull_requests(
     or the work item's. Linking is idempotent, so running this after every push
     costs a request and writes nothing new.
     """
-    item = _github_ref(ref)
+    item = _trusted(_github_ref(ref), config)
     if not is_branch_name(branch or ""):
         raise ValueError(f"unusable branch name {branch!r}")
-    target = _repository(repository, item)
+    target = _trusted(_repository(repository, item), config)
     # The work item's own spelling when it is the same repository.
     if (target.host, target.owner.lower(), target.repo.lower()) == (
         item.host,

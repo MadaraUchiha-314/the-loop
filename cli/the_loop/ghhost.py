@@ -52,6 +52,7 @@ __all__ = [
     "github_host",
     "host_from_remote",
     "host_of_api_base",
+    "origin_github_repo",
     "origin_repo",
     "repo_slug",
 ]
@@ -124,6 +125,24 @@ def _origin_remote(root: Path) -> str:
         logger.debug("could not read the origin remote of %s: %s", root, exc)
         return ""
     return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
+def origin_github_repo(
+    root: Path,
+    hosts,
+    remote_reader: Optional[Callable[[Path], str]] = None,
+) -> str:
+    """``owner/repo`` of ``root``'s origin **when that origin is on one of**
+    ``hosts``, else ``""`` (issue-447): a GitLab or local-path origin must not be
+    looked up on GitHub under the same two path segments. An origin with no host
+    of its own — a proxied or local remote — is not evidence either way, so it
+    is not used."""
+    reader = remote_reader or _origin_remote
+    remote = reader(root)
+    host = host_from_remote(remote).split("@")[-1].lower()
+    if not host or host not in {str(h).lower() for h in hosts}:
+        return ""
+    return repo_slug(remote)
 
 
 def current_branch(root: Path) -> str:

@@ -304,8 +304,12 @@ class FakeGitHubClient(GitHubClient):
         self._enter("commit_checks", owner=owner, repo=repo, sha=sha, host=host)
         return list(self.check_runs.get(sha, [])), list(self.statuses.get(sha, []))
 
-    def merge_pull(self, owner, repo, number, method, host="") -> Dict[str, Any]:
-        self._enter("merge_pull", owner=owner, repo=repo, number=number, host=host)
+    def merge_pull(
+        self, owner, repo, number, method, host="", sha=""
+    ) -> Dict[str, Any]:
+        self._enter(
+            "merge_pull", owner=owner, repo=repo, number=number, host=host, sha=sha
+        )
         if method not in MERGE_METHODS:
             raise GitHubApiError(f"unusable merge method {method!r}")
         self.merged.append((owner, repo, int(number), method))

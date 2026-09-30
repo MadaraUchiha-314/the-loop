@@ -275,6 +275,8 @@ class PullRequestMergeBody(BaseModel):
     ref: str
     workItem: str = ""
     method: str = "merge"
+    # The head the caller reviewed; GitHub refuses the merge if it moved.
+    sha: str = ""
     instance: str = ""
 
 
@@ -781,7 +783,7 @@ def build_router(
     )
     def merge_pull_request(body: PullRequestMergeBody) -> Dict[str, Any]:
         return facade.merge_pull_request(
-            body.ref, body.workItem, body.method, instance=body.instance
+            body.ref, body.workItem, body.method, instance=body.instance, sha=body.sha
         )
 
     @router.post(

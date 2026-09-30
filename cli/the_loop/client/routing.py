@@ -58,6 +58,14 @@ IN_PROCESS_NOTE = (
 )
 
 
+#: What a harness verb says when the running service predates it.
+STALE_SERVICE_NOTE = (
+    "note: the running control-plane service does not serve this verb yet "
+    "(restart it with `the-loop restart`); running in-process on this "
+    "session's GitHub token"
+)
+
+
 def harness_routed(
     remote: Callable[[Any], Any],
     local: Callable[[], Any],
@@ -80,7 +88,19 @@ def harness_routed(
 
     resolved = client.resolved_config(config)
     if client.healthy(resolved):
-        return remote(client.Client(resolved))
+        try:
+            return remote(client.Client(resolved))
+        except client.ApiError as exc:
+            # A service older than the verb answers `/health` but not the route
+            # (FastAPI's bare 404/405). Run it here rather than fail, and say
+            # why — a restart picks the route up.
+            if exc.status not in (404, 405) or exc.detail not in (
+                "Not Found",
+                "Method Not Allowed",
+            ):
+                raise
+            print(STALE_SERVICE_NOTE, file=sys.stderr)
+            return local()
     print(IN_PROCESS_NOTE, file=sys.stderr)
     return local()
 

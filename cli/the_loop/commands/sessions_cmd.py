@@ -560,7 +560,7 @@ class SessionsCommand(Command):
         GitHub, not parsed out of a tool's output. The branch and the repository
         are the checkout's, read here — the service does not run in it."""
         from ..core import github_ops
-        from ..ghhost import current_branch, origin_repo
+        from ..ghhost import current_branch, origin_github_repo
 
         cwd = Path.cwd()
         branch = args.branch or current_branch(cwd)
@@ -570,7 +570,11 @@ class SessionsCommand(Command):
                 file=sys.stderr,
             )
             return 2
-        repository = args.repository or origin_repo(cwd)
+        # The origin only when it is on a GitHub host this instance trusts;
+        # otherwise the work item's own repository (core's default for "").
+        repository = args.repository or origin_github_repo(
+            cwd, github_ops.trusted_hosts(_cli_config())
+        )
         try:
             result = routed(
                 lambda connection: connection.post(

@@ -243,6 +243,12 @@ class PrCommand(Command):
         )
         _add_pr(merge)
         merge.add_argument("--method", choices=MERGE_METHODS, default="merge")
+        merge.add_argument(
+            "--sha",
+            default="",
+            help="The head commit you reviewed; GitHub refuses the merge if the "
+            "branch has moved since (recommended).",
+        )
         merge.set_defaults(_action=self._merge)
 
     def run(self, args: argparse.Namespace) -> int:
@@ -328,10 +334,15 @@ class PrCommand(Command):
                         "ref": args.pull_request,
                         "workItem": args.work_item,
                         "method": args.method,
+                        "sha": args.sha,
                     },
                 ),
                 lambda: github_ops.merge_pull_request(
-                    args.pull_request, args.work_item, args.method, _cli_config()
+                    args.pull_request,
+                    args.work_item,
+                    args.method,
+                    _cli_config(),
+                    sha=args.sha,
                 ),
             )
         )

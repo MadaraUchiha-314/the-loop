@@ -1018,3 +1018,9 @@ def test_abuse_447_a1_the_token_never_reaches_a_verb_error(
     with pytest.raises(GitHubApiError) as exc:
         client.merge_pull(OWNER, REPO, 12, "merge")
     assert token not in str(exc.value)
+
+
+def test_merge_pull_sends_the_reviewed_head(client, github_replay):
+    github_replay.on("PUT", "/repos/octo/repo/pulls/12/merge", 200, {"merged": True})
+    client.merge_pull(OWNER, REPO, 12, "merge", sha="a" * 40)
+    assert github_replay.exchanges[0].json == {"merge_method": "merge", "sha": "a" * 40}

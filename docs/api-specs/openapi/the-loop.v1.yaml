@@ -2415,6 +2415,11 @@ components:
           type: string
           title: Method
           default: merge
+        sha:
+          type: string
+          title: Sha
+          default: ''
+          description: The head commit the caller reviewed; GitHub refuses the merge if the branch has moved since.
         instance:
           type: string
           title: Instance

@@ -279,12 +279,19 @@ def build_server(cli_config: Optional[dict] = None, *, facade: Any = None) -> MC
         )
 
     def merge_pull_request(
-        ref: str, work_item: str = "", method: str = "merge", instance: str = ""
+        ref: str,
+        work_item: str = "",
+        method: str = "merge",
+        sha: str = "",
+        instance: str = "",
     ) -> Dict[str, Any]:
         """Merge a pull request (method merge, squash or rebase) — refused when
         the operator's routing.mergeOnApproval is false, which means a person
-        merges it."""
-        return facade.merge_pull_request(ref, work_item, method, instance=instance)
+        merges it. Pass the reviewed head as `sha` so a commit pushed after the
+        review makes GitHub refuse the merge."""
+        return facade.merge_pull_request(
+            ref, work_item, method, instance=instance, sha=sha
+        )
 
     def list_standing_sessions() -> List[Dict[str, Any]]:
         """The standing sessions (issue-277) — the long-lived sessions that

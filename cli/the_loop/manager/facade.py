@@ -524,16 +524,21 @@ class ManagerFacade:
         )
 
     def merge_pull_request(
-        self, ref: str, work_item: str = "", method: str = "merge", instance: str = ""
+        self,
+        ref: str,
+        work_item: str = "",
+        method: str = "merge",
+        instance: str = "",
+        sha: str = "",
     ) -> Dict[str, Any]:
         member = self._target(instance)
         if self.fleet.is_local(member):
-            return self.core.merge_pull_request(ref, work_item, method)
+            return self.core.merge_pull_request(ref, work_item, method, sha=sha)
         return self._proxy(
             member,
             "POST",
             "/api/v1/pull-requests/merge",
-            body={"ref": ref, "workItem": work_item, "method": method},
+            body={"ref": ref, "workItem": work_item, "method": method, "sha": sha},
         )
 
     def close_session(

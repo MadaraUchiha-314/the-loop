@@ -291,3 +291,55 @@ def test_a_routed_verb_maps_a_400_to_exit_2(monkeypatch, config, capsys):
     monkeypatch.setattr(client.Client, "post", refuse)
     assert _cli(config(), "comment", "--work-item", REF, "--body", "x") == 2
     assert "the comment is empty" in capsys.readouterr().err
+
+
+@pytest.mark.routed
+def test_a_service_older_than_the_verb_falls_back_loudly(monkeypatch, capsys):
+    """Review L6 — a running service without the route is not a hard error."""
+    from the_loop import client
+
+    monkeypatch.setattr(client, "healthy", lambda *_a, **_k: True)
+
+    def old_service(_connection):
+        raise client.ApiError(404, "Not Found")
+
+    result = routing.harness_routed(old_service, lambda: {"via": "local"}, config={})
+    assert result == {"via": "local"}
+    assert routing.STALE_SERVICE_NOTE in capsys.readouterr().err
+
+
+@pytest.mark.routed
+def test_a_real_404_from_the_service_is_not_swallowed(monkeypatch):
+    from the_loop import client
+
+    monkeypatch.setattr(client, "healthy", lambda *_a, **_k: True)
+
+    def foreign(_connection):
+        raise client.ApiError(404, "instance 'x' is not this one")
+
+    with pytest.raises(client.ApiError):
+        routing.harness_routed(foreign, lambda: pytest.fail("no fallback"), config={})
+
+
+def test_discovery_ignores_an_origin_that_is_not_on_github(tmp_path):
+    from the_loop.ghhost import origin_github_repo
+
+    def reader(url):
+        return lambda _root: url
+
+    hosts = ["github.com"]
+    assert (
+        origin_github_repo(tmp_path, hosts, reader("https://github.com/Octo/App.git"))
+        == "octo/app"
+    )
+    assert (
+        origin_github_repo(tmp_path, hosts, reader("git@github.com:o/r.git")) == "o/r"
+    )
+    assert (
+        origin_github_repo(tmp_path, hosts, reader("git@gitlab.com:team/app.git")) == ""
+    )
+    assert (
+        origin_github_repo(tmp_path, hosts, reader("http://proxy@127.0.0.1:9/git/o/r"))
+        == ""
+    )
+    assert origin_github_repo(tmp_path, hosts, reader("/srv/mirror/app")) == ""

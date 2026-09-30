@@ -514,3 +514,97 @@ def test_discover_without_a_session_is_exit_1(tmp_path):
 def test_discover_refuses_a_hostile_branch(tmp_path):
     with pytest.raises(ValueError, match="branch"):
         github_ops.discover_pull_requests(REF, "a..b", config=_config(tmp_path))
+
+
+# -- issue-447 review: the host allow-list and the merge's edges ------------------
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda c, f: github_ops.show_ticket("github:evil.example/o/r#1", c, client=f),
+        lambda c, f: github_ops.comment("github:evil.example/o/r#1", "x", c, client=f),
+        lambda c, f: github_ops.pull_request_status(
+            "https://evil.example/o/r/pull/1", config=c, client=f
+        ),
+        lambda c, f: github_ops.pull_request_threads(
+            "https://127.0.0.1:8443/o/r/pull/1", config=c, client=f
+        ),
+        lambda c, f: github_ops.merge_pull_request(
+            "github:evil.example/o/r#1", config=c, client=f
+        ),
+        lambda c, f: github_ops.create_ticket(
+            "evil.example/o/r", "T", "B", (), c, client=f
+        ),
+        lambda c, f: github_ops.create_pull_request(
+            REF, "T", "B", "x", repository="evil.example/o/r", config=c, client=f
+        ),
+        lambda c, f: github_ops.discover_pull_requests(
+            REF, "x", "evil.example/o/r", c, client=f
+        ),
+    ],
+)
+def test_abuse_447_a3_a_host_the_operator_did_not_configure_is_refused(tmp_path, call):
+    """The token goes only to github.com or the operator's own host (review H1)."""
+    fake = FakeGitHubClient()
+    with pytest.raises(ValueError, match="not a GitHub host"):
+        call(_config(tmp_path), fake)
+    assert fake.calls == []
+
+
+def test_the_operators_own_enterprise_host_is_trusted(tmp_path):
+    config = _config(tmp_path)
+    config["integrations"] = {"github": {"host": "ghe.corp.example"}}
+    fake = FakeGitHubClient()
+    fake.threads[("o", "r", 3)] = []
+    result = github_ops.pull_request_threads(
+        "github:ghe.corp.example/o/r#3", config=config, client=fake
+    )
+    assert result["exitCode"] == 0
+    assert fake.calls[0][1]["host"] == "ghe.corp.example"
+
+
+@pytest.mark.parametrize(
+    "given", ["github:octo/repo#0", "0", "https://github.com/o/r/pull/0"]
+)
+def test_a_zero_pull_request_number_is_a_caller_mistake(given):
+    with pytest.raises(ValueError, match="positive"):
+        github_ops.resolve_pull_request(given, REF)
+
+
+def test_a_merge_github_did_not_do_is_exit_1(tmp_path, monkeypatch):
+    fake = FakeGitHubClient()
+    monkeypatch.setattr(
+        fake, "merge_pull", lambda *a, **k: {"merged": False, "message": "conflict"}
+    )
+    result = github_ops.merge_pull_request(
+        "12", REF, "merge", _config(tmp_path), client=fake
+    )
+    assert result["exitCode"] == 1 and "conflict" in _words(result)
+
+
+def test_merge_pins_the_reviewed_head(tmp_path):
+    fake = FakeGitHubClient()
+    github_ops.merge_pull_request(
+        "12", REF, "merge", _config(tmp_path), sha="a" * 40, client=fake
+    )
+    assert fake.calls[-1][1]["sha"] == "a" * 40
+    with pytest.raises(ValueError, match="sha"):
+        github_ops.merge_pull_request("12", REF, "merge", _config(tmp_path), sha="x;y")
+
+
+def test_pr_create_keys_the_link_by_githubs_own_spelling(tmp_path):
+    _register(tmp_path, "github:Octo/Repo#5")
+    fake = FakeGitHubClient()
+    fake.create_pull = lambda *a, **k: (12, "https://github.com/Octo/Repo/pull/12")
+    result = github_ops.create_pull_request(
+        "github:Octo/Repo#5",
+        "T",
+        "B",
+        "x",
+        base="main",
+        repository="octo/repo",
+        config=_config(tmp_path),
+        client=fake,
+    )
+    assert result["pullRequest"] == "github:Octo/Repo#12"

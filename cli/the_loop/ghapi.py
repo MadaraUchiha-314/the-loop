@@ -1087,17 +1087,28 @@ class GitHubClient:
         )
 
     def merge_pull(
-        self, owner: str, repo: str, number: int, method: str, host: str = ""
+        self,
+        owner: str,
+        repo: str,
+        number: int,
+        method: str,
+        host: str = "",
+        sha: str = "",
     ) -> Dict[str, Any]:
         """``PUT /repos/{o}/{r}/pulls/{n}/merge``. GitHub's refusal (405 not
-        mergeable, 409 head moved) is :class:`GitHubApiError` with its status."""
+        mergeable, 409 head moved) is :class:`GitHubApiError` with its status.
+        ``sha``, when given, is the head the caller reviewed: GitHub refuses the
+        merge (409) if the branch has moved since."""
         owner, repo = self._coordinates(owner, repo)
         if method not in MERGE_METHODS:
             raise GitHubApiError(f"unusable merge method {method!r}")
+        payload: Dict[str, Any] = {"merge_method": method}
+        if sha:
+            payload["sha"] = self._sha(sha)
         data = self.rest(
             "PUT",
             f"/repos/{owner}/{repo}/pulls/{self._number(number)}/merge",
-            {"merge_method": method},
+            payload,
             host=host,
         )
         return data if isinstance(data, dict) else {}

@@ -49,7 +49,7 @@ goes through `_call` (one exception type, no token in any message), and takes `h
 | `create_pull(owner, repo, title, body, head, base, draft)` | `POST /repos/{o}/{r}/pulls` | `(number, html_url)` |
 | `get_pull(owner, repo, number)` | `GET /repos/{o}/{r}/pulls/{n}` | the raw document |
 | `commit_checks(owner, repo, sha)` | `GET …/commits/{sha}/check-runs?per_page=100` and `GET …/commits/{sha}/status` | `(check_runs, statuses)` |
-| `merge_pull(owner, repo, number, method)` | `PUT /repos/{o}/{r}/pulls/{n}/merge` | the raw document (`sha`, `merged`) |
+| `merge_pull(owner, repo, number, method, sha="")` | `PUT /repos/{o}/{r}/pulls/{n}/merge` (with `sha` when given) | the raw document (`sha`, `merged`) |
 | `review_threads(owner, repo, number)` | GraphQL `reviewThreads`, paged by 100 | list of thread dicts |
 | `open_pulls_for_head(owner, repo, head_owner, branch)` | `GET /repos/{o}/{r}/pulls?state=open&head={owner}:{branch}` | list of raw documents |
 
@@ -107,6 +107,11 @@ def harness_routed(remote, local, config=None):
     print(IN_PROCESS_NOTE, file=sys.stderr)   # R2.2: never silent
     return local()
 ```
+
+A running service that answers the route with FastAPI's bare `404 Not Found` or `405
+Method Not Allowed` predates the verb; `harness_routed` then runs it in-process with
+`STALE_SERVICE_NOTE` (restart the service). Any other error — a foreign instance's 404
+included — is raised as usual.
 
 The difference from `routed` is deliberate (decision-140 D2). `routed` auto-starts a
 service and otherwise fails closed, because a core verb's state lives with the service.
@@ -177,8 +182,16 @@ record lives in the service's registry.
 - **Trigger:** a `Bash` command matching `\bgit\b[^\n|;&]*\bpush\b` or
   `\bpr\b[^\n|;&]*\bcreate\b`, unless it is `the-loop pr create` (R4.4). Or any tool
   whose name ends in `create_pull_request`. An interrupted call triggers nothing.
+- **Trigger, decided per segment.** The command is split on `&&`, `||`, `;`, `|` and
+  newlines, and each segment is matched from its start, so a commit message or branch
+  name that mentions `the-loop pr create` neither triggers nor suppresses.
 - **Action:** `the-loop sessions link-pr --work-item <ref> --discover`, in the payload's
-  `cwd`. No URL is read from the response, and no PR argument is composed.
+  `cwd`. For an MCP call, the tool's own `head`, `owner` and `repo` become `--branch`
+  and `--repository` when they are GitHub name shapes. No URL is read from the
+  response.
+- `--discover` uses the checkout's origin only when its host is a trusted GitHub host
+  (`ghhost.origin_github_repo`); a GitLab, local-path or proxied origin falls back to
+  the work item's repository.
 - The work-item resolution (`THE_LOOP_WORK_ITEM`, then the registry by session id, then
   by working directory), stdlib-only, and exit 0 on every path are unchanged.
 
@@ -222,7 +235,7 @@ the new trigger.
 |---|---|
 | A1 | Every client call goes through `_call` and `_translate`, and every result message is composed from `GitHubApiError.__str__` (status plus GitHub's message). T7 asserts the token is absent from the output of a failing verb |
 | A2 | `merge_on_approval(config)` is read inside core from the **executing process's** config. The CLI sends no policy field, the route body has none, and the MCP tool calls the same facade method |
-| A3 | Coordinates go through `_coordinates`, `_number`, `_BRANCH_RE` and the SHA and method checks before any request. `create_issue`'s slug parse and `is_github_host` apply to `--repository`. The GraphQL document is a constant, with values passed only as variables |
+| A3 | `_trusted(ref, config)` admits only `trusted_hosts(config)` — github.com plus `ghhost.github_host(config)` — before any client call, in every operation (the review's H1: shape-checking a host was not enough, since `base_for` derives `https://<host>/api/v3` for any host against the public default). Coordinates go through `_coordinates`, `_number`, `_BRANCH_RE` and the SHA and method checks before any request. `create_issue`'s slug parse and `is_github_host` apply to `--repository`. The GraphQL document is a constant, with values passed only as variables |
 | A4 | The ledger's default branch stamps `mark_self_authored` and an envelope. `publish_comment` drops enveloped comments at ingress, so the comment is never re-published or re-forwarded |
 | A5 | `harness_routed` prints `IN_PROCESS_NOTE` on every fallback, and never auto-starts |
 | A6 | The hook's argv is `["the-loop", "sessions", "link-pr", "--work-item", ref, "--discover"]`, where `ref` has already matched `_REF_RE`. No shell, and nothing taken from the tool's response |

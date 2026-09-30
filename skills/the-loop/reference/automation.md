@@ -322,7 +322,7 @@ runs `gh`; these verbs close the last hop, the agent's own session.
 | open a ticket (`/the-loop:create-ticket`) | `the-loop ticket create --repository <owner/repo> --title … --body-file … [--label …]` |
 | open the pull request — and record it | `the-loop pr create --work-item <ref> --title … --body-file …` |
 | read CI and the open review threads during `needs-review` | `the-loop pr status <pr>` · `the-loop pr threads <pr>` (JSON) |
-| merge on approval | `the-loop pr merge <pr>` — refused when `routing.mergeOnApproval` is `false` |
+| merge on approval | `the-loop pr merge <pr> --sha <reviewed head>` — refused when `routing.mergeOnApproval` is `false`; the `--sha` makes GitHub refuse a branch that moved after the review |
 
 - **Whose token.** On a box where the daemon runs, each verb executes in the
   control-plane service, so the token stays in the daemon's environment and the session
@@ -330,6 +330,9 @@ runs `gh`; these verbs close the last hop, the agent's own session.
   `integrations.github.api.tokenEnv` names (default `GH_TOKEN`), prints a note on
   stderr saying so, and never starts a service. The same operations are tools on the
   service's `/mcp` endpoint for a harness that prefers MCP.
+- **Only trusted hosts.** A verb addresses github.com and the operator's own GitHub
+  host, nothing else: a ref or URL naming another host is refused before anything is
+  sent, so the token cannot be pointed at a server by text in a ticket.
 - **What stays the harness's own:** `git` (clone, push — a git credential, not a
   GitHub API token), and anything outside the work item's lifecycle.
 - **The fallback** is `gh` or a GitHub MCP server, only when the CLI is not installed —

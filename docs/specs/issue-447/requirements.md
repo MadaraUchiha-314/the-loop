@@ -93,10 +93,13 @@ commit statuses, with the failing and pending check names.
 the PR's **unresolved** review threads: id, path, line, outdated flag, and each comment's
 author, body, time and URL. `--all` SHALL include resolved threads.
 
-1.8 WHEN the agent runs `the-loop pr merge <pr> [--method merge|squash|rebase]` THEN the
+1.8 WHEN the agent runs `the-loop pr merge <pr> [--method merge|squash|rebase] [--sha
+<reviewed-head>]` THEN the
 system SHALL merge the PR **only if** the governing CLI config's
 `routing.mergeOnApproval` is `true` (the default). WHEN it is `false`, THEN the verb SHALL
-refuse with exit 1, merge nothing, and name the key.
+refuse with exit 1, merge nothing, and name the key. WHEN `--sha` is given THEN it SHALL
+be sent as the expected head, so GitHub refuses the merge if the branch moved after the
+review. WHEN GitHub answers that it did not merge THEN the verb SHALL exit 1.
 
 1.9 A `<pr>` argument SHALL accept a ref (`github:[host/]owner/repo#n`), a pull-request
 URL, or a bare number together with `--work-item` (resolved against the work item's
@@ -124,6 +127,14 @@ naming the variables to set, and make no request.
 
 2.4 The token SHALL never appear in a verb's output, an error string the-loop composes,
 or the event log. This is issue-442's A1, unchanged.
+
+2.5 A verb SHALL address only github.com and the operator's own GitHub host (the
+configured `integrations.github.host`, an enterprise `baseUrl`'s host, `$GH_HOST`). IF a
+ref, URL or repository names any other host THEN the verb SHALL refuse it with exit 2
+(HTTP 400) before any request, because the token would otherwise be sent to that host.
+
+2.6 WHEN a running service does not serve a verb's route (a service older than the CLI)
+THEN the verb SHALL run in-process with a note naming the restart, rather than fail.
 
 ### Requirement 3 — the service and MCP expose the same operations
 
@@ -201,7 +212,7 @@ the mechanisms, and the testing plan's T7 row carries the negative tests.
 |---|------------|------------------|
 | A1 | a token leaks through a verb's output, an error, or the event log | never: issue-442's translation boundary is reused, and every message is the status plus GitHub's text |
 | A2 | a prompt-injected session merges a PR the operator wanted a human to merge | `pr merge` is refused when `routing.mergeOnApproval` is `false`, read from the **service's** config when routed. The agent cannot override it by flag or argument, and the MCP tool is gated identically |
-| A3 | hostile coordinates (owner, repo, number, branch, host) reach a URL path or a GraphQL variable | every coordinate passes the client's shape checks before any request. A branch name is validated against git's ref grammar subset, and GraphQL values travel only as variables |
+| A3 | hostile coordinates (owner, repo, number, branch, host) reach a URL path or a GraphQL variable, or a caller-named host receives the token | every coordinate passes the client's shape checks before any request. A branch name is validated against git's ref grammar subset, and GraphQL values travel only as variables. A host must be github.com or the operator's own (R2.5), so neither a prompt-injected agent nor a cross-site request to a loopback route can point the daemon's token at another server |
 | A4 | a comment the agent posts is read back as human input, and resumes its own session | every `comment` body is stamped with the self-authored marker **centrally** and carries an envelope, so the ingress never re-publishes it (issue-104, issue-309 A10) |
 | A5 | an in-process fallback quietly runs where the operator expected the service | the fallback is printed on stderr each time, and happens only when no service answers `/health` |
 | A6 | the hook turns every `git push` into a shell-injection surface | the hook passes only the resolved work-item ref in an argv list, with no shell. It reads nothing out of the tool's response any more |

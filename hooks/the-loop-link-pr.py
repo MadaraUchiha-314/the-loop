@@ -50,10 +50,18 @@ CLI_TIMEOUT_SECONDS = 20
 _MCP_CREATE_RE = re.compile(r"create_pull_request$")
 #: The `Bash` commands that can make a pull request exist: a push (the PR may be
 #: opened by a person, or be about to be), and any `pr create` / `pull-request`.
-_GIT_PUSH_RE = re.compile(r"\bgit\b[^\n|;&]*\bpush\b")
-_PR_CREATE_RE = re.compile(r"\bpr\b[^\n|;&]*\bcreate\b|\bpull-request\b")
+#: Each is matched against ONE segment of the command (split on `&&`, `||`, `;`,
+#: `|` and newlines), from the segment's start, so a commit message or a branch
+#: name that merely mentions `the-loop pr create` neither triggers nor suppresses.
+_SEGMENT_SPLIT_RE = re.compile(r"&&|\|\||[;|\n]")
+_GIT_PUSH_RE = re.compile(r"^\s*(?:\S+=\S*\s+)*git\b(?:\s+-\S+(?:\s+\S+)?)*\s+push\b")
+_PR_CREATE_RE = re.compile(
+    r"^\s*(?:\S+=\S*\s+)*(?:gh\s+pr\s+create\b|hub\s+pull-request\b)"
+)
 #: the-loop's own verb links the PR it opens (R4.4): not a trigger.
-_OWN_VERB_RE = re.compile(r"\bthe-loop\b[^\n|;&]*\bpr\b[^\n|;&]*\bcreate\b")
+_OWN_VERB_RE = re.compile(
+    r"^\s*(?:\S+=\S*\s+)*the-loop\s+(?:--?\S+\s+\S+\s+)*pr\s+create\b"
+)
 #: `--dry-run` as a flag, not as the text of a `--title`.
 _DRY_RUN_RE = re.compile(r"(?:^|\s)--dry-run(?:[\s=]|$)")
 
@@ -83,13 +91,47 @@ def should_discover(payload: Dict[str, Any]) -> bool:
     tool = str(payload.get("tool_name") or "")
     if tool == "Bash":
         command = str((payload.get("tool_input") or {}).get("command") or "")
-        if _OWN_VERB_RE.search(command) or _DRY_RUN_RE.search(command):
-            return False
-        if not (_GIT_PUSH_RE.search(command) or _PR_CREATE_RE.search(command)):
+        if not any(_triggers(segment) for segment in _SEGMENT_SPLIT_RE.split(command)):
             return False
     elif not _MCP_CREATE_RE.search(tool):
         return False
     return not _interrupted(payload)
+
+
+def _triggers(segment: str) -> bool:
+    """Whether one command segment can have made a pull request exist."""
+    if _OWN_VERB_RE.search(segment):
+        return False  # links its own PR
+    if _PR_CREATE_RE.search(segment):
+        return not _DRY_RUN_RE.search(segment)
+    return bool(_GIT_PUSH_RE.search(segment))
+
+
+#: What an MCP `create_pull_request` names, checked before it reaches an argv.
+_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
+_BRANCH_RE = re.compile(r"^(?![-/])(?!.*\.\.)(?!.*//)[A-Za-z0-9._/-]{1,255}(?<![./])$")
+
+
+def discovery_scope(payload: Dict[str, Any]) -> List[str]:
+    """``--branch``/``--repository`` for a PR an MCP tool opened (issue-447).
+
+    The tool's own input says which head and repository it used, which need not
+    be the checkout's; a `Bash` push is the checkout's own, so it adds nothing.
+    Values that are not GitHub's name shapes are dropped, never passed on.
+    """
+    if payload.get("tool_name") == "Bash":
+        return []
+    given = payload.get("tool_input")
+    if not isinstance(given, dict):
+        return []
+    extra: List[str] = []
+    head = str(given.get("head") or "").rpartition(":")[2]
+    if _BRANCH_RE.match(head):
+        extra += ["--branch", head]
+    owner, repo = str(given.get("owner") or ""), str(given.get("repo") or "")
+    if _NAME_RE.match(owner) and _NAME_RE.match(repo):
+        extra += ["--repository", f"{owner}/{repo}"]
+    return extra
 
 
 def _interrupted(payload: Dict[str, Any]) -> bool:
@@ -169,7 +211,15 @@ def main() -> int:
     if not work_item:
         return 0
     proc = _run(
-        ["the-loop", "sessions", "link-pr", "--work-item", work_item, "--discover"],
+        [
+            "the-loop",
+            "sessions",
+            "link-pr",
+            "--work-item",
+            work_item,
+            "--discover",
+            *discovery_scope(payload),
+        ],
         cwd=_checkout(payload),
     )
     if proc is not None and proc.returncode == 0:

@@ -39,8 +39,14 @@ Through the control-plane service when one is running, so the daemon's token pos
 the comment and the session holds none. When no service answers, it runs
 in-process on the token `integrations.github.api.tokenEnv` names (default
 `GH_TOKEN`, then `GITHUB_TOKEN`), and says so on stderr. It never starts a service
-for this ([decision-140](/decisions/decision-140)). The same holds for
+for this ([decision-140](/decisions/decision-140)). A service older than the CLI, which
+lacks the route, is treated the same way, with a note to restart it. The same holds for
 [`ticket`](/cli/commands/ticket) and [`pr`](/cli/commands/pr).
+
+Every verb addresses only github.com and the operator's own GitHub host
+(`integrations.github.host`, an enterprise `baseUrl`, `$GH_HOST`). A ref, URL or
+repository on any other host is refused with exit 2 before anything is sent, so the
+token never reaches a server the operator did not name.
 
 ## Exit codes
 
