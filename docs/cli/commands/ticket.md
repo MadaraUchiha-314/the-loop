@@ -1,11 +1,12 @@
 # `ticket`
 
-Read a work item's ticket, or open a new one, without `gh`.
+Read, open or close a work item's ticket, without `gh`.
 
 ```bash
 the-loop ticket show github:OWNER/REPO#N
 the-loop ticket create --repository OWNER/REPO --title "Add OAuth" \
     --body-file docs/specs/draft-oauth/ticket.md --label loop:requirements-definition
+the-loop ticket close github:OWNER/REPO#N [--reason completed|not_planned]
 ```
 
 ## `ticket show`
@@ -34,6 +35,16 @@ issue body is the request itself, not a comment the loop reads back.
 | `--title` | required | The issue title. |
 | `--body` / `--body-file` | required (one) | The issue body; `--body-file -` reads stdin. |
 | `--label` | none | A label to apply; repeatable. GitHub drops labels silently for a token without triage rights on the repository. |
+
+## `ticket close`
+
+Closes the ticket with GitHub's `state_reason`: `completed`, the default, or
+`not_planned`. This is `/the-loop:finish-tasks`'s cleanup step. Closing a ticket that a
+merge's `Closes #N` already closed is a no-op.
+
+Only a **registered** work item's ticket is closed: a session must be registered for it
+on the instance that runs the verb. An ad-hoc work item (`the-loop do`) may close a
+ticket it names with `--work-item`. Anything else is exit 1, and nothing is sent.
 
 ## Notes
 

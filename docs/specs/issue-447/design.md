@@ -90,6 +90,28 @@ Otherwise `pending` if any run is not `completed` or any status is `pending`. Ot
 `cli_config.merge_on_approval` so the hook and the verb share one reader. Routed through
 the service, `config` is the **service's**, so the session cannot bring its own.
 
+**The registered-work-item rule** (R1.10, the owner's review). `_authority(target,
+work_item, config, registry_dir)` answers `""` when the executing instance's session
+registry holds `target` as a live work item, or holds a live record that `owns()` it as a
+delivering pull request. It also answers `""` when `work_item` is a live registered item
+whose control record's command selects `pdlc-adhoc-loop` (`the-loop do`). Otherwise it
+returns the refusal text. `pr merge`, `pr resolve-thread` and `ticket close` call it
+before any GitHub request. `pr create` requires the work item itself to be registered,
+since the PR does not exist yet. The registry, like the merge policy, is the executing
+process's, so the manager routes these acts to the member that manages the work item
+(`fleet.by_ref`), falling back to itself.
+
+**Closing and resolving.** `close_ticket` sends `PATCH /repos/{o}/{r}/issues/{n}` with
+`state: closed` and a `state_reason` from `completed` or `not_planned`. `resolve_thread`
+first reads the PR's `reviewThreads` and refuses an id that is not among them, so a node
+id from another PR or repository is never resolved. It then sends the
+`resolveReviewThread` mutation, with the id as a GraphQL variable.
+
+**Forks** (R4.5). `open_pulls_for_head` takes a `head_owner`. Discovery asks the named
+repository and, when that differs from the work item's, the work item's repository too,
+for `<head owner>:<branch>`. The head owner defaults to the named repository's owner. The
+hook passes `--head-owner` from an MCP call's `owner:branch` head.
+
 **A GitHub failure** (`GitHubApiError`) is a result, not an exception: `exitCode: 1` and
 an `err` message carrying the client's text. A missing token is the same, with the
 message naming the variables (R2.3). A caller mistake is a `ValueError`, so exit 2 or
@@ -155,6 +177,8 @@ convention (the ref is a query or body parameter, as in `/work-items/one` and
 | `GET /pull-requests/status?ref=&workItem=` | `getPullRequestStatus` | `pull_request_status` |
 | `GET /pull-requests/threads?ref=&workItem=&all=` | `listPullRequestThreads` | `pull_request_threads` |
 | `POST /pull-requests/merge` | `mergePullRequest` | `merge_pull_request` |
+| `POST /work-items/tickets/close` | `closeTicket` | `close_ticket` |
+| `POST /pull-requests/threads/resolve` | `resolveReviewThread` | `resolve_review_thread` |
 | `POST /sessions/link-pr` gains optional `branch`, `repository`, `discover` | `linkSessionPullRequest` (unchanged) | `link_pull_request` gains `discover`, `branch` |
 
 A generic `/github` proxy route was rejected (the ticket's design question). It would

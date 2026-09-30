@@ -10,7 +10,7 @@ summaries are as the runner printed them, from `cli/`.
 
 ```text
 $ uv run python -m pytest -q tests/test_ghapi.py
-70 passed
+73 passed
 ```
 
 The seven new methods run over the real PyGithub with HTTP replaced by `ghreplay`. The
@@ -21,20 +21,23 @@ any exchange. Outcome: **pass**.
 
 ```text
 $ uv run python -m pytest -q tests/test_github_ops.py
-70 passed
+83 passed
 ```
 
 Red → green: `test_discover_keeps_the_repositorys_own_spelling` went red first. It
 exposed that the fake answered only the lower-cased key while core asks in the work
 item's spelling, so the test data was fixed. The review round's tests (the host
 allow-list, `merged: false`, a zero number, the reviewed-head pin, the created PR's
-spelling) went red against the code before its fixes. Outcome: **pass**.
+spelling) went red against the code before its fixes. So did the owner's round: nine
+existing tests went red when the registered-work-item rule landed, because they merged or
+opened PRs for unregistered items. They now register first, and new tests pin the refusal
+and the `do` exception. Outcome: **pass**.
 
 ## T3: unit, the commands and routing
 
 ```text
 $ uv run python -m pytest -q tests/test_github_verbs_cli.py
-24 passed
+26 passed
 ```
 
 Red → green: the two branch-reading tests failed on a fresh `git init` checkout with
@@ -44,13 +47,14 @@ Red → green: the two branch-reading tests failed on a fresh `git init` checkou
 
 ```text
 $ uv run python -m pytest -q tests/test_github_verbs_integration.py tests/test_mcp_integration.py
-15 passed
+16 passed
 ```
 
 These carry Gherkin docstrings: the comment is recorded, mirrored, and never
 re-published; `pr create` records its link; the service serves every verb; a caller
 mistake is a 400; the service and the MCP tool merge only by their own policy; the tools
-are listed; and `link_pull_request` discovers. Outcome: **pass**.
+are listed; `link_pull_request` discovers; and the service closes and resolves only for
+a registered work item. Outcome: **pass**.
 
 ## T5: contract and docs parity
 
@@ -75,7 +79,7 @@ Outcome: **pass**.
 
 ```text
 $ uv run python -m pytest -q tests -k abuse_447
-32 passed, 5161 deselected
+33 passed, 5179 deselected
 ```
 
 There is at least one test for each of A1–A7; `security-review.md` maps each test to
@@ -100,14 +104,15 @@ uv run ruff format --check cli hooks         -> 401 files already formatted
 uv run pyright cli                           -> 0 errors, 0 warnings, 0 informations
 uv run python scripts/validate_config.py     -> VALID (every config)
 npx markdownlint-cli2@0.18.1 "**/*.md"       -> Summary: 0 error(s)
-cd cli && uv run python -m pytest -q         -> 5192 passed, 1 skipped, 2 warnings
+cd cli && uv run python -m pytest -q         -> 5211 passed, 1 skipped, 1 warning
 ```
 
-The baseline on `b473ced` was `5055 passed, 1 skipped, 1 warning`. The second warning
-is pydantic's `UnsupportedFieldAttributeWarning` for the alias `body`. It is the same
-class the suite already emits for the alias `repo`: the MCP SDK builds an argument
-model from each tool's signature, and `post_comment` has a `body` parameter. It is
-harmless. Outcome: **pass**.
+The baseline on `b473ced` was `5055 passed, 1 skipped, 1 warning`. An earlier run of
+this branch showed a second warning, pydantic's `UnsupportedFieldAttributeWarning` for
+the alias `body`. It is the same class the suite already emits for the alias `repo`: the
+MCP SDK builds an argument model from each tool's signature. Which alias pytest reports
+depends on test order, and the final run shows one warning, as the baseline does.
+Outcome: **pass**.
 
 ## T12: security review
 

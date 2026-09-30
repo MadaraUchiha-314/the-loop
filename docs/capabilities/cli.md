@@ -50,7 +50,11 @@ self-learning/ML capabilities.
   `false`. Each SHALL run through the control-plane service when one answers `/health`
   (the daemon's token; the session holds none), and otherwise in-process on
   `integrations.github.api.tokenEnv` with a note on stderr — never auto-starting a
-  service (decision-140).
+  service (decision-140). `ticket close` and `pr resolve-thread` (a thread of that PR
+  only) complete the set. Every lifecycle act (`pr create`, `pr merge`, `pr
+  resolve-thread`, `ticket close`) SHALL act only for a work item registered on the
+  executing instance, with an ad-hoc `the-loop do` work item as the one exception
+  (decision-140 D8). Discovery SHALL also find a PR opened from a fork (`--head-owner`).
   Since issue-370 it is the **only** writer of the work item's `pullRequests[]`, and the
   plugin's `PostToolUse` hook runs it when a session creates a pull request, so the record
   does not depend on the agent remembering the step.

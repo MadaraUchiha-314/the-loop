@@ -783,10 +783,19 @@ EVENT_TYPES: Dict[str, str] = {
     "work_item.pr_merged": (
         "`the-loop pr merge` merged a pull request (pull_request, method)."
     ),
+    "work_item.ticket_closed": (
+        "`the-loop ticket close` closed a registered work item's ticket "
+        "(work_item, reason: completed | not_planned)."
+    ),
+    "work_item.thread_resolved": (
+        "`the-loop pr resolve-thread` resolved one review thread of a pull "
+        "request recorded against a registered work item (pull_request, thread)."
+    ),
     "work_item.merge_refused": (
-        "`the-loop pr merge` refused to merge because the executing process's "
-        "`routing.mergeOnApproval` is false (pull_request, reason) — a person "
-        "merges this repository's pull requests."
+        "`the-loop pr merge` refused to merge (pull_request, reason): the "
+        "executing process's `routing.mergeOnApproval` is false — a person "
+        "merges this repository's pull requests — or the pull request is not "
+        "recorded against a work item registered on this instance."
     ),
     "cleanup.deferred": (
         "A work item closed but was NOT cleaned up, because the close event "

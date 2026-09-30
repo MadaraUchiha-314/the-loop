@@ -184,6 +184,7 @@ def build_server(cli_config: Optional[dict] = None, *, facade: Any = None) -> MC
         discover: bool = False,
         branch: str = "",
         repository: str = "",
+        head_owner: str = "",
     ) -> Dict[str, Any]:
         """Record a pull request as delivering a work item, so its comments,
         reviews and CI results route to that work item's session. Call this in
@@ -202,6 +203,7 @@ def build_server(cli_config: Optional[dict] = None, *, facade: Any = None) -> MC
                 discover=True,
                 branch=branch,
                 repository=repository,
+                head_owner=head_owner,
             )
         return facade.link_session_pull_request(ref, pull_request, instance=instance)
 
@@ -277,6 +279,21 @@ def build_server(cli_config: Optional[dict] = None, *, facade: Any = None) -> MC
         return facade.list_pull_request_threads(
             ref, work_item, include_resolved=include_resolved, instance=instance
         )
+
+    def close_ticket(
+        ref: str, reason: str = "completed", work_item: str = "", instance: str = ""
+    ) -> Dict[str, Any]:
+        """Close a registered work item's ticket (reason completed or
+        not_planned) — the cleanup step once its work is done. `work_item` names
+        an ad-hoc (`the-loop do`) work item closing a ticket it was asked to."""
+        return facade.close_ticket(ref, reason, work_item, instance=instance)
+
+    def resolve_review_thread(
+        ref: str, thread: str, work_item: str = "", instance: str = ""
+    ) -> Dict[str, Any]:
+        """Resolve one review thread (an id from pull_request_threads) on a pull
+        request recorded against a registered work item."""
+        return facade.resolve_review_thread(ref, thread, work_item, instance=instance)
 
     def merge_pull_request(
         ref: str,
@@ -437,6 +454,8 @@ def build_server(cli_config: Optional[dict] = None, *, facade: Any = None) -> MC
         create_pull_request,
         pull_request_status,
         pull_request_threads,
+        resolve_review_thread,
+        close_ticket,
         merge_pull_request,
         list_standing_sessions,
         get_standing_session,

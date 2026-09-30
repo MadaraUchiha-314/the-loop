@@ -38,7 +38,8 @@ For every finding, in order:
 2. **Fix one finding per commit.** Make the change for a will-fix finding as its own
    commit referencing the thread, then **resolve that thread**. One finding ↔ one commit
    ↔ one resolved thread keeps history reviewable. `the-loop pr threads <pr>` lists the
-   threads still open and `the-loop pr status <pr>` the CI verdict (issue-447).
+   threads still open, `the-loop pr resolve-thread <pr> --thread <id>` resolves one, and
+   `the-loop pr status <pr>` gives the CI verdict (issue-447).
 3. **Won't-fix / needs-clarification** findings are left unresolved with the reason
    recorded; needs-clarification escalates to the human via the paper trail.
 

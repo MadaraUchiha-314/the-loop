@@ -377,7 +377,10 @@ def test_an_mcp_creation_is_discovered_on_its_own_head_and_repository(
         "tool_input": {"owner": "octo", "repo": "lib", "head": "me:feat/x"},
     }
     run_main(hook, monkeypatch, payload, capsys)
-    assert runs == [DISCOVER + ["--branch", "feat/x", "--repository", "octo/lib"]]
+    assert runs == [
+        DISCOVER
+        + ["--branch", "feat/x", "--head-owner", "me", "--repository", "octo/lib"]
+    ]
 
 
 def test_abuse_447_a6_hostile_mcp_input_never_reaches_the_argv(

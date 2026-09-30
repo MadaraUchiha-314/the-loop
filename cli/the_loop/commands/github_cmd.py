@@ -30,7 +30,7 @@ from .sessions_cmd import _cli_config, _render
 from .. import eventlog
 from ..client.routing import harness_routed, service_error
 from ..core import github_ops
-from ..ghapi import MERGE_METHODS
+from ..ghapi import CLOSE_REASONS, MERGE_METHODS
 from ..ghhost import current_branch
 
 #: Fields of a core result that are the envelope, not the data.
@@ -137,6 +137,19 @@ class TicketCommand(Command):
         )
         create.set_defaults(_action=self._create)
 
+        close = actions.add_parser(
+            "close",
+            help="Close a registered work item's ticket (finish-tasks' cleanup)",
+        )
+        close.add_argument("ref", help="Work-item ref, e.g. github:OWNER/REPO#15")
+        close.add_argument("--reason", choices=CLOSE_REASONS, default="completed")
+        close.add_argument(
+            "--work-item",
+            default="",
+            help="An ad-hoc (`the-loop do`) work item closing a ticket it names.",
+        )
+        close.set_defaults(_action=self._close)
+
     def run(self, args: argparse.Namespace) -> int:
         eventlog.configure_from_file("ticket")
         return args._action(args)
@@ -148,6 +161,23 @@ class TicketCommand(Command):
                 lambda: github_ops.show_ticket(args.ref, _cli_config()),
             ),
             as_json=True,
+        )
+
+    def _close(self, args: argparse.Namespace) -> int:
+        return _run(
+            lambda: harness_routed(
+                lambda c: c.post(
+                    "/work-items/tickets/close",
+                    {
+                        "ref": args.ref,
+                        "reason": args.reason,
+                        "workItem": args.work_item,
+                    },
+                ),
+                lambda: github_ops.close_ticket(
+                    args.ref, args.reason, args.work_item, _cli_config()
+                ),
+            )
         )
 
     def _create(self, args: argparse.Namespace) -> int:
@@ -237,6 +267,16 @@ class PrCommand(Command):
         )
         threads.set_defaults(_action=self._threads)
 
+        resolve = actions.add_parser(
+            "resolve-thread",
+            help="Resolve one of the PR's review threads (an id from `pr threads`)",
+        )
+        _add_pr(resolve)
+        resolve.add_argument(
+            "--thread", required=True, help="The thread's id (PRRT_…)."
+        )
+        resolve.set_defaults(_action=self._resolve)
+
         merge = actions.add_parser(
             "merge",
             help="Merge the PR — refused when routing.mergeOnApproval is false",
@@ -323,6 +363,23 @@ class PrCommand(Command):
                 ),
             ),
             as_json=True,
+        )
+
+    def _resolve(self, args: argparse.Namespace) -> int:
+        return _run(
+            lambda: harness_routed(
+                lambda c: c.post(
+                    "/pull-requests/threads/resolve",
+                    {
+                        "ref": args.pull_request,
+                        "workItem": args.work_item,
+                        "thread": args.thread,
+                    },
+                ),
+                lambda: github_ops.resolve_thread(
+                    args.pull_request, args.thread, args.work_item, _cli_config()
+                ),
+            )
         )
 
     def _merge(self, args: argparse.Namespace) -> int:

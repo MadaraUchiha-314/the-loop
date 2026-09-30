@@ -555,7 +555,11 @@ show <ref>` reads the ticket (body, comments, attachment links) at session start
 reviewer briefing, decision records); `the-loop ask` asks and waits; `the-loop ticket
 create` opens a ticket; `the-loop pr create` opens a pull request **and** records it
 against the work item; `the-loop pr status` / `pr threads` read CI and open review
-threads during `needs-review`; `the-loop pr merge` merges under `routing.mergeOnApproval`.
+threads during `needs-review`, and `pr resolve-thread` resolves one; `the-loop pr merge`
+merges under `routing.mergeOnApproval`; `the-loop ticket close` closes the ticket at the
+end. Each lifecycle act needs the work item **registered** on the instance
+(`the-loop sessions register`), with an ad-hoc `the-loop do` work item as the one
+exception.
 The same operations are tools on the service's `/mcp` endpoint. `gh` (or a GitHub MCP
 server) remains only the fallback when the CLI is not installed. `git` itself — clone,
 push — is unchanged: that is a git credential, not a GitHub API token. See

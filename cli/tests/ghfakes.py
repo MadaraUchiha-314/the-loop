@@ -98,6 +98,8 @@ class FakeGitHubClient(GitHubClient):
     reactions: List[Tuple[str, Any, str, str]] = field(default_factory=list)
     opened: List[Dict[str, Any]] = field(default_factory=list)  # create_pull
     merged: List[Tuple[str, str, int, str]] = field(default_factory=list)
+    closed: List[Tuple[str, str, int, str]] = field(default_factory=list)
+    resolved: List[str] = field(default_factory=list)
     label_calls: List[Tuple[str, ...]] = field(default_factory=list)
     calls: List[Tuple[str, Dict[str, Any]]] = field(default_factory=list)
 
@@ -323,8 +325,32 @@ class FakeGitHubClient(GitHubClient):
         self._enter("review_threads", owner=owner, repo=repo, number=number, host=host)
         return [dict(t) for t in self.threads.get((owner, repo, int(number)), [])]
 
-    def open_pulls_for_head(self, owner, repo, branch, host="") -> List[Dict[str, Any]]:
+    def open_pulls_for_head(
+        self, owner, repo, branch, host="", head_owner=""
+    ) -> List[Dict[str, Any]]:
         self._enter(
-            "open_pulls_for_head", owner=owner, repo=repo, branch=branch, host=host
+            "open_pulls_for_head",
+            owner=owner,
+            repo=repo,
+            branch=branch,
+            host=host,
+            head_owner=head_owner or owner,
         )
-        return [dict(p) for p in self.heads.get((owner, repo, branch), [])]
+        key = (owner, repo, branch)
+        if head_owner and head_owner != owner:
+            key = (owner, repo, f"{head_owner}:{branch}")
+        return [dict(p) for p in self.heads.get(key, [])]
+
+    def close_issue(
+        self, owner, repo, number, reason="completed", host=""
+    ) -> Dict[str, Any]:
+        self._enter("close_issue", owner=owner, repo=repo, number=number, host=host)
+        if (owner, repo, int(number)) in self.missing:
+            raise not_found()
+        self.closed.append((owner, repo, int(number), reason))
+        return {"number": int(number), "state": "closed", "state_reason": reason}
+
+    def resolve_review_thread(self, thread_id, host="") -> bool:
+        self._enter("resolve_review_thread", thread_id=thread_id, host=host)
+        self.resolved.append(thread_id)
+        return True

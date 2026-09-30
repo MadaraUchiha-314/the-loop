@@ -79,6 +79,7 @@ __all__ = [
     "KIND_CONVERSATION",
     "KIND_REVIEW",
     "KIND_REVIEW_THREAD",
+    "CLOSE_REASONS",
     "MERGE_METHODS",
     "REACTION_CONTENTS",
     "REACTION_KINDS",
@@ -134,6 +135,15 @@ MERGE_METHODS: Tuple[str, ...] = ("merge", "squash", "rebase")
 
 # A pull request's review threads, resolved or not — the one thing about a review
 # REST cannot say (issue-447). Values travel as variables, never as query text.
+_RESOLVE_THREAD_MUTATION = (
+    "mutation($threadId: ID!) "
+    "{ resolveReviewThread(input: {threadId: $threadId}) "
+    "{ thread { id isResolved } } }"
+)
+
+#: Why an issue was closed — GitHub's ``state_reason`` values for a close.
+CLOSE_REASONS: Tuple[str, ...] = ("completed", "not_planned")
+
 _REVIEW_THREADS_QUERY = """
 query($owner: String!, $name: String!, $number: Int!, $first: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
@@ -1167,17 +1177,58 @@ class GitHubClient:
             after = str(info["endCursor"])
 
     def open_pulls_for_head(
-        self, owner: str, repo: str, branch: str, host: str = ""
+        self,
+        owner: str,
+        repo: str,
+        branch: str,
+        host: str = "",
+        head_owner: str = "",
     ) -> List[Dict[str, Any]]:
-        """The open pull requests of ``owner/repo`` whose head is ``owner:branch``
-        (``GET …/pulls?state=open&head=…``) — what ``link-pr --discover`` links."""
+        """The open pull requests of ``owner/repo`` whose head is
+        ``<head_owner>:branch`` (``GET …/pulls?state=open&head=…``) — what
+        ``link-pr --discover`` links. ``head_owner`` defaults to ``owner``; a
+        fork's owner finds a PR opened from the fork into this repository."""
         owner, repo = self._coordinates(owner, repo)
         branch = self._branch(branch)
+        head_owner = head_owner or owner
+        if not is_github_name(head_owner):
+            raise GitHubApiError(f"unusable head owner {head_owner!r}")
         return self.rest_pages(
             f"/repos/{owner}/{repo}/pulls",
-            {"state": "open", "head": f"{owner}:{branch}"},
+            {"state": "open", "head": f"{head_owner}:{branch}"},
             host=host,
         )
+
+    def close_issue(
+        self,
+        owner: str,
+        repo: str,
+        number: int,
+        reason: str = "completed",
+        host: str = "",
+    ) -> Dict[str, Any]:
+        """``PATCH /repos/{o}/{r}/issues/{n}`` to ``closed`` with ``state_reason``.
+        Closing a closed issue is GitHub's no-op, not an error."""
+        owner, repo = self._coordinates(owner, repo)
+        if reason not in CLOSE_REASONS:
+            raise GitHubApiError(f"unusable close reason {reason!r}")
+        data = self.rest(
+            "PATCH",
+            f"/repos/{owner}/{repo}/issues/{self._number(number)}",
+            {"state": "closed", "state_reason": reason},
+            host=host,
+        )
+        return data if isinstance(data, dict) else {}
+
+    def resolve_review_thread(self, thread_id: str, host: str = "") -> bool:
+        """``resolveReviewThread`` on a thread's node id; its ``isResolved``."""
+        if not _NODE_ID_RE.match(str(thread_id or "")):
+            raise GitHubApiError(f"unusable thread id {thread_id!r}")
+        data = self.graphql(
+            _RESOLVE_THREAD_MUTATION, {"threadId": thread_id}, host=host
+        )
+        thread = ((data.get("resolveReviewThread") or {}).get("thread")) or {}
+        return bool(thread.get("isResolved"))
 
     # -- GraphQL paging and parsing ------------------------------------------------
 

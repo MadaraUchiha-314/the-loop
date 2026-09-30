@@ -112,7 +112,16 @@ def test_a_pull_request_opened_by_the_verb_is_linked_in_the_same_act(fake, tmp_p
 
 @pytest.fixture
 def api(fake, tmp_path):
-    return TestClient(create_app(_config(tmp_path)))
+    config = _config(tmp_path)
+    SessionRegistry(layout_from_config(config).local_dir).register(
+        Session(
+            work_item=WorkItemRef.parse(REF),
+            harness="claude",
+            harness_session_id="s1",
+            cwd=str(tmp_path),
+        )
+    )
+    return TestClient(create_app(config))
 
 
 def test_the_service_serves_every_verb(fake, api):
@@ -202,3 +211,36 @@ def test_abuse_447_a2_the_service_merges_by_its_own_policy_only(fake, tmp_path):
     body = response.json()
     assert body["exitCode"] == 1 and fake.merged == []
     assert "routing.mergeOnApproval" in body["messages"][0]["text"]
+
+
+def test_the_service_closes_and_resolves_only_for_a_registered_work_item(fake, api):
+    """
+    Feature: lifecycle acts need a registered work item
+      Scenario: The service resolves a thread and closes the ticket of its work item
+        Given a work item registered on the service, with its pull request recorded
+        When the resolve-thread and close routes are called
+        Then the thread is resolved and the ticket closed
+        And the same acts on a pull request and a ticket nobody registered are refused
+
+    Requirement: docs/specs/issue-447/requirements.md R1.10, R1.11, R1.12
+    """
+    api.post("/api/v1/sessions/link-pr", json={"ref": REF, "pullRequest": "12"})
+    fake.threads[("octo", "repo", 12)] = [{"id": "PRRT_1", "isResolved": False}]
+    resolved = api.post(
+        "/api/v1/pull-requests/threads/resolve",
+        json={"ref": "github:octo/repo#12", "thread": "PRRT_1"},
+    )
+    assert resolved.json()["resolved"] is True
+    closed = api.post("/api/v1/work-items/tickets/close", json={"ref": REF})
+    assert closed.json()["closed"] is True
+
+    stranger = api.post(
+        "/api/v1/pull-requests/threads/resolve",
+        json={"ref": "github:octo/repo#99", "thread": "PRRT_1"},
+    )
+    assert stranger.json()["exitCode"] == 1
+    unregistered = api.post(
+        "/api/v1/work-items/tickets/close", json={"ref": "github:octo/repo#77"}
+    )
+    assert unregistered.json()["exitCode"] == 1
+    assert fake.closed == [("octo", "repo", 5, "completed")]

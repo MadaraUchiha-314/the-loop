@@ -78,6 +78,7 @@ results route back to that work item's session.
 | `--pull-request` | one of these two | The pull request that delivers it: its number in the work item's own repository (`16`, `#16`), or a full ref for one in another repository (`github:OWNER/OTHER#16`). |
 | `--discover` | one of these two | Ask GitHub instead ([issue-447](https://github.com/MadaraUchiha-314/the-loop/issues/447)): list the **open** pull requests whose head is this checkout's branch, and record each one. None found is exit 0. |
 | `--branch` | no | With `--discover`: the head branch. Default: the checked-out branch; a detached HEAD needs the flag. |
+| `--head-owner` | no | With `--discover`: the fork's owner when the head branch is a fork's. The work item's repository is asked for `<owner>:<branch>` too. |
 | `--repository` | no | With `--discover`: `[HOST/]OWNER/REPO` to look in. Default: the checkout's `origin` when it is on a trusted GitHub host, else the work item's repository. |
 
 Run it in the **same step as opening the pull request**. Routing normally infers which

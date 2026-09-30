@@ -240,6 +240,8 @@ def test_the_github_verbs_are_tools(mcp):
         "create_pull_request",
         "pull_request_status",
         "pull_request_threads",
+        "resolve_review_thread",
+        "close_ticket",
         "merge_pull_request",
     } <= names
 

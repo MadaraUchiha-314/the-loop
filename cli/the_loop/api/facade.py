@@ -406,12 +406,13 @@ class CoreFacade:
         discover: bool = False,
         branch: str = "",
         repository: str = "",
+        head_owner: str = "",
     ) -> Dict[str, Any]:
         self._self(instance)
         if discover:
             # issue-447: ask GitHub for the branch's open pull requests.
             return core_github.discover_pull_requests(
-                ref, branch, repository, config=self.config
+                ref, branch, repository, config=self.config, head_owner=head_owner
             )
         if not pull_request:
             raise ValueError("name the pull request, or ask to discover it")
@@ -486,6 +487,22 @@ class CoreFacade:
         return core_github.pull_request_threads(
             ref, work_item, include_resolved=include_resolved, config=self.config
         )
+
+    def close_ticket(
+        self,
+        ref: str,
+        reason: str = "completed",
+        work_item: str = "",
+        instance: str = "",
+    ) -> Dict[str, Any]:
+        self._self(instance)
+        return core_github.close_ticket(ref, reason, work_item, config=self.config)
+
+    def resolve_review_thread(
+        self, ref: str, thread: str, work_item: str = "", instance: str = ""
+    ) -> Dict[str, Any]:
+        self._self(instance)
+        return core_github.resolve_thread(ref, thread, work_item, config=self.config)
 
     def merge_pull_request(
         self,

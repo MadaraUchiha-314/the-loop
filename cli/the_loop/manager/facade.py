@@ -388,6 +388,7 @@ class ManagerFacade:
         discover: bool = False,
         branch: str = "",
         repository: str = "",
+        head_owner: str = "",
     ) -> Dict[str, Any]:
         member = self.fleet.by_ref(ref, instance)
         if self.fleet.is_local(member):
@@ -398,12 +399,18 @@ class ManagerFacade:
                     discover=discover,
                     branch=branch,
                     repository=repository,
+                    head_owner=head_owner,
                 ),
                 self.own_name,
             )
         body: Dict[str, Any] = {"ref": ref, "pullRequest": pull_request}
         if discover:
-            body.update(discover=True, branch=branch, repository=repository)
+            body.update(
+                discover=True,
+                branch=branch,
+                repository=repository,
+                headOwner=head_owner,
+            )
         return self._proxy(member, "POST", "/api/v1/sessions/link-pr", body=body)
 
     # -- the harness's GitHub verbs (issue-447): by instance -------------------
@@ -467,7 +474,7 @@ class ManagerFacade:
         draft: bool = False,
         instance: str = "",
     ) -> Dict[str, Any]:
-        member = self._target(instance)
+        member = self._acting_member(ref, "", instance)
         if self.fleet.is_local(member):
             return self.core.create_pull_request(
                 ref, title, body, head, base=base, repository=repository, draft=draft
@@ -523,6 +530,48 @@ class ManagerFacade:
             },
         )
 
+    # The registered-work-item rule (R1.10) reads the registry of the instance
+    # that executes, so a lifecycle act (open, merge, close, resolve) runs where
+    # its work item is registered — by ref, like every session operation — and
+    # on the manager itself when no member manages it (where the rule refuses
+    # it unless the manager registered it).
+
+    def _acting_member(self, ref: str, work_item: str, instance: str) -> Member:
+        try:
+            return self.fleet.by_ref(work_item or ref, instance)
+        except LookupError:
+            return self._target(instance)
+
+    def close_ticket(
+        self,
+        ref: str,
+        reason: str = "completed",
+        work_item: str = "",
+        instance: str = "",
+    ) -> Dict[str, Any]:
+        member = self._acting_member(ref, work_item, instance)
+        if self.fleet.is_local(member):
+            return self.core.close_ticket(ref, reason, work_item)
+        return self._proxy(
+            member,
+            "POST",
+            "/api/v1/work-items/tickets/close",
+            body={"ref": ref, "reason": reason, "workItem": work_item},
+        )
+
+    def resolve_review_thread(
+        self, ref: str, thread: str, work_item: str = "", instance: str = ""
+    ) -> Dict[str, Any]:
+        member = self._acting_member(ref, work_item, instance)
+        if self.fleet.is_local(member):
+            return self.core.resolve_review_thread(ref, thread, work_item)
+        return self._proxy(
+            member,
+            "POST",
+            "/api/v1/pull-requests/threads/resolve",
+            body={"ref": ref, "thread": thread, "workItem": work_item},
+        )
+
     def merge_pull_request(
         self,
         ref: str,
@@ -531,7 +580,7 @@ class ManagerFacade:
         instance: str = "",
         sha: str = "",
     ) -> Dict[str, Any]:
-        member = self._target(instance)
+        member = self._acting_member(ref, work_item, instance)
         if self.fleet.is_local(member):
             return self.core.merge_pull_request(ref, work_item, method, sha=sha)
         return self._proxy(

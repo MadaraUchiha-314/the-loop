@@ -1024,3 +1024,36 @@ def test_merge_pull_sends_the_reviewed_head(client, github_replay):
     github_replay.on("PUT", "/repos/octo/repo/pulls/12/merge", 200, {"merged": True})
     client.merge_pull(OWNER, REPO, 12, "merge", sha="a" * 40)
     assert github_replay.exchanges[0].json == {"merge_method": "merge", "sha": "a" * 40}
+
+
+def test_close_issue_is_one_patch_with_the_reason(client, github_replay):
+    github_replay.on("PATCH", "/repos/octo/repo/issues/5", 200, {"state": "closed"})
+    client.close_issue(OWNER, REPO, 5, "not_planned")
+    assert github_replay.exchanges[0].json == {
+        "state": "closed",
+        "state_reason": "not_planned",
+    }
+    with pytest.raises(GitHubApiError, match="close reason"):
+        client.close_issue(OWNER, REPO, 5, "duplicate")
+
+
+def test_resolve_review_thread_is_the_mutation_with_the_id_as_a_variable(
+    client, github_replay
+):
+    github_replay.graphql(
+        "resolveReviewThread",
+        {"resolveReviewThread": {"thread": {"id": "PRRT_1", "isResolved": True}}},
+    )
+    assert client.resolve_review_thread("PRRT_1") is True
+    (call,) = github_replay.graphql_calls()
+    assert call.json["variables"] == {"threadId": "PRRT_1"}
+    with pytest.raises(GitHubApiError, match="thread id"):
+        client.resolve_review_thread("x y")
+
+
+def test_open_pulls_for_head_asks_for_a_forks_head(client, github_replay):
+    github_replay.on("GET", "/repos/octo/repo/pulls", 200, [])
+    client.open_pulls_for_head(OWNER, REPO, "feat/x", head_owner="me")
+    assert "head=me%3Afeat%2Fx" in github_replay.exchanges[0].query
+    with pytest.raises(GitHubApiError, match="head owner"):
+        client.open_pulls_for_head(OWNER, REPO, "feat/x", head_owner="a b")

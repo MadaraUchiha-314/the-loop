@@ -331,6 +331,14 @@ class SessionsCommand(Command):
             help="With --discover: the head branch (default: the checked-out one).",
         )
         link.add_argument(
+            "--head-owner",
+            default="",
+            help=(
+                "With --discover: the owner of the head branch, when it is a "
+                "fork's (default: the repository's owner)."
+            ),
+        )
+        link.add_argument(
             "--repository",
             default="",
             metavar="[HOST/]OWNER/REPO",
@@ -584,6 +592,7 @@ class SessionsCommand(Command):
                         "discover": True,
                         "branch": branch,
                         "repository": repository,
+                        "headOwner": args.head_owner,
                     },
                 ),
                 lambda: github_ops.discover_pull_requests(
@@ -591,6 +600,7 @@ class SessionsCommand(Command):
                     branch,
                     repository,
                     _cli_config(),
+                    head_owner=args.head_owner,
                     registry_dir=args.registry_dir,
                 ),
             )

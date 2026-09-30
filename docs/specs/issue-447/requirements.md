@@ -79,8 +79,7 @@ same act, exactly as `sessions link-pr` would. It SHALL print the PR's ref and U
 `--head` SHALL default to the checkout's current branch. `--base` SHALL default to the
 repository's default branch. `--repository` SHALL default to the work item's repository.
 
-1.5 IF the pull request is opened but linking it fails (for example, no session is
-recorded for the work item) THEN the verb SHALL still exit 0, print the PR's ref and URL,
+1.5 IF the pull request is opened but linking it fails afterwards THEN the verb SHALL still exit 0, print the PR's ref and URL,
 and say on stderr that it was not linked and why. A PR that was opened is never reported
 as a failure.
 
@@ -105,6 +104,22 @@ review. WHEN GitHub answers that it did not merge THEN the verb SHALL exit 1.
 URL, or a bare number together with `--work-item` (resolved against the work item's
 repository, as `sessions link-pr` does). Anything else SHALL be refused with exit 2 before
 any request.
+
+1.10 IF a verb would open a pull request, merge one, resolve one of its review threads,
+or close a ticket, THEN the work item it acts for SHALL be registered on the executing
+instance: the ticket or pull request is itself a registered work item, or is recorded as
+delivering one. The one exception is an **ad-hoc** work item (armed with `the-loop do`),
+which MAY act on a pull request or ticket it names with `--work-item`. Otherwise the
+verb SHALL refuse with exit 1, before any GitHub request, naming what to register. This
+is the owner's rule from [the owner's review](https://github.com/MadaraUchiha-314/the-loop/pull/448#issuecomment-5917395935). Reads and comments are not lifecycle acts,
+and are not gated.
+
+1.11 WHEN the agent runs `the-loop ticket close <ref> [--reason completed|not_planned]`
+THEN the system SHALL close the ticket with that `state_reason`, subject to R1.10.
+
+1.12 WHEN the agent runs `the-loop pr resolve-thread <pr> --thread <id>` THEN the system
+SHALL resolve that review thread, subject to R1.10. IF the id is not one of that pull
+request's own threads THEN it SHALL refuse without resolving anything.
 
 ### Requirement 2 — the credential stays where it already is
 
@@ -168,7 +183,7 @@ checkout's `origin` repository (the work item's repository when the origin is no
 remote), and link each one found. Finding none SHALL exit 0 and say so. `--discover` and
 `--pull-request` SHALL be mutually exclusive, and exactly one SHALL be given.
 
-4.2 `--discover` SHALL accept `--branch` and `--repository` overrides. A detached HEAD
+4.2 `--discover` SHALL accept `--branch`, `--repository` and `--head-owner` overrides. A detached HEAD
 with no `--branch` SHALL be refused with exit 2.
 
 4.3 WHEN a `Bash` tool call runs `git push` or a command that creates a pull request, or
@@ -180,6 +195,10 @@ the work item exactly as today.
 
 4.4 A `Bash` call that ran `the-loop pr create` SHALL NOT trigger the hook, because that
 verb links its own PR.
+
+4.5 WHEN the head branch lives in a fork (the checkout's origin is not the work item's
+repository, or an MCP call's head is `owner:branch`) THEN discovery SHALL also ask the
+work item's repository for pull requests whose head is `<fork owner>:<branch>`.
 
 ### Requirement 5 — the harness's instructions name the verbs
 
@@ -225,5 +244,3 @@ the mechanisms, and the testing plan's T7 row carries the negative tests.
 - `git` itself (clone, push), which uses a git credential, not a GitHub API token.
 - Removing the `PostToolUse` hook. It stays as the safety net for PRs opened by hand or
   by MCP (issue note).
-- Resolving review threads from a verb. The reviewing procedure's "resolve the thread"
-  stays the harness's act until a follow-up asks for it.

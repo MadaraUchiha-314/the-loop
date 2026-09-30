@@ -6,6 +6,7 @@ Open, inspect and merge a work item's pull request, without `gh`.
 the-loop pr create --work-item github:OWNER/REPO#N --title "feat: …" --body-file briefing.md
 the-loop pr status  github:OWNER/REPO#16            # or its URL, or: 16 --work-item …
 the-loop pr threads github:OWNER/REPO#16 [--all]
+the-loop pr resolve-thread github:OWNER/REPO#16 --thread PRRT_…
 the-loop pr merge   github:OWNER/REPO#16 [--method squash] [--sha <reviewed-head>]
 ```
 
@@ -29,8 +30,9 @@ plugin's `PostToolUse` hook does not need to catch it.
 | `--repository` | the work item's | `[HOST/]OWNER/REPO` for a PR in a contributing repository. |
 | `--draft` | off | Open it as a draft. |
 
-If the PR opens but cannot be linked (no session is recorded for the work item on
-this machine), the verb still exits 0. It prints the PR and says on stderr why it
+If the work item has no session registered on this instance, nothing is opened (exit
+1; register with `the-loop sessions register`). If the PR opens but the link still
+fails, the verb exits 0. It prints the PR and says on stderr why it
 is not linked. The PR exists, and a failure would invite a second one.
 
 ## `pr status`
@@ -54,6 +56,12 @@ Prints as JSON the PR's **unresolved** review threads: `id`, `path`, `line`,
 `isOutdated`, and each comment's `author`, `body`, `createdAt` and `url`. `--all`
 includes resolved threads.
 
+## `pr resolve-thread`
+
+Resolves one review thread, by the `id` that `pr threads` printed. The id must be one of
+**this** PR's threads, and the verb checks that before resolving. This is the reviewing
+procedure's "one finding, one commit, one resolved thread".
+
 ## `pr merge`
 
 Merges with `--method merge|squash|rebase` (default `merge`), **only if** the
@@ -67,6 +75,16 @@ GitHub's message).
 Pass `--sha` with the head commit you reviewed (`headSha` from `pr status`): if the
 branch has moved since, GitHub refuses the merge instead of shipping unreviewed code. A
 merge GitHub reports as not done is exit 1.
+
+## Only for a registered work item
+
+`pr create`, `pr merge` and `pr resolve-thread` act only for a work item registered on
+the instance that runs them (the owner's rule, [decision-140](/decisions/decision-140)
+D8). `pr create` needs its `--work-item` registered. `merge` and `resolve-thread` need
+the PR to be recorded against a registered work item (`sessions link-pr`), or to be one
+itself. An ad-hoc work item (`the-loop do`) may act on a PR it names with `--work-item`.
+Anything else is exit 1, before GitHub is asked. `status` and `threads` are reads and are
+not gated.
 
 ## Notes
 

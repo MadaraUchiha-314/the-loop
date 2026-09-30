@@ -234,9 +234,14 @@ package — there are no install extras (owner decision, PR #162).
   /work-items/tickets` (`createTicket`), `POST /work-items/pull-requests`
   (`createPullRequest`), `GET /pull-requests/status` (`getPullRequestStatus`), `GET
   /pull-requests/threads` (`listPullRequestThreads`), `POST /pull-requests/merge`
-  (`mergePullRequest`), and `discover` on `POST /sessions/link-pr` — each with its MCP
+  (`mergePullRequest`), `POST /work-items/tickets/close` (`closeTicket`), `POST
+  /pull-requests/threads/resolve` (`resolveReviewThread`), and `discover` on `POST
+  /sessions/link-pr` — each with its MCP
   tool (`post_comment`, `get_ticket`, `create_ticket`, `create_pull_request`,
-  `pull_request_status`, `pull_request_threads`, `merge_pull_request`). Each executes
+  `pull_request_status`, `pull_request_threads`, `merge_pull_request`, `close_ticket`,
+  `resolve_review_thread`). The lifecycle acts require a work item registered on the
+  executing instance (decision-140 D8), so a manager routes them to the member that
+  manages the work item. Each executes
   core with **this process's** config, so the token and the merge policy
   (`routing.mergeOnApproval`) are the daemon's; a manager serves them by instance. The
   `comment`, `ticket` and `pr` verbs route here when a service answers `/health`, and

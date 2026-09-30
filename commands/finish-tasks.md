@@ -39,11 +39,11 @@ of the loop; the cleanup set is intentionally **extensible** (more may be added 
    deadline.
 
 5. **Cleanup (extensible):**
-   - **Close the ticket(s)** for this work item (GitHub issue / Jira) **if still open**
-     (the harness's own act — there is no `the-loop` verb for it; `gh` or the tracker's
-     UI),
-     referencing the merged PR(s) / evidence. A ticket a merge's `Closes #N` already
-     closed is expected — say so in the summary and move on; do not reopen it. Closing
+   - **Close the ticket(s)** for this work item (GitHub issue / Jira) **if still open**,
+     with `the-loop ticket close <ref>` (issue-447; `--reason not_planned` for work
+     that was dropped), after a `the-loop comment` that references the merged PR(s)
+     and evidence. A ticket a merge's `Closes #N` already closed is expected — say so
+     in the summary and move on; do not reopen it. Closing
      the ticket is also what ends the work item's harness session — one of its PRs
      merging does not (see `reference/automation.md`).
    - _Future cleanup steps are added here_ (e.g. archiving branches, releasing artifacts,

@@ -2,13 +2,17 @@
 
 ## TL;DR
 
-The agent in its session no longer needs `gh` or a GitHub token of its own. Seven
+The agent in its session no longer needs `gh` or a GitHub token of its own. These
 `the-loop` verbs cover every GitHub act the loop asks of it:
 
 - `comment`
-- `ticket show` and `ticket create`
-- `pr create`, `pr status`, `pr threads` and `pr merge`
-- `sessions link-pr --discover`
+- `ticket show`, `ticket create` and `ticket close`
+- `pr create`, `pr status`, `pr threads`, `pr resolve-thread` and `pr merge`
+- `sessions link-pr --discover`, forks included
+
+Every lifecycle act (open, merge, resolve, close) needs a work item registered on the
+instance that runs it, with an ad-hoc `the-loop do` work item as the one exception. This
+is your rule from the review.
 
 They run on the client #442 built, `ghapi.GitHubClient`. When a daemon is running they
 execute in the control-plane service, which holds the token. Without one they run
@@ -21,28 +25,33 @@ Closes #447. Tier 3 (`human-approves-pr`). No new credential, config key or depe
 
 ## Where to focus (in this order)
 
-1. **The merge gate:** `cli/the_loop/core/github_ops.py::merge_pull_request` and
+1. **The registered-work-item rule:** `github_ops._authority`, applied to `pr create`,
+   `pr merge`, `pr resolve-thread` and `ticket close` before any request. It reads the
+   executing instance's registry and control records (the `do` exception), and the
+   manager routes these acts to the member that manages the work item
+   (`ManagerFacade._acting_member`).
+2. **The merge gate:** `cli/the_loop/core/github_ops.py::merge_pull_request` and
    `cli_config.merge_on_approval`. The verb refuses when `routing.mergeOnApproval` is
    `false`. The value comes from the **executing process's** config, which is the
    daemon's when routed, so no flag, route field or MCP argument can override it. The
    `merge_pull_request` MCP tool is registered, and gated below the facade.
-2. **The routing exception:** `client/routing.py::harness_routed`. It uses a running
+3. **The routing exception:** `client/routing.py::harness_routed`. It uses a running
    service, and otherwise runs in-process with a stderr note. It never auto-starts a
    service. This is the second exception to "the service is the only path", after `ask`
    ([decision-140](../../../decisions/decision-140.md) D2). Check that you agree with
    the trade.
-3. **The comment path:** `github_ops.comment` publishes `comment.agent` with
+4. **The comment path:** `github_ops.comment` publishes `comment.agent` with
    `record: true` over a `GitHubLedger`. The ledger stamps the marker and the envelope,
    the room hears the comment once, and the ingress drops the enveloped copy.
-4. **The host allow-list and input validation before any request:**
+5. **The host allow-list and input validation before any request:**
    `github_ops.trusted_hosts`/`_trusted` (github.com plus the operator's own host), so a
    ref or URL naming another host never receives the token. Also
    `ghapi.is_branch_name`, `_sha`, the merge-method allow-list, and
    `github_ops._slug`/`_repository`/`resolve_pull_request`.
-5. **The hook:** `hooks/the-loop-link-pr.py`. It triggers on `git push`, `pr create`,
+6. **The hook:** `hooks/the-loop-link-pr.py`. It triggers on `git push`, `pr create`,
    `pull-request` and MCP `create_pull_request`, skips `the-loop pr create`, and runs a
    fixed argv in the session's `cwd`.
-6. **Skim:** the routes, the facades (the manager serves these by instance), the
+7. **Skim:** the routes, the facades (the manager serves these by instance), the
    OpenAPI entries, the docs.
 
 ## What changed (map)
@@ -82,13 +91,13 @@ flowchart LR
 
 ## Evidence
 
-- Full suite `5192 passed, 1 skipped`; ruff, ruff format, pyright (0 errors), config
+- Full suite `5211 passed, 1 skipped`; ruff, ruff format, pyright (0 errors), config
   validation, markdownlint (1491 files, 0 errors). See
   [`verification.md`](verification.md).
 - One negative test per abuse case A1–A7:
   [`security-review.md`](security-review.md).
 - `pr status` is bounded at three GitHub requests (T8).
-- Self-review: two rounds, 13 findings. All are fixed except M2 (open question 3) and the fork case (question 4): [`self-review.md`](self-review.md).
+- Self-review: two rounds, 13 findings, plus your two asks. All are fixed: [`self-review.md`](self-review.md).
 - Spec chain: [`docs/specs/issue-447/`](../).
 
 ## Open questions for the reviewer
@@ -99,10 +108,6 @@ flowchart LR
 2. **No live GitHub run.** T9/T10 are `n/a`: the cloud session holds no token or
    scratch repository. `the-loop pr status github:MadaraUchiha-314/the-loop#<this PR>`
    on a box with the daemon is a one-line check.
-3. **Should `pr merge` only merge PRs recorded against a registered work item?**
-   Right now it merges any PR the executing token can, when the policy allows it. `--sha`
-   pins the reviewed head, and branch protection is the backstop. Restricting it further
-   would stop a cloud session, which has no registry, from merging its own PR. This is
-   the review's M2, and it is left to you.
-4. **Not covered by a verb:** closing a ticket, resolving a review thread, and discovery
-   of a PR opened from a fork. The docs say so. A follow-up can add them if wanted.
+3. **Answered on the PR, and done here:** closing a ticket, resolving a review thread
+   and fork discovery are verbs now. Merging and every other lifecycle act need a
+   registered work item, with `the-loop do` as the exception.

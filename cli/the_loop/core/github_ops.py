@@ -35,6 +35,7 @@ from ..authz import mark_self_authored
 from ..cli_config import merge_on_approval
 from ..comments import create_issue, post_issue_comment_with_url, resolve_client
 from ..ghapi import (
+    CLOSE_REASONS,
     MERGE_METHODS,
     GitHubApiConfig,
     GitHubApiError,
@@ -49,6 +50,7 @@ logger = logging.getLogger("the-loop.github_ops")
 
 __all__ = [
     "checks_rollup",
+    "close_ticket",
     "comment",
     "create_pull_request",
     "create_ticket",
@@ -57,6 +59,7 @@ __all__ = [
     "pull_request_status",
     "pull_request_threads",
     "resolve_pull_request",
+    "resolve_thread",
     "show_ticket",
 ]
 
@@ -125,6 +128,69 @@ def _trusted(ref: WorkItemRef, config: Optional[Mapping[str, Any]]) -> WorkItemR
             "integrations.github.host to use it"
         )
     return ref
+
+
+def _registry(config: Optional[Mapping[str, Any]], registry_dir: str):
+    from ..sessions.registry import SessionRegistry
+
+    return SessionRegistry(
+        core_sessions._registry_dir(dict(config or {}), registry_dir)
+    )
+
+
+def _is_adhoc(item: WorkItemRef, config: Optional[Mapping[str, Any]]) -> bool:
+    """Whether ``item`` was armed as an ad-hoc task (`the-loop do`, issue-225)."""
+    from ..graph.model import LOOP_FOR_CONTROL_COMMAND, PDLC_ADHOC_LOOP
+
+    try:
+        record = core_sessions._control_store(dict(config or {})).get(item)
+    except Exception:  # noqa: BLE001 — an unreadable record grants nothing
+        return False
+    return bool(
+        record and LOOP_FOR_CONTROL_COMMAND.get(record.command) == PDLC_ADHOC_LOOP
+    )
+
+
+def _authority(
+    target: WorkItemRef,
+    work_item: str,
+    config: Optional[Mapping[str, Any]],
+    registry_dir: str,
+) -> str:
+    """``""`` when this instance may act on ``target``; else why it may not.
+
+    The owner's rule for every lifecycle act on a pull request or ticket
+    (merge, close, resolve a thread, open a PR): it happens for a work item
+    **registered on this instance** — ``target`` is one, or is a pull request
+    recorded as delivering a live one. The one exception is an ad-hoc task
+    (`the-loop do`): a registered work item armed with `do` may act on a pull
+    request it names, because a tactical task is exactly "merge that PR". The
+    registry is the executing process's, like the merge policy, so a routed
+    verb answers to the daemon's records.
+    """
+    registry = _registry(config, registry_dir)
+    if registry.find_by_work_item(target) is not None:
+        return ""
+    for record in registry.list_sessions():
+        if record.is_live and record.owns(target):
+            return ""
+    if work_item:
+        try:
+            item = _github_ref(work_item)
+        except ValueError:
+            item = None
+        if (
+            item is not None
+            and registry.find_by_work_item(item) is not None
+            and _is_adhoc(item, config)
+        ):
+            return ""
+    return (
+        f"{target.ref} is not a work item registered on this instance, nor a pull "
+        "request recorded against one — register the session (`the-loop sessions "
+        "register`) and record the pull request (`the-loop sessions link-pr`), or "
+        "act from an ad-hoc `the-loop do` work item named with --work-item"
+    )
 
 
 def _failed(data: Dict[str, Any], text: str) -> Dict[str, Any]:
@@ -416,9 +482,10 @@ def create_pull_request(
     ``head`` is resolved by the caller — the CLI reads the checkout's branch,
     because the service's working directory is not the checkout. ``base``
     defaults to the repository's default branch, ``repository`` to the work
-    item's. A link that fails (no session recorded here) is a note, not a
-    failure: the pull request exists, and saying otherwise would invite a second
-    one (R1.5).
+    item's. The work item must be registered on this instance (R1.10): a pull
+    request the-loop opens belongs to a work item it tracks. A link that still
+    fails after the PR opened is a note, not a failure: the pull request exists,
+    and saying otherwise would invite a second one (R1.5).
     """
     item = _trusted(_github_ref(ref), config)
     title = _text(title, "title")
@@ -427,9 +494,15 @@ def create_pull_request(
     if base and not is_branch_name(base):
         raise ValueError(f"unusable base branch {base!r}")
     target = _trusted(_repository(repository, item), config)
+    data: Dict[str, Any] = {"workItem": item.ref, "linked": False}
+    if _registry(config, registry_dir).find_by_work_item(item) is None:
+        return _failed(
+            data,
+            f"not opening a pull request for {item.ref}: no session is registered "
+            "for it on this instance — run `the-loop sessions register` first",
+        )
     gh = _client(config, client)
     host = _host(target)
-    data: Dict[str, Any] = {"workItem": item.ref, "linked": False}
     try:
         if not base:
             base = str(
@@ -591,9 +664,11 @@ def merge_pull_request(
     config: Optional[Mapping[str, Any]] = None,
     *,
     sha: str = "",
+    registry_dir: str = "",
     client: Optional[GitHubClient] = None,
 ) -> Dict[str, Any]:
-    """Merge the pull request — only where the operator's policy says so (R1.8).
+    """Merge the pull request — only where the operator's policy says so (R1.8),
+    and only for a registered work item (R1.10, :func:`_authority`).
 
     ``sha`` pins the head the caller reviewed: a commit pushed after the review
     makes GitHub refuse the merge rather than ship unreviewed code.
@@ -624,6 +699,15 @@ def merge_pull_request(
             f"not merging {target.ref}: routing.mergeOnApproval is false in the "
             "CLI config, so a person merges this pull request",
         )
+    refusal = _authority(target, work_item, config, registry_dir)
+    if refusal:
+        eventlog.emit(
+            "work_item.merge_refused",
+            level="warning",
+            pull_request=target.ref,
+            reason="not a registered work item",
+        )
+        return _failed(data, f"not merging: {refusal}")
     gh = _client(config, client)
     try:
         result = gh.merge_pull(
@@ -670,10 +754,16 @@ def discover_pull_requests(
     repository: str = "",
     config: Optional[Mapping[str, Any]] = None,
     *,
+    head_owner: str = "",
     registry_dir: str = "",
     client: Optional[GitHubClient] = None,
 ) -> Dict[str, Any]:
     """Link every open pull request whose head is ``branch`` (R4.1).
+
+    A fork (R4.5): the head lives in ``<head_owner>/…`` (default: the
+    repository's owner) while the pull request lives in the repository it was
+    opened against — so when ``repository`` is not the work item's own, the
+    work item's repository is asked for ``<head_owner>:branch`` too.
 
     What the ``PostToolUse`` hook runs after a push or a PR-creating tool
     (issue-447 comment): no tool output is parsed, the pull requests are asked
@@ -692,6 +782,9 @@ def discover_pull_requests(
         item.repo.lower(),
     ):
         target = item
+    owner_of_head = head_owner or target.owner
+    if not is_github_name(owner_of_head):
+        raise ValueError(f"unusable head owner {head_owner!r}")
     gh = _client(config, client)
     data: Dict[str, Any] = {
         "workItem": item.ref,
@@ -700,20 +793,28 @@ def discover_pull_requests(
         "found": [],
         "linked": [],
     }
-    try:
-        pulls = gh.open_pulls_for_head(
-            target.owner, target.repo, branch, host=_host(target)
-        )
-    except GitHubApiError as exc:
-        return _failed(
-            data, f"could not list the pull requests of {target.path}: {exc}"
-        )
+    # Where to look: the named repository, and the work item's own when they
+    # differ (a fork's PR is opened upstream, into the work item's repository).
+    places = [target] if target == item else [target, item]
     found: List[WorkItemRef] = []
-    for doc in pulls:
-        if isinstance(doc.get("number"), int) and doc["number"] > 0:
-            pr = _pull_ref(doc, target)
-            if pr.ref != item.ref:
-                found.append(pr)
+    for place in places:
+        try:
+            pulls = gh.open_pulls_for_head(
+                place.owner,
+                place.repo,
+                branch,
+                host=_host(place),
+                head_owner=owner_of_head if owner_of_head != place.owner else "",
+            )
+        except GitHubApiError as exc:
+            return _failed(
+                data, f"could not list the pull requests of {place.path}: {exc}"
+            )
+        for doc in pulls:
+            if isinstance(doc.get("number"), int) and doc["number"] > 0:
+                pr = _pull_ref(doc, place)
+                if pr.ref != item.ref and pr.ref not in [f.ref for f in found]:
+                    found.append(pr)
     data["found"] = [pr.ref for pr in found]
     if not found:
         return _done(data, f"no open pull request in {target.path} has head {branch!r}")
@@ -731,3 +832,89 @@ def discover_pull_requests(
         messages.extend(result.get("messages") or [])
     data.update(exitCode=exit_code, messages=messages)
     return data
+
+
+# ------------------------------------------------------------------ closing
+
+
+def close_ticket(
+    ref: str,
+    reason: str = "completed",
+    work_item: str = "",
+    config: Optional[Mapping[str, Any]] = None,
+    *,
+    registry_dir: str = "",
+    client: Optional[GitHubClient] = None,
+) -> Dict[str, Any]:
+    """Close a ticket — ``/the-loop:finish-tasks``'s cleanup step (R1.11).
+
+    Only a work item registered on this instance (or one an ad-hoc work item
+    names), like every lifecycle act (:func:`_authority`). ``reason`` is
+    GitHub's ``state_reason``: ``completed`` or ``not_planned``. A ticket a merge's
+    ``Closes #N`` already closed closes again as a no-op.
+    """
+    target = _trusted(_github_ref(ref), config)
+    if reason not in CLOSE_REASONS:
+        raise ValueError(
+            f"unknown close reason {reason!r}; expected one of "
+            + ", ".join(CLOSE_REASONS)
+        )
+    data: Dict[str, Any] = {"ref": target.ref, "closed": False}
+    refusal = _authority(target, work_item, config, registry_dir)
+    if refusal:
+        return _failed(data, f"not closing: {refusal}")
+    gh = _client(config, client)
+    try:
+        gh.close_issue(
+            target.owner, target.repo, target.number, reason, host=_host(target)
+        )
+    except GitHubApiError as exc:
+        return _failed(data, f"could not close {target.ref}: {exc}")
+    data["closed"] = True
+    eventlog.emit("work_item.ticket_closed", work_item=target.ref, reason=reason)
+    return _done(data, f"closed {target.ref} ({reason})")
+
+
+def resolve_thread(
+    pr: str,
+    thread_id: str,
+    work_item: str = "",
+    config: Optional[Mapping[str, Any]] = None,
+    *,
+    registry_dir: str = "",
+    client: Optional[GitHubClient] = None,
+) -> Dict[str, Any]:
+    """Resolve one review thread of a pull request — the reviewing procedure's
+    "one finding, one commit, one resolved thread" (R1.12).
+
+    The thread must be **one of this pull request's**: the id is checked against
+    the PR's own threads before the mutation, so a node id from anywhere else is
+    refused rather than resolved. The PR must belong to a registered work item
+    (:func:`_authority`).
+    """
+    target = _trusted(resolve_pull_request(pr, work_item), config)
+    thread = str(thread_id or "").strip()
+    if not thread:
+        raise ValueError("name the thread to resolve (its id, from `pr threads`)")
+    data: Dict[str, Any] = {
+        "pullRequest": target.ref,
+        "thread": thread,
+        "resolved": False,
+    }
+    refusal = _authority(target, work_item, config, registry_dir)
+    if refusal:
+        return _failed(data, f"not resolving: {refusal}")
+    gh = _client(config, client)
+    host = _host(target)
+    try:
+        threads = gh.review_threads(target.owner, target.repo, target.number, host=host)
+        if thread not in [t.get("id") for t in threads]:
+            return _failed(data, f"{thread} is not a review thread of {target.ref}")
+        resolved = gh.resolve_review_thread(thread, host=host)
+    except GitHubApiError as exc:
+        return _failed(data, f"could not resolve {thread} on {target.ref}: {exc}")
+    data["resolved"] = resolved
+    if not resolved:
+        return _failed(data, f"GitHub did not resolve {thread} on {target.ref}")
+    eventlog.emit("work_item.thread_resolved", pull_request=target.ref, thread=thread)
+    return _done(data, f"resolved {thread} on {target.ref}")

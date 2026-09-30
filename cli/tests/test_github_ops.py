@@ -42,6 +42,14 @@ def _register(tmp_path, ref=REF):
     )
 
 
+def _register_pr(tmp_path, pr="github:octo/repo#12", ref=REF):
+    """A registered work item with ``pr`` recorded as delivering it."""
+    from the_loop.core import sessions as core_sessions
+
+    _register(tmp_path, ref)
+    assert core_sessions.link_pull_request(ref, pr, config=_config(tmp_path))["linked"]
+
+
 def _linked(tmp_path, ref=REF):
     record = SessionRegistry(
         layout_from_config(_config(tmp_path)).local_dir
@@ -266,17 +274,36 @@ def test_pr_create_in_another_repository_links_its_full_ref(tmp_path):
     assert _linked(tmp_path) == ["github:octo/other#12"]
 
 
-def test_pr_create_without_a_session_still_succeeds_and_says_so(tmp_path):
+def test_pr_create_without_a_registered_work_item_opens_nothing(tmp_path):
+    """R1.10 — a PR the-loop opens belongs to a work item it tracks."""
     fake = FakeGitHubClient()
     result = github_ops.create_pull_request(
         REF, "T", "B", "claude/x", config=_config(tmp_path), client=fake
     )
+    assert result["exitCode"] == 1 and "sessions register" in _words(result)
+    assert fake.calls == [] and fake.opened == []
+
+
+def test_a_link_that_fails_after_the_open_is_a_note(tmp_path, monkeypatch):
+    """R1.5 — the PR exists; a failure would invite a second one."""
+    _register(tmp_path)
+    monkeypatch.setattr(
+        "the_loop.core.sessions.link_pull_request",
+        lambda *a, **k: {
+            "exitCode": 1,
+            "messages": [{"stream": "err", "text": "registry is read-only"}],
+        },
+    )
+    result = github_ops.create_pull_request(
+        REF, "T", "B", "claude/x", config=_config(tmp_path), client=FakeGitHubClient()
+    )
     assert result["exitCode"] == 0 and result["linked"] is False
     errs = [m["text"] for m in result["messages"] if m["stream"] == "err"]
-    assert errs and "not linked" in errs[0] and "no session recorded" in errs[0]
+    assert errs and "not linked" in errs[0]
 
 
 def test_pr_create_refused_by_github_is_exit_1(tmp_path):
+    _register(tmp_path)
     fake = FakeGitHubClient(fail_on={"create_pull": http_error(422, "already exists")})
     result = github_ops.create_pull_request(
         REF, "T", "B", "claude/x", base="main", config=_config(tmp_path), client=fake
@@ -411,6 +438,7 @@ def test_pr_threads_are_the_unresolved_ones_unless_all(tmp_path):
 
 
 def test_pr_merge_merges_by_default(tmp_path):
+    _register_pr(tmp_path)
     fake = FakeGitHubClient()
     result = github_ops.merge_pull_request(
         "12", REF, "squash", _config(tmp_path), client=fake
@@ -430,6 +458,7 @@ def test_abuse_447_a2_merge_is_refused_when_the_operator_merges(tmp_path):
 
 
 def test_pr_merge_refused_by_github_is_exit_1(tmp_path):
+    _register_pr(tmp_path)
     fake = FakeGitHubClient(fail_on={"merge_pull": http_error(405, "not mergeable")})
     result = github_ops.merge_pull_request(
         "12", REF, "merge", _config(tmp_path), client=fake
@@ -575,6 +604,7 @@ def test_a_zero_pull_request_number_is_a_caller_mistake(given):
 
 
 def test_a_merge_github_did_not_do_is_exit_1(tmp_path, monkeypatch):
+    _register_pr(tmp_path)
     fake = FakeGitHubClient()
     monkeypatch.setattr(
         fake, "merge_pull", lambda *a, **k: {"merged": False, "message": "conflict"}
@@ -586,6 +616,7 @@ def test_a_merge_github_did_not_do_is_exit_1(tmp_path, monkeypatch):
 
 
 def test_merge_pins_the_reviewed_head(tmp_path):
+    _register_pr(tmp_path)
     fake = FakeGitHubClient()
     github_ops.merge_pull_request(
         "12", REF, "merge", _config(tmp_path), sha="a" * 40, client=fake
@@ -610,3 +641,128 @@ def test_pr_create_keys_the_link_by_githubs_own_spelling(tmp_path):
         client=fake,
     )
     assert result["pullRequest"] == "github:Octo/Repo#12"
+
+
+# -- the owner's rule: a lifecycle act needs a registered work item (R1.10) ------
+
+
+def test_merge_of_a_pull_request_no_work_item_owns_is_refused(tmp_path):
+    _register(tmp_path)  # the work item is registered, the PR is not linked
+    fake = FakeGitHubClient()
+    result = github_ops.merge_pull_request(
+        "12", REF, "merge", _config(tmp_path), client=fake
+    )
+    assert result["exitCode"] == 1 and "not a work item registered" in _words(result)
+    assert fake.calls == [] and fake.merged == []
+
+
+def test_a_pull_request_that_is_itself_the_work_item_may_be_merged(tmp_path):
+    _register(tmp_path, "github:octo/repo#12")
+    fake = FakeGitHubClient()
+    result = github_ops.merge_pull_request(
+        "github:octo/repo#12", config=_config(tmp_path), client=fake
+    )
+    assert result["exitCode"] == 0
+
+
+def test_an_adhoc_work_item_may_merge_a_pull_request_it_names(tmp_path):
+    """The `the-loop do` exception the owner named."""
+    from the_loop.core import sessions as core_sessions
+
+    _register(tmp_path)
+    core_sessions._control_store(_config(tmp_path)).record(REF, "do", source="cli")
+    fake = FakeGitHubClient()
+    result = github_ops.merge_pull_request(
+        "github:octo/other#9", REF, "merge", _config(tmp_path), client=fake
+    )
+    assert result["exitCode"] == 0 and fake.merged == [("octo", "other", 9, "merge")]
+
+
+def test_a_non_adhoc_work_item_cannot_merge_a_stranger(tmp_path):
+    from the_loop.core import sessions as core_sessions
+
+    _register(tmp_path)
+    core_sessions._control_store(_config(tmp_path)).record(REF, "start", source="cli")
+    fake = FakeGitHubClient()
+    result = github_ops.merge_pull_request(
+        "github:octo/other#9", REF, "merge", _config(tmp_path), client=fake
+    )
+    assert result["exitCode"] == 1 and fake.merged == []
+
+
+def test_close_ticket_closes_a_registered_work_item(tmp_path):
+    _register(tmp_path)
+    fake = FakeGitHubClient()
+    result = github_ops.close_ticket(
+        REF, "completed", config=_config(tmp_path), client=fake
+    )
+    assert result["exitCode"] == 0 and result["closed"] is True
+    assert fake.closed == [("octo", "repo", 5, "completed")]
+
+
+def test_close_ticket_refuses_an_unregistered_ticket(tmp_path):
+    fake = FakeGitHubClient()
+    result = github_ops.close_ticket(REF, config=_config(tmp_path), client=fake)
+    assert result["exitCode"] == 1 and fake.closed == []
+
+
+def test_close_ticket_refuses_an_unknown_reason(tmp_path):
+    with pytest.raises(ValueError, match="close reason"):
+        github_ops.close_ticket(REF, "duplicate", config=_config(tmp_path))
+
+
+def test_resolve_thread_resolves_one_of_the_prs_own_threads(tmp_path):
+    _register_pr(tmp_path)
+    fake = FakeGitHubClient()
+    fake.threads[("octo", "repo", 12)] = [{"id": "PRRT_1", "isResolved": False}]
+    result = github_ops.resolve_thread(
+        "12", "PRRT_1", REF, _config(tmp_path), client=fake
+    )
+    assert result["exitCode"] == 0 and fake.resolved == ["PRRT_1"]
+
+
+def test_abuse_447_a3_a_thread_of_another_pull_request_is_refused(tmp_path):
+    _register_pr(tmp_path)
+    fake = FakeGitHubClient()
+    fake.threads[("octo", "repo", 12)] = [{"id": "PRRT_1", "isResolved": False}]
+    result = github_ops.resolve_thread(
+        "12", "PRRT_elsewhere", REF, _config(tmp_path), client=fake
+    )
+    assert result["exitCode"] == 1 and fake.resolved == []
+
+
+def test_resolve_thread_of_an_unowned_pull_request_is_refused(tmp_path):
+    fake = FakeGitHubClient()
+    result = github_ops.resolve_thread(
+        "github:octo/repo#12", "PRRT_1", config=_config(tmp_path), client=fake
+    )
+    assert result["exitCode"] == 1 and fake.calls == []
+
+
+def test_discover_finds_a_pull_request_opened_from_a_fork(tmp_path):
+    """R4.5 — the checkout is a fork; the PR lives in the work item's repository."""
+    _register(tmp_path)
+    fake = FakeGitHubClient()
+    fake.heads[("octo", "repo", "me:feat/x")] = [
+        {"number": 21, "html_url": "https://github.com/octo/repo/pull/21"}
+    ]
+    result = github_ops.discover_pull_requests(
+        REF, "feat/x", "me/repo", _config(tmp_path), client=fake
+    )
+    assert result["found"] == ["github:octo/repo#21"]
+    asked = [
+        (c[1]["owner"], c[1]["head_owner"])
+        for c in fake.calls
+        if c[0] == "open_pulls_for_head"
+    ]
+    assert asked == [("me", "me"), ("octo", "me")]
+
+
+def test_discover_takes_an_explicit_head_owner(tmp_path):
+    _register(tmp_path)
+    fake = FakeGitHubClient()
+    fake.heads[("octo", "repo", "me:feat/x")] = [{"number": 22}]
+    result = github_ops.discover_pull_requests(
+        REF, "feat/x", config=_config(tmp_path), head_owner="me", client=fake
+    )
+    assert result["found"] == ["github:octo/repo#22"]

@@ -28,6 +28,7 @@ output to learn which pull request had been opened.
 | D5 | **`comment` publishes `comment.agent` with `record: true`.** | The ledger stamps the marker and the envelope centrally. The room hears the comment once, and the ingress drops the enveloped copy. A new event type would split one stream subscribers already understand. |
 | D6 | **`pr create` links what it opens. The hook becomes trigger-agnostic** (a push or any PR-creating call runs `link-pr --discover`) and parses no output. | The owner's scope addition on the ticket. The primary path needs no hook, and the hook becomes a safety net that knows nothing of `gh`. |
 | D7 | **A verb addresses github.com and the operator's own host only** (`ghhost.github_host`); any other host is a caller mistake, refused before a request. | A host-shaped string in a ref or URL would otherwise make the service send the daemon's token to that host (`base_for` derives `https://<host>/api/v3` against the public default). Found in self-review. |
+| D8 | **Every lifecycle act (open, merge, resolve a thread, close a ticket) needs a work item registered on the executing instance**. The PR or ticket must be that work item, or be recorded as delivering it. An ad-hoc (`the-loop do`) work item may act on one it names. | The owner's rule: an act the-loop takes on a PR belongs to a work item it tracks. The ad-hoc loop is the named exception, because "merge that PR" is exactly a tactical task. A cloud session registers itself (`sessions register`) before it acts. |
 
 ## Consequences
 
@@ -37,8 +38,8 @@ code instead of by prompt. A PR opened by hand or by MCP is still recorded.
 
 **Costs, accepted.** A second exception to "the service is the only execution path"
 (D2). One more GitHub request after every `git push` in a hooked session (idempotent).
-Seven routes and seven MCP tools to keep in the contract. Closing a ticket and resolving
-a review thread stay the harness's own acts, since no verb covers them yet.
+Nine routes and nine MCP tools to keep in the contract. A cloud session must register
+itself (`the-loop sessions register`) before it can open, merge or close anything (D8).
 
 ## Alternatives considered
 

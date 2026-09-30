@@ -125,9 +125,11 @@ def discovery_scope(payload: Dict[str, Any]) -> List[str]:
     if not isinstance(given, dict):
         return []
     extra: List[str] = []
-    head = str(given.get("head") or "").rpartition(":")[2]
+    head_owner, _, head = str(given.get("head") or "").rpartition(":")
     if _BRANCH_RE.match(head):
         extra += ["--branch", head]
+        if head_owner and _NAME_RE.match(head_owner):
+            extra += ["--head-owner", head_owner]  # a fork's branch
     owner, repo = str(given.get("owner") or ""), str(given.get("repo") or "")
     if _NAME_RE.match(owner) and _NAME_RE.match(repo):
         extra += ["--repository", f"{owner}/{repo}"]

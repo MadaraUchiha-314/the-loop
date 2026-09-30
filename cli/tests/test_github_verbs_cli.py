@@ -59,6 +59,21 @@ def config(tmp_path):
     return write
 
 
+def _register_argv(cwd):
+    return [
+        "sessions",
+        "register",
+        "--work-item",
+        REF,
+        "--harness",
+        "claude",
+        "--harness-session-id",
+        "s1",
+        "--cwd",
+        str(cwd),
+    ]
+
+
 def _cli(config_path, *argv):
     return main(["--config", config_path, *argv])
 
@@ -145,13 +160,18 @@ def test_pr_create_opens_from_the_checked_out_branch(
     checkout = tmp_path / "checkout"
     _git_checkout(checkout, "claude/issue-5")
     monkeypatch.chdir(checkout)
+    path = config()
     argv = ["pr", "create", "--work-item", REF, "--title", "T", "--body", "B"]
-    assert _cli(config(), *argv) == 0
+    assert _cli(path, *argv) == 1  # R1.10: no registered work item, nothing opened
+    assert fake.opened == []
+    _cli(path, *_register_argv(checkout))
+    capsys.readouterr()
+    assert _cli(path, *argv) == 0
     assert fake.opened[0]["head"] == "claude/issue-5"
     assert fake.opened[0]["base"] == "main"  # the repository's default branch
     captured = capsys.readouterr()
     assert "github:octo/repo#12" in captured.out
-    assert "not linked" in captured.err  # no session recorded here: a note, exit 0
+    assert "recorded github:octo/repo#12" in captured.out
 
 
 def test_pr_create_on_a_detached_head_is_exit_2(fake, config, tmp_path, monkeypatch):
@@ -179,14 +199,18 @@ def test_pr_threads_prints_json(fake, config, capsys):
     assert json.loads(capsys.readouterr().out)["threads"][0]["id"] == "PRRT_1"
 
 
-def test_pr_merge_obeys_the_operators_policy(fake, config, capsys):
+def test_pr_merge_obeys_the_operators_policy(fake, config, tmp_path, capsys):
     assert (
         _cli(config(mergeOnApproval=False), "pr", "merge", "github:octo/repo#12") == 1
     )
     assert fake.merged == []
     assert "mergeOnApproval" in capsys.readouterr().err
+    path = config()
     argv = ["pr", "merge", "github:octo/repo#12", "--method", "squash"]
-    assert _cli(config(), *argv) == 0
+    assert _cli(path, *argv) == 1  # R1.10: no work item owns the PR
+    _cli(path, *_register_argv(tmp_path))
+    _cli(path, "sessions", "link-pr", "--work-item", REF, "--pull-request", "12")
+    assert _cli(path, *argv) == 0
     assert fake.merged == [("octo", "repo", 12, "squash")]
 
 
@@ -343,3 +367,35 @@ def test_discovery_ignores_an_origin_that_is_not_on_github(tmp_path):
         == ""
     )
     assert origin_github_repo(tmp_path, hosts, reader("/srv/mirror/app")) == ""
+
+
+def test_ticket_close_and_pr_resolve_thread(fake, config, tmp_path, capsys):
+    path = config()
+    _cli(path, *_register_argv(tmp_path))
+    _cli(path, "sessions", "link-pr", "--work-item", REF, "--pull-request", "12")
+    fake.threads[("octo", "repo", 12)] = [{"id": "PRRT_1", "isResolved": False}]
+    argv = ["pr", "resolve-thread", "12", "--work-item", REF, "--thread", "PRRT_1"]
+    assert _cli(path, *argv) == 0
+    assert _cli(path, "ticket", "close", REF, "--reason", "not_planned") == 0
+    assert fake.resolved == ["PRRT_1"]
+    assert fake.closed == [("octo", "repo", 5, "not_planned")]
+
+
+def test_link_pr_discover_passes_a_fork_head_owner(fake, config, tmp_path, monkeypatch):
+    checkout = tmp_path / "checkout"
+    _git_checkout(checkout, "feat/x")
+    monkeypatch.chdir(checkout)
+    path = config()
+    _cli(path, *_register_argv(checkout))
+    fake.heads[("octo", "repo", "me:feat/x")] = [{"number": 21}]
+    argv = [
+        "sessions",
+        "link-pr",
+        "--work-item",
+        REF,
+        "--discover",
+        "--head-owner",
+        "me",
+    ]
+    assert _cli(path, *argv) == 0
+    assert fake.calls[-1][1]["head_owner"] == "me"

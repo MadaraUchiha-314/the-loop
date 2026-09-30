@@ -237,6 +237,8 @@ class SessionLinkPrBody(BaseModel):
     discover: bool = False
     branch: str = ""
     repository: str = ""
+    # A fork's owner, when the head branch is not in `repository`'s namespace.
+    headOwner: str = ""
     # Which instance this is for (issue-374 R2.6): empty means this one.
     instance: str = ""
 
@@ -268,6 +270,20 @@ class PullRequestCreateBody(BaseModel):
     base: str = ""
     repository: str = ""
     draft: bool = False
+    instance: str = ""
+
+
+class TicketCloseBody(BaseModel):
+    ref: str
+    reason: str = "completed"
+    workItem: str = ""
+    instance: str = ""
+
+
+class ThreadResolveBody(BaseModel):
+    ref: str
+    thread: str
+    workItem: str = ""
     instance: str = ""
 
 
@@ -706,6 +722,7 @@ def build_router(
                 discover=True,
                 branch=body.branch,
                 repository=body.repository,
+                head_owner=body.headOwner,
             )
         return facade.link_session_pull_request(
             body.ref, body.pullRequest, instance=body.instance
@@ -734,6 +751,21 @@ def build_router(
             body.body,
             labels=body.labels,
             instance=body.instance,
+        )
+
+    @router.post(f"{API_PREFIX}/work-items/tickets/close", operation_id="closeTicket")
+    def close_ticket(body: TicketCloseBody) -> Dict[str, Any]:
+        return facade.close_ticket(
+            body.ref, body.reason, body.workItem, instance=body.instance
+        )
+
+    @router.post(
+        f"{API_PREFIX}/pull-requests/threads/resolve",
+        operation_id="resolveReviewThread",
+    )
+    def resolve_review_thread(body: ThreadResolveBody) -> Dict[str, Any]:
+        return facade.resolve_review_thread(
+            body.ref, body.thread, body.workItem, instance=body.instance
         )
 
     @router.post(

@@ -352,6 +352,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/work-items/tickets/close:
+    post:
+      summary: Close Ticket
+      operationId: closeTicket
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TicketCloseBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Closeticket
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/pull-requests/threads/resolve:
+    post:
+      summary: Resolve Review Thread
+      operationId: resolveReviewThread
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThreadResolveBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Resolvereviewthread
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/config:
     get:
       summary: Get Config
@@ -2429,6 +2479,50 @@ components:
       required:
       - ref
       title: PullRequestMergeBody
+    TicketCloseBody:
+      properties:
+        ref:
+          type: string
+          title: Ref
+        reason:
+          type: string
+          title: Reason
+          default: completed
+        workItem:
+          type: string
+          title: Workitem
+          default: ''
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
+      type: object
+      required:
+      - ref
+      title: TicketCloseBody
+    ThreadResolveBody:
+      properties:
+        ref:
+          type: string
+          title: Ref
+        thread:
+          type: string
+          title: Thread
+        workItem:
+          type: string
+          title: Workitem
+          default: ''
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
+      type: object
+      required:
+      - ref
+      - thread
+      title: ThreadResolveBody
     SessionLinkPrBody:
       properties:
         ref:
@@ -2449,6 +2543,10 @@ components:
         repository:
           type: string
           title: Repository
+          default: ''
+        headOwner:
+          type: string
+          title: Headowner
           default: ''
         instance:
           type: string
