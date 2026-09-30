@@ -44,7 +44,7 @@ overrides: {}
   - _Depends on:_ 3, 4
   - _Requirements:_ R5.1, R5.2
   - _Test:_ T5, T11
-- [ ] 6. Verification and evidence: `make check`,
+- [x] 6. Verification and evidence: `make check`,
   `evidence/{verification,self-review,security-review,documentation,reviewer-briefing}.md`,
   and the PR
   - _Depends on:_ 5

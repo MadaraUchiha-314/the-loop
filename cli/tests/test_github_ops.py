@@ -553,8 +553,10 @@ def test_abuse_447_a3_a_host_the_operator_did_not_configure_is_refused(tmp_path,
 
 
 def test_the_operators_own_enterprise_host_is_trusted(tmp_path):
-    config = _config(tmp_path)
-    config["integrations"] = {"github": {"host": "ghe.corp.example"}}
+    config: dict = {
+        **_config(tmp_path),
+        "integrations": {"github": {"host": "ghe.corp.example"}},
+    }
     fake = FakeGitHubClient()
     fake.threads[("o", "r", 3)] = []
     result = github_ops.pull_request_threads(

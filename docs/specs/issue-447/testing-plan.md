@@ -60,16 +60,28 @@ and no network in tests.
 
 ## Activities checklist
 
-- [ ] T1 client
-- [ ] T2 core
-- [ ] T3 commands and routing
-- [ ] T4 integration
-- [ ] T5 parity
-- [ ] T6 hook
-- [ ] T7 abuse cases
-- [ ] T11 `make check`
-- [ ] T12 security review
+- [x] T1 client
+- [x] T2 core
+- [x] T3 commands and routing
+- [x] T4 integration
+- [x] T5 parity
+- [x] T6 hook
+- [x] T7 abuse cases
+- [x] T11 `make check`
+- [x] T12 security review
 
 ## Verification results
 
-*(filled at `verification`)*
+| Row | Command | Outcome | Evidence |
+|-----|---------|---------|----------|
+| T1 | `pytest tests/test_ghapi.py` | 70 passed | [verification.md § T1](evidence/verification.md#t1-unit-the-client) |
+| T2 | `pytest tests/test_github_ops.py` | 70 passed | [§ T2](evidence/verification.md#t2-unit-core) |
+| T3 | `pytest tests/test_github_verbs_cli.py` | 24 passed | [§ T3](evidence/verification.md#t3-unit-the-commands-and-routing) |
+| T4 | `pytest tests/test_github_verbs_integration.py tests/test_mcp_integration.py` | 15 passed | [§ T4](evidence/verification.md#t4-integration-scenario) |
+| T5 | `pytest` contract/docs parity | 15 passed | [§ T5](evidence/verification.md#t5-contract-and-docs-parity) |
+| T6 | `pytest tests/test_harness_link_pr.py` | 34 passed | [§ T6](evidence/verification.md#t6-unit-the-hook) |
+| T7 | `pytest -k abuse_447` | 32 passed | [security-review.md](evidence/security-review.md) |
+| T8 | part of T1 | 3 exchanges | [§ T8](evidence/verification.md#t8-performance-bounded) |
+| T9, T10 | n/a | n/a (no token or scratch repository in the session) | [§ T9, T10](evidence/verification.md#t9-t10-end-to-end-and-manual) |
+| T11 | `make check`, step by step | green; 5192 passed, 1 skipped | [§ T11](evidence/verification.md#t11-the-repositorys-gates-make-check-run-step-by-step) |
+| T12 | the security checklist | no unresolved finding | [security-review.md](evidence/security-review.md) |

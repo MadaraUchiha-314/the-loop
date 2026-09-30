@@ -34,8 +34,11 @@ Closes #447. Tier 3 (`human-approves-pr`). No new credential, config key or depe
 3. **The comment path:** `github_ops.comment` publishes `comment.agent` with
    `record: true` over a `GitHubLedger`. The ledger stamps the marker and the envelope,
    the room hears the comment once, and the ingress drops the enveloped copy.
-4. **Input validation before any request:** `ghapi.is_branch_name`, `_sha`, the merge
-   method allow-list, `github_ops._slug`/`_repository`/`resolve_pull_request`.
+4. **The host allow-list and input validation before any request:**
+   `github_ops.trusted_hosts`/`_trusted` (github.com plus the operator's own host), so a
+   ref or URL naming another host never receives the token. Also
+   `ghapi.is_branch_name`, `_sha`, the merge-method allow-list, and
+   `github_ops._slug`/`_repository`/`resolve_pull_request`.
 5. **The hook:** `hooks/the-loop-link-pr.py`. It triggers on `git push`, `pr create`,
    `pull-request` and MCP `create_pull_request`, skips `the-loop pr create`, and runs a
    fixed argv in the session's `cwd`.
@@ -79,7 +82,7 @@ flowchart LR
 
 ## Evidence
 
-- Full suite `5164 passed, 1 skipped`; ruff, ruff format, pyright (0 errors), config
+- Full suite `5192 passed, 1 skipped`; ruff, ruff format, pyright (0 errors), config
   validation, markdownlint (1491 files, 0 errors). See
   [`verification.md`](verification.md).
 - One negative test per abuse case A1–A7:
@@ -96,5 +99,10 @@ flowchart LR
 2. **No live GitHub run.** T9/T10 are `n/a`: the cloud session holds no token or
    scratch repository. `the-loop pr status github:MadaraUchiha-314/the-loop#<this PR>`
    on a box with the daemon is a one-line check.
-3. **Not covered by a verb:** closing a ticket and resolving a review thread. The docs
-   say so. A follow-up can add them if wanted.
+3. **Should `pr merge` only merge PRs recorded against a registered work item?**
+   Right now it merges any PR the executing token can, when the policy allows it. `--sha`
+   pins the reviewed head, and branch protection is the backstop. Restricting it further
+   would stop a cloud session, which has no registry, from merging its own PR. This is
+   the review's M2, and it is left to you.
+4. **Not covered by a verb:** closing a ticket, resolving a review thread, and discovery
+   of a PR opened from a fork. The docs say so. A follow-up can add them if wanted.
