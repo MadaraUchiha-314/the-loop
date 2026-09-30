@@ -103,7 +103,9 @@ repositories: []
 # `critics`, because `routing` configures how an event reaches a session while
 # these configure what a session is. A work item then picks a model and an effort
 # level at its `phase-selection` gate, by the same authorized reply that freezes
-# the phases — no config edit, no daemon restart.
+# the phases — no config edit, no daemon restart. With two or more declared
+# harnesses that can host a session, it picks its HARNESS there too (issue-440);
+# a harness that cannot host one (today: all but claude) is never offered.
 #
 # Two rules carry the whole thing:
 #   * A DECLARATION MAY NARROW; ONLY THE PROBE MAY CONFIRM. Nothing here asserts
@@ -115,7 +117,8 @@ repositories: []
 #     identifier, copied verbatim and never parsed for a vendor.
 harnesses: []
 # - name: claude
-#   default: true                 # the harness an unmatched event spawns on
+#   default: true                 # the harness an unmatched event, and a work
+#                                 # item that chose none, spawns on
 #   args: [--dangerously-skip-permissions]   # new home of routing.harnessArgs.claude;
 #                                            # reaches EVERY session on this harness
 #                                            # (work item, released, respawned, PR,

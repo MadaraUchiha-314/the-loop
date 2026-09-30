@@ -189,10 +189,11 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   unnecessary, say so on the ticket and let a human declare it. The same reply also
   answers the questions that are **not** phases — where the outer loop is iterated
   (issue-183), how many sessions this item's pull requests get (issue-260,
-  `pr-sessions-*`, defaulting to the operator's `routing.tmux.sessionPerPr`), and
-  **which model and how much effort this work item runs on** (issue-358, `model-*` and
-  `effort-*`, offered only where the operator declared them and this machine's harness
-  actually accepts them) — and the agent never ticks those rows either. See
+  `pr-sessions-*`, defaulting to the operator's `routing.tmux.sessionPerPr`),
+  **which harness it runs on** (issue-440, `harness-*`, offered only when two or more
+  declared harnesses can host a session), and **which model and how much effort**
+  (issue-358, `model-*` and `effort-*`, offered only where the operator declared them and
+  the harness actually accepts them) — and the agent never ticks those rows either. See
   `reference/workflow.md` § Declared skips.
 - **An armed work item has no session until its first gate is answered** (issue-358, R8).
   The checklist is posted by the **daemon**, not by a session, so nothing spawns while the

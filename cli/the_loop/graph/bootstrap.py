@@ -240,31 +240,30 @@ def build_runtime(
     # probed verdicts are cached. Seeded here for the same reason `sessionPerPr`
     # is — a graph hook must not import the dispatcher, and it needs nothing of it.
     if cli_cfg:
+        from ..harness import hosting_harnesses
         from ..modelchoice import (
             EFFORT_KEY,
             HARNESSES_KEY,
             MODELS_KEY,
-            declared_harnesses,
+            default_harness,
+            offered_harnesses,
         )
         from ..state import layout_from_config
 
         config[MODELS_KEY] = cli_cfg.get(MODELS_KEY) or []
         config[EFFORT_KEY] = cli_cfg.get(EFFORT_KEY) or []
         config[HARNESSES_KEY] = cli_cfg.get(HARNESSES_KEY) or []
-        declared = declared_harnesses(cli_cfg)
-        default_harness = next(
-            (
-                str(entry.get("name"))
-                for entry in (cli_cfg.get(HARNESSES_KEY) or [])
-                if isinstance(entry, dict) and entry.get("default") is True
-            ),
-            "",
+        # Which harness this work item runs on when it chooses none, and which it
+        # may choose instead (issue-440). Resolved by the rule — and with the
+        # fallback — the dispatcher spawns by, so the harness the checklist calls
+        # the default is the one the session starts on.
+        hosting = set(hosting_harnesses())
+        config["harness"] = default_harness(
+            cli_cfg,
+            str(routing.get("defaultHarness") or "claude"),
+            hosting.__contains__,
         )
-        config["harness"] = (
-            default_harness
-            or str(routing.get("defaultHarness") or "")
-            or (declared[0] if declared else "")
-        )
+        config["offeredHarnesses"] = offered_harnesses(cli_cfg, hosting.__contains__)
         config["verdictCache"] = layout_from_config(cli_cfg).verdict_cache
     if authorized_users is None and cli_cfg:
         # The `github` projection of the person entries (issue-309): the

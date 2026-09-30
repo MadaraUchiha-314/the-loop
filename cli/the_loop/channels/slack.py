@@ -647,10 +647,10 @@ _PLAIN_ROW = re.compile(
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,74}$")
 
 #: The checklist's rows that are NOT phases: the hook's ``SURFACE_TOKEN`` and the
-#: prefixes of its ``PR_SESSIONS_TOKENS`` / ``MODEL_PREFIX`` / ``EFFORT_PREFIX``
+#: prefixes of its ``PR_SESSIONS_TOKENS`` / ``HARNESS_PREFIX`` / ``MODEL_PREFIX`` / ``EFFORT_PREFIX``
 #: rows. Pinned to the hook's by a test, like the marker.
 SURFACE_TOKEN = "outer-loop-on-pull-request"
-_NON_PHASE_PREFIXES = ("pr-sessions-", "model-", "effort-")
+_NON_PHASE_PREFIXES = ("pr-sessions-", "harness-", "model-", "effort-")
 
 #: The control's own ids. A block id under :data:`SELECTION_BLOCK` is part of the
 #: control — the state a press carries is keyed by it, and the press report takes
@@ -868,7 +868,7 @@ def selection_control_blocks(rows: SelectionRows, keyword: str) -> List[Dict[str
             "Always run: " + ", ".join(f"`{node}`" for node in rows.always) + "."
         )
     notes.append(
-        "Sessions per pull request, model and effort keep this deployment's "
+        "Sessions per pull request, harness, model and effort keep this deployment's "
         "defaults from here — to choose them, tick them on GitHub and reply "
         f"`{keyword}` there instead."
     )

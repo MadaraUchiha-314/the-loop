@@ -123,6 +123,10 @@ _CHECK_LINE = re.compile(
     re.MULTILINE,
 )
 
+#: A name that can be rendered as a row and read back by :data:`_CHECK_LINE`
+#: whole — what an offered harness name is checked against (issue-440).
+_TOKEN_SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
 #: The marker the entry hook leaves in its own comment, so the posting is
 #: idempotent across redelivered spawns: a second entry finds it and does not
 #: post a duplicate checklist.
@@ -175,6 +179,9 @@ PR_SESSIONS_ROW_TEXT = {
 #: reply is matched on — and neither can be confused with a phase.
 MODEL_PREFIX = "model-"
 EFFORT_PREFIX = "effort-"
+#: The third choice section (issue-440): which harness the work item runs on.
+#: Resolved FIRST, because the model and effort are resolved against it.
+HARNESS_PREFIX = "harness-"
 
 #: How many rows a choice section renders before "…and N more". The same number
 #: the kickoff picker uses, and for the same reason: a list a human reads on a
@@ -193,6 +200,7 @@ _NON_PHASE_TOKENS = {SURFACE_TOKEN, *PR_SESSIONS_TOKENS}
 def _is_non_phase(token: str) -> bool:
     return (
         token in _NON_PHASE_TOKENS
+        or token.startswith(HARNESS_PREFIX)
         or token.startswith(MODEL_PREFIX)
         or token.startswith(EFFORT_PREFIX)
     )
@@ -222,7 +230,28 @@ def _harness_for(ctx: HookContext) -> str:
     return str((ctx.config or {}).get("harness") or "")
 
 
-def _offerable(ctx: HookContext, kind: str, names: List[str]) -> List[str]:
+def _harness_rows(ctx: HookContext) -> List[str]:
+    """The harnesses this work item may be put on, or ``[]`` when there is no choice.
+
+    Seeded by ``graph/bootstrap.py`` as ``offeredHarnesses``: declared in
+    ``harnesses[]`` **and** able to host a work item's session (issue-440). Fewer
+    than two is no choice at all, so no section — which keeps the checklist
+    byte-identical for every install with one hosting harness (R1.3). Re-validated
+    here against the token grammar, because a row's name becomes a token a reply is
+    matched on.
+    """
+    raw = (ctx.config or {}).get("offeredHarnesses") or []
+    names = [
+        str(name)
+        for name in dict.fromkeys(raw)
+        if isinstance(name, str) and _TOKEN_SAFE.match(name)
+    ]
+    return names if len(names) > 1 else []
+
+
+def _offerable(
+    ctx: HookContext, kind: str, names: List[str], harness: str = ""
+) -> List[str]:
     """``names``, less the ones this work item's harness is known to refuse.
 
     The whole of R7.3 at the gate: a model the harness cannot run is not shown, so
@@ -234,7 +263,7 @@ def _offerable(ctx: HookContext, kind: str, names: List[str]) -> List[str]:
     ``check`` run outside a deployment (no cache, no harness) offers everything
     and blocks nothing.
     """
-    harness = _harness_for(ctx)
+    harness = harness or _harness_for(ctx)
     cache_path = str((ctx.config or {}).get("verdictCache") or "")
     if not harness or not cache_path:
         return list(names)
@@ -248,31 +277,62 @@ def _offerable(ctx: HookContext, kind: str, names: List[str]) -> List[str]:
         return list(names)
 
 
-def _model_rows(ctx: HookContext) -> List[str]:
-    """The models offerable for THIS work item, in declaration order.
-
-    Narrowed twice, both in the shrinking direction: by an entry's own
-    ``harnesses`` (the operator's restriction) and by the probe's verdict (the
-    measurement). Neither can add a model the operator did not declare.
+def _across_harnesses(
+    ctx: HookContext, rows, harness: str, order: List[str]
+) -> List[str]:
+    """``rows(ctx, h)`` for one harness — or, when ``harness`` is not given and a
+    harness section is rendered, the union across every offered harness, in
+    ``order`` (issue-440, R2.1). The reply is then checked against the harness it
+    resolves to, so a union row is never a promise that it runs everywhere.
     """
+    if harness:
+        return rows(ctx, harness)
+    offered = _harness_rows(ctx)
+    if not offered:
+        return rows(ctx, "")
+    union = {row for name in offered for row in rows(ctx, name)}
+    return [name for name in order if name in union]
+
+
+def _models_on(ctx: HookContext, harness: str) -> List[str]:
     config = ctx.config or {}
-    harness = _harness_for(ctx)
+    harness = harness or _harness_for(ctx)
     names = [
         name
         for name in declared_models(config)
         if not harness or harness in candidate_harnesses(config, name)
     ]
-    return _offerable(ctx, "model", names)
+    return _offerable(ctx, "model", names, harness)
 
 
-def _effort_rows(ctx: HookContext) -> List[str]:
+def _effort_on(ctx: HookContext, harness: str) -> List[str]:
+    return _offerable(ctx, "effort", declared_effort(ctx.config or {}), harness)
+
+
+def _model_rows(ctx: HookContext, harness: str = "") -> List[str]:
+    """The models offerable for THIS work item, in declaration order.
+
+    Narrowed twice, both in the shrinking direction: by an entry's own
+    ``harnesses`` (the operator's restriction) and by the probe's verdict (the
+    measurement). Neither can add a model the operator did not declare. For one
+    ``harness`` when given; otherwise for the default harness, or across every
+    offered harness when the work item may choose one (issue-440).
+    """
+    return _across_harnesses(
+        ctx, _models_on, harness, declared_models(ctx.config or {})
+    )
+
+
+def _effort_rows(ctx: HookContext, harness: str = "") -> List[str]:
     """The effort levels offerable for THIS work item, in the loop's enum order.
 
     A level the work item's harness cannot express resolves to no arguments, which
     the probe records as ``refused`` — so it is simply not shown here, rather than
-    offered and then silently dropped.
+    offered and then silently dropped. ``harness`` as for :func:`_model_rows`.
     """
-    return _offerable(ctx, "effort", declared_effort(ctx.config or {}))
+    return _across_harnesses(
+        ctx, _effort_on, harness, declared_effort(ctx.config or {})
+    )
 
 
 def _declared_channels(ctx: HookContext) -> List[str]:
@@ -344,7 +404,7 @@ def _about(ctx: HookContext, name: str) -> str:
 
 
 def _choice_lines(ctx: HookContext) -> List[str]:
-    """The two choice sections of the checklist body (issue-358).
+    """The choice sections of the checklist body (issue-358, issue-440).
 
     Two sections, never one: a work item chooses a model and an effort level
     **separately**, and a reader scanning boxes must never have to work out which
@@ -353,9 +413,20 @@ def _choice_lines(ctx: HookContext) -> List[str]:
     the one it gets today.
     """
     lines: List[str] = []
+    harnesses = _harness_rows(ctx)
     models = _model_rows(ctx)
     effort = _effort_rows(ctx)
     for kind, prefix, names, heading, tail in (
+        (
+            "harness",
+            HARNESS_PREFIX,
+            harnesses,
+            "**Which harness should this work item run on?** Not a phase — it is "
+            "the agent CLI its session is. **Tick at most one:**",
+            f"Leave them alone and this work item runs on `{_harness_for(ctx)}`, "
+            "this deployment's default. A model or effort ticked below is kept "
+            "only if the harness it ends up on can run it.",
+        ),
         (
             "model",
             MODEL_PREFIX,
@@ -675,6 +746,7 @@ def _frozen_graph(
     session_per_pr: str = SESSION_PER_PR_CROSS_REPOSITORY,
     model: str = "",
     effort: str = "",
+    harness: str = "",
 ) -> Dict[str, Any]:
     """The graph this work item will actually walk, as a record.
 
@@ -717,7 +789,8 @@ def _frozen_graph(
         # What this work item runs AS (issue-358). Empty means "chose nothing",
         # which is a different fact from "chose the default": the dispatcher then
         # launches on the harness's own arguments, and a later change to those
-        # applies to this item like any other.
+        # applies to this item like any other. The harness likewise (issue-440).
+        "harness": harness,
         "model": model,
         "effort": effort,
         "nodes": nodes,
@@ -820,6 +893,10 @@ def _confirmation(
     model_offered: Optional[List[str]] = None,
     effort_offered: Optional[List[str]] = None,
     channels: Optional[List[str]] = None,
+    harness: str = "",
+    harness_offered: Optional[List[str]] = None,
+    default_harness: str = "",
+    dropped: Optional[List[Tuple[str, str]]] = None,
 ) -> str:
     lines = ["🤖 _the-loop_ — **phase selection recorded**", ""]
     if skips:
@@ -877,6 +954,24 @@ def _confirmation(
         f"Pull requests delivering this work item: **`{session_per_pr}`** — "
         + PR_SESSIONS_ROW_TEXT[session_per_pr],
     ]
+    # The harness first (issue-440, R1.5): the model and effort below were
+    # resolved against it. Named in both directions, like them.
+    if harness_offered:
+        lines += [
+            "",
+            (
+                f"Harness: **`{harness}`**."
+                if harness
+                else f"Harness: **`{default_harness}`**, this deployment's default "
+                "— no single row was ticked."
+            ),
+        ]
+    for kind, name in dropped or []:
+        lines += [
+            "",
+            f"Not applied: {kind} `{name}` — the `{harness or default_harness}` "
+            "harness does not offer it, so the harness's own stands.",
+        ]
     # Named in BOTH directions (issue-358, R1.6): "the harness's own default" is
     # an outcome a human should be able to read back, and it is also what a
     # reader sees when two rows were ticked — so saying it is how an ambiguous
@@ -973,10 +1068,25 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
     # model must never discard a valid effort, and neither may be read off a row
     # that was not offered — the reply names a key into what the operator
     # declared, never a string that reaches an argv.
+    #
+    # The harness is resolved FIRST (issue-440, R2.2): the model and effort rows
+    # offered across every harness are then kept only if the harness this item
+    # resolves to can run them, and a tick that cannot is named, not dropped quietly.
+    harness_offered = _harness_rows(ctx)
+    harness = _parse_choice(body, HARNESS_PREFIX, harness_offered)
+    resolved_harness = harness or _harness_for(ctx)
     model_offered = _model_rows(ctx)
     effort_offered = _effort_rows(ctx)
     model = _parse_choice(body, MODEL_PREFIX, model_offered)
     effort = _parse_choice(body, EFFORT_PREFIX, effort_offered)
+    dropped: List[Tuple[str, str]] = []
+    if harness_offered:
+        if model and model not in _model_rows(ctx, resolved_harness):
+            dropped.append(("model", model))
+            model = ""
+        if effort and effort not in _effort_rows(ctx, resolved_harness):
+            dropped.append(("effort", effort))
+            effort = ""
     actor = str(reply["author"]).lstrip("@")
 
     confirmation_error = ""
@@ -998,6 +1108,10 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
                 model_offered=model_offered,
                 effort_offered=effort_offered,
                 channels=_declared_channels(ctx),
+                harness=harness,
+                harness_offered=harness_offered,
+                default_harness=_harness_for(ctx),
+                dropped=dropped,
             ),
         )
     except Exception as exc:  # noqa: BLE001
@@ -1026,6 +1140,7 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
             "decision": DECISION_KEY,
             "surface": surface,
             "sessionPerPr": session_per_pr,
+            "harness": harness,
             "model": model,
             "effort": effort,
             "frozenGraph": _frozen_graph(
@@ -1036,6 +1151,7 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
                 session_per_pr=session_per_pr,
                 model=model,
                 effort=effort,
+                harness=harness,
             ),
             "selectionSource": source,
             **({"error": confirmation_error} if confirmation_error else {}),

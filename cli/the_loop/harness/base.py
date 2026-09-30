@@ -225,6 +225,19 @@ class HarnessAdapter:
         )
 
 
+def hosts_sessions(adapter: object) -> bool:
+    """Whether ``adapter`` (an instance or a class) can host a work item's session.
+
+    Derived from whether its class overrides :meth:`HarnessAdapter.interactive_argv`,
+    never declared beside it, so an adapter cannot claim a capability it does not
+    implement (issue-440). Only a hosting harness can be offered at `phase-selection`:
+    offering one that cannot spawn would park a work item on a session that never starts.
+    """
+    cls = adapter if isinstance(adapter, type) else type(adapter)
+    method = getattr(cls, "interactive_argv", None)
+    return method is not None and method is not HarnessAdapter.interactive_argv
+
+
 def usage_from_output(stdout: str) -> Usage:
     """Best-effort token/cost accounting from the CLI's JSON output (issue-37).
 

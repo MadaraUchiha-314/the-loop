@@ -404,6 +404,9 @@ class WorkItemState:
     #: issue-368, which left this file unable to say what its own work item runs
     #: on.
     session_per_pr: str = ""
+    #: Which harness (issue-440) — the third choice the same reply freezes, read
+    #: first because the model and effort are resolved against it.
+    harness: str = ""
     model: str = ""
     effort: str = ""
     #: The pull requests delivering this work item (issue-368, R2.1) — the
@@ -487,6 +490,7 @@ class WorkItemState:
             loop=str(data.get("loop") or ""),
             phase=str(data.get("phase") or ""),
             session_per_pr=str(data.get("sessionPerPr") or ""),
+            harness=str(data.get("harness") or ""),
             model=str(data.get("model") or ""),
             effort=str(data.get("effort") or ""),
             pull_requests=_pull_requests(
@@ -525,6 +529,7 @@ class WorkItemState:
             "optIns": self.opt_ins,
             "surface": self.surface,
             "sessionPerPr": self.session_per_pr,
+            "harness": self.harness,
             "model": self.model,
             "effort": self.effort,
             "repos": self.repos,
