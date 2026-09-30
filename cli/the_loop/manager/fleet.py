@@ -82,16 +82,34 @@ class TransportError(Exception):
     """No HTTP answer: refused, unreachable, timed out, or too large."""
 
 
+class _NoRedirects(urllib.request.HTTPRedirectHandler):
+    """Refuse every 3xx: a member's answer is data, never a new address.
+
+    ``urlopen``'s default handler would follow a ``Location`` to any host — a
+    compromised member could point the manager at a loopback service of the
+    manager's own and have its body served as that member's rows. A redirect is
+    therefore the member's *error* (its status comes back as is), and the only
+    URLs the manager ever opens are the registered ones joined with fixed paths.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D401 — stdlib hook
+        return None
+
+
+#: One opener for every member request, redirects refused.
+_opener = urllib.request.build_opener(_NoRedirects())
+
+
 def urllib_transport(
     method: str, url: str, body: Optional[bytes], timeout: float
 ) -> Tuple[int, bytes]:
-    """The default transport: stdlib, bounded, and it forwards nothing of the caller's."""
+    """The default transport: stdlib, bounded, no redirects, nothing of the caller's."""
     request = urllib.request.Request(url, data=body, method=method)
     request.add_header("Accept", "application/json")
     if body is not None:
         request.add_header("Content-Type", "application/json")
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 — http(s) URL from the operator's config
+        with _opener.open(request, timeout=timeout) as response:  # noqa: S310 — http(s) URL from the operator's config
             data = response.read(MAX_MEMBER_BODY + 1)
             return response.status, data
     except urllib.error.HTTPError as exc:

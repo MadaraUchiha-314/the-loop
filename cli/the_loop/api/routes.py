@@ -51,7 +51,7 @@ from ..yamlpatch import SpliceError
 from . import stream as api_stream
 from .config import stream_config
 from .errors import Conflict, MemberUnavailable
-from .facade import LEFT_OUT, PARTIAL_HEADER, CoreFacade
+from .facade import LEFT_OUT, PARTIAL_HEADER, TARGET, CoreFacade
 
 API_PREFIX = "/api/v1"
 
@@ -299,6 +299,7 @@ def _core_route_class(holder: ConfigHolder):
             async def handler(request: Request) -> Response:
                 holder.refresh()
                 token = LEFT_OUT.set([])
+                target_token = TARGET.set([])
                 try:
                     response = await original(request)
                 # SpliceError first: it is a RuntimeError today, but ordering
@@ -340,7 +341,9 @@ def _core_route_class(holder: ConfigHolder):
                     )
                 finally:
                     left_out = list(LEFT_OUT.get() or [])
+                    targets = list(TARGET.get() or [])
                     LEFT_OUT.reset(token)
+                    TARGET.reset(target_token)
                 if left_out:
                     # The members a list read could not include (R2.9): a bare array
                     # cannot carry the fact, so the header does.
@@ -358,7 +361,13 @@ def _core_route_class(holder: ConfigHolder):
                         method=request.method,
                         path=request.url.path,
                         status=response.status_code,
-                        instance=request.query_params.get("instance") or None,
+                        # The member a manager sent this to (a body field on a
+                        # POST, the facade's note), else the query's (abuse case 7).
+                        instance=(
+                            ",".join(targets)
+                            or request.query_params.get("instance")
+                            or None
+                        ),
                     )
                 return response
 

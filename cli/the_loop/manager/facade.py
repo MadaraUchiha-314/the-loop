@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
-from ..api.facade import CoreFacade, note_left_out
+from ..api.facade import CoreFacade, note_left_out, note_target
 from ..cli_config import ConfigHolder
 from ..core import instances as core_instances
 from ..instance import Member
@@ -121,6 +121,7 @@ class ManagerFacade:
         expect: type = dict,
         operation: str = "",
     ) -> Any:
+        note_target(member.name)
         answer = self.fleet.call(
             member,
             method,

@@ -57,6 +57,7 @@ from typing import (
 
 from .. import eventlog
 from ..api.stream import (
+    MAX_PARTIAL_BYTES,
     QUEUE_SIZE,
     REPLAY_BYTES,
     RETRY_MS,
@@ -103,15 +104,21 @@ _CURSOR_PART = re.compile(r"^([a-z0-9][a-z0-9-]{0,39})=(\d+)$")
 def urllib_opener(
     url: str, last_event_id: Optional[str], timeout: float
 ) -> Iterator[bytes]:
-    """The default opener: stdlib, no caller headers, a socket timeout as the watchdog."""
+    """The default opener: stdlib, no caller headers, no redirects, a socket timeout
+    as the watchdog, and no line longer than :data:`MAX_PARTIAL_BYTES`."""
+    from .fleet import _opener
+
     request = urllib.request.Request(url, method="GET")
     request.add_header("Accept", "text/event-stream")
     request.add_header("Cache-Control", "no-cache")
     if last_event_id is not None:
         request.add_header("Last-Event-ID", last_event_id)
-    response = urllib.request.urlopen(request, timeout=timeout)  # noqa: S310 — http(s) URL from the operator's config
+    response = _opener.open(request, timeout=timeout)  # noqa: S310 — http(s) URL from the operator's config
     try:
-        for line in response:
+        while True:
+            line = response.readline(MAX_PARTIAL_BYTES + 1)
+            if not line:
+                return
             yield line
     finally:
         response.close()
@@ -168,16 +175,29 @@ class _Event:
 
 
 def parse_sse(lines: Iterator[bytes]) -> Iterator[Tuple[Optional[str], str, str]]:
-    """``(id, event, data)`` per frame; comments and ``retry:`` are skipped."""
+    """``(id, event, data)`` per frame; comments and ``retry:`` are skipped.
+
+    A frame is held for at most :data:`MAX_PARTIAL_BYTES` — the tailer's own bound
+    for an unterminated line: a member that never ends a frame, or ends one far
+    larger than any record ``eventlog`` writes, has that frame dropped rather than
+    the manager's memory grown by it.
+    """
     event_id: Optional[str] = None
     kind = "message"
     data: List[str] = []
+    held = 0
     for raw in lines:
+        if held > MAX_PARTIAL_BYTES:
+            # Oversized: discard until the frame ends, then start clean.
+            if raw in (b"\n", b"\r\n"):
+                event_id, kind, data, held = None, "message", [], 0
+            continue
+        held += len(raw)
         line = raw.decode("utf-8", "replace").rstrip("\r\n")
         if line == "":
             if data:
                 yield event_id, kind, "\n".join(data)
-            event_id, kind, data = None, "message", []
+            event_id, kind, data, held = None, "message", [], 0
             continue
         if line.startswith(":"):
             continue

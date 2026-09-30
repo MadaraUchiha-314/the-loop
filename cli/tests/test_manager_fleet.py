@@ -400,3 +400,42 @@ def test_rows_and_from_config(quiet):
     ]
     assert rows[1]["detail"] == "connection refused"
     assert fleet.own_name == "hq"
+
+
+# -- the real transport: no redirects -----------------------------------------------
+
+
+def test_the_transport_never_follows_a_redirect():
+    """Security review (Low): a member's 3xx is its answer, never a new address."""
+    import http.server
+    import threading
+
+    from the_loop.manager.fleet import urllib_transport
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 — stdlib naming
+            if self.path.startswith("/api/v1/instance"):
+                self.send_response(302)
+                self.send_header("Location", "http://127.0.0.1:1/api/v1/instance")
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'{"ok": true}')
+
+        def log_message(self, format, *args):  # noqa: A002 — stdlib signature
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        status, body = urllib_transport(
+            "GET", f"http://127.0.0.1:{port}/api/v1/instance", None, 3
+        )
+        assert status == 302
+        status, body = urllib_transport("GET", f"http://127.0.0.1:{port}/x", None, 3)
+        assert status == 200 and json.loads(body) == {"ok": True}
+    finally:
+        server.shutdown()

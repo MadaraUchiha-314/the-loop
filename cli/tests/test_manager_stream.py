@@ -427,3 +427,13 @@ def test_a_member_that_desyncs_on_replay_makes_one_desync(tmp_path, quiet):
     first = asyncio.run(main())
     opener.release.set()
     assert first.startswith("event: desync") and "member" in first
+
+
+def test_an_oversized_frame_is_dropped_not_held():
+    """Security review: a frame past MAX_PARTIAL_BYTES is discarded whole."""
+    from the_loop.api.stream import MAX_PARTIAL_BYTES
+
+    huge = b"data: " + b"x" * (MAX_PARTIAL_BYTES + 10) + b"\n"
+    lines = [b"event: log\n", huge, b"\n"] + _sse(3, "log", {"event": "after"})
+    frames = list(parse_sse(iter(lines)))
+    assert frames == [("3", "log", '{"event": "after"}')]

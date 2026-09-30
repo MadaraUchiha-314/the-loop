@@ -77,27 +77,39 @@ overrides: {}
 
 ## Verification activities
 
-- [ ] T1 — `uv run --project cli python -m pytest -q cli/tests/test_instance.py cli/tests/test_manager_fleet.py cli/tests/test_manager_facade.py cli/tests/test_manager_stream.py cli/tests/test_instances_core.py cli/tests/test_lifecycle_cmd.py cli/tests/test_api_config_integration.py`
-- [ ] T2 — `uv run --project cli python -m pytest -q cli/tests/test_manager_integration.py cli/tests/test_manager_stream_integration.py`
-- [ ] T3 — `uv run --project cli python -m pytest -q cli/tests/test_api_contract_parity.py cli/tests/test_mcp_integration.py cli/tests/test_sdk_docs_parity.py`
-- [ ] T5 — `cd ui && bun run test` and the screenshot capture
-- [ ] T7 — `uv run --project cli python -m pytest -q cli/tests/test_manager_fleet.py -k "bounded or upstream_count"`
-- [ ] T8 — `uv run --project cli python -m pytest -q cli/tests -k "foreign_url or mismatched_member or malformed_member or hung_member or ambiguous_ref or unknown_instance or foreign_instance or proxied_write or worker_half_is_unchanged or overwrites_a_members_claim"`
-- [ ] T9 — `cd ui && bun run test -- Instances`
-- [ ] T10 — `uv run --project cli python -m pytest -q cli/tests/test_config_schema_parity.py cli/tests/test_docs_parity.py cli/tests/test_migrations.py cli/tests/test_instance_integration.py cli/tests/test_api_routers_integration.py` and `make validate` and `cd ui && bun run test -- settings`
-- [ ] T11 — the procedure in `evidence/manual.md`
-- [ ] T12 — `make check` and `cd ui && bun run lint && bun run typecheck && bun run build`
-- [ ] T13 — `evidence/security-review.md`
+- [x] T1 — `uv run --project cli python -m pytest -q cli/tests/test_instance.py cli/tests/test_manager_fleet.py cli/tests/test_manager_facade.py cli/tests/test_manager_stream.py cli/tests/test_instances_core.py cli/tests/test_lifecycle_cmd.py cli/tests/test_api_config_integration.py`
+- [x] T2 — `uv run --project cli python -m pytest -q cli/tests/test_manager_integration.py cli/tests/test_manager_stream_integration.py`
+- [x] T3 — `uv run --project cli python -m pytest -q cli/tests/test_api_contract_parity.py cli/tests/test_mcp_integration.py cli/tests/test_sdk_docs_parity.py`
+- [x] T5 — `cd ui && bun run test` and the screenshot capture
+- [x] T7 — `uv run --project cli python -m pytest -q cli/tests/test_manager_fleet.py -k "bounded or upstream_count"`
+- [x] T8 — `uv run --project cli python -m pytest -q cli/tests -k "foreign_url or mismatched_member or malformed_member or hung_member or ambiguous_ref or unknown_instance or foreign_instance or proxied_write or worker_half_is_unchanged or overwrites_a_members_claim"`
+- [x] T9 — `cd ui && bun run test -- Instances`
+- [x] T10 — `uv run --project cli python -m pytest -q cli/tests/test_config_schema_parity.py cli/tests/test_docs_parity.py cli/tests/test_migrations.py cli/tests/test_instance_integration.py cli/tests/test_api_routers_integration.py` and `make validate` and `cd ui && bun run test -- settings`
+- [x] T11 — the procedure in `evidence/manual.md`
+- [x] T12 — `make check` and `cd ui && bun run lint && bun run typecheck && bun run build`
+- [x] T13 — `evidence/security-review.md`
 
 ## Verification results
 
-_Not yet executed._
+Executed 2026-09-30 at the `verification` node; the full record is
+[`evidence/verification.md`](evidence/verification.md).
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1 | the eight unit files | 147 passed | `evidence/verification.md` § T1 |
+| T2 | the two in-process scenario files and the socket-level one | 15 passed | § T2 |
+| T3 | contract parity over both roles, the MCP tool list, the SDK docs | 15 passed | § T3 |
+| T5 | `bun run test`; screenshots of the built bundle against a live manager | 324 passed; 8 screenshots | § T5, `evidence/ui/` |
+| T7 | `-k "hung_member or upstream_per_live_member"` | 2 passed | § T7 |
+| T8 | the abuse-case selection | 13 passed | § T8, `evidence/security-review.md` |
+| T9 | the render tests' assertions and the prototype by hand | pass | § T5 / T9 |
+| T10 | schema, docs, migrations, the issue-322 suites, the routers, the event catalogue | 104 passed | § T10 |
+| T11 | three real services on one machine | pass | `evidence/manual.md` |
+| T12 | ruff, ruff format, pyright, markdownlint, validate, the CI-form suite | all clean; 4965 passed, 1 skipped | § T12 |
+| T13 | the security review gate | see the record | `evidence/security-review.md` |
 
-**Not executed:** —
+**Not executed:** none. `make validate` and `make test` ran through their underlying
+commands because the container's `uv` predates the Makefile's pin (§ T12).
 
 ## Review comments
 

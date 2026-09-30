@@ -42,7 +42,15 @@ from ..core import sessions as core_sessions
 from ..core import standing as core_standing
 from ..core import workitems as core_workitems
 
-__all__ = ["LEFT_OUT", "PARTIAL_HEADER", "CoreFacade", "facade_for", "note_left_out"]
+__all__ = [
+    "LEFT_OUT",
+    "PARTIAL_HEADER",
+    "TARGET",
+    "CoreFacade",
+    "facade_for",
+    "note_left_out",
+    "note_target",
+]
 
 #: The response header naming the members a list read could not include (R2.9).
 PARTIAL_HEADER = "The-Loop-Instances-Unreachable"
@@ -53,6 +61,21 @@ PARTIAL_HEADER = "The-Loop-Instances-Unreachable"
 LEFT_OUT: contextvars.ContextVar[Optional[List[str]]] = contextvars.ContextVar(
     "the_loop_left_out", default=None
 )
+
+
+#: The member a proxied operation was sent to, for the ``api.request`` audit event
+#: (abuse case 7): a ``POST`` carries ``instance`` in its body, which the route class
+#: does not re-read, so the facade names the target here.
+TARGET: contextvars.ContextVar[Optional[List[str]]] = contextvars.ContextVar(
+    "the_loop_target", default=None
+)
+
+
+def note_target(name: str) -> None:
+    """Name the member this request reached, for the audit event."""
+    bucket = TARGET.get()
+    if bucket is not None and name and name not in bucket:
+        bucket.append(name)
 
 
 def note_left_out(names: List[str]) -> None:

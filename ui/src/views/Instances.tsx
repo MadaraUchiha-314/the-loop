@@ -212,7 +212,7 @@ function InstanceTableRow({
   const dash = (value: string | number) => (live ? String(value) : "—");
   return (
     <tr data-instance-row={row.name} className="max-md:block max-md:border-b max-md:border-border max-md:py-2">
-      <td className={`${CELL} font-mono`}>
+      <td className={`${CELL} whitespace-nowrap font-mono`}>
         {row.name}
         {own ? <span className="ml-1.5 font-sans text-[0.68rem] text-muted-foreground">this instance</span> : null}
       </td>

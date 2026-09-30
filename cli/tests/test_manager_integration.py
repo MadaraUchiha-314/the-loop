@@ -250,7 +250,7 @@ def test_an_operation_without_instance_is_the_managers_own(fleet):
     assert {row["instance"] for row in daemons} == {"hq", "laptop-a", "ci-box"}
 
 
-def test_a_proxied_config_write_lands_on_the_members_file(fleet, tmp_path):
+def test_a_proxied_config_write_lands_on_the_members_file(fleet, tmp_path, monkeypatch):
     """
     Feature: manage one instance individually
       Scenario: a proxied config write lands on the member's file
@@ -274,6 +274,25 @@ def test_a_proxied_config_write_lands_on_the_members_file(fleet, tmp_path):
     )
     assert "mode: locked" in (tmp_path / "laptop-a" / "cli-config.yaml").read_text()
     assert fleet["path"].read_text() == manager_before
+    # Abuse case 7: the manager's own audit event names the member it reached,
+    # although the target travelled in the POST body.
+    from the_loop.api import routes as api_routes
+
+    audited = []
+    monkeypatch.setattr(
+        api_routes.eventlog, "emit", lambda event, **k: audited.append((event, k))
+    )
+    fleet["manager"].post(
+        "/api/v1/config",
+        json={
+            "patch": {"instance": {"scope": {"mode": "locked"}}},
+            "instance": "laptop-a",
+        },
+    )
+    requests = [
+        k for e, k in audited if e == "api.request" and k["path"] == "/api/v1/config"
+    ]
+    assert requests and requests[-1]["instance"] == "laptop-a"
 
 
 def test_a_registration_through_the_api_equals_a_hand_edit(fleet):
