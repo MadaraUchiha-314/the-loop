@@ -453,3 +453,25 @@ def test_by_ref_re_probes_once_before_answering_nobody(quiet):
     assert fleet.by_ref("github:octo/repo#15") == Member("laptop-a", A)
     with pytest.raises(LookupError):
         fleet.by_ref("github:octo/repo#99")
+
+
+def test_a_member_answering_an_http_error_is_mismatched_not_a_raised_probe(quiet):
+    """Self-review round 2: any other app at the address is 'not this instance'."""
+    transport = FakeTransport()
+    transport.routes[A] = {
+        "/api/v1/health": (200, {"version": "x"})
+    }  # no /instance route → 404
+    fleet = _fleet(transport, [("laptop-a", A)])
+    rows = fleet.rows()  # must not raise
+    assert rows[0]["state"] == MISMATCHED
+    assert "does not answer as a the-loop instance" in rows[0]["detail"]
+
+
+def test_a_one_shot_fleet_announces_nothing(quiet):
+    """Self-review round 2: `status` must not record a transition on every run."""
+    fleet = Fleet.from_config(
+        _config([("cloud-1", "http://c:1")]), transport=FakeTransport()
+    )
+    fleet.rows()
+    fleet.rows()
+    assert quiet == []

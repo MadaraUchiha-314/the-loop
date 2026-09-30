@@ -251,7 +251,12 @@ class _Upstream:
     def _run(self) -> None:
         backoff = 1.0
         while not self._stop.is_set():
-            if not self.fleet.probe(self.member).live:
+            try:
+                live = self.fleet.probe(self.member).live
+            except Exception as exc:  # noqa: BLE001 — a probe must never end the thread
+                logger.warning("%s probe failed (%s); retrying", self.member.name, exc)
+                live = False
+            if not live:
                 # Left to the probe cycle: retry no sooner than the next probe.
                 self._sleep(self.fleet.config.probe_interval_seconds)
                 continue
@@ -425,12 +430,21 @@ class FleetBroker:
         for upstream in self._upstreams.values():
             upstream.stop()
         self._upstreams.clear()
+        # The next start is a fresh connection: no stale `Last-Event-ID` (a new
+        # no-cursor subscriber wants what happens next, not the backlog), and a new
+        # queue so a thread still blocked in a read feeds nobody.
+        self._offsets = {}
+        self._sizes = {}
+        self._queue = queue.Queue()
 
     def reconcile_upstreams(self) -> None:
         """One upstream per live member: start the new, stop the unregistered."""
         wanted = {member.name: member for member in self.fleet.members()}
         for name in list(self._upstreams):
-            if name not in wanted or self._upstreams[name].stopped:
+            upstream = self._upstreams[name]
+            # Unregistered, stopped, or DEAD — a thread that ended on an exception
+            # is replaced on the next reconcile rather than mourned until restart.
+            if name not in wanted or upstream.stopped or not upstream.thread.is_alive():
                 self._upstreams.pop(name).stop()
         for name, member in wanted.items():
             if name in self._upstreams:

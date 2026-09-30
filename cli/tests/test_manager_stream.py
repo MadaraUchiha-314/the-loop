@@ -501,3 +501,53 @@ def test_replayed_frames_carry_the_position_after_each_record(tmp_path, quiet):
     assert _cursor(ids[1]).offsets == {"hq": len(one) + len(two), "laptop-a": 10}
     assert _cursor(ids[2]).offsets["laptop-a"] == 15
     assert _cursor(ids[3]).offsets["laptop-a"] == 20
+
+
+def test_a_dead_upstream_thread_is_replaced_on_reconcile(tmp_path, quiet):
+    """Self-review round 2: a thread that ended is replaced, not mourned."""
+    opener = ScriptedOpener()
+    broker, _ = _broker(tmp_path, opener)
+
+    async def main():
+        sub = broker.subscribe()
+        await _settle(broker)
+        dead = threading.Thread(target=lambda: None)
+        dead.start()
+        dead.join()
+        old = broker._upstreams["laptop-a"]
+        old.thread = dead
+        broker.reconcile_upstreams()
+        replaced = (
+            broker._upstreams["laptop-a"] is not old
+            and broker._upstreams["laptop-a"].thread.is_alive()
+        )
+        broker.unsubscribe(sub)
+        return replaced
+
+    assert asyncio.run(main())
+    opener.release.set()
+
+
+def test_a_restarted_broker_connects_fresh(tmp_path, quiet):
+    """Self-review round 2: no stale Last-Event-ID and no old queue after stop/start."""
+    opener = ScriptedOpener()
+    opener.scripts.append((_sse(30, "log", {"event": "before"}), "hold"))
+    broker, _ = _broker(tmp_path, opener)
+
+    async def main():
+        sub = broker.subscribe()
+        await _settle(broker)
+        broker.unsubscribe(sub)  # last subscriber: stop
+        assert broker.offsets() == {"hq": broker.tail_offset()}
+        sub2 = broker.subscribe()
+        await _settle(broker)
+        frames = []
+        while not sub2.queue.empty():
+            frames.append(sub2.queue.get_nowait())
+        broker.unsubscribe(sub2)
+        return frames
+
+    frames = asyncio.run(main())
+    opener.release.set()
+    assert [c[1] for c in opener.calls[:2]] == [None, None]
+    assert all(f.data.get("event") != "before" for f in frames)

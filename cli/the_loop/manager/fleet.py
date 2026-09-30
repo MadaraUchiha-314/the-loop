@@ -185,8 +185,10 @@ class Fleet:
         local_refs: Optional[Callable[[], Sequence[str]]] = None,
         local_standing: Optional[Callable[[], Sequence[str]]] = None,
         clock: Callable[[], float] = time.monotonic,
+        announce: bool = True,
     ) -> None:
         self._config = config
+        self._announce_transitions = announce
         self._transport = transport
         self._local_refs = local_refs or (lambda: ())
         self._local_standing = local_standing or (lambda: ())
@@ -201,9 +203,14 @@ class Fleet:
         *,
         transport: Transport = urllib_transport,
     ) -> "Fleet":
-        """A fleet over a static config — for `status`, which runs with no service."""
+        """A fleet over a static config — for `status`, which runs with no service.
+
+        One-shot, so it **announces nothing**: a fresh cache has no previous state to
+        transition from, and a `status` typed while a member is down would otherwise
+        record `instance.unreachable` on every invocation rather than once.
+        """
         frozen = dict(config or {})
-        return cls(lambda: frozen, transport=transport)
+        return cls(lambda: frozen, transport=transport, announce=False)
 
     # -- the registry -------------------------------------------------------------
 
@@ -270,6 +277,18 @@ class Fleet:
             return Probe(
                 member=member, state=UNREACHABLE, at=now, detail=reason, probed_at=stamp
             )
+        except (ValueError, LookupError, Conflict) as exc:
+            # An HTTP error on /api/v1/instance — an older the-loop, or any other
+            # app at that address — is "not this instance", never a raised probe:
+            # a fleet read must answer with that row, not fail on it.
+            return Probe(
+                member=member,
+                state=MISMATCHED,
+                at=now,
+                detail=f"does not answer as a the-loop instance: {exc}",
+                probed_at=stamp,
+                document={"reported": "", "role": ""},
+            )
         reported = document.get("name")
         role = document.get("role") or WORKER
         if reported != member.name or role != WORKER:
@@ -308,6 +327,8 @@ class Fleet:
 
     def _announce(self, previous: Optional[Probe], probe: Probe) -> None:
         """One event per transition (R3.4); the names are the registered ones."""
+        if not self._announce_transitions:
+            return
         before = previous.state if previous is not None else None
         if before == probe.state:
             return
