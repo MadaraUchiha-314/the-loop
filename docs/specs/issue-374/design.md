@@ -597,6 +597,12 @@ ambiguity refuses; the stream is a fan-in of member streams with a per-member cu
 a poll; the client is stdlib on threads; the `instances` family is served by every role;
 an unknown role refuses to boot.
 
+Accepted after the security review (S2 in `evidence/security-review.md`): a member's
+self-reported managed set steers unqualified keyed operations to it — a member is
+registered by the operator's config write, the claim reaches only that member's own
+routes, `instance` is the operator's override, and a claim on a ref the manager or
+another member also manages is refused, never resolved to the claimant.
+
 Accepted costs: a manager is one more process to run; a keyed operation costs a probe
 (cached) plus a call; the `instance` parameter is an additive change to 30 operations; a
 worker's `GET /instances` is a self-description a lone operator will not need; the

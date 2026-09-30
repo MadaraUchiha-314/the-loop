@@ -222,7 +222,11 @@ class ManagerConfig:
 
     @classmethod
     def from_mapping(
-        cls, data: Optional[Mapping[str, Any]], *, own_url: str = ""
+        cls,
+        data: Optional[Mapping[str, Any]],
+        *,
+        own_url: str = "",
+        own_name: str = "",
     ) -> "ManagerConfig":
         """Build the registry; every entry that does not validate is skipped by index.
 
@@ -246,7 +250,7 @@ class ManagerConfig:
         seen: set = set()
         own = own_url.rstrip("/") if isinstance(own_url, str) else ""
         for index, entry in enumerate(entries):
-            reason = _member_problem(entry, seen, own)
+            reason = _member_problem(entry, seen, own, own_name)
             if reason:
                 logger.warning(
                     "instance.manager.instances[%d] %s; skipped", index, reason
@@ -280,13 +284,17 @@ class ManagerConfig:
         }
 
 
-def _member_problem(entry: Any, seen: set, own_url: str) -> str:
+def _member_problem(entry: Any, seen: set, own_url: str, own_name: str = "") -> str:
     """Why ``entry`` is not a member, as a phrase for the warning; ``""`` when it is."""
     if not isinstance(entry, Mapping):
         return "is not a mapping with `name` and `url`"
     name = entry.get("name")
     if not isinstance(name, str) or not NAME_RE.fullmatch(name):
         return "has a name outside ^[a-z0-9][a-z0-9-]{0,39}$"
+    if own_name and name == own_name:
+        # Its rows would be stamped as the manager's and `instance=<name>` would
+        # always resolve to the manager itself: unreachable by construction.
+        return "names this manager itself; a manager is its own first member"
     if name in seen:
         return "repeats a name already registered"
     url = parse_member_url(entry.get("url"))
@@ -408,7 +416,9 @@ class InstanceConfig:
                 raise InstanceConfigError(message)
             logger.warning("%s; reading the role as %r", message, WORKER)
             role = WORKER
-        manager = ManagerConfig.from_mapping(data.get("manager"), own_url=own_url)
+        manager = ManagerConfig.from_mapping(
+            data.get("manager"), own_url=own_url, own_name=name
+        )
         return cls(
             name=name, mode=mode, declared=tuple(declared), role=role, manager=manager
         )

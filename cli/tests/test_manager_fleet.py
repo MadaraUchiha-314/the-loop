@@ -439,3 +439,17 @@ def test_the_transport_never_follows_a_redirect():
         assert status == 200 and json.loads(body) == {"ok": True}
     finally:
         server.shutdown()
+
+
+def test_by_ref_re_probes_once_before_answering_nobody(quiet):
+    """Self-review: a cached probe may predate the member taking the work item."""
+    transport = FakeTransport().member(A, "laptop-a", managed=[])
+    now = [0.0]
+    fleet = _fleet(transport, [("laptop-a", A)], clock=lambda: now[0], interval=60)
+    fleet.probe(Member("laptop-a", A))  # cached: manages nothing
+    transport.member(
+        A, "laptop-a", managed=["github:octo/repo#15"]
+    )  # then it takes #15
+    assert fleet.by_ref("github:octo/repo#15") == Member("laptop-a", A)
+    with pytest.raises(LookupError):
+        fleet.by_ref("github:octo/repo#99")

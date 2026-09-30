@@ -582,16 +582,26 @@ class Fleet:
         names one.
         """
 
-        def holders() -> List[str]:
+        def holders_from(probes: List[Probe]) -> List[str]:
             names: List[str] = []
             if ref in set(self._local_refs()):
                 names.append(self.own_name)
-            for probe in self.live():
+            for probe in probes:
+                if not probe.live:
+                    continue
                 managed = (probe.document or {}).get("managed") or []
                 if any(
                     isinstance(row, dict) and row.get("ref") == ref for row in managed
                 ):
                     names.append(probe.member.name)
+            return names
+
+        def holders() -> List[str]:
+            names = holders_from(self.probes())
+            if not names and self.members():
+                # A cached probe may predate the member taking the work item: one
+                # fresh round before answering "nobody manages it".
+                names = holders_from(self.probes(fresh=True))
             return names
 
         return self._resolve(ref, instance, holders, "work item")

@@ -151,6 +151,11 @@ def register_instance(
             "url is this manager's own service address; a manager is its own first "
             "member and is never registered"
         )
+    if name == instance_config(config).name:
+        raise ValueError(
+            f"name {name!r} is this manager's own; a manager is its own first member "
+            "and is never registered"
+        )
     entries = _raw_registry(config)
     for entry in entries:
         if isinstance(entry, dict) and entry.get("name") == name:

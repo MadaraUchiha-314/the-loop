@@ -437,3 +437,67 @@ def test_an_oversized_frame_is_dropped_not_held():
     lines = [b"event: log\n", huge, b"\n"] + _sse(3, "log", {"event": "after"})
     frames = list(parse_sse(iter(lines)))
     assert frames == [("3", "log", '{"event": "after"}')]
+
+
+def test_own_frames_in_one_batch_carry_their_own_offsets(tmp_path, quiet):
+    """Self-review: a drop mid-batch resumes after the frame last read, not the batch."""
+    opener = ScriptedOpener()
+    broker, log = _broker(tmp_path, opener)
+    one = json.dumps({"event": "one"}) + "\n"
+    two = json.dumps({"event": "two"}) + "\n"
+
+    async def main():
+        sub = broker.subscribe()
+        await _settle(broker)
+        log.write_text(one + two)
+        await _settle(broker)
+        frames = []
+        while not sub.queue.empty():
+            frames.append(sub.queue.get_nowait())
+        broker.unsubscribe(sub)
+        return frames
+
+    frames = asyncio.run(main())
+    opener.release.set()
+    own = [f for f in frames if f.kind == "log" and f.data.get("instance") == "hq"]
+    assert [f.data["event"] for f in own] == ["one", "two"]
+    assert _cursor(own[0].cursor).offsets["hq"] == len(one)
+    assert _cursor(own[1].cursor).offsets["hq"] == len(one) + len(two)
+
+
+def test_replayed_frames_carry_the_position_after_each_record(tmp_path, quiet):
+    """Self-review: a drop mid-replay resumes exactly there, not at the boundary."""
+    opener = ScriptedOpener()
+    opener.scripts.append((_sse(20, "log", {"event": "live"}), "hold"))
+    opener.scripts.append(
+        (_sse(15, "log", {"event": "old"}) + _sse(20, "log", {"event": "live"}), "hold")
+    )
+    broker, log = _broker(tmp_path, opener)
+    one = json.dumps({"event": "one"}) + "\n"
+    two = json.dumps({"event": "two"}) + "\n"
+    log.write_text(one + two)
+
+    async def main():
+        sub = broker.subscribe()
+        await _settle(broker)
+        while not sub.queue.empty():
+            sub.queue.get_nowait()
+        gen = serve_fleet(
+            broker,
+            sub,
+            cursor=FleetCursor(offsets={"hq": 0, "laptop-a": 10}),
+            keep_alive=1,
+        )
+        chunks = [await gen.__anext__() for _ in range(5)]
+        await gen.aclose()
+        return chunks
+
+    chunks = asyncio.run(main())
+    opener.release.set()
+    ids = [c.split("\n")[0][4:] for c in chunks[1:]]
+    # own "one" (hq after one, laptop-a still the client's 10), own "two", then the
+    # member's 15 and 20.
+    assert _cursor(ids[0]).offsets == {"hq": len(one), "laptop-a": 10}
+    assert _cursor(ids[1]).offsets == {"hq": len(one) + len(two), "laptop-a": 10}
+    assert _cursor(ids[2]).offsets["laptop-a"] == 15
+    assert _cursor(ids[3]).offsets["laptop-a"] == 20

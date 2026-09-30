@@ -110,6 +110,25 @@ def test_the_registry_skips_a_duplicate_name_and_the_managers_own_address(caplog
     assert "manager.instances[2]" in caplog.text
 
 
+def test_the_registry_skips_the_managers_own_name(caplog):
+    """Self-review: a member under the manager's own name could never be addressed."""
+    with caplog.at_level(logging.WARNING, logger="the-loop.instance"):
+        config = InstanceConfig.from_mapping(
+            {
+                "name": "hq",
+                "role": "manager",
+                "manager": {
+                    "instances": [
+                        {"name": "hq", "url": "http://elsewhere:1"},
+                        {"name": "ok", "url": "http://ok:1"},
+                    ]
+                },
+            }
+        )
+    assert config.manager.members == (Member("ok", "http://ok:1"),)
+    assert "manager.instances[0]" in caplog.text and "itself" in caplog.text
+
+
 def test_the_numbers_clamp_upward_and_tolerate_junk():
     config = InstanceConfig.from_mapping(
         {

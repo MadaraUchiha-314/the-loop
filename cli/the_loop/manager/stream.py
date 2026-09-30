@@ -463,11 +463,16 @@ class FleetBroker:
         if self._ticks % 10 == 0:
             self.reconcile_upstreams()
         for record in self._tail.read():
+            # Each record's OWN offset (the tail advances to the chunk's end before
+            # yielding), so a client that drops mid-batch resumes after the frame it
+            # last read, not after the batch — the worker's `record.cursor` rule.
+            offsets = dict(self._offsets)
+            offsets[self.own_name] = record.cursor
             self._offer(
                 Frame(
                     kind="log",
                     data=dict(record.data, instance=self.own_name),
-                    cursor=encode_cursor(self.offsets()),
+                    cursor=encode_cursor(offsets),
                 ),
                 by_work_item=True,
             )
@@ -583,7 +588,7 @@ def _replay_member(
         if not isinstance(data, dict):
             continue
         data["instance"] = name
-        yield Frame(kind="log", data=data, cursor=None)
+        yield Frame(kind="log", data=data, cursor=cursor)
         if cursor == boundary:
             break
 
@@ -632,7 +637,7 @@ async def serve_fleet(
                                 Frame(
                                     kind="log",
                                     data=dict(record.data, instance=broker.own_name),
-                                    cursor=None,
+                                    cursor=record.cursor,
                                 )
                             )
                         continue
@@ -667,12 +672,24 @@ async def serve_fleet(
             )
             replay = []
         yield f"retry: {RETRY_MS}\n\n"
-        composite = encode_cursor(boundary)
+        # Each replayed frame carries the position AFTER it, per source: the sources
+        # not yet replayed keep the client's own offsets, so a drop mid-replay resumes
+        # exactly there rather than at the boundary (which would skip the rest).
+        progress = dict(boundary)
+        if cursor is not None and not cursor.desync:
+            for name, offset in cursor.offsets.items():
+                if name in progress:
+                    progress[name] = min(offset, progress[name])
         for frame in replay:
+            source = str(frame.data.get("instance") or broker.own_name)
+            if isinstance(frame.cursor, int):
+                progress[source] = frame.cursor
             if matches(frame.data, subscriber.work_items):
                 delivered += 1
                 yield encode_frame(
-                    Frame(kind=frame.kind, data=frame.data, cursor=composite)
+                    Frame(
+                        kind=frame.kind, data=frame.data, cursor=encode_cursor(progress)
+                    )
                 )
 
         last_keepalive = _loop_time()

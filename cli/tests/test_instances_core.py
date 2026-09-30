@@ -105,6 +105,7 @@ def test_register_writes_the_registry_through_the_splice(manager_file):
         ("laptop-a", "ftp://x:1", "url"),
         ("laptop-a", "http://user:pw@x:1", "url"),
         ("laptop-a", "http://127.0.0.1:4114", "own"),
+        ("hq", "http://elsewhere:1", "own"),
     ],
 )
 def test_register_refuses_an_invalid_entry_and_writes_nothing(
