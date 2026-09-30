@@ -1,3 +1,9 @@
+## v19.17.0 (2026-09-30)
+
+### Feat
+
+- **issue-440**: pick the harness at phase-selection beside model and effort (#445)
+
 ## v19.16.0 (2026-09-30)
 
 ### Feat
