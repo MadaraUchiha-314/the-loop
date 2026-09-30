@@ -16,10 +16,12 @@ overrides: {}
 ## Overview
 
 The manager is not a second API. It is the **same `APIRouter`** the worker serves, built
-over a **different facade**: where the worker's routes call `the_loop.core.*`, the
-manager's call `the_loop.manager.facade.*`, a module set with the same function names
-and signatures that answers each call by fanning out to, or routing among, the manager's own
-core and the registered members. Identity of surface is then a property of construction, and the contract parity
+over a **different facade**: the router calls one object with one method per operation
+(`api/facade.py::CoreFacade` on a worker, `manager/facade.py::ManagerFacade` on a
+manager), and the manager's answers each call by fanning out to, or routing among, the
+manager's own core and the registered members. *(As built: one class per role with a
+method per operation, rather than the module-per-core-module namespace first sketched
+below — the same seam, one object to hand the router and the MCP builder.)* Identity of surface is then a property of construction, and the contract parity
 test proves it for both applications.
 
 Seven moves, in the order a request meets them:

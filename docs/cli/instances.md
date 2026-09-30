@@ -105,13 +105,76 @@ The block is hot-reloaded: the next event sees the new scope.
 - **A work item declared on two instances is managed by both.** That is your declaration.
 - **A refused comment is not re-judged** when the scope changes; it was settled. Claim the
   work item with `the-loop sessions start` on the instance, which is the addressed form.
-- **Instances share nothing** and never talk to each other. A manager that aggregates
-  every instance's API is a client of N base URLs, which the dashboard already
-  parameterises; the seam it will use is `GET /api/v1/instance` on each
-  ([decision-110](/decisions/decision-110)).
+- **Instances share nothing** and never talk to each other. A [manager](#running-a-manager)
+  is a client of them, never a peer: it reads each instance's `GET /api/v1/instance` and
+  routes through the same surface ([decision-110](/decisions/decision-110),
+  [decision-138](/decisions/decision-138)).
+
+## Running a manager
+
+One URL for the whole fleet. A **manager** is an instance whose config says
+`instance.role: manager` and lists the others under `instance.manager.instances`
+([issue-374](https://github.com/MadaraUchiha-314/the-loop/issues/374),
+[decision-138](/decisions/decision-138)). It keeps everything a worker does — its
+ingresses, its scope, its sessions — and also serves the registered instances through
+the **same `/api/v1`**: point the dashboard, the CLI, an MCP client or the SDK at it and
+they see the fleet as one instance.
+
+```yaml
+instance:
+  name: hq                      # a manager must be named
+  role: manager
+  scope:
+    mode: addressed             # its worker half is scoped exactly as before
+  manager:
+    instances:
+      - name: laptop-a          # the member's own instance.name
+        url: http://10.0.0.5:4114
+      - name: ci-box
+        url: http://ci:4114
+    timeoutSeconds: 10
+    probeIntervalSeconds: 15
+```
+
+**Reach.** Whoever can reach the manager's port reaches every member's sessions, config
+and restart through it. The manager adds no credential and forwards none
+([decision-059](/decisions/decision-059)): a member on another box is `service.exposed:
+true` behind *your* VPN, tunnel or gateway, and the manager sits inside the same boundary.
+
+**What the manager does with the surface:**
+
+| Operation | On a manager |
+|-----------|--------------|
+| a list read (`work-items`, `sessions`, `standing-sessions`, `attention`, `daemons`, `events`) | its own rows plus every live member's, each stamped `instance`; a member it could not reach is named in the `The-Loop-Instances-Unreachable` header and `health` is `degraded` |
+| an operation keyed by a work item or a standing session | routed to the one instance that manages it; none is `404`, two is `409` naming both — say `instance=<name>` to pick |
+| an operation keyed by a checkout path or a daemon (`graph/*`, `repo/*`, `daemons/control`) | the manager's own machine without `instance`, exactly as on a worker; a member's with it |
+| `config`, `restart`, `health`, `instance` | the manager's own without `instance`; proxied to a member with it — how one instance is managed on its own |
+| `stream` | every member's frames fanned in over one upstream connection per live member, the cursor one offset per instance |
+
+**The name check.** The manager trusts a URL only once `GET /api/v1/instance` there
+answers with the registered name and `role: worker`. Until then the member shows as
+`unreachable` or `mismatched` in `the-loop instances list`, the Instances tab and
+`GET /api/v1/instances`, and nothing is served from it or sent to it. An unnamed worker
+cannot be a member: name it first. A registered URL that answers as another manager is
+`mismatched` too — the fleet is flat
+([nested managers](https://github.com/MadaraUchiha-314/the-loop/issues/438) are a
+follow-up).
+
+**Registering.** Four ways, one key: edit `manager.instances` by hand, click *Register*
+on the dashboard's Instances tab, run
+[`the-loop instances register <name> <url>`](/cli/commands/instances), or
+`POST /api/v1/instances/register`. The last three write the file through the same splice
+the Settings tab uses, so your comments survive and the change is live on the next request
+— no restart. `instance.role` itself is boot-only.
+
+**The `instance` parameter** is part of the one contract: a worker accepts it too, as its
+own name only. So a client that never learned it and points at a manager gets the
+manager's own state for every self-keyed operation and the union for every list, and a
+worker that becomes a manager breaks no client.
 
 ## Next
 
-- **[Instance options](/config/cli/instance-options)** — the three keys.
+- **[Instance options](/config/cli/instance-options)** — the keys, `role` and `manager.*` included.
+- **[`the-loop instances`](/cli/commands/instances)** — list the fleet, register, unregister.
 - **[State on disk](/cli/state)** — where `control.instance` lives.
 - **[Concepts](/cli/concepts)** — arming, starting, and the guards this sits behind.

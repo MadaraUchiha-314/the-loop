@@ -2,7 +2,8 @@
 
 > Several instances of the-loop on one repository, each in an environment the operator
 > provides, each scoped to its own work items: a named, scoped CLI config, an address
-> token on the ticket, a locked instance, and the seams a manager of instances will use.
+> token on the ticket, a locked instance — and a **manager** that serves the whole fleet
+> through the same surface.
 
 ## What it is
 
@@ -105,20 +106,78 @@ flowchart LR
   `the-loop status` SHALL print one line naming the instance and its mode and carry the
   document in its JSON form.
 
+### The manager (issue-374)
+
+- The CLI config SHALL accept `instance.role` (`worker` | `manager`, default `worker`)
+  and, for a manager, `instance.manager.instances` (`{name, url}` entries validated by
+  index: the name grammar, an `http(s)` URL without userinfo, uniqueness, not the
+  manager's own address), `manager.timeoutSeconds` and `manager.probeIntervalSeconds`.
+  `role` is boot-only (`restartRequired`); the registry is hot. `the-loop start` SHALL
+  refuse a role outside the two values and a manager without a name; every other
+  reader warns and reads `worker`.
+- A manager SHALL remain a worker: its ingresses, scope, channels and sessions behave as
+  on a worker, and its own state is the fleet's first member, served in-process under
+  its own name, never through a registered URL ([decision-138](../decisions/decision-138.md) D2).
+- A manager SHALL serve exactly the surface a worker serves — the same `APIRouter` over a
+  second facade, the contract parity test run for both roles, one MCP tool list (D3).
+  A list read is its own rows ∪ every live member's, each stamped `instance` with the
+  registered name (a member's own claim overwritten); an operation keyed by a work-item
+  ref or a standing-session name routes to the one instance that manages it — none
+  `404`, several `409` naming them, unless `instance` names one (D6); an operation keyed
+  by a checkout path or a daemon, and `config`, `restart`, `health` and `instance`, are
+  the manager's own without `instance` and proxied to a member with it. Every keyed
+  operation carries the optional `instance` on every role; a worker accepts only its
+  own name (D7).
+- A member SHALL be trusted only once `GET /api/v1/instance` there answers with the
+  registered name and `role: worker` (D5): otherwise it is `unreachable` or
+  `mismatched`, nothing is served from it or sent to it, and its transitions are one
+  event each (`instance.unreachable`, `instance.mismatched`, `instance.recovered`). A
+  member's body is read within the timeout and a fixed bound and shape-checked; a
+  failure is `instance.malformed` and that member left out. A list read that could not
+  reach every member SHALL still answer `200`, naming them in
+  `The-Loop-Instances-Unreachable` (`aggregate.partial`); a keyed operation to such a
+  member is `502`.
+- `GET /api/v1/instances` SHALL be served by every role (D9): `{role, name, instances}`,
+  one row per instance — itself first, `live`; on a manager one more per registered
+  member from a probe no older than `probeIntervalSeconds` — with `state`, `version`,
+  `mode`, `managedCount`, `sessionCount`, `probedAt` and a `detail` when not live. The
+  `list_instances` MCP tool, `loop.instances()` on the SDK and `the-loop instances list`
+  read it; `the-loop status` prints it on a manager.
+- `POST /api/v1/instances/register` / `unregister`, `the-loop instances register` /
+  `unregister` and the dashboard's Instances tab SHALL all write
+  `instance.manager.instances` through the config route's splice (D4): comments
+  survive, the merged document is validated before anything is written, and the change
+  is live on the next request. A worker answers `400` naming `instance.role`. Neither
+  is an MCP tool.
+- The manager's stream SHALL fan every live member's `log` and `transcript` frames into
+  its own over one upstream connection per member however many subscribers it has, each
+  `log` record stamped `instance`, the frame id one offset per instance
+  (`name=offset,…`) resumed member by member, one `desync` when any part cannot be
+  honoured (D8), bounded reconnection (`1…30 s`), `maxSubscribers` unchanged.
+- The dashboard SHALL read a manager as one board: an instance chip on every row, a
+  filter by instance, a work item on two instances as two rows (`#/item/<ref>@<instance>`),
+  every keyed call carrying the row's instance, an Instances tab (`#/instances`) with a
+  Register card and per-row Open / Manage / Unregister, and a per-instance pane
+  (`#/instances/<name>`) with its identity, daemons, config editor and restart. A worker
+  shows itself as one row.
+
 ### What it does not do
 
 - Two `open` instances still take the same start; a work item declared on two instances
   is managed by both; a refused comment is not re-judged when the scope changes (claim it
   with `the-loop sessions start` on the instance). Instances share nothing and never talk
   to each other.
-- A **manager** instance (the same API aggregated across instances) and an instance
-  **managed from a ticket** are future work items; the seams left for them are the
-  identical per-instance surface with `GET /api/v1/instance`, `control.instance` on every
-  portable record, the address token as the vocabulary a ticket would speak, and
-  `instance.ticket` as the reserved, not-yet-added place for the binding (D8, D9).
+- An instance **managed from a ticket** is a future work item; `instance.ticket` stays
+  the reserved, not-yet-added place for the binding (decision-110 D9). A manager
+  registered with another manager is `mismatched` — the fleet is flat; nested managers
+  are [issue #438](https://github.com/MadaraUchiha-314/the-loop/issues/438), and a
+  fleet-wide Slack channel [issue #437](https://github.com/MadaraUchiha-314/the-loop/issues/437).
+  Auth between a manager and its members is the deployment's (decision-059).
 
 ## Design
 
+[`docs/specs/issue-374/design.md`](../specs/issue-374/design.md) (the manager) ·
+[decision-138](../decisions/decision-138.md) ·
 [`docs/specs/issue-322/design.md`](../specs/issue-322/design.md) ·
 [decision-110](../decisions/decision-110.md) · [instance options](../config/cli/instance-options.md)
 · [running several instances](../cli/instances.md) ·
@@ -129,4 +188,5 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-374 | The manager (2026-09-30): `instance.role: manager` and the registry `instance.manager.instances` in the CLI config; one router over two facades so a manager serves the identical `/api/v1` — its own rows plus every live member's on a list read, a keyed operation routed to the instance that manages it (`409` on ambiguity), an optional `instance` on every keyed operation that a worker accepts as its own name; members trusted by a name-checked probe; the `instances` family on every role with `register`/`unregister` writing the registry through the config splice; the stream fanned in with a per-member cursor; `the-loop instances`; the dashboard's Instances tab, instance pane, chip and filter | [spec](../specs/issue-374/), [decision-138](../decisions/decision-138.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/374) |
 | issue-322 | The capability, whole (2026-09-08): the `instance` block, the derived managed set, the three modes, the address token, the dispatch-seam refusal that leaves no mark, `control.instance`, the token on posted keywords and the announcement, `THE_LOOP_INSTANCE` in a spawned session, `GET /api/v1/instance` and the `status` line | [spec](../specs/issue-322/), [decision-110](../decisions/decision-110.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/322) |

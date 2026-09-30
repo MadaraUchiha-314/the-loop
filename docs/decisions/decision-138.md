@@ -1,6 +1,6 @@
 # Decision 138: a manager is the worker's router over a fleet facade — `instance.role: manager`, a registry in `cli-config.yaml`, members trusted by name, ambiguity refused
 
-- **Status:** proposed
+- **Status:** accepted (the owner, PR #436, 2026-09-29)
 - **Date:** 2026-09-29
 - **Work item:** [issue-374](https://github.com/MadaraUchiha-314/the-loop/issues/374)
 - **Deciders:** MadaraUchiha-314 (the ask), the-loop (design); MadaraUchiha-314 (owner,
