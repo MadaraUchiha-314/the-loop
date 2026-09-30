@@ -49,8 +49,8 @@ def _version() -> str:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace(
-        "+00:00", "Z"
+    return (
+        datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     )
 
 
@@ -74,7 +74,9 @@ def self_row(config: Optional[dict] = None) -> Dict[str, Any]:
     }
 
 
-def list_instances(config: Optional[dict] = None, *, fleet: Any = None) -> Dict[str, Any]:
+def list_instances(
+    config: Optional[dict] = None, *, fleet: Any = None
+) -> Dict[str, Any]:
     """``{role, name, instances: [...]}`` (R3.1).
 
     ``fleet`` is a manager's :class:`~the_loop.manager.fleet.Fleet`; passed by the

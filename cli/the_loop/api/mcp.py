@@ -54,9 +54,7 @@ from .facade import CoreFacade
 MCP_PATH = "/mcp"
 
 
-def build_server(
-    cli_config: Optional[dict] = None, *, facade: Any = None
-) -> MCPServer:
+def build_server(cli_config: Optional[dict] = None, *, facade: Any = None) -> MCPServer:
     """An :class:`MCPServer` whose tools are the facade's operations.
 
     Every tool body is a one-liner delegating to the facade — the same object the
@@ -104,7 +102,9 @@ def build_server(
         is the node that file records (`""` when none); with `recompute`,
         `currentNode` is the first node the artifacts leave unmet, and can be
         ahead of where the work item actually is."""
-        return facade.graph_check(repo, work_item, recompute=recompute, instance=instance)
+        return facade.graph_check(
+            repo, work_item, recompute=recompute, instance=instance
+        )
 
     def graph_show(repo: str, instance: str = "") -> Dict[str, Any]:
         """The process graph this repo runs on: its nodes and edges."""

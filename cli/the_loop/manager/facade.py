@@ -165,7 +165,9 @@ class ManagerFacade:
         if not self.fleet.is_local(member):
             return self._proxy(member, "GET", "/api/v1/instance", operation="instance")
         doc = self.core.get_instance()
-        managed: List[Dict[str, Any]] = _stamp(list(doc.get("managed") or []), self.own_name)
+        managed: List[Dict[str, Any]] = _stamp(
+            list(doc.get("managed") or []), self.own_name
+        )
         for probe in self.fleet.live():
             rows = [
                 dict(row)
@@ -173,7 +175,9 @@ class ManagerFacade:
                 if isinstance(row, dict)
             ]
             managed.extend(_stamp(rows, probe.member.name))
-        managed.sort(key=lambda row: (str(row.get("ref", "")), str(row.get("instance", ""))))
+        managed.sort(
+            key=lambda row: (str(row.get("ref", "")), str(row.get("instance", "")))
+        )
         doc["managed"] = managed
         return doc
 
@@ -193,7 +197,10 @@ class ManagerFacade:
             "listWorkItems",
             "/api/v1/work-items",
             self.core.list_work_items,
-            sort_key=lambda row: (str(row.get("ref", "")), str(row.get("instance", ""))),
+            sort_key=lambda row: (
+                str(row.get("ref", "")),
+                str(row.get("instance", "")),
+            ),
         )
 
     def list_sessions(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -212,7 +219,9 @@ class ManagerFacade:
         )
 
     def list_attention(self) -> List[Dict[str, Any]]:
-        return self._union("listAttention", "/api/v1/attention", self.core.list_attention)
+        return self._union(
+            "listAttention", "/api/v1/attention", self.core.list_attention
+        )
 
     def list_daemons(self) -> List[Dict[str, Any]]:
         return self._union("listDaemons", "/api/v1/daemons", self.core.list_daemons)
@@ -288,7 +297,10 @@ class ManagerFacade:
         if self.fleet.is_local(member):
             return _stamp(self.core.session_transcript(ref, tail=tail), self.own_name)
         return self._proxy(
-            member, "GET", "/api/v1/sessions/transcript", query={"ref": ref, "tail": tail}
+            member,
+            "GET",
+            "/api/v1/sessions/transcript",
+            query={"ref": ref, "tail": tail},
         )
 
     def control_session(
@@ -296,7 +308,9 @@ class ManagerFacade:
     ) -> Dict[str, Any]:
         member = self.fleet.by_ref(ref, instance)
         if self.fleet.is_local(member):
-            return _stamp(self.core.control_session(ref, verb, comment=comment), self.own_name)
+            return _stamp(
+                self.core.control_session(ref, verb, comment=comment), self.own_name
+            )
         return self._proxy(
             member,
             "POST",
@@ -362,7 +376,9 @@ class ManagerFacade:
     ) -> Dict[str, Any]:
         member = self.fleet.by_ref(ref, instance)
         if self.fleet.is_local(member):
-            return _stamp(self.core.link_session_pull_request(ref, pull_request), self.own_name)
+            return _stamp(
+                self.core.link_session_pull_request(ref, pull_request), self.own_name
+            )
         return self._proxy(
             member,
             "POST",
@@ -375,7 +391,9 @@ class ManagerFacade:
     ) -> Dict[str, Any]:
         member = self.fleet.by_ref(ref, instance)
         if self.fleet.is_local(member):
-            return _stamp(self.core.close_session(ref, keep_tmux=keep_tmux), self.own_name)
+            return _stamp(
+                self.core.close_session(ref, keep_tmux=keep_tmux), self.own_name
+            )
         return self._proxy(
             member,
             "POST",
@@ -455,7 +473,11 @@ class ManagerFacade:
     ) -> Dict[str, Any]:
         # An empty name means every session — of the manager's own, or of the
         # member `instance` names; a fleet-wide start/stop is not one operation.
-        member = self._target(instance) if not name else self.fleet.by_standing_name(name, instance)
+        member = (
+            self._target(instance)
+            if not name
+            else self.fleet.by_standing_name(name, instance)
+        )
         if self.fleet.is_local(member):
             return _stamp(self.core.control_standing_session(name, verb), self.own_name)
         return self._proxy(
@@ -470,7 +492,10 @@ class ManagerFacade:
     ) -> Dict[str, Any]:
         member = self.fleet.by_standing_name(name, instance)
         if self.fleet.is_local(member):
-            return _stamp(self.core.say_to_standing_session(name, text, actor=actor), self.own_name)
+            return _stamp(
+                self.core.say_to_standing_session(name, text, actor=actor),
+                self.own_name,
+            )
         return self._proxy(
             member,
             "POST",
@@ -498,7 +523,9 @@ class ManagerFacade:
             query={"repo": repo, "pr": pr, "prRepo": pr_repo, "specDir": spec_dir},
         )
 
-    def _graph(self, verb: str, instance: str, body: Dict[str, Any], local: Callable[[], Any]) -> Any:
+    def _graph(
+        self, verb: str, instance: str, body: Dict[str, Any], local: Callable[[], Any]
+    ) -> Any:
         member = self._target(instance)
         if self.fleet.is_local(member):
             return local()
@@ -517,9 +544,21 @@ class ManagerFacade:
         return self._graph(
             "check",
             instance,
-            {"repo": repo, "workItem": work_item, "recompute": recompute, "pr": pr, "prRepo": pr_repo, "specDir": spec_dir},
+            {
+                "repo": repo,
+                "workItem": work_item,
+                "recompute": recompute,
+                "pr": pr,
+                "prRepo": pr_repo,
+                "specDir": spec_dir,
+            },
             lambda: self.core.graph_check(
-                repo, work_item, recompute=recompute, pr=pr, pr_repo=pr_repo, spec_dir=spec_dir
+                repo,
+                work_item,
+                recompute=recompute,
+                pr=pr,
+                pr_repo=pr_repo,
+                spec_dir=spec_dir,
             ),
         )
 
@@ -538,9 +577,25 @@ class ManagerFacade:
         return self._graph(
             "complete",
             instance,
-            {"repo": repo, "workItem": work_item, "node": node, "actor": actor, "ref": ref, "pr": pr, "prRepo": pr_repo, "specDir": spec_dir},
+            {
+                "repo": repo,
+                "workItem": work_item,
+                "node": node,
+                "actor": actor,
+                "ref": ref,
+                "pr": pr,
+                "prRepo": pr_repo,
+                "specDir": spec_dir,
+            },
             lambda: self.core.graph_complete(
-                repo, work_item, node=node, actor=actor, ref=ref, pr=pr, pr_repo=pr_repo, spec_dir=spec_dir
+                repo,
+                work_item,
+                node=node,
+                actor=actor,
+                ref=ref,
+                pr=pr,
+                pr_repo=pr_repo,
+                spec_dir=spec_dir,
             ),
         )
 
@@ -557,7 +612,14 @@ class ManagerFacade:
         return self._graph(
             "advance",
             instance,
-            {"repo": repo, "workItem": work_item, "ref": ref, "pr": pr, "prRepo": pr_repo, "specDir": spec_dir},
+            {
+                "repo": repo,
+                "workItem": work_item,
+                "ref": ref,
+                "pr": pr,
+                "prRepo": pr_repo,
+                "specDir": spec_dir,
+            },
             lambda: self.core.graph_advance(
                 repo, work_item, ref=ref, pr=pr, pr_repo=pr_repo, spec_dir=spec_dir
             ),
@@ -579,9 +641,27 @@ class ManagerFacade:
         return self._graph(
             "force",
             instance,
-            {"repo": repo, "workItem": work_item, "toNode": to_node, "reason": reason, "actor": actor, "ref": ref, "pr": pr, "prRepo": pr_repo, "specDir": spec_dir},
+            {
+                "repo": repo,
+                "workItem": work_item,
+                "toNode": to_node,
+                "reason": reason,
+                "actor": actor,
+                "ref": ref,
+                "pr": pr,
+                "prRepo": pr_repo,
+                "specDir": spec_dir,
+            },
             lambda: self.core.graph_force(
-                repo, work_item, to_node, reason, actor=actor, ref=ref, pr=pr, pr_repo=pr_repo, spec_dir=spec_dir
+                repo,
+                work_item,
+                to_node,
+                reason,
+                actor=actor,
+                ref=ref,
+                pr=pr,
+                pr_repo=pr_repo,
+                spec_dir=spec_dir,
             ),
         )
 
@@ -601,9 +681,27 @@ class ManagerFacade:
         return self._graph(
             "skip",
             instance,
-            {"repo": repo, "workItem": work_item, "nodes": list(nodes), "reason": reason, "actor": actor, "ref": ref, "pr": pr, "prRepo": pr_repo, "specDir": spec_dir},
+            {
+                "repo": repo,
+                "workItem": work_item,
+                "nodes": list(nodes),
+                "reason": reason,
+                "actor": actor,
+                "ref": ref,
+                "pr": pr,
+                "prRepo": pr_repo,
+                "specDir": spec_dir,
+            },
             lambda: self.core.graph_skip(
-                repo, work_item, nodes, reason, actor=actor, ref=ref, pr=pr, pr_repo=pr_repo, spec_dir=spec_dir
+                repo,
+                work_item,
+                nodes,
+                reason,
+                actor=actor,
+                ref=ref,
+                pr=pr,
+                pr_repo=pr_repo,
+                spec_dir=spec_dir,
             ),
         )
 
@@ -622,9 +720,25 @@ class ManagerFacade:
         return self._graph(
             "repos",
             instance,
-            {"repo": repo, "workItem": work_item, "repositories": repositories, "clear": clear, "ref": ref, "pr": pr, "prRepo": pr_repo, "specDir": spec_dir},
+            {
+                "repo": repo,
+                "workItem": work_item,
+                "repositories": repositories,
+                "clear": clear,
+                "ref": ref,
+                "pr": pr,
+                "prRepo": pr_repo,
+                "specDir": spec_dir,
+            },
             lambda: self.core.graph_repos(
-                repo, work_item, repositories, clear=clear, ref=ref, pr=pr, pr_repo=pr_repo, spec_dir=spec_dir
+                repo,
+                work_item,
+                repositories,
+                clear=clear,
+                ref=ref,
+                pr=pr,
+                pr_repo=pr_repo,
+                spec_dir=spec_dir,
             ),
         )
 
@@ -635,7 +749,10 @@ class ManagerFacade:
         if self.fleet.is_local(member):
             return self.core.repo_scenarios(repo, globs=globs)
         return self._proxy(
-            member, "GET", "/api/v1/repo/scenarios", query={"repo": repo, "glob": list(globs or [])}
+            member,
+            "GET",
+            "/api/v1/repo/scenarios",
+            query={"repo": repo, "glob": list(globs or [])},
         )
 
     def repo_instructions(
@@ -686,21 +803,42 @@ class ManagerFacade:
         member = self._target(instance)
         if self.fleet.is_local(member):
             return self.core.repo_critic_run(
-                repo, name, prompt, prompt_file, work_item=work_item, spec_dir=spec_dir, timeout=timeout, cwd=cwd
+                repo,
+                name,
+                prompt,
+                prompt_file,
+                work_item=work_item,
+                spec_dir=spec_dir,
+                timeout=timeout,
+                cwd=cwd,
             )
         return self._proxy(
             member,
             "POST",
             "/api/v1/repo/critics/run",
-            body={"repo": repo, "name": name, "prompt": prompt, "promptFile": prompt_file, "workItem": work_item, "specDir": spec_dir, "timeout": timeout, "cwd": cwd},
+            body={
+                "repo": repo,
+                "name": name,
+                "prompt": prompt,
+                "promptFile": prompt_file,
+                "workItem": work_item,
+                "specDir": spec_dir,
+                "timeout": timeout,
+                "cwd": cwd,
+            },
         )
 
-    def control_daemon(self, daemon: str, verb: str, instance: str = "") -> Dict[str, Any]:
+    def control_daemon(
+        self, daemon: str, verb: str, instance: str = ""
+    ) -> Dict[str, Any]:
         member = self._target(instance)
         if self.fleet.is_local(member):
             return _stamp(self.core.control_daemon(daemon, verb), self.own_name)
         return self._proxy(
-            member, "POST", "/api/v1/daemons/control", body={"daemon": daemon, "verb": verb}
+            member,
+            "POST",
+            "/api/v1/daemons/control",
+            body={"daemon": daemon, "verb": verb},
         )
 
     # -- self-or-instance ---------------------------------------------------------------------
@@ -715,14 +853,22 @@ class ManagerFacade:
         member = self._target(instance)
         if self.fleet.is_local(member):
             return self.core.get_config_schema()
-        return self._proxy(member, "GET", "/api/v1/config/schema", operation="getConfigSchema")
+        return self._proxy(
+            member, "GET", "/api/v1/config/schema", operation="getConfigSchema"
+        )
 
-    def update_config(self, patch: Dict[str, Any], instance: str = "") -> Dict[str, Any]:
+    def update_config(
+        self, patch: Dict[str, Any], instance: str = ""
+    ) -> Dict[str, Any]:
         member = self._target(instance)
         if self.fleet.is_local(member):
             return self.core.update_config(patch)
         return self._proxy(
-            member, "POST", "/api/v1/config", body={"patch": patch}, operation="updateConfig"
+            member,
+            "POST",
+            "/api/v1/config",
+            body={"patch": patch},
+            operation="updateConfig",
         )
 
     def restart(self, with_upgrade: bool = False, instance: str = "") -> Dict[str, Any]:
@@ -751,7 +897,9 @@ class ManagerFacade:
 
             def resolve(ref: str):
                 try:
-                    return core_sessions.transcript_path(ref, config=self.holder.current)
+                    return core_sessions.transcript_path(
+                        ref, config=self.holder.current
+                    )
                 except (LookupError, ValueError):
                     return None
 

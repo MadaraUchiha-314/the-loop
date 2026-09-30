@@ -56,7 +56,9 @@ def test_a_manager_reads_its_registry_and_numbers():
     )
     assert config.manager.timeout_seconds == 3.0
     assert config.manager.probe_interval_seconds == 7.5
-    assert config.manager.member("ci-box") == Member("ci-box", "https://ci.example/the-loop")
+    assert config.manager.member("ci-box") == Member(
+        "ci-box", "https://ci.example/the-loop"
+    )
     assert config.manager.member("nope") is None
 
 

@@ -38,7 +38,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .. import eventlog
@@ -178,7 +178,10 @@ class Fleet:
 
     @classmethod
     def from_config(
-        cls, config: Optional[Mapping[str, Any]], *, transport: Transport = urllib_transport
+        cls,
+        config: Optional[Mapping[str, Any]],
+        *,
+        transport: Transport = urllib_transport,
     ) -> "Fleet":
         """A fleet over a static config — for `status`, which runs with no service."""
         frozen = dict(config or {})
@@ -221,7 +224,9 @@ class Fleet:
         between two probes is one event; a second failing probe emits nothing.
         """
         if self.is_local(member):
-            return Probe(member=member, state=LIVE, at=self._clock(), probed_at=_utcnow())
+            return Probe(
+                member=member, state=LIVE, at=self._clock(), probed_at=_utcnow()
+            )
         key = (member.name, member.url)
         interval = self.config.probe_interval_seconds
         with self._lock:
@@ -244,11 +249,17 @@ class Fleet:
             # The row's detail is the transport's reason alone ("connection
             # refused"); the member's name is the row's own column.
             reason = str(exc.__cause__) if exc.__cause__ is not None else str(exc)
-            return Probe(member=member, state=UNREACHABLE, at=now, detail=reason, probed_at=stamp)
+            return Probe(
+                member=member, state=UNREACHABLE, at=now, detail=reason, probed_at=stamp
+            )
         reported = document.get("name")
         role = document.get("role") or WORKER
         if reported != member.name or role != WORKER:
-            shown = reported if isinstance(reported, str) and NAME_RE.fullmatch(reported) else "(unnamed)"
+            shown = (
+                reported
+                if isinstance(reported, str) and NAME_RE.fullmatch(reported)
+                else "(unnamed)"
+            )
             detail = (
                 f"answers as {shown} with role {role!r}; registered as {member.name}"
                 if role != WORKER
@@ -322,7 +333,11 @@ class Fleet:
             return
         key = (member.name, member.url)
         probe = Probe(
-            member=member, state=UNREACHABLE, at=self._clock(), detail=reason, probed_at=_utcnow()
+            member=member,
+            state=UNREACHABLE,
+            at=self._clock(),
+            detail=reason,
+            probed_at=_utcnow(),
         )
         with self._lock:
             previous = self._probes.get(key)
@@ -463,7 +478,12 @@ class Fleet:
                 return _Answer(
                     member.name,
                     self.call(
-                        member, method, path, query=query, expect=expect, operation=operation
+                        member,
+                        method,
+                        path,
+                        query=query,
+                        expect=expect,
+                        operation=operation,
                     ),
                 )
             except Exception as exc:  # noqa: BLE001 — every failure is "left out"
@@ -479,13 +499,19 @@ class Fleet:
             deadline = time.monotonic() + timeout + 1
             for name, future in futures.items():
                 try:
-                    answer = future.result(timeout=max(0.0, deadline - time.monotonic()))
+                    answer = future.result(
+                        timeout=max(0.0, deadline - time.monotonic())
+                    )
                 except FutureTimeout:
                     left_out.append(name)
-                    self.mark_unreachable(self.config.member(name) or Member(name, ""), "timed out")
+                    self.mark_unreachable(
+                        self.config.member(name) or Member(name, ""), "timed out"
+                    )
                     continue
                 if answer.error is not None:
-                    logger.warning("%s left out of %s: %s", name, operation or path, answer.error)
+                    logger.warning(
+                        "%s left out of %s: %s", name, operation or path, answer.error
+                    )
                     left_out.append(name)
                 else:
                     answers[name] = answer.value
@@ -508,7 +534,9 @@ class Fleet:
             return self.local
         member = self.config.member(name)
         if member is None:
-            raise LookupError(f"no instance named {name!r} is registered with this manager")
+            raise LookupError(
+                f"no instance named {name!r} is registered with this manager"
+            )
         return member
 
     def _resolve(
@@ -542,7 +570,9 @@ class Fleet:
                 names.append(self.own_name)
             for probe in self.live():
                 managed = (probe.document or {}).get("managed") or []
-                if any(isinstance(row, dict) and row.get("ref") == ref for row in managed):
+                if any(
+                    isinstance(row, dict) and row.get("ref") == ref for row in managed
+                ):
                     names.append(probe.member.name)
             return names
 
@@ -559,7 +589,9 @@ class Fleet:
                 "GET", "/api/v1/standing-sessions", expect=list, operation="standing"
             )
             for member_name, rows in answers.items():
-                if any(isinstance(row, dict) and row.get("name") == name for row in rows):
+                if any(
+                    isinstance(row, dict) and row.get("name") == name for row in rows
+                ):
                     names.append(member_name)
             return names
 

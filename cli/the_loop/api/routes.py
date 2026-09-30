@@ -318,7 +318,10 @@ def _core_route_class(holder: ConfigHolder):
                     # caller can pick with `instance`.
                     response = JSONResponse(
                         status_code=409,
-                        content={"detail": str(exc), "candidates": list(exc.candidates)},
+                        content={
+                            "detail": str(exc),
+                            "candidates": list(exc.candidates),
+                        },
                     )
                 except MemberUnavailable as exc:
                     # A registered instance did not answer a keyed operation (R2.9):

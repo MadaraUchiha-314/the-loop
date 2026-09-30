@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import contextvars
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence
 
 from ..cli_config import ConfigHolder
 from ..core import attention as core_attention
@@ -167,7 +167,9 @@ class CoreFacade:
         self._self(instance)
         return core_config.get_schema()
 
-    def update_config(self, patch: Dict[str, Any], instance: str = "") -> Dict[str, Any]:
+    def update_config(
+        self, patch: Dict[str, Any], instance: str = ""
+    ) -> Dict[str, Any]:
         self._self(instance)
         # The holder picks the new file up on the *next* request through the route
         # class, which is what makes a saved change live without a restart.
@@ -198,7 +200,12 @@ class CoreFacade:
     ) -> Dict[str, Any]:
         self._self(instance)
         return core_graphs.check(
-            repo, work_item, recompute=recompute, pr=pr, pr_repo=pr_repo, spec_dir=spec_dir
+            repo,
+            work_item,
+            recompute=recompute,
+            pr=pr,
+            pr_repo=pr_repo,
+            spec_dir=spec_dir,
         )
 
     def graph_complete(
@@ -376,9 +383,7 @@ class CoreFacade:
         self, ref: str, keep_tmux: Optional[bool] = None, instance: str = ""
     ) -> Dict[str, Any]:
         self._self(instance)
-        return core_sessions.close_session(
-            ref, keep_tmux=keep_tmux, config=self.config
-        )
+        return core_sessions.close_session(ref, keep_tmux=keep_tmux, config=self.config)
 
     # -- standing sessions ----------------------------------------------------------
 
@@ -464,10 +469,13 @@ class CoreFacade:
 
     def list_daemons(self) -> List[Dict[str, Any]]:
         return [
-            core_daemons.daemon_status(name, self.config) for name in core_daemons.DAEMONS
+            core_daemons.daemon_status(name, self.config)
+            for name in core_daemons.DAEMONS
         ]
 
-    def control_daemon(self, daemon: str, verb: str, instance: str = "") -> Dict[str, Any]:
+    def control_daemon(
+        self, daemon: str, verb: str, instance: str = ""
+    ) -> Dict[str, Any]:
         self._self(instance)
         return core_daemons.control_daemon(daemon, verb, self.config)
 

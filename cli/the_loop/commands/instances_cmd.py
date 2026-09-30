@@ -135,10 +135,15 @@ class InstancesCommand(Command):
                 "/instances/register", {"name": args.name, "url": args.url}
             ),
             lambda: core_instances.register_instance(
-                config, args.name, args.url, config_path=cli_config.default_cli_config_path()
+                config,
+                args.name,
+                args.url,
+                config_path=cli_config.default_cli_config_path(),
             ),
         )
-        print(f"registered {result.get('instance') or args.name} in {result.get('path')}")
+        print(
+            f"registered {result.get('instance') or args.name} in {result.get('path')}"
+        )
         return 0
 
     def _unregister(self, args: argparse.Namespace) -> int:
@@ -151,5 +156,7 @@ class InstancesCommand(Command):
                 config, args.name, config_path=cli_config.default_cli_config_path()
             ),
         )
-        print(f"unregistered {result.get('instance') or args.name} from {result.get('path')}")
+        print(
+            f"unregistered {result.get('instance') or args.name} from {result.get('path')}"
+        )
         return 0

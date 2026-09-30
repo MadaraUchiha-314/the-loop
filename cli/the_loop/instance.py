@@ -127,6 +127,7 @@ _URL_SCHEMES = ("http", "https")
 class InstanceConfigError(ValueError):
     """A block the service refuses to boot on (R1.5): raised only under ``strict``."""
 
+
 # A GitHub issue / pull-request URL as a declaration (R1.1): the host is kept when
 # it is not github.com, exactly as `WorkItemRef` keeps it.
 _URL_RE = re.compile(
@@ -237,7 +238,9 @@ class ManagerConfig:
             return cls()
         entries = data.get("instances") or []
         if not isinstance(entries, (list, tuple)):
-            logger.warning("instance.manager.instances: not a list; registering nothing")
+            logger.warning(
+                "instance.manager.instances: not a list; registering nothing"
+            )
             entries = []
         members: List[Member] = []
         seen: set = set()
@@ -245,7 +248,9 @@ class ManagerConfig:
         for index, entry in enumerate(entries):
             reason = _member_problem(entry, seen, own)
             if reason:
-                logger.warning("instance.manager.instances[%d] %s; skipped", index, reason)
+                logger.warning(
+                    "instance.manager.instances[%d] %s; skipped", index, reason
+                )
                 continue
             name = str(entry["name"])
             url = parse_member_url(entry.get("url")) or ""

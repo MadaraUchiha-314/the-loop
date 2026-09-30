@@ -15,7 +15,9 @@ def _client(tmp_path, name="laptop-a"):
         "state": {"root": str(tmp_path / ".the-loop")},
         "instance": {"name": name},
     }
-    return TestClient(create_app(config, config_path=tmp_path / "cli-config.yaml")), config
+    return TestClient(
+        create_app(config, config_path=tmp_path / "cli-config.yaml")
+    ), config
 
 
 def test_a_worker_serves_the_fleet_family_and_names_itself(tmp_path):
@@ -74,7 +76,9 @@ def test_a_worker_accepts_only_its_own_name_as_instance(tmp_path):
     WorkItemStore(layout.portable_dir, legacy=legacy_layout(layout)).write_section(
         REF, "control", {"command": "start"}
     )
-    own = client.get("/api/v1/work-items/one", params={"ref": REF, "instance": "laptop-a"})
+    own = client.get(
+        "/api/v1/work-items/one", params={"ref": REF, "instance": "laptop-a"}
+    )
     assert own.status_code == 200 and own.json()["ref"] == REF
     foreign = client.get(
         "/api/v1/work-items/one", params={"ref": REF, "instance": "ci-box"}
@@ -88,8 +92,12 @@ def test_a_worker_accepts_only_its_own_name_as_instance(tmp_path):
     )
     assert refused.status_code == 404
     # The self-keyed reads too.
-    assert client.get("/api/v1/config", params={"instance": "ci-box"}).status_code == 404
-    assert client.get("/api/v1/health", params={"instance": "laptop-a"}).status_code == 200
+    assert (
+        client.get("/api/v1/config", params={"instance": "ci-box"}).status_code == 404
+    )
+    assert (
+        client.get("/api/v1/health", params={"instance": "laptop-a"}).status_code == 200
+    )
 
 
 def test_a_worker_never_sets_the_partial_header(tmp_path):

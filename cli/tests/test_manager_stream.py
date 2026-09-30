@@ -11,6 +11,7 @@ Spec: docs/specs/issue-374/design.md § 5.
 from __future__ import annotations
 
 import asyncio
+import email.message
 import json
 import threading
 import time
@@ -19,7 +20,6 @@ from typing import List
 
 import pytest
 
-from the_loop.instance import Member
 from the_loop.manager import stream as fleet_stream
 from the_loop.manager.fleet import Fleet, TransportError
 from the_loop.manager.stream import (
@@ -35,7 +35,12 @@ A = "http://a:1"
 
 
 def _sse(event_id, kind, data):
-    return [f"id: {event_id}\n".encode(), f"event: {kind}\n".encode(), f"data: {json.dumps(data)}\n".encode(), b"\n"]
+    return [
+        f"id: {event_id}\n".encode(),
+        f"event: {kind}\n".encode(),
+        f"data: {json.dumps(data)}\n".encode(),
+        b"\n",
+    ]
 
 
 class FakeTransport:
@@ -50,7 +55,14 @@ class FakeTransport:
         if name is None:
             raise TransportError("connection refused")
         if rest.startswith("/instance"):
-            return 200, json.dumps({"name": name, "role": "worker", "scope": {"mode": "open"}, "managed": []}).encode()
+            return 200, json.dumps(
+                {
+                    "name": name,
+                    "role": "worker",
+                    "scope": {"mode": "open"},
+                    "managed": [],
+                }
+            ).encode()
         return 200, json.dumps({"version": "1"}).encode()
 
 
@@ -59,7 +71,9 @@ class ScriptedOpener:
 
     def __init__(self):
         self.calls: List[tuple] = []
-        self.scripts: List[tuple] = []  # (lines, fate) — fate: "hold" | "close" | Exception
+        self.scripts: List[
+            tuple
+        ] = []  # (lines, fate) — fate: "hold" | "close" | Exception
         self.release = threading.Event()
 
     def __call__(self, url, last_event_id, timeout):
@@ -82,7 +96,11 @@ def _config(members, interval=15):
         "instance": {
             "name": "hq",
             "role": "manager",
-            "manager": {"instances": [{"name": n, "url": u} for n, u in members], "timeoutSeconds": 1, "probeIntervalSeconds": interval},
+            "manager": {
+                "instances": [{"name": n, "url": u} for n, u in members],
+                "timeoutSeconds": 1,
+                "probeIntervalSeconds": interval,
+            },
         }
     }
 
@@ -90,10 +108,14 @@ def _config(members, interval=15):
 @pytest.fixture
 def quiet(monkeypatch):
     emitted = []
-    monkeypatch.setattr(fleet_stream.eventlog, "emit", lambda *a, **k: emitted.append((a[0], k)))
+    monkeypatch.setattr(
+        fleet_stream.eventlog, "emit", lambda *a, **k: emitted.append((a[0], k))
+    )
     from the_loop.manager import fleet as fleet_mod
 
-    monkeypatch.setattr(fleet_mod.eventlog, "emit", lambda *a, **k: emitted.append((a[0], k)))
+    monkeypatch.setattr(
+        fleet_mod.eventlog, "emit", lambda *a, **k: emitted.append((a[0], k))
+    )
     return emitted
 
 
@@ -112,7 +134,9 @@ def _broker(tmp_path, opener, members=(("laptop-a", A),), sleeps=None, dead=()):
         max_subscribers=8,
         opener=opener,
         keepalive_hint=1,
-        sleep=(lambda s: sleeps.append(s)) if sleeps is not None else (lambda s: time.sleep(0.001)),
+        sleep=(lambda s: sleeps.append(s))
+        if sleeps is not None
+        else (lambda s: time.sleep(0.001)),
     ), log
 
 
@@ -125,18 +149,31 @@ async def _settle(broker, ticks=3):
 # -- the cursor ---------------------------------------------------------------------------
 
 
+def _cursor(raw) -> FleetCursor:
+    parsed = parse_fleet_cursor(raw)
+    assert parsed is not None
+    return parsed
+
+
 def test_the_composite_cursor_grammar():
     assert parse_fleet_cursor(None) is None
-    assert parse_fleet_cursor("laptop-a=4096,hq=77").offsets == {"laptop-a": 4096, "hq": 77}
-    assert parse_fleet_cursor("12").desync == "bad-cursor"  # a worker's cursor on a manager
-    assert parse_fleet_cursor("").desync == "bad-cursor"
-    assert parse_fleet_cursor("Laptop=1").desync == "bad-cursor"
-    assert parse_fleet_cursor("a=-1").desync == "bad-cursor"
+    assert _cursor("laptop-a=4096,hq=77").offsets == {
+        "laptop-a": 4096,
+        "hq": 77,
+    }
+    assert _cursor("12").desync == "bad-cursor"  # a worker's cursor on a manager
+    assert _cursor("").desync == "bad-cursor"
+    assert _cursor("Laptop=1").desync == "bad-cursor"
+    assert _cursor("a=-1").desync == "bad-cursor"
     assert encode_cursor({"hq": 2, "a": 1}) == "a=1,hq=2"
 
 
 def test_the_sse_parser_reads_frames_and_skips_comments():
-    lines = [b"retry: 3000\n", b"\n", b": keep-alive\n", b"\n"] + _sse(7, "log", {"x": 1}) + [b"data: a\n", b"data: b\n", b"\n"]
+    lines = (
+        [b"retry: 3000\n", b"\n", b": keep-alive\n", b"\n"]
+        + _sse(7, "log", {"x": 1})
+        + [b"data: a\n", b"data: b\n", b"\n"]
+    )
     frames = list(parse_sse(iter(lines)))
     assert frames == [("7", "log", '{"x": 1}'), (None, "message", "a\nb")]
 
@@ -146,7 +183,20 @@ def test_the_sse_parser_reads_frames_and_skips_comments():
 
 def test_frames_are_stamped_and_carry_the_per_member_cursor(tmp_path, quiet):
     opener = ScriptedOpener()
-    opener.scripts.append((_sse(4120, "log", {"event": "graph.advanced", "work_item": "github:octo/repo#1", "instance": "liar"}), "hold"))
+    opener.scripts.append(
+        (
+            _sse(
+                4120,
+                "log",
+                {
+                    "event": "graph.advanced",
+                    "work_item": "github:octo/repo#1",
+                    "instance": "liar",
+                },
+            ),
+            "hold",
+        )
+    )
     broker, log = _broker(tmp_path, opener)
 
     async def main():
@@ -168,7 +218,7 @@ def test_frames_are_stamped_and_carry_the_per_member_cursor(tmp_path, quiet):
     assert member.data["event"] == "graph.advanced"  # R6.3: the stamp overwrote "liar"
     assert "laptop-a=4120" in member.cursor and "hq=" in member.cursor
     own = next(f for f in frames if f.data.get("instance") == "hq")
-    assert parse_fleet_cursor(own.cursor).offsets["hq"] == log.stat().st_size
+    assert _cursor(own.cursor).offsets["hq"] == log.stat().st_size
     assert opener.calls[0] == (A + "/api/v1/stream", None, 3)
 
 
@@ -256,7 +306,9 @@ def test_a_dropped_upstream_reconnects_with_backoff_and_resumes(tmp_path, quiet)
 
 def test_a_member_without_a_stream_is_left_to_the_probe_cycle(tmp_path, quiet):
     opener = ScriptedOpener()
-    opener.scripts.append(([], urllib.error.HTTPError(A, 404, "off", {}, None)))
+    opener.scripts.append(
+        ([], urllib.error.HTTPError(A, 404, "off", email.message.Message(), None))
+    )
     sleeps: List[float] = []
     broker, _ = _broker(tmp_path, opener, sleeps=sleeps)
 
@@ -306,15 +358,26 @@ def test_a_bare_integer_cursor_is_one_desync(tmp_path, quiet):
     assert second.startswith("retry:")
 
 
-def test_own_offset_replays_the_managers_log_and_a_members_offset_asks_the_member(tmp_path, quiet):
+def test_own_offset_replays_the_managers_log_and_a_members_offset_asks_the_member(
+    tmp_path, quiet
+):
     """R2.8: replay per source, up to the boundary each stood at."""
     opener = ScriptedOpener()
     # The shared upstream delivers id 20 first, so the boundary for laptop-a is 20;
     # the replay connection (Last-Event-ID: 10) then serves 15 and 20 and is closed.
     opener.scripts.append((_sse(20, "log", {"event": "live"}), "hold"))
-    opener.scripts.append((_sse(15, "log", {"event": "old"}) + _sse(20, "log", {"event": "live"}) + _sse(25, "log", {"event": "later"}), "hold"))
+    opener.scripts.append(
+        (
+            _sse(15, "log", {"event": "old"})
+            + _sse(20, "log", {"event": "live"})
+            + _sse(25, "log", {"event": "later"}),
+            "hold",
+        )
+    )
     broker, log = _broker(tmp_path, opener)
-    log.write_text(json.dumps({"event": "one"}) + "\n" + json.dumps({"event": "two"}) + "\n")
+    log.write_text(
+        json.dumps({"event": "one"}) + "\n" + json.dumps({"event": "two"}) + "\n"
+    )
     first_line = len(json.dumps({"event": "one"}) + "\n")
 
     async def main():
@@ -334,7 +397,11 @@ def test_own_offset_replays_the_managers_log_and_a_members_offset_asks_the_membe
     opener.release.set()
     assert chunks[0].startswith("retry:")
     events = [json.loads(c.split("data: ", 1)[1])["event"] for c in chunks[1:]]
-    assert events == ["two", "old", "live"]  # own log after the offset, then the member's up to the boundary
+    assert events == [
+        "two",
+        "old",
+        "live",
+    ]  # own log after the offset, then the member's up to the boundary
     assert all('"instance":' in c for c in chunks[1:])
     assert opener.calls[1][1] == "10"
 
@@ -342,13 +409,17 @@ def test_own_offset_replays_the_managers_log_and_a_members_offset_asks_the_membe
 def test_a_member_that_desyncs_on_replay_makes_one_desync(tmp_path, quiet):
     opener = ScriptedOpener()
     opener.scripts.append((_sse(20, "log", {"event": "live"}), "hold"))
-    opener.scripts.append(([b"event: desync\n", b'data: {"reason": "replay-window"}\n', b"\n"], "hold"))
+    opener.scripts.append(
+        ([b"event: desync\n", b'data: {"reason": "replay-window"}\n', b"\n"], "hold")
+    )
     broker, _ = _broker(tmp_path, opener)
 
     async def main():
         sub = broker.subscribe()
         await _settle(broker)
-        gen = serve_fleet(broker, sub, cursor=FleetCursor(offsets={"laptop-a": 1}), keep_alive=1)
+        gen = serve_fleet(
+            broker, sub, cursor=FleetCursor(offsets={"laptop-a": 1}), keep_alive=1
+        )
         first = await gen.__anext__()
         await gen.aclose()
         return first

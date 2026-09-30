@@ -49,7 +49,11 @@ def test_list_on_a_worker_prints_its_one_row(tmp_path, monkeypatch, capsys):
     assert main(["instances", "list"]) == 0
     out = capsys.readouterr().out.splitlines()
     assert out[0].startswith("name")
-    assert out[1].startswith("laptop-a") and "live" in out[1] and "(this instance)" in out[1]
+    assert (
+        out[1].startswith("laptop-a")
+        and "live" in out[1]
+        and "(this instance)" in out[1]
+    )
     assert main(["instances", "list", "--format", "json"]) == 0
     doc = json.loads(capsys.readouterr().out)
     assert doc["role"] == "worker" and doc["instances"][0]["name"] == "laptop-a"
@@ -108,32 +112,66 @@ def test_status_prints_the_fleet_on_a_manager(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     report = {
         "services": [],
-        "instance": {"name": "hq", "role": "manager", "scope": {"mode": "open", "workItems": []}, "managed": []},
+        "instance": {
+            "name": "hq",
+            "role": "manager",
+            "scope": {"mode": "open", "workItems": []},
+            "managed": [],
+        },
         "instances": {
             "role": "manager",
             "name": "hq",
             "instances": [
-                {"name": "hq", "url": "http://127.0.0.1:4114", "state": "live", "version": "1", "mode": "open", "managedCount": 0, "sessionCount": 0},
-                {"name": "laptop-a", "url": "http://10.0.0.5:4114", "state": "live", "version": "1", "mode": "addressed", "managedCount": 4, "sessionCount": 2},
-                {"name": "cloud-1", "url": "http://10.0.0.9:4114", "state": "unreachable", "detail": "connection refused"},
+                {
+                    "name": "hq",
+                    "url": "http://127.0.0.1:4114",
+                    "state": "live",
+                    "version": "1",
+                    "mode": "open",
+                    "managedCount": 0,
+                    "sessionCount": 0,
+                },
+                {
+                    "name": "laptop-a",
+                    "url": "http://10.0.0.5:4114",
+                    "state": "live",
+                    "version": "1",
+                    "mode": "addressed",
+                    "managedCount": 4,
+                    "sessionCount": 2,
+                },
+                {
+                    "name": "cloud-1",
+                    "url": "http://10.0.0.9:4114",
+                    "state": "unreachable",
+                    "detail": "connection refused",
+                },
             ],
         },
         "ok": True,
     }
-    monkeypatch.setattr(lifecycle, "status_all", lambda config, config_path=None: report)
+    monkeypatch.setattr(
+        lifecycle, "status_all", lambda config, config_path=None: report
+    )
     monkeypatch.setattr(lifecycle_cmd, "_config_or_error", lambda: {})
     assert main(["status"]) == 0
     out = capsys.readouterr().out
     assert "instances   hq [manager] — this instance + 2 registered, 1 of 2 live" in out
     assert "laptop-a" in out and "cloud-1" in out and "connection refused" in out
 
-    report["instances"] = {"role": "worker", "name": "a", "instances": [{"name": "a", "state": "live"}]}
+    report["instances"] = {
+        "role": "worker",
+        "name": "a",
+        "instances": [{"name": "a", "state": "live"}],
+    }
     report["instance"]["role"] = "worker"
     assert main(["status"]) == 0
     assert "instances " not in capsys.readouterr().out
 
 
 def test_status_all_carries_the_fleet_document(tmp_path):
-    doc = lifecycle.status_all({"state": {"root": str(tmp_path)}, "instance": {"name": "a"}})
+    doc = lifecycle.status_all(
+        {"state": {"root": str(tmp_path)}, "instance": {"name": "a"}}
+    )
     assert doc["instances"]["role"] == "worker"
     assert [row["name"] for row in doc["instances"]["instances"]] == ["a"]

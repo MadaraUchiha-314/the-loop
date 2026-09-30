@@ -73,7 +73,10 @@ def test_a_worker_refuses_to_register(tmp_path):
 def test_register_writes_the_registry_through_the_splice(manager_file):
     """R4.2: one write path — comments survive, the change is in the file."""
     result = core_instances.register_instance(
-        _config(manager_file), "laptop-a", "http://10.0.0.5:4114/", config_path=manager_file
+        _config(manager_file),
+        "laptop-a",
+        "http://10.0.0.5:4114/",
+        config_path=manager_file,
     )
     assert result["written"] is True and result["instance"] == "laptop-a"
     assert result["restartRequired"] == []
@@ -84,9 +87,14 @@ def test_register_writes_the_registry_through_the_splice(manager_file):
     ]
     # A second one is appended, not replacing the first.
     core_instances.register_instance(
-        _config(manager_file), "ci-box", "https://ci.example/the-loop", config_path=manager_file
+        _config(manager_file),
+        "ci-box",
+        "https://ci.example/the-loop",
+        config_path=manager_file,
     )
-    names = [e["name"] for e in _config(manager_file)["instance"]["manager"]["instances"]]
+    names = [
+        e["name"] for e in _config(manager_file)["instance"]["manager"]["instances"]
+    ]
     assert names == ["laptop-a", "ci-box"]
 
 
@@ -136,7 +144,9 @@ def test_unregister_removes_the_entry_and_refuses_an_unknown_name(manager_file):
         _config(manager_file), "a", config_path=manager_file
     )
     assert result["instance"] == "a"
-    assert [e["name"] for e in _config(manager_file)["instance"]["manager"]["instances"]] == ["b"]
+    assert [
+        e["name"] for e in _config(manager_file)["instance"]["manager"]["instances"]
+    ] == ["b"]
     with pytest.raises(LookupError):
         core_instances.unregister_instance(
             _config(manager_file), "a", config_path=manager_file
@@ -146,11 +156,15 @@ def test_unregister_removes_the_entry_and_refuses_an_unknown_name(manager_file):
 def test_registration_is_recorded_by_name_never_url(manager_file, monkeypatch):
     """The event log names people, hosts and binaries too easily; names only."""
     emitted = []
-    monkeypatch.setattr(core_instances.eventlog, "emit", lambda *a, **k: emitted.append((a, k)))
+    monkeypatch.setattr(
+        core_instances.eventlog, "emit", lambda *a, **k: emitted.append((a, k))
+    )
     core_instances.register_instance(
         _config(manager_file), "a", "http://secret-host:1", config_path=manager_file
     )
-    core_instances.unregister_instance(_config(manager_file), "a", config_path=manager_file)
+    core_instances.unregister_instance(
+        _config(manager_file), "a", config_path=manager_file
+    )
     events = [a[0] for a, k in emitted]
     assert "instance.registered" in events and "instance.unregistered" in events
     assert not any("secret-host" in str(k) for a, k in emitted)

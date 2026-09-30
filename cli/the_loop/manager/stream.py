@@ -42,7 +42,18 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Set, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+)
 
 from .. import eventlog
 from ..api.stream import (
@@ -57,7 +68,7 @@ from ..api.stream import (
     keepalive,
     matches,
 )
-from ..instance import NAME_RE, Member
+from ..instance import Member
 from .fleet import Fleet
 
 logger = logging.getLogger("the-loop.manager")
@@ -89,7 +100,9 @@ Opener = Callable[[str, Optional[str], float], Iterator[bytes]]
 _CURSOR_PART = re.compile(r"^([a-z0-9][a-z0-9-]{0,39})=(\d+)$")
 
 
-def urllib_opener(url: str, last_event_id: Optional[str], timeout: float) -> Iterator[bytes]:
+def urllib_opener(
+    url: str, last_event_id: Optional[str], timeout: float
+) -> Iterator[bytes]:
     """The default opener: stdlib, no caller headers, a socket timeout as the watchdog."""
     request = urllib.request.Request(url, method="GET")
     request.add_header("Accept", "text/event-stream")
@@ -431,7 +444,11 @@ class FleetBroker:
             self.reconcile_upstreams()
         for record in self._tail.read():
             self._offer(
-                Frame(kind="log", data=dict(record.data, instance=self.own_name), cursor=encode_cursor(self.offsets())),
+                Frame(
+                    kind="log",
+                    data=dict(record.data, instance=self.own_name),
+                    cursor=encode_cursor(self.offsets()),
+                ),
                 by_work_item=True,
             )
         while True:
@@ -443,7 +460,9 @@ class FleetBroker:
                 self._offsets[event.source] = event.cursor
             cursor = encode_cursor(self.offsets())
             if event.kind == "log":
-                self._offer(Frame(kind="log", data=event.data, cursor=cursor), by_work_item=True)
+                self._offer(
+                    Frame(kind="log", data=event.data, cursor=cursor), by_work_item=True
+                )
             elif event.kind == "transcript":
                 ref = str(event.data.get("ref") or "")
                 frame = Frame(kind="transcript", data=event.data)
@@ -618,7 +637,13 @@ async def serve_fleet(
         if desync:
             eventlog.emit("stream.desync", reason=desync, cursor=str(cursor))
             yield encode_frame(
-                Frame(kind="desync", data={"reason": desync, "cursor": encode_cursor(cursor.offsets) if cursor else None})
+                Frame(
+                    kind="desync",
+                    data={
+                        "reason": desync,
+                        "cursor": encode_cursor(cursor.offsets) if cursor else None,
+                    },
+                )
             )
             replay = []
         yield f"retry: {RETRY_MS}\n\n"
@@ -626,12 +651,16 @@ async def serve_fleet(
         for frame in replay:
             if matches(frame.data, subscriber.work_items):
                 delivered += 1
-                yield encode_frame(Frame(kind=frame.kind, data=frame.data, cursor=composite))
+                yield encode_frame(
+                    Frame(kind=frame.kind, data=frame.data, cursor=composite)
+                )
 
         last_keepalive = _loop_time()
         while True:
             try:
-                frame = await asyncio.wait_for(subscriber.queue.get(), timeout=TICK_SECONDS)
+                frame = await asyncio.wait_for(
+                    subscriber.queue.get(), timeout=TICK_SECONDS
+                )
             except asyncio.TimeoutError:
                 frame = None
             if frame is not None:

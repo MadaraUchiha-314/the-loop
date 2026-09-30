@@ -62,7 +62,9 @@ class FakeTransport:
                     "name": name,
                     "role": role,
                     "scope": {"mode": "addressed", "workItems": []},
-                    "managed": [{"ref": ref, "sources": ["control"]} for ref in managed],
+                    "managed": [
+                        {"ref": ref, "sources": ["control"]} for ref in managed
+                    ],
                     "sessionCount": 1,
                 },
             ),
@@ -83,6 +85,7 @@ class FakeTransport:
             return 404, json.dumps({"detail": f"no route {path}"}).encode()
         if callable(answer):
             answer = answer(method, url, body, timeout)
+        assert isinstance(answer, tuple)
         status, payload = answer
         if isinstance(payload, (bytes, bytearray)):
             return status, bytes(payload)
@@ -92,7 +95,9 @@ class FakeTransport:
 @pytest.fixture
 def quiet(monkeypatch):
     emitted = []
-    monkeypatch.setattr(fleet_mod.eventlog, "emit", lambda *a, **k: emitted.append((a[0], k)))
+    monkeypatch.setattr(
+        fleet_mod.eventlog, "emit", lambda *a, **k: emitted.append((a[0], k))
+    )
     return emitted
 
 
@@ -101,7 +106,12 @@ def _fleet(transport, members, clock=None, **manager):
     kwargs = {"transport": transport}
     if clock is not None:
         kwargs["clock"] = clock
-    return Fleet(lambda: config, local_refs=lambda: ["github:octo/repo#1"], local_standing=lambda: ["pr-shepherd"], **kwargs)
+    return Fleet(
+        lambda: config,
+        local_refs=lambda: ["github:octo/repo#1"],
+        local_standing=lambda: ["pr-shepherd"],
+        **kwargs,
+    )
 
 
 # -- the probe --------------------------------------------------------------------
@@ -115,7 +125,11 @@ def test_a_member_answering_to_its_name_is_live(quiet):
     assert probe.version == "1.0"
     row = probe.row()
     assert row["name"] == "laptop-a" and row["url"] == A and row["state"] == "live"
-    assert row["mode"] == "addressed" and row["managedCount"] == 1 and row["sessionCount"] == 1
+    assert (
+        row["mode"] == "addressed"
+        and row["managedCount"] == 1
+        and row["sessionCount"] == 1
+    )
     assert "detail" not in row
     # No transition from nothing to live is announced: it is the expected state.
     assert quiet == []
@@ -123,9 +137,15 @@ def test_a_member_answering_to_its_name_is_live(quiet):
 
 @pytest.mark.parametrize(
     "name, role, needle",
-    [("someone-else", "worker", "answers as someone-else"), ("", "worker", "(unnamed)"), ("laptop-a", "manager", "role 'manager'")],
+    [
+        ("someone-else", "worker", "answers as someone-else"),
+        ("", "worker", "(unnamed)"),
+        ("laptop-a", "manager", "role 'manager'"),
+    ],
 )
-def test_a_member_answering_as_another_name_or_a_manager_is_mismatched(quiet, name, role, needle):
+def test_a_member_answering_as_another_name_or_a_manager_is_mismatched(
+    quiet, name, role, needle
+):
     """R6.1, abuse case 2: nothing is served from it or sent to it."""
     transport = FakeTransport().member(A, name, role=role)
     fleet = _fleet(transport, [("laptop-a", A)])
@@ -179,7 +199,14 @@ def test_a_member_with_no_role_field_probes_as_a_worker(quiet):
     """A 19.14.1 member carries no `role`; absent reads as worker (T10)."""
     transport = FakeTransport()
     transport.routes[A] = {
-        "/api/v1/instance": (200, {"name": "laptop-a", "scope": {"mode": "open", "workItems": []}, "managed": []}),
+        "/api/v1/instance": (
+            200,
+            {
+                "name": "laptop-a",
+                "scope": {"mode": "open", "workItems": []},
+                "managed": [],
+            },
+        ),
         "/api/v1/health": (200, {"version": "19.14.1"}),
     }
     fleet = _fleet(transport, [("laptop-a", A)])
@@ -200,7 +227,10 @@ def test_a_members_error_is_the_managers_error(quiet):
     transport = FakeTransport().member(A, "laptop-a")
     transport.routes[A]["/api/v1/x400"] = (400, {"detail": "bad ref"})
     transport.routes[A]["/api/v1/x404"] = (404, {"detail": "no session"})
-    transport.routes[A]["/api/v1/x409"] = (409, {"detail": "two", "candidates": ["p", "q"]})
+    transport.routes[A]["/api/v1/x409"] = (
+        409,
+        {"detail": "two", "candidates": ["p", "q"]},
+    )
     transport.routes[A]["/api/v1/x500"] = (500, {"detail": "boom"})
     fleet = _fleet(transport, [("laptop-a", A)])
     member = Member("laptop-a", A)
@@ -223,7 +253,9 @@ def test_a_members_error_is_the_managers_error(quiet):
         (json.dumps({"a": 1}).encode(), "not a JSON list"),
     ],
 )
-def test_a_malformed_member_answer_is_dropped_and_the_rest_served(quiet, payload, reason):
+def test_a_malformed_member_answer_is_dropped_and_the_rest_served(
+    quiet, payload, reason
+):
     """R6.4, abuse case 3: never crash, never hang, never pass the body on."""
     transport = FakeTransport().member(A, "laptop-a").member(B, "ci-box")
     transport.routes[A]["/api/v1/work-items"] = (200, payload)
@@ -232,7 +264,11 @@ def test_a_malformed_member_answer_is_dropped_and_the_rest_served(quiet, payload
     with pytest.raises(MemberUnavailable):
         fleet.call(Member("laptop-a", A), "GET", "/api/v1/work-items", expect=list)
     malformed = [k for e, k in quiet if e == "instance.malformed"]
-    assert malformed and malformed[0]["instance"] == "laptop-a" and malformed[0]["reason"] == reason
+    assert (
+        malformed
+        and malformed[0]["instance"] == "laptop-a"
+        and malformed[0]["reason"] == reason
+    )
     answers, left_out = fleet.fan_out("GET", "/api/v1/work-items", expect=list)
     assert answers == {"ci-box": [{"ref": "github:octo/repo#2"}]}
     assert left_out == ["laptop-a"]
@@ -243,7 +279,12 @@ def test_nothing_of_the_caller_is_forwarded(quiet):
     transport = FakeTransport().member(A, "laptop-a")
     transport.routes[A]["/api/v1/sessions/one"] = (200, {"ref": "github:octo/repo#2"})
     fleet = _fleet(transport, [("laptop-a", A)])
-    fleet.call(Member("laptop-a", A), "GET", "/api/v1/sessions/one", query={"ref": "github:octo/repo#2", "instance": ""})
+    fleet.call(
+        Member("laptop-a", A),
+        "GET",
+        "/api/v1/sessions/one",
+        query={"ref": "github:octo/repo#2", "instance": ""},
+    )
     method, url, body, timeout = transport.calls[-1]
     assert url == A + "/api/v1/sessions/one?ref=github%3Aocto%2Frepo%232"
     assert body is None and timeout == 1
@@ -256,7 +297,9 @@ def test_fan_out_is_the_union_of_the_live_members_and_names_the_rest(quiet):
     transport = FakeTransport().member(A, "laptop-a").member(B, "ci-box")
     transport.routes[A]["/api/v1/sessions"] = (200, [{"ref": "r1"}])
     transport.routes[B]["/api/v1/sessions"] = (200, [{"ref": "r2"}])
-    fleet = _fleet(transport, [("laptop-a", A), ("ci-box", B), ("cloud-1", "http://c:1")])
+    fleet = _fleet(
+        transport, [("laptop-a", A), ("ci-box", B), ("cloud-1", "http://c:1")]
+    )
     answers, left_out = fleet.fan_out("GET", "/api/v1/sessions", expect=list)
     assert answers == {"laptop-a": [{"ref": "r1"}], "ci-box": [{"ref": "r2"}]}
     assert left_out == ["cloud-1"]
@@ -300,7 +343,11 @@ def test_by_instance_resolves_own_registered_and_unknown_names(quiet):
 
 
 def test_by_ref_routes_to_the_one_instance_that_manages_it(quiet):
-    transport = FakeTransport().member(A, "laptop-a", managed=["github:octo/repo#15"]).member(B, "ci-box", managed=["github:octo/repo#16"])
+    transport = (
+        FakeTransport()
+        .member(A, "laptop-a", managed=["github:octo/repo#15"])
+        .member(B, "ci-box", managed=["github:octo/repo#16"])
+    )
     fleet = _fleet(transport, [("laptop-a", A), ("ci-box", B)])
     assert fleet.by_ref("github:octo/repo#15") == Member("laptop-a", A)
     assert fleet.by_ref("github:octo/repo#16") == Member("ci-box", B)
@@ -312,16 +359,26 @@ def test_by_ref_routes_to_the_one_instance_that_manages_it(quiet):
 
 def test_an_ambiguous_ref_is_refused_not_sent_twice(quiet):
     """R2.4, abuse case 5."""
-    transport = FakeTransport().member(A, "laptop-a", managed=["github:octo/repo#15"]).member(B, "ci-box", managed=["github:octo/repo#15"])
+    transport = (
+        FakeTransport()
+        .member(A, "laptop-a", managed=["github:octo/repo#15"])
+        .member(B, "ci-box", managed=["github:octo/repo#15"])
+    )
     fleet = _fleet(transport, [("laptop-a", A), ("ci-box", B)])
     with pytest.raises(Conflict) as excinfo:
         fleet.by_ref("github:octo/repo#15")
     assert excinfo.value.candidates == ("laptop-a", "ci-box")
-    assert fleet.by_ref("github:octo/repo#15", instance="laptop-a") == Member("laptop-a", A)
+    assert fleet.by_ref("github:octo/repo#15", instance="laptop-a") == Member(
+        "laptop-a", A
+    )
 
 
 def test_by_standing_name_routes_and_refuses_ambiguity(quiet):
-    transport = FakeTransport().member(A, "laptop-a", standing=["nightly"]).member(B, "ci-box", standing=["nightly", "other"])
+    transport = (
+        FakeTransport()
+        .member(A, "laptop-a", standing=["nightly"])
+        .member(B, "ci-box", standing=["nightly", "other"])
+    )
     fleet = _fleet(transport, [("laptop-a", A), ("ci-box", B)])
     assert fleet.by_standing_name("other") == Member("ci-box", B)
     assert fleet.by_standing_name("pr-shepherd") == fleet.local
@@ -333,8 +390,13 @@ def test_by_standing_name_routes_and_refuses_ambiguity(quiet):
 
 def test_rows_and_from_config(quiet):
     transport = FakeTransport().member(A, "laptop-a")
-    fleet = Fleet.from_config(_config([("laptop-a", A), ("cloud-1", "http://c:1")]), transport=transport)
+    fleet = Fleet.from_config(
+        _config([("laptop-a", A), ("cloud-1", "http://c:1")]), transport=transport
+    )
     rows = fleet.rows()
-    assert [(r["name"], r["state"]) for r in rows] == [("laptop-a", "live"), ("cloud-1", "unreachable")]
+    assert [(r["name"], r["state"]) for r in rows] == [
+        ("laptop-a", "live"),
+        ("cloud-1", "unreachable"),
+    ]
     assert rows[1]["detail"] == "connection refused"
     assert fleet.own_name == "hq"
