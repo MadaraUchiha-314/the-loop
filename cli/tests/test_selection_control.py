@@ -234,6 +234,7 @@ def test_the_row_grammar_and_the_non_phase_tokens_are_the_hooks():
     ]
     assert ours == theirs and len(ours) == 4
     assert SURFACE_TOKEN == selection.SURFACE_TOKEN
+    assert selection.HARNESS_PREFIX in _NON_PHASE_PREFIXES
     assert selection.MODEL_PREFIX in _NON_PHASE_PREFIXES
     assert selection.EFFORT_PREFIX in _NON_PHASE_PREFIXES
     for token in (SURFACE_TOKEN, *selection.PR_SESSIONS_TOKENS, "model-x", "effort-y"):

@@ -5,16 +5,32 @@ programmatic surface reachable from a zero-dependency Python process is their
 CLI, invoked as a subprocess.
 """
 
-from .base import HarnessAdapter, Usage  # noqa: F401
+from .base import HarnessAdapter, Usage, hosts_sessions  # noqa: F401
 from .claude_code import ClaudeCodeAdapter  # noqa: F401
 from .cursor_agent import CursorAgentAdapter  # noqa: F401
 
 __all__ = [
+    "ADAPTER_TYPES",
     "ClaudeCodeAdapter",
     "CursorAgentAdapter",
     "HarnessAdapter",
     "Usage",
+    "hosting_harnesses",
+    "hosts_sessions",
 ]
+
+#: Every harness this build of the-loop has an adapter for, by name. What
+#: :func:`build_adapters` instantiates, and what the `phase-selection` gate asks
+#: which harnesses may be offered (issue-440) without building one.
+ADAPTER_TYPES = {
+    "claude": ClaudeCodeAdapter,
+    "cursor": CursorAgentAdapter,
+}
+
+
+def hosting_harnesses():
+    """The harness names whose adapter can host a work item's session."""
+    return [name for name, cls in ADAPTER_TYPES.items() if hosts_sessions(cls)]
 
 
 def build_adapters(harness_args=None, trust=None, plugins=None):
@@ -26,10 +42,6 @@ def build_adapters(harness_args=None, trust=None, plugins=None):
     """
     harness_args = harness_args or {}
     return {
-        "claude": ClaudeCodeAdapter(
-            extra_args=harness_args.get("claude") or [], trust=trust, plugins=plugins
-        ),
-        "cursor": CursorAgentAdapter(
-            extra_args=harness_args.get("cursor") or [], trust=trust, plugins=plugins
-        ),
+        name: cls(extra_args=harness_args.get(name) or [], trust=trust, plugins=plugins)
+        for name, cls in ADAPTER_TYPES.items()
     }

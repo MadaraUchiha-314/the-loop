@@ -64,12 +64,13 @@ from ..graphlink import (
     spec_id_for,
     GraphContext,
 )
-from ..harness.base import HarnessAdapter, UnsupportedRunnerError
+from ..harness.base import HarnessAdapter, UnsupportedRunnerError, hosts_sessions
 from ..modelchoice import (
     candidate_harnesses,
     declared_effort,
     declared_harnesses,
     declared_models,
+    default_harness,
     effective_args,
     effort_args,
     launch_args,
@@ -1591,7 +1592,7 @@ class Dispatcher:
         is never failed over a state read, and every value is re-validated by
         the caller anyway, because both files are agent-writable.
         """
-        empty = {"sessionPerPr": "", "model": "", "effort": ""}
+        empty = {"sessionPerPr": "", "harness": "", "model": "", "effort": ""}
         chosen = dict(empty)
         spec_dir = self._spec_dir_for(work_item, cwd)
         if spec_dir is not None:
@@ -1599,6 +1600,7 @@ class Dispatcher:
                 state = WorkItemState.load(spec_dir, spec_dir.name)
                 chosen = {
                     "sessionPerPr": state.session_per_pr,
+                    "harness": state.harness,
                     "model": state.model,
                     "effort": state.effort,
                 }
@@ -1661,6 +1663,46 @@ class Dispatcher:
         if chosen not in SESSION_PER_PR_MODES or chosen == default.session_per_pr:
             return default
         return replace(default, session_per_pr=str(chosen))
+
+    def _hosts(self, harness: str) -> bool:
+        """Whether this daemon has an adapter for ``harness`` that can host a session."""
+        adapter = self.adapters.get(harness)
+        return adapter is not None and hosts_sessions(adapter)
+
+    def _default_harness(self) -> str:
+        """The harness a work item that chose none spawns on (issue-440, R4.1).
+
+        :func:`the_loop.modelchoice.default_harness` — the rule the gate names as the
+        default — over this daemon's own adapters: a hosting ``default: true`` entry,
+        else ``routing.defaultHarness``.
+        """
+        return default_harness(
+            self.cli_config or {}, self.config.default_harness, self._hosts
+        )
+
+    def _harness_for(self, work_item: WorkItemRef, cwd: str = "") -> str:
+        """The harness this work item's next fresh session spawns on (issue-440).
+
+        What it froze at `phase-selection`, re-validated on the way in like the model
+        is — the state file is agent-writable, so a harness that is not declared, has
+        no adapter here, or cannot host a session buys nothing — and otherwise the
+        default. A live session's harness is its record's, never this: a
+        conversation cannot be resumed in another harness (R3.4).
+        """
+        default = self._default_harness()
+        chosen = self._frozen_choices(work_item, cwd).get("harness") or ""
+        if not chosen or chosen == default:
+            return default
+        if chosen in declared_harnesses(self.cli_config or {}) and self._hosts(chosen):
+            return chosen
+        logger.warning(
+            "%s froze the harness %r, which is not a declared harness this machine "
+            "can host a session on; spawning on %r",
+            work_item.ref,
+            chosen,
+            default,
+        )
+        return default
 
     def _resolved_choice(
         self, work_item: WorkItemRef, harness: str, cwd: str = ""
@@ -2103,7 +2145,7 @@ class Dispatcher:
                 command=record.command if record is not None else "",
                 actor=(record.actor if record is not None and record.actor else "")
                 or (event_actor(routed.event, routed.payload) or ""),
-                harness=self.config.default_harness,
+                harness=self._default_harness(),
                 instance=self.config.instance.name,
             )
         )
@@ -2193,7 +2235,7 @@ class Dispatcher:
             SessionSpawn(
                 work_item=WorkItem.from_ref(work_item),
                 endpoint=_endpoint_item(work_item, endpoint),
-                harness=harness or self.config.default_harness,
+                harness=harness or self._default_harness(),
                 cwd=cwd,
                 model=model,
                 effort=effort,
@@ -3591,16 +3633,17 @@ class Dispatcher:
             logger.exception("opening the conversations for %s raised", work_item.ref)
 
     def _spawn_for(self, work_item: WorkItemRef, routed: RoutedEvent) -> bool:
-        if self.config.default_harness not in self.adapters:
+        default = self._default_harness()
+        if default not in self.adapters:
             logger.error(
                 "no adapter for defaultHarness %r; cannot spawn",
-                self.config.default_harness,
+                default,
             )
             eventlog.emit(
                 "session.spawn_failed",
                 level="error",
                 work_item=work_item.ref,
-                harness=self.config.default_harness,
+                harness=default,
                 error="no adapter for defaultHarness",
                 will_retry=False,
             )
@@ -3626,7 +3669,7 @@ class Dispatcher:
                 "session.spawn_failed",
                 level="error",
                 work_item=work_item.ref,
-                harness=self.config.default_harness,
+                harness=default,
                 error=f"workspace: {exc}",
                 will_retry=bool(routed.delivery_id),
             )
@@ -3658,7 +3701,7 @@ class Dispatcher:
             eventlog.emit(
                 "session.spawn_deferred",
                 work_item=work_item.ref,
-                harness=self.config.default_harness,
+                harness=default,
                 gh_event=routed.event,
                 action=routed.action or None,
                 delivery_id=routed.delivery_id or None,
@@ -3672,7 +3715,11 @@ class Dispatcher:
         # yet there, and the session that R8 promised would "already carry the
         # frozen choice" carried none. Resolved once, so what is seeded for,
         # what is launched and what is recorded are the same adapter.
-        adapter = self._adapter_for(work_item, self.config.default_harness, cwd)
+        #
+        # The harness too (issue-440): the same reply freezes it, so it is read
+        # here — never before `on_arm` — and the model and effort resolve against it.
+        harness = self._harness_for(work_item, cwd)
+        adapter = self._adapter_for(work_item, harness, cwd)
         if adapter is None:  # pragma: no cover — the membership check above holds
             return False
         # Reads before the spawn, writes after it (issue-148, D5): the graph
@@ -3692,7 +3739,7 @@ class Dispatcher:
         # Before the runner starts the harness: make sure the harness will not
         # open on a trust dialog nobody is there to answer (issue-90).
         self._prepare_environment(adapter, work_item, cwd)
-        return self._spawn_tmux(work_item, routed, adapter, prompt, cwd)
+        return self._spawn_tmux(work_item, routed, adapter, prompt, cwd, harness)
 
     def _spawn_tmux(
         self,
@@ -3701,8 +3748,14 @@ class Dispatcher:
         adapter: HarnessAdapter,
         prompt: str,
         cwd: str,
+        harness: str = "",
     ) -> bool:
-        """Spawn the harness TUI in a tmux session with a pre-assigned id (R1/R2)."""
+        """Spawn the harness TUI in a tmux session with a pre-assigned id (R1/R2).
+
+        ``harness`` is the one :meth:`_spawn_for` resolved for this work item
+        (issue-440); the session is recorded, logged and announced as that one.
+        """
+        harness = harness or self._default_harness()
         if not adapter.is_available():
             # tmux new-session would "succeed" (the pane exists briefly) and
             # register a session doomed to die — fail honestly instead.
@@ -3711,13 +3764,13 @@ class Dispatcher:
                 "for %s — install it or point the %s adapter at the binary",
                 adapter.binary,
                 work_item.ref,
-                self.config.default_harness,
+                harness,
             )
             eventlog.emit(
                 "session.spawn_failed",
                 level="error",
                 work_item=work_item.ref,
-                harness=self.config.default_harness,
+                harness=harness,
                 error=f"harness CLI {adapter.binary!r} not found on PATH",
                 will_retry=bool(routed.delivery_id),
             )
@@ -3726,11 +3779,9 @@ class Dispatcher:
             return False
         # From the checkout, like the adapter was (issue-377): the record must
         # say what the argv says — and the lifecycle hooks are told the same.
-        model, effort = self._resolved_choice(
-            work_item, self.config.default_harness, cwd
-        )
+        model, effort = self._resolved_choice(work_item, harness, cwd)
         launch = self._before_launch(
-            work_item, work_item, adapter, prompt, cwd, model, effort
+            work_item, work_item, adapter, prompt, cwd, model, effort, harness=harness
         )
         if not launch.proceed:
             return self._refuse_launch(work_item, routed, launch)
@@ -3767,7 +3818,7 @@ class Dispatcher:
                 "session.spawn_failed",
                 level="error",
                 work_item=work_item.ref,
-                harness=self.config.default_harness,
+                harness=harness,
                 tmux_target=target,
                 error=result.error,
                 will_retry=bool(routed.delivery_id),
@@ -3781,7 +3832,7 @@ class Dispatcher:
                 "session.spawn_failed",
                 level="error",
                 work_item=work_item.ref,
-                harness=self.config.default_harness,
+                harness=harness,
                 error=result.error,
                 will_retry=bool(routed.delivery_id),
             )
@@ -3790,7 +3841,7 @@ class Dispatcher:
             return False
         session = Session(
             work_item=work_item,
-            harness=self.config.default_harness,
+            harness=harness,
             harness_session_id=session_id,
             cwd=cwd,
             tmux_target=self.tmux.target_for(work_item),
@@ -3809,7 +3860,7 @@ class Dispatcher:
         logger.info(
             "spawned tmux session %s (%s %s) for %s — attach: tmux attach -t %s",
             session.tmux_target,
-            self.config.default_harness,
+            harness,
             session_id,
             work_item.ref,
             session.tmux_target,
@@ -3817,7 +3868,7 @@ class Dispatcher:
         eventlog.emit(
             "session.spawned",
             work_item=work_item.ref,
-            harness=self.config.default_harness,
+            harness=harness,
             harness_session_id=session_id,
             runner="tmux",
             interaction=self.config.interaction.mode,

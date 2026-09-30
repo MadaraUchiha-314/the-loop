@@ -208,7 +208,8 @@ def test_two_default_harnesses_is_an_error():
         ]
     }
     findings = config_findings(config, _adapters())
-    assert [f.level for f in findings] == ["error"]
+    # cursor's `default: true` also draws the issue-440 warning (it cannot host).
+    assert [f.level for f in findings if f.level == "error"] == ["error"]
 
 
 def test_a_narrowing_to_an_undeclared_harness_warns():

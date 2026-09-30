@@ -31,7 +31,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 logger = logging.getLogger("the-loop.modelchoice")
 
@@ -47,11 +47,13 @@ __all__ = [
     "declared_effort",
     "declared_harnesses",
     "declared_models",
+    "default_harness",
     "effective_args",
     "effort_args",
     "harness_args",
     "launch_args",
     "model_args",
+    "offered_harnesses",
 ]
 
 #: The three top-level sections (issue-358, owner review on PR #359). They sit beside
@@ -171,6 +173,45 @@ def declared_harnesses(config: Optional[Mapping[str, Any]]) -> List[str]:
         if name and name not in names:
             names.append(name)
     return names
+
+
+def offered_harnesses(
+    config: Optional[Mapping[str, Any]], hosts: Callable[[str], bool]
+) -> List[str]:
+    """The harnesses a work item may be put on at `phase-selection` (issue-440).
+
+    Declared in ``harnesses[]`` **and** able to host a work item's session, in
+    declaration order. ``hosts`` answers the second half — the caller's view of the
+    adapters, so this module still runs no process and imports no adapter. A harness
+    that cannot host is never offered: choosing it would park the work item on a
+    session that cannot start.
+    """
+    return [name for name in declared_harnesses(config) if hosts(name)]
+
+
+def default_harness(
+    config: Optional[Mapping[str, Any]],
+    routing_default: str,
+    hosts: Callable[[str], bool],
+) -> str:
+    """The harness a work item runs on when it chose none — one rule for two readers.
+
+    The ``harnesses[]`` entry marked ``default: true`` when it can host a session,
+    else ``routing_default`` (``routing.defaultHarness``). The gate names this harness
+    as the default and the dispatcher spawns on it, so they are resolved here, once:
+    issue-440 found the gate honouring ``default: true`` while the daemon read only
+    ``routing.defaultHarness``. A ``default: true`` that cannot host is skipped rather
+    than obeyed — :func:`config_findings` says so where the operator looks.
+    """
+    for entry in _entries(config, HARNESSES_KEY):
+        if not isinstance(entry, Mapping) or entry.get("default") is not True:
+            continue
+        raw = entry.get("name")
+        name = raw.strip() if isinstance(raw, str) else ""
+        if name and hosts(name):
+            return name
+        break
+    return routing_default
 
 
 def candidate_harnesses(config: Optional[Mapping[str, Any]], name: str) -> List[str]:
@@ -420,6 +461,16 @@ def config_findings(
                 )
             )
             continue
+        if harness in defaults and not _hosts(adapter):
+            findings.append(
+                Finding(
+                    "warning",
+                    f"{HARNESSES_KEY}[{harness}].default",
+                    "this harness cannot host a work item's session, so it is not "
+                    "made the default; routing.defaultHarness is used instead "
+                    "(issue-440)",
+                )
+            )
         if models and not getattr(adapter, "model_flag", ""):
             findings.append(
                 Finding(
@@ -452,3 +503,11 @@ def config_findings(
                 )
             )
     return findings
+
+
+def _hosts(adapter: Any) -> bool:
+    """:func:`the_loop.harness.hosts_sessions`, imported late: this module is read by
+    the graph hooks, which must not pull the adapters in at import time."""
+    from .harness import hosts_sessions
+
+    return hosts_sessions(adapter)

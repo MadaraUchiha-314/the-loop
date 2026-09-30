@@ -645,7 +645,7 @@ class Runtime:
                 # "" is *no choice*, which is a different fact from "the
                 # operator's default" — so an empty value is recorded as an
                 # empty value rather than skipped.
-                for key in ("model", "effort"):
+                for key in ("harness", "model", "effort"):
                     value = str(result.data.get(key) or "")
                     if value:
                         record[key] = value

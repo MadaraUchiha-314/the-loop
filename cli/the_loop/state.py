@@ -637,6 +637,9 @@ ATTRIBUTES: Tuple[Attribute, ...] = (
         "how many sessions its pull requests get (issue-260)",
     ),
     Attribute(
+        REPOSITORY_FILE, "harness", "human-decision", "which harness (issue-440)"
+    ),
+    Attribute(
         REPOSITORY_FILE, "model", "human-decision", "what it runs on (issue-358)"
     ),
     Attribute(

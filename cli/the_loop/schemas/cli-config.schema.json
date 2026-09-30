@@ -275,7 +275,7 @@
     },
     "harnesses": {
       "type": "array",
-      "description": "The agent harnesses this instance has, and how each is launched (issue-358). Top level, beside `repositories` and `critics`, because which harnesses a machine has installed is not a routing decision: `routing` configures how an event REACHES a session, this configures what a session is. `models` and `effort` are declared beside it and refer to these names. Today it carries `name`, `default` and `args`; the other three per-harness keys (`routing.harnessTrust`, `routing.harnessPlugins`, `routing.defaultHarness`) belong here by the same argument and are a named follow-up rather than a silent migration.",
+      "description": "The agent harnesses this instance has, and how each is launched (issue-358). Top level, beside `repositories` and `critics`, because which harnesses a machine has installed is not a routing decision: `routing` configures how an event REACHES a session, this configures what a session is. `models` and `effort` are declared beside it and refer to these names. When two or more declared harnesses can host a work item's session, `phase-selection` also asks which harness each work item runs on (issue-440); a harness whose adapter cannot host one (today every harness but `claude`) is never offered. Today it carries `name`, `default` and `args`; the other three per-harness keys (`routing.harnessTrust`, `routing.harnessPlugins`, `routing.defaultHarness`) belong here by the same argument and are a named follow-up rather than a silent migration.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -290,7 +290,7 @@
           "default": {
             "type": "boolean",
             "default": false,
-            "description": "Whether an unmatched event spawns on this harness. Falls back to `routing.defaultHarness` when no entry claims it; two entries claiming it is a config error, because a work item's harness decides which models it may be offered."
+            "description": "Whether an unmatched event — and a work item that chose no harness at `phase-selection` — spawns on this harness. Falls back to `routing.defaultHarness` when no entry claims it, or when the entry claiming it cannot host a work item's session (issue-440); two entries claiming it is a config error, because a work item's harness decides which models it may be offered."
           },
           "args": {
             "type": "array",
