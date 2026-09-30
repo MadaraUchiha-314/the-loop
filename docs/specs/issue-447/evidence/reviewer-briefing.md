@@ -51,7 +51,7 @@ Closes #447. Tier 3 (`human-approves-pr`). No new credential, config key or depe
 6. **The hook:** `hooks/the-loop-link-pr.py`. It triggers on `git push`, `pr create`,
    `pull-request` and MCP `create_pull_request`, skips `the-loop pr create`, and runs a
    fixed argv in the session's `cwd`.
-7. **Skim:** the routes, the facades (the manager serves these by instance), the
+7. **Skim:** the routes, the facades (the manager serves reads by instance, and lifecycle acts by the work item's member), the
    OpenAPI entries, the docs.
 
 ## What changed (map)
@@ -64,7 +64,7 @@ flowchart LR
   M["MCP tools on /mcp"] --> S
   S --> C["core.github_ops"]
   L --> C
-  C --> G["ghapi.GitHubClient<br/>+7 methods"]
+  C --> G["ghapi.GitHubClient<br/>+9 methods"]
   C -->|comment| B["bus → ledger (marked, enveloped) → channels"]
   C -->|pr create / discover| K["core.sessions.link_pull_request"]
   H["PostToolUse hook<br/>git push · pr create · MCP"] -->|"link-pr --discover"| C
