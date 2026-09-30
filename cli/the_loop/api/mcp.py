@@ -178,14 +178,31 @@ def build_server(cli_config: Optional[dict] = None, *, facade: Any = None) -> MC
         )
 
     def link_pull_request(
-        ref: str, pull_request: str, instance: str = ""
+        ref: str,
+        pull_request: str = "",
+        instance: str = "",
+        discover: bool = False,
+        branch: str = "",
+        repository: str = "",
     ) -> Dict[str, Any]:
         """Record a pull request as delivering a work item, so its comments,
         reviews and CI results route to that work item's session. Call this in
         the same step as opening the pull request: a pull request the-loop
         authored carries none of the linkages the router can otherwise infer.
         `pull_request` is its number in the work item's own repository, or a
-        full ref (github:OWNER/REPO#16) for one in another repository."""
+        full ref (github:OWNER/REPO#16) for one in another repository. With
+        `discover` and a `branch` instead, every open pull request whose head is
+        that branch (in `repository`, default the work item's) is recorded.
+        A pull request opened with `create_pull_request` is already recorded."""
+        if discover:
+            return facade.link_session_pull_request(
+                ref,
+                "",
+                instance=instance,
+                discover=True,
+                branch=branch,
+                repository=repository,
+            )
         return facade.link_session_pull_request(ref, pull_request, instance=instance)
 
     # -- the harness's GitHub verbs (issue-447): what an agent used `gh` for ----

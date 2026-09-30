@@ -205,3 +205,84 @@ def test_mcp_can_be_disabled_per_config():
             headers=HEADERS,
         )
     assert response.status_code == 404
+
+
+# -- issue-447: the harness's GitHub verbs as tools ------------------------------
+
+
+@pytest.fixture()
+def fake_github(monkeypatch):
+    from ghfakes import FakeGitHubClient
+    from the_loop.ghapi import GitHubClient
+
+    client = FakeGitHubClient()
+    monkeypatch.setattr(
+        GitHubClient, "shared", classmethod(lambda cls, *a, **k: client)
+    )
+    return client
+
+
+def test_the_github_verbs_are_tools(mcp):
+    """
+    Feature: a harness that prefers MCP reaches GitHub through the-loop too
+      Scenario: an agent discovers the GitHub tools
+        When the host calls tools/list
+        Then the comment, ticket and pull-request tools are present, merge included
+
+    Requirement: docs/specs/issue-447/requirements.md R3.2
+    """
+    client, _ = mcp
+    names = {t["name"] for t in client.request("tools/list")["result"]["tools"]}
+    assert {
+        "post_comment",
+        "get_ticket",
+        "create_ticket",
+        "create_pull_request",
+        "pull_request_status",
+        "pull_request_threads",
+        "merge_pull_request",
+    } <= names
+
+
+def test_abuse_447_a2_the_merge_tool_obeys_the_policy(tmp_path, fake_github):
+    """
+    Feature: the merge policy lives in one place
+      Scenario: a tool call cannot merge what the verb would refuse
+        Given a service whose config says routing.mergeOnApproval is false
+        When the host calls merge_pull_request
+        Then nothing is merged and the result names the key
+
+    Requirement: docs/specs/issue-447/requirements.md R1.8, R3.2
+    """
+    config = {
+        "state": {"root": str(tmp_path / ".the-loop")},
+        "routing": {"mergeOnApproval": False},
+    }
+    with TestClient(create_app(config), base_url=BASE_URL) as http:
+        result = McpClient(http).request(
+            "tools/call",
+            {"name": "merge_pull_request", "arguments": {"ref": "github:octo/repo#12"}},
+        )["result"]
+    assert "routing.mergeOnApproval" in json.dumps(result)
+    assert fake_github.merged == []
+
+
+def test_link_pull_request_can_discover(mcp, fake_github):
+    """
+    Feature: the discovering link is a tool too
+      Scenario: an agent asks the service to find its branch's pull requests
+        When the host calls link_pull_request with discover and a branch
+        Then GitHub is asked for that branch's open pull requests
+
+    Requirement: docs/specs/issue-447/requirements.md R4.1, R3.2
+    """
+    client, _ = mcp
+    result = client.request(
+        "tools/call",
+        {
+            "name": "link_pull_request",
+            "arguments": {"ref": REF, "discover": True, "branch": "claude/x"},
+        },
+    )["result"]
+    assert result.get("isError") is not True
+    assert fake_github.calls_to == ["open_pulls_for_head"]
