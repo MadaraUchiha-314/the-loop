@@ -88,7 +88,7 @@ flowchart LR
 - One negative test per abuse case A1–A7:
   [`security-review.md`](security-review.md).
 - `pr status` is bounded at three GitHub requests (T8).
-- Self-review findings, all fixed in this PR: [`self-review.md`](self-review.md).
+- Self-review: two rounds, 13 findings. All are fixed except M2 (open question 3) and the fork case (question 4): [`self-review.md`](self-review.md).
 - Spec chain: [`docs/specs/issue-447/`](../).
 
 ## Open questions for the reviewer
