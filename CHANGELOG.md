@@ -1,3 +1,9 @@
+## v19.16.0 (2026-09-30)
+
+### Feat
+
+- print the-loop version on start and status
+
 ## v19.15.0 (2026-09-30)
 
 ### Feat
