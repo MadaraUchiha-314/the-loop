@@ -109,11 +109,13 @@ or breaking change publish nothing. See
 ## What else you may need
 
 The CLI shells out to a few tools rather than reimplementing them. None is required for
-every command:
+every command. GitHub is **not** one of them since issue-442: the daemon reaches it through
+PyGithub with a token you name under
+[`integrations.github.api.tokenEnv`](/config/cli/integrations-options#github-api-tokenenv)
+(default `GH_TOKEN`, then `GITHUB_TOKEN`) — no `gh` binary, no interactive login.
 
 | Tool | Needed for |
 |------|-----------|
-| `gh`, authenticated | GitHub reads and writes — the poller, reactions, session announcements, control paper-trail comments. The daemon holds no token of its own. |
 | `git` | Per-work-item [workspaces](/config/cli/routing-options#workspace-root). |
 | `tmux` | Hosting every spawned session — **required** by both ingress daemons ([`the-loop start`](/cli/commands/start)). See [interactive sessions](/capabilities/interactive-sessions). |
 | `ttyd` | The optional [browser terminal](/config/cli/routing-options#webterminal-enabled). |

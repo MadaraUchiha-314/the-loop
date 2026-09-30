@@ -185,7 +185,7 @@ def test_the_role_is_boot_only_and_the_registry_is_hot():
 def test_the_schema_accepts_the_block_and_refuses_an_unknown_key():
     """R1.1: the authored schema carries the keys; `additionalProperties: false` holds."""
     good = {
-        "version": "0.10.0",
+        "version": "0.11.0",
         "instance": {
             "name": "hq",
             "role": "manager",
@@ -197,12 +197,12 @@ def test_the_schema_accepts_the_block_and_refuses_an_unknown_key():
         },
     }
     assert configschema.validate(good) == []
-    bad = {"version": "0.10.0", "instance": {"role": "boss"}}
+    bad = {"version": "0.11.0", "instance": {"role": "boss"}}
     assert configschema.validate(bad)
-    extra = {"version": "0.10.0", "instance": {"manager": {"members": []}}}
+    extra = {"version": "0.11.0", "instance": {"manager": {"members": []}}}
     assert configschema.validate(extra)
     unnamed_entry = {
-        "version": "0.10.0",
+        "version": "0.11.0",
         "instance": {"manager": {"instances": [{"url": "http://x:1"}]}},
     }
     assert configschema.validate(unnamed_entry)

@@ -93,7 +93,7 @@ def get_config(path: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
     everything is at its default, which is the one thing it is not.
 
     The document is served as authored. ``load_cli_config`` would additionally fan
-    ``integrations.github.cli.binary`` out into private ``_ghBinary`` keys — a runtime
+    ``integrations.github.api`` out into private ``_github`` keys — a runtime
     convenience that is not in the schema, and would come back on the next save as an
     unknown key — so the two steps that matter are taken directly instead.
     """

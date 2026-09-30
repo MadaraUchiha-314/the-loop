@@ -220,7 +220,7 @@ def _announce(
             subject=label,
             invocation=f"the-loop {verb}",
         )
-        ok, error = post_issue_comment(work_item, body, gh_binary=config.gh_binary)
+        ok, error = post_issue_comment(work_item, body, api=config.github)
         if ok:
             messages.append(
                 {

@@ -853,9 +853,7 @@ def test_a_refused_keyword_explains_itself_on_the_ticket(setup, monkeypatch):
     monkeypatch.setattr(
         dispatcher_mod,
         "post_issue_comment",
-        lambda item, body, gh_binary="gh": (
-            posted.append((item.ref, body)) or (True, "")
-        ),
+        lambda item, body, api=None: posted.append((item.ref, body)) or (True, ""),
     )
 
     dispatcher.handle(

@@ -66,8 +66,8 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   arms on the event that adds it — and WHEN it carries only some THEN it SHALL NOT,
   whichever entry is missing. An empty list arms nothing. The poll ingress SHALL list by
   the same set (`polling.sources[].labels`, empty = reuse the routing list): one `--label`
-  per label to `gh`, and a returned item that does not carry every label SHALL be dropped
-  before it is tracked, so both ingresses agree whatever `gh`'s filter returns. The
+  per label to GitHub's listing filter, and a returned item that does not carry every label SHALL be dropped
+  before it is tracked, so both ingresses agree whatever the filter returns. The
   single-string `autoExecuteLabel` and source `label` are **refused** rather than read —
   the shared default in place of a custom label would arm *more* than the operator set —
   and `the-loop migrate-config` wraps them (config version `0.10.0`).
@@ -433,14 +433,14 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   yields a work-item ref **only** through that convention (a pull request's head branch, or
   a CI event's `head_branch` / `branches[].name`) AND no live session record on this machine
   owns any of the event's refs THEN the system SHALL ask the provider whether the ref exists
-  (`gh api repos/<owner>/<repo>/issues/<n>`, a ref on GitHub Enterprise asked of its own
+  (`GET repos/<owner>/<repo>/issues/<n>` through the daemon's client, a ref on GitHub Enterprise asked of its own
   host) before that ref becomes a spawn target or a control-command target; WHEN the answer
   is a definitive HTTP 404 THEN the ref SHALL be removed from the event's work items
   (`routing.linkage_dropped`) and the event routed on what remains; and WHEN every one of an
   event's work items is removed this way THEN the event SHALL be dropped
   (`dispatch.dropped`, reason `work-item-not-found`) **without** releasing its delivery id,
   because a work item that does not exist is a permanent condition. Every other answer — no
-  `gh` on PATH, a timeout, a 403, a 5xx, unusable coordinates, a non-GitHub provider — SHALL
+  token, a timeout, a 403, a 5xx, unusable coordinates, a non-GitHub provider — SHALL
   keep the ref and route exactly as before: an unavailable check is not evidence of absence.
   A ref GitHub itself reported (`closingIssuesReferences`) or one a closing keyword named is
   **never** questioned — those state their repository, and issue-183's cross-repository
@@ -478,8 +478,8 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   spawning one — THEN the PR SHALL be durably recorded on that work item's **single
   session record** (`pullRequests[]`, see [state on disk](../cli/state.md)), so which work
   item owns a PR's events is read from the record on later events and never re-derived
-  from `gh`. Before issue-172 the binding was recomputed per event, so **unlinking the PR
-  in the Development panel, editing the closing keyword out of its body, a `gh` too old
+  from GitHub. Before issue-172 the binding was recomputed per event, so **unlinking the PR
+  in the Development panel, editing the closing keyword out of its body, a listing too old
   for `closingIssuesReferences`, or one transient GraphQL error** silently re-pointed
   routing at the PR itself — past a running session — and the event was dropped or
   answered with a duplicate session.
@@ -684,7 +684,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   - Every one of these SHALL pass the guards a conversation comment passes, in the same
     order and the same place: the self-comment marker first, then `authorizedUsers` judged
     by **that comment's own author**, then control parsing. No new credential, no new
-    network path — the reads go through the operator's own `gh`.
+    network path — the reads go through the daemon's GitHub client under its token (issue-442).
   - WHEN the polled item is an **issue** THEN the requests SHALL be exactly the one the
     poller always made; the two extra reads are per **pull request** only.
 - On the **poll** path the same closure is discovered by reconciliation, since a poll
@@ -738,7 +738,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   something had no way to learn the agent was never told. The notice states the recovery:
   **post the instruction again** — a new comment id carries a full retry budget, and
   nothing the-loop stores needs editing. Posting is **best-effort in one direction only**:
-  it MAY fail (no `gh`, a non-GitHub provider, an API error — `poll.giveup_report_failed`)
+  it MAY fail (no token, a non-GitHub provider, an API error — `poll.giveup_report_failed`)
   and the give-up SHALL be recorded regardless; it SHALL NEVER cause a comment to be
   treated as delivered, and SHALL NEVER end a poll cycle. The notice is built from the
   comment's id, URL and attempt count only — **no text from the abandoned comment is
@@ -793,8 +793,8 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     lock held by a standalone daemon is skipped with a warning, never fought over;
     `hostIngresses: false` (or a disabled service) restores one process per ingress.
 - On the poll path the linked issues of a labelled PR SHALL be read from GitHub inside the
-  PR listing the poller already performs (`gh pr list --json …,closingIssuesReferences` —
-  no extra API round-trip per cycle), and WHEN the installed `gh` predates that field THEN
+  PR listing the poller already performs (the GraphQL listing's `closingIssuesReferences` —
+  no extra API round-trip per cycle; before issue-442 it was `gh pr list --json`), and WHEN a listing carries no such field THEN
   the poller SHALL warn once and fall back to the head-branch / closing-keyword
   conventions rather than failing the cycle.
 - WHEN `routing.reactions.enabled` is on (default **on** — owner decision at PR #85
@@ -805,7 +805,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   (default 🎉 `hooray`) or `error` (default 😕 `confused`) from the dispatch outcome —
   on the triggering **comment** when the event carries one, else on the **issue/PR**
   itself. Shared by the webhook receiver and the poller; best-effort via the operator's
-  own `gh` CLI (a reaction failure never affects the dispatch; a missing `gh`, a
+  token through the daemon's client (a reaction failure never affects the dispatch; a missing token, a
   non-GitHub provider, or an event with no reactable target is a silent no-op — so
   work-item platforms without reactions degrade cleanly). GitHub's palette is fixed
   (`+1 -1 laugh confused heart hooray rocket eyes`; ✅/⁉️ don't exist), and each
@@ -938,6 +938,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-442 | Every GitHub read and write of both ingresses moved from the operator's `gh` to the daemon's own client on PyGithub (2026-09-30): the poller's listings are the GraphQL queries `gh` ran (so `closingIssuesReferences`, node-id comment ids and every baselined thread survive the upgrade), the three pull-request surfaces are read over REST, the existence check, reactions, announcement, paper trail and give-up notice post under the token `integrations.github.api.tokenEnv` names; *Issues disabled* is classified from GitHub's 410; no rate-limit sleep, the caller's timeout on every request | [spec](../specs/issue-442/), [decision-139](../decisions/decision-139.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/442) |
 | issue-426 | **A `work-item`-mode session can no longer freeze on Claude Code's question menu** (2026-09-28): the prompt said "never block on an interactive prompt" and nothing enforced it, so `AskUserQuestion` rendered a menu in the tmux pane, emitted nothing, and every later message was pasted into a session waiting on a keypress. `Dispatcher._adapter_for` and `sessions restart` now launch the adapter `with_unattended(interaction.unattended)`, and the Claude adapter adds `--disallowedTools=AskUserQuestion` before the prompt; `cli` mode is the opt-out. The `=` spelling matters: the ticket's space-separated workaround turned the spawn prompt into deny rules | [spec](../specs/issue-426/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/426) |
 | issue-416 | **An attachment in a GitHub body reaches the session as a path** (2026-09-21): `_render_prompt` appends an Attachments section after the template for the asset URLs in the event's bodies, fetched with the daemon's token (GitHub's hosts only, redirects re-checked, 25 MiB, ten per event) into `<state.root>/local/attachments/<slug>/` and reused from disk; a failed fetch names the URL and the reason; the excerpt is untouched | [spec](../specs/issue-416/), [decision-135](../decisions/decision-135.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/416) |
 | issue-405 | The close branch **holds** a closure for a session at its endgame (2026-09-21): `_defer_close` reads the work item's `GraphContext` and parks the close when the pointer stands on an unexited terminal node; `sweep_closing` (the dispatcher's own sweeper thread, or an embedder's cycle) finishes it on the completion claim or at `routing.tmux.finishGraceSeconds`; `_record_reopen` cancels it; the poller's closure reconciliation skips a held ref; `session.autoclosed merged` reads the state file's merged pull requests | [spec](../specs/issue-405/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/405) |

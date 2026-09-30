@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
-import shutil
 from typing import Any, Dict, FrozenSet, Mapping, Protocol
 
 logger = logging.getLogger("the-loop.graph.integrations")
@@ -40,53 +38,44 @@ class Integration(Protocol):
     def call(self, op: str, **params: Any) -> Dict[str, Any]: ...
 
 
-def _has_token(env_names) -> bool:
-    return any(os.environ.get(n) for n in env_names)
-
-
 def resolve(target: str, config: Mapping[str, Any]) -> "Integration":
     """Build the configured provider for ``target``.
 
-    ``transport: auto`` resolves in a documented order — a configured API token
-    first, then an installed CLI binary — and when neither is available it fails
-    closed naming **both** remedies. An explicit transport is honoured verbatim
-    and fails rather than silently falling back: a configured choice that
-    quietly degrades is worse than an error.
+    There is one GitHub transport since issue-442 — PyGithub under the token
+    ``integrations.github.api.tokenEnv`` names — so ``auto`` and ``api`` build
+    it, a missing token fails closed naming the variables, and the retired
+    ``cli`` is refused by name rather than silently served another way: a
+    configured choice that quietly degrades is worse than an error.
     """
     section = dict((config.get("integrations") or {}).get(target) or {})
     transport = str(section.get("transport", "auto"))
 
     if target == "github":
-        from .github import GitHubApi, GitHubCli
+        from ...ghapi import GitHubApiConfig
+        from .github import GitHubProvider
 
-        api_cfg = dict(section.get("api") or {})
-        cli_cfg = dict(section.get("cli") or {})
-        token_envs = api_cfg.get("tokenEnv") or ["GH_TOKEN", "GITHUB_TOKEN"]
-        if isinstance(token_envs, str):
-            token_envs = [token_envs]
-        binary = str(cli_cfg.get("binary", "gh"))
-
-        if transport == "api":
-            return GitHubApi(
-                token_envs, str(api_cfg.get("baseUrl", "https://api.github.com"))
-            )
         if transport == "cli":
-            return GitHubCli(binary)
-        if transport != "auto":
+            # Retired by issue-442 (decision-139): the daemon reaches GitHub
+            # through PyGithub under a token, never through a `gh` binary. The
+            # config gate refuses the key at start; a hand-built mapping is
+            # refused here, by name, rather than silently served another way.
             raise TransportUnavailable(
-                f"github: unknown transport {transport!r}; expected auto, api or cli"
+                "github: the `cli` transport was retired (issue-442) — the daemon "
+                "reaches GitHub with the token `integrations.github.api.tokenEnv` "
+                "names; remove `integrations.github.transport` and "
+                "`integrations.github.cli` (`the-loop migrate-config`)"
             )
-        if _has_token(token_envs):
-            return GitHubApi(
-                token_envs, str(api_cfg.get("baseUrl", "https://api.github.com"))
+        if transport not in ("auto", "api"):
+            raise TransportUnavailable(
+                f"github: unknown transport {transport!r}; expected auto or api"
             )
-        if shutil.which(binary):
-            return GitHubCli(binary)
-        raise TransportUnavailable(
-            "github: no transport available — set one of "
-            f"{', '.join(token_envs)} to use the API transport, or install "
-            f"{binary!r} to use the CLI transport"
-        )
+        api = GitHubApiConfig.from_cli_config(config)
+        if not api.token():
+            raise TransportUnavailable(
+                f"github: {api.missing_token_reason} — the daemon's own GitHub "
+                "calls need a token (integrations.github.api.tokenEnv)"
+            )
+        return GitHubProvider(api)
 
     if target == "slack":
         # Slack converged on the channels layer (issue-245, owner's call on

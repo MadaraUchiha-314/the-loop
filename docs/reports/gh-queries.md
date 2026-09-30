@@ -3,7 +3,10 @@
 > Requested in [issue #60](https://github.com/MadaraUchiha-314/the-loop/issues/60):
 > *what filters are we using, and how are we making sure that queries are performant?*
 > Audited at the current `main` (post-v0.11.0). This is a point-in-time report, not a
-> living capability doc.
+> living capability doc. **Superseded in mechanism by issue-442 (2026-09-30):** the poller
+> no longer shells out to `gh`; the same three queries run through PyGithub (the two
+> listings as the GraphQL documents `gh` itself ran, the comments over GraphQL and REST)
+> under the daemon's token — see [decision-139](../decisions/decision-139.md).
 
 ## Scope and method
 

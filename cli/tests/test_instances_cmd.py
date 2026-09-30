@@ -12,7 +12,7 @@ from the_loop.commands import instances_cmd, lifecycle_cmd
 from the_loop.core import lifecycle
 
 MANAGER = """# keep me
-version: "0.10.0"
+version: "0.11.0"
 instance:
   name: hq
   role: manager
@@ -45,7 +45,7 @@ def test_list_on_a_worker_prints_its_one_row(tmp_path, monkeypatch, capsys):
     """
     monkeypatch.chdir(tmp_path)
     _quiet(monkeypatch)
-    _write(tmp_path, 'version: "0.10.0"\ninstance:\n  name: laptop-a\n')
+    _write(tmp_path, 'version: "0.11.0"\ninstance:\n  name: laptop-a\n')
     assert main(["instances", "list"]) == 0
     out = capsys.readouterr().out.splitlines()
     assert out[0].startswith("name")
@@ -62,7 +62,7 @@ def test_list_on_a_worker_prints_its_one_row(tmp_path, monkeypatch, capsys):
 def test_register_on_a_worker_exits_2_naming_the_role(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     _quiet(monkeypatch)
-    path = _write(tmp_path, 'version: "0.10.0"\ninstance:\n  name: laptop-a\n')
+    path = _write(tmp_path, 'version: "0.11.0"\ninstance:\n  name: laptop-a\n')
     before = path.read_text()
     assert main(["instances", "register", "b", "http://b:1"]) == 2
     assert "instance.role" in capsys.readouterr().err

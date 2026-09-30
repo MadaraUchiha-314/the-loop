@@ -76,7 +76,7 @@ only a supported, semantically-versioned way to reach one.
   through the cli-config.yaml") and SHALL be declinable at the call site
   (`host_ingresses=False`), which is what a multi-worker deployment needs.
 - **The environment contract SHALL be stated and checkable.**
-  `the_loop.sdk.REQUIREMENTS` names each external binary (`gh`, `claude`, `cursor-agent`,
+  `the_loop.sdk.REQUIREMENTS` names each external binary (`claude`, `cursor-agent`,
   `tmux`, `git`, `ttyd`), the config key that renames it, the capability it serves, and the
   predicate deciding whether *this* configuration needs it.
   `TheLoop.check_environment()` resolves them against `PATH` and returns
@@ -107,4 +107,5 @@ only a supported, semantically-versioned way to reach one.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-442 | `gh` left the environment contract (2026-09-30): GitHub is reached through PyGithub, a dependency of the wheel, under the token `integrations.github.api.tokenEnv` names — a credential the docs name, not a binary the table checks | [spec](../specs/issue-442/), [decision-139](../decisions/decision-139.md) |
 | issue-212 | Capability minted: `the_loop.sdk` with `TheLoop`, eight capability namespaces, a mountable `APIRouter` extracted from `create_app` (one surface, two consumers, parity-tested), lifespan composition that wraps the host's by default, MCP under a prefix with a declarable host allowlist, strict config-at-construction, and an executable environment contract. The SDK installs no middleware, no exception handlers and no CORS on the host application; authorization is a `dependencies=` parameter, not an in-app layer | [spec](../specs/issue-212/), [decision-085](../decisions/decision-085.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/212) |

@@ -1,36 +1,26 @@
-"""GitHub providers — `api` (stdlib HTTP) and `cli` (the existing `gh` path).
+"""The GitHub provider — the process graph's hooks over the daemon's client.
 
-GitHub publishes **no official Python SDK** — its own docs list every Python
-library as third-party and unmaintained by GitHub, while official Octokit covers
-JS/Ruby/.NET only. The community options cost five or six transitive packages
-(PyGithub even a compiled one) to wrap roughly ten endpoints, against a runtime
-footprint of `pyyaml`. So: thin REST, or the `gh` binary the operator already
-authenticated.
-
-The `cli` transport is not a fallback — it is genuinely better in some
-environments, because it inherits the operator's `gh auth`, including enterprise
-and SSO configuration.
+Until issue-442 this module carried two transports: ``api`` (a stdlib ``urllib``
+client that still shelled out to ``gh auth token`` when no token was set) and
+``cli`` (the operator's ``gh``). Both are one provider now, over
+:class:`~the_loop.ghapi.GitHubClient` — PyGithub under the token
+``integrations.github.api.tokenEnv`` names (decision-139). The operations a hook
+may ask for are unchanged (``OPERATIONS``), and so is the contract: every
+failure is an :class:`IntegrationError`, a missing token names the variables.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-import shutil
-import subprocess
-import urllib.error
-import urllib.request
-from typing import Any, Dict, FrozenSet, Sequence
+from typing import Any, Dict, FrozenSet, Optional
 
-from ...comments import gh_host_args
-from ...ghhost import PUBLIC_API_BASE, api_base_for
+from ...ghapi import GitHubApiConfig, GitHubApiError, GitHubClient
 from ...sessions import DEFAULT_GITHUB_HOST, is_github_host
 from .base import IntegrationError, OperationUnsupported
 
 logger = logging.getLogger("the-loop.graph.integrations")
 
-__all__ = ["GitHubApi", "GitHubCli", "OPERATIONS"]
+__all__ = ["GitHubProvider", "OPERATIONS"]
 
 #: Everything the-loop's own hooks need from GitHub. Small on purpose.
 #: `get-thread` joined for the review loop (issue-279, the work-item-level
@@ -60,8 +50,7 @@ def _ref_parts(ref: str) -> tuple[str, str, str, str]:
     """``github:[host/]owner/repo#123`` → ``(host, owner, repo, "123")``.
 
     ``host`` is ``""`` for github.com — the unwritten default — so a caller
-    spelling a ``--repo`` or a ``--hostname`` writes it exactly when it is not
-    the default (issue-311).
+    addresses a host exactly when it is not the default (issue-311).
     """
     body = ref.split(":", 1)[1] if ":" in ref else ref
     repo_part, _, number = body.partition("#")
@@ -75,7 +64,7 @@ def _ref_parts(ref: str) -> tuple[str, str, str, str]:
         owner, repo = parts
     if host == DEFAULT_GITHUB_HOST:
         host = ""
-    if not (owner and repo and number):
+    if not (owner and repo and number.isdigit()):
         # Name both remedies (issue-194). The value that lands here is almost
         # always a bare work-item id, because no `--ref` was passed and none
         # could be derived — and an error that says only "malformed" leaves the
@@ -95,260 +84,99 @@ def _split_ref(ref: str) -> tuple[str, str, str]:
     return owner, repo, number
 
 
-class GitHubApi:
-    """REST over the standard library. No dependency, works in a bare container."""
+class GitHubProvider:
+    """The one GitHub provider: PyGithub through :class:`GitHubClient`.
+
+    ``transport`` reads ``"api"`` for anything that still inspects it — there is
+    one way to reach GitHub now, and it is the API.
+    """
 
     name = "github"
     transport = "api"
     operations = OPERATIONS
 
     def __init__(
-        self, token_envs: Sequence[str], base_url: str = "https://api.github.com"
-    ):
-        self.token_envs = list(token_envs)
-        self.base_url = base_url.rstrip("/")
-
-    def _token(self) -> str:
-        for env in self.token_envs:
-            value = os.environ.get(env)
-            if value:
-                return value
-        # `gh` auth ergonomics without depending on `gh` at call time.
-        if shutil.which("gh"):
-            try:
-                proc = subprocess.run(
-                    ["gh", "auth", "token"], capture_output=True, text=True, timeout=15
-                )
-                if proc.returncode == 0 and proc.stdout.strip():
-                    return proc.stdout.strip()
-            except (OSError, subprocess.SubprocessError):
-                pass
-        raise IntegrationError(
-            f"github api transport has no credentials — set one of "
-            f"{', '.join(self.token_envs)}, or run `gh auth login`"
-        )
-
-    def _base_for(self, host: str) -> str:
-        """The REST base a hosted ref is addressed at (issue-311, R4.3).
-
-        A ref on GitHub Enterprise against the **public** default derives
-        ``https://<host>/api/v3`` — the case nobody configured. An explicit
-        ``baseUrl`` is the operator's and is honoured verbatim (decision-042).
-        """
-        if host and self.base_url == PUBLIC_API_BASE:
-            return api_base_for(host)
-        return self.base_url
-
-    def _request(
         self,
-        method: str,
-        path: str,
-        payload: Dict[str, Any] | None = None,
-        host: str = "",
+        config: Optional[GitHubApiConfig] = None,
+        client: Optional[GitHubClient] = None,
     ):
-        url = f"{self._base_for(host)}{path}"
-        data = json.dumps(payload).encode() if payload is not None else None
-        req = urllib.request.Request(url, data=data, method=method)
-        req.add_header("Authorization", f"Bearer {self._token()}")
-        req.add_header("Accept", "application/vnd.github+json")
-        req.add_header("Content-Type", "application/json")
+        self.config = config or GitHubApiConfig()
+        self.client = client or GitHubClient.shared(self.config)
+
+    def _run(self, fn):
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                body = resp.read().decode() or "{}"
-        except urllib.error.HTTPError as exc:
-            raise IntegrationError(
-                f"github api {method} {path} failed: {exc.code} {exc.reason}"
-            ) from None
-        except urllib.error.URLError as exc:
-            raise IntegrationError(
-                f"github api {method} {path} failed: {exc.reason}"
-            ) from None
-        try:
-            return json.loads(body)
-        except json.JSONDecodeError:
-            return {}
+            return fn()
+        except GitHubApiError as exc:
+            raise IntegrationError(f"github: {exc}") from None
 
     def call(self, op: str, **params: Any) -> Dict[str, Any]:
         if op not in self.operations:
-            raise OperationUnsupported(f"github/api does not implement {op!r}")
-        host, owner, repo, number = _ref_parts(str(params["ref"]))
+            raise OperationUnsupported(f"github does not implement {op!r}")
+        host, owner, repo, number_text = _ref_parts(str(params["ref"]))
+        number = int(number_text)
+        gh = self.client
         if op == "add-comment":
-            return {
-                "result": self._request(
-                    "POST",
-                    f"/repos/{owner}/{repo}/issues/{number}/comments",
-                    {"body": str(params["body"])},
-                    host=host,
+            url = self._run(
+                lambda: gh.post_comment(
+                    owner, repo, number, str(params["body"]), host=host
                 )
-            }
+            )
+            return {"result": {"html_url": url}}
         if op == "set-labels":
-            return {
-                "result": self._request(
-                    "PUT",
-                    f"/repos/{owner}/{repo}/issues/{number}/labels",
-                    {"labels": list(params["labels"])},
-                    host=host,
-                )
-            }
+            # Adds the named labels, leaving every other one in place — the
+            # semantics the shipped hooks rely on (they take the previous phase
+            # label off themselves through `remove-label`).
+            labels = [str(lbl) for lbl in params["labels"]]
+            self._run(lambda: gh.add_labels(owner, repo, number, labels, host=host))
+            return {"result": "ok"}
         if op == "create-label":
             # issue-393 F3/R13: create a label the repository does not have yet,
             # so the daemon can label a repo that was never `/the-loop:init`-ed.
-            # A label that already exists returns 422; the caller treats that as
-            # success (the label is there, which is all it wanted).
-            try:
-                return {
-                    "result": self._request(
-                        "POST",
-                        f"/repos/{owner}/{repo}/labels",
-                        {
-                            "name": str(params["name"]),
-                            "color": str(params.get("color") or "ededed"),
-                        },
-                        host=host,
-                    )
-                }
-            except IntegrationError as exc:
-                if "already_exists" in str(exc) or "422" in str(exc):
-                    return {"result": "exists"}
-                raise
-        if op == "remove-label":
-            # issue-393 B10: take ONE label off an issue, leaving every other
-            # label (`bug`, `enhancement`, the arming labels) in place — unlike a
-            # PUT of the label set, which would replace them all. A label the
-            # issue does not carry returns 404; that is success (it is not there,
-            # which is all the caller wanted).
-            from urllib.parse import quote
-
-            label = quote(str(params["label"]), safe="")
-            try:
-                return {
-                    "result": self._request(
-                        "DELETE",
-                        f"/repos/{owner}/{repo}/issues/{number}/labels/{label}",
-                        host=host,
-                    )
-                }
-            except IntegrationError as exc:
-                if "not found" in str(exc).lower() or "404" in str(exc):
-                    return {"result": "absent"}
-                raise
-        if op == "get-labels":
-            data = self._request(
-                "GET", f"/repos/{owner}/{repo}/issues/{number}/labels", host=host
-            )
-            return {"labels": [d.get("name") for d in data if isinstance(d, dict)]}
-        if op == "get-thread":
-            data = self._request(
-                "GET", f"/repos/{owner}/{repo}/issues/{number}", host=host
-            )
-            kind = "pull-request" if "pull_request" in data else "issue"
-            return {"kind": kind}
-        data = self._request(
-            "GET", f"/repos/{owner}/{repo}/issues/{number}/comments", host=host
-        )
-        return {"comments": data}
-
-
-class GitHubCli:
-    """The existing `gh` path, wrapped as a provider rather than replaced.
-
-    Configurable transport is what turned this migration from a big-bang rewrite
-    into an addition: `announce`, `comments`, `control`, `reactions` and the
-    poller keep working, and the API transport lands beside them.
-    """
-
-    name = "github"
-    transport = "cli"
-    operations = OPERATIONS
-
-    def __init__(self, binary: str = "gh"):
-        self.binary = binary
-
-    def _run(self, args: list[str]) -> str:
-        if not shutil.which(self.binary):
-            raise IntegrationError(
-                f"github cli transport needs {self.binary!r} on PATH — install it, "
-                "or set integrations.github.transport: api with a token"
-            )
-        proc = subprocess.run(
-            [self.binary, *args], capture_output=True, text=True, timeout=60
-        )
-        if proc.returncode != 0:
-            raise IntegrationError(
-                f"{self.binary} {' '.join(args[:3])} failed: "
-                f"{(proc.stderr or proc.stdout).strip()}"
-            )
-        return proc.stdout
-
-    def call(self, op: str, **params: Any) -> Dict[str, Any]:
-        if op not in self.operations:
-            raise OperationUnsupported(f"github/cli does not implement {op!r}")
-        host, owner, repo, number = _ref_parts(str(params["ref"]))
-        # gh's own grammars (issue-311): `--repo [HOST/]OWNER/REPO` for the
-        # issue verbs, `--hostname` for `api`; both written only off github.com.
-        slug = f"{host}/{owner}/{repo}" if host else f"{owner}/{repo}"
-        api = ["api", *gh_host_args(host)]
-        if op == "add-comment":
-            self._run(
-                [
-                    "issue",
-                    "comment",
-                    number,
-                    "--repo",
-                    slug,
-                    "--body",
-                    str(params["body"]),
-                ]
-            )
-            return {"result": "ok"}
-        if op == "set-labels":
-            args = ["issue", "edit", number, "--repo", slug]
-            for label in params["labels"]:
-                args += ["--add-label", str(label)]
-            self._run(args)
-            return {"result": "ok"}
-        if op == "create-label":
-            # issue-393 F3/R13. `gh label create --force` is idempotent — it
-            # updates an existing label rather than failing — which is exactly
-            # the "ensure it exists" this needs.
-            self._run(
-                [
-                    "label",
-                    "create",
+            # A label that already exists is success (the label is there).
+            created = self._run(
+                lambda: gh.ensure_label(
+                    owner,
+                    repo,
                     str(params["name"]),
-                    "--repo",
-                    slug,
-                    "--color",
                     str(params.get("color") or "ededed"),
-                    "--force",
-                ]
+                    host=host,
+                )
             )
-            return {"result": "ok"}
+            return {"result": "ok" if created else "exists"}
         if op == "remove-label":
-            # issue-393 B10: `--remove-label` takes one label off, leaving the
-            # rest. `gh` is idempotent on a label the issue does not carry.
-            self._run(
-                [
-                    "issue",
-                    "edit",
-                    number,
-                    "--repo",
-                    slug,
-                    "--remove-label",
-                    str(params["label"]),
-                ]
+            # issue-393 B10: take ONE label off, leaving the rest. A label the
+            # issue does not carry is success (it is not there).
+            removed = self._run(
+                lambda: gh.remove_label(
+                    owner, repo, number, str(params["label"]), host=host
+                )
             )
-            return {"result": "ok"}
+            return {"result": "ok" if removed else "absent"}
         if op == "get-labels":
-            out = self._run(
-                ["issue", "view", number, "--repo", slug, "--json", "labels"]
-            )
-            data = json.loads(out or "{}")
-            return {"labels": [d.get("name") for d in data.get("labels", [])]}
+            return {
+                "labels": self._run(
+                    lambda: gh.labels_of(owner, repo, number, host=host)
+                )
+            }
         if op == "get-thread":
-            out = self._run([*api, f"repos/{owner}/{repo}/issues/{number}"])
-            data = json.loads(out or "{}")
+            data = self._run(lambda: gh.get_issue(owner, repo, number, host=host))
             kind = "pull-request" if "pull_request" in data else "issue"
             return {"kind": kind}
-        out = self._run(["issue", "view", number, "--repo", slug, "--json", "comments"])
-        return {"comments": json.loads(out or "{}").get("comments", [])}
+        comments = self._run(
+            lambda: gh.list_issue_comments(owner, repo, number, host=host)
+        )
+        return {
+            "comments": [
+                {
+                    "id": c.id,
+                    "body": c.body,
+                    "author": {"login": c.author},
+                    "user": {"login": c.author},
+                    "created_at": c.created_at,
+                    "createdAt": c.created_at,
+                    "html_url": c.url,
+                    "url": c.url,
+                }
+                for c in comments
+            ]
+        }

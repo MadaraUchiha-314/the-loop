@@ -8,10 +8,10 @@ tmux session name and the ``tmux attach -t loop-<slug>`` command. Posted on the
 work item's **first spawn** only — a respawn reuses the same session name, so
 re-announcing would just be noise on the ticket (owner decision, PR #87).
 
-Built in the mould of :mod:`the_loop.reactions`: it shells the operator's own
-``gh`` CLI (no token of the-loop's own), and everything is best-effort — an
-announcement must never fail, delay or drop the dispatch, so every failure
-degrades to a logged no-op. Sessions with no tmux session yet are skipped
+Built in the mould of :mod:`the_loop.reactions`: it posts through the daemon's
+GitHub client (issue-442), and everything is best-effort — an announcement must
+never fail, delay or drop the dispatch, so every failure degrades to a logged
+no-op. Sessions with no tmux session yet are skipped
 (there is nothing to attach to) and so are non-GitHub work items.
 
 The comment body is built **only** from the session's own registry fields — the
@@ -30,13 +30,13 @@ Spec: docs/specs/issue-86/design.md, docs/specs/issue-104/design.md.
 from __future__ import annotations
 
 import logging
-import subprocess
 from dataclasses import dataclass
 from typing import Callable, Optional
 
 from . import eventlog
 from .authz import mark_self_authored
 from .comments import post_issue_comment
+from .ghapi import GitHubApiConfig, GitHubClient
 from .linkage import looks_not_found
 from .sessions import Session, WorkItemRef
 
@@ -50,14 +50,15 @@ class AnnounceConfig:
     """Mirror of ``routing.announce`` (see config schema)."""
 
     enabled: bool = True
-    gh_binary: str = "gh"
+    #: Where the token is (issue-442) — the private `_github` fan-out key.
+    github: GitHubApiConfig = GitHubApiConfig()
 
     @classmethod
     def from_mapping(cls, data: dict) -> "AnnounceConfig":
         data = data or {}
         return cls(
             enabled=bool(data.get("enabled", True)),
-            gh_binary=str(data.get("_ghBinary", "gh")),
+            github=GitHubApiConfig.from_mapping(data.get("_github")),
         )
 
 
@@ -102,17 +103,17 @@ def announcement_body(session: Session, instance: str = "") -> str:
 
 
 class SessionAnnouncer:
-    """Posts session announcements through the operator's ``gh`` CLI.
+    """Posts session announcements through the daemon's GitHub client.
 
     Never raises: every failure path is a logged no-op returning ``False`` —
-    the dispatch outcome must not depend on a comment. ``runner`` is injectable
-    so tests drive it without a real ``gh`` (mirrors ``GitHubReactor``).
+    the dispatch outcome must not depend on a comment. ``client`` is injectable
+    so tests drive it without a network (mirrors ``GitHubReactor``).
     """
 
     def __init__(
         self,
         config: Optional[AnnounceConfig] = None,
-        runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+        client: Optional[GitHubClient] = None,
         timeout: Optional[float] = 30.0,
         on_work_item_missing: Optional[Callable[[WorkItemRef], None]] = None,
         instance: str = "",
@@ -120,9 +121,9 @@ class SessionAnnouncer:
         self.config = config or AnnounceConfig()
         # The instance's name (issue-322), named in the body; "" adds nothing.
         self.instance = instance
-        self._runner = runner
+        self._client = client
         self.timeout = timeout
-        self._warned_missing_gh = False
+        self._warned_missing_token = False
         # Where a 404 on the work item itself is reported (issue-269). The
         # dispatcher wires it to the existence check's cache; unset, the failure
         # is still recorded on the event log.
@@ -145,19 +146,19 @@ class SessionAnnouncer:
         ok, error = post_issue_comment(
             item,
             announcement_body(session, instance=self.instance),
-            gh_binary=config.gh_binary,
-            runner=self._runner,
+            api=config.github,
+            client=self._client,
             timeout=self.timeout,
         )
         if not ok:
-            if error.endswith("not found on PATH"):
-                # One warning per process, then silence: a machine without `gh`
-                # would otherwise log this on every spawn.
-                if not self._warned_missing_gh:
-                    self._warned_missing_gh = True
+            if error.startswith("no GitHub token"):
+                # One warning per process, then silence: a machine without a
+                # token would otherwise log this on every spawn.
+                if not self._warned_missing_token:
+                    self._warned_missing_token = True
                     logger.warning(
-                        "%s — session announcements are a no-op (install gh or "
-                        "set routing.announce.enabled: false)",
+                        "%s — session announcements are a no-op (set the token "
+                        "or routing.announce.enabled: false)",
                         error,
                     )
                 return False

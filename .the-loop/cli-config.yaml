@@ -16,7 +16,7 @@
 # agent's file (workflow, tooling, reviews, …), which the CLI never
 # reads (issue-352, decision-123).
 
-version: "0.10.0"
+version: "0.11.0"
 
 # Everything the CLI GENERATES lives under this root (issue-106), organised by
 # whether it travels between machines (issue-128, decision-046):
@@ -352,9 +352,10 @@ routing:
   # comment (or the issue/PR itself) that the-loop started / completed / failed
   # processing an event. GitHub's palette is fixed (+1 -1 laugh confused heart
   # hooray rocket eyes) — ✅/⁉️ don't exist, so defaults are the closest match.
-  # Best-effort via the operator's gh CLI; no-op when gh is absent, a state is
-  # "", or the event has no reactable GitHub target. Default true (owner
-  # decision, PR #85); posts with YOUR gh auth — set enabled: false to opt out.
+  # Best-effort with the daemon's token (`integrations.github.api.tokenEnv`);
+  # no-op when the token is unset, a state is "", or the event has no reactable
+  # GitHub target. Default true (owner decision, PR #85) — set enabled: false
+  # to opt out.
   reactions:
     enabled: true
     started: eyes               # 👀 event dequeued for delivery/spawn
@@ -363,8 +364,8 @@ routing:
   # Session announcement comment (issue-86): when a tmux-mode session is
   # spawned, post the tmux session name + `tmux attach -t …` on the work item
   # so a human can watch it work. A respawn posts nothing further (same name,
-  # same command). Best-effort via your gh CLI; no-op for target-less
-  # sessions, non-GitHub work items, or a missing gh. The body carries no
+  # same command). Best-effort with the daemon's token; no-op for target-less
+  # sessions, non-GitHub work items, or a missing token. The body carries no
   # paths, session ids or hostnames.
   announce:
     enabled: true
@@ -489,8 +490,8 @@ eventLog:                           # structured JSONL o11y trail; `the-loop eve
 # events, terminal give-ups in the event log), debug the failure in an isolated
 # agent one-shot and file the findings on the-loop's repo, labeled
 # `the-loop: self-diagnosed`. STRICTLY OPT-IN, default off — enabling it means
-# this machine may post redacted failure reports publicly with your gh
-# credentials. Everything posted is allow-listed + scrubbed, and a self-filed
+# this machine may post redacted failure reports publicly under the daemon's
+# GitHub token. Everything posted is allow-listed + scrubbed, and a self-filed
 # issue is never armed (no auto-execute label, no control keyword, self-authored
 # marker). Preview with `the-loop diagnose --dry-run` before flipping it on.
 selfDiagnosis:
@@ -508,23 +509,24 @@ selfDiagnosis:
 # This governs the CONTROL PLANE only: what the AGENT does from inside its
 # session is unconstrained — CLI, MCP, API, whatever the harness has.
 #
-# `auto` resolves in a documented order (a configured token, then an installed
-# binary) and fails closed naming BOTH remedies. An explicit transport is
-# honoured verbatim and fails rather than silently degrading, because a
-# configured choice that quietly falls back is worse than an error.
+# GitHub is reached through PyGithub under ONE token (issue-442, decision-139):
+# the first set variable of `api.tokenEnv`, read from the daemon's environment
+# at call time (`env.file` above can hold it). There is no `gh` transport any
+# more — nothing the daemon does runs a `gh` binary — so a missing token is
+# reported (by every writer, by the poller's pre-flight, by the graph) and
+# never worked around. A fine-grained token needs Issues: read and write,
+# Pull requests: read and Metadata: read on every repository this instance
+# works with (a classic token: `repo`).
 integrations:
   github:
-    transport: auto             # auto | api | cli
     # Which GitHub the-loop is on (issue-311): set your GitHub Enterprise domain
-    # and every link it posts and every `gh` call it makes name that host. Unset,
+    # and every link it posts and every API call it makes name that host. Unset,
     # it resolves from `api.baseUrl` (an enterprise base), then `$GH_HOST`, then
     # the checkout's origin remote (in-session), then github.com.
     # host: ghe.corp.example
     api:
       tokenEnv: [GH_TOKEN, GITHUB_TOKEN]
-      baseUrl: https://api.github.com
-    cli:
-      binary: gh                # inherits your `gh auth`, incl. enterprise/SSO
+      baseUrl: https://api.github.com   # or https://<host>/api/v3 for GitHub Enterprise
   # There is deliberately no `slack` here any more (issue-245, PR #267 review):
   # the incoming webhook converged into `channels.slack` below, and
   # `the-loop migrate-config` retires an old section.

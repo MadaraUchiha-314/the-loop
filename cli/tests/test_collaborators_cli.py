@@ -57,8 +57,8 @@ def posted(monkeypatch):
     """Capture the paper-trail comment instead of shelling out to ``gh``."""
     calls = []
 
-    def fake_post(item, body, gh_binary="gh", **kwargs):
-        calls.append((item.ref, body, gh_binary))
+    def fake_post(item, body, api=None, **kwargs):
+        calls.append((item.ref, body, api))
         return True, ""
 
     monkeypatch.setattr(core_collaborators, "post_issue_comment", fake_post)

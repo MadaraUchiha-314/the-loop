@@ -32,7 +32,7 @@ def _config(root: Path, name: str, port: int, extra: str = "") -> Path:
     path = root / ".the-loop" / "cli-config.yaml"
     path.parent.mkdir(exist_ok=True)
     path.write_text(
-        'version: "0.10.0"\n'
+        'version: "0.11.0"\n'
         f"instance:\n  name: {name}\n{extra}"
         "webhooks:\n  ghWebhook:\n    enabled: false\n"
         "polling:\n  enabled: false\n"

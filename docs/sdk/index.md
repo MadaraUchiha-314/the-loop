@@ -47,7 +47,7 @@ graph LR
   YOU --> HTTP["the HTTP seam<br/>loop.mount(app)"]
   CAP --> CORE["the_loop.core"]
   HTTP --> CORE
-  CORE --> STATE["state root · event log ·<br/>gh · harness CLIs · tmux"]
+  CORE --> STATE["state root · event log ·<br/>GitHub (PyGithub) · harness CLIs · tmux"]
 ```
 
 ### Capabilities — plain method calls
@@ -97,7 +97,8 @@ and on `loop.reload()` for everything else.
 
 ## What it expects from the host
 
-the-loop drives other programs: `gh`, a harness CLI, `tmux`, `git`. Which of them your
+the-loop drives other programs: a harness CLI, `tmux`, `git` (and reaches GitHub through
+PyGithub under a token, since issue-442). Which of them your
 configuration actually needs is answerable at startup:
 
 ```python

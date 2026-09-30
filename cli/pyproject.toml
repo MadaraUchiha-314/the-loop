@@ -38,6 +38,7 @@ dependencies = [
     "uvicorn>=0.29",    # its ASGI server
     "mcp>=1.2",         # the OFFICIAL MCP SDK — no hand-rolled protocol code
     "slack-sdk>=3",     # the `sdk` Slack notification transport
+    "pygithub>=2.5",
 ]
 
 [project.optional-dependencies]

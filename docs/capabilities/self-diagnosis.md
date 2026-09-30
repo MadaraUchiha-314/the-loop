@@ -57,4 +57,5 @@ state: [`<root>/self-diagnosis.json`](../cli/state.md)
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-442 | The self-filed issue is opened through the daemon's GitHub client on PyGithub under `integrations.github.api.tokenEnv` (2026-09-30), through the shared issue writer, no longer through the operator's `gh` | [spec](../specs/issue-442/), [decision-139](../decisions/decision-139.md) |
 | issue-242 | The capability: detection over the event log, the isolated diagnosis one-shot, allow-list redaction, never-armed issue creation, the watcher in both daemons and `the-loop diagnose` | [spec](../specs/issue-242/), [decision-090](../decisions/decision-090.md) |

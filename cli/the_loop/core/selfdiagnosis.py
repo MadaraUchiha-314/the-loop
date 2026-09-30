@@ -37,8 +37,6 @@ import logging
 import os
 import platform
 import re
-import shutil
-import subprocess
 import tempfile
 import threading
 import time
@@ -47,9 +45,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
-from .. import __version__, critics, eventlog
+from .. import __version__, comments, critics, eventlog
 from ..authz import mark_self_authored
 from ..control import DEFAULT_KEYWORDS
+from ..ghapi import GitHubApiConfig, GitHubClient
 from ..redact import defang_control_keywords, scrub
 from ..runlock import RunLock
 from ..state import layout_from_config
@@ -127,7 +126,8 @@ class SelfDiagnosisConfig:
     interval_seconds: float = 3600.0
     max_issues_per_day: int = 3
     max_retries: int = 3
-    gh_binary: str = "gh"
+    #: Where the daemon's GitHub token is (issue-442): `integrations.github.api`.
+    github: GitHubApiConfig = GitHubApiConfig()
     control_keywords: Tuple[str, ...] = ()
 
     @classmethod
@@ -136,12 +136,7 @@ class SelfDiagnosisConfig:
         loudly — the ingress rule that a broken config never breaks a daemon."""
         config = config or {}
         section = config.get("selfDiagnosis") or {}
-        gh_binary = str(
-            (
-                ((config.get("integrations") or {}).get("github") or {}).get("cli")
-                or {}
-            ).get("binary", "gh")
-        )
+        github = GitHubApiConfig.from_cli_config(config)
         keywords = tuple(
             str(value)
             for value in (
@@ -151,7 +146,7 @@ class SelfDiagnosisConfig:
             if value
         )
         if not section:
-            return cls(gh_binary=gh_binary, control_keywords=keywords)
+            return cls(github=github, control_keywords=keywords)
         try:
             enabled = section.get("enabled", False)
             if not isinstance(enabled, bool):
@@ -166,7 +161,7 @@ class SelfDiagnosisConfig:
                 interval_seconds=float(section.get("intervalSeconds", 3600.0)),
                 max_issues_per_day=int(section.get("maxIssuesPerDay", 3)),
                 max_retries=int(section.get("maxRetries", 3)),
-                gh_binary=gh_binary,
+                github=github,
                 control_keywords=keywords,
             )
         except (TypeError, ValueError) as exc:
@@ -174,7 +169,7 @@ class SelfDiagnosisConfig:
                 "selfDiagnosis config is unusable (%s); self-diagnosis stays OFF",
                 exc,
             )
-            return cls(gh_binary=gh_binary, control_keywords=keywords)
+            return cls(github=github, control_keywords=keywords)
 
 
 # ------------------------------------------------------- candidates & identity
@@ -327,47 +322,29 @@ def create_issue(
     title: str,
     body: str,
     *,
-    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    client: Optional[GitHubClient] = None,
     timeout: Optional[float] = 30.0,
 ) -> Tuple[bool, str, str]:
-    """Create the issue through the operator's own ``gh`` — the
+    """Create the issue through the daemon's GitHub client — the
     :mod:`the_loop.comments` contract: best-effort, ``(ok, error, url)``,
     never raises.
 
-    ``labels[]`` rides the same request; GitHub silently drops it for callers
+    ``labels`` ride the same request; GitHub silently drops them for callers
     without triage rights on the target repository, which is exactly the
     degradation R5.2 wants — the body names the intended label either way.
     """
     if not _REPO_RE.match(config.repo):
         return False, f"unusable selfDiagnosis.repo {config.repo!r}", ""
-    if shutil.which(config.gh_binary) is None:
-        return False, f"gh CLI {config.gh_binary!r} not found on PATH", ""
-    argv = [
-        config.gh_binary,
-        "api",
-        "--method",
-        "POST",
-        f"repos/{config.repo}/issues",
-        "-f",
-        f"title={title}",
-        "-f",
-        f"body={body}",
-    ]
-    if config.label:
-        argv += ["-f", f"labels[]={config.label}"]
-    try:
-        proc = runner(argv, capture_output=True, text=True, timeout=timeout)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return False, str(exc), ""
-    if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "").strip()
-        return False, f"gh exited {proc.returncode}: {detail}", ""
-    try:
-        data = json.loads(proc.stdout or "")
-    except ValueError:
-        data = {}
-    url = data.get("html_url") if isinstance(data, dict) else None
-    return True, "", url if isinstance(url, str) else ""
+    ok, error, _ref, url = comments.create_issue(
+        config.repo,
+        title,
+        body,
+        [config.label] if config.label else [],
+        api=config.github,
+        client=client,
+        timeout=timeout,
+    )
+    return ok, error, url
 
 
 # --------------------------------------------------------------------- agent
@@ -403,7 +380,7 @@ def scan(
     log_path: Union[str, Path],
     state_path: Union[str, Path],
     dry_run: bool = False,
-    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    client: Optional[GitHubClient] = None,
     agent: Optional[AgentRunner] = None,
     now: Optional[float] = None,
 ) -> List[dict]:
@@ -430,7 +407,7 @@ def scan(
             log_path=log_path,
             state_path=state_path,
             dry_run=dry_run,
-            runner=runner,
+            client=client,
             agent=agent,
             now=now,
         )
@@ -444,7 +421,7 @@ def _scan_locked(
     log_path: Union[str, Path],
     state_path: Path,
     dry_run: bool,
-    runner: Callable[..., subprocess.CompletedProcess],
+    client: Optional[GitHubClient],
     agent: Optional[AgentRunner],
     now: float,
 ) -> List[dict]:
@@ -496,7 +473,7 @@ def _scan_locked(
             )
             continue
 
-        ok, error, url = create_issue(config, title, body, runner=runner)
+        ok, error, url = create_issue(config, title, body, client=client)
         if not ok:
             outcomes.append(
                 _failure(state, fp, event, "post", error, dossier, config, dry_run, now)

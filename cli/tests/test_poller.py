@@ -1,8 +1,9 @@
 """Unit tests for the provider-agnostic poller (issue-34).
 
 Three layers, kept separate:
-  * the ``gh`` JSON wrapper (`GhClient`) and the GitHub provider that maps gh
-    shapes onto the neutral WorkItem/Comment + shared RoutedEvent;
+  * the GitHub provider that maps the client's shapes (issue-442: PyGithub
+    behind ``ghapi.GitHubClient``, doubled here by ``ghfakes``) onto the neutral
+    WorkItem/Comment + shared RoutedEvent;
   * the provider registry (`build_provider`);
   * the provider-agnostic Poller core, exercised through a fake provider + a
     recording dispatcher so the decision logic (spawn-once, forward-new) is
@@ -13,13 +14,12 @@ Spec: docs/specs/issue-34/design.md.
 
 import json
 import os
-import subprocess
 
 import tempfile
 
 import pytest
+from ghfakes import FakeGitHubClient, http_error
 
-from the_loop import comments as comments_mod
 from the_loop.collaborators import CollaboratorStore
 from the_loop.control import ControlConfig, ControlStore
 from the_loop.pollclocks import PollClockStore
@@ -27,8 +27,8 @@ from the_loop.webhook.dispatcher import RoutingConfig
 from the_loop.poller import (
     Closure,
     Comment,
-    GhClient,
     GhComment,
+    GhItem,
     GitHubPollProvider,
     PollConfig,
     Poller,
@@ -40,7 +40,7 @@ from the_loop.poller import (
     RepoSpec,
     WorkItem,
     build_provider,
-    check_gh_dependency,
+    check_github_credentials,
     parse_repos,
     provider_names,
 )
@@ -67,130 +67,60 @@ LABEL = "the-loop: auto-execute"
 OWNER, REPO = "octo", "repo"
 
 
-# -- gh CLI wrapper -----------------------------------------------------------
+# -- the client double ---------------------------------------------------------
 
 
-class FakeRun:
-    """Stand-in for subprocess.run capturing argv and returning canned JSON."""
-
-    def __init__(self, stdout="null", returncode=0, stderr=""):
-        self.stdout = stdout
-        self.returncode = returncode
-        self.stderr = stderr
-        self.calls = []
-
-    def __call__(self, cmd, **kwargs) -> subprocess.CompletedProcess:
-        self.calls.append(list(cmd))
-        return subprocess.CompletedProcess(
-            args=cmd,
-            returncode=self.returncode,
-            stdout=self.stdout,
-            stderr=self.stderr,
-        )
-
-
-def test_gh_list_labeled_issues_parses_and_builds_argv():
-    payload = json.dumps(
-        [
-            {
-                "number": 15,
-                "title": "Fix the thing",
-                "labels": [{"name": LABEL}, {"name": "bug"}],
-                "updatedAt": "2026-07-20T00:00:00Z",
-                "url": "https://github.com/octo/repo/issues/15",
-            }
-        ]
+def _row_item(row: dict, is_pr: bool) -> GhItem:
+    """A listing row in the shape the old ``gh --json`` fixtures used."""
+    return GhItem(
+        number=int(row["number"]),
+        title=str(row.get("title") or ""),
+        labels=[lab["name"] for lab in row.get("labels") or []],
+        updated_at=str(row.get("updatedAt") or ""),
+        url=str(row.get("url") or ""),
+        is_pr=is_pr,
+        author=str((row.get("author") or {}).get("login") or ""),
+        head_ref=str(row.get("headRefName") or ""),
+        body=str(row.get("body") or ""),
+        linked_issues=[
+            ref["number"] for ref in row.get("closingIssuesReferences") or []
+        ],
     )
-    run = FakeRun(stdout=payload)
-    client = GhClient(runner=run)
-    items = client.list_labeled_issues(OWNER, REPO, [LABEL])
-    assert len(items) == 1
-    item = items[0]
-    assert (item.number, item.is_pr) == (15, False)
-    assert item.labels == [LABEL, "bug"]
-    argv = run.calls[0]
-    assert argv[:4] == ["gh", "issue", "list", "--repo"]
-    assert "--label" in argv and LABEL in argv
-    assert "--state" in argv and "open" in argv
 
 
-def test_gh_list_labeled_prs_carries_head_ref_and_body():
-    payload = json.dumps(
-        [
-            {
-                "number": 42,
-                "title": "PR",
-                "labels": [{"name": LABEL}],
-                "updatedAt": "2026-07-20T00:00:00Z",
-                "url": "u",
-                "headRefName": "claude/github-issue-15-abc",
-                "body": "Closes #15",
-            }
-        ]
+def _row_comment(row: dict) -> GhComment:
+    return GhComment(
+        id=str(row.get("id") or ""),
+        body=str(row.get("body") or ""),
+        author=str((row.get("author") or {}).get("login") or ""),
+        created_at=str(row.get("createdAt") or ""),
+        url=str(row.get("url") or ""),
     )
-    client = GhClient(runner=FakeRun(stdout=payload))
-    prs = client.list_labeled_prs(OWNER, REPO, [LABEL])
-    assert prs[0].is_pr is True
-    assert prs[0].head_ref == "claude/github-issue-15-abc"
-    assert prs[0].body == "Closes #15"
 
 
-def test_gh_list_labeled_prs_requests_and_parses_linked_issues():
-    """The PR listing carries GitHub's own linkage (issue-93) — no extra call."""
-    payload = json.dumps(
-        [
-            {
-                "number": 42,
-                "title": "PR",
-                "labels": [{"name": LABEL}],
-                "url": "u",
-                "headRefName": "feature/no-number",
-                "body": "",
-                "closingIssuesReferences": [{"number": 15}, {"number": None}],
-            }
-        ]
+def _review(node_id, body, author="octocat", submitted_at="", state="COMMENTED"):
+    return GhComment(
+        id=node_id,
+        body=body,
+        author=author,
+        created_at=submitted_at,
+        url=f"https://github.com/{OWNER}/{REPO}/pull/42#pullrequestreview-1",
+        kind="review",
+        state=state,
     )
-    run = FakeRun(stdout=payload)
-    prs = GhClient(runner=run).list_labeled_prs(OWNER, REPO, [LABEL])
-    assert prs[0].linked_issues == [15]
-    fields = run.calls[0][run.calls[0].index("--json") + 1]
-    assert "closingIssuesReferences" in fields
 
 
-def test_gh_list_labeled_prs_downgrades_once_on_unsupported_field(caplog):
-    """An old gh that lacks the field degrades to the legacy fields, once."""
-
-    class Downgrading(FakeRun):
-        def __call__(self, cmd, **kwargs):
-            self.calls.append(list(cmd))
-            fields = cmd[cmd.index("--json") + 1]
-            if "closingIssuesReferences" in fields:
-                return subprocess.CompletedProcess(
-                    args=cmd,
-                    returncode=1,
-                    stdout="",
-                    stderr='unknown JSON field: "closingIssuesReferences"',
-                )
-            return subprocess.CompletedProcess(
-                args=cmd, returncode=0, stdout="[]", stderr=""
-            )
-
-    run = Downgrading()
-    client = GhClient(runner=run)
-    assert client.list_labeled_prs(OWNER, REPO, [LABEL]) == []
-    assert len(run.calls) == 2  # attempt + downgraded retry
-    # The doomed attempt is not repeated on later cycles.
-    assert client.list_labeled_prs(OWNER, REPO, [LABEL]) == []
-    assert len(run.calls) == 3
-
-
-def test_gh_list_labeled_prs_propagates_unrelated_errors():
-    """A real failure must surface, not be masked by the field downgrade."""
-    run = FakeRun(returncode=1, stderr="HTTP 401: Bad credentials")
-    with pytest.raises(ProviderError) as exc:
-        GhClient(runner=run).list_labeled_prs(OWNER, REPO, [LABEL])
-    assert "Bad credentials" in str(exc.value)
-    assert len(run.calls) == 1  # no retry
+def _review_comment(node_id, body, author="octocat", created_at="", line=239):
+    return GhComment(
+        id=node_id,
+        body=body,
+        author=author,
+        created_at=created_at,
+        url=f"https://github.com/{OWNER}/{REPO}/pull/42#discussion_r1",
+        kind="review-thread",
+        path="cli/the_loop/poller/github.py",
+        line=line,
+    )
 
 
 def test_provider_refs_put_the_linked_issue_before_the_pr():
@@ -215,224 +145,16 @@ def test_provider_refs_put_the_linked_issue_before_the_pr():
     ]
 
 
-@pytest.mark.parametrize("is_pr,sub", [(False, "issue"), (True, "pr")])
-def test_gh_list_comments_uses_kind_subcommand(is_pr, sub):
-    payload = json.dumps(
-        {
-            "comments": [
-                {
-                    "id": "IC_1",
-                    "body": "please fix",
-                    "author": {"login": "octocat"},
-                    "createdAt": "2026-07-20T01:00:00Z",
-                    "url": "c-url",
-                }
-            ]
-        }
-    )
+def test_check_github_credentials_reports_when_the_token_is_missing(monkeypatch):
+    """The poller's pre-flight names the variables, not a binary (issue-442 R2.3)."""
+    from the_loop.ghapi import GitHubApiConfig
 
-    class Run(FakeRun):
-        def __call__(self, cmd, **kwargs):
-            self.calls.append(list(cmd))
-            # A PR also reads its reviews and review threads (issue-246); this
-            # test is about the sub-command the *conversation* read uses.
-            out = "[]" if cmd[1] == "api" else payload
-            return subprocess.CompletedProcess(cmd, 0, out, "")
-
-    run = Run()
-    client = GhClient(runner=run)
-    comments = client.list_comments(OWNER, REPO, 15, is_pr=is_pr)
-    assert comments == [
-        GhComment(
-            id="IC_1",
-            body="please fix",
-            author="octocat",
-            created_at="2026-07-20T01:00:00Z",
-            url="c-url",
-        )
-    ]
-    assert run.calls[0][1] == sub  # gh <issue|pr> view …
-
-
-def _pr_surfaces_client(conversation=(), reviews=(), review_comments=()):
-    """A GhClient answering the three reads a polled PR now performs (issue-246)."""
-
-    class Router:
-        def __init__(self):
-            self.calls = []
-
-        def __call__(self, cmd, **kwargs):
-            self.calls.append(list(cmd))
-            if cmd[1] == "api":
-                path = cmd[2]
-                rows = reviews if "/reviews" in path else review_comments
-                return subprocess.CompletedProcess(cmd, 0, json.dumps(list(rows)), "")
-            out = json.dumps({"comments": list(conversation)})
-            return subprocess.CompletedProcess(cmd, 0, out, "")
-
-    router = Router()
-    return GhClient(runner=router), router
-
-
-def _review(node_id, body, author="octocat", submitted_at="", state="COMMENTED"):
-    return {
-        "id": 4946703449,
-        "node_id": node_id,
-        "user": {"login": author},
-        "body": body,
-        "state": state,
-        "html_url": f"https://github.com/octo/repo/pull/42#pullrequestreview-{node_id}",
-        "submitted_at": submitted_at,
-    }
-
-
-def _review_comment(node_id, body, author="octocat", created_at="", **extra):
-    row = {
-        "id": 12345,
-        "node_id": node_id,
-        "user": {"login": author},
-        "body": body,
-        "path": "cli/the_loop/poller/github.py",
-        "line": 239,
-        "created_at": created_at,
-        "html_url": f"https://github.com/octo/repo/pull/42#discussion_r{node_id}",
-        "diff_hunk": "@@ -239,7 +239,7 @@",
-    }
-    row.update(extra)
-    return row
-
-
-def test_gh_list_comments_on_a_pr_reads_all_three_surfaces():
-    """A review body and an inline comment are comments too (issue-246)."""
-    client, router = _pr_surfaces_client(
-        conversation=[
-            {
-                "id": "IC_1",
-                "body": "conversation",
-                "author": {"login": "octocat"},
-                "createdAt": "2026-08-16T01:00:00Z",
-                "url": "c-url",
-            }
-        ],
-        reviews=[
-            _review("PRR_1", "please rename it", submitted_at="2026-08-16T03:00:00Z")
-        ],
-        review_comments=[
-            _review_comment("PRRC_1", "this line", created_at="2026-08-16T02:00:00Z")
-        ],
-    )
-    comments = client.list_comments(OWNER, REPO, 42, is_pr=True)
-
-    # Merged and ordered by time, not by source (issue-119 depends on thread order).
-    assert [c.id for c in comments] == ["IC_1", "PRRC_1", "PRR_1"]
-    assert [c.kind for c in comments] == ["conversation", "review-thread", "review"]
-    review = comments[-1]
-    assert (review.body, review.author, review.state) == (
-        "please rename it",
-        "octocat",
-        "COMMENTED",
-    )
-    inline = comments[1]
-    assert (inline.path, inline.line) == ("cli/the_loop/poller/github.py", 239)
-
-    paths = [c[2] for c in router.calls if c[1] == "api"]
-    assert any(p.startswith(f"repos/{OWNER}/{REPO}/pulls/42/reviews") for p in paths)
-    assert any(p.startswith(f"repos/{OWNER}/{REPO}/pulls/42/comments") for p in paths)
-    # Every page, oldest-first REST ordering being what hides the newest reviews.
-    assert all("--paginate" in c for c in router.calls if c[1] == "api")
-
-
-def test_gh_list_comments_on_an_issue_is_one_call_exactly_as_before():
-    """Issue polling is untouched: no PR endpoint is reached for an issue."""
-    client, router = _pr_surfaces_client(
-        conversation=[
-            {
-                "id": "IC_1",
-                "body": "hi",
-                "author": {"login": "octocat"},
-                "createdAt": "",
-                "url": "u",
-            }
-        ]
-    )
-    comments = client.list_comments(OWNER, REPO, 15, is_pr=False)
-    assert [c.id for c in comments] == ["IC_1"]
-    assert [c[1] for c in router.calls] == ["issue"]  # one call, no `gh api`
-
-
-@pytest.mark.parametrize(
-    "row,why",
-    [
-        (_review("PRR_empty", "", state="APPROVED"), "an approval with no words"),
-        (_review("PRR_blank", "   \n ", state="APPROVED"), "whitespace only"),
-        (_review("PRR_draft", "not sent yet", state="PENDING"), "never submitted"),
-    ],
-)
-def test_gh_review_carrying_no_instruction_is_not_a_comment(row, why):
-    client, _ = _pr_surfaces_client(reviews=[row])
-    assert client.list_comments(OWNER, REPO, 42, is_pr=True) == [], why
-
-
-def test_gh_review_comment_on_an_outdated_line_keeps_its_original_anchor():
-    """`line` is null once the diff moves on; the anchor is still part of the ask."""
-    client, _ = _pr_surfaces_client(
-        review_comments=[
-            _review_comment("PRRC_old", "stale", line=None, original_line=17)
-        ]
-    )
-    (inline,) = client.list_comments(OWNER, REPO, 42, is_pr=True)
-    assert inline.line == 17
-
-
-def test_gh_review_without_a_user_is_authorized_exactly_as_the_webhook_path_is():
-    """A review GitHub attributes to nobody parses to no author.
-
-    `is_authorized` then **allows** it, because an actor-less action is allowed
-    by design (`the_loop.authz`: a CI event carries status, not instructions).
-    That is the shared contract, and the webhook path answers identically for the
-    same object — `event_actor` reads `review.user.login` and gets `None` — so
-    this test pins the parity, not an ambition. The residual (a review body *is*
-    free-form text, unlike a CI status) is recorded in `design.md`; narrowing it
-    would change both ingresses at once, which is not this work item's scope.
-    """
-    client, _ = _pr_surfaces_client(
-        reviews=[{**_review("PRR_ghost", "do the thing"), "user": None}]
-    )
-    (review,) = client.list_comments(OWNER, REPO, 42, is_pr=True)
-    assert review.author == ""
-    assert is_authorized(review.author, ["octocat"]) is True
-    assert event_actor("pull_request_review", {"review": {"user": None}}) is None
-
-
-def test_gh_review_fetch_failure_is_not_swallowed_into_no_comments():
-    """A broken read must look broken, never like a quiet PR (R4.4)."""
-
-    def runner(cmd, **kwargs):
-        if cmd[1] == "api":
-            return subprocess.CompletedProcess(cmd, 1, "", "HTTP 502: upstream")
-        return subprocess.CompletedProcess(cmd, 0, json.dumps({"comments": []}), "")
-
-    with pytest.raises(ProviderError) as exc:
-        GhClient(runner=runner).list_comments(OWNER, REPO, 42, is_pr=True)
-    assert "502" in str(exc.value)
-
-
-def test_gh_error_on_nonzero_exit():
-    client = GhClient(runner=FakeRun(returncode=1, stderr="not found"))
-    with pytest.raises(ProviderError) as exc:  # GhError is a ProviderError
-        client.list_labeled_issues(OWNER, REPO, [LABEL])
-    assert "not found" in str(exc.value)
-
-
-def test_gh_error_on_bad_json():
-    client = GhClient(runner=FakeRun(stdout="{not json"))
-    with pytest.raises(ProviderError):
-        client.list_labeled_issues(OWNER, REPO, [LABEL])
-
-
-def test_check_gh_dependency_reports_when_missing():
-    assert check_gh_dependency("definitely-not-a-real-binary-xyz")
-    assert check_gh_dependency("python") == []  # present on PATH
+    api = GitHubApiConfig(token_envs=("LOOP_TOKEN",))
+    monkeypatch.delenv("LOOP_TOKEN", raising=False)
+    (message,) = check_github_credentials(api)
+    assert "LOOP_TOKEN" in message and "gh" not in message.replace("GitHub", "")
+    monkeypatch.setenv("LOOP_TOKEN", "x")
+    assert check_github_credentials(api) == []
 
 
 @pytest.mark.parametrize("bad", ["", "octo", "/repo", "octo/"])
@@ -450,26 +172,20 @@ def test_parse_repos_dedupes_in_order():
 
 
 def _gh_client(issues=None, prs=None, comments=None):
-    """A GhClient whose runner returns canned JSON keyed by the gh sub-command."""
-    issues = issues or []
-    prs = prs or []
-    comments = comments or []
-
-    class Router:
-        calls = []
-
-        def __call__(self, cmd, **kwargs):
-            self.calls.append(list(cmd))
-            sub = (cmd[1], cmd[2])
-            if sub == ("issue", "list"):
-                out = json.dumps(issues)
-            elif sub == ("pr", "list"):
-                out = json.dumps(prs)
-            else:  # issue/pr view --json comments
-                out = json.dumps({"comments": comments})
-            return subprocess.CompletedProcess(cmd, 0, out, "")
-
-    return GhClient(runner=Router())
+    """A client double answering the listings and every item's comments with
+    canned rows in the shape the old ``gh --json`` fixtures used."""
+    gh = FakeGitHubClient()
+    gh.issues[(OWNER, REPO)] = [_row_item(r, is_pr=False) for r in issues or []]
+    gh.prs[(OWNER, REPO)] = [_row_item(r, is_pr=True) for r in prs or []]
+    for row in issues or []:
+        gh.comments[(OWNER, REPO, int(row["number"]))] = [
+            _row_comment(c) for c in comments or []
+        ]
+    for row in prs or []:
+        gh.comments[(OWNER, REPO, int(row["number"]))] = [
+            _row_comment(c) for c in comments or []
+        ]
+    return gh
 
 
 def test_provider_from_source_takes_its_repositories_from_the_caller():
@@ -531,7 +247,7 @@ def test_provider_lists_issues_and_prs_as_work_items():
             }
         ],
     )
-    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], gh=gh)
+    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], api=gh)
     items = provider.list_work_items()
     kinds = {(i.number, i.kind) for i in items}
     assert kinds == {(15, "issue"), (42, "pull-request")}
@@ -541,7 +257,7 @@ def test_provider_presence_event_is_labeled_and_maps_ref():
     gh = _gh_client(
         issues=[{"number": 15, "title": "i", "labels": [{"name": LABEL}], "url": "u"}]
     )
-    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], gh=gh)
+    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], api=gh)
     item = provider.list_work_items()[0]
     refs = provider.refs(item)
     ev = provider.presence_event(item, refs)
@@ -563,7 +279,7 @@ def test_provider_pr_refs_link_head_branch_issue():
             }
         ]
     )
-    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], gh=gh)
+    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], api=gh)
     item = provider.list_work_items()[0]
     refs = {r.ref for r in provider.refs(item)}
     assert "github:octo/repo#42" in refs and "github:octo/repo#15" in refs
@@ -573,7 +289,7 @@ def test_provider_comment_event_carries_body_and_is_unlabeled():
     gh = _gh_client(
         issues=[{"number": 15, "title": "i", "labels": [{"name": LABEL}], "url": "u"}]
     )
-    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], gh=gh)
+    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], api=gh)
     item = provider.list_work_items()[0]
     refs = provider.refs(item)
     ev = provider.comment_event(
@@ -598,7 +314,7 @@ def _pr_provider():
             }
         ]
     )
-    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], gh=gh)
+    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], api=gh)
     item = provider.list_work_items()[0]
     return provider, item, provider.refs(item)
 
@@ -670,11 +386,12 @@ def test_provider_conversation_comment_event_is_unchanged():
 
 
 def test_provider_passes_the_review_kind_through_to_the_event():
-    """End to end inside the provider: gh JSON in, per-kind event out."""
-    gh, _ = _pr_surfaces_client(
-        reviews=[_review("PRR_1", "rename it", submitted_at="2026-08-16T03:00:00Z")]
-    )
-    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], gh=gh)
+    """End to end inside the provider: the client's review in, per-kind event out."""
+    gh = FakeGitHubClient()
+    gh.reviews[(OWNER, REPO, 42)] = [
+        _review("PRR_1", "rename it", submitted_at="2026-08-16T03:00:00Z")
+    ]
+    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], api=gh)
     item = WorkItem(
         provider="github",
         owner=OWNER,
@@ -694,10 +411,11 @@ def test_provider_passes_the_review_kind_through_to_the_event():
 
 def test_a_self_authored_review_never_leaves_the_poller():
     """the-loop's own review must not resume its own session (R3.2)."""
-    gh, _ = _pr_surfaces_client(
-        reviews=[_review("PRR_own", mark_self_authored("looks good to me"))]
-    )
-    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], gh=gh)
+    gh = FakeGitHubClient()
+    gh.reviews[(OWNER, REPO, 42)] = [
+        _review("PRR_own", mark_self_authored("looks good to me"))
+    ]
+    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], api=gh)
     item = WorkItem(
         provider="github",
         owner=OWNER,
@@ -713,17 +431,14 @@ def test_a_self_authored_review_never_leaves_the_poller():
 
 
 def _state_client(payload):
-    """A GhClient answering ``gh api repos/…/issues/<n>`` with ``payload``."""
-
-    def runner(cmd, **kwargs):
-        assert cmd[1] == "api" and cmd[2].startswith("repos/")
-        return subprocess.CompletedProcess(cmd, 0, json.dumps(payload), "")
-
-    return GhClient(runner=runner)
+    """A client double answering the issues document for ``payload``'s number."""
+    gh = FakeGitHubClient()
+    gh.states[(OWNER, REPO, int(payload["number"]))] = payload
+    return gh
 
 
 def _provider(gh):
-    return GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], gh=gh)
+    return GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], api=gh)
 
 
 @pytest.mark.parametrize(
@@ -743,7 +458,7 @@ def _provider(gh):
 )
 def test_provider_closure_reads_state_for_issues_and_prs(payload, expected):
     # issue-94: one REST endpoint answers for both kinds — the registry ref
-    # records only a number, and `gh issue view` refuses PR numbers.
+    # records only a number, and the kind is not known when it is asked.
     ref = WorkItemRef.parse(f"github:octo/repo#{payload['number']}")
     closure = _provider(_state_client(payload)).closure(ref)
     if expected is None:
@@ -775,13 +490,33 @@ def test_provider_closure_event_names_the_closer_as_sender():
     assert "sender" not in unnamed.payload
 
 
-def test_provider_closure_propagates_a_gh_failure():
-    def runner(cmd, **kwargs):
-        return subprocess.CompletedProcess(cmd, 1, "", "HTTP 502")
-
-    provider = _provider(GhClient(runner=runner))
-    with pytest.raises(ProviderError):
+def test_provider_closure_propagates_a_github_failure():
+    provider = _provider(FakeGitHubClient(fail=http_error(502, "upstream")))
+    with pytest.raises(ProviderError) as exc:
         provider.closure(WorkItemRef.parse("github:octo/repo#15"))
+    assert "502" in str(exc.value)
+
+
+def test_provider_classifies_issues_disabled_by_status_and_by_words():
+    """issue-315 over the client (issue-442 R3.4): a 410, or GitHub's sentence,
+    is the permanent per-scope condition; anything else stays transient."""
+    from the_loop.poller.github import GhError
+
+    provider = _provider(_gh_client())
+    assert provider._issues_disabled(GhError("x", status=410))
+    assert provider._issues_disabled(GhError("Issues are disabled for this repo"))
+    assert not provider._issues_disabled(GhError("Bad credentials", status=401))
+
+
+def test_provider_lists_nothing_when_the_repository_has_issues_disabled():
+    gh = _gh_client(
+        prs=[{"number": 42, "title": "p", "labels": [{"name": LABEL}], "url": "u"}]
+    )
+    gh.issues_disabled.add((OWNER, REPO))
+    provider = _provider(gh)
+    listing = provider.listing()
+    assert [item.number for item in listing.items] == [42]  # PRs still polled
+    assert listing.failures and listing.failures[0].permanent
 
 
 @pytest.mark.parametrize(
@@ -816,7 +551,7 @@ def test_provider_closure_event_mirrors_the_webhook_shape():
 
 
 def test_provider_without_repos_raises_on_list():
-    provider = GitHubPollProvider([], [LABEL], gh=_gh_client())
+    provider = GitHubPollProvider([], [LABEL], api=_gh_client())
     with pytest.raises(ProviderError):
         provider.list_work_items()
 
@@ -1250,10 +985,10 @@ def make_poller(
     reloader=None,
     authorized=("octocat",),
     max_retries=3,
-    comment_runner=None,
+    comment_client=None,
     publisher=None,
 ):
-    # provider/dispatcher/reloader/comment_runner intentionally unannotated so
+    # provider/dispatcher/reloader/comment_client intentionally unannotated so
     # the in-process doubles satisfy the typed Poller params without casts (see
     # test_routing). authorized defaults to the fixture author so behaviour tests
     # aren't gated; the authz guard has its own dedicated tests below.
@@ -1266,7 +1001,7 @@ def make_poller(
         reloader=reloader,
         authorized_users=list(authorized),
         publisher=publisher,
-        **({"comment_runner": comment_runner} if comment_runner else {}),
+        **({"comment_client": comment_client} if comment_client else {}),
     )
 
 
@@ -1545,36 +1280,20 @@ def test_failed_comment_is_retried_then_given_up(tmp_path):
 # -- telling the human when a comment is abandoned (issue-240) ----------------
 
 
-class FakeGh:
-    """A `gh` stand-in for `comments.post_issue_comment`'s injectable runner.
+class FakeGh(FakeGitHubClient):
+    """The client double for the give-up notice's `post_issue_comment`.
 
-    Records the argv of every invocation; ``returncode`` drives the failure
-    path (a `gh` that is present but refuses).
+    Records every comment posted; ``refuse`` drives the failure path (a GitHub
+    that answers, and refuses).
     """
 
-    def __init__(self, returncode=0):
-        self.calls = []
-        self.returncode = returncode
-
-    def __call__(self, cmd, **kwargs):
-        self.calls.append(list(cmd))
-
-        class Proc:
-            returncode = self.returncode
-            stdout = '{"html_url": "https://example.invalid/c/1"}'
-            stderr = "" if self.returncode == 0 else "gh: refused"
-
-        return Proc()
+    def __init__(self, refuse=False):
+        super().__init__(fail=http_error(403, "refused") if refuse else None)
 
     @property
     def bodies(self):
-        """The `body=` value of each posted comment."""
-        out = []
-        for call in self.calls:
-            for arg in call:
-                if arg.startswith("body="):
-                    out.append(arg[len("body=") :])
-        return out
+        """The body of each posted comment."""
+        return [body for (_o, _r, _n, body, _h) in self.posted]
 
 
 def test_giveup_notice_says_what_happened_and_what_to_do():
@@ -1616,7 +1335,6 @@ def test_giveup_notice_cannot_echo_the_comment_body():
 
 def _giveup_poller(tmp_path, gh, monkeypatch, max_retries=1):
     """A poller one cycle away from abandoning `IC_1`, posting through ``gh``."""
-    monkeypatch.setattr(comments_mod.shutil, "which", lambda _: "/usr/bin/gh")
     ref = "github:octo/repo#15"
     registry = _with_session(tmp_path)
     state = PollState(WorkItemStore(tmp_path / "portable"))
@@ -1630,7 +1348,7 @@ def _giveup_poller(tmp_path, gh, monkeypatch, max_retries=1):
         RecordingDispatcher(),
         state,
         max_retries=max_retries,
-        comment_runner=gh,
+        comment_client=gh,
     )
     return ref, poller, state
 
@@ -1648,8 +1366,8 @@ def test_a_given_up_comment_is_reported_on_the_ticket(tmp_path, monkeypatch):
     body = gh.bodies[0]
     assert is_self_authored(body)  # R2.2
     assert "IC_1" in body
-    posted_to = gh.calls[0]
-    assert "repos/octo/repo/issues/15/comments" in posted_to
+    (owner, repo, number, _body, _host) = gh.posted[0]
+    assert (owner, repo, number) == ("octo", "repo", 15)
 
     # R2.5: exactly one notice per abandoned comment — a later cycle sees the
     # id baselined and says nothing more.
@@ -1661,9 +1379,9 @@ def test_a_given_up_comment_is_reported_on_the_ticket(tmp_path, monkeypatch):
 def test_a_give_up_is_recorded_even_when_the_ticket_cannot_be_told(
     tmp_path, monkeypatch
 ):
-    # R2.4: notifying is best-effort; the ledger is not. A `gh` that refuses
+    # R2.4: notifying is best-effort; the ledger is not. A GitHub that refuses
     # must not change what the poller recorded, nor end the cycle.
-    gh = FakeGh(returncode=1)
+    gh = FakeGh(refuse=True)
     ref, poller, state = _giveup_poller(tmp_path, gh, monkeypatch)
 
     poller.poll_once()
@@ -1672,14 +1390,15 @@ def test_a_give_up_is_recorded_even_when_the_ticket_cannot_be_told(
     assert summary.failures == 1
     assert "IC_1" in state.seen_comments(ref)
     assert state.comment_attempts(ref, "IC_1") == 0
-    assert gh.bodies  # it tried
+    assert gh.calls_to == ["post_comment"]  # it tried
 
 
 def test_a_raising_comment_poster_never_ends_a_poll_cycle(tmp_path, monkeypatch):
-    def boom(*_args, **_kwargs):
-        raise RuntimeError("gh exploded")
+    class Boom(FakeGitHubClient):
+        def post_comment(self, *_args, **_kwargs):
+            raise RuntimeError("GitHub exploded")
 
-    ref, poller, state = _giveup_poller(tmp_path, boom, monkeypatch)
+    ref, poller, state = _giveup_poller(tmp_path, Boom(), monkeypatch)
     poller.poll_once()
     summary = poller.poll_once()
 
@@ -1692,7 +1411,6 @@ def test_the_notice_answers_the_item_the_comment_was_written_on(tmp_path, monkey
     # (issue-93) — correct for routing the event to that issue's session, wrong
     # for answering a comment: it was written on the PR, and that is where its
     # author will look. Posting to `refs[0]` would have replied on the issue.
-    monkeypatch.setattr(comments_mod.shutil, "which", lambda _: "/usr/bin/gh")
     pr_ref = "github:octo/repo#42"
     linked_issue = WorkItemRef.parse("github:octo/repo#15")
     state = PollState(WorkItemStore(tmp_path / "portable"))
@@ -1717,21 +1435,18 @@ def test_the_notice_answers_the_item_the_comment_was_written_on(tmp_path, monkey
         RecordingDispatcher(),
         state,
         max_retries=1,
-        comment_runner=gh,
+        comment_client=gh,
     )
     poller.poll_once()
     poller.poll_once()
 
-    assert len(gh.calls) == 1
-    assert "repos/octo/repo/issues/42/comments" in gh.calls[0]
-    assert "issues/15/comments" not in " ".join(gh.calls[0])
+    assert [(o, r, n) for (o, r, n, _b, _h) in gh.posted] == [("octo", "repo", 42)]
 
 
 def test_the_notice_carries_no_text_from_the_comment_it_reports(tmp_path, monkeypatch):
     # Abuse case: a commenter controls the body, including a forged marker and
     # anything that would read as an instruction. None of it may be reflected
-    # into a comment posted with the operator's credentials.
-    monkeypatch.setattr(comments_mod.shutil, "which", lambda _: "/usr/bin/gh")
+    # into a comment posted with the daemon's credentials.
     # No forged marker here: a body carrying one is dropped before it can ever
     # be forwarded (issue-64, covered by its own tests), so it could not reach
     # the give-up branch. This is the case that *does* reach it — an authorized
@@ -1754,7 +1469,7 @@ def test_the_notice_carries_no_text_from_the_comment_it_reports(tmp_path, monkey
         RecordingDispatcher(),
         state,
         max_retries=1,
-        comment_runner=gh,
+        comment_client=gh,
     )
     poller.poll_once()
     poller.poll_once()
@@ -3634,43 +3349,54 @@ def test_parse_repos_tells_hosts_apart():
     assert [s.gh_repo for s in specs] == [f"{GHE}/a/b", "a/b"]
 
 
-def test_gh_listings_on_an_enterprise_host_name_it_in_repo():
-    run = FakeRun(stdout="[]")
-    client = GhClient(runner=run)
-    client.list_labeled_issues(OWNER, REPO, [LABEL], host=GHE)
-    client.list_labeled_prs(OWNER, REPO, [LABEL], host=GHE)
-    for argv in run.calls:
-        assert argv[3:5] == ["--repo", f"{GHE}/octo/repo"], argv
-        assert "--hostname" not in argv  # `issue list` takes the host in --repo
+def test_every_read_on_an_enterprise_source_names_its_host():
+    """The listings, the three comment surfaces and the closure read all carry
+    the source's host to the client (issue-311 R4; the client itself is proved
+    against PyGithub in test_ghapi.py)."""
+    gh = FakeGitHubClient()
+    gh.issues[(OWNER, REPO)] = [
+        _row_item(
+            {
+                "number": 15,
+                "labels": [{"name": LABEL}],
+                "url": f"https://{GHE}/octo/repo/issues/15",
+            },
+            False,
+        )
+    ]
+    provider = GitHubPollProvider(parse_repos([f"{GHE}/octo/repo"]), [LABEL], api=gh)
+    (item,) = provider.list_work_items()
+    provider.list_comments(
+        WorkItem(
+            provider="github",
+            owner=OWNER,
+            repo=REPO,
+            number=42,
+            kind="pull-request",
+            url=f"https://{GHE}/octo/repo/pull/42",
+            labels=[LABEL],
+            raw={},
+        )
+    )
+    provider.closure(WorkItemRef.parse(item.ref))
+    assert gh.calls_to == [
+        "list_labeled_issues",
+        "list_labeled_prs",
+        "list_issue_comments",
+        "list_reviews",
+        "list_review_comments",
+        "get_issue",
+    ]
+    assert all(kwargs["host"] == GHE for _, kwargs in gh.calls)
 
 
-def test_gh_comment_reads_on_an_enterprise_host_name_it():
-    """Every one of the three PR surfaces (issue-246) goes to the same host."""
-    run = FakeRun(stdout="[]")
-    client = GhClient(runner=run)
-    client.list_comments(OWNER, REPO, 15, is_pr=True, host=GHE)
-    views = [argv for argv in run.calls if argv[1] == "pr"]
-    apis = [argv for argv in run.calls if argv[1] == "api"]
-    assert views and all(f"{GHE}/octo/repo" in argv for argv in views)
-    assert len(apis) == 2 and all(argv[2:4] == ["--hostname", GHE] for argv in apis)
-
-
-def test_gh_item_state_is_asked_of_its_host():
-    run = FakeRun(stdout='{"number": 15, "state": "open"}')
-    GhClient(runner=run).fetch_item_state(OWNER, REPO, 15, host=GHE)
-    assert run.calls[0][1:4] == ["api", "--hostname", GHE]
-
-
-def test_a_github_com_read_is_byte_identical():
+def test_a_github_com_source_names_no_host():
     """A5 — nothing changes for a source that names no host."""
-    run = FakeRun(stdout="[]")
-    client = GhClient(runner=run)
-    client.list_labeled_issues(OWNER, REPO, [LABEL])
-    client.list_comments(OWNER, REPO, 15, is_pr=False)
-    run.stdout = '{"number": 15, "state": "open"}'
-    client.fetch_item_state(OWNER, REPO, 15)
-    for argv in run.calls:
-        assert "--hostname" not in argv and GHE not in " ".join(argv)
+    gh = FakeGitHubClient()
+    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL], api=gh)
+    provider.list_work_items()
+    provider.closure(WorkItemRef.parse("github:octo/repo#15"))
+    assert gh.calls and all(kwargs["host"] == "" for _, kwargs in gh.calls)
 
 
 def test_provider_owns_by_host_too():
@@ -3684,34 +3410,30 @@ def test_provider_owns_by_host_too():
 
 
 def test_provider_discovery_and_reads_go_to_the_sources_host():
-    listing = json.dumps(
-        [
+    gh = FakeGitHubClient()
+    gh.issues[(OWNER, REPO)] = [
+        _row_item(
             {
                 "number": 15,
                 "title": "t",
                 "labels": [{"name": LABEL}],
                 "updatedAt": "2026-07-20T00:00:00Z",
                 "url": f"https://{GHE}/octo/repo/issues/15",
-            }
-        ]
-    )
-    run = FakeRun(stdout=listing)
+            },
+            False,
+        )
+    ]
+    gh.states[(OWNER, REPO, 15)] = {"number": 15, "state": "closed"}
     provider = GitHubPollProvider(
-        parse_repos([f"{GHE}/octo/repo"]),
-        [LABEL],
-        monitor_prs=False,
-        gh=GhClient(runner=run),
+        parse_repos([f"{GHE}/octo/repo"]), [LABEL], monitor_prs=False, api=gh
     )
     items = provider.list_work_items()
     ref = WorkItemRef.parse(items[0].ref)
     assert ref.host == GHE
-    run.stdout = '{"comments": []}'
     provider.list_comments(items[0])
-    run.stdout = '{"number": 15, "state": "closed"}'
     provider.closure(ref)
-    assert run.calls[0][3:5] == ["--repo", f"{GHE}/octo/repo"]
-    assert f"{GHE}/octo/repo" in run.calls[1]
-    assert run.calls[2][1:4] == ["api", "--hostname", GHE]
+    assert gh.calls_to == ["list_labeled_issues", "list_issue_comments", "get_issue"]
+    assert all(kwargs["host"] == GHE for _, kwargs in gh.calls)
 
 
 # -- per-scope fault isolation (issue-315) ------------------------------------
@@ -3723,70 +3445,92 @@ def test_provider_discovery_and_reads_go_to_the_sources_host():
 # classified permanent and quarantined (issues only, re-probed slowly), and the
 # heartbeat names what was not polled.
 
-ISSUES_OFF = "the 'octo/repo-m' repository has disabled issues"
+ISSUES_OFF = "Issues are disabled for this repo"  # GitHub's own sentence (a 410)
 
 
-def _two_repo_gh(issue_fail=None, pr_fail=None, healthy_items=True):
-    """A gh double for `octo/repo` (healthy) and `octo/repo-m` (configurable).
+class _TwoRepoGh(FakeGitHubClient):
+    """A client double for `octo/repo` (healthy) and `octo/repo-m` (configurable).
 
-    ``issue_fail`` / ``pr_fail``: stderr for repo-m's `gh issue list` / `gh pr
-    list` (None = succeed). Records every argv, so a test can prove which
+    ``issue_fail`` / ``pr_fail``: the error repo-m's issue / pull-request listing
+    raises (None = succeed). Every call is logged, so a test can prove which
     listings were (not) asked.
     """
 
-    class Router:
-        calls = []
-
-        def __call__(self, cmd, **kwargs):
-            self.calls.append(list(cmd))
-            sub = (cmd[1], cmd[2])
-            repo = cmd[4]
-            if repo == "octo/repo-m":
-                if sub == ("issue", "list") and issue_fail:
-                    return subprocess.CompletedProcess(cmd, 1, "", issue_fail)
-                if sub == ("pr", "list") and pr_fail:
-                    return subprocess.CompletedProcess(cmd, 1, "", pr_fail)
-            if sub == ("issue", "list"):
-                rows = (
-                    [
-                        {
-                            "number": 15,
-                            "title": "i",
-                            "labels": [{"name": LABEL}],
-                            "url": f"https://github.com/{repo}/issues/15",
-                        }
-                    ]
-                    if (repo == "octo/repo" and healthy_items)
-                    else []
+    def __init__(self, issue_fail=None, pr_fail=None, healthy_items=True):
+        super().__init__()
+        self.issue_fail = issue_fail
+        self.pr_fail = pr_fail
+        if healthy_items:
+            self.issues[("octo", "repo")] = [
+                _row_item(
+                    {
+                        "number": 15,
+                        "title": "i",
+                        "labels": [{"name": LABEL}],
+                        "url": "https://github.com/octo/repo/issues/15",
+                    },
+                    False,
                 )
-                return subprocess.CompletedProcess(cmd, 0, json.dumps(rows), "")
-            if sub == ("pr", "list"):
-                rows = (
-                    [
-                        {
-                            "number": 42,
-                            "title": "p",
-                            "labels": [{"name": LABEL}],
-                            "url": f"https://github.com/{repo}/pull/42",
-                        }
-                    ]
-                    if repo == "octo/repo-m"
-                    else []
-                )
-                return subprocess.CompletedProcess(cmd, 0, json.dumps(rows), "")
-            return subprocess.CompletedProcess(cmd, 0, json.dumps({"comments": []}), "")
+            ]
+        self.prs[("octo", "repo-m")] = [
+            _row_item(
+                {
+                    "number": 42,
+                    "title": "p",
+                    "labels": [{"name": LABEL}],
+                    "url": "https://github.com/octo/repo-m/pull/42",
+                },
+                True,
+            )
+        ]
 
-    return Router()
+    def list_labeled_issues(self, owner, repo, labels, host=""):
+        if repo == "repo-m" and self.issue_fail is not None:
+            self.calls.append(("list_labeled_issues", {"owner": owner, "repo": repo}))
+            raise self.issue_fail
+        return super().list_labeled_issues(owner, repo, labels, host)
+
+    def list_labeled_prs(self, owner, repo, labels, host=""):
+        if repo == "repo-m" and self.pr_fail is not None:
+            self.calls.append(("list_labeled_prs", {"owner": owner, "repo": repo}))
+            raise self.pr_fail
+        return super().list_labeled_prs(owner, repo, labels, host)
 
 
-def _two_repo_provider(runner):
+def _two_repo_gh(issue_fail=None, pr_fail=None, healthy_items=True):
+    def _err(text):
+        if text is None:
+            return None
+        if text == ISSUES_OFF:
+            return http_error(410, ISSUES_OFF)
+        status = int(text.split()[1].rstrip(":")) if text.startswith("HTTP ") else None
+        return http_error(status, text) if status else http_error(500, text)
+
+    return _TwoRepoGh(_err(issue_fail), _err(pr_fail), healthy_items)
+
+
+def _two_repo_provider(gh):
     return GitHubPollProvider(
-        parse_repos(["octo/repo", "octo/repo-m"]), [LABEL], gh=GhClient(runner=runner)
+        parse_repos(["octo/repo", "octo/repo-m"]), [LABEL], api=gh
     )
 
 
+_LISTING_NAMES = {
+    "list_labeled_issues": ("issue", "list"),
+    "list_labeled_prs": ("pr", "list"),
+}
+
+
 def _listings(calls, repo):
-    return [(c[1], c[2]) for c in calls if c[4] == repo and c[2] == "list"]
+    """Which listings were asked of ``repo`` (``owner/repo``), in order."""
+    owner, name = repo.split("/")
+    return [
+        _LISTING_NAMES[method]
+        for method, kwargs in calls
+        if method in _LISTING_NAMES
+        and kwargs.get("owner") == owner
+        and kwargs.get("repo") == name
+    ]
 
 
 def test_listing_isolates_one_repositorys_failure(tmp_path):
@@ -3820,7 +3564,7 @@ def test_a_repository_that_answers_nothing_is_not_polled():
 
 
 def test_disabled_issues_is_permanent_and_still_lists_pull_requests():
-    """R2.1/R2.2 (A2): the quarantine withholds `gh issue list` only."""
+    """R2.1/R2.2 (A2): the quarantine withholds the issue listing only."""
     runner = _two_repo_gh(issue_fail=ISSUES_OFF)
     provider = _two_repo_provider(runner)
 
@@ -3860,7 +3604,7 @@ def test_a_quarantined_repository_is_reprobed_every_sixty_cycles():
 
     # The operator re-enables Issues: the next re-probe recovers.
     healed = _two_repo_gh()
-    provider.gh = GhClient(runner=healed)
+    provider.api = healed
     # The clock restarted at cycle 61: cycles 63..120 are skipped, 121 re-probes.
     for _ in range(gh_mod.REPROBE_EVERY_CYCLES - 2):
         provider.listing()
@@ -3872,7 +3616,7 @@ def test_a_quarantined_repository_is_reprobed_every_sixty_cycles():
     assert provider.listing().recovered == []  # said once
 
 
-def test_only_ghs_own_message_classifies_as_permanent():
+def test_only_githubs_own_answer_classifies_as_permanent():
     """A3: a 502 stays transient — retried, isolated, never quarantined."""
     runner = _two_repo_gh(issue_fail="HTTP 502: upstream")
     provider = _two_repo_provider(runner)
@@ -3895,7 +3639,7 @@ def test_the_strict_form_still_raises_on_any_failure():
 
 def test_listing_without_repos_is_still_a_whole_provider_failure():
     with pytest.raises(ProviderError):
-        GitHubPollProvider([], [LABEL], gh=_gh_client()).listing()
+        GitHubPollProvider([], [LABEL], api=_gh_client()).listing()
 
 
 @pytest.mark.parametrize(
@@ -4178,19 +3922,16 @@ def test_a_bare_repo_inherits_the_default_host_and_owns_its_refs():
 
 def test_a_bare_repos_reads_go_to_the_inherited_host():
     """R1.4 — the listing, the closure read and the scope name all name the host."""
-    run = FakeRun(stdout="[]")
+    gh = FakeGitHubClient()
+    gh.states[(OWNER, REPO, 15)] = {"number": 15, "state": "closed"}
     provider = GitHubPollProvider(
-        parse_repos(["octo/repo"], default_host=GHE),
-        [LABEL],
-        monitor_prs=False,
-        gh=GhClient(runner=run),
+        parse_repos(["octo/repo"], default_host=GHE), [LABEL], monitor_prs=False, api=gh
     )
     provider.list_work_items()
-    assert run.calls[0][3:5] == ["--repo", f"{GHE}/octo/repo"]
     ref = WorkItemRef.parse(f"github:{GHE}/octo/repo#15")
-    run.stdout = '{"number": 15, "state": "closed"}'
     assert provider.closure(ref) is not None
-    assert run.calls[1][1:4] == ["api", "--hostname", GHE]
+    assert gh.calls_to == ["list_labeled_issues", "get_issue"]
+    assert all(kwargs["host"] == GHE for _, kwargs in gh.calls)
     assert provider.scope_of(ref) == f"{GHE}/octo/repo"
 
 
@@ -4385,26 +4126,29 @@ def _row(number, labels):
     }
 
 
-def test_gh_listings_pass_one_label_flag_per_label():
-    """R2.1 — both listings carry every label, in order, as separate argv entries."""
-    run = FakeRun(stdout="[]")
-    client = GhClient(runner=run)
-    client.list_labeled_issues(OWNER, REPO, [LABEL, MINE])
-    client.list_labeled_prs(OWNER, REPO, [LABEL, MINE])
-    assert len(run.calls) == 2
-    for argv in run.calls:
-        flags = [argv[i + 1] for i, flag in enumerate(argv) if flag == "--label"]
-        assert flags == [LABEL, MINE], argv
+def test_listings_ask_for_every_label_in_order():
+    """R2.1 — both listings carry every label, in order, to the client."""
+    gh = FakeGitHubClient()
+    provider = GitHubPollProvider(parse_repos(["octo/repo"]), [LABEL, MINE], api=gh)
+    provider.list_work_items()
+    assert [kwargs["labels"] for _, kwargs in gh.calls] == [
+        [LABEL, MINE],
+        [LABEL, MINE],
+    ]
 
 
 def test_provider_drops_a_listed_item_missing_one_label():
-    """R2.1, A1 — the gate holds whatever `gh` returns."""
-    run = FakeRun(stdout=json.dumps([_row(1, [LABEL, MINE, "bug"]), _row(2, [LABEL])]))
+    """R2.1, A1 — the gate holds whatever the listing returns."""
+    gh = FakeGitHubClient()
+    gh.issues[(OWNER, REPO)] = [
+        _row_item(_row(1, [LABEL, MINE, "bug"]), False),
+        _row_item(_row(2, [LABEL]), False),
+    ]
     provider = GitHubPollProvider(
         repos=parse_repos([f"{OWNER}/{REPO}"]),
         labels=[LABEL, MINE],
         monitor_prs=False,
-        gh=GhClient(runner=run),
+        api=gh,
     )
     assert [item.number for item in provider.list_work_items()] == [1]
 

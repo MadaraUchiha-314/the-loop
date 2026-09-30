@@ -120,7 +120,7 @@ lists the rest under **needs-user**:
 | `THE_LOOP_SLACK_BOT_TOKEN` | posting, reading and reacting in Slack | Slack app → *OAuth & Permissions → Install* (`xoxb-…`) |
 | `THE_LOOP_SLACK_APP_TOKEN` | Socket Mode: buttons, `/the-loop`, live replies | Slack app → *Basic Information → App-Level Tokens*, scope `connections:write` (`xapp-…`) |
 | `THE_LOOP_GH_WEBHOOK_SECRET` | verifying that a webhook delivery really came from GitHub | you choose it, and paste the same value into the GitHub webhook |
-| `GH_TOKEN` / `GITHUB_TOKEN` | the-loop's own GitHub API calls | `gh auth token`, or a personal access token |
+| `GH_TOKEN` / `GITHUB_TOKEN` | every GitHub call the daemon makes — comments, reactions, labels, polling (issue-442) | a personal access token (fine-grained: *Issues: read and write*, *Pull requests: read*, *Metadata: read*) |
 
 **Init reports presence only** — whether the variable is set, never its value, and it
 never writes a credential into any file.

@@ -205,8 +205,8 @@ still carrying the key is warned about and otherwise ignored).
   (`routing.announce`, default on), so the attach details reach the humans on the
   ticket. A **respawn** SHALL post nothing further — it reuses the same name, so the
   existing comment stays correct and a flapping session cannot bury the thread.
-  Best-effort through the operator's own `gh` CLI: a failure never affects the
-  dispatch, and a non-GitHub work item or a missing `gh` is
+  Best-effort through the daemon's GitHub client under its token (issue-442): a failure
+  never affects the dispatch, and a non-GitHub work item or a missing token is
   a no-op. The body is built only from registry fields — never from event payloads —
   and carries no filesystem paths, harness session ids or hostnames, and it SHALL carry
   the loop-prevention marker plus a visible attribution line
@@ -372,6 +372,7 @@ belongs to does not.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-442 | The session announcement posts through the daemon's GitHub client on PyGithub under `integrations.github.api.tokenEnv` (2026-09-30), no longer through the operator's `gh`; a missing token is one warning per process | [spec](../specs/issue-442/), [decision-139](../decisions/decision-139.md) |
 | issue-426 | **A work-item session is launched without Claude Code's question menu** (2026-09-28): in `work-item` mode the spawn, resume and `sessions restart` argv gains `--disallowedTools=AskUserQuestion` right before the prompt, so a question ends the turn instead of freezing the pane; `cli` mode is unchanged | [spec](../specs/issue-426/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/426) |
 | issue-410 | **A session's environment is no longer frozen for its whole life** (2026-09-21): `the-loop sessions restart [--all\|--work-item …]` relaunches each running session in place (`respawn-pane -k`, resuming its conversation) on what `env.file` declares now, then **verifies** each one and exits non-zero on any that did not land; `the-loop status` carries a line when the fleet has drifted; and a spawn re-reads the file rather than inheriting the tmux server's long-frozen copy. Before this, rotating a credential left the service on the new value and every running session on the old one — the reporter's deployment looked healthy while 144 consecutive agent questions failed over three days. `envstate` is the new module, and no value reaches any output: a variable is named with a fingerprint | [spec](../specs/issue-410/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/410) |
 | issue-405 | **A closure that reaches a session at its endgame is held** (2026-09-21, P2 of the 2026-09-20 run-3 e2e run): a live session standing on the graph's terminal node keeps its harness, checkout and record until it claims `graph complete` or `routing.tmux.finishGraceSeconds` (default 300) runs out — `session.closing`, then `session.autoclosed` with `waited_seconds`/`finished`; a reopen cancels the hold, the poller leaves a held item alone, everything else closes at once as before. `GraphContext` gained `terminal` and `delivered_by_merge`, and `session.autoclosed merged` is true for an issue whose recorded pull request merged. Before this the merge's `Closes #N` closed the ticket and the close path SIGTERM'd the session mid-summary | [spec](../specs/issue-405/), [report](../reports/e2e-slack-test-2026-09-20-run-3.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/405) |

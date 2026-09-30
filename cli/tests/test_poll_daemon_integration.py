@@ -7,7 +7,7 @@ that started it, owning the pidfile's lock, logging somewhere — are statements
 about the running system. So these tests spawn ``the-loop start`` (with only the
 poller enabled) as a real subprocess against a temporary ``state.root``, and
 then interrogate the kernel. Every test kills what it spawned in a ``finally``;
-nothing here reaches the network (the ``gh`` on ``PATH`` is a stub that lists no
+nothing here reaches the network (the GitHub the daemon is pointed at is a loopback stub that lists no
 work items) and nothing spawns a session.
 
 The detach idiom changed with issue-228 — `Popen(start_new_session=True)` via
@@ -30,6 +30,7 @@ from pathlib import Path
 
 import pytest
 
+from ghstub import FakeGitHubServer
 from the_loop.runlock import RunLock
 
 pytestmark = pytest.mark.skipif(
@@ -51,33 +52,24 @@ polling:
     - provider: github
 """
 
-#: A `gh` that satisfies the dependency check and lists nothing, so a cycle runs
-#: to completion with no network and no spawn.
-FAKE_GH = """#!/bin/sh
-case "$1" in
-  --version) echo "gh version 2.60.0 (fake)" ;;
-  auth) exit 0 ;;
-  *) echo "[]" ;;
-esac
-exit 0
-"""
+
+@pytest.fixture
+def github():
+    """A loopback GitHub that lists nothing (issue-442): the daemon's client is
+    pointed at it, so a cycle runs to completion with no network and no spawn."""
+    with FakeGitHubServer() as server:
+        yield server
 
 
 @pytest.fixture
-def env(tmp_path):
-    """A temp working directory with a CLI config and a stub `gh` on PATH."""
+def env(tmp_path, github):
+    """A temp working directory with a CLI config bound to the loopback GitHub."""
     root = tmp_path / ".the-loop"
     root.mkdir()
-    (root / "cli-config.yaml").write_text(CONFIG)
-
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    gh = bin_dir / "gh"
-    gh.write_text(FAKE_GH)
-    gh.chmod(0o755)
+    (root / "cli-config.yaml").write_text(CONFIG + github.config_yaml())
 
     environ = dict(os.environ)
-    environ["PATH"] = f"{bin_dir}{os.pathsep}{environ.get('PATH', '')}"
+    environ["GH_TOKEN"] = "test-token"  # the daemon's credential (issue-442)
     environ["THE_LOOP_CLI_CONFIG"] = str(root / "cli-config.yaml")
     environ["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
     environ.pop("THE_LOOP_SERVICE_LOCAL", None)

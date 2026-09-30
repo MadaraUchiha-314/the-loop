@@ -1,18 +1,21 @@
-"""Unit tests for dispatch-lifecycle emoji reactions (issue-84).
+"""Unit tests for dispatch-lifecycle emoji reactions (issue-84, issue-442).
 
-Pure pieces only: config parsing, target resolution and the ``gh api``
-invocation the reactor builds (driven by a fake runner — no real ``gh``).
-Dispatcher-level scenarios live in ``test_reactions_integration.py``.
+Pure pieces only: config parsing, target resolution and the call the reactor
+makes on the daemon's GitHub client (driven by the in-memory double — no
+network). Dispatcher-level scenarios live in ``test_reactions_integration.py``.
 """
 
-import subprocess
 import types
 from typing import Any
 
 import pytest
+from ghfakes import FakeGitHubClient, http_error
 
-from the_loop import reactions as reactions_mod
+from the_loop.ghapi import GitHubApiConfig
 from the_loop.reactions import (
+    KIND_ISSUE,
+    KIND_ISSUE_COMMENT,
+    KIND_REVIEW_COMMENT,
     STATE_COMPLETED,
     STATE_ERROR,
     STATE_STARTED,
@@ -53,7 +56,7 @@ def test_reaction_config_defaults_are_on_with_closest_palette():
         "hooray",
         "confused",
     )
-    assert config.gh_binary == "gh"
+    assert config.github == GitHubApiConfig()
 
 
 def test_reaction_config_from_mapping_reads_camel_case_keys():
@@ -79,14 +82,14 @@ def test_target_prefers_webhook_comment_node_id():
     event = routed(payload=comment_payload({"id": 123, "node_id": "IC_kwDOabc"}))
     target = target_from_event(event)
     assert target is not None and target.node_id == "IC_kwDOabc"
-    assert target.rest_path == ""
+    assert (target.kind, target.id) == ("", 0)
 
 
 def test_target_numeric_comment_id_uses_issue_comment_rest_endpoint():
     event = routed(payload=comment_payload({"id": 123}))
     target = target_from_event(event)
     assert target is not None
-    assert target.rest_path == "repos/octo/repo/issues/comments/123/reactions"
+    assert (target.kind, target.id) == (KIND_ISSUE_COMMENT, 123)
 
 
 def test_target_review_comment_uses_pulls_rest_endpoint():
@@ -96,12 +99,12 @@ def test_target_review_comment_uses_pulls_rest_endpoint():
     )
     target = target_from_event(event)
     assert target is not None
-    assert target.rest_path == "repos/octo/repo/pulls/comments/99/reactions"
+    assert (target.kind, target.id) == (KIND_REVIEW_COMMENT, 99)
 
 
 def test_target_poll_comment_carries_graphql_node_id_in_id():
-    # The poll path synthesizes comment.id from gh's GraphQL comment shape
-    # (GhClient._comment_from_json) — a node id, not a numeric REST id.
+    # The poll path synthesizes comment.id from the conversation read's GraphQL
+    # shape (ghapi.list_issue_comments) — a node id, not a numeric REST id.
     event = routed(payload=comment_payload({"id": "IC_kwDOnode="}))
     target = target_from_event(event)
     assert target is not None and target.node_id == "IC_kwDOnode="
@@ -122,9 +125,9 @@ def test_target_falls_back_to_issue_then_pull_request():
     issue_target = target_from_event(issue)
     pr_target = target_from_event(pr)
     assert issue_target is not None
-    assert issue_target.rest_path == "repos/octo/repo/issues/15/reactions"
+    assert (issue_target.kind, issue_target.id) == (KIND_ISSUE, 15)
     assert pr_target is not None
-    assert pr_target.rest_path == "repos/octo/repo/issues/7/reactions"
+    assert (pr_target.kind, pr_target.id) == (KIND_ISSUE, 7)
 
 
 @pytest.mark.parametrize(
@@ -160,128 +163,112 @@ def test_target_is_none_for_unreactable_events(event):
 # -- GitHubReactor --------------------------------------------------------------
 
 
-class FakeRunner:
-    """Records gh invocations; returns a scripted CompletedProcess."""
-
-    def __init__(self, returncode=0, stderr=""):
-        self.returncode = returncode
-        self.stderr = stderr
-        self.commands = []
-
-    def __call__(self, cmd, capture_output=True, text=True, timeout=None):
-        self.commands.append(list(cmd))
-        return subprocess.CompletedProcess(
-            cmd, self.returncode, stdout="", stderr=self.stderr
-        )
-
-
-def enabled_reactor(runner, monkeypatch, **overrides):
-    monkeypatch.setattr(reactions_mod.shutil, "which", lambda _: "/usr/bin/gh")
+def enabled_reactor(gh, **overrides):
     config = ReactionConfig(enabled=True, **overrides)
-    return GitHubReactor(config=config, runner=runner)
+    return GitHubReactor(config=config, client=gh)
 
 
-def test_reactor_posts_rest_reaction_for_numeric_comment(monkeypatch):
-    runner = FakeRunner()
-    reactor = enabled_reactor(runner, monkeypatch)
+def test_reactor_posts_rest_reaction_for_numeric_comment():
+    gh = FakeGitHubClient()
+    reactor = enabled_reactor(gh)
     assert reactor.react(routed(payload=comment_payload({"id": 123})), STATE_STARTED)
-    assert runner.commands == [
-        [
-            "gh",
-            "api",
-            "--method",
-            "POST",
-            "repos/octo/repo/issues/comments/123/reactions",
-            "-f",
-            "content=eyes",
-        ]
-    ]
+    assert gh.reactions == [(KIND_ISSUE_COMMENT, 123, "eyes", "")]
+    assert gh.calls[0][1]["owner"] == "octo" and gh.calls[0][1]["repo"] == "repo"
 
 
-def test_reactor_posts_graphql_reaction_for_node_id(monkeypatch):
-    runner = FakeRunner()
-    reactor = enabled_reactor(runner, monkeypatch)
+def test_reactor_posts_graphql_reaction_for_node_id():
+    gh = FakeGitHubClient()
+    reactor = enabled_reactor(gh)
     event = routed(payload=comment_payload({"id": "IC_kwDOabc"}))
     assert reactor.react(event, STATE_COMPLETED)
-    (cmd,) = runner.commands
-    assert cmd[:3] == ["gh", "api", "graphql"]
-    assert "subjectId=IC_kwDOabc" in cmd
-    assert "content=HOORAY" in cmd  # GraphQL enum spelling of `hooray`
+    assert gh.reactions == [("node", "IC_kwDOabc", "hooray", "")]
 
 
-def test_reactor_disabled_or_skipped_state_is_a_noop(monkeypatch):
-    runner = FakeRunner()
+def test_reactor_reacts_on_the_issue_itself_for_a_presence_event():
+    gh = FakeGitHubClient()
+    event = routed(
+        event="issues",
+        payload={"repository": {"full_name": "octo/repo"}, "issue": {"number": 15}},
+    )
+    assert enabled_reactor(gh).react(event, STATE_STARTED)
+    assert gh.reactions == [(KIND_ISSUE, 15, "eyes", "")]
+
+
+def test_reactor_disabled_or_skipped_state_is_a_noop():
+    gh = FakeGitHubClient()
     event = routed(payload=comment_payload({"id": 123}))
-    off = GitHubReactor(config=ReactionConfig(enabled=False), runner=runner)
+    off = GitHubReactor(config=ReactionConfig(enabled=False), client=gh)
     assert not off.react(event, STATE_STARTED)
-    skipped = enabled_reactor(runner, monkeypatch, error="")
+    skipped = enabled_reactor(gh, error="")
     assert not skipped.react(event, STATE_ERROR)
-    assert runner.commands == []
+    assert gh.calls == []
 
 
-def test_reactor_unknown_content_is_skipped_with_warning(monkeypatch, caplog):
-    runner = FakeRunner()
-    reactor = enabled_reactor(runner, monkeypatch, started="sparkles")
+def test_reactor_unknown_content_is_skipped_with_warning(caplog):
+    gh = FakeGitHubClient()
+    reactor = enabled_reactor(gh, started="sparkles")
     with caplog.at_level("WARNING"):
         assert not reactor.react(
             routed(payload=comment_payload({"id": 123})), STATE_STARTED
         )
-    assert runner.commands == []
+    assert gh.calls == []
     assert "unknown reaction" in caplog.text
 
 
-def test_reactor_missing_gh_noops_and_warns_once(monkeypatch, caplog):
-    runner = FakeRunner()
-    monkeypatch.setattr(reactions_mod.shutil, "which", lambda _: None)
-    reactor = GitHubReactor(config=ReactionConfig(enabled=True), runner=runner)
+def test_reactor_missing_token_noops_and_warns_once(caplog):
+    gh = FakeGitHubClient(token=False)
+    reactor = GitHubReactor(config=ReactionConfig(enabled=True), client=gh)
     event = routed(payload=comment_payload({"id": 123}))
     with caplog.at_level("WARNING"):
         assert not reactor.react(event, STATE_STARTED)
         assert not reactor.react(event, STATE_COMPLETED)
-    assert runner.commands == []
-    assert caplog.text.count("not found on PATH") == 1  # warn once, not per event
+    assert gh.reactions == []
+    assert caplog.text.count("no GitHub token") == 1  # warn once, not per event
 
 
-def test_reactor_gh_failure_returns_false_without_raising(monkeypatch):
-    runner = FakeRunner(returncode=1, stderr="HTTP 404")
-    reactor = enabled_reactor(runner, monkeypatch)
+def test_reactor_github_failure_returns_false_without_raising():
+    gh = FakeGitHubClient(fail=http_error(404, "Not Found"))
+    reactor = enabled_reactor(gh)
     assert not reactor.react(routed(payload=comment_payload({"id": 123})), STATE_ERROR)
 
 
-def test_reactor_runner_exception_returns_false(monkeypatch):
-    def boom(cmd, capture_output=True, text=True, timeout=None):
-        raise OSError("gh vanished")
+def test_reactor_client_exception_returns_false():
+    class Exploding(FakeGitHubClient):
+        def add_reaction(self, *a, **k):
+            raise OSError("socket vanished")
 
-    monkeypatch.setattr(reactions_mod.shutil, "which", lambda _: "/usr/bin/gh")
-    reactor = GitHubReactor(config=ReactionConfig(enabled=True), runner=boom)
+    reactor = GitHubReactor(config=ReactionConfig(enabled=True), client=Exploding())
     assert not reactor.react(
         routed(payload=comment_payload({"id": 123})), STATE_STARTED
     )
 
 
-def test_reactor_unreactable_event_is_a_noop(monkeypatch):
-    runner = FakeRunner()
-    reactor = enabled_reactor(runner, monkeypatch)
+def test_reactor_unreactable_event_is_a_noop():
+    gh = FakeGitHubClient()
+    reactor = enabled_reactor(gh)
     ci_event = routed(
         event="workflow_run",
         payload={"repository": {"full_name": "octo/repo"}},
     )
     assert not reactor.react(ci_event, STATE_STARTED)
-    assert runner.commands == []
+    assert gh.calls == []
 
 
-def test_the_binary_comes_from_the_integrations_block():
-    """issue-109: `ghBinary` retired for one `integrations.github.cli.binary`."""
+def test_the_token_config_comes_from_the_integrations_block():
+    """issue-109 declared GitHub once under `integrations`; issue-442 fans the
+    `api` block (where the token is) in under `_github`."""
     from the_loop.cli_config import apply_integrations
 
     data = apply_integrations(
         {
-            "integrations": {"github": {"cli": {"binary": "/opt/gh"}}},
+            "integrations": {"github": {"api": {"tokenEnv": ["LOOP_TOKEN"]}}},
             "routing": {"reactions": {"enabled": True}},
         }
     )
     section = data["routing"]["reactions"]
-    assert ReactionConfig.from_mapping(section).gh_binary == "/opt/gh"
+    assert ReactionConfig.from_mapping(section).github == GitHubApiConfig(
+        token_envs=("LOOP_TOKEN",)
+    )
 
 
 # -- the host (issue-311, R4) ----------------------------------------------------
@@ -303,29 +290,32 @@ def test_the_target_carries_the_work_items_host():
 
 
 def test_a_hosted_reaction_is_posted_on_its_host():
-    target = target_from_event(
+    gh = FakeGitHubClient()
+    reactor = enabled_reactor(gh)
+    reactor.react(
         routed(
             payload=comment_payload({"id": 7}),
             work_items=[WorkItemRef.parse(GHE_REF)],
-        )
+        ),
+        STATE_STARTED,
     )
-    assert target is not None
-    argv = GitHubReactor._argv(target, "eyes")
-    assert argv[:3] == ["api", "--hostname", GHE]
-    node = target_from_event(
+    reactor.react(
         routed(
             payload=comment_payload({"node_id": "IC_kwDOAbCdEf4AAAAB"}),
             work_items=[WorkItemRef.parse(GHE_REF)],
-        )
+        ),
+        STATE_STARTED,
     )
-    assert node is not None
-    assert GitHubReactor._argv(node, "eyes")[:3] == ["api", "--hostname", GHE]
+    assert gh.reactions == [
+        (KIND_ISSUE_COMMENT, 7, "eyes", GHE),
+        ("node", "IC_kwDOAbCdEf4AAAAB", "eyes", GHE),
+    ]
 
 
-def test_a_github_com_reaction_argv_is_unchanged():
-    target = target_from_event(routed(payload=comment_payload({"id": 7})))
-    assert target is not None
-    assert "--hostname" not in GitHubReactor._argv(target, "eyes")
+def test_a_github_com_reaction_names_no_host():
+    gh = FakeGitHubClient()
+    enabled_reactor(gh).react(routed(payload=comment_payload({"id": 7})), STATE_STARTED)
+    assert gh.reactions == [(KIND_ISSUE_COMMENT, 7, "eyes", "")]
 
 
 # -- the settled-outcome acknowledgement table (issue-371) ----------------------

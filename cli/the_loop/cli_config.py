@@ -170,23 +170,22 @@ def child_env(
 
 
 def apply_integrations(config: dict) -> dict:
-    """Fan `integrations.github.cli.binary` out to the features that need it.
+    """Fan `integrations.github.api` out to the features that write to GitHub.
 
     issue-109 removed the three per-feature `ghBinary` keys in favour of one
-    `integrations` block. The features still need a binary at call time, so the
-    resolved value is injected here under a private key — declared once by the
-    operator, available everywhere internally.
+    `integrations` block; issue-442 retired the binary itself for a token. The
+    features still need to know where the token is at call time, so the `api`
+    block (`tokenEnv`, `baseUrl`) is injected here under a private `_github`
+    key — declared once by the operator, available everywhere internally.
     """
-    binary = str(
-        (((config.get("integrations") or {}).get("github") or {}).get("cli") or {}).get(
-            "binary", "gh"
-        )
-    )
+    from .ghapi import GitHubApiConfig
+
+    api = GitHubApiConfig.from_cli_config(config).to_mapping()
     routing = config.get("routing") or {}
     for feature in ("control", "reactions", "announce"):
         section = routing.get(feature)
         if isinstance(section, dict):
-            section["_ghBinary"] = binary
+            section["_github"] = dict(api)
     return config
 
 
@@ -197,8 +196,8 @@ def apply_instance(config: dict) -> dict:
     set, so it sits beside `state` and `env` rather than under `routing`. The
     dispatcher reads its policy from `RoutingConfig.from_mapping(routing, …)`
     alone, and decision-109 D1 wants exactly one construction of that object; so
-    the block travels under a private key, the way `integrations.github.cli.binary`
-    reaches `routing.control` as `_ghBinary`. A `RoutingConfig` built from a bare
+    the block travels under a private key, the way `integrations.github.api`
+    reaches `routing.control` as `_github`. A `RoutingConfig` built from a bare
     routing mapping is an unnamed, open instance: 13.3.1.
     """
     block = config.get("instance")

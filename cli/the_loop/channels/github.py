@@ -33,6 +33,7 @@ import logging
 from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 
 from ..authz import mark_self_authored
+from ..ghapi import GitHubApiConfig
 from ..redact import (
     defang_control_keywords,
     neutralise_broadcasts,
@@ -49,7 +50,7 @@ __all__ = [
     "GitHubLedger",
     "TITLE_MAX_CHARS",
     "control_keywords",
-    "gh_binary",
+    "github_api",
     "mirror_body",
     "relay_body",
 ]
@@ -92,11 +93,9 @@ def control_keywords(cli_config: Optional[Mapping]) -> Tuple[str, ...]:
     return tuple(keywords.values())
 
 
-def gh_binary(cli_config: Optional[Mapping]) -> str:
-    section = (
-        (dict(cli_config or {}).get("integrations") or {}).get("github") or {}
-    ).get("cli") or {}
-    return str(section.get("binary", "gh"))
+def github_api(cli_config: Optional[Mapping]) -> GitHubApiConfig:
+    """Where the daemon's GitHub token is — `integrations.github.api` (issue-442)."""
+    return GitHubApiConfig.from_cli_config(dict(cli_config or {}))
 
 
 def _quoted(text: str) -> str:
@@ -211,7 +210,7 @@ def issue_body(event: Event) -> str:
 
 
 class GitHubLedger:
-    """The ledger: comments through the operator's ``gh`` (best-effort), issues too."""
+    """The ledger: comments through the daemon's GitHub client (best-effort), issues too."""
 
     name = "github"
 
@@ -264,7 +263,7 @@ class GitHubLedger:
 
             post = comments.post_issue_comment_with_url
         try:
-            outcome = tuple(post(item, body, gh_binary=gh_binary(self.cli_config)))
+            outcome = tuple(post(item, body, api=github_api(self.cli_config)))
         except Exception as exc:  # the writer is best-effort by contract
             outcome = (False, str(exc), "")
         # Both writer shapes are honoured: `(ok, error)` and `(ok, error, url)`.
@@ -296,7 +295,7 @@ class GitHubLedger:
                 issue_title(event.text),
                 issue_body(event),
                 labels,
-                gh_binary=gh_binary(self.cli_config),
+                api=github_api(self.cli_config),
             )
         except Exception as exc:  # best-effort, like every ledger write
             ok, error, ref, url = False, str(exc), "", ""

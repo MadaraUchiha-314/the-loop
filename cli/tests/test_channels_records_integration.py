@@ -22,8 +22,7 @@ import json
 import pytest
 
 from the_loop.channels.records import records_from_comments
-from the_loop.poller import github as poller_github
-from the_loop.poller.github import GhComment, GhError
+from the_loop.ghapi import GhComment, GitHubApiError, GitHubClient
 from test_channels_mentions_integration import (  # noqa: F401
     BOT,
     REF,
@@ -91,18 +90,16 @@ def _run(tmp_path, monkeypatch, comments, *argv, failing=None, login="the-loop-b
     from the_loop.commands.channels_cmd import ChannelsCommand
 
     monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(tmp_path / "cli-config.yaml"))
-    monkeypatch.setattr(
-        poller_github.GhClient, "viewer_login", lambda self, host="": login
-    )
+    monkeypatch.setattr(GitHubClient, "viewer_login", lambda self, host="": login)
     seen = []
 
-    def list_comments(self, owner, repo, number, is_pr, host=""):
-        seen.append((owner, repo, number, is_pr, host))
-        if failing and failing(is_pr):
-            raise GhError(f"gh issue view exited 1: {failing(is_pr)}")
+    def list_issue_comments(self, owner, repo, number, host=""):
+        seen.append((owner, repo, number, host))
+        if failing:
+            raise GitHubApiError(failing, status=401)
         return list(comments)
 
-    monkeypatch.setattr(poller_github.GhClient, "list_comments", list_comments)
+    monkeypatch.setattr(GitHubClient, "list_issue_comments", list_issue_comments)
     parser = argparse.ArgumentParser()
     ChannelsCommand().add_arguments(parser)
     code = ChannelsCommand().run(parser.parse_args(["records", *argv]))
@@ -138,7 +135,7 @@ def test_channels_records_prints_markdown_by_default(
     code, seen = _run(tmp_path, monkeypatch, ticket, REF)
     out = capsys.readouterr().out
     assert code == 0
-    assert seen == [("octo", "repo", 389, False, "github.com")]
+    assert seen == [("octo", "repo", 389, "github.com")]
     assert out.startswith(f"# Records on {REF}")
     assert "## 1. context.added — github:gh-UHUMAN, slack:UHUMAN" in out
     assert "## 2. decision.recorded" in out
@@ -174,29 +171,23 @@ def test_channels_records_says_when_there_are_none(
     assert capsys.readouterr().out == f"no records on {REF}\n"
 
 
-def test_channels_records_falls_back_to_the_pull_request_read(
+def test_channels_records_is_one_read_for_an_issue_and_a_pull_request_alike(
     tmp_path, monkeypatch, capsys, ticket
 ):
-    code, seen = _run(
-        tmp_path,
-        monkeypatch,
-        ticket,
-        REF,
-        failing=lambda is_pr: "" if is_pr else "could not resolve to an Issue",
-    )
+    """The conversation read answers for either kind (issue-442): no second try,
+    no guess about what the number is."""
+    code, seen = _run(tmp_path, monkeypatch, ticket, REF)
     assert code == 0
-    assert [s[3] for s in seen] == [False, True]
+    assert [s[:3] for s in seen] == [("octo", "repo", 389)]
     assert "decision.recorded" in capsys.readouterr().out
 
 
 def test_channels_records_exits_one_when_the_ledger_cannot_be_read(
     tmp_path, monkeypatch, capsys, ticket
 ):
-    code, seen = _run(
-        tmp_path, monkeypatch, ticket, REF, failing=lambda is_pr: "not logged in"
-    )
+    code, seen = _run(tmp_path, monkeypatch, ticket, REF, failing="not logged in")
     assert code == 1
-    assert [s[3] for s in seen] == [False, True]
+    assert len(seen) == 1
     err = capsys.readouterr().err
     assert "could not read the records" in err and "not logged in" in err
 
@@ -245,26 +236,21 @@ def test_without_the_login_the_verb_lists_by_marker_and_warns(
     captured = capsys.readouterr()
     rows = json.loads(captured.out)
     assert [r["author"] for r in rows] == ["the-loop-bot", "the-loop-bot", "mallory"]
-    assert "could not read the gh login" in captured.err
+    assert "could not read the GitHub login" in captured.err
 
 
-def test_viewer_login_spells_the_host_as_every_gh_api_call_does(monkeypatch):
-    """Round 2, finding 2: no `--hostname` for github.com, the flag for GHE."""
-    from the_loop.poller.github import GhClient
-
-    seen = []
-
-    def run_json(self, argv):
-        seen.append(list(argv))
-        return {"login": "the-loop-bot"}
-
-    monkeypatch.setattr(GhClient, "_run_json", run_json)
-    gh = GhClient()
+def test_viewer_login_is_asked_of_the_hosts_own_api(monkeypatch, github_replay):
+    """Round 2, finding 2: github.com's API for github.com, the enterprise API
+    (`https://<host>/api/v3`) for a hosted ref — through the real client."""
+    monkeypatch.setenv("GH_TOKEN", "x")
+    github_replay.on("GET", "/user", 200, {"login": "the-loop-bot"})
+    github_replay.on("GET", "/api/v3/user", 200, {"login": "the-loop-bot"})
+    gh = GitHubClient()
     assert gh.viewer_login("github.com") == "the-loop-bot"
     assert gh.viewer_login("") == "the-loop-bot"
     assert gh.viewer_login("ghe.corp.example") == "the-loop-bot"
-    assert seen == [
-        ["api", "user"],
-        ["api", "user"],
-        ["api", "--hostname", "ghe.corp.example", "user"],
+    assert [(e.host, e.path) for e in github_replay.exchanges] == [
+        ("api.github.com", "/user"),
+        ("api.github.com", "/user"),
+        ("ghe.corp.example", "/api/v3/user"),
     ]

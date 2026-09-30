@@ -1310,8 +1310,9 @@ took (issue-371):
 A comment refused at **ingress** — the-loop's own comment, or an unauthorized author — is
 never reacted to either: the refusal is silent by design.
 
-Best-effort by design: reactions post through your own `gh` CLI (the daemon holds no
-token), a reaction failure never affects the dispatch, and a missing `gh`, a non-GitHub
+Best-effort by design: reactions post with the daemon's GitHub token
+([`integrations.github.api.tokenEnv`](/config/cli/integrations-options#github-api-tokenenv)),
+a reaction failure never affects the dispatch, and a missing token, a non-GitHub
 provider or an event with no reactable target is a silent no-op. Shared by the receiver and
 the poller, and hot-reloaded with the rest of `routing`.
 
@@ -1363,12 +1364,12 @@ watch it work without digging through daemon logs.
 A **respawn** posts nothing further — it reuses the same session name, so the comment
 already there stays correct and a flapping session cannot bury the thread.
 
-Best-effort via your own `gh` CLI, like reactions: a failure never affects the dispatch,
-and a non-GitHub work item or a missing `gh` is a no-op. The body
+Best-effort with the daemon's GitHub token, like reactions: a failure never affects the
+dispatch, and a non-GitHub work item or a missing token is a no-op. The body
 is built only from registry fields — work-item ref, tmux target, harness — never from event
 payloads, and carries no filesystem paths, harness session ids or hostnames.
 
-This posts **text** to GitHub with your own `gh` auth. Set `false` to opt out.
+This posts **text** to GitHub under the daemon's token. Set `false` to opt out.
 
 ## Registry and throughput
 

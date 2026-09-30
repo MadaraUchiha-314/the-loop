@@ -77,7 +77,7 @@ def no_ticket_comment(monkeypatch):
     monkeypatch.setattr(
         core_sessions,
         "post_issue_comment",
-        lambda item, body, gh_binary="gh": posted.append(body) or (True, ""),
+        lambda item, body, api=None: posted.append(body) or (True, ""),
     )
     return posted
 
@@ -364,7 +364,7 @@ def test_the_ask_verb_posts_a_marked_question_and_records_the_wait(
     """
     posted = {}
 
-    def fake_post(item, body, gh_binary="gh"):
+    def fake_post(item, body, api=None):
         posted["ref"], posted["body"] = item.ref, body
         return True, "", "https://github.com/octo/repo/issues/7#issuecomment-3"
 
@@ -418,7 +418,7 @@ def test_the_ask_verb_records_the_wait_even_when_gh_fails(
     monkeypatch.setattr(
         core_sessions,
         "post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": (False, "gh exited 1: boom", ""),
+        lambda item, body, api=None: (False, "gh exited 1: boom", ""),
     )
     log_path = layout_from_config(_config(tmp_path)).event_log
     monkeypatch.setattr(
@@ -455,7 +455,7 @@ def test_the_ask_verb_reads_a_question_file(tmp_path, monkeypatch):
     monkeypatch.setattr(
         core_sessions,
         "post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": posted.update(body=body) or (True, "", ""),
+        lambda item, body, api=None: posted.update(body=body) or (True, "", ""),
     )
     question = tmp_path / "question.md"
     question.write_text("## Two options\n\n- A\n- B\n")
@@ -485,7 +485,7 @@ def test_the_ask_verb_warns_when_the_bus_names_no_channel(
     monkeypatch.setattr(
         core_sessions,
         "post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": (True, "", "https://x/#c1"),
+        lambda item, body, api=None: (True, "", "https://x/#c1"),
     )
     # The default config in this test env carries no `channels` section, which
     # is exactly the silent bus B6 recorded.
@@ -507,7 +507,7 @@ def test_the_ask_verb_is_quiet_when_a_channel_subscribes(tmp_path, monkeypatch, 
     monkeypatch.setattr(
         core_sessions,
         "post_issue_comment_with_url",
-        lambda item, body, gh_binary="gh": (True, "", "https://x/#c1"),
+        lambda item, body, api=None: (True, "", "https://x/#c1"),
     )
 
     from the_loop.channels import base as channels_base

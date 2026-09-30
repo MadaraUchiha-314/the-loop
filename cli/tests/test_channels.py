@@ -366,7 +366,7 @@ def acked_pipeline(
     posts, deliveries = [], []
     client = client or FakeSlackClient()
 
-    def post_comment(item, body, gh_binary="gh"):
+    def post_comment(item, body, api=None):
         posts.append((item.ref, body))
         return (True, "") if post_ok else (False, "gh exited 1")
 
@@ -442,7 +442,7 @@ def test_a_control_keyword_with_the_grant_is_recorded_unmarked_for_ingress(tmp_p
     reply = a_reply(text="please the-loop start now")
     posts, deliveries = [], []
 
-    def post_comment(item, body, gh_binary="gh"):
+    def post_comment(item, body, api=None):
         posts.append((item.ref, body))
         return True, "", "https://x/c1"
 
@@ -538,9 +538,7 @@ def test_poll_once_processes_and_advances(tmp_path, monkeypatch):
     summary = inbound.poll_once(
         config,
         client_factory=factory,
-        post_comment=lambda item, body, gh_binary="gh": (
-            posts.append(item.ref) or (True, "")
-        ),
+        post_comment=lambda item, body, api=None: posts.append(item.ref) or (True, ""),
         deliver=lambda *a, **k: deliveries.append(a) or {"delivered": True},
     )
     assert summary["replies"] == 1 and summary["processed"] == 1
@@ -1241,7 +1239,7 @@ def _run(tmp_path, reply, config):
     """``process_reply`` over ``config``; the caller patches the graph read."""
     posts, deliveries = [], []
 
-    def post_comment(item, body, gh_binary="gh"):
+    def post_comment(item, body, api=None):
         posts.append((item.ref, body))
         return True, "", "https://x/c1"
 
@@ -1680,7 +1678,7 @@ def test_the_received_reaction_precedes_the_record(tmp_path, monkeypatch):
         order.append(("react", kw["name"])) or {"ok": True}
     )
 
-    def post_comment(item, body, gh_binary="gh"):
+    def post_comment(item, body, api=None):
         order.append(("record", item.ref))
         return True, ""
 
@@ -1800,7 +1798,7 @@ def _kickoff(tmp_path, client, *, create_ok=True, authorized=("UHUMAN",)):
         channel_id="D123",
     )
 
-    def create_issue(repo, title, body, labels, gh_binary="gh"):
+    def create_issue(repo, title, body, labels, api=None):
         if create_ok:
             return True, "", "github:o/r#42", "https://github.com/o/r/issues/42"
         return False, "gh exited 1", "", ""

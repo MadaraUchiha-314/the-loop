@@ -149,7 +149,7 @@ def run(tmp_path, text, *, config=None, post_ok=True, post_url="https://x/c1", *
     lifecycle = kw.pop("lifecycle", FakeLifecycle())
     standing = kw.pop("standing", FakeStanding())
 
-    def post_comment(item, body, gh_binary="gh"):
+    def post_comment(item, body, api=None):
         posts.append((item.ref, body))
         return (True, "", post_url) if post_ok else (False, "gh exited 1", "")
 
@@ -640,7 +640,7 @@ def test_a_failed_answer_keeps_the_outcome(tmp_path, monkeypatch):
     )
     posts = []
 
-    def post_comment(item, body, gh_binary="gh"):
+    def post_comment(item, body, api=None):
         posts.append(body)
         return True, "", ""
 
@@ -803,13 +803,13 @@ def run_new(tmp_path, text, *, config=None, client=None, create_ok=True, **kw):
     config = config or cli_config(tmp_path, publish=[*ALL_GRANTS, "work-item.create"])
     client = client or FakeSlackClient()
 
-    def create_issue(repo, title, body, labels=(), gh_binary="gh"):
+    def create_issue(repo, title, body, labels=(), api=None):
         created.append((repo, title, body, tuple(labels)))
         if not create_ok:
             return False, "gh exited 1", "", ""
         return True, "", "github:o/r#99", "https://x/99"
 
-    def post_comment(item, body, gh_binary="gh"):
+    def post_comment(item, body, api=None):
         posts.append((item.ref, body))
         return True, "", "https://x/c1"
 

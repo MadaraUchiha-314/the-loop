@@ -153,7 +153,7 @@ def test_the_ledger_records_both_acts_through_the_mirror():
 
     posted = []
 
-    def post(item, body, gh_binary="gh"):
+    def post(item, body, api=None):
         posted.append(body)
         return True, "", "https://github.com/o/r/issues/389#issuecomment-1"
 

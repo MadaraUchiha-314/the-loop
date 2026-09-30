@@ -18,6 +18,12 @@ receiver — which never read it — was bounded by no repository list at all. I
 to a top-level ``repositories``, a sibling of ``routing``/``polling``/``channels``, and
 every ingress reads it.
 
+issue-442 removes ``integrations.github.transport`` and ``integrations.github.cli``
+because there is one transport now: the daemon reaches GitHub through PyGithub
+under the token ``integrations.github.api.tokenEnv`` names (decision-139), and a
+key promising a ``gh`` binary the daemon never runs is a key that quietly does
+nothing.
+
 issue-304 removes ``collaborators`` and ``notifications`` for the plainest reason
 of all: **nothing ever read either block.** The daemon events the filter named
 are raised nowhere under ``the_loop/``, so an operator who filled it in
@@ -53,9 +59,9 @@ __all__ = [
 ]
 
 #: Bumped by issue-109, then issue-128, then issue-142, then issue-245, then
-#: issue-304, then issue-309, then issue-348, then issue-381. A config below this
-#: needs `/the-loop:upgrade-the-loop`.
-CURRENT_CONFIG_VERSION = "0.10.0"
+#: issue-304, then issue-309, then issue-348, then issue-381, then issue-442. A
+#: config below this needs `/the-loop:upgrade-the-loop`.
+CURRENT_CONFIG_VERSION = "0.11.0"
 
 _UPGRADE = "/the-loop:upgrade-the-loop"
 
@@ -151,6 +157,14 @@ _SOURCE_LABEL_SITE = "polling.sources[].label"
 _SOURCE_LABEL_KEY = "label"
 _SOURCE_LABEL_REPLACEMENT = "labels"
 
+# issue-442 retires the `gh` transport (decision-139): the daemon holds one token and
+# speaks PyGithub, so the transport choice and the binary path have nothing left to
+# select. Both keys are removed; the token block they leave behind is the whole
+# configuration, and the note says where the token now has to be.
+_GITHUB_SITE: Tuple[str, ...] = ("integrations", "github")
+_GITHUB_RETIRED_KEYS: Tuple[str, ...] = ("transport", "cli")
+_GITHUB_REPLACEMENT = "integrations.github.api.tokenEnv"
+
 
 def _github_sources(config: Mapping[str, Any]) -> List[Dict[str, Any]]:
     """Every ``provider: github`` entry of ``polling.sources``.
@@ -230,6 +244,8 @@ def needs_migration(config: Mapping[str, Any]) -> bool:
     if _LABEL_KEY in (_dig(config, _LABEL_SITE) or {}):
         return True
     if any(_SOURCE_LABEL_KEY in source for source in _github_sources(config)):
+        return True
+    if any(key in (_dig(config, _GITHUB_SITE) or {}) for key in _GITHUB_RETIRED_KEYS):
         return True
     return any(
         (section or {}).get("ghBinary") is not None
@@ -361,6 +377,22 @@ def assert_current(config: Mapping[str, Any]) -> None:
             f"reusing `routing.{_LABEL_REPLACEMENT}` when empty (issue-381). It is NOT "
             "being ignored: a source silently polling the shared default instead of "
             f"the label you set would track items that are not yours. Run `{_UPGRADE}` "
+            "to migrate."
+        )
+    retired = [
+        f"integrations.github.{key}"
+        for key in _GITHUB_RETIRED_KEYS
+        if key in (_dig(config, _GITHUB_SITE) or {})
+    ]
+    if retired:
+        raise ConfigTooOld(
+            "this CLI config still declares "
+            + " and ".join(f"`{key}`" for key in retired)
+            + ". The `gh` transport was retired (issue-442): the daemon reaches "
+            "GitHub through PyGithub with the token "
+            f"`{_GITHUB_REPLACEMENT}` names, and nothing runs a `gh` binary any "
+            "more. It is NOT being ignored — a transport you chose that is "
+            f"silently served another way is worse than an error. Run `{_UPGRADE}` "
             "to migrate."
         )
     declared = config.get("version")
@@ -531,6 +563,7 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
     _promote_repositories(data, report)
     _retire_repo_hooks(data, report)
     _migrate_auto_execute_labels(data, report)
+    _retire_github_cli(data, report)
 
     if _parts(str(data.get("version", "0"))) < _parts(CURRENT_CONFIG_VERSION):
         report.moves.append(
@@ -540,6 +573,51 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
         report.changed = True
 
     return report
+
+
+def _retire_github_cli(data: Dict[str, Any], report: MigrationReport) -> None:
+    """Drop ``integrations.github.transport`` and ``.cli`` (issue-442, decision-139).
+
+    Runs after the issue-109 move, so a very old file whose per-feature
+    ``ghBinary`` keys were just gathered into ``integrations.github.cli`` loses
+    that key again in the same pass — both moves reported, one migration. The
+    note names the token the daemon needs now, whenever the file relied on the
+    binary (``transport: cli``) or never named a token variable.
+    """
+    github = _dig(data, _GITHUB_SITE)
+    if github is None:
+        return
+    removed: Dict[str, Any] = {}
+    for key in _GITHUB_RETIRED_KEYS:
+        if key in github:
+            removed[key] = github.pop(key)
+    if not removed:
+        return
+    report.changed = True
+    for key, value in removed.items():
+        report.moves.append(
+            f"integrations.github.{key} ({value!r}) removed — the `gh` transport was "
+            "retired (issue-442); the daemon reaches GitHub through PyGithub with the "
+            f"token `{_GITHUB_REPLACEMENT}` names"
+        )
+    api_block = github.get("api")
+    api: Dict[str, Any] = api_block if isinstance(api_block, dict) else {}
+    if str(removed.get("transport", "")) == "cli" or not api.get("tokenEnv"):
+        report.notes.append(
+            "the daemon holds a GitHub token of its own now: export GH_TOKEN (or "
+            "GITHUB_TOKEN, or a variable you name under "
+            f"`{_GITHUB_REPLACEMENT}`) — an `env.file` can carry it — with Issues: "
+            "read and write, Pull requests: read and Metadata: read on every "
+            "repository this instance works with. Until it is set, comments, "
+            "reactions, announcements and the poller's reads report the missing "
+            "token and do nothing else"
+        )
+    if not github:
+        integrations = data.get("integrations")
+        if isinstance(integrations, dict):
+            integrations.pop("github", None)
+            if not integrations:
+                data.pop("integrations", None)
 
 
 def _migrate_auto_execute_labels(data: Dict[str, Any], report: MigrationReport) -> None:

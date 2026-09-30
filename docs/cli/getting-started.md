@@ -7,7 +7,8 @@ spawns for it, every later comment and CI result on that item is routed to the s
 session, and the session closes itself when the item does.
 
 ::: tip Prerequisites
-An authenticated `gh` (`gh auth login`), `tmux` (every spawned session is hosted in it),
+A GitHub token in `GH_TOKEN` (or `GITHUB_TOKEN`) with *Issues: read and write* and
+*Pull requests: read* on the repository, `tmux` (every spawned session is hosted in it),
 and the harness you want to spawn — `claude` or `cursor-agent` — on your `PATH`.
 :::
 

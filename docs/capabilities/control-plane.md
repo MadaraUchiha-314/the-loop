@@ -224,7 +224,7 @@ package — there are no install extras (owner decision, PR #162).
   posts it on the work item with the loop-prevention marker stamped **centrally**
   (no agent is trusted to remember it), records the wait as a
   `session.awaiting_input` event — comment URL included, and emitted (as a warning)
-  even when `gh` failed, since the agent is waiting either way — and executes
+  even when the post failed, since the agent is waiting either way — and executes
   in-process, because the escalation path must not depend on the service being up.
   The `work-item` interaction directive names the verb; manual `gh` + marker
   remains only as the stated fallback.

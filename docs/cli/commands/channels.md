@@ -65,7 +65,7 @@ the-loop channels manifest  # the Slack app manifest to import (scopes, events, 
   record; `--format json` prints the rows; `--type` (repeatable) keeps one kind. A
   session run `the-loop channels records <ref>` at the start of every phase to find
   what it has not folded (see [collaboration](/guide/slack#addressing-the-loop)). One
-  `gh` read of the ticket's comments — tried as an issue, then as a pull request — no
+  read of the ticket's comments — one read answers for an issue and a pull request alike — no
   Slack call, no token printed; exit 1 when the ref is not one or the ledger cannot
   be read, with the reason on stderr.
 - **`poll`** runs one synchronous read cycle: every bound Slack thread is checked for

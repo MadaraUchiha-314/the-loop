@@ -269,12 +269,12 @@ def test_the_ledger_is_github_and_an_unknown_name_never_resolves_to_none(caplog)
 def ledger_with_fakes(cli_config=None):
     posts, issues = [], []
 
-    def post(item, body, gh_binary="gh"):
-        posts.append((item.ref, body, gh_binary))
+    def post(item, body, api=None):
+        posts.append((item.ref, body, api))
         return True, "", "https://gh/c/9"
 
-    def create(repo, title, body, labels, gh_binary="gh"):
-        issues.append((repo, title, body, list(labels), gh_binary))
+    def create(repo, title, body, labels, api=None):
+        issues.append((repo, title, body, list(labels), api))
         return True, "", "github:o/r#42", "https://gh/o/r/issues/42"
 
     return (
@@ -331,7 +331,7 @@ def test_a_relayed_record_is_unmarked_with_the_words_intact(event_type):
 def test_a_kickoff_record_is_an_issue_with_only_configured_labels():
     """R3.6, A7 — unmarked (armable), enveloped, labels from config alone."""
     ledger, _, issues = ledger_with_fakes(
-        {"integrations": {"github": {"cli": {"binary": "hub"}}}}
+        {"integrations": {"github": {"api": {"tokenEnv": ["HUB_TOKEN"]}}}}
     )
     result = ledger.record(
         Event(
@@ -344,12 +344,12 @@ def test_a_kickoff_record_is_an_issue_with_only_configured_labels():
         )
     )
     assert result.ok and result.ref == "github:o/r#42"
-    repo, title, body, labels, binary = issues[0]
-    assert (repo, title, labels, binary) == (
+    repo, title, body, labels, api = issues[0]
+    assert (repo, title, labels, api.token_envs) == (
         "o/r",
         "Ship the thing",
         ["the-loop: auto-execute", "bug"],
-        "hub",
+        ("HUB_TOKEN",),
     )
     assert not is_self_authored(body)
     parsed = env.parse(body)

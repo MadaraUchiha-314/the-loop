@@ -14,16 +14,19 @@ unconstrained — CLI, MCP, API, whatever the harness has. Nothing here narrows 
 
 Introduced by issue-109 to replace three copies of one setting: `ghBinary` used to be
 declared separately under `routing.control`, `routing.reactions` and `routing.announce`.
-It is now declared once here and fanned out internally. A config still carrying the old key
-is **refused**, naming the replacement — see
+Since issue-442 there is no binary at all: the daemon reaches GitHub through
+[PyGithub](https://github.com/pygithub/pygithub/) under **one token**, named here and read
+from the process environment. A config still carrying a retired key (`ghBinary`,
+`github.transport`, `github.cli`) is **refused**, naming the replacement — see
 [`the-loop migrate-config`](/cli/commands/migrate-config).
 
 ```yaml
 integrations:
   github:
-    transport: auto
-    cli: { binary: gh }
-    api: { tokenEnv: [GITHUB_TOKEN], baseUrl: "" }
+    # host: ghe.corp.example
+    api:
+      tokenEnv: [GH_TOKEN, GITHUB_TOKEN]
+      baseUrl: https://api.github.com   # or https://<host>/api/v3 for GitHub Enterprise
 ```
 
 ::: tip Looking for Slack?
@@ -34,30 +37,36 @@ replies back. A config still declaring `integrations.slack` is refused with the
 replacement named — [`the-loop migrate-config`](/cli/commands/migrate-config) removes it.
 :::
 
-## Choosing a transport
+## One transport, one token
 
-Transport is a **choice, not a mandate**:
+The daemon's own GitHub calls — the control paper trail, dispatch reactions, session
+announcements, the poller's reads, the existence check, the process graph's labels and
+comments, the self-diagnosis issue, the channel ledger — all go through one client built on
+PyGithub ([decision-139](/decisions/decision-139)). It authenticates with the first set
+variable of [`github.api.tokenEnv`](/config/cli/integrations-options#github-api-tokenenv), read **at call time** from the
+daemon's environment; an [`env.file`](/config/cli/instance-options) can hold it. Nothing
+runs a `gh` binary any more, and nothing bridges through `gh auth token`.
 
-- `auto` resolves token → binary, and **fails closed naming both remedies** if neither is
-  available. It never guesses silently.
-- An **explicit** transport is honoured verbatim and **fails rather than degrading**. If
-  you asked for `api` and the token is missing, you get an error — not a quiet fallback to
-  a CLI that might be authenticated as somebody else.
+**A missing token is loud, never worked around.** Every best-effort writer reports
+`no GitHub token: set GH_TOKEN or GITHUB_TOKEN` and does nothing else (once per process in
+the log); the poller's pre-flight names the variables; the process graph's integration
+refuses with the same sentence.
+
+**Scopes.** A fine-grained personal access token needs *Issues: read and write*,
+*Pull requests: read* and *Metadata: read* on every repository the instance works with
+(the top-level [`repositories`](/config/cli/repositories-options)); a classic token needs
+`repo`. The token's login is the author of every comment the-loop writes, which is why each
+one carries the `<!-- the-loop:agent-comment -->` marker — the ledger reads its own writes
+by that login (`the-loop channels records`).
+
+::: details Upgrading from a `gh`-based deployment (before 19.16)
+`github.transport` (`auto | api | cli`) and `github.cli.binary` are gone.
+[`the-loop migrate-config`](/cli/commands/migrate-config) removes both and, when the file
+relied on the binary (`transport: cli`) or named no token variable, says which variable to
+set. Until it is set the daemon posts nothing and reads nothing from GitHub, and says so.
+:::
 
 ## GitHub
-
-### `github.transport`
-
-- **Type:** `'auto' | 'api' | 'cli'`
-- **Default:** `auto`
-
-How GitHub calls are made:
-
-| Value | Means |
-|-------|-------|
-| `api` | stdlib HTTP with a token from `github.api.tokenEnv` |
-| `cli` | the operator's authenticated `gh`, inheriting enterprise and SSO settings |
-| `auto` | token first, then binary; fails closed naming both remedies |
 
 ### `github.host`
 
@@ -67,8 +76,8 @@ How GitHub calls are made:
 **Which GitHub the-loop is on** (issue-311). Set it to your GitHub Enterprise domain
 (`ghe.corp.example`, or `ghe.corp.example:8443`) and every link the-loop posts — the Slack
 notification for a pending decision, the ask's "answer on the ticket", the portable
-record's `url`, the reviewer's suggested pull requests — and every `gh` call it makes
-(`gh api --hostname …`, `gh issue … --repo HOST/OWNER/REPO`) name that host.
+record's `url`, the reviewer's suggested pull requests — and every API call it makes name
+that host.
 
 You rarely need to set it. A work item that arrives through a webhook or a poll already
 carries its host in its ref, read off the event. This key answers for the refs the-loop
@@ -81,23 +90,24 @@ it is the first of five tiers, resolved in this order:
 |------|--------|
 | 1 | `integrations.github.host` — this key |
 | 2 | the host of `github.api.baseUrl`, when it is not the public API (`https://<host>/api/v3`) |
-| 3 | `$GH_HOST` — `gh`'s own override |
-| 4 | the `origin` remote of the repository the loop is running in — `gh`'s own next answer; only in-session, never in a daemon |
+| 3 | `$GH_HOST` — kept as a plain environment convention (it is `gh`'s, and harmless) |
+| 4 | the `origin` remote of the repository the loop is running in — only in-session, never in a daemon |
 | 5 | `github.com` |
 
 A value that is not the shape of a host — a scheme, a path, credentials, a bare word with
 no dot and no port — is skipped with a warning and the next tier answers. `github.com`
-stays unwritten in refs and adds nothing to any `gh` argv, so a deployment on github.com
-sees no change. The checkout directory's host is a separate, explicit key:
+stays unwritten in refs, so a deployment on github.com sees no change. The checkout
+directory's host is a separate, explicit key:
 [`routing.workspace.defaultHost`](/config/cli/routing-options#workspace-defaulthost).
 See [decision-104](/decisions/decision-104).
 
 ### `github.api.tokenEnv`
 
 - **Type:** `string[]`
-- **Default:** none
+- **Default:** `[GH_TOKEN, GITHUB_TOKEN]`
 
-Environment variables holding a token, tried **in order**.
+Environment variables holding the daemon's GitHub token, tried **in order**; the first one
+set wins, read at call time.
 
 ::: danger Variable names, never tokens
 This is a list of *variable names*. Putting a token in this file commits it.
@@ -106,26 +116,12 @@ This is a list of *variable names*. Putting a token in this file commits it.
 ### `github.api.baseUrl`
 
 - **Type:** `string`
-- **Default:** none (github.com)
+- **Default:** `https://api.github.com`
 
-API base URL — set it for a GitHub Enterprise host (`https://<host>/api/v3`). An
-enterprise base also answers
-[`github.host`](/config/cli/integrations-options#github-host) when that key is unset; and a
-work item on an enterprise host is addressed at `https://<host>/api/v3` when this key is
-left at the public default (issue-311).
-
-### `github.cli.binary`
-
-- **Type:** `string`
-- **Default:** `gh`
-
-Path or name of the `gh` CLI. One declaration, used by every feature that shells out to
-GitHub: control-command paper-trail comments, dispatch
-[reactions](/config/cli/routing-options#reactions-enabled), session
-[announcements](/config/cli/routing-options#announce-enabled), and the GitHub
-[poll provider](/config/cli/polling-options#sources-provider).
-
-This is the key that replaced the three `ghBinary` declarations.
+API base URL. Leave it at the public API and every work item is addressed at **its own**
+host — `https://<host>/api/v3` for a ref on GitHub Enterprise (issue-311), the public API
+for github.com. Set an enterprise base explicitly and it is honoured verbatim for every
+call; it also answers [`github.host`](/config/cli/integrations-options#github-host) when that key is unset.
 
 ## Jira
 

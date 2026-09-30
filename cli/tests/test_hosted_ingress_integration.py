@@ -9,9 +9,9 @@ hosted threads under the same lifespan. The claims worth a real-process test:
 - the hosted receiver actually answers on its own port;
 - `the-loop stop` stops the one process and all three locks are released.
 
-Same conventions as test_poll_daemon_integration: temp state root, a stub `gh`
-on PATH so a poll cycle completes with no network, everything killed in
-``finally``.
+Same conventions as test_poll_daemon_integration: temp state root, a loopback GitHub
+the daemon is pointed at so a poll cycle completes with no network, everything
+killed in ``finally``.
 """
 
 from __future__ import annotations
@@ -28,20 +28,12 @@ from pathlib import Path
 
 import pytest
 
+from ghstub import FakeGitHubServer
 from the_loop.runlock import RunLock
 
 pytestmark = pytest.mark.skipif(
     os.name != "posix", reason="lifecycle tests need POSIX signals"
 )
-
-FAKE_GH = """#!/bin/sh
-case "$1" in
-  --version) echo "gh version 2.60.0 (fake)" ;;
-  auth) exit 0 ;;
-  *) echo "[]" ;;
-esac
-exit 0
-"""
 
 CLI = [
     sys.executable,
@@ -57,13 +49,21 @@ def _free_port() -> int:
 
 
 @pytest.fixture
-def env(tmp_path):
+def github():
+    """A loopback GitHub that lists nothing (issue-442)."""
+    with FakeGitHubServer() as server:
+        yield server
+
+
+@pytest.fixture
+def env(tmp_path, github):
     root = tmp_path / ".the-loop"
     root.mkdir()
     service_port = _free_port()
     receiver_port = _free_port()
     (root / "cli-config.yaml").write_text(
         f"""
+{github.config_yaml()}
 service:
   port: {service_port}
 webhooks:
@@ -82,14 +82,8 @@ polling:
 """
     )
 
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    gh = bin_dir / "gh"
-    gh.write_text(FAKE_GH)
-    gh.chmod(0o755)
-
     environ = dict(os.environ)
-    environ["PATH"] = f"{bin_dir}{os.pathsep}{environ.get('PATH', '')}"
+    environ["GH_TOKEN"] = "test-token"  # the daemon's credential (issue-442)
     environ["THE_LOOP_CLI_CONFIG"] = str(root / "cli-config.yaml")
     environ["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
     environ.pop("THE_LOOP_SERVICE_LOCAL", None)
