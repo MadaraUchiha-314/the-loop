@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from the_loop.ghapi import (
+    MERGE_METHODS,
     REACTION_CONTENTS,
     GhComment,
     GhItem,
@@ -76,6 +77,18 @@ class FakeGitHubClient(GitHubClient):
     states: Dict[Tuple[str, str, int], Dict[str, Any]] = field(default_factory=dict)
     labels: Dict[Tuple[str, str, int], List[str]] = field(default_factory=dict)
     issues_disabled: set = field(default_factory=set)  # (owner, repo)
+    # the pull-request verbs (issue-447)
+    default_branch: str = "main"
+    pulls: Dict[Tuple[str, str, int], Dict[str, Any]] = field(default_factory=dict)
+    check_runs: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)  # sha
+    statuses: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)  # sha
+    threads: Dict[Tuple[str, str, int], List[Dict[str, Any]]] = field(
+        default_factory=dict
+    )
+    heads: Dict[Tuple[str, str, str], List[Dict[str, Any]]] = field(
+        default_factory=dict
+    )  # (owner, repo, branch) -> open pulls
+    next_pull_number: int = 12
 
     # writes and the log
     posted: List[Tuple[str, str, int, str, str]] = field(default_factory=list)
@@ -83,6 +96,8 @@ class FakeGitHubClient(GitHubClient):
         default_factory=list
     )
     reactions: List[Tuple[str, Any, str, str]] = field(default_factory=list)
+    opened: List[Dict[str, Any]] = field(default_factory=list)  # create_pull
+    merged: List[Tuple[str, str, int, str]] = field(default_factory=list)
     label_calls: List[Tuple[str, ...]] = field(default_factory=list)
     calls: List[Tuple[str, Dict[str, Any]]] = field(default_factory=list)
 
@@ -251,3 +266,61 @@ class FakeGitHubClient(GitHubClient):
         comments += self.list_reviews(owner, repo, number, host)
         comments += self.list_review_comments(owner, repo, number, host)
         return sorted(comments, key=lambda c: c.created_at)
+
+    # -- the pull-request verbs (issue-447) -----------------------------------
+
+    def repository(self, owner, repo, host="") -> Dict[str, Any]:
+        self._enter("repository", owner=owner, repo=repo, host=host)
+        return {"full_name": f"{owner}/{repo}", "default_branch": self.default_branch}
+
+    def create_pull(
+        self, owner, repo, title, body, head, base, draft=False, host=""
+    ) -> Tuple[int, str]:
+        self._enter("create_pull", owner=owner, repo=repo, host=host)
+        number = self.next_pull_number
+        self.next_pull_number += 1
+        self.opened.append(
+            {
+                "owner": owner,
+                "repo": repo,
+                "title": title,
+                "body": body,
+                "head": head,
+                "base": base,
+                "draft": draft,
+                "host": self._host(host),
+            }
+        )
+        return number, f"https://github.com/{owner}/{repo}/pull/{number}"
+
+    def get_pull(self, owner, repo, number, host="") -> Dict[str, Any]:
+        self._enter("get_pull", owner=owner, repo=repo, number=number, host=host)
+        key = (owner, repo, int(number))
+        if key in self.missing or key not in self.pulls:
+            raise not_found()
+        return dict(self.pulls[key])
+
+    def commit_checks(self, owner, repo, sha, host=""):
+        self._enter("commit_checks", owner=owner, repo=repo, sha=sha, host=host)
+        return list(self.check_runs.get(sha, [])), list(self.statuses.get(sha, []))
+
+    def merge_pull(self, owner, repo, number, method, host="") -> Dict[str, Any]:
+        self._enter("merge_pull", owner=owner, repo=repo, number=number, host=host)
+        if method not in MERGE_METHODS:
+            raise GitHubApiError(f"unusable merge method {method!r}")
+        self.merged.append((owner, repo, int(number), method))
+        return {
+            "merged": True,
+            "sha": "f" * 40,
+            "message": "Pull Request successfully merged",
+        }
+
+    def review_threads(self, owner, repo, number, host="") -> List[Dict[str, Any]]:
+        self._enter("review_threads", owner=owner, repo=repo, number=number, host=host)
+        return [dict(t) for t in self.threads.get((owner, repo, int(number)), [])]
+
+    def open_pulls_for_head(self, owner, repo, branch, host="") -> List[Dict[str, Any]]:
+        self._enter(
+            "open_pulls_for_head", owner=owner, repo=repo, branch=branch, host=host
+        )
+        return [dict(p) for p in self.heads.get((owner, repo, branch), [])]

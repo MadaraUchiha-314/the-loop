@@ -14,13 +14,13 @@ overrides: {}
 
 ## Task list
 
-- [ ] 1. The client: seven methods on `ghapi.GitHubClient` (`repository`, `create_pull`,
+- [x] 1. The client: seven methods on `ghapi.GitHubClient` (`repository`, `create_pull`,
   `get_pull`, `commit_checks`, `merge_pull`, `review_threads`, `open_pulls_for_head`), the
   branch, SHA and method checks, and the fake client's matching methods
   - _Depends on:_ none
   - _Requirements:_ R1.2–R1.8, R4.1, NFR
   - _Test:_ T1, T7 (A1, A3), T8
-- [ ] 2. Core: `core/github_ops.py` (the eight operations, `resolve_pull_request`, the
+- [x] 2. Core: `core/github_ops.py` (the eight operations, `resolve_pull_request`, the
   checks roll-up); `cli_config.merge_on_approval`, shared with the graph's `notify` hook;
   `core.sessions.pull_request_ref` made public
   - _Depends on:_ 1

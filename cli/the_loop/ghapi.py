@@ -79,8 +79,10 @@ __all__ = [
     "KIND_CONVERSATION",
     "KIND_REVIEW",
     "KIND_REVIEW_THREAD",
+    "MERGE_METHODS",
     "REACTION_CONTENTS",
     "REACTION_KINDS",
+    "is_branch_name",
 ]
 
 #: The variables a token is read from when the config names none, in order.
@@ -118,6 +120,37 @@ REACTION_CONTENTS: Dict[str, str] = {
 REACTION_KINDS: Tuple[str, ...] = ("issue", "issue-comment", "review-comment")
 
 _NODE_ID_RE = re.compile(r"^[A-Za-z0-9_=+/-]+$")
+
+#: A branch name the harness verbs accept (issue-447, A3): a conservative subset of
+#: git's ref grammar — no whitespace, no `..`, no leading `-` or `/`, no `@{`,
+#: nothing a query string or a JSON body would have to escape.
+_BRANCH_RE = re.compile(r"^(?![-/])(?!.*\.\.)(?!.*//)[A-Za-z0-9._/-]{1,255}(?<![./])$")
+
+#: A commit SHA, abbreviated or full.
+_SHA_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
+
+#: The three ways GitHub merges a pull request (``PUT …/pulls/{n}/merge``).
+MERGE_METHODS: Tuple[str, ...] = ("merge", "squash", "rebase")
+
+# A pull request's review threads, resolved or not — the one thing about a review
+# REST cannot say (issue-447). Values travel as variables, never as query text.
+_REVIEW_THREADS_QUERY = """
+query($owner: String!, $name: String!, $number: Int!, $first: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviewThreads(first: $first, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id isResolved isOutdated path line
+          comments(first: 100) {
+            nodes { id body createdAt url author { login } }
+          }
+        }
+      }
+    }
+  }
+}
+"""
 
 _ADD_REACTION_MUTATION = (
     "mutation($subjectId: ID!, $content: ReactionContent!) "
@@ -188,6 +221,11 @@ query($owner: String!, $name: String!, $number: Int!, $first: Int!, $after: Stri
 #: What GitHub says about a repository whose Issues are turned off, in the REST
 #: answer (410) and in this module's own rendering of ``hasIssuesEnabled: false``.
 ISSUES_DISABLED_MESSAGE = "Issues are disabled for this repo"
+
+
+def is_branch_name(value: str) -> bool:
+    """Whether ``value`` is a branch name the harness verbs may send (A3)."""
+    return bool(value) and bool(_BRANCH_RE.match(value)) and "@{" not in value
 
 
 # ----------------------------------------------------------------- data shapes
@@ -557,14 +595,19 @@ class GitHubClient:
             self._requester(host), url=f"/repos/{owner}/{repo}", completed=False
         )
 
-    def _pull(self, owner: str, repo: str, number: int, host: str) -> Any:
-        from github.PullRequest import PullRequest
+    @staticmethod
+    def _branch(value: Any, what: str = "branch") -> str:
+        text = str(value or "")
+        if not is_branch_name(text):
+            raise GitHubApiError(f"unusable {what} name {text!r}")
+        return text
 
-        return PullRequest(
-            self._requester(host),
-            url=f"/repos/{owner}/{repo}/pulls/{number}",
-            completed=False,
-        )
+    @staticmethod
+    def _sha(value: Any) -> str:
+        text = str(value or "")
+        if not _SHA_RE.match(text):
+            raise GitHubApiError(f"unusable commit sha {text!r}")
+        return text
 
     # -- writes ------------------------------------------------------------------
 
@@ -953,6 +996,177 @@ class GitHubClient:
         comments += self.list_reviews(owner, repo, number, host)
         comments += self.list_review_comments(owner, repo, number, host)
         return sorted(comments, key=lambda c: c.created_at)
+
+    # -- the harness's pull-request verbs (issue-447) -----------------------------
+
+    def repository(self, owner: str, repo: str, host: str = "") -> Dict[str, Any]:
+        """``GET /repos/{o}/{r}`` — the raw document (``default_branch``)."""
+        owner, repo = self._coordinates(owner, repo)
+        data = self.rest("GET", f"/repos/{owner}/{repo}", host=host)
+        if not isinstance(data, dict) or not data:
+            raise GitHubApiError(f"repos/{owner}/{repo} returned no object")
+        return data
+
+    def create_pull(
+        self,
+        owner: str,
+        repo: str,
+        title: str,
+        body: str,
+        head: str,
+        base: str,
+        draft: bool = False,
+        host: str = "",
+    ) -> Tuple[int, str]:
+        """``POST /repos/{o}/{r}/pulls``. Returns ``(number, html_url)``.
+
+        ``head`` is a branch of this repository, or ``owner:branch`` for a fork.
+        """
+        owner, repo = self._coordinates(owner, repo)
+        head_owner, _, head_branch = head.rpartition(":")
+        if head_owner and not is_github_name(head_owner):
+            raise GitHubApiError(f"unusable head owner {head_owner!r}")
+        self._branch(head_branch, "head")
+        self._branch(base, "base")
+        if not str(title).strip():
+            raise GitHubApiError("a pull request needs a title")
+        data = self.rest(
+            "POST",
+            f"/repos/{owner}/{repo}/pulls",
+            {
+                "title": str(title),
+                "body": str(body),
+                "head": head,
+                "base": base,
+                "draft": bool(draft),
+            },
+            host=host,
+        )
+        if not isinstance(data, dict) or not isinstance(data.get("number"), int):
+            raise GitHubApiError(f"repos/{owner}/{repo}/pulls returned no number")
+        return int(data["number"]), str(data.get("html_url") or "")
+
+    def get_pull(
+        self, owner: str, repo: str, number: int, host: str = ""
+    ) -> Dict[str, Any]:
+        """``GET /repos/{o}/{r}/pulls/{n}`` — the raw document."""
+        owner, repo = self._coordinates(owner, repo)
+        data = self.rest(
+            "GET", f"/repos/{owner}/{repo}/pulls/{self._number(number)}", host=host
+        )
+        if not isinstance(data, dict) or not data:
+            raise GitHubApiError(
+                f"repos/{owner}/{repo}/pulls/{number} returned no object"
+            )
+        return data
+
+    def commit_checks(
+        self, owner: str, repo: str, sha: str, host: str = ""
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """``(check_runs, statuses)`` for ``sha`` — two requests, one page each.
+
+        A hundred check runs is the page GitHub serves at most; a commit carrying
+        more is summarised from the first hundred, which is still a verdict an
+        agent can act on (the NFR bounds ``pr status`` at three requests).
+        """
+        owner, repo = self._coordinates(owner, repo)
+        sha = self._sha(sha)
+        runs = self.rest(
+            "GET",
+            f"/repos/{owner}/{repo}/commits/{sha}/check-runs?per_page={PAGE_SIZE}",
+            host=host,
+        )
+        status = self.rest(
+            "GET", f"/repos/{owner}/{repo}/commits/{sha}/status", host=host
+        )
+        check_runs = runs.get("check_runs") if isinstance(runs, dict) else None
+        statuses = status.get("statuses") if isinstance(status, dict) else None
+        return (
+            [r for r in (check_runs or []) if isinstance(r, dict)],
+            [s for s in (statuses or []) if isinstance(s, dict)],
+        )
+
+    def merge_pull(
+        self, owner: str, repo: str, number: int, method: str, host: str = ""
+    ) -> Dict[str, Any]:
+        """``PUT /repos/{o}/{r}/pulls/{n}/merge``. GitHub's refusal (405 not
+        mergeable, 409 head moved) is :class:`GitHubApiError` with its status."""
+        owner, repo = self._coordinates(owner, repo)
+        if method not in MERGE_METHODS:
+            raise GitHubApiError(f"unusable merge method {method!r}")
+        data = self.rest(
+            "PUT",
+            f"/repos/{owner}/{repo}/pulls/{self._number(number)}/merge",
+            {"merge_method": method},
+            host=host,
+        )
+        return data if isinstance(data, dict) else {}
+
+    def review_threads(
+        self, owner: str, repo: str, number: int, host: str = ""
+    ) -> List[Dict[str, Any]]:
+        """Every review thread on a pull request, resolved or not, oldest first."""
+        owner, repo = self._coordinates(owner, repo)
+        number = self._number(number)
+        threads: List[Dict[str, Any]] = []
+        after: Optional[str] = None
+        while True:
+            data = self.graphql(
+                _REVIEW_THREADS_QUERY,
+                {
+                    "owner": owner,
+                    "name": repo,
+                    "number": number,
+                    "first": PAGE_SIZE,
+                    "after": after,
+                },
+                host=host,
+            )
+            pull = (data.get("repository") or {}).get("pullRequest")
+            if not isinstance(pull, Mapping):
+                raise GitHubApiError(f"{owner}/{repo}#{number} not found", status=404)
+            conn = pull.get("reviewThreads") or {}
+            for node in conn.get("nodes") or []:
+                if not isinstance(node, Mapping):
+                    continue
+                line = node.get("line")
+                threads.append(
+                    {
+                        "id": str(node.get("id") or ""),
+                        "isResolved": bool(node.get("isResolved")),
+                        "isOutdated": bool(node.get("isOutdated")),
+                        "path": str(node.get("path") or ""),
+                        "line": line if isinstance(line, int) else None,
+                        "comments": [
+                            {
+                                "id": str(c.get("id") or ""),
+                                "author": _login(c.get("author")),
+                                "body": str(c.get("body") or ""),
+                                "createdAt": _iso(c.get("createdAt")),
+                                "url": str(c.get("url") or ""),
+                            }
+                            for c in ((node.get("comments") or {}).get("nodes") or [])
+                            if isinstance(c, Mapping)
+                        ],
+                    }
+                )
+            info = conn.get("pageInfo") or {}
+            if not info.get("hasNextPage") or not info.get("endCursor"):
+                return threads
+            after = str(info["endCursor"])
+
+    def open_pulls_for_head(
+        self, owner: str, repo: str, branch: str, host: str = ""
+    ) -> List[Dict[str, Any]]:
+        """The open pull requests of ``owner/repo`` whose head is ``owner:branch``
+        (``GET …/pulls?state=open&head=…``) — what ``link-pr --discover`` links."""
+        owner, repo = self._coordinates(owner, repo)
+        branch = self._branch(branch)
+        return self.rest_pages(
+            f"/repos/{owner}/{repo}/pulls",
+            {"state": "open", "head": f"{owner}:{branch}"},
+            host=host,
+        )
 
     # -- GraphQL paging and parsing ------------------------------------------------
 

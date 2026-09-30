@@ -470,7 +470,7 @@ def register_session(
 _PR_NUMBER_RE = re.compile(r"^#?(\d+)$")
 
 
-def _pull_request_ref(work_item: WorkItemRef, given: str) -> WorkItemRef:
+def pull_request_ref(work_item: WorkItemRef, given: str) -> WorkItemRef:
     """``given`` as a ref: a bare number is the work item's own repository.
 
     A bare number is what a session that has just run ``gh pr create`` has to
@@ -549,7 +549,7 @@ def link_pull_request(
     does not exist would invent a work item.
     """
     work_item = WorkItemRef.parse(ref)  # ValueError on a malformed ref
-    pr = _pull_request_ref(work_item, pull_request)
+    pr = pull_request_ref(work_item, pull_request)
     if pr.ref == work_item.ref:
         raise ValueError(
             f"{work_item.ref} does not deliver itself; name the pull request "
