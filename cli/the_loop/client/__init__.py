@@ -60,6 +60,11 @@ def _resolved(config: Optional[dict]) -> dict:
         return {}
 
 
+def resolved_config(config: Optional[dict]) -> dict:
+    """The CLI config a connection would use — public for the routing helpers."""
+    return _resolved(config)
+
+
 class ApiError(RuntimeError):
     """The service answered with an error status."""
 

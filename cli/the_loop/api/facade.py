@@ -33,6 +33,7 @@ from ..core import attention as core_attention
 from ..core import config as core_config
 from ..core import daemons as core_daemons
 from ..core import events as core_events
+from ..core import github_ops as core_github
 from ..core import graphs as core_graphs
 from ..core import instance as core_instance
 from ..core import instances as core_instances
@@ -397,10 +398,102 @@ class CoreFacade:
         )
 
     def link_session_pull_request(
-        self, ref: str, pull_request: str, instance: str = ""
+        self,
+        ref: str,
+        pull_request: str,
+        instance: str = "",
+        *,
+        discover: bool = False,
+        branch: str = "",
+        repository: str = "",
     ) -> Dict[str, Any]:
         self._self(instance)
+        if discover:
+            # issue-447: ask GitHub for the branch's open pull requests.
+            return core_github.discover_pull_requests(
+                ref, branch, repository, config=self.config
+            )
+        if not pull_request:
+            raise ValueError("name the pull request, or ask to discover it")
         return core_sessions.link_pull_request(ref, pull_request, config=self.config)
+
+    # -- the harness's GitHub verbs (issue-447) -----------------------------------
+    #
+    # One method per operation, each a one-line call into core with THIS
+    # process's config — which is what keeps the token, and the merge policy,
+    # in the service's environment rather than the session's.
+
+    def post_work_item_comment(
+        self, ref: str, body: str, instance: str = ""
+    ) -> Dict[str, Any]:
+        self._self(instance)
+        return core_github.comment(ref, body, config=self.config)
+
+    def get_ticket(self, ref: str, instance: str = "") -> Dict[str, Any]:
+        self._self(instance)
+        return core_github.show_ticket(ref, config=self.config)
+
+    def create_ticket(
+        self,
+        repository: str,
+        title: str,
+        body: str,
+        labels: Optional[Sequence[str]] = None,
+        instance: str = "",
+    ) -> Dict[str, Any]:
+        self._self(instance)
+        return core_github.create_ticket(
+            repository, title, body, list(labels or []), config=self.config
+        )
+
+    def create_pull_request(
+        self,
+        ref: str,
+        title: str,
+        body: str,
+        head: str,
+        base: str = "",
+        repository: str = "",
+        draft: bool = False,
+        instance: str = "",
+    ) -> Dict[str, Any]:
+        self._self(instance)
+        return core_github.create_pull_request(
+            ref,
+            title,
+            body,
+            head,
+            base=base,
+            repository=repository,
+            draft=draft,
+            config=self.config,
+        )
+
+    def get_pull_request_status(
+        self, ref: str, work_item: str = "", instance: str = ""
+    ) -> Dict[str, Any]:
+        self._self(instance)
+        return core_github.pull_request_status(ref, work_item, config=self.config)
+
+    def list_pull_request_threads(
+        self,
+        ref: str,
+        work_item: str = "",
+        include_resolved: bool = False,
+        instance: str = "",
+    ) -> Dict[str, Any]:
+        self._self(instance)
+        return core_github.pull_request_threads(
+            ref, work_item, include_resolved=include_resolved, config=self.config
+        )
+
+    def merge_pull_request(
+        self, ref: str, work_item: str = "", method: str = "merge", instance: str = ""
+    ) -> Dict[str, Any]:
+        self._self(instance)
+        return core_github.merge_pull_request(
+            ref, work_item, method, config=self.config
+        )
 
     def close_session(
         self, ref: str, keep_tmux: Optional[bool] = None, instance: str = ""

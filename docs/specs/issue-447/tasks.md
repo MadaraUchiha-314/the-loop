@@ -26,13 +26,13 @@ overrides: {}
   - _Depends on:_ 1
   - _Requirements:_ R1.1–R1.9, R2.3, R4.1
   - _Test:_ T2, T7 (A2, A4, A7)
-- [ ] 3. The surface: `client.routing.harness_routed`; the `comment`, `ticket` and `pr`
+- [x] 3. The surface: `client.routing.harness_routed`; the `comment`, `ticket` and `pr`
   commands; `sessions link-pr --discover`; `CoreFacade`, `ManagerFacade`, routes, MCP
   tools, and the OpenAPI contract
   - _Depends on:_ 2
   - _Requirements:_ R1.*, R2.1–R2.3, R3.1–R3.3, R4.1, R4.2
   - _Test:_ T3, T4, T5, T7 (A5)
-- [ ] 4. The hook: `hooks/the-loop-link-pr.py` trigger-agnostic, running `--discover`;
+- [x] 4. The hook: `hooks/the-loop-link-pr.py` trigger-agnostic, running `--discover`;
   the `hooks/hooks.json` description
   - _Depends on:_ 3
   - _Requirements:_ R4.3, R4.4

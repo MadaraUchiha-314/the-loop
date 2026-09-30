@@ -48,6 +48,7 @@ logger = logging.getLogger("the-loop.ghhost")
 
 __all__ = [
     "api_base_for",
+    "current_branch",
     "github_host",
     "host_from_remote",
     "host_of_api_base",
@@ -121,6 +122,28 @@ def _origin_remote(root: Path) -> str:
         )
     except (OSError, subprocess.SubprocessError) as exc:
         logger.debug("could not read the origin remote of %s: %s", root, exc)
+        return ""
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
+def current_branch(root: Path) -> str:
+    """The branch checked out at ``root``, or ``""`` (detached, or not a checkout).
+
+    What ``the-loop pr create`` and ``sessions link-pr --discover`` read as the
+    head when none is given (issue-447) — on the CLI side, because the service's
+    working directory is not the session's checkout.
+    """
+    try:
+        proc = subprocess.run(
+            # symbolic-ref, not rev-parse: it answers on a branch with no
+            # commit yet, and says nothing (exit 1) on a detached HEAD.
+            ["git", "-C", str(root), "symbolic-ref", "--short", "-q", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.debug("could not read the branch of %s: %s", root, exc)
         return ""
     return proc.stdout.strip() if proc.returncode == 0 else ""
 

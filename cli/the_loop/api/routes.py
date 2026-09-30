@@ -231,8 +231,50 @@ class SessionRegisterBody(BaseModel):
 
 class SessionLinkPrBody(BaseModel):
     ref: str
-    pullRequest: str
+    pullRequest: str = ""
+    # issue-447: ask GitHub for the open pull requests whose head is `branch`
+    # in `repository` (the work item's when empty) instead of naming one.
+    discover: bool = False
+    branch: str = ""
+    repository: str = ""
     # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
+
+
+# -- the harness's GitHub verbs (issue-447) ------------------------------------
+# Work-item and pull-request scoped, never a generic GitHub proxy: the contract
+# says what the agent may do, and the merge gate stays reachable.
+
+
+class WorkItemCommentBody(BaseModel):
+    ref: str
+    body: str
+    instance: str = ""
+
+
+class TicketCreateBody(BaseModel):
+    repository: str
+    title: str
+    body: str = ""
+    labels: List[str] = []
+    instance: str = ""
+
+
+class PullRequestCreateBody(BaseModel):
+    ref: str
+    title: str
+    body: str = ""
+    head: str
+    base: str = ""
+    repository: str = ""
+    draft: bool = False
+    instance: str = ""
+
+
+class PullRequestMergeBody(BaseModel):
+    ref: str
+    workItem: str = ""
+    method: str = "merge"
     instance: str = ""
 
 
@@ -654,8 +696,92 @@ def build_router(
         operation_id="linkSessionPullRequest",
     )
     def link_session_pull_request(body: SessionLinkPrBody) -> Dict[str, Any]:
+        if body.discover:
+            return facade.link_session_pull_request(
+                body.ref,
+                "",
+                instance=body.instance,
+                discover=True,
+                branch=body.branch,
+                repository=body.repository,
+            )
         return facade.link_session_pull_request(
             body.ref, body.pullRequest, instance=body.instance
+        )
+
+    # -- the harness's GitHub verbs (issue-447) ---------------------------------
+
+    @router.post(
+        f"{API_PREFIX}/work-items/comments",
+        operation_id="postWorkItemComment",
+    )
+    def post_work_item_comment(body: WorkItemCommentBody) -> Dict[str, Any]:
+        return facade.post_work_item_comment(
+            body.ref, body.body, instance=body.instance
+        )
+
+    @router.get(f"{API_PREFIX}/work-items/ticket", operation_id="getTicket")
+    def get_ticket(ref: str = Query(...), instance: str = Query("")) -> Dict[str, Any]:
+        return facade.get_ticket(ref, instance=instance)
+
+    @router.post(f"{API_PREFIX}/work-items/tickets", operation_id="createTicket")
+    def create_ticket(body: TicketCreateBody) -> Dict[str, Any]:
+        return facade.create_ticket(
+            body.repository,
+            body.title,
+            body.body,
+            labels=body.labels,
+            instance=body.instance,
+        )
+
+    @router.post(
+        f"{API_PREFIX}/work-items/pull-requests",
+        operation_id="createPullRequest",
+    )
+    def create_pull_request(body: PullRequestCreateBody) -> Dict[str, Any]:
+        return facade.create_pull_request(
+            body.ref,
+            body.title,
+            body.body,
+            body.head,
+            base=body.base,
+            repository=body.repository,
+            draft=body.draft,
+            instance=body.instance,
+        )
+
+    @router.get(
+        f"{API_PREFIX}/pull-requests/status",
+        operation_id="getPullRequestStatus",
+    )
+    def get_pull_request_status(
+        ref: str = Query(...),
+        workItem: str = Query(""),
+        instance: str = Query(""),
+    ) -> Dict[str, Any]:
+        return facade.get_pull_request_status(ref, workItem, instance=instance)
+
+    @router.get(
+        f"{API_PREFIX}/pull-requests/threads",
+        operation_id="listPullRequestThreads",
+    )
+    def list_pull_request_threads(
+        ref: str = Query(...),
+        workItem: str = Query(""),
+        all: bool = Query(False),
+        instance: str = Query(""),
+    ) -> Dict[str, Any]:
+        return facade.list_pull_request_threads(
+            ref, workItem, include_resolved=all, instance=instance
+        )
+
+    @router.post(
+        f"{API_PREFIX}/pull-requests/merge",
+        operation_id="mergePullRequest",
+    )
+    def merge_pull_request(body: PullRequestMergeBody) -> Dict[str, Any]:
+        return facade.merge_pull_request(
+            body.ref, body.workItem, body.method, instance=body.instance
         )
 
     @router.post(

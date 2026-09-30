@@ -9,6 +9,7 @@ from . import collaborators_cmd  # noqa: F401,E402  (add-/remove-collaborator)
 from . import critic_cmd  # noqa: F401,E402
 from . import diagnose_cmd  # noqa: F401,E402
 from . import events  # noqa: F401,E402
+from . import github_cmd  # noqa: F401,E402  (comment, ticket, pr — issue-447)
 from . import graph_cmd  # noqa: F401,E402
 from . import hooks_cmd  # noqa: F401,E402
 from . import install_cmd  # noqa: F401,E402

@@ -128,7 +128,7 @@ The in-process path reads the operator's CLI config the way every other command 
 | `pr create …` · `pr status P [--work-item R]` · `pr threads P [--work-item R] [--all]` · `pr merge P [--work-item R] [--method M]` | `commands/pr_cmd.py` | the ref and URL · JSON · JSON · the merge line |
 
 `--body-file -` reads stdin, as `ask --question-file` does. `pr create` resolves
-`--head` on the **CLI side** from `git rev-parse --abbrev-ref HEAD` in the working
+`--head` on the **CLI side** from `git symbolic-ref --short HEAD` in the working
 directory, because the service's working directory is not the checkout. A detached HEAD
 (`HEAD`) with no `--head` is exit 2.
 
@@ -163,7 +163,7 @@ an item no member manages.
 
 `sessions link-pr` gains `--discover`, `--branch` and `--repository`. `--pull-request`
 and `--discover` form a required, mutually exclusive group. With `--discover`, the CLI
-resolves the branch (`git rev-parse --abbrev-ref HEAD`) and the repository
+resolves the branch (`git symbolic-ref --short HEAD`) and the repository
 (`ghhost.origin_repo(cwd)`, falling back to the work item's repository when the origin
 is not a GitHub remote). It then routes `{ref, discover: true, branch, repository}` to
 the same route with `routed`, like the existing link. This is a core verb, and its
