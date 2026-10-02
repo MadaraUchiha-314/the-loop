@@ -51,6 +51,9 @@ native trace normalization, JSONL critic output and usage, native Stop results,
 MCP adapter selection, installer behavior, argument migration, default fallback,
 label diagnostics and read-only connection retries.
 
+The bundled instructions include both the operating skill and its required
+sibling writing skill, including each skill's references.
+
 Build verification must include a wheel built from the checkout and a wheel
 rebuilt from an extracted source distribution, with the shared resources present
 in each. Static checks include Ruff, Pyright, configuration validation, version

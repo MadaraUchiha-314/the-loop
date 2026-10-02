@@ -9,7 +9,7 @@ resolve github.com. This record does not claim that remote gates passed.
 
 | Round | Reviewer | Outcome | Findings and disposition |
 | --- | --- | --- | --- |
-| 1 | codex/GPT-6 | New findings | S1: rollout lookup accepts absent, empty or relative directory metadata as the process directory. Fixed; all six new negative tests failed before the fix. S2: wheel and source distribution omit the required sibling writing skill. Will fix and inspect both built archives. |
+| 1 | codex/GPT-6 | New findings | S1: rollout lookup accepts absent, empty or relative directory metadata as the process directory. Fixed; all six new negative tests failed before the fix. S2: wheel and source distribution omit the required sibling writing skill. Fixed; archive checks failed before the fix and pass for the checkout wheel, source distribution and rebuilt wheel. |
 
 ## Publication
 

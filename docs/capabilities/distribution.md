@@ -173,6 +173,7 @@ definitions with `/hooks` before relying on unattended execution.
 The repository also ships `.codex-plugin/plugin.json`, using the shared skills
 and Codex-specific lifecycle hooks under `hooks/codex-hooks.json`. Native plugin
 hook installation follows Codex's own trust review. Plugin versions remain in
-commitizen's version lockstep. The CLI distribution bundles the skill references,
+commitizen's version lockstep. The CLI distribution bundles the operating skill,
+its required sibling writing skill and both sets of references,
 command procedures and hook scripts so installation from a wheel or source
 distribution has the same instruction surface as a repository checkout.

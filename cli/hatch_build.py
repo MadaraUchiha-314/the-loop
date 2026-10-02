@@ -10,6 +10,7 @@ class CustomBuildHook(BuildHookInterface):
         root = Path(self.root)
         for source, destination in (
             ("skills/the-loop", "skills/the-loop"),
+            ("skills/writing", "skills/writing"),
             ("commands", "commands"),
             ("hooks", "hooks"),
         ):
