@@ -1,4 +1,4 @@
-"""Harness adapters: trigger Claude Code / Cursor sessions via their CLIs.
+"""Harness adapters: trigger Claude Code / Codex / Cursor sessions via their CLIs.
 
 CLI-only by decision (docs/decisions/decision-016.md): both vendors' official
 programmatic surface reachable from a zero-dependency Python process is their
@@ -7,11 +7,13 @@ CLI, invoked as a subprocess.
 
 from .base import HarnessAdapter, Usage, hosts_sessions  # noqa: F401
 from .claude_code import ClaudeCodeAdapter  # noqa: F401
+from .codex_agent import CodexAdapter  # noqa: F401
 from .cursor_agent import CursorAgentAdapter  # noqa: F401
 
 __all__ = [
     "ADAPTER_TYPES",
     "ClaudeCodeAdapter",
+    "CodexAdapter",
     "CursorAgentAdapter",
     "HarnessAdapter",
     "Usage",
@@ -24,6 +26,7 @@ __all__ = [
 #: which harnesses may be offered (issue-440) without building one.
 ADAPTER_TYPES = {
     "claude": ClaudeCodeAdapter,
+    "codex": CodexAdapter,
     "cursor": CursorAgentAdapter,
 }
 

@@ -285,7 +285,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "The harness's name, as the-loop's adapters know it (`claude`, `cursor`). A name with no adapter is declared but unusable, and `the-loop models check` says so rather than failing a spawn."
+            "description": "The harness's name, as the-loop's adapters know it (`claude`, `codex`, `cursor`). A name with no adapter is declared but unusable, and `the-loop models check` says so rather than failing a spawn."
           },
           "default": {
             "type": "boolean",
@@ -540,6 +540,7 @@
           "type": "string",
           "enum": [
             "claude",
+            "codex",
             "cursor"
           ],
           "default": "claude",
@@ -1011,6 +1012,12 @@
                 "type": "string"
               }
             },
+            "codex": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "cursor": {
               "type": "array",
               "items": {
@@ -1287,6 +1294,7 @@
                 "type": "string",
                 "enum": [
                   "claude",
+                  "codex",
                   "cursor"
                 ],
                 "description": "Which harness hosts it. Omitted inherits `routing.defaultHarness`. cursor-agent has no pre-assignable conversation id and so cannot host an interactive session — the same limitation work-item sessions have."
@@ -1882,6 +1890,7 @@
           "type": "string",
           "enum": [
             "claude",
+            "codex",
             "cursor"
           ],
           "default": "claude",

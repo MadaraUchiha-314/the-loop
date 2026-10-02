@@ -40,7 +40,7 @@ from ..control import (
     ControlStore,
     command_comment,
 )
-from ..harness import ClaudeCodeAdapter, CursorAgentAdapter
+from ..harness import ClaudeCodeAdapter, CodexAdapter, CursorAgentAdapter
 from ..harness.base import UnsupportedRunnerError
 from ..instance import INSTANCE_LOCKED, LOCKED, InstanceConfig
 from ..runner import TmuxRunner
@@ -57,6 +57,7 @@ CONTROL_VERBS = (START, PAUSE, RESUME, STOP, CLEANUP)
 #: The harness CLIs a registration may name, and the binary each one needs.
 HARNESS_BINARIES = {
     "claude": ClaudeCodeAdapter.default_binary,
+    "codex": CodexAdapter.default_binary,
     "cursor": CursorAgentAdapter.default_binary,
 }
 
