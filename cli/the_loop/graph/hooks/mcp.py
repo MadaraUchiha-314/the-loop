@@ -24,7 +24,7 @@ from ..contract import HookContext, HookResult, Message
 from ..registry import hook
 from ...harness import ADAPTER_TYPES
 from ...harness.base import output_text
-from ...modelchoice import default_harness, harness_args
+from ...modelchoice import default_harness
 
 logger = logging.getLogger("the-loop.graph")
 
@@ -90,10 +90,10 @@ def mcp_call(ctx: HookContext) -> HookResult:
     )
     try:
         proc = subprocess.run(
-            _argv(harness, prompt)
-            + harness_args(
-                ctx.config, harness, (routing.get("harnessArgs") or {}).get(harness, ())
-            ),
+            # The one-shot argv only: a harness's launch args (harnesses[].args)
+            # are for its interactive TUI, and `codex exec` rejects TUI-only
+            # flags such as `-a`/`--no-alt-screen`.
+            _argv(harness, prompt),
             cwd=str(ctx.repo),
             capture_output=True,
             text=True,

@@ -23,7 +23,11 @@ from the_loop.graph.hooks.mcp import mcp_call
 from the_loop.harness import CodexAdapter
 from the_loop.harness.base import usage_from_output
 from the_loop.harness_plugins import PluginConfig
-from the_loop.migrations import CURRENT_CONFIG_VERSION, migrate_cli_config
+from the_loop.migrations import (
+    CURRENT_CONFIG_VERSION,
+    migrate_cli_config,
+    needs_migration,
+)
 from the_loop.poller.github import GitHubPollProvider
 from the_loop.sessions.registry import Session, SessionRegistry
 from the_loop.state import layout_from_config
@@ -333,10 +337,13 @@ def test_codex_mcp_delegation_uses_codex_and_reads_its_final_json(
     assert run.call_args.args[0][:2] == ["codex", "exec"]
     ctx.params = {"tool": "test_tool"}
     ctx.config = {
-        "harnesses": [{"name": "codex", "default": True, "args": ["--model", "custom"]}]
+        "harnesses": [{"name": "codex", "default": True, "args": ["-a", "never"]}]
     }
     assert mcp_call(ctx).status == "pass"
-    assert run.call_args.args[0][-2:] == ["--model", "custom"]
+    argv = run.call_args.args[0]
+    assert argv[:2] == ["codex", "exec"]
+    # Interactive launch args never reach `codex exec`, which rejects `-a`.
+    assert "-a" not in argv and "never" not in argv
     ctx.params = {"harness": "missing", "tool": "test_tool"}
     assert mcp_call(ctx).status == "block"
     assert run.call_count == 2
@@ -355,13 +362,50 @@ def test_deprecated_harness_arguments_migrate_even_at_current_schema_version():
     }
     result = migrate_cli_config(original)
     assert result.changed
-    assert "harnessArgs" not in result.config["routing"]
+    # An undeclared harness is never invented: declaring codex would offer it.
+    assert result.config["routing"]["harnessArgs"] == {
+        "codex": ["--sandbox", "workspace-write"]
+    }
     assert result.config["harnesses"] == [
         {"name": "claude", "args": ["operator-choice"]},
-        {"name": "codex", "args": ["--sandbox", "workspace-write"]},
     ]
+    assert not needs_migration(result.config)
     assert not migrate_cli_config(result.config).changed
-    assert "harnessArgs" in original["routing"]
+    assert "claude" in original["routing"]["harnessArgs"]
+
+
+def test_deprecated_harness_arguments_move_onto_a_bare_declaration():
+    result = migrate_cli_config(
+        {
+            "version": CURRENT_CONFIG_VERSION,
+            "routing": {"harnessArgs": {"codex": ["-a", "never"]}},
+            "harnesses": ["claude", "codex"],
+        }
+    )
+    assert "harnessArgs" not in result.config["routing"]
+    assert result.config["harnesses"] == [
+        "claude",
+        {"name": "codex", "args": ["-a", "never"]},
+    ]
+
+
+def test_deprecated_harness_arguments_never_declare_a_harness():
+    config = {
+        "version": CURRENT_CONFIG_VERSION,
+        "routing": {"harnessArgs": {"claude": ["x"], "codex": []}},
+    }
+    assert not needs_migration(config)
+    result = migrate_cli_config(config)
+    assert not result.changed
+    assert "harnesses" not in result.config
+
+
+def test_malformed_deprecated_harness_arguments_are_dropped_once():
+    config = {"version": CURRENT_CONFIG_VERSION, "routing": {"harnessArgs": None}}
+    assert needs_migration(config)
+    result = migrate_cli_config(config)
+    assert result.changed and "harnessArgs" not in result.config["routing"]
+    assert not needs_migration(result.config)
 
 
 @pytest.mark.parametrize(
@@ -396,6 +440,11 @@ def test_missing_arming_labels_are_observable_without_widening_the_gate(monkeypa
     assert not provider._carries_every_label(item)
     assert events[0][0] == "poll.item_filtered"
     assert events[0][1]["missing_labels"] == ["mine"]
+    # Reported once per change, not on every poll cycle.
+    assert not provider._carries_every_label(item)
+    assert len(events) == 1
+    assert not provider._carries_every_label(GhItem(449, "Codex", [], "", "", False))
+    assert len(events) == 2 and events[1][1]["missing_labels"] == ["mine", "shared"]
 
 
 def test_codex_install_reports_missing_binary_and_prepares_native_user_surface(
@@ -425,6 +474,127 @@ def test_spawn_setup_uses_one_user_hook_definition_across_worktrees(tmp_path, ho
     assert hooks.read_text() == original
     assert not (first / ".codex/hooks.json").exists()
     assert (first / "AGENTS.md").is_file() and (second / "AGENTS.md").is_file()
+
+
+def _git(cwd, *args):
+    subprocess.run(
+        ["git", "-C", str(cwd), *args],
+        check=True,
+        capture_output=True,
+        env={
+            **os.environ,
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@t",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@t",
+        },
+    )
+
+
+def test_spawn_setup_keeps_untracked_instructions_out_of_git(tmp_path, home):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    result = CodexAdapter().prepare_environment(str(repo))
+    assert result.ok
+    assert "the-loop:codex:start" in (repo / "AGENTS.md").read_text()
+    assert "/AGENTS.md" in (repo / ".git/info/exclude").read_text().splitlines()
+    status = subprocess.run(
+        ["git", "-C", str(repo), "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert status.stdout == ""
+
+
+def test_spawn_setup_reports_a_tracked_instructions_file(tmp_path, home):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    (repo / "AGENTS.md").write_text("Project rules.\n")
+    _git(repo, "add", "AGENTS.md")
+    _git(repo, "commit", "-qm", "rules")
+    result = CodexAdapter().prepare_environment(str(repo))
+    assert result.ok
+    assert any("AGENTS.md is tracked" in note for note in result.applied)
+    exclude = repo / ".git/info/exclude"
+    assert "/AGENTS.md" not in exclude.read_text().splitlines()
+
+
+def test_a_worktree_main_root_at_home_is_never_trusted(tmp_path, home, monkeypatch):
+    import tomllib
+
+    fake_home = tmp_path / "fake-home"
+    monkeypatch.setenv("HOME", str(fake_home))
+    checkout = tmp_path / "wt"
+    checkout.mkdir()
+    (checkout / ".git").write_text(f"gitdir: {fake_home}/.git/worktrees/wt\n")
+    adapter = CodexAdapter(plugins=PluginConfig(enabled=False))
+    result = adapter.prepare_environment(str(checkout))
+    assert result.ok
+    assert any("too broad" in note for note in result.applied)
+    projects = tomllib.loads((home / "config.toml").read_text())["projects"]
+    assert str(fake_home) not in projects
+    assert os.path.realpath(checkout) in projects
+    main = tmp_path / "main"
+    (checkout / ".git").write_text(f"gitdir: {main}/.git/worktrees/wt\n")
+    assert adapter.prepare_environment(str(checkout)).ok
+    projects = tomllib.loads((home / "config.toml").read_text())["projects"]
+    assert str(main) in projects
+
+
+def test_a_stale_gate_from_another_install_is_replaced_not_duplicated(tmp_path, home):
+    stale = {
+        "type": "command",
+        "command": "/old/python /gone/hooks/the-loop-gate.py codex",
+    }
+    operator = {"type": "command", "command": "operator-check"}
+    home.mkdir()
+    (home / "hooks.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "Stop": [{"hooks": [stale, operator]}, {"hooks": [dict(stale)]}]
+                }
+            }
+        )
+    )
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    assert CodexAdapter().prepare_environment(str(checkout)).ok
+    groups = json.loads((home / "hooks.json").read_text())["hooks"]["Stop"]
+    commands = [h["command"] for g in groups for h in g["hooks"]]
+    gates = [c for c in commands if "the-loop-gate.py" in c]
+    assert len(gates) == 1 and "/gone/" not in gates[0]
+    assert "operator-check" in commands and len(groups) == 1
+
+
+def test_codex_home_is_stripped_and_expanded_for_every_writer(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", " ~/codex ")
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    assert CodexAdapter().prepare_environment(str(checkout)).ok
+    assert (tmp_path / "codex/config.toml").is_file()
+    assert (tmp_path / "codex/hooks.json").is_file()
+
+
+def test_a_rollout_whose_first_line_is_not_an_object_is_skipped(tmp_path, home):
+    path = write_rollout(home, tmp_path)
+    path.write_text("[1, 2]\n" + path.read_text())
+    assert rollout_path(str(tmp_path), LAUNCH) is None
+
+
+def test_a_resolved_rollout_is_not_searched_for_again(tmp_path, home, monkeypatch):
+    original = write_rollout(home, tmp_path)
+    assert rollout_path(str(tmp_path), LAUNCH) == original.resolve()
+
+    def no_search(*args):
+        raise AssertionError("searched the session store again")
+
+    monkeypatch.setattr("the_loop.codex_support._find_rollout", no_search)
+    assert rollout_path(str(tmp_path), LAUNCH) == original.resolve()
 
 
 def test_parallel_codex_trust_writes_preserve_every_project(tmp_path, home):

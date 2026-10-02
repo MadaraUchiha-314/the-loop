@@ -11,11 +11,11 @@ normal home, authentication, settings and sandbox policy.
 | A2: stop gate | Install a native Stop command that returns Codex's JSON continuation protocol, including the existing bounded retry cap. Preserve unrelated hooks and explicit operator choices. |
 | A3: instructions | Preserve existing `AGENTS.md` or `AGENTS.override.md` and maintain an identified block pointing to the bundled skill, command procedures and graph verbs. Native plugins also expose the shared skill. |
 | A4: harness trace | Locate the identified native rollout and normalize text, tool calls, tool results, reasoning summaries and compaction for the existing transcript API and UI. Retain original event payloads. |
-| A5: MCP delegation | Use the selected adapter's actual binary, one-shot arguments and configured defaults. Unknown harnesses block instead of running Claude. Extract Codex's final JSON agent message. |
+| A5: MCP delegation | Use the selected adapter's actual binary and one-shot arguments, never its interactive launch arguments (`codex exec` rejects TUI-only flags such as `-a`). Unknown harnesses block instead of running Claude. Extract Codex's final JSON agent message. |
 | A6: critic output and accounting | Run `codex exec --json`; extract the final completed agent message and latest usage record. Account for cached input without counting it twice. Do not invent dollar costs. |
 | A7: distribution | Add the Codex installer component, native plugin manifest and hook definitions. Bundle shared instructions, command procedures and hooks in both wheels and source distributions. |
 | B1: required labels | Keep the ALL-of semantics established by decision-381. Emit `poll.item_filtered` with the missing labels and repository-qualified work item when this gate excludes an item. |
-| B2: retired arguments | Migrate `routing.harnessArgs` into `harnesses[].args`, including current-version configs. Preserve explicit modern arguments, report conflicts and leave a repeat migration unchanged. |
+| B2: retired arguments | Migrate `routing.harnessArgs` into `harnesses[].args` of already-declared harnesses, including current-version configs. Never declare a harness (that would offer it). Preserve explicit modern arguments, report conflicts, drop a malformed block and leave a repeat migration unchanged. |
 | B3: default fallback | Log and emit `session.default_harness_bypassed` when a declared default cannot host the session. Include the declared and effective harness and reason. |
 | B4: stale connection | Retry a disconnected GraphQL read once. Never replay mutations or semantic API failures. |
 
@@ -42,6 +42,22 @@ Stop continuation and hook trust follow OpenAI's
 [hook documentation](https://learn.chatgpt.com/docs/hooks).
 Custom prompt copies are optional in the issue comment; shared procedures are
 available through the installed skill and managed instruction block instead.
+
+## PR review follow-up
+
+The PR #450 review found ten issues; nine are fixed here, one is deferred:
+
+- The managed `AGENTS.md` block is kept out of git in work-item checkouts via
+  `info/exclude` (shared helper `the_loop.gitexclude`, also used for the spec
+  tree). A *tracked* `AGENTS.md` is reported but still edited; where Codex could
+  read the instructions instead needs a real Codex binary to settle (tasks A8).
+- `mcp-call` no longer appends interactive launch args to `codex exec`.
+- A linked worktree's main root goes through `is_too_broad()` before it is trusted.
+- One `codex_home()` (stripped, `~` expanded) serves trust, hooks, rollouts and install.
+- The Stop gate is matched by script and argument, so a stale path is replaced.
+- Rollout lookups cache identified rollouts and per-file metadata.
+- Bypassed-default and filtered-item diagnostics are reported once, not per event.
+- `requirements.md`, `testing-plan.md` and `tasks.md` were recorded (in review).
 
 ## Verification
 

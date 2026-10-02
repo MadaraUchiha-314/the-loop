@@ -47,7 +47,9 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Set, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Set, Tuple
+
+from .modelchoice import declared_harnesses
 
 __all__ = [
     "CURRENT_CONFIG_VERSION",
@@ -226,7 +228,7 @@ def needs_migration(config: Mapping[str, Any]) -> bool:
     removed key (belt and braces: a hand-edited file may lie about its version)."""
     if _parts(str(config.get("version", "0"))) < _parts(CURRENT_CONFIG_VERSION):
         return True
-    if "harnessArgs" in (_dig(config, ("routing",)) or {}):
+    if _harness_args_pending(config):
         return True
     if (_dig(config, _STATE_FILE_SITE) or {}).get(_STATE_FILE_KEY) is not None:
         return True
@@ -578,30 +580,84 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
     return report
 
 
+def _harness_args_pending(config: Mapping[str, Any]) -> bool:
+    """True while ``routing.harnessArgs`` holds something the migration moves.
+
+    A key for a harness ``harnesses[]`` does not declare stays put (see
+    :func:`_migrate_harness_args`), so it alone never reports a migration due —
+    otherwise a migrated file would claim to need migrating forever.
+    """
+    routing = _dig(config, ("routing",)) or {}
+    if "harnessArgs" not in routing:
+        return False
+    legacy = routing["harnessArgs"]
+    if not isinstance(legacy, dict) or not legacy:
+        return True
+    declared = declared_harnesses(config)
+    return any(str(name) in declared for name in legacy)
+
+
+def _declared_index(entries: List[Any], name: str) -> Optional[int]:
+    """Where ``harnesses[]`` declares ``name`` (bare string or mapping)."""
+    for index, entry in enumerate(entries):
+        raw = entry.get("name") if isinstance(entry, dict) else entry
+        if isinstance(raw, str) and raw.strip() == name:
+            return index
+    return None
+
+
 def _migrate_harness_args(data: Dict[str, Any], report: MigrationReport) -> None:
-    """Move deprecated launch arguments without overriding a newer declaration."""
+    """Move deprecated launch arguments without overriding a newer declaration.
+
+    Only onto harnesses ``harnesses[]`` already declares: declaring a harness is
+    what offers it at ``phase-selection`` (and to every bare model), so inventing
+    an entry would change the operator's harness set, not just move a key. Args
+    for an undeclared harness stay where they are — still honoured, with the
+    deprecation warning — and a note says how to finish the move. A malformed
+    (non-mapping) block carries nothing to keep and is dropped.
+    """
     routing = _dig(data, ("routing",)) or {}
-    legacy = routing.get("harnessArgs")
-    if not isinstance(legacy, dict):
+    if "harnessArgs" not in routing:
         return
-    entries = data.setdefault("harnesses", [])
+    legacy = routing["harnessArgs"]
+    if not isinstance(legacy, dict):
+        routing.pop("harnessArgs")
+        report.notes.append("routing.harnessArgs was not a mapping; dropped it")
+        report.changed = True
+        return
+    entries = data.get("harnesses")
+    if entries is None:
+        entries = []
     if not isinstance(entries, list):
         raise ValueError("harnesses must be a list to migrate routing.harnessArgs")
+    kept: Dict[str, Any] = {}
     for name, args in legacy.items():
-        entry = next(
-            (e for e in entries if isinstance(e, dict) and e.get("name") == name), None
-        )
-        if entry is None:
-            entry = {"name": name}
-            entries.append(entry)
+        index = _declared_index(entries, str(name))
+        if index is None:
+            kept[name] = args
+            report.notes.append(
+                f"routing.harnessArgs.{name} left in place: {name!r} is not declared in "
+                "harnesses[], and declaring it would offer it at phase-selection; "
+                f"declare it there with these args to finish the move"
+            )
+            continue
+        entry = entries[index]
+        if not isinstance(entry, dict):
+            entry = {"name": str(name)}
+            entries[index] = entry
         if "args" not in entry:
             entry["args"] = copy.deepcopy(args)
+            report.moves.append(f"routing.harnessArgs.{name} → harnesses[{name}].args")
         else:
             report.notes.append(
                 f"harnesses[{name}].args already declared; kept it instead of deprecated routing.harnessArgs.{name}"
             )
-        report.moves.append(f"routing.harnessArgs.{name} → harnesses[{name}].args")
-    routing.pop("harnessArgs")
+    if legacy and len(kept) == len(legacy):
+        return  # nothing declared to move onto: the file is unchanged
+    if kept:
+        routing["harnessArgs"] = kept
+    else:
+        routing.pop("harnessArgs")
     report.changed = True
 
 

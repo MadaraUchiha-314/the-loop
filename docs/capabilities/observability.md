@@ -53,10 +53,11 @@ for humans, coding agents and any dashboarding built on top.
 ## Harness and polling diagnostics (issue-449)
 
 - `session.default_harness_bypassed` names an unusable declared default and the
-  actual fallback harness, at warning level.
+  actual fallback harness, at warning level, once per configuration (a reload
+  reports it again).
 - `session.identity_bound` records the native conversation id discovered after launch.
 - `poll.item_filtered` names the required and missing labels for a rejected listing
-  item. Arming labels retain the ALL-of policy chosen in issue-381; an empty list
+  item, once per change in its missing labels rather than on every poll cycle. Arming labels retain the ALL-of policy chosen in issue-381; an empty list
   arms nothing.
 - Codex JSONL critics report uncached input, cached input, output, and total tokens
   from the final usage snapshot. Cached input is not double-counted. Dollar cost

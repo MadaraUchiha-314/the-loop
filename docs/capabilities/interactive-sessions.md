@@ -426,14 +426,21 @@ failure and a fresh conversation, rather than resuming an operator's chat.
 The rollout also supplies the Harness trace: messages, reasoning summaries,
 tool calls and tool results map into the existing UI model while original
 payloads remain available. Reads stay confined to `$CODEX_HOME/sessions` and
-reject traversal, mismatched cwd and symlinks outside that store.
+reject traversal, mismatched cwd and symlinks outside that store. An identified
+rollout is remembered, and a rollout's metadata is parsed once per file version,
+so lookups on the dispatcher's hot path do not rescan the whole store.
 
 Environment preparation preserves existing `AGENTS.md` (or the higher-priority
 `AGENTS.override.md`) and adds a managed instruction block pointing at the
-bundled skill and command procedures. The CLI wheel and source distribution
-both include these resources; a consuming repository need not contain them.
-The Stop hook is installed in `$CODEX_HOME/hooks.json`, so its definition and
-trust review are stable across worktrees. It acts only when `THE_LOOP_WORK_ITEM`
+bundled skill and command procedures. The block holds this machine's absolute
+paths, so in a work-item checkout an untracked instructions file is added to
+git's checkout-local `info/exclude` and never reaches the project's history; a
+tracked one is left as a local change and reported. The CLI wheel and source
+distribution both include these resources; a consuming repository need not
+contain them. The Stop hook is installed in `$CODEX_HOME/hooks.json`, so its
+definition and trust review are stable across worktrees. The gate is identified
+by its script, so a daemon running from another interpreter or install path
+replaces it rather than adding a second gate. It acts only when `THE_LOOP_WORK_ITEM`
 is set. It returns Codex's `decision: block` with continuation feedback when the
 current graph node has gate debt, and valid empty JSON when the turn may end.
 The same attempt cap protects every harness.
@@ -444,6 +451,8 @@ remains authoritative. `routing.harnessPlugins.enabled: false` opts out of the
 instruction/hook setup; workspace trust has its separate opt-out. Sandbox and
 approval flags are never widened. Trust writes validate TOML, preserve operator
 entries, escape directory names, retain file modes and symlinks, serialize
-concurrent writes, and reject blanket trust of `/` or the user's home directory.
+concurrent writes, and reject blanket trust of `/` or the user's home directory
+— including a linked worktree's main repository root. Every path reads
+`$CODEX_HOME` the same way: whitespace stripped and `~` expanded.
 
 The Codex protocol follows [the official hook documentation](https://learn.chatgpt.com/docs/hooks).

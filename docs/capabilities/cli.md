@@ -507,8 +507,14 @@ self-learning/ML capabilities.
 ## Codex configuration fixes (issue-449)
 
 `the-loop migrate-config` now moves deprecated `routing.harnessArgs.<name>` into
-`harnesses[].args`, even when the schema version is current. Existing top-level
-arguments win and the migration reports that conflict. A second run is a no-op.
+`harnesses[].args`, even when the schema version is current — but only onto a
+harness `harnesses[]` already declares. Declaring a harness offers it at
+`phase-selection`, so args for an undeclared one stay in place (still honoured,
+with the deprecation warning) and a note says how to finish the move. Existing
+top-level arguments win and the migration reports that conflict; a malformed
+block is dropped. A second run is a no-op.
 `mcp-call` delegates through the requested registered harness adapter, including
-Codex, and extracts its final JSON answer from JSONL. An unknown harness blocks
+Codex, using its one-shot argv only — interactive launch args are never passed to
+`codex exec`, which rejects TUI-only flags — and extracts its final JSON answer
+from JSONL. An unknown harness blocks
 with its name instead of silently invoking Claude.

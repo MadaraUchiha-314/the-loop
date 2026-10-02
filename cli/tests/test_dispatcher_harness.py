@@ -192,6 +192,10 @@ def test_the_default_skips_a_default_true_that_cannot_host(tmp_path, monkeypatch
     assert events[-1][0] == "session.default_harness_bypassed"
     assert events[-1][1]["declared_harness"] == "cursor"
     assert events[-1][1]["harness"] == "claude"
+    # Reported once per configuration, not on every routed event.
+    assert dispatcher._default_harness() == "claude"
+    bypassed = [e for e in events if e[0] == "session.default_harness_bypassed"]
+    assert len(bypassed) == 1
     config["harnesses"] = [{"name": "codex", "default": True}, {"name": "claude"}]
     _, dispatcher = _dispatcher(tmp_path, cli_config=config)
     assert dispatcher._default_harness() == "codex"

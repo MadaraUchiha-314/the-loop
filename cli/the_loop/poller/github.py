@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Sequence, TypeVar
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, TypeVar
 
 from .. import eventlog
 
@@ -248,6 +248,9 @@ class GitHubPollProvider(PollProvider):
         # moments an operator who just re-enabled Issues wants a re-probe.
         self._issues_off: Dict[str, int] = {}
         self._cycles = 0
+        #: The missing labels last reported per filtered item, so a filtered item
+        #: is logged once per change rather than on every poll cycle.
+        self._filtered: Dict[Tuple[str, int], Tuple[str, ...]] = {}
 
     @classmethod
     def from_source(
@@ -441,8 +444,13 @@ class GitHubPollProvider(PollProvider):
         semantics. An empty list keeps nothing, as the gate arms nothing.
         """
         accepted = bool(self.labels) and set(self.labels) <= set(gh_item.labels)
-        if not accepted:
-            missing = sorted(set(self.labels) - set(gh_item.labels))
+        key = (spec.gh_repo if spec else "", gh_item.number)
+        if accepted:
+            self._filtered.pop(key, None)
+            return True
+        missing = sorted(set(self.labels) - set(gh_item.labels))
+        if self._filtered.get(key) != tuple(missing):
+            self._filtered[key] = tuple(missing)
             logger.info(
                 "filtered GitHub item %s: missing required labels %s",
                 gh_item.number,

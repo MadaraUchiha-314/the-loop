@@ -532,7 +532,7 @@ def plan(
                 scope=scope, upgrade=upgrade, project_dir=project, env=env
             )
         elif name == "codex":
-            from .codex_support import prepare_instructions
+            from .codex_support import codex_home, prepare_instructions
 
             if env.which("codex") is None:
                 steps.append(
@@ -544,11 +544,7 @@ def plan(
                     )
                 )
             else:
-                target = (
-                    project
-                    if scope == "project"
-                    else Path(os.environ.get("CODEX_HOME") or env.home / ".codex")
-                )
+                target = project if scope == "project" else codex_home(env.home)
                 steps.append(
                     Step(
                         "codex",

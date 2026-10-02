@@ -760,6 +760,9 @@ class Dispatcher:
         # declared none) means no work item can have a choice to resolve, and the
         # spawn path is byte-identical to what it was before this feature.
         self.cli_config = dict(cli_config or {})
+        #: (declared, resolved) default-harness bypasses already reported, so the
+        #: warning fires once per configuration rather than on every event.
+        self._default_bypass_reported: Set[Tuple[str, str]] = set()
         if self.cli_config:
             self.cli_config.setdefault(
                 "_verdictCache", layout_from_config(self.cli_config).verdict_cache
@@ -922,6 +925,7 @@ class Dispatcher:
             self.cli_config.setdefault(
                 "_verdictCache", layout_from_config(self.cli_config).verdict_cache
             )
+            self._default_bypass_reported.clear()
         # The adapters launch on the resolved launch arguments — `harnesses[].args`,
         # else the deprecated `routing.harnessArgs` (issue-377): one resolver for
         # every builder, so a reload cannot leave the shared adapters reading a
@@ -1680,7 +1684,12 @@ class Dispatcher:
         for entry in (self.cli_config or {}).get("harnesses", []):
             if isinstance(entry, dict) and entry.get("default") is True:
                 declared = str(entry.get("name") or "").strip()
-                if declared and declared != resolved:
+                if (
+                    declared
+                    and declared != resolved
+                    and (declared, resolved) not in self._default_bypass_reported
+                ):
+                    self._default_bypass_reported.add((declared, resolved))
                     logger.warning(
                         "default harness %r cannot host a session; using %r",
                         declared,

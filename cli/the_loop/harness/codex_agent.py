@@ -63,10 +63,12 @@ class CodexAdapter(HarnessAdapter):
         repository root (the dialog says so in as many words), so that root is
         written too. Writes are append-only, atomic, and skipped when an entry
         for the directory already exists — an operator's own ``trust_level``
-        is never rewritten.
+        is never rewritten. A main root that is ``/`` or the home directory is
+        never trusted (the same guard as a workspace root): that would trust
+        every directory beneath it for every Codex session.
         """
         result = (
-            prepare_instructions(cwd, hook_home=codex_home())
+            prepare_instructions(cwd, hook_home=codex_home(), keep_out_of_git=True)
             if self.plugins.enabled
             else TrustResult()
         )
@@ -78,7 +80,17 @@ class CodexAdapter(HarnessAdapter):
             keys.append(real)
         main_root = _worktree_main_root(cwd)
         if main_root and main_root not in keys:
-            keys.append(main_root)
+            if is_too_broad(main_root):
+                result = result.merge(
+                    TrustResult(
+                        applied=[
+                            f"did not trust worktree main root {main_root}: too broad "
+                            "(/ or the home directory); Codex may ask to trust it"
+                        ]
+                    )
+                )
+            else:
+                keys.append(main_root)
         if root and self.trust.roots_allowed:
             rootkey = os.path.normpath(os.path.realpath(root))
             if (
@@ -109,9 +121,7 @@ class CodexAdapter(HarnessAdapter):
 
 def _codex_config_path() -> Path:
     """``$CODEX_HOME/config.toml``, honouring the same override codex does."""
-    home = (os.environ.get("CODEX_HOME") or "").strip()
-    base = Path(home) if home else Path.home() / ".codex"
-    return base / "config.toml"
+    return codex_home() / "config.toml"
 
 
 def _worktree_main_root(cwd: str) -> str:
