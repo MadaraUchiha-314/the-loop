@@ -86,6 +86,24 @@ def test_rollout_lookup_rejects_unsafe_or_unknown_id(tmp_path, home, sid):
     assert rollout_path(str(tmp_path), sid) is None
 
 
+@pytest.mark.parametrize("sid", [LAUNCH, NATIVE])
+@pytest.mark.parametrize("cwd", [None, "", "."])
+def test_rollout_lookup_requires_explicit_absolute_directory_metadata(
+    tmp_path, home, monkeypatch, sid, cwd
+):
+    monkeypatch.chdir(tmp_path)
+    path = write_rollout(home, tmp_path)
+    entries = path.read_text().splitlines()
+    metadata = json.loads(entries[0])
+    if cwd is None:
+        metadata["payload"].pop("cwd")
+    else:
+        metadata["payload"]["cwd"] = cwd
+    entries[0] = json.dumps(metadata)
+    path.write_text("\n".join(entries) + "\n")
+    assert rollout_path(str(tmp_path), sid) is None
+
+
 def test_rollout_lookup_refuses_a_wrong_cwd_ambiguous_marker_and_escaping_symlink(
     tmp_path, home
 ):

@@ -418,7 +418,8 @@ normal phase-selection gate. Model selection uses `--model`; effort uses Codex's
 `model_reasoning_effort` configuration overrides and remains availability-probed.
 
 Codex assigns its own UUID. The first prompt carries the-loop's launch marker;
-rollout discovery requires the matching marker and cwd, then binds the native
+rollout discovery requires the matching marker and explicit absolute cwd metadata,
+then binds the native
 UUID when the next event arrives. Resume uses `codex resume <native UUID>` and
 never `--last`. Missing or ambiguous identity produces an observable resume
 failure and a fresh conversation, rather than resuming an operator's chat.

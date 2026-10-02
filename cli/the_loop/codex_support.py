@@ -55,7 +55,12 @@ def rollout_path(cwd: str, session_id: str) -> Optional[Path]:
                 native_id = meta.get("id", "")
                 if not isinstance(native_id, str) or not _UUID.fullmatch(native_id):
                     continue
-                if os.path.realpath(str(meta.get("cwd", ""))) != os.path.realpath(cwd):
+                recorded_cwd = meta.get("cwd")
+                if (
+                    not isinstance(recorded_cwd, str)
+                    or not os.path.isabs(recorded_cwd)
+                    or os.path.realpath(recorded_cwd) != os.path.realpath(cwd)
+                ):
                     continue
                 if native_id == session_id:
                     return resolved

@@ -22,7 +22,7 @@ normal home, authentication, settings and sandbox policy.
 ## Codex integration details
 
 Codex 0.160.0's interactive CLI does not accept a preassigned conversation ID.
-Rollout discovery validates UUIDs, session metadata, the working directory and
+Rollout discovery validates UUIDs, explicit absolute working-directory metadata and
 filesystem containment. A launch marker may resolve only one conversation.
 The loop does not copy authentication into a separate home or select the most
 recent conversation. A live endpoint binds its native ID on subsequent delivery;
