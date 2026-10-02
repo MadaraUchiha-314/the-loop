@@ -19,7 +19,7 @@ normal home, authentication, settings and sandbox policy.
 | B3: default fallback | Log and emit `session.default_harness_bypassed` when a declared default cannot host the session. Include the declared and effective harness and reason. |
 | B4: stale connection | Retry a disconnected GraphQL read once. Never replay mutations or semantic API failures. |
 
-## Codex integration details
+## Architecture
 
 Codex 0.160.0's interactive CLI does not accept a preassigned conversation ID.
 Rollout discovery validates UUIDs, explicit absolute working-directory metadata and
@@ -63,7 +63,7 @@ resolved using Codex's native global instruction source:
 - Bypassed-default and filtered-item diagnostics are reported once, not per event.
 - `requirements.md`, `testing-plan.md` and `tasks.md` were recorded (in review).
 
-## Verification
+## Testing strategy
 
 The fresh smoke run exposed a start-control bug: the dispatcher correctly
 deferred spawning at phase selection, but the CLI interpreted the absent
@@ -87,3 +87,25 @@ rebuilt from an extracted source distribution, with the shared resources present
 in each. Static checks include Ruff, Pyright, configuration validation, version
 lockstep and Markdown lint. Local execution evidence and environmental limits
 are recorded in `evidence/codex-verification.md`.
+
+## Security design
+
+Rollout lookup validates native UUIDs, requires explicit absolute directory
+metadata and matching launch identity, and checks containment in the Codex session
+store before reading. Missing or ambiguous identity refuses resume. R2's negative
+tests cover malformed metadata, unrelated conversations and symlink escapes.
+
+Instruction preparation preserves operator text, refuses malformed blocks and
+escaping symlinks, and checks file changes before replacing content. Spawn setup
+leaves tracked project instructions unchanged and prepares the native global
+source instead. Trust preparation refuses `/` and the home directory, including
+linked-worktree roots. Hook setup preserves unrelated definitions and reports the
+native trust step; it does not bypass sandbox or approval policy. R3's preservation,
+containment, concurrency and broad-root tests enforce these boundaries.
+
+The dispatcher still validates authorized GitHub actors and human gate answers.
+The new start settlement only preserves a request already accepted by the CLI;
+it does not answer the gate. Its success and real-failure integration scenarios
+prove both lifecycle paths. Unknown harnesses block, one-shot arguments use argv
+lists and only disconnected read requests are retried. No new dependencies or
+credential storage are introduced by the completion fixes.

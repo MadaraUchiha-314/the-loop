@@ -1,6 +1,6 @@
 # Codex completion security review
 
-## Security review
+## Security review (gate)
 
 Mechanism: the-loop security checklist, applied to the Codex remediation and
 the local completion fixes. The local code review found no remaining actionable

@@ -48,3 +48,38 @@ riskTier: 4
 
 T15 needs an authenticated Codex CLI. The hook-trust step (`/hooks`) is interactive by
 Codex's design and is verified by hand.
+
+## Verification environment
+
+Source checkout: the operator's current the-loop repository and branch
+`claude/github-issue-449-codex`. Runtime: macOS, Python 3.12, uv source installation,
+codex-cli 0.160.0 and the devbox repository's existing deployment configuration.
+GitHub Linux CI supplies the portable full-suite check. The live run uses the
+operator's existing gh and Codex authentication without recording credentials.
+
+## Evidence plan
+
+Record commands, results, regression failures before fixes and environment limits
+in [completion verification](evidence/completion-verification.md). Keep native
+conversation IDs and the smoke issue/PR links for traceability. Summarize the
+acceptance coverage in [final validation](evidence/final-validation.md), without
+claiming unexecuted native Stop continuation or interrupted respawn checks.
+
+## Verification results
+
+| Activity | Result | Evidence |
+| --- | --- | --- |
+| Codex identity, instruction, installation and shared harness regressions | 153 passed after tracked-instruction fix | [Completion verification](evidence/completion-verification.md) |
+| Startup, control, routing, sessions and Codex regressions | 672 passed after start-gate fix | [Completion verification](evidence/completion-verification.md) |
+| Ruff lint/format, Pyright, Markdownlint and config validation | Passed; no lint or type findings | [Completion verification](evidence/completion-verification.md) |
+| Wheel, source distribution and rebuilt wheel resources | Required operating and writing resources present | [Completion verification](evidence/completion-verification.md) |
+| Installed Codex issue-to-PR execution | Issue #3 complete; PR #4 merged | [Live verification](https://github.com/MadaraUchiha-314/the-loop-testing/blob/main/docs/specs/issue-3/evidence/verification.md) |
+| Native instructions, hook trust and unrelated-chat recovery | Exercised and passed | [Completion verification](evidence/completion-verification.md) |
+| Local full suite | Environment failures retained; not a green suite | [Completion verification](evidence/completion-verification.md) |
+| Interrupted native TUI respawn and blocking Stop continuation | Not exercised in the live run; unit coverage only | [Completion verification](evidence/completion-verification.md) |
+
+- [x] Run automated regression and static checks.
+- [x] Build and inspect installable distribution resources.
+- [x] Install from the branch and start from devbox.
+- [x] Complete a fresh Codex issue-to-PR run in the-loop-testing.
+- [x] Record exercised behavior and remaining verification limits.

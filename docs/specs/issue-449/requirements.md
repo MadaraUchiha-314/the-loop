@@ -90,3 +90,24 @@ per-work-item choice and named Codex as its first follow-up.
 ## Out of scope
 
 - Deduplicating the plugin's Stop hook against the daemon-installed one.
+
+## Security considerations
+
+The operator authorizes phase selections and the runtime controls the harness.
+Repository instructions, rollout metadata and GitHub comment bodies are untrusted
+inputs. Authentication stays in the operator's normal Codex home; it is never
+copied into a per-session home or committed to a repository.
+
+- WHEN a rollout has missing, relative or mismatched directory metadata, an unsafe
+  native ID, an ambiguous marker or an escaping symlink THEN identity lookup SHALL
+  refuse it rather than resume another conversation (R2.1–R2.3).
+- WHEN instruction preparation encounters an escaping symlink or malformed managed
+  block THEN it SHALL refuse the write rather than overwrite operator instructions
+  or write outside its permitted location (R3.1–R3.2).
+- WHEN trust preparation encounters the home directory or filesystem root THEN it
+  SHALL refuse blanket trust; hook trust and execution policy remain operator-owned
+  (R3.4–R3.6).
+- WHEN a human gate is pending THEN preserving an accepted start SHALL NOT bypass
+  authorization or launch a harness before the authorized answer (R5.4).
+- WHEN delegation names an unknown harness THEN it SHALL block; retries SHALL NOT
+  replay GitHub mutations (R4.3, R5.3).

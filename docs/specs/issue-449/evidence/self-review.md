@@ -22,3 +22,19 @@ The findings and will-fix dispositions are prepared here before changing code.
 Posting them through `the-loop comment` is blocked by unavailable GitHub
 credentials and service access. They must be posted when access is restored;
 no remote thread is reported as resolved.
+
+## Live completion follow-up
+
+Access was restored on 2026-10-02. The current checkout pulled the published
+completion commits, and the findings were posted to PR #450. A8's tracked
+project instructions and A9's start-gate lifecycle defect were recorded before
+their fixes. The 153-test instruction suite and 672-test routing/startup/Codex
+suite pass. The source installation completed smoke issue #3 with merged PR #4;
+installed startup-only issue #5 verifies a successful waiting result and preserved
+request. [Completion verification](completion-verification.md) records actual
+IDs, commits, limits and links. Main PR approvals remain human-owned.
+
+A final artifact audit found missing required headings and evidence records in
+the retroactively authored spec chain. The documentation follow-up preserves
+in-review statuses, records the threat boundaries and adds the required results,
+final validation and PR index. Recomputed agent-owned artifact checks now pass.

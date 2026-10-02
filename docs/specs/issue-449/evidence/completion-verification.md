@@ -334,3 +334,39 @@ The test command covered spawn-gate, control CLI/integration, core sessions,
 instance integration, reactions, polling, routing, work-channel integration,
 Codex support and Codex adapter tests. This is targeted verification, not a
 claim that the local full suite passed.
+
+## Installed startup fix: live regression
+
+Source commit `032ed5e` was pushed, installed with `uv tool install --force`,
+and the service/poller restarted from devbox. SHA-256 comparisons of installed
+`core/sessions.py`, `webhook/dispatcher.py`, `codex_support.py` and
+`harness/codex_agent.py` matched the checkout.
+
+[Startup-only issue #5](https://github.com/MadaraUchiha-314/the-loop-testing/issues/5)
+was created through the-loop. From devbox, this command returned exit code 0:
+
+```sh
+the-loop sessions start --work-item github:MadaraUchiha-314/the-loop-testing#5
+```
+
+```text
+started the loop for github:MadaraUchiha-314/the-loop-testing#5; waiting at its first human gate before launching a session
+```
+
+The installed `ControlStore` read the existing devbox portable state and asserted
+`start_requested=True`. The work item was still at phase selection and no harness
+launched. [The result was posted on the issue](https://github.com/MadaraUchiha-314/the-loop-testing/issues/5#issuecomment-5960575014).
+This live probe verifies the previously broken CLI path without launching another
+Codex conversation. The startup-only issue was closed through the operator's
+authorized gh CLI because no harness session existed for lifecycle registration.
+`the-loop sessions stop --no-comment` then cancelled its start request; a fresh
+ControlStore assertion confirmed it was no longer armed.
+
+A fresh artifact-only `the-loop check --recompute` also found missing required
+spec/evidence sections in the retroactively authored files. The existing content
+now names Architecture, Security design, Testing strategy, Security considerations,
+Verification environment, Evidence plan, Verification results and Security review
+(gate). Final-validation and pull-request gate records summarize the existing
+proof; no approval or work-item state was fabricated. Recomputed agent-owned
+artifact checks now pass; human approval checks still wait. The local graph state
+is absent, so this recomputation does not claim to advance the live selected graph.
