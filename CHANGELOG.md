@@ -1,3 +1,9 @@
+## v19.21.0 (2026-10-02)
+
+### Feat
+
+- **issue-451**: a default model per harness in cli-config.yaml (#456)
+
 ## v19.20.0 (2026-10-02)
 
 ### Feat
