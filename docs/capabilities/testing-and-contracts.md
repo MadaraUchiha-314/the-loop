@@ -135,6 +135,30 @@ every API is authored contract-first with docs generated from the contract).
   parity that is claimed but not kept sends the first contributor who hits it looking for a
   bug in their own diff.
 
+### A test controls the executables, paths and process metadata it asserts on (issue-454)
+
+- WHEN a test asserts on what an executable lookup resolves (`shutil.which`, a harness
+  binary's availability) THEN it SHALL fix that lookup itself, and SHOULD assert both
+  answers. A developer with the Cursor CLI installed and a CI runner without it SHALL get
+  the same verdict.
+- WHEN a test asserts that a path stays inside a directory THEN it SHALL compare canonical
+  paths on both sides. On macOS the temp dir `/var/…` is an alias of `/private/var/…`, so a
+  resolved path never equals an unresolved one. The escape check stays: a hostile id
+  SHALL still be shown to land directly inside the directory. A symlinked temp dir
+  recreates the alias on any POSIX host.
+- WHEN a test reads a process's session or process group THEN it SHALL use `os.getsid` /
+  `os.getpgid`, never the `sess` column of `ps`. On BSD that column is a kernel session
+  pointer, and macOS prints `0`. Only columns every `ps` agrees on (`ppid`) are read from
+  `ps`, and only where there is no `/proc`.
+- WHEN a test needs a binary only to pass a preflight (the daemon's `tmux` check) THEN it
+  SHALL get it from an explicit fixture rather than the host's PATH. `preflight_tmux` in
+  `cli/tests/conftest.py` puts a stub `tmux` first on the daemon subprocess's PATH. The
+  stub records any call and fails the test at teardown if one happened. A test that
+  genuinely runs tmux SHALL declare a real dependency instead.
+- `make test` SHALL pass on a supported Linux or macOS host whether or not tmux or any
+  harness CLI is installed, and without a bespoke `TMPDIR` or `PATH`. A skip is allowed only
+  where the platform cannot provide the capability under test.
+
 ### The suite never writes into a checked-in `.the-loop/` (issue-422)
 
 - WHEN a test exercises code that writes state THEN it SHALL give that code a state root
@@ -181,6 +205,7 @@ every API is authored contract-first with docs generated from the contract).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-454 | The suite stopped reading the host it runs on (2026-10-02): on macOS four tests failed that Linux CI never saw — two critic-availability tests assumed `cursor-agent` was absent, the gate's containment test compared `/var` with `/private/var`, and the daemon detachment test read BSD `ps`'s `sess` (a pointer, `0` on macOS) as the SID — and eight daemon tests failed wherever tmux was absent though none runs it. The tests now fix `shutil.which`, compare canonical paths (with a symlinked-temp-dir case that runs the alias on Linux), read `os.getsid`/`os.getpgid`, and take tmux from a `preflight_tmux` stub that fails any test which actually runs it | [spec](../specs/issue-454/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/454) |
 | issue-422 | The suite stopped writing into the repository it runs in (2026-09-22): four tests wrote into this checkout's `.the-loop/` when run from the root, one of them into the tracked `portable/`, where an earlier run's control record had already been committed. Each now gets a `tmp_path` state root, the two debris records are deleted, and an audit-hook guard in `conftest.py` fails any test that writes into the repository's or the working directory's `.the-loop/`. Two of the four were weaker than they read: an abuse-case log check searched a file that was never written, and a lock assertion watched a pidfile the poller never held | [spec](../specs/issue-422/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/422) |
 | issue-412 | A test pins or controls what it resolves, and never reads the machine it runs on (2026-09-21): four `test_instance.py` argv assertions stopped passing or failing on the working directory and on whether the developer has `~/.the-loop/cli-config.yaml` — pinned in the module that had the defect, not suite-wide, because the config path anchors the state root and a wholesale pin breaks the tests that legitimately control the cwd branch; and `make test` became byte-for-byte the pre-commit `pytest` hook, `cd cli` included, so the Makefile's CI-parity rule is true | [spec](../specs/issue-412/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/412) |
 | issue-365 | The e2e conformance keys followed the artifact (2026-09-14): `executionLogSections` and `executionLogEntries` became one `evidenceSections` map of file → sections, and the walk is asserted by the node trace alone rather than by checkpoints a hook wrote into a log | [spec](../specs/issue-365/), [decision-126](../decisions/decision-126.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/365) |

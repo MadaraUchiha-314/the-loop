@@ -56,7 +56,7 @@ def github():
 
 
 @pytest.fixture
-def env(tmp_path, github):
+def env(tmp_path, github, preflight_tmux):
     root = tmp_path / ".the-loop"
     root.mkdir()
     service_port = _free_port()
@@ -83,6 +83,8 @@ polling:
     )
 
     environ = dict(os.environ)
+    # The preflight wants tmux on PATH; nothing here spawns a session (issue-454).
+    environ["PATH"] = preflight_tmux.path(environ.get("PATH", ""))
     environ["GH_TOKEN"] = "test-token"  # the daemon's credential (issue-442)
     environ["THE_LOOP_CLI_CONFIG"] = str(root / "cli-config.yaml")
     environ["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])

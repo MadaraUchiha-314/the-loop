@@ -62,13 +62,15 @@ def github():
 
 
 @pytest.fixture
-def env(tmp_path, github):
-    """A temp working directory with a CLI config bound to the loopback GitHub."""
+def env(tmp_path, github, preflight_tmux):
+    """A temp working directory with a CLI config bound to the loopback GitHub, and
+    a `tmux` on PATH for the daemon's preflight (none of these tests spawns one)."""
     root = tmp_path / ".the-loop"
     root.mkdir()
     (root / "cli-config.yaml").write_text(CONFIG + github.config_yaml())
 
     environ = dict(os.environ)
+    environ["PATH"] = preflight_tmux.path(environ.get("PATH", ""))
     environ["GH_TOKEN"] = "test-token"  # the daemon's credential (issue-442)
     environ["THE_LOOP_CLI_CONFIG"] = str(root / "cli-config.yaml")
     environ["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
@@ -136,18 +138,27 @@ def _alive(pid: int) -> bool:
 
 
 def _stat(pid: int) -> dict:
-    """``{ppid, sid, pgid}`` for ``pid``, from /proc or ps."""
+    """``{ppid, sid, pgid}`` for ``pid``.
+
+    The session and group come from ``getsid(2)``/``getpgid(2)``: POSIX calls that
+    return the numeric IDs on Linux and macOS alike. Never ``ps -o sess=``: on BSD
+    that column is a kernel session pointer, not the SID, and macOS prints ``0``
+    for it (issue-454). Only the parent comes from /proc, or ``ps -o ppid=`` where
+    there is no /proc — a column every ``ps`` agrees on.
+    """
     proc_status = Path(f"/proc/{pid}/stat")
     if proc_status.is_file():
-        fields = proc_status.read_text().rsplit(")", 1)[1].split()
-        return {"ppid": int(fields[1]), "pgid": int(fields[2]), "sid": int(fields[3])}
-    out = subprocess.run(
-        ["ps", "-o", "ppid=,pgid=,sess=", "-p", str(pid)],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.split()
-    return {"ppid": int(out[0]), "pgid": int(out[1]), "sid": int(out[2])}
+        ppid = int(proc_status.read_text().rsplit(")", 1)[1].split()[1])
+    else:
+        ppid = int(
+            subprocess.run(
+                ["ps", "-o", "ppid=", "-p", str(pid)],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+        )
+    return {"ppid": ppid, "pgid": os.getpgid(pid), "sid": os.getsid(pid)}
 
 
 def _wait_for(predicate, timeout: float = 30.0) -> bool:

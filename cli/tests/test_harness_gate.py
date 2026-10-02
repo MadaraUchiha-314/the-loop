@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -229,11 +230,39 @@ class TestAttemptsFile:
             "issue-1", "/repo/a"
         )
 
-    def test_a_work_item_with_slashes_does_not_escape_the_temp_dir(self, gate):
-        """A ref like `github:o/r#1` must not become a path traversal."""
+    @pytest.mark.parametrize(
+        "work_item", ["../../etc/passwd", "github:o/r#1", "/etc/passwd", "a/../../b"]
+    )
+    def test_a_work_item_with_slashes_does_not_escape_the_temp_dir(
+        self, gate, work_item
+    ):
+        """A ref like `github:o/r#1` must not become a path traversal.
+
+        Both sides are compared canonically (issue-454): on macOS the temp dir is
+        `/var/…`, an alias of `/private/var/…`, so a resolved path never equals an
+        unresolved one even when nothing escaped.
+        """
+        path = gate.attempts_path(work_item, "/repo")
+        assert path.parent == Path(tempfile.gettempdir())
+        assert path.resolve().parent == Path(tempfile.gettempdir()).resolve()
+        assert ".." not in path.name and "/" not in path.name
+
+    def test_containment_holds_when_the_temp_dir_is_a_symlink(
+        self, gate, tmp_path, monkeypatch
+    ):
+        """macOS's `/var` → `/private/var`, recreated on any POSIX host (issue-454)."""
+        real = tmp_path / "private-tmp"
+        real.mkdir()
+        alias = tmp_path / "tmp-alias"
+        alias.symlink_to(real, target_is_directory=True)
+        monkeypatch.setattr(tempfile, "tempdir", str(alias))
+
         path = gate.attempts_path("../../etc/passwd", "/repo")
-        assert path.parent == path.resolve().parent
-        assert ".." not in path.name
+        # The alias is really in play: comparing a resolved parent with an
+        # unresolved one — the old assertion — would report an escape here.
+        assert path.parent != path.resolve().parent
+        assert path.parent == alias
+        assert path.resolve().parent == real.resolve()
 
     def test_a_missing_or_corrupt_counter_reads_as_zero(self, gate, tmp_path):
         assert gate.read_attempts(tmp_path / "nope") == 0

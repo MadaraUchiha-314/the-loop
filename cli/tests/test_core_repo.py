@@ -2,6 +2,7 @@
 
 import pytest
 
+from the_loop import critics as critics_mod
 from the_loop.core import repo as core_repo
 from the_loop.critics import CriticConfigError
 from the_loop.scenarios import DEFAULT_GLOBS
@@ -52,7 +53,17 @@ def test_instructions_accepts_the_mapping_shape_with_notes(tmp_path):
     assert report["docs"][0]["notes"] == "house style"
 
 
-def test_critics_lists_the_cli_configs_entries_without_argv(tmp_path, monkeypatch):
+@pytest.mark.parametrize("installed", [False, True])
+def test_critics_lists_the_cli_configs_entries_without_argv(
+    tmp_path, monkeypatch, installed
+):
+    # Discovery is the test's, not the host's (issue-454): a developer with
+    # `cursor-agent` installed must see the same result as CI without it.
+    monkeypatch.setattr(
+        critics_mod.shutil,
+        "which",
+        lambda b: f"/stub/{b}" if installed and b == "cursor-agent" else None,
+    )
     _cli_config(
         tmp_path,
         monkeypatch,
@@ -66,7 +77,7 @@ def test_critics_lists_the_cli_configs_entries_without_argv(tmp_path, monkeypatc
             "model": "gpt-5.5",
             # The executable and whether it resolves — never the composed argv.
             "binary": "cursor-agent",
-            "available": False,
+            "available": installed,
             "enabled": True,
             "error": "",
         }
