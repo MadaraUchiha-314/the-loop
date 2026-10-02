@@ -47,6 +47,22 @@ def test_a_narrowed_model_is_asked_about_only_its_harnesses(configured):
     assert ("claude", "model", "gpt-5.6-sol") not in pairs
 
 
+def test_each_harnesses_default_model_is_asked_about_on_that_harness_once():
+    """issue-451 R4.1 — a default the harness refuses is found by the check, not by a
+    spawn; one already declared in `models[]` is not asked about twice."""
+    config = dict(
+        CONFIG,
+        harnesses=[
+            {"name": "claude", "default": True, "defaultModel": "opus-5"},
+            {"name": "cursor", "defaultModel": "gpt-5.6-mini"},
+        ],
+    )
+    pairs = models_cmd._combinations(config)
+    assert pairs.count(("claude", "model", "opus-5")) == 1
+    assert ("cursor", "model", "gpt-5.6-mini") in pairs
+    assert ("claude", "model", "gpt-5.6-mini") not in pairs
+
+
 def test_every_effort_mapping_is_asked_about(configured):
     """the-loop asserts the mapping, so the-loop has it checked — R2.7."""
     pairs = models_cmd._combinations(configured)

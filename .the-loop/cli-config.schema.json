@@ -292,6 +292,11 @@
             "default": false,
             "description": "Whether an unmatched event — and a work item that chose no harness at `phase-selection` — spawns on this harness. Falls back to `routing.defaultHarness` when no entry claims it, or when the entry claiming it cannot host a work item's session (issue-440); two entries claiming it is a config error, because a work item's harness decides which models it may be offered."
           },
+          "defaultModel": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "description": "The model a work item's session on this harness is launched on when it has no model of its own (issue-451): `the-loop do`, `the-loop contribute`, `the-loop review`, a `phase-selection` reply with no model ticked, and a frozen model that no longer passes re-validation. Unset — the default — passes no model flag, so the harness's own settings (an enterprise policy, the user's settings file, the vendor's default) decide, exactly as before this key existed. The provider's own name, copied verbatim into the harness's model flag, with the same grammar as a `models[]` name. Need not be declared in `models[]`: it applies where no choice is offered at all. A work item's own model always wins, and the default is read at launch rather than frozen, so changing it moves every work item that chose nothing. `the-loop models check` probes it on this harness; a refused default is dropped at launch like a refused choice."
+          },
           "args": {
             "type": "array",
             "items": {

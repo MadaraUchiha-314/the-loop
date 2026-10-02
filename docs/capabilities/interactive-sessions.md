@@ -355,7 +355,18 @@ belongs to does not.
   re-validated on the way in — against what the operator declares *now*, and against the
   probed availability matrix — so a hand-edited state file, a withdrawn declaration or a
   model this machine's harness has started refusing resolves to the harness's own
-  arguments unchanged, and a refusal is said out loud rather than left to a dead pane.
+  arguments unchanged (plus its default model, below), and a refusal is said out loud
+  rather than left to a dead pane.
+- WHEN a work item's session is launched with **no model of its own** — `the-loop do`,
+  `contribute`, `review`, a `phase-selection` reply with no model ticked, or a frozen
+  model that failed re-validation — AND its harness's `harnesses[]` entry declares a
+  `defaultModel` THEN it SHALL be launched with that harness's model flag and the default
+  after the launch arguments, and the record, the spawn event and the lifecycle hooks
+  SHALL name it (issue-451). The default is the operator's, read at launch and never
+  frozen into the work item; it is held to the model-name grammar on read, applied only
+  on its own harness, probed by `the-loop models check`, and dropped like a refused
+  choice when the harness refuses it. With no `defaultModel`, no model flag is passed and
+  the harness's own settings decide, as before.
 - WHEN a work item's session is spawned fresh THEN it SHALL be spawned on the **harness**
   its `phase-selection` reply froze (issue-440), re-validated on the way in — declared in
   `harnesses[]`, an adapter on this machine, and able to host a session — and otherwise on
@@ -381,6 +392,7 @@ belongs to does not.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-451 | **A default model per harness** (2026-10-02): `harnesses[].defaultModel` is the model a work item's session is launched on when it has none of its own — `do`, `contribute`, `review`, an unticked gate. `Dispatcher._resolved_choice` falls back to `modelchoice.default_model`, so the argv, record, spawn event and hooks carry it; the gate names it on the checklist and in the confirmation; `models check` probes it | [spec](../specs/issue-451/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/451) |
 | issue-442 | The session announcement posts through the daemon's GitHub client on PyGithub under `integrations.github.api.tokenEnv` (2026-09-30), no longer through the operator's `gh`; a missing token is one warning per process | [spec](../specs/issue-442/), [decision-139](../decisions/decision-139.md) |
 | issue-426 | **A work-item session is launched without Claude Code's question menu** (2026-09-28): in `work-item` mode the spawn, resume and `sessions restart` argv gains `--disallowedTools=AskUserQuestion` right before the prompt, so a question ends the turn instead of freezing the pane; `cli` mode is unchanged | [spec](../specs/issue-426/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/426) |
 | issue-410 | **A session's environment is no longer frozen for its whole life** (2026-09-21): `the-loop sessions restart [--all\|--work-item …]` relaunches each running session in place (`respawn-pane -k`, resuming its conversation) on what `env.file` declares now, then **verifies** each one and exits non-zero on any that did not land; `the-loop status` carries a line when the fleet has drifted; and a spawn re-reads the file rather than inheriting the tmux server's long-frozen copy. Before this, rotating a credential left the service on the new value and every running session on the old one — the reporter's deployment looked healthy while 144 consecutive agent questions failed over three days. `envstate` is the new module, and no value reaches any output: a variable is named with a fingerprint | [spec](../specs/issue-410/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/410) |

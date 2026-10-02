@@ -42,12 +42,14 @@ __all__ = [
     "MODELS_KEY",
     "EFFORT_KEY",
     "HARNESSES_KEY",
+    "DEFAULT_MODEL_KEY",
     "NAME_RE",
     "candidate_harnesses",
     "declared_effort",
     "declared_harnesses",
     "declared_models",
     "default_harness",
+    "default_model",
     "effective_args",
     "effort_args",
     "harness_args",
@@ -62,6 +64,9 @@ __all__ = [
 HARNESSES_KEY = "harnesses"
 MODELS_KEY = "models"
 EFFORT_KEY = "effort"
+#: ``harnesses[].defaultModel`` (issue-451): the model a session on that harness is
+#: launched on when its work item chose none.
+DEFAULT_MODEL_KEY = "defaultModel"
 
 #: the-loop's own effort vocabulary, identical across harnesses. The operator declares
 #: which of these an instance offers; the *translation* to a given harness is that
@@ -212,6 +217,27 @@ def default_harness(
             return name
         break
     return routing_default
+
+
+def default_model(config: Optional[Mapping[str, Any]], harness: str) -> str:
+    """The model a session on ``harness`` runs on when nothing chose one (issue-451).
+
+    ``harnesses[].defaultModel`` of the entry named ``harness``, or ``""``. Held to
+    :data:`NAME_RE` here as well as in the schema, because the daemon reads configs the
+    schema never saw (a hand edit, then a reload): a value that could be a flag never
+    becomes a model. Deliberately not required to be in ``models[]`` — the default
+    exists for the install that offers no choice at all.
+    """
+    for entry in _entries(config, HARNESSES_KEY):
+        if not isinstance(entry, Mapping):
+            continue
+        raw = entry.get("name")
+        if not isinstance(raw, str) or raw.strip() != harness:
+            continue
+        value = entry.get(DEFAULT_MODEL_KEY)
+        name = value.strip() if isinstance(value, str) else ""
+        return name if NAME_RE.match(name) else ""
+    return ""
 
 
 def candidate_harnesses(config: Optional[Mapping[str, Any]], name: str) -> List[str]:
@@ -469,6 +495,15 @@ def config_findings(
                     "this harness cannot host a work item's session, so it is not "
                     "made the default; routing.defaultHarness is used instead "
                     "(issue-440)",
+                )
+            )
+        if default_model(config, harness) and not getattr(adapter, "model_flag", ""):
+            findings.append(
+                Finding(
+                    "warning",
+                    f"{HARNESSES_KEY}[{harness}].{DEFAULT_MODEL_KEY}",
+                    "this harness has no model flag, so its default model cannot be "
+                    "applied (issue-451)",
                 )
             )
         if models and not getattr(adapter, "model_flag", ""):

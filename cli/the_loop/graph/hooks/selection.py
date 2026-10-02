@@ -86,6 +86,7 @@ from ...modelchoice import (
     candidate_harnesses,
     declared_effort,
     declared_models,
+    default_model,
 )
 from ...prsessions import (
     SESSION_PER_PR_ALWAYS,
@@ -416,6 +417,9 @@ def _choice_lines(ctx: HookContext) -> List[str]:
     harnesses = _harness_rows(ctx)
     models = _model_rows(ctx)
     effort = _effort_rows(ctx)
+    # What an unticked model section means (issue-451): the default harness's own
+    # default model when the operator declared one, named so nobody is surprised.
+    fallback = default_model(ctx.config, _harness_for(ctx))
     for kind, prefix, names, heading, tail in (
         (
             "harness",
@@ -433,8 +437,13 @@ def _choice_lines(ctx: HookContext) -> List[str]:
             models,
             "**Which model should this work item run on?** Not a phase — it is "
             "what the session is. **Tick at most one:**",
-            "Leave them alone and this work item runs on the model this harness "
-            "is configured with.",
+            (
+                f"Leave them alone and this work item runs on `{fallback}`, the "
+                f"`{_harness_for(ctx)}` harness's default model."
+                if fallback
+                else "Leave them alone and this work item runs on the model this "
+                "harness is configured with."
+            ),
         ),
         (
             "effort",
@@ -966,11 +975,20 @@ def _confirmation(
                 "— no single row was ticked."
             ),
         ]
+    # The model a work item runs on when it resolved none (issue-451): the
+    # resolved harness's `defaultModel`, applied at launch — named, never frozen.
+    resolved = harness or default_harness
+    fallback = default_model(ctx.config, resolved)
     for kind, name in dropped or []:
         lines += [
             "",
-            f"Not applied: {kind} `{name}` — the `{harness or default_harness}` "
-            "harness does not offer it, so the harness's own stands.",
+            f"Not applied: {kind} `{name}` — the `{resolved}` harness does not "
+            "offer it, so "
+            + (
+                f"its default model `{fallback}` stands."
+                if kind == "model" and fallback
+                else "the harness's own stands."
+            ),
         ]
     # Named in BOTH directions (issue-358, R1.6): "the harness's own default" is
     # an outcome a human should be able to read back, and it is also what a
@@ -982,6 +1000,9 @@ def _confirmation(
             (
                 f"Model: **`{model}`**."
                 if model
+                else f"Model: **`{fallback}`**, the `{resolved}` harness's default "
+                "— no single row was ticked."
+                if fallback
                 else "Model: **the harness's own** — no single row was ticked."
             ),
         ]
