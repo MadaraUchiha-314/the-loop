@@ -1,3 +1,9 @@
+## v19.20.0 (2026-10-02)
+
+### Feat
+
+- **issue-449**: codex CLI harness — hosting adapter, trust pre-seed, critic one-shot (#450)
+
 ## v19.19.0 (2026-09-30)
 
 ### Feat
