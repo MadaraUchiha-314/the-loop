@@ -226,6 +226,8 @@ def needs_migration(config: Mapping[str, Any]) -> bool:
     removed key (belt and braces: a hand-edited file may lie about its version)."""
     if _parts(str(config.get("version", "0"))) < _parts(CURRENT_CONFIG_VERSION):
         return True
+    if "harnessArgs" in (_dig(config, ("routing",)) or {}):
+        return True
     if (_dig(config, _STATE_FILE_SITE) or {}).get(_STATE_FILE_KEY) is not None:
         return True
     if (_dig(config, _ROUTING_SITE) or {}).get(_ROUTING_KEY) is not None:
@@ -564,6 +566,7 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
     _retire_repo_hooks(data, report)
     _migrate_auto_execute_labels(data, report)
     _retire_github_cli(data, report)
+    _migrate_harness_args(data, report)
 
     if _parts(str(data.get("version", "0"))) < _parts(CURRENT_CONFIG_VERSION):
         report.moves.append(
@@ -573,6 +576,33 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
         report.changed = True
 
     return report
+
+
+def _migrate_harness_args(data: Dict[str, Any], report: MigrationReport) -> None:
+    """Move deprecated launch arguments without overriding a newer declaration."""
+    routing = _dig(data, ("routing",)) or {}
+    legacy = routing.get("harnessArgs")
+    if not isinstance(legacy, dict):
+        return
+    entries = data.setdefault("harnesses", [])
+    if not isinstance(entries, list):
+        raise ValueError("harnesses must be a list to migrate routing.harnessArgs")
+    for name, args in legacy.items():
+        entry = next(
+            (e for e in entries if isinstance(e, dict) and e.get("name") == name), None
+        )
+        if entry is None:
+            entry = {"name": name}
+            entries.append(entry)
+        if "args" not in entry:
+            entry["args"] = copy.deepcopy(args)
+        else:
+            report.notes.append(
+                f"harnesses[{name}].args already declared; kept it instead of deprecated routing.harnessArgs.{name}"
+            )
+        report.moves.append(f"routing.harnessArgs.{name} → harnesses[{name}].args")
+    routing.pop("harnessArgs")
+    report.changed = True
 
 
 def _retire_github_cli(data: Dict[str, Any], report: MigrationReport) -> None:

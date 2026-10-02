@@ -1674,9 +1674,27 @@ class Dispatcher:
         default — over this daemon's own adapters: a hosting ``default: true`` entry,
         else ``routing.defaultHarness``.
         """
-        return default_harness(
+        resolved = default_harness(
             self.cli_config or {}, self.config.default_harness, self._hosts
         )
+        for entry in (self.cli_config or {}).get("harnesses", []):
+            if isinstance(entry, dict) and entry.get("default") is True:
+                declared = str(entry.get("name") or "").strip()
+                if declared and declared != resolved:
+                    logger.warning(
+                        "default harness %r cannot host a session; using %r",
+                        declared,
+                        resolved,
+                    )
+                    eventlog.emit(
+                        "session.default_harness_bypassed",
+                        level="warning",
+                        declared_harness=declared,
+                        harness=resolved,
+                        reason="declared-default-cannot-host",
+                    )
+                break
+        return resolved
 
     def _harness_for(self, work_item: WorkItemRef, cwd: str = "") -> str:
         """The harness this work item's next fresh session spawns on (issue-440).
@@ -3464,6 +3482,20 @@ class Dispatcher:
         # the checked-in state `await-inner-loops` reads.
         endpoint = self._endpoint_for(session, routed)
         inner = endpoint is not session
+        adapter = self.adapters.get(endpoint.harness)
+        if adapter is not None:
+            native_id = adapter.resolve_session_id(
+                endpoint.cwd, endpoint.harness_session_id
+            )
+            if native_id and native_id != endpoint.harness_session_id:
+                endpoint.harness_session_id = native_id
+                self.registry.save_endpoint(session.work_item, endpoint)
+                eventlog.emit(
+                    "session.identity_bound",
+                    work_item=endpoint.work_item.ref,
+                    harness=endpoint.harness,
+                    harness_session_id=native_id,
+                )
 
         # Work-item state is resolved BEFORE anything is rendered or delivered
         # (issue-148, R3.1) — and an item parked at a human gate has its gate
@@ -3837,6 +3869,7 @@ class Dispatcher:
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
             return False
+        session_id = adapter.resolve_session_id(cwd, session_id) or session_id
         session = Session(
             work_item=work_item,
             harness=harness,
@@ -4465,9 +4498,13 @@ class Dispatcher:
         """
         if not self.config.tmux.resume_on_respawn:
             return None
-        session_id = session.harness_session_id
+        session_id = adapter.resolve_session_id(session.cwd, session.harness_session_id)
         if not session_id:
-            return None
+            return self._resume_failed(
+                session,
+                session.harness_session_id,
+                "no positively identified harness conversation",
+            )
         if not _SESSION_ID_RE.match(session_id):
             # Registry files are local state the-loop wrote (a uuid4), but the
             # id lands in an argv — validate before use, as announce.py does.

@@ -49,6 +49,7 @@ import logging
 import os
 import re
 import threading
+from http.client import RemoteDisconnected
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import (
@@ -797,7 +798,27 @@ class GitHubClient:
         requester = self._requester(host)
 
         def _do():
-            _headers, data = requester.graphql_query(query, variables)
+            try:
+                _headers, data = requester.graphql_query(query, variables)
+            except Exception as exc:
+                # Retry reads only: a mutation may have succeeded already.
+                cause = exc
+                stale = isinstance(cause, (ConnectionError, RemoteDisconnected))
+                for _ in range(5):
+                    stale = stale or type(cause).__name__ in (
+                        "ProtocolError",
+                        "ConnectionError",
+                    )
+                    cause = cause.__cause__ or cause.__context__
+                    if cause is None:
+                        break
+                    stale = stale or isinstance(
+                        cause, (ConnectionError, RemoteDisconnected)
+                    )
+                if not stale or not re.match(r"\s*(?:query\b|\{)", query):
+                    raise
+                logger.info("retrying a GraphQL read after a disconnected connection")
+                _headers, data = requester.graphql_query(query, variables)
             payload = data.get("data") if isinstance(data, Mapping) else None
             if not isinstance(payload, Mapping):
                 raise AssertionError("GraphQL returned no data object")

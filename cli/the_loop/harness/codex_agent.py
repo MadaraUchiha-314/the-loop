@@ -1,31 +1,35 @@
-"""Codex adapter: host the ``codex`` TUI in tmux; run ``codex exec`` for critics.
+"""Codex TUI hosting, exact-conversation resume and JSONL one-shot reviews.
 
-Codex CLI (issue-449) follows decision-016 like the others: the official CLI is
-the programmatic surface. Hosting works, with one honest asymmetry: ``codex``
-has no pre-assignable session id in interactive mode (the flag is an open
-upstream request, openai/codex#13242), so the id the dispatcher passes into
-``interactive_argv`` cannot be handed to the TUI. The session is launched
-id-less and the registry's ``harness_session_id`` stays the-loop's own name for
-the conversation, not codex's. Respawn therefore resumes by recency —
-``codex resume --last`` — scoped by the session's recorded cwd, which is unique
-per work item under the workspace's worktree strategy.
-
-Unattended, nothing is taken away (`_UNATTENDED_ARGS` is empty): codex's
-approval prompts are governed by sandbox/approval *policy* flags
-(``--dangerously-bypass-approvals-and-sandbox``, ``--sandbox``), and policy is
-the operator's to declare via ``harnesses[].args`` — the-loop never widens
-permissions itself.
+Codex creates its own conversation id. A unique launch marker identifies its
+rollout positively; resume never chooses a conversation by recency. Instruction
+and Stop-hook setup are independent of workspace trust, and existing operator
+configuration and approval/sandbox policy remain authoritative.
 """
 
 from __future__ import annotations
 
 import os
+import json
 import tempfile
+import sys
 from pathlib import Path
 from typing import List, Optional
 
+from ..codex_support import (
+    codex_home,
+    conversation_marker,
+    native_session_id,
+    prepare_instructions,
+    rollout_path,
+)
+
 from .base import HarnessAdapter
-from ..trust import TrustResult
+from ..trust import TrustResult, _lock_for, is_too_broad
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
 
 
 class CodexAdapter(HarnessAdapter):
@@ -61,8 +65,13 @@ class CodexAdapter(HarnessAdapter):
         for the directory already exists — an operator's own ``trust_level``
         is never rewritten.
         """
+        result = (
+            prepare_instructions(cwd, hook_home=codex_home())
+            if self.plugins.enabled
+            else TrustResult()
+        )
         if not self.trust.enabled:
-            return TrustResult()
+            return result
         keys = [os.path.normpath(os.path.abspath(cwd))]
         real = os.path.normpath(os.path.realpath(cwd))
         if real not in keys:
@@ -72,26 +81,30 @@ class CodexAdapter(HarnessAdapter):
             keys.append(main_root)
         if root and self.trust.roots_allowed:
             rootkey = os.path.normpath(os.path.realpath(root))
-            if rootkey not in keys and (real + os.sep).startswith(rootkey + os.sep):
+            if (
+                rootkey not in keys
+                and not is_too_broad(rootkey)
+                and (real + os.sep).startswith(rootkey + os.sep)
+            ):
                 keys.append(rootkey)
-        return _trust_in_codex_config(keys)
+        return result.merge(_trust_in_codex_config(keys))
 
     def _oneshot_argv(self, prompt: str) -> List[str]:
-        # Plain text out, no `--json`: codex's JSON mode is JSONL events, which
-        # neither `parse_json_object` nor a critic's `output_format: json`
-        # extraction reads; the critic path's text fallback wants the prose.
+        # JSONL retains token usage; shared extraction reads the final message.
         # `--skip-git-repo-check` keeps probes runnable outside a repository.
-        return ["exec", "--skip-git-repo-check"] + self.extra_args + [prompt]
+        return ["exec", "--skip-git-repo-check", "--json"] + self.extra_args + [prompt]
 
     def interactive_argv(self, prompt: str, session_id: str) -> List[str]:
-        # `session_id` is accepted and dropped: codex mints its own id at
-        # launch (see module docstring). Flags first, positional prompt last.
-        return self._launch_args() + [prompt]
+        # Record the launch marker in the first user prompt for id discovery.
+        return self._launch_args() + [prompt + "\n\n" + conversation_marker(session_id)]
 
     def interactive_resume_argv(self, prompt: str, session_id: str) -> List[str]:
-        # ponytail: resume-by-recency; swap to `resume <id>` when codex grows a
-        # pre-assignable id (openai/codex#13242) or an id-discovery hook lands.
-        return ["resume", "--last"] + self._launch_args() + [prompt]
+        # The caller resolves the launch marker to Codex's own UUID first.
+        return ["resume"] + self._launch_args() + [session_id, prompt]
+
+    def resolve_session_id(self, cwd: str, session_id: str) -> str:
+        path = rollout_path(cwd, session_id)
+        return native_session_id(path) if path else ""
 
 
 def _codex_config_path() -> Path:
@@ -120,6 +133,8 @@ def _worktree_main_root(cwd: str) -> str:
             if not content.startswith("gitdir:"):
                 return ""
             gitdir = Path(content[len("gitdir:") :].strip())
+            if not gitdir.is_absolute():
+                gitdir = (directory / gitdir).resolve()
             parts = gitdir.parts
             for i in range(len(parts) - 1):
                 if parts[i] == ".git" and parts[i + 1] == "worktrees":
@@ -129,27 +144,41 @@ def _worktree_main_root(cwd: str) -> str:
 
 
 def _trust_in_codex_config(keys: List[str]) -> TrustResult:
-    """Append missing ``[projects."<key>"]`` trust entries, atomically."""
-    path = _codex_config_path()
+    """Preserve valid TOML and operator choices; serialize concurrent writes."""
+    path = _codex_config_path().resolve()
+    with _lock_for(path):
+        return _write_trust(path, keys)
+
+
+def _write_trust(path: Path, keys: List[str]) -> TrustResult:
     try:
         text = path.read_text(encoding="utf-8") if path.exists() else ""
-    except OSError as exc:
+        projects = tomllib.loads(text).get("projects", {})
+        if not isinstance(projects, dict):
+            raise ValueError("projects must be a TOML table")
+    except (OSError, ValueError) as exc:
         return TrustResult(ok=False, error=f"could not read {path}: {exc}")
+    missing = [key for key in dict.fromkeys(keys) if key not in projects]
     additions = [
-        f'\n[projects."{key}"]\ntrust_level = "trusted"\n'
-        for key in keys
-        if f'[projects."{key}"]' not in text
+        f'\n[projects.{json.dumps(key, ensure_ascii=False)}]\ntrust_level = "trusted"\n'
+        for key in missing
     ]
     if not additions:
-        return TrustResult(ok=True)
+        return TrustResult()
+    tmp = ""
     try:
+        updated = text + "".join(additions)
+        tomllib.loads(updated)
         path.parent.mkdir(parents=True, exist_ok=True)
+        mode = path.stat().st_mode & 0o777 if path.exists() else 0o600
         fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".config-toml-")
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(text + "".join(additions))
+            handle.write(updated)
+        os.chmod(tmp, mode)
         os.replace(tmp, path)
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         return TrustResult(ok=False, error=f"could not write {path}: {exc}")
-    return TrustResult(
-        ok=True, applied=[f"trusted {key} in {path}" for key in keys]
-    )
+    finally:
+        if tmp and os.path.exists(tmp):
+            os.unlink(tmp)
+    return TrustResult(applied=[f"trusted {key} in {path}" for key in missing])

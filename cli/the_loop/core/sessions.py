@@ -42,6 +42,7 @@ from ..control import (
 )
 from ..harness import ClaudeCodeAdapter, CodexAdapter, CursorAgentAdapter
 from ..harness.base import UnsupportedRunnerError
+from ..codex_support import native_session_id, rollout_path, transcript_entry
 from ..instance import INSTANCE_LOCKED, LOCKED, InstanceConfig
 from ..runner import TmuxRunner
 from ..sessions.registry import RegistryError, Session, SessionRegistry
@@ -321,6 +322,14 @@ def _transcript_target(
             f"no session registered for {work_item.ref}, so no transcript can "
             "be resolved"
         )
+    if endpoint.harness == "codex":
+        path = rollout_path(endpoint.cwd, endpoint.harness_session_id)
+        if path is None:
+            raise LookupError(
+                "no positively identified Codex rollout for this session yet"
+            )
+        endpoint.harness_session_id = native_session_id(path)
+        return endpoint, path
     if endpoint.harness != "claude":
         raise LookupError(
             f"no derivable transcript for harness {endpoint.harness!r} — only "
@@ -391,7 +400,10 @@ def get_transcript(
             parsed = None
         # A line that is not a JSON object is served, flagged, in place —
         # dropped data is worse than ugly data (R1.1).
-        entries.append(parsed if isinstance(parsed, dict) else {"malformed": line})
+        entry = parsed if isinstance(parsed, dict) else {"malformed": line}
+        entries.append(
+            transcript_entry(entry) if endpoint.harness == "codex" else entry
+        )
     return {
         "workItem": work_item.ref,
         "harness": endpoint.harness,

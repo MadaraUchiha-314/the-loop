@@ -1,11 +1,11 @@
 # Capability: distribution
 
-> Shipping the-loop as an installable plugin for **Claude Code and Cursor** from a
+> Shipping the-loop as an installable plugin for **Claude Code, Cursor and Codex** from a
 > single repository — no bespoke marketplace publishing.
 
 ## What it is
 
-The packaging that makes the-loop installable in both harnesses: two thin plugin
+The packaging that makes the-loop installable across harnesses: thin plugin
 manifests over one shared set of skills, commands and templates. The templates **and the
 config schemas** are **internal** to the plugin — read from it when authoring artifacts or
 validating a config, never copied into the projects the-loop is run on.
@@ -159,3 +159,20 @@ validating a config, never copied into the projects the-loop is run on.
 | issue-36 | Templates made internal to the plugin (`skills/the-loop/templates/`); init no longer copies them into projects, and upgrade cleans up the deprecated `.the-loop/templates/` folder | [spec](../specs/issue-36/) |
 | issue-12 | Added Cursor packaging (`.cursor-plugin/`, `rules/the-loop.mdc`) reusing the same skills/commands | [spec](../specs/issue-12/), [decision-015](../decisions/decision-015.md) |
 | issue-1 | Shipped the Claude Code plugin + marketplace manifests (v0) | [spec](../specs/issue-1/), [decision-001](../decisions/decision-001.md) |
+
+## Codex installation (issue-449)
+
+`the-loop install codex --scope project --project-dir <repo>` checks the Codex
+binary and prepares native instructions and project hooks without starting a
+model session. `--scope user` prepares `~/.codex/AGENTS.md` and `hooks.json`.
+`all` includes Codex, and the default includes it when its binary is on PATH.
+A missing binary is a named failed step, and `--dry-run` performs no writes.
+Existing instructions and hook definitions are preserved. Trust new hook
+definitions with `/hooks` before relying on unattended execution.
+
+The repository also ships `.codex-plugin/plugin.json`, using the shared skills
+and Codex-specific lifecycle hooks under `hooks/codex-hooks.json`. Native plugin
+hook installation follows Codex's own trust review. Plugin versions remain in
+commitizen's version lockstep. The CLI distribution bundles the skill references,
+command procedures and hook scripts so installation from a wheel or source
+distribution has the same instruction surface as a repository checkout.

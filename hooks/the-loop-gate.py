@@ -136,6 +136,9 @@ def feedback_text(node: dict, attempts: int, maximum: int) -> str:
 
 def emit(harness: str, text: str) -> int:
     """Speak the harness's protocol. Return this process's exit code."""
+    if harness == "codex":
+        print(json.dumps({"decision": "block", "reason": text}))
+        return 0
     if harness == "cursor":
         # Cursor cannot block a stop, but it auto-submits followup_message as
         # the next user turn — and caps that natively (loop_limit, hard max 5).
@@ -150,6 +153,8 @@ def main(argv: list[str]) -> int:
     harness = argv[1] if len(argv) > 1 else "claude"
     work_item = os.environ.get("THE_LOOP_WORK_ITEM", "").strip()
     if not work_item:
+        if harness == "codex":
+            print("{}")
         return 0
 
     try:
@@ -160,11 +165,15 @@ def main(argv: list[str]) -> int:
 
     report = run_check(work_item)
     if report is None:
+        if harness == "codex":
+            print("{}")
         return 0
 
     counter = attempts_path(work_item, os.getcwd())
     node = blocking_node(report)
     if node is None:
+        if harness == "codex":
+            print("{}")
         counter.unlink(missing_ok=True)
         return 0
 
@@ -178,6 +187,8 @@ def main(argv: list[str]) -> int:
     # auto-followups natively — the asymmetry runs the opposite way to the
     # obvious guess, which is why the bound lives on this path at all.
     if attempts > maximum:
+        if harness == "codex":
+            print("{}")
         counter.unlink(missing_ok=True)
         # Bail out rather than loop forever. The CI gate is the backstop, and a
         # hook that can wedge a session is worse than one that gives up loudly.

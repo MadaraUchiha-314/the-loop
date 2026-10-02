@@ -409,3 +409,40 @@ belongs to does not.
 | issue-86 | Keep a finished work item's tmux session (and, via `remain-on-exit`, its pane) instead of killing it, guarded by a pane-liveness check so the respawn path still fires; announce a first-spawned session's attach command as a comment on the work item | [spec](../specs/issue-86/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/86) |
 | issue-94 | A retained session is now a **record, not a live agent**: closing the work item ends the harness in its pane (SIGTERM→SIGKILL, `killHarnessOnClose` / `harnessKillGraceSeconds`) with `remain-on-exit` re-set so the scrollback survives, and `sessions attach` forces read-only for a closed session | [spec](../specs/issue-94/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/94) |
 | issue-89 | Respawn now **resumes** the dead session's harness conversation (`claude --resume`, id kept in the registry) instead of booting a blank one, verified by a liveness probe with a fresh-conversation fallback (`resumeOnRespawn` / `resumeProbeSeconds`, `session.resume_failed`) | [spec](../specs/issue-89/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/89) |
+
+## Codex hosting (issue-449)
+
+Codex is a hosting harness and a one-shot critic. Declare `name: codex` under
+`harnesses`, optionally with `default: true`, and choose its model/effort at the
+normal phase-selection gate. Model selection uses `--model`; effort uses Codex's
+`model_reasoning_effort` configuration overrides and remains availability-probed.
+
+Codex assigns its own UUID. The first prompt carries the-loop's launch marker;
+rollout discovery requires the matching marker and cwd, then binds the native
+UUID when the next event arrives. Resume uses `codex resume <native UUID>` and
+never `--last`. Missing or ambiguous identity produces an observable resume
+failure and a fresh conversation, rather than resuming an operator's chat.
+The rollout also supplies the Harness trace: messages, reasoning summaries,
+tool calls and tool results map into the existing UI model while original
+payloads remain available. Reads stay confined to `$CODEX_HOME/sessions` and
+reject traversal, mismatched cwd and symlinks outside that store.
+
+Environment preparation preserves existing `AGENTS.md` (or the higher-priority
+`AGENTS.override.md`) and adds a managed instruction block pointing at the
+bundled skill and command procedures. The CLI wheel and source distribution
+both include these resources; a consuming repository need not contain them.
+The Stop hook is installed in `$CODEX_HOME/hooks.json`, so its definition and
+trust review are stable across worktrees. It acts only when `THE_LOOP_WORK_ITEM`
+is set. It returns Codex's `decision: block` with continuation feedback when the
+current graph node has gate debt, and valid empty JSON when the turn may end.
+The same attempt cap protects every harness.
+
+**Review and trust the Stop hook once with Codex `/hooks` before unattended
+execution.** No hook-trust bypass flag is added. Explicit hook/feature disablement
+remains authoritative. `routing.harnessPlugins.enabled: false` opts out of the
+instruction/hook setup; workspace trust has its separate opt-out. Sandbox and
+approval flags are never widened. Trust writes validate TOML, preserve operator
+entries, escape directory names, retain file modes and symlinks, serialize
+concurrent writes, and reject blanket trust of `/` or the user's home directory.
+
+The Codex protocol follows [the official hook documentation](https://learn.chatgpt.com/docs/hooks).

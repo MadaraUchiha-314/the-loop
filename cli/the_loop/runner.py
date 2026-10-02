@@ -429,6 +429,12 @@ class TmuxRunner:
         from firing in a session that has none.
         """
         try:
+            if resume:
+                session_id = adapter.resolve_session_id(cwd, session_id)
+                if not session_id:
+                    raise UnsupportedRunnerError(
+                        "no positively identified harness conversation to resume"
+                    )
             harness_argv = (
                 adapter.interactive_resume_argv(prompt, session_id)
                 if resume
@@ -560,6 +566,11 @@ class TmuxRunner:
                 ok=False, error=f"refusing to respawn an unrecognised target {target!r}"
             )
         try:
+            session_id = adapter.resolve_session_id(cwd, session_id)
+            if not session_id:
+                raise UnsupportedRunnerError(
+                    "no positively identified harness conversation to resume"
+                )
             harness_argv = adapter.interactive_resume_argv(prompt, session_id)
         except UnsupportedRunnerError as exc:
             return TmuxResult(ok=False, error=str(exc))

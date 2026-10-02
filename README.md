@@ -15,7 +15,7 @@ on a ticket, the gate on an artifact and the assignment an agent receives all co
 declaration rather than from someone remembering.
 
 The `the-loop` CLI turns ticket and pull-request activity into agent sessions and drives
-each of them through that graph. Claude Code and Cursor plugins are how an agent picks up
+each of them through that graph. Claude Code, Cursor and Codex instruction surfaces are how an agent picks up
 the operating model — one delivery surface, not the product.
 
 **[Read the documentation](https://madarauchiha-314.github.io/the-loop/)** — everything
@@ -188,7 +188,7 @@ Full reference: **[the Python SDK](https://madarauchiha-314.github.io/the-loop/s
 
 ## The agent plugins
 
-The operating model reaches an agent as a plugin — the same `SKILL.md` for both harnesses,
+The operating model reaches an agent as a plugin — the same `SKILL.md` across harnesses,
 following the [Agent Skills](https://agentskills.io) standard. Installed from GitHub; no
 bespoke marketplace.
 
@@ -247,3 +247,20 @@ the-loop to improve itself.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Codex
+
+Install the official Codex CLI, then run `the-loop install codex --scope project`
+to prepare the-loop's instructions and Stop hook. Review and trust the hook with
+Codex `/hooks`. To make Codex the daemon's default:
+
+```yaml
+harnesses:
+  - name: codex
+    default: true
+    args: [--sandbox, workspace-write]
+```
+
+Choose approval and sandbox flags for your environment. Codex supports work-item
+hosting, resume by conversation id, critic reviews, MCP delegation, token usage,
+and the Harness trace. See [Codex session behavior](docs/capabilities/interactive-sessions.md#codex-hosting-issue-449).

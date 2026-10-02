@@ -59,6 +59,9 @@ LEVELS = ("debug", "info", "warning", "error")
 # by `the-loop events --types` and mirrored in the observability reference.
 # Adding an instrumentation point means adding its type (and description) here.
 EVENT_TYPES: Dict[str, str] = {
+    "session.identity_bound": "The launch identity was resolved to the harness's native conversation id (work_item, harness, harness_session_id).",
+    "poll.item_filtered": "A listed item lacked required arming labels (item_number, required_labels, missing_labels, reason). Every configured label is required.",
+    "session.default_harness_bypassed": "The declared default cannot host a session; the routing fallback was used (declared_harness, harness, reason).",
     # -- lifecycle hooks (issue-344; source: whichever process ran the chain) ---
     "hooks.loaded": (
         "The top-level `hooks` declaration was loaded into this process (hooks: the "

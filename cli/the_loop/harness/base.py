@@ -39,6 +39,7 @@ _OUTPUT_TOKEN_KEYS = (
     "completionTokens",
 )
 _CACHE_READ_KEYS = (
+    "cached_input_tokens",
     "cache_read_input_tokens",
     "cacheReadInputTokens",
     "cache_read_tokens",
@@ -224,6 +225,15 @@ class HarnessAdapter:
             "conversation in interactive mode"
         )
 
+    def resolve_session_id(self, cwd: str, session_id: str) -> str:
+        """Resolve a launch identity to the harness's native conversation id.
+
+        Most CLIs accept the assigned id directly. A CLI that creates its own
+        id may discover it from a positively identified transcript instead.
+        An empty answer means it cannot safely resume that conversation.
+        """
+        return session_id
+
 
 def hosts_sessions(adapter: object) -> bool:
     """Whether ``adapter`` (an instance or a class) can host a work item's session.
@@ -246,6 +256,12 @@ def usage_from_output(stdout: str) -> Usage:
     harness that reports neither. Never raises — telemetry is advisory.
     """
     data = parse_json_object(stdout)
+    if not data:
+        # JSONL event streams report accounting at turn completion. Take the
+        # latest usage snapshot, never sum snapshots of the same turn.
+        for event in json_objects(stdout):
+            if any(isinstance(event.get(key), dict) for key in _USAGE_KEYS):
+                data = event
     usage = Usage()
     block = next(
         (data[k] for k in _USAGE_KEYS if isinstance(data.get(k), dict)),
@@ -256,6 +272,10 @@ def usage_from_output(stdout: str) -> Usage:
         usage.output_tokens = _first_int(block, _OUTPUT_TOKEN_KEYS)
         usage.cache_read_tokens = _first_int(block, _CACHE_READ_KEYS)
         usage.cache_write_tokens = _first_int(block, _CACHE_WRITE_KEYS)
+        if "cached_input_tokens" in block:
+            # OpenAI counts cached input inside input_tokens; our Usage totals
+            # sum the disjoint categories used by the other harnesses.
+            usage.input_tokens = max(0, usage.input_tokens - usage.cache_read_tokens)
         usage.present = usage.present or bool(block)
     for key in _COST_KEYS:
         value = data.get(key)
@@ -273,6 +293,29 @@ def parse_json_object(stdout: str) -> dict:
     except json.JSONDecodeError:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def json_objects(stdout: str):
+    """Valid objects from a JSONL stream; malformed/progress lines are inert."""
+    for line in stdout.splitlines():
+        data = parse_json_object(line)
+        if data:
+            yield data
+
+
+def output_text(stdout: str) -> str:
+    """The final agent message in a JSONL stream, or the original output."""
+    answer = ""
+    for event in json_objects(stdout):
+        item = event.get("item")
+        if (
+            event.get("type") == "item.completed"
+            and isinstance(item, dict)
+            and item.get("type") == "agent_message"
+            and isinstance(item.get("text"), str)
+        ):
+            answer = item["text"]
+    return answer or stdout
 
 
 def _first_int(block: dict, keys: Sequence[str]) -> int:

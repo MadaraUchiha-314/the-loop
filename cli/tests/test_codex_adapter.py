@@ -24,6 +24,7 @@ def test_oneshot_argv_is_exec_with_flags_before_prompt():
     assert adapter.oneshot_argv("review this") == [
         "exec",
         "--skip-git-repo-check",
+        "--json",
         "--full-auto",
         "review this",
     ]
@@ -41,15 +42,16 @@ def test_interactive_argv_drops_the_preassigned_id():
     adapter = CodexAdapter(extra_args=["--sandbox", "workspace-write"])
     argv = adapter.interactive_argv("do the loop", "the-loop-uuid")
     assert "the-loop-uuid" not in argv
-    assert argv == ["--sandbox", "workspace-write", "do the loop"]
+    assert argv[:2] == ["--sandbox", "workspace-write"]
+    assert argv[-1].startswith("do the loop\n\n[the-loop conversation:")
 
 
-def test_interactive_resume_argv_resumes_by_recency():
+def test_interactive_resume_argv_resumes_the_recorded_id():
     adapter = CodexAdapter()
     argv = adapter.interactive_resume_argv("continue", "the-loop-uuid")
-    assert argv[:2] == ["resume", "--last"]
+    assert argv[:2] == ["resume", "the-loop-uuid"]
     assert argv[-1] == "continue"
-    assert "the-loop-uuid" not in argv
+    assert "--last" not in argv
 
 
 def test_effort_levels_map_to_config_overrides():
@@ -89,9 +91,7 @@ def test_prepare_environment_trusts_cwd_worktree_root_and_workspace_root(
     assert (tmp_path / "codex-home" / "config.toml").read_text() == text
 
 
-def test_prepare_environment_never_rewrites_an_operator_decision(
-    tmp_path, monkeypatch
-):
+def test_prepare_environment_never_rewrites_an_operator_decision(tmp_path, monkeypatch):
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
     cwd = tmp_path / "repo"
     (cwd / ".git").mkdir(parents=True)

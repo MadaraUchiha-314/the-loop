@@ -1,0 +1,27 @@
+{
+  "description": "Codex lifecycle hooks for the-loop. Trust these exact definitions with /hooks before unattended execution.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/hooks/the-loop-gate.py\" codex",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|exec_command|.*create_pull_request",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/hooks/the-loop-link-pr.py\""
+          }
+        ]
+      }
+    ]
+  }
+}
