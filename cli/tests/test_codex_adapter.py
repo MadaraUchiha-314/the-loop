@@ -59,3 +59,48 @@ def test_effort_levels_map_to_config_overrides():
     assert adapter.effort_args("ultra") == ("-c", "model_reasoning_effort=ultra")
     # A level codex cannot express is not offered, never guessed (decision-124).
     assert adapter.effort_args("max") == ()
+
+
+def test_prepare_environment_trusts_cwd_worktree_root_and_workspace_root(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+    workspace = tmp_path / "workspace"
+    clone = workspace / "github.com" / "o" / "r"
+    (clone / ".git" / "worktrees" / "wt").mkdir(parents=True)
+    wt = workspace / ".worktrees" / "wt"
+    wt.mkdir(parents=True)
+    (wt / ".git").write_text(f"gitdir: {clone}/.git/worktrees/wt\n")
+
+    result = CodexAdapter().prepare_environment(str(wt), root=str(workspace))
+    assert result.ok, result.error
+    text = (tmp_path / "codex-home" / "config.toml").read_text()
+    import os as _os
+
+    for key in (str(wt), str(clone), str(workspace)):
+        assert f'[projects."{_os.path.realpath(key)}"]' in text
+    assert text.count('trust_level = "trusted"') == len(
+        [line for line in text.splitlines() if line.startswith("[projects.")]
+    )
+
+    # Idempotent: a second call appends nothing.
+    again = CodexAdapter().prepare_environment(str(wt), root=str(workspace))
+    assert again.ok and again.applied == []
+    assert (tmp_path / "codex-home" / "config.toml").read_text() == text
+
+
+def test_prepare_environment_never_rewrites_an_operator_decision(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    cwd = tmp_path / "repo"
+    (cwd / ".git").mkdir(parents=True)
+    import os as _os
+
+    key = _os.path.realpath(str(cwd))
+    (tmp_path / "config.toml").write_text(
+        f'[projects."{key}"]\ntrust_level = "untrusted"\n'
+    )
+    result = CodexAdapter().prepare_environment(str(cwd))
+    assert result.ok
+    assert 'trust_level = "untrusted"' in (tmp_path / "config.toml").read_text()
