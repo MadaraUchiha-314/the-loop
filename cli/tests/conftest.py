@@ -1,6 +1,7 @@
 """Shared fixtures and doubles for the CLI test suite."""
 
 import os
+import shlex
 import sys
 import threading
 import time
@@ -546,3 +547,41 @@ def _hermetic_eventlog(monkeypatch):
     )
     yield
     eventlog.reset()
+
+
+class PreflightTmux:
+    """A ``tmux`` that satisfies the daemon's preflight and nothing more."""
+
+    def __init__(self, bindir: Path, log: Path):
+        self.bindir = bindir
+        self.log = log
+
+    def path(self, rest: str) -> str:
+        """``rest`` (a PATH value) with the stub's directory in front of it."""
+        return os.pathsep.join(p for p in (str(self.bindir), rest) if p)
+
+
+@pytest.fixture
+def preflight_tmux(tmp_path):
+    """A stub ``tmux`` for daemon tests that only need the preflight (issue-454).
+
+    ``the-loop start`` refuses to run without tmux on PATH
+    (``runner.check_dependencies``), but a daemon test that spawns no session never
+    runs it. So the test brings its own rather than depending on the host's (or
+    touching the host's tmux server): the stub records any invocation and fails it,
+    and this fixture fails the test if one happened. A test that starts to exercise
+    tmux for real must then declare a real dependency instead of riding on this.
+    """
+    bindir = tmp_path / "preflight-bin"
+    bindir.mkdir()
+    log = tmp_path / "preflight-tmux.log"
+    stub = bindir / "tmux"
+    stub.write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' \"$*\" >> {shlex.quote(str(log))}\n"
+        "echo 'preflight-only tmux stub: this test must not run tmux' >&2\n"
+        "exit 1\n"
+    )
+    stub.chmod(0o755)
+    yield PreflightTmux(bindir, log)
+    assert not log.exists(), f"a preflight-only test ran tmux: {log.read_text()}"

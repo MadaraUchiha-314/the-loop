@@ -528,13 +528,20 @@ def test_critic_command_is_registered():
     assert "critic" in {c.name for c in iter_commands()}
 
 
-def test_list_reports_availability(tmp_path: Path, capsys):
+def test_list_reports_availability(tmp_path: Path, capsys, monkeypatch):
+    # The test decides what is installed, not the machine running it (issue-454):
+    # `claude` resolves and `cursor-agent` does not, on every host.
+    monkeypatch.setattr(
+        critics.shutil, "which", lambda b: "/stub/claude" if b == "claude" else None
+    )
     write_config(
         tmp_path,
         """
         - name: cursor-gpt
           harness: cursor
           model: gpt-5.5
+        - name: claude-opus
+          harness: claude
         - name: paused
           harness: claude
           enabled: false
@@ -546,7 +553,9 @@ def test_list_reports_availability(tmp_path: Path, capsys):
     rows = json.loads(capsys.readouterr().out)
     by_name = {row["name"]: row for row in rows}
     assert by_name["cursor-gpt"]["binary"] == "cursor-agent"
-    assert by_name["cursor-gpt"]["available"] is False  # not installed in CI
+    assert by_name["cursor-gpt"]["available"] is False
+    assert by_name["claude-opus"]["binary"] == "claude"
+    assert by_name["claude-opus"]["available"] is True
     assert by_name["paused"]["enabled"] is False
     assert "no built-in invocation" in by_name["broken"]["error"]
 
