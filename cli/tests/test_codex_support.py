@@ -11,6 +11,7 @@ import pytest
 from test_harness_gate import load_gate, report
 from the_loop import install
 from the_loop.codex_support import (
+    BEGIN,
     conversation_marker,
     prepare_instructions,
     rollout_path,
@@ -508,18 +509,38 @@ def test_spawn_setup_keeps_untracked_instructions_out_of_git(tmp_path, home):
     assert status.stdout == ""
 
 
-def test_spawn_setup_reports_a_tracked_instructions_file(tmp_path, home):
+@pytest.mark.parametrize("filename", ["AGENTS.md", "AGENTS.override.md"])
+@pytest.mark.parametrize("global_filename", ["AGENTS.md", "AGENTS.override.md"])
+def test_spawn_setup_preserves_tracked_instructions_and_uses_global_file(
+    tmp_path, home, filename, global_filename
+):
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q")
-    (repo / "AGENTS.md").write_text("Project rules.\n")
-    _git(repo, "add", "AGENTS.md")
+    (repo / filename).write_text("Project rules.\n")
+    _git(repo, "add", filename)
     _git(repo, "commit", "-qm", "rules")
+    home.mkdir()
+    global_agents = home / global_filename
+    global_agents.write_text("Operator rules.\n")
     result = CodexAdapter().prepare_environment(str(repo))
     assert result.ok
-    assert any("AGENTS.md is tracked" in note for note in result.applied)
+    assert (repo / filename).read_text() == "Project rules.\n"
+    assert global_agents.read_text().startswith("Operator rules.\n")
+    assert BEGIN in global_agents.read_text()
+    assert (
+        subprocess.run(
+            ["git", "-C", str(repo), "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        == ""
+    )
+    assert CodexAdapter().prepare_environment(str(repo)).ok
+    assert global_agents.read_text().count(BEGIN) == 1
     exclude = repo / ".git/info/exclude"
-    assert "/AGENTS.md" not in exclude.read_text().splitlines()
+    assert f"/{filename}" not in exclude.read_text().splitlines()
 
 
 def test_a_worktree_main_root_at_home_is_never_trusted(tmp_path, home, monkeypatch):

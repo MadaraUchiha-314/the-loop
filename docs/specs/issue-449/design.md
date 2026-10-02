@@ -45,12 +45,16 @@ available through the installed skill and managed instruction block instead.
 
 ## PR review follow-up
 
-The PR #450 review found ten issues; nine are fixed here, one is deferred:
+The PR #450 review found ten issues; the tracked-instructions follow-up is now
+resolved using Codex's native global instruction source:
 
 - The managed `AGENTS.md` block is kept out of git in work-item checkouts via
   `info/exclude` (shared helper `the_loop.gitexclude`, also used for the spec
-  tree). A *tracked* `AGENTS.md` is reported but still edited; where Codex could
-  read the instructions instead needs a real Codex binary to settle (tasks A8).
+  tree). When the effective project instructions file is tracked, its bytes are
+  preserved and the managed block is installed in `$CODEX_HOME/AGENTS.md` (or its
+  existing `AGENTS.override.md`). Codex loads global instructions before project
+  instructions; a read-only probe with codex-cli 0.160.0 confirmed both sources.
+  Explicit project-scope installation still writes into the requested project.
 - `mcp-call` no longer appends interactive launch args to `codex exec`.
 - A linked worktree's main root goes through `is_too_broad()` before it is trusted.
 - One `codex_home()` (stripped, `~` expanded) serves trust, hooks, rollouts and install.

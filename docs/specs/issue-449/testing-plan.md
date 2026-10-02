@@ -30,7 +30,7 @@ riskTier: 4
 | T2 | R2.3 | `test_rollout_lookup_rejects_unsafe_or_unknown_id`, `test_rollout_lookup_requires_explicit_absolute_directory_metadata`, `test_rollout_lookup_refuses_a_wrong_cwd_ambiguous_marker_and_escaping_symlink` |
 | T3 | R2.4 | `test_a_resolved_rollout_is_not_searched_for_again` |
 | T4 | R3.1 | `test_instruction_setup_preserves_operator_text_and_hook_choices`, `test_native_override_instructions_are_used_without_changing_other_file`, `test_instruction_setup_rejects_an_escaping_symlink` |
-| T5 | R3.2 | `test_spawn_setup_keeps_untracked_instructions_out_of_git`, `test_spawn_setup_reports_a_tracked_instructions_file` |
+| T5 | R3.2 | `test_spawn_setup_keeps_untracked_instructions_out_of_git`, `test_spawn_setup_preserves_tracked_instructions_and_uses_global_file` |
 | T6 | R3.3 | `test_spawn_setup_uses_one_user_hook_definition_across_worktrees`, `test_a_stale_gate_from_another_install_is_replaced_not_duplicated` |
 | T7 | R3.4 | `test_parallel_codex_trust_writes_preserve_every_project`, `test_a_worktree_main_root_at_home_is_never_trusted` |
 | T8 | R3.5 | `test_codex_home_is_stripped_and_expanded_for_every_writer` |
@@ -41,6 +41,7 @@ riskTier: 4
 | T13 | R5.3 | `test_disconnected_graphql_retries_a_read_once_but_never_a_write` |
 | T14 | R1.3 | Codex JSONL critic output and usage tests in `test_codex_support.py` |
 | T15 | R1.1, R1.2 | Manual end-to-end run on `the-loop-testing` with a real Codex binary, recorded in `evidence/` (pending) |
+| T16 | R3.2 | Real codex-cli 0.160.0 read-only instruction-discovery probe loads global and tracked project guidance; recorded in `evidence/completion-verification.md` |
 
 ## Not automated
 

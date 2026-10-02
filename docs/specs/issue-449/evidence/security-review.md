@@ -9,7 +9,7 @@ security finding after S1 was fixed. This does not satisfy a remote approval gat
 | Boundary | Evidence and result |
 | --- | --- |
 | Conversation identity | UUID validation, exact absolute directory metadata, unique launch-marker matching and session-store containment. Negative tests cover unsafe IDs, wrong directories, ambiguity, symlink escape and malformed directory metadata. Passing. |
-| Instruction files | Managed blocks preserve existing content; malformed managed blocks are rejected. Files escaping the checkout are refused. Writes retain modes and check for concurrent changes. Existing preservation and escape tests pass. |
+| Instruction files | Managed blocks preserve existing content; malformed managed blocks are rejected. Files escaping the checkout are refused. Writes retain modes and check for concurrent changes. Tracked project instructions remain unchanged; global guidance preserves operator text and honors `AGENTS.override.md`. Four project/global filename combinations pass. Existing preservation and escape tests pass. |
 | Hook and workspace trust | Hook installation reports the native trust requirement and does not bypass it. Sandbox and approval choices remain operator-owned. Trust preparation preserves existing TOML entries and uses atomic locked writes. Existing tests pass. |
 | Harness delegation | Unknown harnesses block. Arguments use subprocess argv lists; Codex JSONL extraction feeds local JSON validation. Existing MCP and critic-output tests pass. |
 | GitHub retries | Only a disconnected GraphQL read is retried; mutation and semantic failures are not replayed. Covered in the earlier Codex regression record. |

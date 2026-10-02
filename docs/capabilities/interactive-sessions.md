@@ -435,7 +435,10 @@ Environment preparation preserves existing `AGENTS.md` (or the higher-priority
 bundled skill and command procedures. The block holds this machine's absolute
 paths, so in a work-item checkout an untracked instructions file is added to
 git's checkout-local `info/exclude` and never reaches the project's history; a
-tracked one is left as a local change and reported. The CLI wheel and source
+tracked one stays unchanged, with the managed block placed in Codex's global
+instructions instead (`$CODEX_HOME/AGENTS.md` or its existing `AGENTS.override.md`).
+Codex reads both global and project instructions. Explicit project-scope
+installation still writes into the requested project. The CLI wheel and source
 distribution both include these resources; a consuming repository need not
 contain them. The Stop hook is installed in `$CODEX_HOME/hooks.json`, so its
 definition and trust review are stable across worktrees. The gate is identified

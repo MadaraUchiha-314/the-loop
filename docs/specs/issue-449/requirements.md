@@ -55,7 +55,8 @@ per-work-item choice and named Codex as its first follow-up.
   `AGENTS.override.md` and maintain one identified managed block.
 - **R3.2** The managed block SHALL NOT reach the project's history: an untracked
   instructions file in a work-item checkout SHALL be excluded from git, and a tracked
-  one SHALL be reported.
+  one SHALL remain unchanged, with the managed block installed in Codex's global
+  instructions instead.
 - **R3.3** One Stop hook SHALL exist per Codex home. Reinstalling from another
   interpreter or install path SHALL replace the previous gate, not add a second one.
 - **R3.4** Directory trust SHALL be written to `$CODEX_HOME/config.toml` without
@@ -84,6 +85,4 @@ per-work-item choice and named Codex as its first follow-up.
 
 ## Out of scope
 
-- Writing instructions somewhere other than the checkout when the project tracks its
-  own `AGENTS.md` (needs Codex's instruction-source behaviour verified on a real binary).
 - Deduplicating the plugin's Stop hook against the daemon-installed one.

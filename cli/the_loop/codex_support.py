@@ -258,8 +258,8 @@ def prepare_instructions(
 
     ``keep_out_of_git`` is for per-work-item checkouts: the managed block holds
     this machine's absolute paths, so an untracked instructions file is added
-    to the checkout's ``info/exclude`` instead of being left for a session to
-    commit into the project's history.
+    to the checkout's ``info/exclude``. If the project tracks the instructions
+    file, the managed block goes in Codex's global instructions instead.
     """
     try:
         resources = resources_root()
@@ -278,6 +278,9 @@ def prepare_instructions(
             return TrustResult(
                 ok=False, error="Codex instruction files resolve outside the checkout"
             )
+        if keep_out_of_git and _is_tracked_in_git(agents):
+            home = hook_home or codex_home()
+            return prepare_instructions(str(home), global_scope=True, hook_home=home)
         original = agents.read_text(encoding="utf-8") if agents.exists() else ""
         if (
             original.count(BEGIN) != original.count(END)
@@ -359,7 +362,7 @@ def prepare_instructions(
                 "Codex Stop hook installed; review and trust this definition once using /hooks"
             )
         return TrustResult(applied=notes).merge(result)
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
         return TrustResult(
             ok=False, error=f"could not prepare Codex instructions: {exc}"
         )
@@ -377,6 +380,25 @@ def _is_codex_gate(hook: object) -> bool:
         len(tokens) >= 2
         and tokens[-1] == "codex"
         and Path(tokens[-2]).name == GATE_SCRIPT
+    )
+
+
+def _is_tracked_in_git(path: Path) -> bool:
+    return (
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(path.parent),
+                "ls-files",
+                "--error-unmatch",
+                "--",
+                path.name,
+            ],
+            capture_output=True,
+            timeout=10,
+        ).returncode
+        == 0
     )
 
 

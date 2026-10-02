@@ -4,7 +4,8 @@ The completion review found three gaps after `65985a8`: malformed rollout
 directory metadata was accepted, packaged instructions lacked the required
 writing skill, and installation pages omitted Codex. The fixes are verified
 locally. Remote review, CI, approval and the requested fresh end-to-end run
-remain unverified.
+remain unverified in the original restricted-session record below. The live
+follow-up at the end records the subsequently restored access and fresh test.
 
 ## Environment
 
@@ -192,3 +193,84 @@ github.com. No new test issue was created and no live run is claimed.
 The main workspace's `.git` is read-only. The local completion commits are
 prepared in `/private/tmp/pr450-completion-checkout`; no remote push or merge
 has occurred.
+
+## Live follow-up: source install and tracked instructions
+
+On 2026-10-02, the current checkout was fast-forwarded from `65985a8` to
+`5d2ca97`. The operator's local edits remain in a Git stash. Existing GitHub
+credentials were supplied to the daemon by reference; their values were not
+printed or written into evidence.
+
+```sh
+uv tool install --force /Users/rohithr31/workspace/github.com/MadaraUchiha-314/the-loop/cli
+```
+
+Installed distribution: `the-loopy-one==19.19.0`. Its `direct_url.json` points
+at this checkout's `cli` directory. SHA-256 comparisons confirmed that installed
+`codex_support.py` and `harness/codex_agent.py` matched the pulled source; the
+writing skill was present in the installed resources.
+
+From the operator's requested devbox cwd:
+
+```sh
+the-loop install codex --scope user
+the-loop start
+the-loop status
+```
+
+```text
+service running — http://127.0.0.1:4114, healthy
+poller running
+```
+
+The installed Stop gate was reviewed through Codex's native hook screen.
+Only this gate was trusted; the resulting Stop row showed one installed and
+one active hook. No hook-trust bypass flag or trust-file edit was used.
+
+A real codex-cli 0.160.0 read-only probe ran from this repository:
+
+```sh
+codex --ask-for-approval never exec --sandbox read-only --json   'This is a read-only instruction-discovery probe for PR 450. Without using tools or editing files, identify the global instruction source and the project instruction source already supplied to this conversation. Quote one line from each that establishes the-loop operating instructions. Do not perform work on any ticket.'
+```
+
+The native conversation `01a0fe02-9e5c-7cc2-985c-8a5f61220c91` reported both the
+global the-loop block and the project's “Working in the-loop” instructions.
+The JSONL contained no tool calls, and the project stayed clean. This agrees
+with [Codex's documented global/project instruction discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md).
+
+A8 regression: both tracked project instruction filenames failed preservation
+before the fix. Spawn preparation now installs the managed block in Codex's
+global instruction file when the effective project file is tracked. Four
+combinations of project/global `AGENTS.md` and `AGENTS.override.md` verify
+unchanged project bytes, a clean Git status, operator text preservation, and
+idempotent preparation. Explicit project-scope installation is unchanged.
+
+```sh
+TMPDIR=/private/tmp uv run python -m pytest -q   cli/tests/test_codex_support.py cli/tests/test_codex_adapter.py   cli/tests/test_dispatcher_harness.py cli/tests/test_harness_gate.py   cli/tests/test_mcp_integration.py cli/tests/test_install.py   cli/tests/test_version_lockstep.py
+```
+
+```text
+153 passed in 2.29s
+```
+
+Ruff lint and format checks, Pyright, six configuration validations, and
+Markdownlint passed. The initial full-suite run on the pulled branch reported
+5261 passed and four failures: two tests assumed Cursor was absent, one
+compared macOS's temporary-directory alias without resolving it, and one
+expected a numeric POSIX session ID from macOS `ps`. A rerun from `cli` with
+canonical temp paths removed the first three conditions but omitted tmux from
+PATH, causing eight ingress-test failures. Rerunning the two affected ingress
+test files with Homebrew's tmux available reported 10 passed and one failure:
+the same macOS session-ID assertion (`ps` reports `sess=0`). These environment
+results are not a green suite.
+The three GitHub checks on `5d2ca97` were successful.
+
+Fresh smoke issue: [the-loop-testing#3](https://github.com/MadaraUchiha-314/the-loop-testing/issues/3).
+It was created through `the-loop ticket create` and started through
+`the-loop sessions start` from devbox. The service prepared its worktree,
+posted the phase-selection checklist, and recorded `graph.parked` plus
+`session.spawn_deferred` with reason `parked-at-human-start-gate`, selecting
+Codex as the deployment default. The CLI's start command returned an error
+because no session had spawned; the graph's events show it waiting correctly
+at the human gate. No selection or approval was fabricated. End-to-end
+execution and completion remain pending the operator's phase selection.
