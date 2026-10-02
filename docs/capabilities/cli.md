@@ -54,7 +54,18 @@ self-learning/ML capabilities.
   only) complete the set. Every lifecycle act (`pr create`, `pr merge`, `pr
   resolve-thread`, `ticket close`) SHALL act only for a work item registered on the
   executing instance, with an ad-hoc `the-loop do` work item as the one exception
-  (decision-140 D8). Discovery SHALL also find a PR opened from a fork (`--head-owner`).
+  (decision-140 D8). Registered means **accepted** (issue-453, decision-141): a live
+  session record, a live session recording the target as its pull request, **or** a
+  control record this instance wrote (its `instance` is this instance's name as the
+  config declares it) for a work item not stamped `ended` — what `sessions start` leaves
+  when it parks an item at its first human gate without a session. The control-record
+  source reaches the work item itself only, never a pull request. `ticket close` on
+  such an item SHALL also cancel its pending start, recording the same `stop` as
+  `sessions stop` (and `startCancelled: true`), so no later event launches it; a second
+  close is exit 0 and records nothing. A record another instance wrote, an unnamed
+  record on a named instance (and the reverse), an ended item's record and an
+  unreadable one SHALL grant nothing. Discovery SHALL also find a PR opened from a fork
+  (`--head-owner`).
   Since issue-370 it is the **only** writer of the work item's `pullRequests[]`, and the
   plugin's `PostToolUse` hook runs it when a session creates a pull request, so the record
   does not depend on the agent remembering the step.
@@ -456,6 +467,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-453 | Lifecycle authority for an accepted, parked work item (2026-10-02): `core.github_ops._authority` gains a second source of ownership beside the session registry — the control record this instance wrote for a work item not yet ended — so `ticket close`, `pr create`, `pr merge` and `pr resolve-thread` act on an item `sessions start` parked at its first human gate without a session; `ticket close` on such an item also records the `stop` that cancels its pending start (`startCancelled`), idempotently. A record another instance wrote, an ended item's and an unreadable one grant nothing | [spec](../specs/issue-453/), [decision-141](../decisions/decision-141.md), [ticket](../cli/commands/ticket.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/453) |
 | issue-447 | The coding harness reaches GitHub through `the-loop`'s verbs (2026-09-30): `comment`, `ticket show\|create` and `pr create\|status\|threads\|merge` over `ghapi.GitHubClient`, routed through a running service and otherwise in-process with a stderr note (`harness_routed`, never an auto-start); `pr create` links what it opens; `pr merge` obeys `routing.mergeOnApproval`; `sessions link-pr --discover` asks GitHub for the branch's open pull requests. The skill and the slash commands name the verbs, `gh` only as the fallback | [spec](../specs/issue-447/), [decision-140](../decisions/decision-140.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/447) |
 | issue-442 | The daemon reaches GitHub through PyGithub, never through `gh` (2026-09-30): one client (`ghapi.GitHubClient`) under one token (`integrations.github.api.tokenEnv`, read from the environment at call time) behind every write and read — the paper trail, `ask`, `add-channel`/`add-collaborator`, `channels records`, the announcement, reactions, the existence check, the poller, the process graph's labels and comments, the self-diagnosis issue; `integrations.github.transport` and `.cli` retired at config `0.11.0` with a migration that names the token; `gh` left the environment table; a missing token is one warning per writer, the poller's pre-flight and the graph's refusal | [spec](../specs/issue-442/), [decision-139](../decisions/decision-139.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/442) |
 | issue-374 | `the-loop instances list\|register\|unregister` (2026-09-30): the fleet a manager serves, listed on any instance and edited on a manager by writing `instance.manager.instances` through the config splice — thin clients of the `instances` routes; `the-loop status` carries the fleet document as `instances` and prints a headline and one row per instance on a manager; `the-loop start` refuses an unknown `instance.role` or an unnamed manager | [spec](../specs/issue-374/), [decision-138](../decisions/decision-138.md), [instances](instances.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/374) |

@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import replace
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from .. import eventlog
 from ..authz import mark_self_authored
@@ -151,6 +151,31 @@ def _is_adhoc(item: WorkItemRef, config: Optional[Mapping[str, Any]]) -> bool:
     )
 
 
+def _accepted_here(item: WorkItemRef, config: Optional[Mapping[str, Any]]) -> bool:
+    """Whether this instance accepted ``item`` and the item has not ended (issue-453).
+
+    The second source of ownership beside the session registry. A work item
+    `the-loop sessions start` accepts and parks at its first human gate has a
+    control record and no session (issue-358); the record is what the instance
+    wrote when it took the item, so it is what says the item is the instance's.
+    Three conditions, each failing closed: the record exists and reads; its
+    ``instance`` is this instance's name **as the config declares it** (an
+    unnamed instance owns unnamed records only — a planted record cannot name
+    itself in); and the portable record is not stamped ``ended``, because the
+    daemon forgets an ended item's arming and so does this.
+    """
+    try:
+        store = core_sessions._control_store(dict(config or {}))
+        record = store.get(item)
+        if record is None:
+            return False
+        if record.instance != core_sessions._instance(dict(config or {})).name:
+            return False
+        return store.ended(item) is None
+    except Exception:  # noqa: BLE001 — an unreadable record grants nothing
+        return False
+
+
 def _authority(
     target: WorkItemRef,
     work_item: str,
@@ -167,6 +192,12 @@ def _authority(
     request it names, because a tactical task is exactly "merge that PR". The
     registry is the executing process's, like the merge policy, so a routed
     verb answers to the daemon's records.
+
+    Registered means **accepted**, not only session-backed (issue-453,
+    decision-141): a work item this instance armed and parked at its first
+    human gate has a control record and no session yet, and it is this
+    instance's from the record on. That source reaches ``target`` itself only
+    — a parked item has recorded no pull request.
     """
     registry = _registry(config, registry_dir)
     if registry.find_by_work_item(target) is not None:
@@ -174,6 +205,8 @@ def _authority(
     for record in registry.list_sessions():
         if record.is_live and record.owns(target):
             return ""
+    if _accepted_here(target, config):
+        return ""
     if work_item:
         try:
             item = _github_ref(work_item)
@@ -852,6 +885,12 @@ def close_ticket(
     names), like every lifecycle act (:func:`_authority`). ``reason`` is
     GitHub's ``state_reason``: ``completed`` or ``not_planned``. A ticket a merge's
     ``Closes #N`` already closed closes again as a no-op.
+
+    Closing an item this instance accepted but never launched a session for
+    (issue-453) also cancels its pending start — the ``stop`` an operator used
+    to have to type after closing with ``gh`` — so the daemon's spawn gate
+    cannot launch it later. ``startCancelled`` says whether that happened; a
+    second close finds nothing to cancel and is exit 0 all the same.
     """
     target = _trusted(_github_ref(ref), config)
     if reason not in CLOSE_REASONS:
@@ -872,7 +911,57 @@ def close_ticket(
         return _failed(data, f"could not close {target.ref}: {exc}")
     data["closed"] = True
     eventlog.emit("work_item.ticket_closed", work_item=target.ref, reason=reason)
-    return _done(data, f"closed {target.ref} ({reason})")
+    lines = [f"closed {target.ref} ({reason})"]
+    cancelled, note = _cancel_pending_start(target, config, registry_dir)
+    data["startCancelled"] = cancelled
+    if cancelled:
+        lines.append(f"cancelled the pending start for {target.ref}")
+    result = _done(data, *lines)
+    if note:
+        result["messages"].append({"stream": "err", "text": note})
+    return result
+
+
+def _cancel_pending_start(
+    target: WorkItemRef, config: Optional[Mapping[str, Any]], registry_dir: str
+) -> Tuple[bool, str]:
+    """Disarm a closed work item that has no session (issue-453 R2.2).
+
+    ``(True, "")`` when a ``stop`` was recorded; ``(False, "")`` when there was
+    nothing to cancel — a live session (its closure is the daemon's, on the
+    ``closed`` event) or a record that no longer requests a start; ``(False,
+    <warning>)`` when the record could not be written, since the ticket is
+    closed either way and ``sessions stop`` is the remedy. The record is the
+    same one ``sessions stop`` writes, so the spawn gate reads it the same way.
+    """
+    from ..control import STOP
+
+    actor = ""
+    try:
+        if _registry(config, registry_dir).find_by_work_item(target) is not None:
+            return False, ""
+        store = core_sessions._control_store(dict(config or {}))
+        if not store.start_requested(target):
+            return False, ""
+        actor = core_sessions._local_actor()
+        instance = core_sessions._instance(dict(config or {})).name
+        store.record(target, STOP, source="cli", actor=actor, instance=instance)
+        store.clear_started(target)
+    except Exception as exc:  # noqa: BLE001 — the close happened; say what did not
+        return False, (
+            f"warning: could not cancel the pending start for {target.ref} "
+            f"({exc}); run `the-loop sessions stop {target.ref}` so it is not "
+            "launched later"
+        )
+    eventlog.emit(
+        "control.command",
+        work_item=target.ref,
+        command=STOP,
+        source="cli",
+        actor=actor or None,
+        effect="start-cancelled",
+    )
+    return True, ""
 
 
 def resolve_thread(
