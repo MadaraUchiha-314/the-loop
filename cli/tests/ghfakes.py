@@ -207,6 +207,7 @@ class FakeGitHubClient(GitHubClient):
             title=str(data.get("title") or ""),
             url=str(data.get("html_url") or ""),
             closed_by=str(((data.get("closed_by") or {}).get("login")) or ""),
+            state_reason=str(data.get("state_reason") or ""),
         )
 
     def labels_of(self, owner, repo, number, host="") -> List[str]:

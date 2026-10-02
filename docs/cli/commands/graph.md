@@ -260,6 +260,11 @@ daemon-run work item's state lives in the **session's checkout** — a worktree 
   was silent, and `graph status github:…#1` from the daemon's config directory reported
   `phase-selection` for an item three nodes further on.
 
+When nothing is found and the ref has **ended**, `status` prints the archived record the
+closure kept instead — `issue-3: ARCHIVED — completed (at complete)` and the lines
+[`check`](/cli/commands/check#an-archived-work-item) prints
+([issue-452](https://github.com/MadaraUchiha-314/the-loop/issues/452)).
+
 Only the read verbs (`status`, and [`check`](/cli/commands/check)) resolve a checkout
 this way. A mutating verb writes into the checkout it is pointed at, and that stays
 your choice: `--repo`, or the directory you run it from.

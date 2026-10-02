@@ -163,7 +163,18 @@ def check(
     no path through this function that reaches the graph with a path the boundary
     rejected. The body names nothing the caller did not already send: no path, no
     error text, so the 200 tells them strictly less than the 400 did.
+
+    **An ended work item whose state is not here is answered from its archive**
+    (issue-452). Normal cleanup removes the checkout that held
+    `work-item-state.json`; the closure copied the ending into the portable
+    record first. So when the outer loop's state file is not found, the work item
+    was named by **ref**, and that ref's portable record carries an `ended` stamp,
+    the report is the archived one — its outcome and terminal record, and no node
+    findings against a directory that is not the work item's. A found state file
+    always wins, and `--recompute` over a spec directory that is present still
+    evaluates its artifacts.
     """
+    named = work_item
     work_item = work_item_id(work_item)
     if not repo_resolves(repo):
         return {
@@ -174,11 +185,18 @@ def check(
             "nodes": [],
             "repoResolved": False,
         }
-    return (
-        _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir)
-        .status(work_item, recompute=recompute)
-        .as_dict()
-    )
+    runtime = _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir)
+    report = runtime.status(work_item, recompute=recompute).as_dict()
+    if report["stateFound"] or pr is not None or named.strip() == work_item:
+        return report
+    if recompute and runtime.spec_dir(work_item).is_dir():
+        return report
+    from .. import archive
+
+    stamp = archive.ended_for(named.strip())
+    if stamp is None:
+        return report
+    return archive.archived_report(work_item, named.strip(), stamp, report["statePath"])
 
 
 def complete(

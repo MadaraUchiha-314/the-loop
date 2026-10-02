@@ -614,6 +614,7 @@ class GitHubPollProvider(PollProvider):
             title=state.title,
             url=state.url,
             actor=state.closed_by,
+            reason=state.state_reason,
         )
 
     def closure_event(self, ref: WorkItemRef, closure: Closure) -> RoutedEvent:
@@ -646,6 +647,10 @@ class GitHubPollProvider(PollProvider):
             payload["pull_request"] = entity
         else:
             event = "issues"
+            # The webhook's own field (issue-452), and absent when GitHub gave
+            # none, as `sender` is.
+            if closure.reason:
+                entity["state_reason"] = closure.reason
             payload["issue"] = entity
         return RoutedEvent(
             event=event,

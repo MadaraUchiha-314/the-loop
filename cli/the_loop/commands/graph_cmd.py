@@ -433,6 +433,11 @@ class CheckCommand(Command):
                 if report.get("repoResolved") is False:
                     print(f"{report['workItem']}: UNREAD — {root} is not a directory")
                     continue
+                if report.get("archived"):
+                    # Ended and cleaned up (issue-452): the archive is the
+                    # answer, and there are no node findings to list.
+                    _print_archived(report, note)
+                    continue
                 state = "ok" if report["ok"] else "UNMET"
                 print(f"{report['workItem']}: {state} (at {report['currentNode']})")
                 if not args.all:
@@ -562,6 +567,70 @@ def _session_checkout(work_item: str) -> Optional[Path]:
     return checkout.resolve()
 
 
+def _archived_lines(report: Dict[str, Any]) -> List[str]:
+    """The table for an archived work item (issue-452).
+
+    Ended upstream, its checkout cleaned up, answered from the terminal record
+    the closure kept — or, when there is none, saying so rather than printing a
+    start-node position. Every value printed here was filtered when it was
+    recorded (``the_loop.archive``), so none of it can carry a terminal escape.
+    """
+    archived = report["archived"]
+    node = str(report.get("currentNode") or "")
+    head = f"{report['workItem']}: ARCHIVED — {archived.get('outcome') or 'unknown'}"
+    lines = [head + (f" (at {node})" if node else "")]
+    actor = str(archived.get("actor") or "") or "an unnamed actor"
+    lines.append(
+        f"  ended: {archived.get('state') or 'closed'} by {actor} at "
+        f"{archived.get('at') or '?'} ({archived.get('reason') or 'no reason'})"
+    )
+    terminal = archived.get("terminal")
+    if not isinstance(terminal, dict):
+        lines.append(
+            "  detail: unavailable — no terminal record was kept when it closed "
+            "(it closed before issue-452, or its checkout could not be read), so "
+            "its graph position is not known here"
+        )
+        return lines
+    if terminal.get("completedAt"):
+        lines.append(f"  completed: {terminal['completedAt']}")
+    selections = terminal.get("selections") or {}
+    skipped = selections.get("skipped") or []
+    opted = selections.get("optedIn") or []
+    lines.append(
+        "  selections: "
+        + (f"skipped {', '.join(skipped)}" if skipped else "no phase skipped")
+        + (f"; opted in {', '.join(opted)}" if opted else "")
+    )
+    chosen = [
+        f"{key} {selections[key]}"
+        for key in ("harness", "model", "effort", "surface", "sessionPerPr")
+        if selections.get(key)
+    ]
+    if chosen:
+        lines.append(f"  choices: {', '.join(chosen)}")
+    for pr in terminal.get("pullRequests") or []:
+        url = f" {pr['url']}" if pr.get("url") else ""
+        lines.append(f"  pull request: {pr.get('ref')} ({pr.get('state') or '?'}){url}")
+    evidence = terminal.get("evidence") or []
+    if terminal.get("specDir"):
+        lines.append(
+            f"  evidence: {terminal['specDir']}/evidence/"
+            + (f" — {', '.join(evidence)}" if evidence else " — none recorded")
+        )
+    return lines
+
+
+def _print_archived(report: Dict[str, Any], note: str = "") -> None:
+    lines = _archived_lines(report)
+    print(lines[0])
+    if note:
+        print(f"  {note}")
+    print(f"  {_state_line(report)}")
+    for line in lines[1:]:
+        print(line)
+
+
 def _state_line(report: Dict[str, Any], recompute: bool = False) -> str:
     """``state: <path>`` — which ``work-item-state.json`` the report is about.
 
@@ -571,6 +640,11 @@ def _state_line(report: Dict[str, Any], recompute: bool = False) -> str:
     points at the two ways to reach the right checkout.
     """
     path = str(report.get("statePath") or "")
+    if report.get("archived"):
+        return (
+            f"state: {path} (not found; reporting the terminal record this "
+            "machine kept when the work item ended — issue-452)"
+        )
     if report.get("stateFound"):
         pointer = str(report.get("pointer") or "")
         if recompute and pointer and pointer != report.get("currentNode"):
@@ -1058,6 +1132,9 @@ class GraphCommand(Command):
                 pr_repo=args.pr_repo,
                 spec_dir=spec_dir,
             )
+            if report.get("archived"):
+                _print_archived(report, note)
+                return 0 if report["ok"] else 1
             reached, ahead = _split_at_pointer(report["nodes"], report["currentNode"])
             print(f"{report['workItem']}: at {report['currentNode']}")
             if note:

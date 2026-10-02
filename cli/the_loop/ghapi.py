@@ -280,6 +280,9 @@ class GhItemState:
     url: str = ""
     #: ``closed_by.login`` — who closed the item, or "" (issue-329).
     closed_by: str = ""
+    #: ``state_reason`` — ``completed`` | ``not_planned`` | …, or "" (issue-452):
+    #: what tells a cancelled work item from a finished one on the poll path.
+    state_reason: str = ""
 
     @property
     def open(self) -> bool:
@@ -853,6 +856,7 @@ class GitHubClient:
             title=str(data.get("title") or ""),
             url=str(data.get("html_url") or ""),
             closed_by=_login(data.get("closed_by")),
+            state_reason=str(data.get("state_reason") or ""),
         )
 
     def labels_of(

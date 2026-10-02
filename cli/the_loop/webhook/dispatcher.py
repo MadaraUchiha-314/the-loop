@@ -24,7 +24,7 @@ from pathlib import Path
 from string import Template
 from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple
 
-from .. import envstate, eventlog, lifecycle
+from .. import archive, envstate, eventlog, lifecycle
 from ..announce import AnnounceConfig, SessionAnnouncer
 from ..instance import (
     REFUSALS as SCOPE_REFUSALS,
@@ -2054,7 +2054,11 @@ class Dispatcher:
             logger.debug("could not drop %s's poll ledger: %s", pr.ref, exc)
 
     def _record_closure(
-        self, work_item: WorkItemRef, routed: RoutedEvent, reason: str
+        self,
+        work_item: WorkItemRef,
+        routed: RoutedEvent,
+        reason: str,
+        terminal: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Disarm the work item and stamp it `ended` (issue-329, decision-113).
 
@@ -2070,6 +2074,14 @@ class Dispatcher:
         it a portable record of its own. Its upstream state goes where the pull
         request itself is recorded — the owner's `work-item-state.json` — and
         its nested poll ledger is dropped.
+
+        The stamp also carries how the item **ended** (issue-452): its
+        ``terminal`` record — read from the checkout by the caller before the
+        checkout went, else here from the checkout the registry still records —
+        and the ``outcome`` classified from it and the closure. That copy is what
+        `the-loop check <ref>` answers from once normal cleanup has removed the
+        checkout. ``completed`` is only ever the record's claim, never the
+        closure's: a closed ticket says nothing about which phases ran.
         """
         owner = self._owner_of(work_item)
         if owner is not None:
@@ -2095,13 +2107,18 @@ class Dispatcher:
             if (routed.delivery_id or "").startswith(POLL_CLOSURE_DELIVERY_PREFIX)
             else "webhook"
         )
-        stamp = {
+        stamp: Dict[str, Any] = {
             "state": "merged" if reason == "pr-merged" else "closed",
             "kind": "issue" if routed.event == "issues" else "pull-request",
             "reason": reason,
             "source": source,
             "actor": actor,
         }
+        if terminal is None:
+            terminal = self._terminal_record(work_item)
+        outcome = archive.closure_outcome(
+            terminal, archive.cancelled(routed.event, routed.payload, reason)
+        )
         # The lifecycle hooks hear the end first (issue-344): `work_item_complete`
         # carries the closure's own facts and decides whether it is announced.
         complete = lifecycle.run(
@@ -2127,6 +2144,11 @@ class Dispatcher:
         # (issue-375). Cleared with the roster, so the channel is free to back
         # the next work item the moment this one ends.
         self.channel_store.clear(work_item)
+        # The ending is added after the hooks heard the closure, so the
+        # `work_item_complete` contract and the announcement keep their shape.
+        stamp["outcome"] = outcome
+        if terminal is not None:
+            stamp["terminal"] = terminal
         self.control_store.record_ended(work_item, stamp)
         eventlog.emit(
             "work_item.ended",
@@ -2134,10 +2156,59 @@ class Dispatcher:
             state=stamp["state"],
             kind=stamp["kind"],
             reason=reason,
+            outcome=outcome,
             source=source,
             actor=actor or None,
             delivery_id=routed.delivery_id or None,
         )
+
+    def _terminal_record(
+        self, work_item: WorkItemRef, cwd: str = ""
+    ) -> Optional[Dict[str, Any]]:
+        """How ``work_item`` ended, read from its checkout (issue-452).
+
+        ``cwd`` is the session's checkout when the caller has one in hand;
+        otherwise the checkout the registry still records, live or closed. A
+        checkout that is no longer a directory has nothing to read, and the
+        coupling's own gates (ownership, containment) decide the rest — every
+        failure is ``None``, and a closure is never held up by it.
+        """
+        if not cwd:
+            record = self.registry.find_by_work_item(work_item, include_closed=True)
+            cwd = record.cwd if record is not None else ""
+        if not cwd or not Path(cwd).is_dir():
+            return None
+        # A coupling injected by an embedder or a test may predate issue-452;
+        # one without the read has no record to give.
+        read = getattr(self.graphlink, "terminal_record", None)
+        if not callable(read):
+            return None
+        terminal = read(work_item, cwd)
+        return terminal if isinstance(terminal, dict) else None
+
+    def _backfill_terminal(self, work_item: WorkItemRef, cwd: str) -> None:
+        """Add the terminal record to a stamp that has none, before cleanup (issue-452).
+
+        A work item that closed before issue-452, or whose checkout the closure
+        kept (``keepCheckoutOnClose``) but could not read, is stamped without a
+        record. The explicit cleanup is the last moment its checkout exists, so
+        the record is read here first. An item that has not ended gets no stamp:
+        cleanup of an open item is not an ending.
+        """
+        ended = self.control_store.ended(work_item)
+        if ended is None or isinstance(ended.get("terminal"), dict):
+            return
+        terminal = self._terminal_record(work_item, cwd)
+        if terminal is None:
+            return
+        stamp = dict(ended)
+        stamp["terminal"] = terminal
+        stamp["outcome"] = archive.closure_outcome(
+            terminal,
+            ended.get("outcome") == archive.CANCELLED
+            or ended.get("reason") == "pr-closed",
+        )
+        self.control_store.record_ended(work_item, stamp)
 
     # -- lifecycle hooks (issue-344) ----------------------------------------------
 
@@ -2884,6 +2955,10 @@ class Dispatcher:
         """
         record = self.registry.find_by_work_item(work_item, include_closed=True)
         cwd = record.cwd if record is not None else self.config.spawn_workdir
+        # Before anything is entered or removed (issue-452): the record is a
+        # copy of the checkout's state as the item left it, not as cleanup does.
+        if record is not None:
+            self._backfill_terminal(work_item, record.cwd)
         self.graphlink.on_cleanup(work_item, cwd, reason=reason)
         end_session = (
             self._retain_endpoint
@@ -2943,8 +3018,11 @@ class Dispatcher:
         merged = reason == "pr-merged" or bool(
             context is not None and context.delivered_by_merge
         )
+        # Read BEFORE `close_session` (issue-452): it removes the checkout unless
+        # `keepCheckoutOnClose`, and the state file this copies lives there.
+        terminal = self._terminal_record(session.work_item, session.cwd)
         self.close_session(session, routed)
-        self._record_closure(session.work_item, routed, reason)
+        self._record_closure(session.work_item, routed, reason, terminal=terminal)
         logger.info("auto-closed session %s (%s)", ref, reason)
         fields: Dict[str, Any] = {
             "work_item": ref,
