@@ -11,12 +11,15 @@ a session — at user scope, or for one project only:
 
 ```bash
 pip install the-loopy-one            # once
-the-loop install                     # the CLI + the Claude Code plugin
+the-loop install                     # the CLI + detected Claude Code and Codex setup
 the-loop install claude --scope project --project-dir .   # this repository only
+the-loop install codex --scope project --project-dir .
 the-loop upgrade                     # later, when a release lands
 ```
 
-It drives Claude Code's own plugin installer, prints every command before running it
+It drives Claude Code's own plugin installer and prepares Codex's bundled instructions
+and native Stop hook. Review and trust the Codex hook through `/hooks` before
+unattended execution. It prints every command before running it
 (`--dry-run` to preview), and reports what it skipped and why. See
 [`install`](/cli/commands/install) · [`upgrade`](/cli/commands/upgrade).
 

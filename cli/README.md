@@ -31,7 +31,8 @@ the-loop --help
 From there the CLI installs the rest of the-loop — and upgrades itself:
 
 ```bash
-the-loop install            # this CLI + the Claude Code plugin (Cursor: issue #157)
+the-loop install            # this CLI + detected Claude Code and Codex setup (Cursor: issue #157)
+the-loop install codex --scope project --project-dir .
 the-loop upgrade            # move both to the current release
 the-loop install claude --scope project --project-dir .   # one repository only
 ```

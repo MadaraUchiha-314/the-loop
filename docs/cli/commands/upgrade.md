@@ -1,6 +1,7 @@
 # `upgrade`
 
-Move an installed the-loop forward: the **CLI** and the **Claude Code plugin**.
+Move an installed the-loop forward: the **CLI**, **Claude Code plugin** and
+**Codex instructions and hooks**.
 
 ```bash
 the-loop upgrade [COMPONENT ...] [--scope user|project] [--project-dir .]
@@ -33,6 +34,9 @@ path. Read that page for the mechanics; this one covers only what differs.
   rather than a cached one.
 - **A source checkout is skipped**, naming the checkout: a development install is updated
   with `git pull` (and `uv sync`), not by installing a release over it.
+- **Codex setup refreshes its managed instruction block and merges its Stop hook.**
+  Existing instructions and unrelated hooks are preserved. Trust a changed hook
+  definition through Codex `/hooks` before expecting unattended continuation.
 
 Claude Code applies a plugin update on the **next** session — restart the harness after an
 upgrade.

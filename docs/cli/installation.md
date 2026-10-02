@@ -33,12 +33,15 @@ always reports what you actually have.
 Once the CLI is on the machine it installs the rest of the-loop — and itself:
 
 ```bash
-the-loop install            # the CLI + the Claude Code plugin, if `claude` is on PATH
+the-loop install            # the CLI + setup for detected Claude Code and Codex binaries
+the-loop install codex --scope project --project-dir .
 the-loop upgrade            # move both to the current release
 the-loop upgrade --dry-run  # see the exact commands first
 ```
 
-Claude Code only for now; the Cursor plugin is
+Codex setup preserves existing instructions and adds the operating skill and Stop
+hook. Review and trust the hook through Codex `/hooks` before unattended use.
+Install the official Codex CLI separately. Cursor plugin installation is
 [issue #157](https://github.com/MadaraUchiha-314/the-loop/issues/157).
 
 `upgrade` works out how the running copy was installed — `uv tool`, `pipx` or `pip` — and
@@ -119,7 +122,7 @@ PyGithub with a token you name under
 | `git` | Per-work-item [workspaces](/config/cli/routing-options#workspace-root). |
 | `tmux` | Hosting every spawned session — **required** by both ingress daemons ([`the-loop start`](/cli/commands/start)). See [interactive sessions](/capabilities/interactive-sessions). |
 | `ttyd` | The optional [browser terminal](/config/cli/routing-options#webterminal-enabled). |
-| `claude` / `cursor-agent` | Whichever harness you spawn sessions with. |
+| `claude` / `codex` / `cursor-agent` | Whichever harness you spawn sessions with. |
 
 ## Next
 

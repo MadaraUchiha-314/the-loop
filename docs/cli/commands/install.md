@@ -1,7 +1,7 @@
 # `install`
 
-Put the-loop on a machine: the **CLI** and the **Claude Code plugin**, at user or project
-scope.
+Put the-loop on a machine: the **CLI**, **Claude Code plugin** and **Codex instructions
+and hooks**, at user or project scope.
 
 ```bash
 the-loop install [COMPONENT ...] [--scope user|project] [--project-dir .]
@@ -18,7 +18,7 @@ claude     planned  register the the-loop marketplace (…/the-loop)  claude plu
 claude     planned  install the-loop@the-loop                       claude plugin install the-loop@the-loop --scope user
 ```
 
-Components are `cli`, `claude`, or `all`. **Naming none** means the CLI plus every
+Components are `cli`, `claude`, `codex`, or `all`. **Naming none** means the CLI plus every
 harness actually found on `PATH` — the useful default when setting a machine up.
 
 > **Cursor is not a component yet.** the-loop ships as a Cursor plugin
@@ -83,6 +83,25 @@ A binary that offers `plugin marketplace` but no working `plugin install` counts
 surface**, and takes the fallback — running an install that cannot work would report
 `failed` for what is really an absent feature.
 
+### `codex` — bundled instructions and Stop hook
+
+Install the official Codex CLI first, then run:
+
+```bash
+the-loop install codex --scope project --project-dir .
+```
+
+The installer preserves existing `AGENTS.md` or `AGENTS.override.md` and adds a
+managed block pointing to the bundled operating skill and command procedures.
+It merges the native Stop hook into `.codex/hooks.json` for project scope, or
+`$CODEX_HOME/hooks.json` for user scope (`~/.codex` when unset). The user instruction
+block is installed in that same Codex home. Repeating setup leaves matching
+definitions unchanged; a missing Codex binary is reported as a failed step.
+
+**Review and trust the new hook through Codex `/hooks` before unattended use.**
+The installer preserves the operator's sandbox and approval policy; it does not
+grant hook trust.
+
 ### `cli` — the-loopy-one from PyPI
 
 The installer is read off the copy you are running rather than asked for as a flag:
@@ -104,6 +123,7 @@ It deliberately does not run `uv add` — installing a tool must not rewrite you
 | | `--scope user` (default) | `--scope project` |
 |---|---|---|
 | Claude Code | the harness's user scope / `<config dir>/settings.json` | the harness's project scope, run in `--project-dir` / that repo's `.claude/settings.json` |
+| Codex | instructions and `hooks.json` in `$CODEX_HOME` or `~/.codex` | instructions and `.codex/hooks.json` in `--project-dir` |
 | CLI | `uv tool` / `pipx` / `pip` | the project's `.venv` |
 
 A scope that cannot be expressed is **skipped, never widened** — an install asked for one
@@ -126,7 +146,7 @@ argv list with no shell.
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| *(positional)* | `cli` + detected harnesses | `cli`, `claude`, `all` |
+| *(positional)* | `cli` + detected harnesses | `cli`, `claude`, `codex`, `all` |
 | `--scope` | `user` | `user` or `project` |
 | `--project-dir` | `.` | The project for `--scope project` |
 | `--from` | config, else `MadaraUchiha-314/the-loop` | Marketplace `owner/repo` |
