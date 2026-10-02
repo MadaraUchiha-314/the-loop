@@ -766,3 +766,163 @@ def test_discover_takes_an_explicit_head_owner(tmp_path):
         REF, "feat/x", config=_config(tmp_path), head_owner="me", client=fake
     )
     assert result["found"] == ["github:octo/repo#22"]
+
+
+# -- ownership of an accepted, parked work item (issue-453) ----------------------
+
+
+def _named(tmp_path, name="alpha"):
+    config = _config(tmp_path)
+    config["instance"] = {"name": name}
+    return config
+
+
+def _store(config):
+    from the_loop.core import sessions as core_sessions
+
+    return core_sessions._control_store(config)
+
+
+def _park(config, ref=REF, instance="alpha", command="start"):
+    """What `sessions start` leaves when it parks at the first human gate: a
+    control record stamped with the instance, and no session."""
+    return _store(config).record(
+        ref, command, source="cli", actor="op", instance=instance
+    )
+
+
+def test_close_ticket_closes_a_work_item_this_instance_parked(tmp_path):
+    config = _named(tmp_path)
+    _park(config)
+    fake = FakeGitHubClient()
+    result = github_ops.close_ticket(REF, "not_planned", config=config, client=fake)
+    assert result["exitCode"] == 0 and result["closed"] is True
+    assert fake.closed == [("octo", "repo", 5, "not_planned")]
+
+
+def test_closing_a_parked_work_item_cancels_its_pending_start(tmp_path):
+    config = _named(tmp_path)
+    _park(config)
+    store = _store(config)
+    assert store.mark_started(REF) and store.start_requested(REF)
+    result = github_ops.close_ticket(REF, config=config, client=FakeGitHubClient())
+    assert result["startCancelled"] is True
+    assert "cancelled the pending start" in _words(result)
+    record = store.get(REF)
+    assert record is not None and record.command == "stop"
+    assert record.source == "cli" and record.instance == "alpha"
+    assert not store.start_requested(REF)
+    assert store.mark_started(REF), "the work_item_start mark was forgotten"
+
+
+def test_a_second_close_of_a_parked_work_item_is_a_no_op_with_exit_0(tmp_path):
+    config = _named(tmp_path)
+    _park(config)
+    fake = FakeGitHubClient()
+    first = github_ops.close_ticket(REF, config=config, client=fake)
+    before = _store(config).get(REF)
+    second = github_ops.close_ticket(REF, config=config, client=fake)
+    assert first["startCancelled"] is True and second["startCancelled"] is False
+    assert second["exitCode"] == 0 and len(fake.closed) == 2
+    after = _store(config).get(REF)
+    assert after is not None and before is not None
+    assert after.to_dict() == before.to_dict(), "nothing was re-recorded"
+
+
+def test_a_close_github_refuses_leaves_the_parked_item_armed(tmp_path):
+    config = _named(tmp_path)
+    _park(config)
+    fake = FakeGitHubClient(missing={("octo", "repo", 5)})
+    result = github_ops.close_ticket(REF, config=config, client=fake)
+    assert result["exitCode"] == 1 and result["closed"] is False
+    assert "startCancelled" not in result
+    assert _store(config).start_requested(REF)
+
+
+def test_a_session_backed_close_records_no_stop(tmp_path):
+    config = _named(tmp_path)
+    _register(tmp_path)
+    _park(config)  # the arming that spawned the session is still recorded
+    result = github_ops.close_ticket(REF, config=config, client=FakeGitHubClient())
+    assert result["exitCode"] == 0 and result["startCancelled"] is False
+    record = _store(config).get(REF)
+    assert record is not None and record.command == "start"
+
+
+def test_abuse_453_a1_a_record_another_instance_wrote_grants_nothing(tmp_path):
+    config = _named(tmp_path, "alpha")
+    _park(config, instance="beta")
+    fake = FakeGitHubClient()
+    result = github_ops.close_ticket(REF, config=config, client=fake)
+    assert result["exitCode"] == 1 and fake.closed == []
+    assert "not a work item registered on this instance" in _words(result)
+    assert _store(config).start_requested(REF), "the other instance's arming stands"
+
+
+def test_abuse_453_a2_an_unnamed_record_is_not_a_named_instances(tmp_path):
+    config = _named(tmp_path, "alpha")
+    _park(config, instance="")
+    fake = FakeGitHubClient()
+    assert github_ops.close_ticket(REF, config=config, client=fake)["exitCode"] == 1
+    assert fake.closed == []
+
+
+def test_abuse_453_a2_a_named_record_is_not_an_unnamed_instances(tmp_path):
+    config = _config(tmp_path)
+    _park(config, instance="alpha")
+    fake = FakeGitHubClient()
+    assert github_ops.close_ticket(REF, config=config, client=fake)["exitCode"] == 1
+    assert fake.closed == []
+
+
+def test_an_unnamed_instance_owns_the_records_it_wrote(tmp_path):
+    config = _config(tmp_path)
+    _park(config, instance="")
+    fake = FakeGitHubClient()
+    assert github_ops.close_ticket(REF, config=config, client=fake)["exitCode"] == 0
+    assert fake.closed == [("octo", "repo", 5, "completed")]
+
+
+def test_abuse_453_a3_an_ended_items_record_grants_nothing(tmp_path):
+    config = _named(tmp_path)
+    _park(config)
+    _store(config).record_ended(REF, {"state": "closed", "kind": "issue"})
+    fake = FakeGitHubClient()
+    assert github_ops.close_ticket(REF, config=config, client=fake)["exitCode"] == 1
+    assert fake.closed == []
+
+
+def test_an_unreadable_control_record_grants_nothing(tmp_path, monkeypatch):
+    from the_loop.control import ControlStore
+
+    config = _named(tmp_path)
+    _park(config)
+    monkeypatch.setattr(
+        ControlStore, "get", lambda self, item: (_ for _ in ()).throw(OSError("disk"))
+    )
+    fake = FakeGitHubClient()
+    assert github_ops.close_ticket(REF, config=config, client=fake)["exitCode"] == 1
+    assert fake.closed == []
+
+
+def test_a_parked_work_item_owns_no_pull_request(tmp_path):
+    """R1.3: the record reaches its own ref only — a stranger PR named beside a
+    parked --work-item is still refused."""
+    config = _named(tmp_path)
+    _park(config)
+    fake = FakeGitHubClient()
+    result = github_ops.merge_pull_request(
+        "github:octo/repo#12", work_item=REF, config=config, client=fake
+    )
+    assert result["exitCode"] == 1 and fake.merged == []
+
+
+def test_a_parked_pull_request_work_item_may_be_acted_on(tmp_path):
+    """A pull request that is itself the parked work item is the instance's."""
+    config = _named(tmp_path)
+    _park(config, ref="github:octo/repo#12")
+    fake = FakeGitHubClient()
+    result = github_ops.merge_pull_request(
+        "github:octo/repo#12", config=config, client=fake
+    )
+    assert result["exitCode"] == 0 and fake.merged

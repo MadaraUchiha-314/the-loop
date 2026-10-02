@@ -42,9 +42,25 @@ Closes the ticket with GitHub's `state_reason`: `completed`, the default, or
 `not_planned`. This is `/the-loop:finish-tasks`'s cleanup step. Closing a ticket that a
 merge's `Closes #N` already closed is a no-op.
 
-Only a **registered** work item's ticket is closed: a session must be registered for it
-on the instance that runs the verb. An ad-hoc work item (`the-loop do`) may close a
-ticket it names with `--work-item`. Anything else is exit 1, and nothing is sent.
+Only a work item **registered** on the instance that runs the verb is closed. Registered
+means accepted by this instance, in either of two ways:
+
+- a session is registered for it (or a live session records it as its pull request);
+- this instance armed it and the daemon parked it at its first human gate without a
+  session (`the-loop sessions start` answered `waiting`): the control record the start
+  wrote, stamped with this instance's name, is the registration
+  ([decision-141](/decisions/decision-141)).
+
+An ad-hoc work item (`the-loop do`) may close a ticket it names with `--work-item`.
+Anything else is exit 1, and nothing is sent: a ref this instance never accepted, a
+record another instance wrote, or an item already stamped `ended`.
+
+Closing a parked item also **cancels its pending start**: the same `stop` that
+`the-loop sessions stop` records, so no later event launches a session for it. The
+output says `cancelled the pending start for <ref>` and the data carries
+`startCancelled: true`. Run it again and the ticket closes again (GitHub's no-op), exit
+0, with nothing more to cancel. A session-backed item's local closure stays the
+daemon's, on the `closed` event, as before.
 
 ## Notes
 
