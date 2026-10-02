@@ -47,7 +47,7 @@ from ..instance import INSTANCE_LOCKED, LOCKED, InstanceConfig
 from ..runner import TmuxRunner
 from ..sessions.registry import RegistryError, Session, SessionRegistry
 from ..state import layout_from_config, legacy_layout
-from ..webhook.dispatcher import TmuxConfig
+from ..webhook.dispatcher import SETTLED_START_GATE, TmuxConfig
 from ..webhook.router import RoutedEvent
 from ..workitem import WorkItemRef
 
@@ -1451,8 +1451,9 @@ def _spawn_for_start(
     a strictly higher privilege than commenting on an issue.
 
     The control record is armed *before* the spawn (the dispatcher's gate reads
-    it) and **cleared again if no session came up**, so a start that could not
-    run leaves nothing standing (owner decision on PR #107).
+    it) and cleared again on a failed spawn, so a start that could not run
+    leaves nothing standing (owner decision on PR #107). An accepted start
+    waiting at the first human gate stays armed without a harness session.
     """
     store = _control_store(config, portable_dir)
     dispatcher, routing = _dispatcher_for(config, registry_dir, portable_dir)
@@ -1500,6 +1501,17 @@ def _spawn_for_start(
 
     session = SessionRegistry(registry_dir).find_by_work_item(work_item)
     if session is None:
+        if dispatcher.delivery_outcome(routed.delivery_id) == SETTLED_START_GATE:
+            messages.append(
+                {
+                    "stream": "out",
+                    "text": (
+                        f"started the loop for {work_item.ref}; waiting at its "
+                        "first human gate before launching a session"
+                    ),
+                }
+            )
+            return "waiting", 0
         # Nothing came up, so leave nothing armed.
         store.clear(work_item)
         messages.append(

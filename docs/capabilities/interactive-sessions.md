@@ -333,6 +333,9 @@ belongs to does not.
   mid-graph work item always spawns and respawns, an inner PR loop is untouched, and every
   existing graph-link skip path means nothing is deferred. An armed work item with no
   session is followed with `the-loop check`, not `sessions list`.
+  A CLI/API `sessions start` at this gate returns success with effect `waiting`
+  and preserves its start request. Answering the gate then launches the session;
+  an actual failed spawn still returns failure and clears the request.
 - WHEN a session is spawned or respawned — on a work item's first event, by the reply
   that answers its human start gate, on a respawn, or for a pull request endpoint — THEN
   it SHALL be launched with the harness's **launch arguments**: `harnesses[].args` when

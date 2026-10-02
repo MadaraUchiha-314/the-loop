@@ -117,6 +117,90 @@ def test_an_armed_work_item_gets_no_session_until_its_gate_is_answered(tmp_path)
     assert registry.find_by_work_item(REF) is None
 
 
+def test_a_cli_start_waiting_at_the_first_gate_stays_armed(tmp_path, monkeypatch):
+    """Feature: durable CLI starts at the human start gate
+
+    Scenario: a CLI start preserves the request while phase selection waits
+      Given an unstarted work item whose first graph node is a human gate
+      When the operator starts it through the CLI's core facade
+      Then the result reports waiting successfully and the start remains armed
+      And no harness or tmux session is created before the answer
+
+    Requirement: docs/specs/issue-449/requirements.md R5
+    """
+    from the_loop.core import sessions as core_sessions
+    from the_loop.control import ControlStore
+
+    registry, dispatcher, tmux = _dispatcher(
+        tmp_path, _Link(parked=True), control=ControlConfig(require_start_command=True)
+    )
+    monkeypatch.setattr(
+        core_sessions,
+        "_dispatcher_for",
+        lambda *a, **k: (dispatcher, dispatcher.config),
+    )
+    result = core_sessions.control_session(
+        REF,
+        "start",
+        comment=False,
+        registry_dir=str(tmp_path / "sessions"),
+        portable_dir=str(tmp_path / "portable"),
+    )
+    assert result["exitCode"] == 0
+    assert result["effect"] == "waiting"
+    assert ControlStore(str(tmp_path / "portable")).start_requested(REF)
+    assert registry.find_by_work_item(REF) is None
+    assert tmux.spawns == []
+
+    next_registry, next_dispatcher, next_tmux = _dispatcher(
+        tmp_path,
+        _Link(parked=False),
+        control=ControlConfig(require_start_command=True),
+        authorized_users=["octo"],
+    )
+    next_dispatcher.handle(_comment(delivery="answer", body="the-loop execute"))
+    next_dispatcher.stop()
+    assert next_registry.find_by_work_item(REF) is not None
+    assert len(next_tmux.spawns) == 1
+
+
+def test_a_cli_start_with_a_real_spawn_failure_leaves_nothing_armed(
+    tmp_path, monkeypatch
+):
+    """Feature: durable CLI starts at the human start gate
+
+    Scenario: a genuine spawn failure still disarms the CLI request
+      Given a work item whose graph permits spawning but tmux fails to spawn
+      When the operator starts it through the CLI's core facade
+      Then the result reports failure and the start request is cleared
+
+    Requirement: docs/specs/issue-449/requirements.md R5
+    """
+    from the_loop.core import sessions as core_sessions
+    from the_loop.control import ControlStore
+    from the_loop.runner import TmuxResult
+
+    _, dispatcher, tmux = _dispatcher(tmp_path, _Link(parked=False))
+    monkeypatch.setattr(
+        tmux, "spawn", lambda *a, **k: TmuxResult(ok=False, error="spawn failed")
+    )
+    monkeypatch.setattr(
+        core_sessions,
+        "_dispatcher_for",
+        lambda *a, **k: (dispatcher, dispatcher.config),
+    )
+    result = core_sessions.control_session(
+        REF,
+        "start",
+        comment=False,
+        registry_dir=str(tmp_path / "sessions"),
+        portable_dir=str(tmp_path / "portable"),
+    )
+    assert result["exitCode"] == 1
+    assert result["effect"] == "failed"
+    assert not ControlStore(str(tmp_path / "portable")).start_requested(REF)
+
+
 def test_the_arming_event_still_reaches_the_first_gate(tmp_path):
     """Feature: spawning after the gate (issue-358, R8)
 

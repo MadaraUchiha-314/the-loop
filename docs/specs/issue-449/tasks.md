@@ -29,8 +29,10 @@ riskTier: 4
   `mcp-call` through the adapter's one-shot argv. *Req:* R4 · *Test:* T9, T10
 - [x] **A6: diagnostics.** Bypassed-default and filtered-item events reported once;
   read-only GraphQL retry. *Req:* R5 · *Test:* T11–T13
-- [ ] **A7: end-to-end proof.** Run a ticket on `the-loop-testing` with a real Codex
+- [x] **A7: end-to-end proof.** Run a ticket on `the-loop-testing` with a real Codex
   binary and record it under `evidence/`. *Req:* R1.1, R1.2 · *Test:* T15
 - [x] **A8: tracked `AGENTS.md`.** Preserve tracked project instructions and place
   the managed block in Codex's global instructions. Verified against a real Codex
   binary. *Req:* R3.2 · *Test:* T5, T16
+- [x] **A9: durable CLI start.** Preserve an accepted start waiting at its first
+  human gate; keep clearing genuine spawn failures. *Req:* R5.4 · *Test:* T17

@@ -156,6 +156,7 @@ SETTLED_SUPPRESSED = ("awaiting-start", "session-paused", "collaborator-no-spawn
 SETTLED_CONTROL_EXECUTED = "control-executed"
 SETTLED_CONTROL_REJECTED = "control-rejected"
 SETTLED_CONTROL_AMBIGUOUS = "control-ambiguous"
+SETTLED_START_GATE = "parked-at-human-start-gate"
 # An event this instance refused as out of its scope (issue-322): another
 # instance may own the work item, so the drop is deliberate and final — settled,
 # never retried into a different answer.
@@ -166,6 +167,7 @@ SETTLED_OUTCOMES = (
         SETTLED_CONTROL_EXECUTED,
         SETTLED_CONTROL_REJECTED,
         SETTLED_CONTROL_AMBIGUOUS,
+        SETTLED_START_GATE,
     )
     + SETTLED_OUT_OF_SCOPE
 )
@@ -3744,8 +3746,9 @@ class Dispatcher:
                 gh_event=routed.event,
                 action=routed.action or None,
                 delivery_id=routed.delivery_id or None,
-                reason="parked-at-human-start-gate",
+                reason=SETTLED_START_GATE,
             )
+            self._settle(routed, SETTLED_START_GATE, acknowledge=False)
             return True
         # The adapter is resolved HERE, after `on_arm` and from the prepared
         # checkout (issue-377): the reply that unparks the gate is what freezes

@@ -13,6 +13,7 @@ security finding after S1 was fixed. This does not satisfy a remote approval gat
 | Hook and workspace trust | Hook installation reports the native trust requirement and does not bypass it. Sandbox and approval choices remain operator-owned. Trust preparation preserves existing TOML entries and uses atomic locked writes. Existing tests pass. |
 | Harness delegation | Unknown harnesses block. Arguments use subprocess argv lists; Codex JSONL extraction feeds local JSON validation. Existing MCP and critic-output tests pass. |
 | GitHub retries | Only a disconnected GraphQL read is retried; mutation and semantic failures are not replayed. Covered in the earlier Codex regression record. |
+| Start authorization | An accepted start remains armed only for the dispatcher's explicit human-gate outcome. The gate still owns phase selection. Authorized execute launches once; a real spawn failure clears the request. Both integration scenarios pass. |
 | Secrets and dependencies | Authentication remains in the normal Codex home. The completion fixes introduce no dependency or credential handling. No credential values appear in their code, fixtures or evidence. |
 
 S1: malformed directory metadata could match the daemon's process directory.

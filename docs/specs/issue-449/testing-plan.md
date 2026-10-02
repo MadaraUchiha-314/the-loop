@@ -40,8 +40,9 @@ riskTier: 4
 | T12 | R5.2 | `test_missing_arming_labels_are_observable_without_widening_the_gate` |
 | T13 | R5.3 | `test_disconnected_graphql_retries_a_read_once_but_never_a_write` |
 | T14 | R1.3 | Codex JSONL critic output and usage tests in `test_codex_support.py` |
-| T15 | R1.1, R1.2 | Manual end-to-end run on `the-loop-testing` with a real Codex binary, recorded in `evidence/` (pending) |
+| T15 | R1.1, R1.2 | Real Codex run on `the-loop-testing#3`, delivered in merged PR #4; `evidence/completion-verification.md` |
 | T16 | R3.2 | Real codex-cli 0.160.0 read-only instruction-discovery probe loads global and tracked project guidance; recorded in `evidence/completion-verification.md` |
+| T17 | R5.4 | `test_a_cli_start_waiting_at_the_first_gate_stays_armed` (including a later answer launching the session), `test_a_cli_start_with_a_real_spawn_failure_leaves_nothing_armed` in `test_spawn_gate_integration.py` |
 
 ## Not automated
 

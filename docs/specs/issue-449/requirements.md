@@ -82,6 +82,10 @@ per-work-item choice and named Codex as its first follow-up.
 - **R5.2** An item filtered by arming labels SHALL be reported (`poll.item_filtered`)
   once per change in its missing labels, not on every poll cycle.
 - **R5.3** A disconnected GraphQL read SHALL be retried once; a mutation SHALL NOT be.
+- **R5.4** WHEN a CLI/API start is accepted and waits at the first human gate,
+  THEN it SHALL report waiting successfully and preserve the start request so
+  the gate's answer can launch the selected harness. A genuine spawn failure
+  SHALL still clear the request and report failure.
 
 ## Out of scope
 

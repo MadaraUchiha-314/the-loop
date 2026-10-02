@@ -274,3 +274,63 @@ Codex as the deployment default. The CLI's start command returned an error
 because no session had spawned; the graph's events show it waiting correctly
 at the human gate. No selection or approval was fabricated. End-to-end
 execution and completion remain pending the operator's phase selection.
+
+## Completed live Codex run and startup regression
+
+The later operator instruction explicitly delegated phase selection to this Codex
+session. The recorded selection chose Codex, implementation and verification,
+with the other phases explicitly unchecked. No artifact approval was claimed.
+The deployment launched the issue from the configured devbox cwd at
+2026-10-02T19:27:52Z using the installed source at `fdf8261`.
+
+[Smoke issue #3](https://github.com/MadaraUchiha-314/the-loop-testing/issues/3)
+completed. [PR #4](https://github.com/MadaraUchiha-314/the-loop-testing/pull/4)
+merged at 2026-10-02T19:33:32Z with merge commit
+`5600637414df40a0ec6b3523f54c66cb300a647c`; the issue closed automatically.
+The delivery added the requested `codex-smoke.md` sentence, linked it from README,
+and committed the test work item's verification evidence. The original README
+content was preserved. No managed machine instructions or session state were
+committed. The native session reported a complete graph before normal cleanup
+removed its worktree and local session state.
+
+[The persistent smoke verification record](https://github.com/MadaraUchiha-314/the-loop-testing/blob/main/docs/specs/issue-3/evidence/verification.md)
+and [the agent's main-PR report](https://github.com/MadaraUchiha-314/the-loop/pull/450#issuecomment-5959955607)
+record the delivery. The native conversation was
+`01a0fe16-5d14-7923-ba0f-650b743d759a`; the service's Harness trace returned that
+same conversation and rendered user, assistant and tool events.
+
+A separate real read-only Codex chat in the same worktree started after the
+work-item session. It produced native ID
+`01a0fe18-8108-7850-8cc7-b9ce435b7afd`. A fresh Python process using the installed
+`CodexAdapter.resolve_session_id` and original launch marker
+`e499f5ef-ac59-4ba0-a285-2be0ed7b08d1` still resolved the work-item conversation,
+not the newer unrelated chat. Both native executions produced real JSONL files.
+An interrupted TUI respawn and a blocking Stop continuation were not exercised;
+the operator's native hook review and trust were exercised separately above.
+
+The live start exposed one additional bug: CLI `sessions start` cleared its
+accepted start request when the graph deliberately parked at phase selection.
+[The finding was posted before the fix](https://github.com/MadaraUchiha-314/the-loop/pull/450#issuecomment-5959913727).
+The dispatcher now records `parked-at-human-start-gate` in its existing bounded
+settlement cache. The CLI returns success with effect `waiting` and preserves
+the request when that precise outcome is present. Actual spawn failures still
+return failure and clear the request; no human gate or authorization is bypassed.
+
+The positive integration scenario failed before the production fix (`exit_code`
+was 1 instead of 0). It now verifies that a subsequent authorized execute command
+launches exactly one session. A separate real-spawn-failure scenario verifies
+that a failed launch leaves no start request armed. The event catalogue and its
+exact vocabulary test include the new outcome.
+
+Latest relevant verification:
+
+```text
+672 passed in 9.77s
+Ruff: all checks passed; 407 files already formatted
+Pyright: 0 errors, 0 warnings
+```
+
+The test command covered spawn-gate, control CLI/integration, core sessions,
+instance integration, reactions, polling, routing, work-channel integration,
+Codex support and Codex adapter tests. This is targeted verification, not a
+claim that the local full suite passed.

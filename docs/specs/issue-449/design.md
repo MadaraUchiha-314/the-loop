@@ -65,6 +65,14 @@ resolved using Codex's native global instruction source:
 
 ## Verification
 
+The fresh smoke run exposed a start-control bug: the dispatcher correctly
+deferred spawning at phase selection, but the CLI interpreted the absent
+session as a failure and cleared the start request. Deferred deliveries now
+carry a settled `parked-at-human-start-gate` outcome in the existing bounded
+deduper. The CLI reads that outcome after draining dispatch and returns
+`waiting` with success, preserving the request. Actual spawn failures still
+clear it. This adds no second outcome cache or alternative spawn path.
+
 Regression tests cover exact conversation recovery after an unrelated chat,
 ambiguous markers, mismatched directories, unsafe IDs, escaping symlinks,
 native trace normalization, JSONL critic output and usage, native Stop results,
