@@ -74,11 +74,11 @@ Recorded in [`evidence/verification.md`](evidence/verification.md).
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| T1 + T2 + T10 | `cd cli && uv run python -m pytest -q tests/test_archive.py` | pass — 28 passed (import error before the fix) | `evidence/verification.md` |
-| T3 + T4 + T7 | `cd cli && uv run python -m pytest -q tests/test_archive_dispatch.py` · `tests/test_poller.py tests/test_ghapi.py tests/test_poller_integration.py` | pass — 7 and 333 passed (red before the fix) | `evidence/verification.md` |
+| T1 + T2 + T10 | `cd cli && uv run python -m pytest -q tests/test_archive.py` | pass — 30 passed (import error before the fix) | `evidence/verification.md` |
+| T3 + T4 + T7 | `cd cli && uv run python -m pytest -q tests/test_archive_dispatch.py` · `tests/test_poller.py tests/test_ghapi.py tests/test_poller_integration.py` | pass — 12 and 333 passed (red before the fix) | `evidence/verification.md` |
 | T5 | `cd cli && uv run python -m pytest -q tests/test_archive_integration.py` | pass — 4 passed (all 4 red before the fix) | `evidence/verification.md` |
 | T6 | `cd cli && uv run python -m pytest -q tests/test_api_contract_parity.py` | pass — 4 passed | `evidence/verification.md` |
-| T11 | full suite · ruff · ruff format · pyright · markdownlint | pass — 5338 passed, 1 skipped; all clean | `evidence/verification.md` |
+| T11 | full suite · ruff · ruff format · pyright · markdownlint | pass — 5345 passed, 1 skipped; all clean | `evidence/verification.md` |
 | T8 | live daemon run against `the-loop-testing` | not run — needs a daemon, a token and a second repository; T5 drives the same path in-process | — |
 
 ## Review comments

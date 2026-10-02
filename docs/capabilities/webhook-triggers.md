@@ -629,7 +629,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   a `terminal` record (spec id, loop, last node and phase, whether the completion node was
   claimed and when, the frozen selections, the delivering pull requests, the spec
   directory and the evidence files) and an `outcome`: `completed` only when the record
-  shows the completion node claimed; else `cancelled` for an issue closed as not planned
+  shows the completion node claimed; else `cancelled` for an issue closed as not planned or as a duplicate
   or a pull request closed unmerged; else `closed-externally` with a record, `unknown`
   without one. A session-less closure SHALL read the checkout the registry still records;
   an explicit `cleanup` of an ended item whose stamp has no record SHALL add it before the

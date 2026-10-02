@@ -107,8 +107,8 @@ The `ended` section, additive (the six keys of issue-329 are unchanged):
 flowchart TD
   T{terminal record read?} -->|yes| K{completion node claimed?}
   K -->|yes| COMPLETED[completed]
-  K -->|no| X{not planned / PR closed unmerged?}
-  T -->|no| X2{not planned / PR closed unmerged?}
+  K -->|no| X{not planned or duplicate / PR closed unmerged?}
+  T -->|no| X2{not planned or duplicate / PR closed unmerged?}
   X -->|yes| CANCELLED[cancelled]
   X -->|no| EXT[closed-externally]
   X2 -->|yes| CANCELLED
@@ -150,6 +150,16 @@ The archived check report (`archived` is the only new key; the rest keep their t
   unchanged. This is what keeps `check` working in CI.
 - **A malformed `terminal` value** (not a mapping) is treated as absent: `detail:
   unavailable`.
+- **A second delivery of the same closure** (the webhook and the poller both see it)
+  finds the checkout gone. `_record_closure` keeps the record the first stamp holds
+  rather than replacing it with nothing, and a prior `cancelled` stays cancelled.
+- **An operator closes the session during the endgame hold** (issue-405): `close_session`
+  and `cleanup` read the record onto the held entry before removing the checkout, and
+  the sweeper stamps it from there.
+- **Any exception from the read** — an injected coupling, the ownership probe — is
+  `None`: the closure still closes and stamps.
+- **The cleanup backfill races a reopen:** it re-reads the stamp under the portable
+  store's lock and writes only if it is unchanged, so a reopen in the window wins.
 
 ## Security design
 
@@ -167,7 +177,10 @@ The archived check report (`archived` is the only new key; the rest keep their t
 - **Terminal-safe output.** Evidence names are kept only when they match a plain
   relative-path character set (`[A-Za-z0-9._/-]`, no `..`), at most 50 of them, so a
   filename carrying an escape sequence cannot reach the operator's terminal through
-  `check`.
+  `check`. `completedAt` must be ISO-8601 shaped. A symlinked `evidence/` (or one that
+  resolves outside the spec directory) is not listed, links inside are not followed,
+  and the walk stops after 1,000 entries — it runs on the close path, and
+  `evidence -> /` must not hold a closure up or list another directory.
 - **Same trust boundary for the closure facts.** `state_reason` comes from the provider
   event or the REST document the poller already fetches; an unrecognized value is not
   "not planned".

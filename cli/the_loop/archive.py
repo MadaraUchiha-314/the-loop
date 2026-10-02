@@ -35,6 +35,7 @@ Spec: docs/specs/issue-452/design.md.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
@@ -82,11 +83,27 @@ _PLAIN_PATH = re.compile(r"[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*")
 #: A scalar choice (harness, model, effort, …): short and printable, or nothing.
 _PLAIN_VALUE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}")
 
+#: A recorded time: ISO-8601 shaped, or nothing — it is printed too.
+_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T[0-9:.+Z-]{1,40}")
+
+#: The most directory entries an evidence listing visits. The cap on names kept
+#: is not enough on its own: the walk happens on the close path, and a tree of
+#: any size under `evidence/` must not hold a closure up.
+_MAX_VISITED = 1000
+
+#: GitHub's ``state_reason`` values that mean the work was not done here.
+_CANCELLED_REASONS = ("not_planned", "duplicate")
+
 
 def _utcnow() -> str:
     from .graph.state import utc_now
 
     return utc_now()
+
+
+def _timestamp(value: Any) -> str:
+    text = str(value or "")
+    return text if _TIMESTAMP.fullmatch(text) else ""
 
 
 def _plain(value: Any) -> str:
@@ -107,24 +124,38 @@ def _completion_node(graph: Any) -> Optional[Any]:
 
 
 def _evidence(spec_dir: Path) -> List[str]:
-    """The plain-named files under ``<spec_dir>/evidence``, sorted, capped."""
+    """The plain-named files under ``<spec_dir>/evidence``, sorted, capped.
+
+    A symlinked ``evidence`` directory, or one that resolves outside the spec
+    directory, is not listed — the state file's checkout is agent-writable, and
+    ``evidence -> /`` would otherwise walk the machine. Links inside are not
+    followed, and the walk stops after :data:`_MAX_VISITED` entries.
+    """
     root = spec_dir / "evidence"
-    if not root.is_dir():
-        return []
-    names = []
     try:
-        for path in sorted(root.rglob("*")):
-            if not path.is_file() or path.is_symlink():
-                continue
-            name = path.relative_to(root).as_posix()
-            if ".." in name.split("/") or not _PLAIN_PATH.fullmatch(name):
-                continue
-            names.append(name)
-            if len(names) >= MAX_EVIDENCE:
+        if root.is_symlink() or not root.is_dir():
+            return []
+        if not root.resolve().is_relative_to(spec_dir.resolve()):
+            return []
+        names: List[str] = []
+        visited = 0
+        for current, dirs, files in os.walk(root, followlinks=False):
+            dirs.sort()
+            visited += 1
+            for file in sorted(files):
+                visited += 1
+                path = Path(current) / file
+                if path.is_symlink():
+                    continue
+                name = path.relative_to(root).as_posix()
+                if _PLAIN_PATH.fullmatch(name) and ".." not in name.split("/"):
+                    names.append(name)
+            if visited >= _MAX_VISITED:
                 break
     except OSError as exc:  # a listing that fails is an empty listing
         logger.debug("could not list %s: %s", root, exc)
-    return names
+        return []
+    return sorted(names)[:MAX_EVIDENCE]
 
 
 def _pull_requests(state: Any) -> List[Dict[str, str]]:
@@ -177,7 +208,9 @@ def terminal_record(rt: Any, item_id: str) -> Optional[Dict[str, Any]]:
         "node": node,
         "phase": _plain(state.phase),
         "completed": completed,
-        "completedAt": str(claimed.exited_at or "") if claimed and completed else "",
+        "completedAt": (
+            _timestamp(claimed.exited_at) if claimed is not None and completed else ""
+        ),
         "selections": {
             "skipped": [
                 n
@@ -202,7 +235,8 @@ def terminal_record(rt: Any, item_id: str) -> Optional[Dict[str, Any]]:
 def cancelled(event: str, payload: Mapping[str, Any], reason: str) -> bool:
     """Whether a closure is an explicit cancellation.
 
-    An issue closed **as not planned** (the provider's ``state_reason``), or a
+    An issue closed **as not planned** or **as a duplicate** (the provider's
+    ``state_reason``), or a
     pull request — a work item in its own right for `the-loop review` and
     `the-loop contribute` — closed without merging. Anything else, an issue
     closed as completed included, is not a cancellation; whether it is a
@@ -210,7 +244,10 @@ def cancelled(event: str, payload: Mapping[str, Any], reason: str) -> bool:
     """
     if event == "issues":
         issue = payload.get("issue") if isinstance(payload, Mapping) else None
-        return isinstance(issue, Mapping) and issue.get("state_reason") == "not_planned"
+        return (
+            isinstance(issue, Mapping)
+            and issue.get("state_reason") in _CANCELLED_REASONS
+        )
     return reason == "pr-closed"
 
 

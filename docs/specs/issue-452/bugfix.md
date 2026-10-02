@@ -100,7 +100,7 @@ cleanup.
    the spec directory and the evidence files present.
 2. The `ended` stamp SHALL carry an `outcome`: `completed` WHEN the terminal record shows
    the completion node claimed; otherwise `cancelled` WHEN the closure is an issue
-   closed as not planned or a pull request closed without merging; otherwise
+   closed as not planned or as a duplicate, or a pull request closed without merging; otherwise
    `closed-externally` WHEN a terminal record was read; otherwise `unknown`.
 3. The system SHALL NOT infer `completed` from the closure alone: a closed or merged
    ticket whose recorded graph did not claim its completion node SHALL NOT be
@@ -177,6 +177,10 @@ as unstarted.
 - Reading the delivering repository's committed state over the network.
 - `check --all`, which discovers spec directories in a checkout and has no refs.
 - Recording a terminal record for a work item that is cleaned up while still open.
+- A closed item **re-armed without being reopened** keeps its `ended` stamp (issue-329's
+  rule: only a reopen clears it), so until its new session writes a state file `check
+  <ref>` from another directory still answers from the archive. Reopening the ticket is
+  the supported way to resume closed work.
 
 ## Open questions
 

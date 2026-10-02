@@ -502,7 +502,7 @@ next update, and messages in the room are dropped at the ingress as `unmapped`.
 | `at` | when the daemon recorded it |
 | `source` | which ingress saw the closure: `webhook` (a `closed` event) or `poll` (the item left the listing and GitHub confirmed it) |
 | `actor` | who closed it — the webhook's `sender`, or GitHub's `closed_by` on a polled closure; `""` when neither names anyone |
-| `outcome` | how the work item ended ([issue-452](https://github.com/MadaraUchiha-314/the-loop/issues/452)): `completed` (its session claimed the loop's completion node), `cancelled` (an issue closed as not planned, or a pull request closed unmerged), `closed-externally` (closed without that claim), `unknown` (no terminal record could be read). Absent on a stamp written before issue-452 |
+| `outcome` | how the work item ended ([issue-452](https://github.com/MadaraUchiha-314/the-loop/issues/452)): `completed` (its session claimed the loop's completion node), `cancelled` (an issue closed as not planned or as a duplicate, or a pull request closed unmerged), `closed-externally` (closed without that claim), `unknown` (no terminal record could be read). Absent on a stamp written before issue-452 |
 | `terminal` | the work item's ending, copied from its `work-item-state.json` **before** the close path removed the checkout: `workItem`, `loop`, `node`, `phase`, `completed`, `completedAt`, `selections` (`skipped`, `optedIn`, `surface`, `harness`, `model`, `effort`, `sessionPerPr`, `repos`), `pullRequests` (`ref`, `url`, `state`), `specDir`, `evidence` (file names under the spec directory's `evidence/`, at most 50) and `recordedAt`. Absent when no checkout could be read |
 
 Written by the daemon's one close path

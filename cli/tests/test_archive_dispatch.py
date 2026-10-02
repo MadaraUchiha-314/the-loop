@@ -226,3 +226,128 @@ def test_cleanup_of_an_open_item_writes_no_stamp(tmp_path, setup):
     dispatcher.cleanup_work_item(make_session().work_item, reason="test")
 
     assert dispatcher.control_store.ended(REF) is None
+
+
+# -- the critic's findings (review round 1) ---------------------------------------
+
+
+def test_a_second_close_delivery_keeps_the_first_ones_record(tmp_path, setup):
+    """
+    Feature: the closure keeps a durable terminal record
+      Scenario: the webhook and the poller both deliver the closure
+        Given a completed work item whose first closure stamped its record and
+              whose checkout normal cleanup then removed
+        When the same closure arrives again under another delivery id
+        Then the stamp keeps the terminal record and the completed outcome
+
+    Requirement: docs/specs/issue-452/bugfix.md R1.1, R1.2
+    """
+    registry, dispatcher = setup
+    registry.register(make_session(cwd=str(_checkout(tmp_path / "wt", COMPLETED))))
+    _removing_checkouts(dispatcher)
+    dispatcher.handle(_closed())
+    again = _closed()
+    again.delivery_id = "poll-close-github:octo/repo#15-closed"
+
+    dispatcher.handle(again)
+    dispatcher.stop()
+
+    ended = dispatcher.control_store.ended(REF)
+    assert ended["outcome"] == archive.COMPLETED
+    assert ended["terminal"]["node"] == "complete"
+
+
+def test_an_operator_close_during_the_endgame_hold_keeps_the_record(
+    tmp_path, monkeypatch
+):
+    """
+    Feature: the closure keeps a durable terminal record
+      Scenario: an operator closes the session while its closure is held
+        Given a closure held for a session at `complete` (issue-405)
+        When the operator closes the session, removing its checkout
+        And the sweeper later finishes the held closure
+        Then the stamp carries the record read before the checkout went
+
+    Requirement: docs/specs/issue-452/bugfix.md R1.1
+    """
+    from test_finish_grace import TARGET, StubLink, _context
+    from the_loop.webhook.dispatcher import TmuxConfig
+
+    registry, dispatcher = make_dispatcher(
+        tmp_path, FakeTmux(), tmux_config=TmuxConfig(finish_grace_seconds=300.0)
+    )
+
+    class Link(StubLink):
+        def terminal_record(self, work_item, cwd):
+            exists = Path(cwd).is_dir()
+            return {"node": "complete", "completed": True} if exists else None
+
+    monkeypatch.setattr(dispatcher, "graphlink", Link(_context()))
+    checkout = tmp_path / "wt"
+    checkout.mkdir()
+    session = make_session(cwd=str(checkout))
+    session.tmux_target = TARGET
+    registry.register(session)
+    _removing_checkouts(dispatcher)
+    dispatcher.handle(_closed())
+    assert dispatcher.is_closing(REF)
+
+    live = registry.find_by_work_item(REF)
+    assert live is not None
+    dispatcher.close_session(live)
+    assert not checkout.exists()
+    import time
+
+    dispatcher.sweep_closing(now=time.monotonic() + 400.0)
+    dispatcher.stop()
+
+    ended = dispatcher.control_store.ended(REF)
+    assert ended is not None and ended["outcome"] == archive.COMPLETED
+    assert ended["terminal"]["completed"] is True
+
+
+def test_a_coupling_that_raises_still_closes_and_stamps(tmp_path, setup):
+    """A failed read never costs a closure."""
+    registry, dispatcher = setup
+    registry.register(make_session(cwd=str(_checkout(tmp_path / "wt", COMPLETED))))
+
+    def boom(work_item, cwd):
+        raise RuntimeError("coupling fault")
+
+    dispatcher.graphlink.terminal_record = boom
+
+    dispatcher.handle(_closed())
+    dispatcher.stop()
+
+    assert registry.find_by_work_item(REF) is None
+    assert dispatcher.control_store.ended(REF)["outcome"] == archive.UNKNOWN
+
+
+def test_cleanup_does_not_resurrect_a_stamp_a_reopen_cleared(tmp_path, setup):
+    """A reopen while cleanup reads the checkout wins: the item stays open."""
+    registry, dispatcher = setup
+    registry.register(make_session(cwd=str(_checkout(tmp_path / "wt", COMPLETED))))
+    registry.close(REF)
+    dispatcher.control_store.record_ended(REF, {"state": "closed"})
+    read = dispatcher._terminal_record
+
+    def read_while_reopened(work_item, cwd=""):
+        dispatcher.control_store.clear_ended(work_item)
+        return read(work_item, cwd)
+
+    dispatcher._terminal_record = read_while_reopened
+    dispatcher._remove_checkout = lambda work_item: True
+
+    dispatcher.cleanup_work_item(make_session().work_item, reason="test")
+
+    assert dispatcher.control_store.ended(REF) is None
+
+
+def test_a_duplicate_close_is_a_cancellation(tmp_path, setup):
+    registry, dispatcher = setup
+    registry.register(make_session(cwd=str(_checkout(tmp_path / "wt", MID_FLIGHT))))
+
+    dispatcher.handle(_closed("duplicate"))
+    dispatcher.stop()
+
+    assert dispatcher.control_store.ended(REF)["outcome"] == archive.CANCELLED

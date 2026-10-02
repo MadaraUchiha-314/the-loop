@@ -181,6 +181,7 @@ def test_abuse_forged_fields_are_filtered(tmp_path):
         currentNode="not-a-node",
         model="x" * 500,
         effort="high\x1b[2J",
+        nodes={"complete": {"outcome": "pass", "exitedAt": "\x1b]0;pwned\x07"}},
     )
     evidence = spec / "evidence"
     evidence.mkdir()
@@ -199,6 +200,36 @@ def test_abuse_forged_fields_are_filtered(tmp_path):
     assert "ok.md" in record["evidence"]
     assert all("\x1b" not in name and " " not in name for name in record["evidence"])
     assert len(record["evidence"]) == archive.MAX_EVIDENCE
+    assert record["completed"] is True and record["completedAt"] == ""
+
+
+def test_abuse_a_symlinked_evidence_directory_is_not_walked(tmp_path):
+    """An `evidence -> /` link must not list, or walk, anything outside the spec."""
+    spec = _state(tmp_path, currentNode="design")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.md").write_text("x")
+    (spec / "evidence").symlink_to(outside, target_is_directory=True)
+
+    record = archive.terminal_record(_runtime(tmp_path), ITEM)
+
+    assert record is not None and record["evidence"] == []
+
+
+def test_a_large_evidence_tree_is_walked_only_so_far(tmp_path, monkeypatch):
+    spec = _state(tmp_path, currentNode="design")
+    evidence = spec / "evidence"
+    for d in range(30):
+        sub = evidence / f"d{d:02d}"
+        sub.mkdir(parents=True)
+        for n in range(10):
+            (sub / f"f{n}.md").write_text("x")
+    monkeypatch.setattr(archive, "_MAX_VISITED", 25)
+
+    record = archive.terminal_record(_runtime(tmp_path), ITEM)
+
+    assert record is not None
+    assert 0 < len(record["evidence"]) < 300
 
 
 # -- the outcome -------------------------------------------------------------------

@@ -47,7 +47,7 @@ github:octo/repo#3 --format json --fail-on block` from the deployment directory 
 
 ```text
 $ uv run python -m pytest -q tests/test_archive.py
-28 passed
+30 passed
 ```
 
 The record: a claimed `complete` is `completed` with its exit time; a pointer at
@@ -63,7 +63,7 @@ over a present spec directory are unchanged; a pre-change stamp (T10) and a malf
 
 ```text
 $ uv run python -m pytest -q tests/test_archive_dispatch.py
-7 passed
+12 passed
 ```
 
 The stamp carries the record read while the checkout existed (the test's removal seam
@@ -71,7 +71,12 @@ deletes the directory, and the record is still there); `not_planned` on a mid-fl
 is `cancelled`; a completed-reason close of a mid-flight item is `closed-externally`; a
 session-less tracked close reads the registry's checkout; a foreign checkout gives
 `unknown` and no record; `cleanup` backfills a stamp before the checkout goes, and writes
-none for an open item. Outcome: **pass**.
+none for an open item. The critic round's regressions (`critic-review.md`) are here
+too: a second delivery keeps the record, an operator close during the endgame hold keeps
+it, a raising coupling still closes and stamps, a reopen during the backfill wins, a
+duplicate is a cancellation. Each of these, and the two new evidence-walk tests and the
+forged `exitedAt`, was red against the first commit (`59fce06`): `8 failed, 34 passed`.
+Outcome: **pass**.
 
 ## T4: unit — the poller's `state_reason`
 
@@ -115,7 +120,7 @@ $ uv run python -m pytest -q tests/test_cleanup.py tests/test_cleanup_integratio
 288 passed
 
 $ uv run python -m pytest -q
-5338 passed, 1 skipped
+5345 passed, 1 skipped
 
 $ uv run ruff check cli hooks
 All checks passed!

@@ -162,7 +162,7 @@ issue-3: ARCHIVED — completed (at complete)
 ```
 
 The outcome is `completed` only when the work item's session claimed its completion node;
-an issue closed as not planned (or a pull request closed unmerged) is `cancelled`, any
+an issue closed as not planned or as a duplicate (or a pull request closed unmerged) is `cancelled`, any
 other closure `closed-externally`. A stamp with no terminal record — written before this
 change, or when the checkout could not be read — prints `ARCHIVED — unknown` and says the
 archived detail is unavailable. There are no node findings: the directory you ran from is
