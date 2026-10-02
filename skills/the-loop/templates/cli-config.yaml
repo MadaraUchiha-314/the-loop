@@ -119,6 +119,10 @@ harnesses: []
 # - name: claude
 #   default: true                 # the harness an unmatched event, and a work
 #                                 # item that chose none, spawns on
+#   defaultModel: opus-5          # the model a session on this harness runs on
+#                                 # when its work item chose none (do, contribute,
+#                                 # review, an unticked gate); unset passes no model
+#                                 # flag and the harness's own settings decide
 #   args: [--dangerously-skip-permissions]   # new home of routing.harnessArgs.claude;
 #                                            # reaches EVERY session on this harness
 #                                            # (work item, released, respawned, PR,

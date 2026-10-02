@@ -17,6 +17,7 @@ from the_loop.modelchoice import (
     candidate_harnesses,
     declared_effort,
     declared_models,
+    default_model,
     effective_args,
     effort_args,
     model_args,
@@ -309,3 +310,94 @@ def test_launch_args_falls_back_when_the_new_home_is_not_a_list():
         "routing": {"harnessArgs": {"claude": ["--old"]}},
     }
     assert launch_args(config) == {"claude": ["--old"]}
+
+
+# -- default_model: the model a session runs on when nothing chose one (issue-451) --
+
+
+def test_a_harness_declares_its_own_default_model():
+    config = {"harnesses": [{"name": "claude", "defaultModel": " opus-5 "}]}
+    assert default_model(config, "claude") == "opus-5"
+
+
+def test_a_default_model_need_not_be_offered_as_a_choice():
+    """R1.2 — the default exists for the install that offers no choice at all."""
+    config = {"harnesses": [{"name": "claude", "defaultModel": "opus-5"}], "models": []}
+    assert default_model(config, "claude") == "opus-5"
+
+
+def test_abuse_one_harnesses_default_is_never_another_harnesses():
+    """Abuse 3 — looked up by the launch's harness name and nothing else."""
+    config = {
+        "harnesses": [
+            {"name": "claude", "defaultModel": "opus-5"},
+            {"name": "cursor"},
+            "codex",
+        ]
+    }
+    assert default_model(config, "cursor") == ""
+    assert default_model(config, "codex") == ""
+    assert default_model(config, "pi") == ""
+    assert default_model({}, "claude") == ""
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "--dangerously-skip-permissions",
+        "x; rm -rf /",
+        "../etc/passwd",
+        "",
+        42,
+        ["opus-5"],
+        None,
+    ],
+)
+def test_abuse_a_default_outside_the_grammar_is_no_default(value):
+    """R1.3, abuse 1 — a value that could be a flag, a path or a shell fragment never
+    becomes a model, so it can never reach an argv."""
+    config = {"harnesses": [{"name": "claude", "defaultModel": value}]}
+    assert default_model(config, "claude") == ""
+
+
+def test_a_default_model_on_a_harness_with_no_model_flag_warns():
+    """R2.5 — said where the operator looks, never found at a spawn."""
+
+    class _NoFlag(ClaudeCodeAdapter):
+        model_flag = ""
+
+    config = {"harnesses": [{"name": "claude", "defaultModel": "opus-5"}]}
+    findings = config_findings(config, {"claude": _NoFlag()})
+    assert any(
+        f.where == "harnesses[claude].defaultModel" and f.level == "warning"
+        for f in findings
+    )
+    assert config_findings(config, _adapters()) == []
+
+
+@pytest.mark.parametrize(
+    "value, valid",
+    [
+        ("opus-5", True),
+        ("claude-opus-5:beta", True),
+        ("--model", False),
+        ("a b", False),
+    ],
+)
+def test_the_schema_holds_a_default_model_to_the_model_name_grammar(value, valid):
+    """R1.1 — the shipped schema, the one `validate` and onboarding read."""
+    import json
+    from pathlib import Path
+
+    import jsonschema
+
+    import the_loop
+
+    schema = json.loads(
+        (
+            Path(the_loop.__file__).parent / "schemas" / "cli-config.schema.json"
+        ).read_text()
+    )
+    config = {"harnesses": [{"name": "claude", "defaultModel": value}]}
+    errors = list(jsonschema.Draft202012Validator(schema).iter_errors(config))
+    assert (not errors) is valid

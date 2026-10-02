@@ -521,3 +521,120 @@ def test_no_checkout_and_no_record_resolves_to_the_operators_defaults(tmp_path):
         dispatcher._tmux_for(WorkItemRef.parse(REF)).session_per_pr
         == dispatcher.config.tmux.session_per_pr
     )
+
+
+# -- the harness's default model (issue-451) ------------------------------------
+
+
+def _with_default(tmp_path, model="opus-5"):
+    return _config(
+        tmp_path,
+        harnesses=[
+            {
+                "name": "claude",
+                "default": True,
+                "defaultModel": model,
+                "args": ["--dangerously-skip-permissions"],
+            },
+            {"name": "cursor"},
+        ],
+    )
+
+
+def test_a_work_item_that_chose_no_model_launches_on_its_harnesss_default(tmp_path):
+    """
+    Feature: a default model per harness
+      Scenario: `the-loop do`, `contribute`, or a gate answered with no model tick
+        Given the claude harness declares `defaultModel: opus-5`
+        And the work item froze no model
+        When its session is launched
+        Then the argv carries `--model opus-5` after the operator's own arguments
+        And the session record names `opus-5`
+    Requirement: docs/specs/issue-451/requirements.md R2.1, R2.4
+    """
+    registry, dispatcher, tmux = _dispatcher(
+        tmp_path, cli_config=_with_default(tmp_path)
+    )
+    adapter = dispatcher._adapter_for(WorkItemRef.parse(REF), "claude")
+    assert adapter is not None
+    assert adapter.extra_args == ["--dangerously-skip-permissions", "--model", "opus-5"]
+
+    dispatcher.handle(_comment())
+    assert _wait(lambda: registry.find_by_work_item(REF) is not None)
+    dispatcher.stop()
+    session = registry.find_by_work_item(REF)
+    assert session is not None
+    assert session.model == "opus-5"
+    assert session.harness_args == [
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus-5",
+    ]
+
+
+def test_a_frozen_model_wins_over_the_default(tmp_path):
+    """R2.2 — the work item's own choice; the default is never added beside it."""
+    _freeze(tmp_path, model="fable-5.1", effort="xhigh")
+    registry, dispatcher, tmux = _dispatcher(
+        tmp_path, cli_config=_with_default(tmp_path)
+    )
+    adapter = dispatcher._adapter_for(WorkItemRef.parse(REF), "claude")
+    assert adapter is not None
+    assert adapter.extra_args == [
+        "--dangerously-skip-permissions",
+        "--model",
+        "fable-5.1",
+        "--effort",
+        "xhigh",
+    ]
+
+
+def test_an_effort_only_choice_still_runs_on_the_default_model(tmp_path):
+    _freeze(tmp_path, effort="xhigh")
+    registry, dispatcher, tmux = _dispatcher(
+        tmp_path, cli_config=_with_default(tmp_path)
+    )
+    assert dispatcher._resolved_choice(WorkItemRef.parse(REF), "claude") == (
+        "opus-5",
+        "xhigh",
+    )
+
+
+def test_abuse_a_forged_frozen_model_lands_on_the_default(tmp_path):
+    """R2.3, abuse 2 — a state file naming an undeclared model buys the operator's
+    default, never the forged name."""
+    _freeze(tmp_path, model="--dangerously-skip-permissions")
+    registry, dispatcher, tmux = _dispatcher(
+        tmp_path, cli_config=_with_default(tmp_path)
+    )
+    adapter = dispatcher._adapter_for(WorkItemRef.parse(REF), "claude")
+    assert adapter is not None
+    assert adapter.extra_args == ["--dangerously-skip-permissions", "--model", "opus-5"]
+
+
+def test_abuse_a_harnesss_default_is_not_applied_on_another_harness(tmp_path):
+    """Abuse 3."""
+    registry, dispatcher, tmux = _dispatcher(
+        tmp_path, cli_config=_with_default(tmp_path)
+    )
+    assert dispatcher._resolved_choice(WorkItemRef.parse(REF), "cursor") == ("", "")
+
+
+def test_abuse_a_default_outside_the_grammar_reaches_no_argv(tmp_path):
+    """Abuse 1 — a config the schema never validated (a hand edit, then a reload)."""
+    config = _with_default(tmp_path, model="--permission-mode=bypassPermissions")
+    registry, dispatcher, tmux = _dispatcher(tmp_path, cli_config=config)
+    adapter = dispatcher._adapter_for(WorkItemRef.parse(REF), "claude")
+    assert adapter is dispatcher.adapters["claude"]
+
+
+def test_a_default_the_harness_refuses_is_never_spawned_onto(tmp_path):
+    """R2.6 — the same rule a refused frozen model gets."""
+    cache = VerdictCache(str(tmp_path / "state" / "local" / "model-verdicts.json"))
+    cache.put(Verdict("claude", "model", "opus-5", "", REFUSED, time.time()))
+    registry, dispatcher, tmux = _dispatcher(
+        tmp_path, cli_config=_with_default(tmp_path)
+    )
+    adapter = dispatcher._adapter_for(WorkItemRef.parse(REF), "claude")
+    assert adapter is not None
+    assert "--model" not in adapter.extra_args

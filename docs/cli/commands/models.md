@@ -24,7 +24,9 @@ The rule the two halves follow: **a declaration may narrow, only the probe may c
 
 ## `list`
 
-Prints the declared combinations and whatever is already known, asking nothing:
+Prints the declared combinations and whatever is already known, asking nothing. Each
+harness's [`defaultModel`](/config/cli/harnesses-options#harnesses-defaultmodel) is one of
+them, on that harness only (issue-451):
 
 ```console
 $ the-loop models list

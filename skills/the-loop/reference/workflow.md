@@ -381,7 +381,10 @@ A row appears only when the operator declared it (top-level `models` and `effort
 CLI config) **and** this work item's harness is not known to refuse it — availability is
 measured by `the-loop models check`, not assumed, so a human is never offered a model that
 would leave a session dead in a pane. Leave both alone and the work item runs on that
-harness's own arguments, exactly as every work item did before the question existed.
+harness's own arguments plus, when the operator declared one, that harness's
+`harnesses[].defaultModel` (issue-451) — the same model a `do`, `contribute` or `review`
+session gets, since those loops have no gate to ask at. The checklist names that default,
+and it is read at launch, never frozen into the work item.
 
 **The agent never ticks these rows**, exactly as it never declares a skip. See
 [decision-124](../../../docs/decisions/decision-124.md).

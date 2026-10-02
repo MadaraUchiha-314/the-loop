@@ -11,6 +11,7 @@ has, which models a work item may be put on, and how much effort it may be asked
 harnesses:
   - name: claude
     default: true
+    defaultModel: opus-5
     args: ["--dangerously-skip-permissions"]
   - name: cursor
 
@@ -60,7 +61,7 @@ what every install written before this key has.
 The agent harnesses this instance has. `models` and `effort` refer to these names, and a
 work item's harness is what decides which models it may be offered.
 
-Today an entry carries `name`, `default` and `args`. The other three per-harness keys —
+Today an entry carries `name`, `default`, `defaultModel` and `args`. The other three per-harness keys —
 [`routing.harnessTrust`](/config/cli/routing-options#harnesstrust),
 [`routing.harnessPlugins`](/config/cli/routing-options#harnessplugins) and
 [`routing.defaultHarness`](/config/cli/routing-options#defaultharness) — belong here by
@@ -84,6 +85,47 @@ a spawn discover it.
 Whether an unmatched event spawns on this harness. With no entry claiming it, the-loop
 falls back to `routing.defaultHarness`. Two entries claiming it is a config error — a work
 item's harness decides which models it may be offered, so it cannot be ambiguous.
+
+### `harnesses[].defaultModel`
+
+- **Type:** `string`
+- **Default:** unset — no model flag is passed
+
+The model a work item's session on this harness is launched on when it has **no model of
+its own** ([issue-451](https://github.com/MadaraUchiha-314/the-loop/issues/451)):
+
+- `the-loop do`, `the-loop contribute` and `the-loop review`, which have no
+  `phase-selection` gate;
+- a `phase-selection` reply that ticked no model, or an install with no `models` at all;
+- a frozen model that no longer passes re-validation (withdrawn from `models`, or narrowed
+  to another harness).
+
+Unset, the-loop passes no model flag and the harness's own settings decide — an enterprise
+policy, the user's settings file, or the vendor's current default. Set it when you want
+those sessions on a model *you* picked.
+
+```text
+harnesses[].args        →  --dangerously-skip-permissions
++ the default model     →  --model opus-5        (only when the work item chose none)
+```
+
+A work item's own model always wins, and the default is never added beside it. The name
+follows the same grammar as a [`models`](#the-models) name and is copied verbatim into the
+harness's model flag; a value outside the grammar is ignored. It does **not** need to be
+declared in `models` — the default exists for the install that offers no choice.
+
+The default is the operator's answer, read **at launch**: it is not frozen into the work
+item at `phase-selection`, so changing it moves every work item that chose nothing. A
+session already running on other arguments is re-launched on its next event, resuming its
+conversation, the same as when you change `args`. The checklist and the confirmation name
+the default so the person answering the gate knows what an unticked section means.
+
+`the-loop models check` probes the default on this harness. A default the harness refuses
+is dropped at launch, like a refused choice. A harness whose adapter has no model flag
+cannot apply one, and `the-loop models list|check` warns.
+
+Standing sessions and critics do not read it: a standing session's own `harnessArgs`, and
+a critic's own `model`, say which model they run.
 
 ### `harnesses[].args`
 

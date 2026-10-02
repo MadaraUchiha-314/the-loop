@@ -84,6 +84,16 @@ def test_each_section_is_rendered_only_when_it_has_something_to_offer():
     assert selection._choice_lines(_ctx()) == [], "declare nothing, ask nothing"
 
 
+def test_the_model_section_names_the_default_harnesss_default_model():
+    """issue-451 R3.1 — what "no tick" means is readable before anyone replies."""
+    harnesses = [{"name": "claude", "default": True, "defaultModel": "opus-5"}]
+    body = "\n".join(selection._choice_lines(_ctx(**_declared(harnesses=harnesses))))
+    assert "runs on `opus-5`, the `claude` harness's default model" in body
+
+    plain = "\n".join(selection._choice_lines(_ctx(**_declared())))
+    assert "the model this harness is configured with" in plain
+
+
 def test_a_long_list_is_capped_and_counted_rather_than_truncated():
     names = [f"model-{n}" for n in range(selection.CANDIDATE_LIMIT + 5)]
     ctx = _ctx(**_declared(models=names))
@@ -276,6 +286,48 @@ def test_an_authorized_reply_freezes_both_choices(monkeypatch):
     # ...and the human is told, in both directions (R1.6).
     confirmation = next(kw["body"] for verb, kw in posted if verb == "add-comment")
     assert "fable-5.1" in confirmation and "high" in confirmation
+
+
+def _confirm(monkeypatch, body, **config):
+    posted = []
+
+    class _Integration:
+        def call(self, verb, **kw):
+            posted.append((verb, kw))
+            return {}
+
+    monkeypatch.setattr(selection, "_resolve", lambda ctx: _Integration())
+    ctx = _gate_ctx([{"author": "owner", "body": body}], **config)
+    result = selection.classify_phase_selection(ctx)
+    return result, next(kw["body"] for verb, kw in posted if verb == "add-comment")
+
+
+def test_the_confirmation_names_the_default_model_when_none_was_ticked(monkeypatch):
+    """issue-451 R3.2 — and it is not frozen: the default is the operator's, read at
+    launch, never a human's choice recorded in the work item's state."""
+    harnesses = [{"name": "claude", "default": True, "defaultModel": "opus-5"}]
+    result, confirmation = _confirm(
+        monkeypatch, "the-loop execute", **_declared(harnesses=harnesses)
+    )
+    assert result.data["model"] == ""
+    assert "Model: **`opus-5`**, the `claude` harness's default" in confirmation
+
+
+def test_a_ticked_model_still_wins_over_the_default(monkeypatch):
+    harnesses = [{"name": "claude", "default": True, "defaultModel": "opus-5"}]
+    result, confirmation = _confirm(
+        monkeypatch,
+        "- [x] `model-fable-5.1`\nthe-loop execute",
+        **_declared(harnesses=harnesses),
+    )
+    assert result.data["model"] == "fable-5.1"
+    assert "Model: **`fable-5.1`**." in confirmation
+
+
+def test_without_a_default_the_confirmation_is_unchanged(monkeypatch):
+    """R5.1."""
+    _, confirmation = _confirm(monkeypatch, "the-loop execute", **_declared())
+    assert "Model: **the harness's own** — no single row was ticked." in confirmation
 
 
 # -- the collaboration-channel section (issue-375) -------------------------------

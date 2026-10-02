@@ -33,6 +33,7 @@ from ..modelchoice import (
     declared_effort,
     declared_harnesses,
     declared_models,
+    default_model,
 )
 from ..modelprobe import (
     REFUSED,
@@ -74,6 +75,12 @@ def _combinations(config: dict) -> List[tuple]:
     for name in declared_models(config):
         for harness in candidate_harnesses(config, name) or _harnesses(config):
             pairs.append((harness, "model", name))
+    # Each harness's own default model (issue-451), on that harness only: a
+    # default the harness refuses is found here rather than by a spawn.
+    for harness in _harnesses(config):
+        fallback = default_model(config, harness)
+        if fallback and (harness, "model", fallback) not in pairs:
+            pairs.append((harness, "model", fallback))
     for level in declared_effort(config):
         for harness in _harnesses(config):
             pairs.append((harness, "effort", level))

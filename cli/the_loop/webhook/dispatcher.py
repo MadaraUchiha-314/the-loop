@@ -71,6 +71,7 @@ from ..modelchoice import (
     declared_harnesses,
     declared_models,
     default_harness,
+    default_model,
     effective_args,
     effort_args,
     launch_args,
@@ -1736,6 +1737,9 @@ class Dispatcher:
     ) -> Tuple[str, str]:
         """This work item's frozen ``(model, effort)`` — ``("", "")`` when it has
         none, or when what it froze is no longer something it may run (issue-358).
+        Where no model survives, the harness's ``defaultModel`` stands in for it
+        (issue-451), so ``the-loop do``, a contribution and an unticked gate launch
+        on the operator's model rather than on whatever the harness's own settings say.
 
         Read from the same place :meth:`_tmux_for` reads ``sessionPerPr`` — the
         work item's own checked-in state (issue-368) — so resolving a choice
@@ -1749,13 +1753,14 @@ class Dispatcher:
         chosen = self._frozen_choices(work_item, cwd)
         model = chosen["model"]
         effort = chosen["effort"]
-        if not model and not effort:
-            return "", ""
         config = self.cli_config or {}
+        fallback = default_model(config, harness)
+        if not model and not effort and not fallback:
+            return "", ""
         if model and model not in declared_models(config):
             logger.warning(
                 "%s froze the model %r, which is no longer declared; launching on "
-                "the harness's own arguments",
+                "the harness's default instead",
                 work_item.ref,
                 model,
             )
@@ -1769,12 +1774,16 @@ class Dispatcher:
             if harness not in candidate_harnesses(config, model):
                 logger.warning(
                     "%s froze the model %r, which is not declared for the %s "
-                    "harness; launching on the harness's own arguments",
+                    "harness; launching on the harness's default instead",
                     work_item.ref,
                     model,
                     harness,
                 )
                 model = ""
+        # Nothing chosen, or the choice did not survive re-validation: the
+        # operator's per-harness default (issue-451) — read at launch, never frozen,
+        # so a work item that chose nothing follows the operator's current answer.
+        model = model or fallback
         if effort and effort not in declared_effort(config):
             effort = ""
         return self._offerable_only(work_item, harness, model, effort)
