@@ -89,8 +89,9 @@ def should_discover(payload: Dict[str, Any]) -> bool:
     opened nothing links nothing.
     """
     tool = str(payload.get("tool_name") or "")
-    if tool == "Bash":
-        command = str((payload.get("tool_input") or {}).get("command") or "")
+    if tool in ("Bash", "exec_command"):
+        tool_input = payload.get("tool_input") or {}
+        command = str(tool_input.get("command") or tool_input.get("cmd") or "")
         if not any(_triggers(segment) for segment in _SEGMENT_SPLIT_RE.split(command)):
             return False
     elif not _MCP_CREATE_RE.search(tool):

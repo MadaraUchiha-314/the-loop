@@ -30,6 +30,8 @@ dev = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
     "httpx>=0.27",
+    # cli/hatch_build.py's build hook imports hatchling; pyright type-checks it.
+    "hatchling",
 ]
 
 # Test modules import shared doubles from their sibling conftest.py (pytest puts

@@ -178,12 +178,24 @@ def test_an_undeclared_harness_with_an_adapter_is_not_spawned_onto(tmp_path):
     assert dispatcher._harness_for(WorkItemRef.parse(REF)) == "claude"
 
 
-def test_the_default_skips_a_default_true_that_cannot_host(tmp_path):
+def test_the_default_skips_a_default_true_that_cannot_host(tmp_path, monkeypatch):
     """R4.1/R4.2: the daemon's default is the gate's, by the same rule."""
     config = _config(tmp_path)
+    events = []
+    monkeypatch.setattr(
+        "the_loop.webhook.dispatcher.eventlog.emit",
+        lambda event, **fields: events.append((event, fields)),
+    )
     config["harnesses"] = [{"name": "cursor", "default": True}, {"name": "codex"}]
     _, dispatcher = _dispatcher(tmp_path, cli_config=config)
     assert dispatcher._default_harness() == "claude"  # routing.defaultHarness
+    assert events[-1][0] == "session.default_harness_bypassed"
+    assert events[-1][1]["declared_harness"] == "cursor"
+    assert events[-1][1]["harness"] == "claude"
+    # Reported once per configuration, not on every routed event.
+    assert dispatcher._default_harness() == "claude"
+    bypassed = [e for e in events if e[0] == "session.default_harness_bypassed"]
+    assert len(bypassed) == 1
     config["harnesses"] = [{"name": "codex", "default": True}, {"name": "claude"}]
     _, dispatcher = _dispatcher(tmp_path, cli_config=config)
     assert dispatcher._default_harness() == "codex"

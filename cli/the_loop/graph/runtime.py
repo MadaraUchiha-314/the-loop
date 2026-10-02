@@ -66,37 +66,9 @@ def _exclude_spec_root(repo: Path, spec_root: str) -> str:
 
     Returns ``"added"``, ``"present"`` or ``""`` (could not / nothing to do).
     """
-    import subprocess
+    from ..gitexclude import exclude_from_git
 
-    entry = "/" + spec_root.strip("/") + "/"
-    try:
-        proc = subprocess.run(
-            ["git", "-C", str(repo), "rev-parse", "--git-path", "info/exclude"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        logger.debug("could not resolve %s's exclude file: %s", repo, exc)
-        return ""
-    if proc.returncode != 0:
-        return ""  # not a git checkout — nothing to keep out of history
-    path = Path(proc.stdout.strip())
-    if not path.is_absolute():
-        path = repo / path
-    try:
-        existing = path.read_text(encoding="utf-8") if path.is_file() else ""
-        if entry in existing.splitlines():
-            return "present"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as fh:
-            if existing and not existing.endswith("\n"):
-                fh.write("\n")
-            fh.write(entry + "\n")
-    except OSError as exc:
-        logger.warning("could not exclude %s from git: %s", spec_root, exc)
-        return ""
-    return "added"
+    return exclude_from_git(repo, "/" + spec_root.strip("/") + "/")
 
 
 #: The ``via`` marker of a skip nobody declared: an **opt-in** node that was

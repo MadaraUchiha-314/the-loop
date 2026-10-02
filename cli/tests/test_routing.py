@@ -1708,10 +1708,10 @@ def make_control_dispatcher(tmp_path, tmux, **overrides):
     return make_dispatcher(tmp_path, tmux, **overrides)
 
 
-def test_the_settled_vocabulary_is_exactly_the_ten_documented_outcomes():
+def test_the_settled_vocabulary_is_exactly_the_eleven_documented_outcomes():
     """Adding a settlement means adding it here — and to the event catalogue.
 
-    `poll.comment_settled` documents these six as its `outcome` values, and the
+    `poll.comment_settled` documents these eleven as its `outcome` values, and the
     poller records whatever it is handed without branching on it, so this tuple is
     the only place the vocabulary is stated.
     """
@@ -1722,6 +1722,7 @@ def test_the_settled_vocabulary_is_exactly_the_ten_documented_outcomes():
         "control-executed",
         "control-rejected",
         "control-ambiguous",
+        "parked-at-human-start-gate",
         # issue-322: an event outside this instance's scope, refused for good
         "addressed-elsewhere",
         "unaddressed",

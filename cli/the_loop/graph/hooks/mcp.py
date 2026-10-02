@@ -5,7 +5,7 @@ with a session. A daemon speaking it is against its grain, and implementing it
 would put protocol code, server lifecycle management and credential handling
 inside the-loop for capability it can already reach.
 
-So the-loop delegates. It already spawns Claude Code / Cursor, and both are MCP
+So the-loop delegates. It already spawns Claude Code / Cursor / Codex, all of which are MCP
 clients with the operator's servers configured — the harness *is* the client,
 which is what it is for. A minimal stdio JSON-RPC client stays on the shelf
 (decision-042); revisit only if delegation latency ever matters, which for
@@ -22,6 +22,9 @@ from typing import Any, Dict, List
 
 from ..contract import HookContext, HookResult, Message
 from ..registry import hook
+from ...harness import ADAPTER_TYPES
+from ...harness.base import output_text
+from ...modelchoice import default_harness
 
 logger = logging.getLogger("the-loop.graph")
 
@@ -39,19 +42,14 @@ _SCHEMA = {
 
 
 def _argv(harness: str, prompt: str) -> List[str]:
-    if harness == "cursor":
-        # No schema enforcement in cursor-agent today: the schema is embedded in
-        # the prompt and validated locally instead (decision-042).
-        return ["cursor-agent", "-p", prompt, "--output-format", "json"]
-    return [
-        "claude",
-        "-p",
-        prompt,
-        "--output-format",
-        "json",
-        "--json-schema",
-        json.dumps(_SCHEMA),
-    ]
+    cls = ADAPTER_TYPES.get(harness)
+    if cls is None:
+        raise ValueError(f"no adapter for harness {harness!r}")
+    adapter = cls()
+    argv = [adapter.binary] + adapter.oneshot_argv(prompt)
+    if harness == "claude":
+        argv += ["--json-schema", json.dumps(_SCHEMA)]
+    return argv
 
 
 @hook(NAME)
@@ -59,10 +57,25 @@ def mcp_call(ctx: HookContext) -> HookResult:
     tool = str(ctx.params.get("tool") or "")
     if not tool:
         return HookResult.skipped(NAME, "no MCP tool named")
+    routing = ctx.config.get("routing") or {}
     harness = str(
-        ctx.params.get("harness") or ctx.config.get("defaultHarness") or "claude"
+        ctx.params.get("harness")
+        or default_harness(
+            ctx.config,
+            str(
+                routing.get("defaultHarness")
+                or ctx.config.get("defaultHarness")
+                or "claude"
+            ),
+            lambda _: True,
+        )
     )
-    binary = "cursor-agent" if harness == "cursor" else "claude"
+    cls = ADAPTER_TYPES.get(harness)
+    if cls is None:
+        return HookResult.blocked(
+            NAME, [Message(text=f"no adapter for harness {harness!r}")], retriable=False
+        )
+    binary = cls.default_binary
     if not shutil.which(binary):
         return HookResult.blocked(
             NAME,
@@ -77,6 +90,9 @@ def mcp_call(ctx: HookContext) -> HookResult:
     )
     try:
         proc = subprocess.run(
+            # The one-shot argv only: a harness's launch args (harnesses[].args)
+            # are for its interactive TUI, and `codex exec` rejects TUI-only
+            # flags such as `-a`/`--no-alt-screen`.
             _argv(harness, prompt),
             cwd=str(ctx.repo),
             capture_output=True,
@@ -94,13 +110,19 @@ def mcp_call(ctx: HookContext) -> HookResult:
 
     payload: Dict[str, Any] = {}
     try:
-        raw = json.loads(proc.stdout or "{}")
-        payload = raw.get("structured_output") or raw
-    except json.JSONDecodeError:
+        raw = json.loads(output_text(proc.stdout) or "{}")
+        if isinstance(raw, dict):
+            result = (
+                raw
+                if "ok" in raw
+                else (raw.get("structured_output") or raw.get("result") or raw)
+            )
+            payload = json.loads(result) if isinstance(result, str) else result
+    except (json.JSONDecodeError, TypeError):
         return HookResult.blocked(
             NAME, [Message(text="the harness did not return parseable JSON")]
         )
-    if not isinstance(payload, dict) or not payload.get("ok", False):
+    if not isinstance(payload, dict) or payload.get("ok") is not True:
         return HookResult.blocked(
             NAME, [Message(text=f"MCP tool {tool!r} reported failure")]
         )

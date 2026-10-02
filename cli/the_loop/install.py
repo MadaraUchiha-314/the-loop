@@ -8,7 +8,8 @@ had to teach the daemon to install the plugin before a spawn, because a session 
 the plugin has no loop at all; this module is the same capability for a human or a CI job,
 with a scope they can choose.
 
-**Claude Code only, deliberately** (owner decision on PR #153). the-loop is also shipped
+**Claude Code and Codex setup.** Codex receives bundled instructions and native
+Stop-hook wiring; Claude Code uses its plugin installer. the-loop is also shipped
 as a Cursor plugin, but Cursor's plugin *installation* is a separate problem — as of
 Cursor 2.5 the documented routes are the marketplace site and ``/add-plugin`` in the
 editor, with ``cursor-agent plugin marketplace add`` reported to exist but no documented
@@ -80,14 +81,14 @@ __all__ = [
     "resolve_marketplace_repo",
 ]
 
-#: What can be installed. ``cli`` is this package; ``claude`` is the harness plugin.
+#: What can be installed: the CLI, Claude's plugin and Codex's operating surface.
 #: Cursor is deliberately not here yet — see the module docstring and issue-157.
-COMPONENTS = ("cli", "claude")
+COMPONENTS = ("cli", "claude", "codex")
 
 #: The harness binaries, by component. A mapping rather than a constant because the
 #: plan/report machinery is harness-shaped: adding Cursor (issue-157) is an entry here
 #: plus its own planner, not a new command.
-BINARIES: Dict[str, str] = {"claude": "claude"}
+BINARIES: Dict[str, str] = {"claude": "claude", "codex": "codex"}
 
 #: The PyPI distribution name — see decision-019 for why it is not ``the-loop``.
 DISTRIBUTION = "the-loopy-one"
@@ -521,7 +522,7 @@ def plan(
     project = Path(project_dir) if project_dir is not None else Path(".")
     wanted = [name for name in COMPONENTS if name in set(components)]
     repo = ""
-    if any(name in BINARIES for name in wanted):
+    if "claude" in wanted:
         repo = _validated_repo(marketplace_repo)
 
     steps: List[Step] = []
@@ -530,6 +531,31 @@ def plan(
             steps += plan_cli(
                 scope=scope, upgrade=upgrade, project_dir=project, env=env
             )
+        elif name == "codex":
+            from .codex_support import codex_home, prepare_instructions
+
+            if env.which("codex") is None:
+                steps.append(
+                    Step(
+                        "codex",
+                        "check Codex CLI",
+                        state="failed",
+                        detail="codex not found on PATH; install the official Codex CLI first",
+                    )
+                )
+            else:
+                target = project if scope == "project" else codex_home(env.home)
+                steps.append(
+                    Step(
+                        "codex",
+                        "prepare the-loop instructions and Stop hook",
+                        writer=lambda target=target: prepare_instructions(
+                            str(target), global_scope=scope == "user"
+                        ),
+                        target=str(target / "AGENTS.md"),
+                        detail="Trust the new Stop hook once with Codex /hooks; existing instructions and hooks are preserved.",
+                    )
+                )
         else:
             steps += plan_claude(
                 scope=scope,

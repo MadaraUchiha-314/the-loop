@@ -15,6 +15,7 @@ This page is the contract. `loop.check_environment()` is the same contract, exec
 | Binary | Renamed by | Required when | What it serves |
 |--------|-----------|---------------|----------------|
 | `claude` | — | `routing.enabled` and `routing.defaultHarness: claude` (the default) | spawning, resuming and one-shot critic runs of Claude Code sessions |
+| `codex` | — | `routing.enabled` and `routing.defaultHarness: codex` | Codex TUI hosting, exact-session resume, and JSONL critic runs |
 | `cursor-agent` | — | `routing.enabled` and `routing.defaultHarness: cursor` | the same, for Cursor |
 | `tmux` | — | `routing.enabled` | hosting harness sessions — the only runner since issue-156, and what makes a session attachable |
 | `git` | [`routing.workspace.gitBinary`](/config/cli/routing-options) | `routing.enabled` | cloning and worktree checkouts for spawned sessions |

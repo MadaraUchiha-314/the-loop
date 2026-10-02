@@ -415,7 +415,7 @@ def test_an_undetected_harness_is_not_in_the_default_set(tmp_path):
 
 def test_components_all_selects_every_component_even_when_undetected(tmp_path):
     env = env_for(tmp_path / "home", binaries=())
-    assert install.resolve_components(["all"], env) == ["cli", "claude"]
+    assert install.resolve_components(["all"], env) == ["cli", "claude", "codex"]
 
 
 def test_cursor_is_not_a_component_yet(tmp_path):

@@ -21,6 +21,7 @@ version_files = [
     "cli/pyproject.toml:^version = ",
     ".claude-plugin/plugin.json:\"version\"",
     ".claude-plugin/marketplace.json:\"version\"",
+    ".codex-plugin/plugin.json:\"version\"",
     ".cursor-plugin/plugin.json:\"version\"",
     ".cursor-plugin/marketplace.json:\"version\"",
 ]

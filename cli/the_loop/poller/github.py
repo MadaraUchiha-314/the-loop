@@ -26,7 +26,9 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Sequence, TypeVar
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, TypeVar
+
+from .. import eventlog
 
 from ..ghapi import (  # noqa: F401 — re-exported for the poller package
     KIND_CONVERSATION,
@@ -246,6 +248,9 @@ class GitHubPollProvider(PollProvider):
         # moments an operator who just re-enabled Issues wants a re-probe.
         self._issues_off: Dict[str, int] = {}
         self._cycles = 0
+        #: The missing labels last reported per filtered item, so a filtered item
+        #: is logged once per change rather than on every poll cycle.
+        self._filtered: Dict[Tuple[str, int], Tuple[str, ...]] = {}
 
     @classmethod
     def from_source(
@@ -370,7 +375,7 @@ class GitHubPollProvider(PollProvider):
                 out.items.extend(
                     self._work_item(spec, gh_item)
                     for gh_item in prs
-                    if self._carries_every_label(gh_item)
+                    if self._carries_every_label(gh_item, spec)
                 )
         if answered:
             out.polled.append(scope)
@@ -416,7 +421,7 @@ class GitHubPollProvider(PollProvider):
         out.items.extend(
             self._work_item(spec, gh_item)
             for gh_item in issues
-            if self._carries_every_label(gh_item)
+            if self._carries_every_label(gh_item, spec)
         )
         return True
 
@@ -428,7 +433,9 @@ class GitHubPollProvider(PollProvider):
             or _ISSUES_DISABLED in str(exc).lower()
         )
 
-    def _carries_every_label(self, gh_item: GhItem) -> bool:
+    def _carries_every_label(
+        self, gh_item: GhItem, spec: Optional[RepoSpec] = None
+    ) -> bool:
         """Whether a listed item carries every configured label (issue-381, R2.1).
 
         GitHub is asked for items carrying all of them, and its filter answers
@@ -436,7 +443,28 @@ class GitHubPollProvider(PollProvider):
         on the labels the listing actually returned, not on the filter's
         semantics. An empty list keeps nothing, as the gate arms nothing.
         """
-        return bool(self.labels) and set(self.labels) <= set(gh_item.labels)
+        accepted = bool(self.labels) and set(self.labels) <= set(gh_item.labels)
+        key = (spec.gh_repo if spec else "", gh_item.number)
+        if accepted:
+            self._filtered.pop(key, None)
+            return True
+        missing = sorted(set(self.labels) - set(gh_item.labels))
+        if self._filtered.get(key) != tuple(missing):
+            self._filtered[key] = tuple(missing)
+            logger.info(
+                "filtered GitHub item %s: missing required labels %s",
+                gh_item.number,
+                missing,
+            )
+            eventlog.emit(
+                "poll.item_filtered",
+                work_item=f"github:{spec.gh_repo}#{gh_item.number}" if spec else None,
+                item_number=gh_item.number,
+                required_labels=self.labels,
+                missing_labels=missing,
+                reason="missing-required-labels" if self.labels else "no-arming-labels",
+            )
+        return accepted
 
     def list_comments(self, item: WorkItem) -> List[Comment]:
         gh_comments = _read(

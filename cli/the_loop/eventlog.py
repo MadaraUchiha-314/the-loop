@@ -59,6 +59,9 @@ LEVELS = ("debug", "info", "warning", "error")
 # by `the-loop events --types` and mirrored in the observability reference.
 # Adding an instrumentation point means adding its type (and description) here.
 EVENT_TYPES: Dict[str, str] = {
+    "session.identity_bound": "The launch identity was resolved to the harness's native conversation id (work_item, harness, harness_session_id).",
+    "poll.item_filtered": "A listed item lacked required arming labels (item_number, required_labels, missing_labels, reason). Every configured label is required.",
+    "session.default_harness_bypassed": "The declared default cannot host a session; the routing fallback was used (declared_harness, harness, reason).",
     # -- lifecycle hooks (issue-344; source: whichever process ran the chain) ---
     "hooks.loaded": (
         "The top-level `hooks` declaration was loaded into this process (hooks: the "
@@ -907,11 +910,13 @@ EVENT_TYPES: Dict[str, str] = {
         "with its delivery, not because it was delivered (work_item, "
         "comment_id, actor, outcome: awaiting-start | session-paused | "
         "collaborator-no-spawn | control-executed | control-rejected | "
-        "control-ambiguous | addressed-elsewhere | unaddressed | "
+        "control-ambiguous | parked-at-human-start-gate | "
+        "addressed-elsewhere | unaddressed | "
         "instance-locked | ambiguous-address, "
         "will_retry=False) — issue-270. Either the event was suppressed on "
         "purpose (the work item is not started, or its session is paused), or it "
-        "WAS a control command, executed here and never forwarded, or (issue-322) "
+        "WAS a control command, executed here and never forwarded, or its start "
+        "was accepted and parked at a human gate (issue-449), or (issue-322) "
         "it was outside THIS instance's scope — another instance may own the "
         "work item, so the refusal is final and leaves no mark. The comment "
         "is baselined rather than retried or abandoned: it is not written to "

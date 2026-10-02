@@ -87,6 +87,15 @@ REQUIREMENTS: List[Requirement] = [
         ),
     ),
     Requirement(
+        default_binary="codex",
+        config_key="",
+        capability="spawning, resuming and one-shot critic runs of Codex sessions",
+        required=lambda config: (
+            _routing_on(config)
+            and str(_dig(config, "routing.defaultHarness", "claude")) == "codex"
+        ),
+    ),
+    Requirement(
         default_binary="cursor-agent",
         config_key="",
         capability="spawning and one-shot critic runs of Cursor sessions",

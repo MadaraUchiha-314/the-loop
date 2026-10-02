@@ -28,6 +28,11 @@ the-loop sessions cleanup --work-item github:OWNER/REPO#N [--no-comment]
 Every subcommand accepts `--registry-dir`, defaulting to
 [`routing.registryDir`](/config/cli/routing-options#registrydir).
 
+`start` can succeed before a harness session exists. When the graph waits at its
+first human gate, it reports waiting and keeps the start request armed. Answer
+the gate on the work item; the daemon then launches the selected harness. A
+failed spawn still reports failure and clears its request.
+
 ::: warning `--registry-dir` / `--portable-dir` and the service
 Since issue-161 these commands run through the
 [control-plane service](/cli/service), which reads **its own** configured

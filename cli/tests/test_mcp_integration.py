@@ -35,6 +35,7 @@ class McpClient:
 
     def __init__(self, client: TestClient):
         self._client = client
+        self.session_id: str | None = None
         response = self._post(
             {
                 "jsonrpc": "2.0",
@@ -54,7 +55,7 @@ class McpClient:
 
     def _post(self, message):
         headers = dict(HEADERS)
-        if getattr(self, "session_id", None):
+        if self.session_id:
             headers["mcp-session-id"] = self.session_id
         return self._client.post(MCP_PATH, json=message, headers=headers)
 

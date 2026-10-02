@@ -285,7 +285,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "The harness's name, as the-loop's adapters know it (`claude`, `cursor`). A name with no adapter is declared but unusable, and `the-loop models check` says so rather than failing a spawn."
+            "description": "The harness's name, as the-loop's adapters know it (`claude`, `codex`, `cursor`). A name with no adapter is declared but unusable, and `the-loop models check` says so rather than failing a spawn."
           },
           "default": {
             "type": "boolean",
@@ -540,6 +540,7 @@
           "type": "string",
           "enum": [
             "claude",
+            "codex",
             "cursor"
           ],
           "default": "claude",
@@ -1011,6 +1012,12 @@
                 "type": "string"
               }
             },
+            "codex": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "cursor": {
               "type": "array",
               "items": {
@@ -1021,7 +1028,7 @@
         },
         "harnessTrust": {
           "type": "object",
-          "description": "Pre-seed the harness's own config before spawning a session, so it starts working instead of stopping on an interactive dialog (issue-90, decision-036). Claude Code's workspace-trust dialog and bypass-permissions disclaimer are not permission rules, so no CLI flag — `--dangerously-skip-permissions` included — silences them, and every per-work-item checkout is a brand-new directory that trips the trust dialog. Before each spawn/respawn the dispatcher marks that directory trusted in the harness's user config (`projects[<dir>].hasTrustDialogAccepted` + `hasCompletedProjectOnboarding`), honouring `CLAUDE_CONFIG_DIR`. BOTH keys are always written on the EXACT spawn directory (and its realpath), under every `scope`, because the harness reads each of them from the exact project key on at least one path — `scope` only decides whether trust ADDITIONALLY widens to an ancestor (issue-136, decision-052). Writes are narrow and non-destructive: only those keys, merged into what is already there, via a temp file + atomic replace, skipped entirely when the value is already correct, and never applied to a file that does not parse as JSON. A failure logs a warning and emits `workspace.trust_failed` but never fails the dispatch. A harness with no such config surface (cursor-agent) is a silent no-op. NOTE what trust means: a trusted checkout's OWN `.claude/settings.json` may pre-approve tool permissions and add directories to the workspace, so pre-trusting a clone honours grants authored by anyone who can push to that repository. `enabled: false` is the opt-out.",
+          "description": "Pre-seed the harness's own config before spawning a session, so it starts working instead of stopping on an interactive dialog (issue-90, decision-036). Claude Code's workspace-trust dialog and bypass-permissions disclaimer are not permission rules, so no CLI flag — `--dangerously-skip-permissions` included — silences them, and every per-work-item checkout is a brand-new directory that trips the trust dialog. Before each spawn/respawn the dispatcher marks that directory trusted in the harness's user config (`projects[<dir>].hasTrustDialogAccepted` + `hasCompletedProjectOnboarding`), honouring `CLAUDE_CONFIG_DIR`. BOTH keys are always written on the EXACT spawn directory (and its realpath), under every `scope`, because the harness reads each of them from the exact project key on at least one path — `scope` only decides whether trust ADDITIONALLY widens to an ancestor (issue-136, decision-052). Writes are narrow and non-destructive: only those keys, merged into what is already there, via a temp file + atomic replace, skipped entirely when the value is already correct, and never applied to a file that does not parse as JSON. A failure logs a warning and emits `workspace.trust_failed` but never fails the dispatch. A harness with no such config surface (cursor-agent) is a silent no-op. NOTE what trust means: a trusted checkout's OWN `.claude/settings.json` may pre-approve tool permissions and add directories to the workspace, so pre-trusting a clone honours grants authored by anyone who can push to that repository. `enabled: false` is the opt-out. Codex validates and appends projects.<directory>.trust_level in CODEX_HOME/config.toml, including the linked worktree main repository root; existing operator entries are preserved.",
           "additionalProperties": false,
           "properties": {
             "enabled": {
@@ -1052,7 +1059,7 @@
         },
         "harnessPlugins": {
           "type": "object",
-          "description": "Enable the-loop's OWN plugin in the harness before spawning a session, so the session actually has the loop (issue-143, decision-054). Everything a spawned session knows about the loop — the `the-loop` skill, the `/the-loop:*` commands, the SessionStart hook stating the operating rules — ships in the plugin; nothing else in the spawn path installs it, so on a machine where nobody ran `/plugin marketplace add` by hand the session worked its ticket as a plain agent. Before each spawn/respawn the dispatcher ensures the harness's USER SETTINGS file (`<config dir>/settings.json`, honouring `CLAUDE_CONFIG_DIR`) carries `extraKnownMarketplaces[\"the-loop\"]` and `enabledPlugins[\"the-loop@the-loop\"]: true` — exactly what `/plugin marketplace add` + `/plugin install` write. Writes are narrow and non-destructive, sharing `harnessTrust`'s writer: only those two keys, merged into what is already there, temp file + atomic replace, skipped entirely when both already hold a value, and never applied to a file that does not parse as JSON. An EXISTING value is never changed — a marketplace of yours keeps pointing where it points, and an `enabledPlugins` entry already set to `false` stays `false`. A failure logs a warning and emits `workspace.trust_failed` but never fails the dispatch; `cursor-agent` has no plugin-configuration surface and is a silent no-op. Independent of `harnessTrust`: either may be switched off without the other. NOTE the scope: `enabledPlugins` in the user settings file is USER-GLOBAL, so the plugin — skill, commands and its SessionStart hook — also loads in Claude Code sessions you start by hand, not only the ones the-loop spawns. `enabled: false` is the opt-out.",
+          "description": "Enable the-loop's OWN plugin in the harness before spawning a session, so the session actually has the loop (issue-143, decision-054). Everything a spawned session knows about the loop — the `the-loop` skill, the `/the-loop:*` commands, the SessionStart hook stating the operating rules — ships in the plugin; nothing else in the spawn path installs it, so on a machine where nobody ran `/plugin marketplace add` by hand the session worked its ticket as a plain agent. Before each spawn/respawn the dispatcher ensures the harness's USER SETTINGS file (`<config dir>/settings.json`, honouring `CLAUDE_CONFIG_DIR`) carries `extraKnownMarketplaces[\"the-loop\"]` and `enabledPlugins[\"the-loop@the-loop\"]: true` — exactly what `/plugin marketplace add` + `/plugin install` write. Writes are narrow and non-destructive, sharing `harnessTrust`'s writer: only those two keys, merged into what is already there, temp file + atomic replace, skipped entirely when both already hold a value, and never applied to a file that does not parse as JSON. An EXISTING value is never changed — a marketplace of yours keeps pointing where it points, and an `enabledPlugins` entry already set to `false` stays `false`. A failure logs a warning and emits `workspace.trust_failed` but never fails the dispatch; `cursor-agent` has no plugin-configuration surface and is a silent no-op. Independent of `harnessTrust`: either may be switched off without the other. NOTE the scope: `enabledPlugins` in the user settings file is USER-GLOBAL, so the plugin — skill, commands and its SessionStart hook — also loads in Claude Code sessions you start by hand, not only the ones the-loop spawns. `enabled: false` is the opt-out. Codex prepares a managed block in the checkout AGENTS.md (or AGENTS.override.md) and the user-global Stop hook in CODEX_HOME/hooks.json from the bundled CLI resources. Review and trust that hook once using Codex /hooks. enabled:false opts out, and hook trust and sandbox policy are never bypassed automatically.",
           "additionalProperties": false,
           "properties": {
             "enabled": {
@@ -1287,6 +1294,7 @@
                 "type": "string",
                 "enum": [
                   "claude",
+                  "codex",
                   "cursor"
                 ],
                 "description": "Which harness hosts it. Omitted inherits `routing.defaultHarness`. cursor-agent has no pre-assignable conversation id and so cannot host an interactive session — the same limitation work-item sessions have."
@@ -1882,6 +1890,7 @@
           "type": "string",
           "enum": [
             "claude",
+            "codex",
             "cursor"
           ],
           "default": "claude",

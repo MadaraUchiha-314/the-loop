@@ -40,13 +40,14 @@ from ..control import (
     ControlStore,
     command_comment,
 )
-from ..harness import ClaudeCodeAdapter, CursorAgentAdapter
+from ..harness import ClaudeCodeAdapter, CodexAdapter, CursorAgentAdapter
 from ..harness.base import UnsupportedRunnerError
+from ..codex_support import native_session_id, rollout_path, transcript_entry
 from ..instance import INSTANCE_LOCKED, LOCKED, InstanceConfig
 from ..runner import TmuxRunner
 from ..sessions.registry import RegistryError, Session, SessionRegistry
 from ..state import layout_from_config, legacy_layout
-from ..webhook.dispatcher import TmuxConfig
+from ..webhook.dispatcher import SETTLED_START_GATE, TmuxConfig
 from ..webhook.router import RoutedEvent
 from ..workitem import WorkItemRef
 
@@ -57,6 +58,7 @@ CONTROL_VERBS = (START, PAUSE, RESUME, STOP, CLEANUP)
 #: The harness CLIs a registration may name, and the binary each one needs.
 HARNESS_BINARIES = {
     "claude": ClaudeCodeAdapter.default_binary,
+    "codex": CodexAdapter.default_binary,
     "cursor": CursorAgentAdapter.default_binary,
 }
 
@@ -320,6 +322,14 @@ def _transcript_target(
             f"no session registered for {work_item.ref}, so no transcript can "
             "be resolved"
         )
+    if endpoint.harness == "codex":
+        path = rollout_path(endpoint.cwd, endpoint.harness_session_id)
+        if path is None:
+            raise LookupError(
+                "no positively identified Codex rollout for this session yet"
+            )
+        endpoint.harness_session_id = native_session_id(path)
+        return endpoint, path
     if endpoint.harness != "claude":
         raise LookupError(
             f"no derivable transcript for harness {endpoint.harness!r} — only "
@@ -390,7 +400,10 @@ def get_transcript(
             parsed = None
         # A line that is not a JSON object is served, flagged, in place —
         # dropped data is worse than ugly data (R1.1).
-        entries.append(parsed if isinstance(parsed, dict) else {"malformed": line})
+        entry = parsed if isinstance(parsed, dict) else {"malformed": line}
+        entries.append(
+            transcript_entry(entry) if endpoint.harness == "codex" else entry
+        )
     return {
         "workItem": work_item.ref,
         "harness": endpoint.harness,
@@ -1438,8 +1451,9 @@ def _spawn_for_start(
     a strictly higher privilege than commenting on an issue.
 
     The control record is armed *before* the spawn (the dispatcher's gate reads
-    it) and **cleared again if no session came up**, so a start that could not
-    run leaves nothing standing (owner decision on PR #107).
+    it) and cleared again on a failed spawn, so a start that could not run
+    leaves nothing standing (owner decision on PR #107). An accepted start
+    waiting at the first human gate stays armed without a harness session.
     """
     store = _control_store(config, portable_dir)
     dispatcher, routing = _dispatcher_for(config, registry_dir, portable_dir)
@@ -1487,6 +1501,17 @@ def _spawn_for_start(
 
     session = SessionRegistry(registry_dir).find_by_work_item(work_item)
     if session is None:
+        if dispatcher.delivery_outcome(routed.delivery_id) == SETTLED_START_GATE:
+            messages.append(
+                {
+                    "stream": "out",
+                    "text": (
+                        f"started the loop for {work_item.ref}; waiting at its "
+                        "first human gate before launching a session"
+                    ),
+                }
+            )
+            return "waiting", 0
         # Nothing came up, so leave nothing armed.
         store.clear(work_item)
         messages.append(

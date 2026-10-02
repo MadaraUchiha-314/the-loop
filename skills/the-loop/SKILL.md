@@ -6,7 +6,7 @@ description: The operating model for delivering product work items end-to-end wi
 # the-loop
 
 "the-loop" is an opinionated product-development-lifecycle (PDLC) harness, shipped as a
-plugin for Claude Code and Cursor. Once a work item's spec chain (requirements → design
+plugin for Claude Code, Cursor and Codex. Once a work item's spec chain (requirements → design
 → testing plan → tasks) is approved, the harness executes it end-to-end with MINIMAL or
 NO human intervention, escalating only when a decision/opinion is genuinely required.
 

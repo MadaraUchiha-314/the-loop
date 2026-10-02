@@ -297,7 +297,7 @@ class Session:
     """
 
     work_item: WorkItemRef
-    harness: str  # "claude" | "cursor"
+    harness: str  # "claude" | "codex" | "cursor"
     harness_session_id: str  # claude session_id | cursor chat id
     cwd: str  # where resume must run (worktree-aware)
     status: str = "active"  # active | paused (issue-106) | closed

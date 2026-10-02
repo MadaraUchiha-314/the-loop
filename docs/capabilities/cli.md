@@ -503,3 +503,18 @@ self-learning/ML capabilities.
 | issue-15 | Added `sessions` registry commands and webhook `--route` dispatch | [spec](../specs/issue-15/), [decision-016](../decisions/decision-016.md) |
 | issue-11 | Added `scenarios` (queryable integration-test scenario table) | [spec](../specs/issue-11/), [decision-014](../decisions/decision-014.md) |
 | issue-1 | Established the CLI skeleton and the `gh-webhook` receiver (v0) | [spec](../specs/issue-1/), [decision-005](../decisions/decision-005.md) |
+
+## Codex configuration fixes (issue-449)
+
+`the-loop migrate-config` now moves deprecated `routing.harnessArgs.<name>` into
+`harnesses[].args`, even when the schema version is current — but only onto a
+harness `harnesses[]` already declares. Declaring a harness offers it at
+`phase-selection`, so args for an undeclared one stay in place (still honoured,
+with the deprecation warning) and a note says how to finish the move. Existing
+top-level arguments win and the migration reports that conflict; a malformed
+block is dropped. A second run is a no-op.
+`mcp-call` delegates through the requested registered harness adapter, including
+Codex, using its one-shot argv only — interactive launch args are never passed to
+`codex exec`, which rejects TUI-only flags — and extracts its final JSON answer
+from JSONL. An unknown harness blocks
+with its name instead of silently invoking Claude.

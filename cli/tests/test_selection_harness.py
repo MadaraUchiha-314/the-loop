@@ -36,7 +36,7 @@ def test_only_an_adapter_that_implements_hosting_hosts():
     assert hosts_sessions(CursorAgentAdapter) is False
     assert hosts_sessions(HarnessAdapter) is False
     assert hosts_sessions(object()) is False
-    assert hosting_harnesses() == ["claude"]
+    assert hosting_harnesses() == ["claude", "codex"]
 
 
 def test_offered_harnesses_are_declared_and_hosting_in_declaration_order():

@@ -1023,6 +1023,15 @@ only the deprecated key reached the sessions, so a config that had moved to the 
 home launched them bare). When a harness is declared in both, `harnesses[].args` wins
 and `the-loop models list|check` says so; the two are never merged.
 
+### `harnessArgs.codex`
+
+- **Type:** array of strings.
+- **Default:** `[]`.
+- **Deprecated:** use `harnesses[].args` for `name: codex`.
+
+`the-loop migrate-config` moves these arguments into the top-level declaration.
+Codex sandbox and approval flags remain the operator's choice.
+
 ### `harnessArgs.cursor`
 
 - **Type:** `string[]`

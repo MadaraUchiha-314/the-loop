@@ -49,3 +49,19 @@ for humans, coding agents and any dashboarding built on top.
 | issue-239 | The event log gained a second reader: `stream.subscribed`, `stream.refused`, `stream.desync` and `stream.disconnected` record who is watching a workstation, what was refused and why, and when a subscriber was told to resynchronise. `api.request` and `mcp.call` are excluded from what the stream carries — the log still serves them to `the-loop events` | [spec](../specs/issue-239/), [decision-087](../decisions/decision-087.md) |
 | issue-63 | `observability.eventLog` moved into the independent, repo-agnostic CLI config as top-level `eventLog` | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |
 | issue-50 | Added the structured JSONL event log and `the-loop events` | [spec](../specs/issue-50/), [decision-025](../decisions/decision-025.md) |
+
+## Harness and polling diagnostics (issue-449)
+
+- `session.default_harness_bypassed` names an unusable declared default and the
+  actual fallback harness, at warning level, once per configuration (a reload
+  reports it again).
+- `session.identity_bound` records the native conversation id discovered after launch.
+- `poll.item_filtered` names the required and missing labels for a rejected listing
+  item, once per change in its missing labels rather than on every poll cycle. Arming labels retain the ALL-of policy chosen in issue-381; an empty list
+  arms nothing.
+- Codex JSONL critics report uncached input, cached input, output, and total tokens
+  from the final usage snapshot. Cached input is not double-counted. Dollar cost
+  remains unavailable because Codex does not report it; it is never estimated.
+
+A disconnected keep-alive permits one immediate retry of a GraphQL read. Mutations
+and semantic/API failures are not retried by this additional recovery path.

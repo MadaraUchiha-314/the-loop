@@ -45,7 +45,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from .harness import Usage, build_adapters
-from .harness.base import parse_json_object, usage_from_output
+from .harness.base import output_text, parse_json_object, usage_from_output
 
 logger = logging.getLogger("the-loop.critics")
 
@@ -494,6 +494,7 @@ def _extract_output(stdout: str, output_format: str) -> str:
     A critic that printed prose where JSON was configured still produced a review;
     reporting an empty one would lose findings a human already paid for.
     """
+    stdout = output_text(stdout)
     if output_format != "json":
         return stdout
     data = parse_json_object(stdout)
