@@ -39,8 +39,15 @@ jobs:
       released: ${{ steps.bump.outputs.released }}
       version: ${{ steps.bump.outputs.version }}
     steps:
+      # Build on main's TIP, not the event SHA. Runs are serialized (concurrency above),
+      # but a queued run's event SHA can already be behind main — the previous run's
+      # `bump:` commit, or a merge that landed while this run waited. Bumping from a stale
+      # SHA computes a version that is already tagged, or pushes a commit main rejects
+      # (issue-460). From the tip, a run whose commits the previous run already released
+      # finds nothing new and is a clean no-op.
       - uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0     # commitizen needs full history to read commits since the last tag
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -127,9 +134,14 @@ jobs:
       # pushes *annotated* tags, but commitizen creates a *lightweight* tag — so the tag
       # must be pushed explicitly by ref, or `gh release create --verify-tag` (below) can't
       # find it on the remote and the release/publish fails.
+      # `--atomic`: both refs land or neither does. Without it git updates each ref on its
+      # own, so when main has moved on (a merge landed mid-run) the branch is rejected but
+      # the tag is accepted — an orphan tag main never carries, which every later run then
+      # trips over as "tag already exists" (issue-460). Rejected atomically, the run fails
+      # cleanly and the run queued for the newer merge releases everything from the tip.
       - name: Push bump commit + tag to main
         if: steps.bump.outputs.released == 'true'
-        run: git push origin "HEAD:refs/heads/main" "refs/tags/v${{ steps.bump.outputs.version }}"
+        run: git push --atomic origin "HEAD:refs/heads/main" "refs/tags/v${{ steps.bump.outputs.version }}"
 
       - name: Build distribution
         if: steps.bump.outputs.released == 'true'
