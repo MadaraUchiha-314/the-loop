@@ -1,3 +1,10 @@
+## v19.22.1 (2026-10-03)
+
+### Fix
+
+- **release**: recover from the orphan v19.22.0 tag and push release refs atomically (#461)
+- **issue-452**: a completed work item stays completed after normal cleanup (#459)
+
 ## v19.22.0 (2026-10-03)
 
 ### Feat
