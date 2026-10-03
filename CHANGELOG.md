@@ -1,3 +1,9 @@
+## v19.22.0 (2026-10-03)
+
+### Feat
+
+- **issue-453**: a parked work item is owned by the instance that accepted it (#457)
+
 ## v19.21.0 (2026-10-02)
 
 ### Feat
