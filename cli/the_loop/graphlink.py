@@ -91,7 +91,15 @@ _COMMENT_EVENTS = {
 #: happens to a work item, so for them a missing directory still means "this graph was
 #: never placed here" — and keeping it there preserves the module's asymmetry: no input
 #: moves an unplaced work item forward.
-_SPEC_DIR_OPTIONAL_ACTIONS = frozenset({"start", "context"})
+#:
+#: ``archive`` (issue-452) is a read that answers ``None`` for a missing directory
+#: itself: a ticket that closes without ever having had one is the common case, and
+#: recording a ``graph.skipped`` for every such closure would be noise.
+_SPEC_DIR_OPTIONAL_ACTIONS = frozenset({"start", "context", "archive"})
+
+#: The pure reads (issue-452 added ``archive``): run outside the state lock,
+#: like ``context`` always was — they write nothing a second writer could race.
+_READ_ACTIONS = frozenset({"context", "archive"})
 
 
 @dataclass
@@ -745,6 +753,32 @@ class GraphLink:
             "context", work_item, cwd, lambda rt, item: self._context_from(rt, item)
         )
 
+    def terminal_record(
+        self, work_item: WorkItemRef, cwd: str
+    ) -> Optional[Dict[str, Any]]:
+        """How the work item ended, copied from its checkout (issue-452).
+
+        Read by the close path **before** the checkout is removed, because the
+        state file it copies lives in that checkout and nothing else holds it.
+        The same ownership and containment gates as :meth:`context`, run outside
+        the state lock (it writes nothing), with two differences: the start
+        requirement is off — the closure is about to disarm the item, and a
+        finished item's ending is exactly what is wanted — and a checkout with
+        no spec directory is simply ``None``, not a recorded skip: a ticket that
+        never had one has no walk to record. ``None`` whenever it cannot tell.
+        """
+        from .archive import terminal_record
+
+        return self._guarded(
+            "archive",
+            work_item,
+            cwd,
+            lambda rt, item: (
+                terminal_record(rt, item) if rt.spec_dir(item).is_dir() else None
+            ),
+            require_started=False,
+        )
+
     # -- the inner loop (issue-172): one pdlc-pr-loop per pull request ----------
 
     def on_pr_spawn(
@@ -1032,7 +1066,7 @@ class GraphLink:
                     pr_repo=pr_repo,
                     origin_repo=origin,
                 )
-            if action == "context":
+            if action in _READ_ACTIONS:
                 return call(runtime, item_id)
             if self.assignment_sink is not None:
                 # Bind the graph-assigns channel to THIS loop, so an entered

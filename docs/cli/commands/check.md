@@ -142,6 +142,39 @@ With `--format json` the report carries `statePath` and `stateFound` beside its 
 and `pointer` — the node that state file records, `""` when none was found. Without
 `--recompute` it equals `currentNode` whenever a state file was found.
 
+## An archived work item
+
+A work item that has **ended** — its ticket closed — and whose checkout normal cleanup has
+removed has no `work-item-state.json` anywhere `check` can look. Given its **ref**, `check`
+then answers from the terminal record the closure kept in the portable record
+([issue-452](https://github.com/MadaraUchiha-314/the-loop/issues/452)) instead of
+evaluating the directory you are standing in:
+
+```text
+issue-3: ARCHIVED — completed (at complete)
+  state: /srv/devbox/docs/specs/issue-3/work-item-state.json (not found; reporting the terminal record this machine kept when the work item ended — issue-452)
+  ended: closed by octocat at 2026-10-02T22:30:00Z (issue-closed)
+  completed: 2026-10-02T22:29:41+00:00
+  selections: skipped brainstorming, requirements-definition, requirements-approval, design, test-planning, design-approval, tasks-breakdown
+  choices: harness codex
+  pull request: github:octo/repo#4 (merged) https://github.com/octo/repo/issues/4
+  evidence: docs/specs/issue-3/evidence/ — verification.md
+```
+
+The outcome is `completed` only when the work item's session claimed its completion node;
+an issue closed as not planned or as a duplicate (or a pull request closed unmerged) is `cancelled`, any
+other closure `closed-externally`. A stamp with no terminal record — written before this
+change, or when the checkout could not be read — prints `ARCHIVED — unknown` and says the
+archived detail is unavailable. There are no node findings: the directory you ran from is
+not the work item's checkout. `--fail-on block` exits 0 for an archived item, and
+`--fail-on unmet` exits 0 only for a completed one.
+
+The archive is consulted only for a ref (the portable record is keyed by ref), only when no
+state file was found — a checkout that has one always wins — and not under `--recompute`
+when the work item's spec directory is present. With `--format json` the report carries
+`archived` (`ref`, `outcome`, `detail`, `state`, `reason`, `at`, `actor`, and `terminal`
+when recorded), `nodes: []`, and `currentNode`/`pointer` set to the recorded node.
+
 ## Exit codes
 
 | Code | Meaning |

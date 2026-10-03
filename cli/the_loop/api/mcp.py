@@ -106,7 +106,10 @@ def build_server(cli_config: Optional[dict] = None, *, facade: Any = None) -> MC
         start node by default, not a recorded one — check the path. `pointer`
         is the node that file records (`""` when none); with `recompute`,
         `currentNode` is the first node the artifacts leave unmet, and can be
-        ahead of where the work item actually is."""
+        ahead of where the work item actually is. A report carrying `archived`
+        is an ENDED work item whose checkout is gone, answered from the record
+        its closure kept (issue-452): read `archived.outcome` for how it ended,
+        and do not report a position or missing artifacts from it."""
         return facade.graph_check(
             repo, work_item, recompute=recompute, instance=instance
         )

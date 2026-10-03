@@ -77,6 +77,10 @@ class Closure:
     #: dispatcher's cleanup gate judges, with the same provenance a webhook's
     #: `sender` has; it never relaxes that gate.
     actor: str = ""
+    #: The provider's reason for the closure — GitHub's ``state_reason``
+    #: (``completed``, ``not_planned``), or "" (issue-452). Carried into the
+    #: synthesized event so a polled cancellation is classified as a pushed one.
+    reason: str = ""
 
     @property
     def merged(self) -> bool:

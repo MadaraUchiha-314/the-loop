@@ -502,6 +502,8 @@ next update, and messages in the room are dropped at the ingress as `unmapped`.
 | `at` | when the daemon recorded it |
 | `source` | which ingress saw the closure: `webhook` (a `closed` event) or `poll` (the item left the listing and GitHub confirmed it) |
 | `actor` | who closed it — the webhook's `sender`, or GitHub's `closed_by` on a polled closure; `""` when neither names anyone |
+| `outcome` | how the work item ended ([issue-452](https://github.com/MadaraUchiha-314/the-loop/issues/452)): `completed` (its session claimed the loop's completion node), `cancelled` (an issue closed as not planned or as a duplicate, or a pull request closed unmerged), `closed-externally` (closed without that claim), `unknown` (no terminal record could be read). Absent on a stamp written before issue-452 |
+| `terminal` | the work item's ending, copied from its `work-item-state.json` **before** the close path removed the checkout: `workItem`, `loop`, `node`, `phase`, `completed`, `completedAt`, `selections` (`skipped`, `optedIn`, `surface`, `harness`, `model`, `effort`, `sessionPerPr`, `repos`), `pullRequests` (`ref`, `url`, `state`), `specDir`, `evidence` (file names under the spec directory's `evidence/`, at most 50) and `recordedAt`. Absent when no checkout could be read |
 
 Written by the daemon's one close path
 ([issue-329](https://github.com/MadaraUchiha-314/the-loop/issues/329),
@@ -517,7 +519,14 @@ other sections stay beside it.
 Cleared when the item is **reopened** — a `reopened` event from an authorized user, or the
 next poll cycle that lists the item again — and by `the-loop sessions reset`. `the-loop
 cleanup` keeps it. It arms nothing and gates nothing: `the-loop cleanup` on a closed item
-works exactly as before.
+works exactly as before — except that it first adds a `terminal` record to a stamp that has
+none, while the checkout still exists.
+
+It is what [`the-loop check <ref>`](/cli/commands/check#an-archived-work-item) answers from
+once normal cleanup has removed the checkout: the report says `ARCHIVED — <outcome>`
+rather than placing a delivered item back at the graph's start node. `terminal` is a copy
+of an agent-writable file, filtered as it is copied, and nothing reads it back into routing
+or a gate.
 
 **If you delete it:** the item reads as open again on every machine, with whatever
 question or gate it last had, until the next poll cycle re-detects the closure (one

@@ -258,6 +258,12 @@ class WorkItemStore:
 
     # -- paths -----------------------------------------------------------------
 
+    def lock(self) -> threading.RLock:
+        """The lock every write to this directory takes, for a caller that must
+        read, decide and write as one step (issue-452). Re-entrant, so a write
+        made while holding it takes it again without blocking."""
+        return _lock_for(self.root)
+
     def path_for(self, work_item: Union[str, WorkItemRef]) -> Path:
         return self.root / f"{_as_ref(work_item).slug}.json"
 

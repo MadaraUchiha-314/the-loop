@@ -965,6 +965,20 @@ reader.
   report on that checkout — where the daemon's runtime wrote the state — and SHALL print
   `repo: <checkout> (from the session registry)`; a given `--repo` SHALL be used verbatim,
   and the mutating verbs SHALL keep the working directory.
+- **An ended work item is reported from its archive, not from the caller's directory**
+  (issue-452). WHEN `check` (and `graph status`, `POST /graph/check`, the
+  `check_work_item` MCP tool) is given a work item's **ref**, finds no
+  `work-item-state.json` where it looked, AND the ref's portable record carries an `ended`
+  stamp, THEN the report SHALL carry `archived` — the closure's `outcome`
+  (`completed | cancelled | closed-externally | unknown`), its `state`, `reason`, `at`
+  and `actor`, `detail` (`recorded | unavailable`) and the `terminal` record when there
+  is one — SHALL list **no** node findings, SHALL set `currentNode`/`pointer` to the
+  recorded node (`""` without a record) and SHALL be `ok` only when `completed`. The CLI
+  prints `<id>: ARCHIVED — <outcome>`. A found state file SHALL always win; `--recompute`
+  over a spec directory that is present SHALL still evaluate it; a bare id SHALL NOT
+  consult the archive. The terminal record is a filtered **copy** of an agent-writable
+  file and SHALL NOT be read back into routing or a gate. Before, normal cleanup made a
+  delivered item read as `phase-selection` with the full process "missing".
 - **The stop gate SHALL NOT ask about a node the work item never entered** (issue-429).
   Every `check` report SHALL carry `pointer` — the node work-item state records, `""`
   when no state file was found — beside `currentNode`, which under `--recompute` is the
@@ -998,6 +1012,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-452 | A completed work item stays completed after normal cleanup (2026-10-02): `core.graphs.check` answers a ref whose state file is not found from the portable record's `ended` stamp — `archived` with the outcome and the terminal record the closure kept, no node findings, `ok` only for `completed`; the CLI prints `ARCHIVED — <outcome>` (or that the detail is unavailable). Before, `check github:…#3` from the deployment directory after `keepCheckoutOnClose: false` cleanup reported `phase-selection`, `ok: false` and the full process missing | [spec](../specs/issue-452/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/452) |
 | issue-429 | The stop gate stops demanding a phase the work item never entered (2026-09-28): the `check` report carries `pointer` (the node work-item state records) beside `currentNode`, and `the-loop-gate.py` blocks only on the first unmet node at or before it — inconclusive when there is no position. Before, a work item parked at `phase-selection` with its selection recorded was told on every turn to write `design.md`, because `--recompute` places `currentNode` at the first node the artifacts leave unmet | [spec](../specs/issue-429/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/429) |
 | issue-343 | Graphs of the operator's own (2026-09-23): the top-level `graphs` in the CLI config declares a YAML file, and `routing.control.commands` binds the commands that select it — a re-pointed `start`/`contribute`/`do`/`review`, or a new word that parses as `start` with a loop. The control record keeps the loop; `resolve_outer_loop` accepts a declared name and nothing else; a custom graph is compiled by the shipped compiler, held to `PHASE_VOCABULARY`, and may name the operator's `x-` hooks; a node's `command:` is grammar-checked in every graph and may name another plugin's slash command; attachments may be scoped with `loops`; `the-loop graph loops` lists and checks every loop | [spec](../specs/issue-343/), [decision-136](../decisions/decision-136.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/343) |
 | issue-396 | `graph status` reads the state file the runtime wrote, and says which (2026-09-20, B7/O6 of the e2e run): every graph verb accepts a work-item **ref** and translates it to the daemon's `issue-<n>` directory (`core.graphs.work_item_id`, on `graphlink.spec_id_for`); the check report carries `statePath`/`stateFound` and the CLI prints a `state:` line, found or not; `graph status`/`check` with no `--repo` and a ref the working directory does not hold resolve the session's checkout through the session registry and say so (`repo: … (from the session registry)`). Before, `graph status github:…#1` addressed `docs/specs/github:…#1/` — never there — and reported the graph's start node in silence | [spec](../specs/issue-396/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/396) |

@@ -490,6 +490,29 @@ def test_provider_closure_event_names_the_closer_as_sender():
     assert "sender" not in unnamed.payload
 
 
+def test_provider_closure_carries_the_state_reason():
+    """R1.6 (issue-452) — a polled not-planned closure is a cancellation too."""
+    ref = WorkItemRef.parse("github:octo/repo#15")
+    closure = _provider(
+        _state_client({"number": 15, "state": "closed", "state_reason": "not_planned"})
+    ).closure(ref)
+    assert closure is not None and closure.reason == "not_planned"
+    plain = _provider(_state_client({"number": 15, "state": "closed"})).closure(ref)
+    assert plain is not None and plain.reason == ""
+
+
+def test_provider_closure_event_puts_the_state_reason_on_the_issue():
+    """R1.6 (issue-452) — the same `issue.state_reason` a webhook carries."""
+    provider = _provider(_gh_client())
+    ref = WorkItemRef.parse("github:octo/repo#15")
+    ev = provider.closure_event(
+        ref, Closure(state="closed", kind="issue", reason="not_planned")
+    )
+    assert ev.payload["issue"]["state_reason"] == "not_planned"
+    bare = provider.closure_event(ref, Closure(state="closed", kind="issue"))
+    assert "state_reason" not in bare.payload["issue"]
+
+
 def test_provider_closure_propagates_a_github_failure():
     provider = _provider(FakeGitHubClient(fail=http_error(502, "upstream")))
     with pytest.raises(ProviderError) as exc:

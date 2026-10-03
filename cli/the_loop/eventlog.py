@@ -753,10 +753,12 @@ EVENT_TYPES: Dict[str, str] = {
     "work_item.ended": (
         "A work item ended upstream and its portable record was stamped "
         "`ended` (work_item, state: closed | merged, kind: issue | "
-        "pull-request, reason: issue-closed | pr-merged | pr-closed, source: "
-        "webhook | poll, actor: who closed it or none, delivery_id). Written "
-        "with or without a session on this machine; the attention surfaces "
-        "read it to demote the item (issue-329)."
+        "pull-request, reason: issue-closed | pr-merged | pr-closed, outcome: "
+        "completed | cancelled | closed-externally | unknown — issue-452, "
+        "source: webhook | poll, actor: who closed it or none, delivery_id). "
+        "Written with or without a session on this machine; the attention "
+        "surfaces read it to demote the item (issue-329), and `the-loop check "
+        "<ref>` answers from its terminal record once the checkout is gone."
     ),
     "work_item.pull_request_ended": (
         "A pull request delivering a tracked work item merged or closed "

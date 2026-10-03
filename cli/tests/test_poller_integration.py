@@ -186,6 +186,7 @@ class GhState(GitHubClient):
             title=str(data.get("title") or ""),
             url=str(data.get("html_url") or ""),
             closed_by=str(((data.get("closed_by") or {}).get("login")) or ""),
+            state_reason=str(data.get("state_reason") or ""),
         )
 
     def viewer_login(self, host=""):

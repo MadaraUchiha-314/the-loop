@@ -623,6 +623,18 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   `pull_request` event with action `reopened` arrives for a stamped item THEN the stamp
   SHALL be cleared (`work_item.reopened`) before the event is otherwise handled; the
   poller clears it on the next listing that carries the item.
+- **The `ended` stamp keeps how the work item ended** (issue-452). WHEN the close path
+  closes a work item's session THEN it SHALL read the work item's `work-item-state.json`
+  from the session's checkout **before** removing the checkout, and SHALL add to the stamp
+  a `terminal` record (spec id, loop, last node and phase, whether the completion node was
+  claimed and when, the frozen selections, the delivering pull requests, the spec
+  directory and the evidence files) and an `outcome`: `completed` only when the record
+  shows the completion node claimed; else `cancelled` for an issue closed as not planned or as a duplicate
+  or a pull request closed unmerged; else `closed-externally` with a record, `unknown`
+  without one. A session-less closure SHALL read the checkout the registry still records;
+  an explicit `cleanup` of an ended item whose stamp has no record SHALL add it before the
+  checkout goes. A polled closure SHALL carry GitHub's `state_reason` as a webhook's does.
+  Checkout cleanup itself is unchanged.
 - **Closure reconciliation asks about everything this machine tracks** (issue-329),
   not only its active sessions: every session record — active, paused or closed — and
   every portable record that is armed, frozen or has a roster, minus the items the
@@ -940,6 +952,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-452 | The closure keeps a terminal record (2026-10-02): `_close_ended_session` reads `work-item-state.json` before `close_session` removes the checkout, and the `ended` stamp gains `outcome` (`completed` only from a claimed completion node — never from the closure) and `terminal` (node, phase, frozen selections, pull requests, evidence); a session-less closure reads the registry's checkout, `cleanup` backfills a stamp that has none, and a polled closure now carries `state_reason`. `work_item.ended` carries the outcome | [spec](../specs/issue-452/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/452) |
 | issue-447 | The `PostToolUse` recorder stopped parsing `gh` output (2026-09-30): it fires on a `git push` or any pull-request-creating call and runs `sessions link-pr --discover`, which asks GitHub for the open pull requests of the checkout's branch; `the-loop pr create` links what it opens, so the hook is the safety net for PRs opened by hand or by MCP. Routing is unchanged | [spec](../specs/issue-447/), [decision-140](../decisions/decision-140.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/447) |
 | issue-442 | Every GitHub read and write of both ingresses moved from the operator's `gh` to the daemon's own client on PyGithub (2026-09-30): the poller's listings are the GraphQL queries `gh` ran (so `closingIssuesReferences`, node-id comment ids and every baselined thread survive the upgrade), the three pull-request surfaces are read over REST, the existence check, reactions, announcement, paper trail and give-up notice post under the token `integrations.github.api.tokenEnv` names; *Issues disabled* is classified from GitHub's 410; no rate-limit sleep, the caller's timeout on every request | [spec](../specs/issue-442/), [decision-139](../decisions/decision-139.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/442) |
 | issue-426 | **A `work-item`-mode session can no longer freeze on Claude Code's question menu** (2026-09-28): the prompt said "never block on an interactive prompt" and nothing enforced it, so `AskUserQuestion` rendered a menu in the tmux pane, emitted nothing, and every later message was pasted into a session waiting on a keypress. `Dispatcher._adapter_for` and `sessions restart` now launch the adapter `with_unattended(interaction.unattended)`, and the Claude adapter adds `--disallowedTools=AskUserQuestion` before the prompt; `cli` mode is the opt-out. The `=` spelling matters: the ticket's space-separated workaround turned the spawn prompt into deny rules | [spec](../specs/issue-426/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/426) |

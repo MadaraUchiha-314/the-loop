@@ -555,6 +555,13 @@ def build_router(
         must not ask about a node the item never entered bounds itself by
         `pointer`.
 
+        A **ref** whose state file is not found and whose closure this machine
+        stamped is answered from that stamp (issue-452): the report carries
+        `archived` (`outcome`: completed | cancelled | closed-externally |
+        unknown, `detail`: recorded | unavailable, the closure's facts and the
+        `terminal` record), `nodes` is empty, and `ok` is true only for a
+        completed item. A found state file always wins.
+
         `repo` is a path on the machine `instance` names — this one when it is
         empty (issue-374 R2.5).
         """

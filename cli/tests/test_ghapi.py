@@ -229,6 +229,24 @@ def test_a_404_is_not_found_and_every_other_status_is_not(client, github_replay)
     assert str(exc.value) == "GitHub 401: Bad credentials"
 
 
+def test_item_state_reads_the_state_reason(client, github_replay):
+    """issue-452: `state_reason` tells a not-planned closure from a completed one."""
+    github_replay.on(
+        "GET",
+        "/repos/octo/repo/issues/15",
+        200,
+        {"number": 15, "state": "closed", "state_reason": "not_planned"},
+    )
+    assert client.item_state(OWNER, REPO, 15).state_reason == "not_planned"
+    github_replay.on(
+        "GET",
+        "/repos/octo/repo/issues/18",
+        200,
+        {"number": 18, "state": "closed", "state_reason": None},
+    )
+    assert client.item_state(OWNER, REPO, 18).state_reason == ""
+
+
 def test_item_state_reads_closure_kind_merge_and_closer(client, github_replay):
     github_replay.on(
         "GET",
