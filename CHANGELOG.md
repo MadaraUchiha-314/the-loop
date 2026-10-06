@@ -1,3 +1,9 @@
+## v19.23.0 (2026-10-06)
+
+### Feat
+
+- **issue-465**: `the-loop pr ready` takes a draft pull request out of draft (#468)
+
 ## v19.22.2 (2026-10-06)
 
 ### Fix
