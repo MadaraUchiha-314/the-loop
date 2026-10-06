@@ -304,6 +304,14 @@ def build_server(cli_config: Optional[dict] = None, *, facade: Any = None) -> MC
         request recorded against a registered work item."""
         return facade.resolve_review_thread(ref, thread, work_item, instance=instance)
 
+    def mark_pull_request_ready(
+        ref: str, work_item: str = "", instance: str = ""
+    ) -> Dict[str, Any]:
+        """Take a draft pull request out of draft, ready for review — only one
+        recorded against a registered work item. A PR already ready is a no-op
+        (`changed` false); a closed or merged one is refused."""
+        return facade.mark_pull_request_ready(ref, work_item, instance=instance)
+
     def merge_pull_request(
         ref: str,
         work_item: str = "",
@@ -465,6 +473,7 @@ def build_server(cli_config: Optional[dict] = None, *, facade: Any = None) -> MC
         pull_request_threads,
         resolve_review_thread,
         close_ticket,
+        mark_pull_request_ready,
         merge_pull_request,
         list_standing_sessions,
         get_standing_session,

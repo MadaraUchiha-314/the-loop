@@ -246,6 +246,47 @@ def test_the_service_closes_and_resolves_only_for_a_registered_work_item(fake, a
     assert fake.closed == [("octo", "repo", 5, "completed")]
 
 
+def test_issue_465_the_service_marks_only_its_own_draft_ready(fake, api):
+    """
+    Feature: a draft pull request is marked ready through the-loop, not gh
+      Scenario: The service readies the draft of its work item and no other
+        Given a work item registered on the service, with its draft pull request
+              recorded
+        When the ready route is called for that pull request
+        Then the pull request is marked ready for review
+        And a second call is a no-op that still exits 0
+        And the same call on a draft nobody registered is refused before GitHub
+            is asked
+
+    Requirement: docs/specs/issue-465/requirements.md R1.1, R1.3, R2.2
+    """
+    api.post("/api/v1/sessions/link-pr", json={"ref": REF, "pullRequest": "12"})
+    fake.pulls[("octo", "repo", 12)] = {
+        "state": "open",
+        "draft": True,
+        "node_id": "PR_kw12",
+    }
+    fake.pulls[("octo", "repo", 99)] = {
+        "state": "open",
+        "draft": True,
+        "node_id": "PR_kw99",
+    }
+    ready = api.post(
+        "/api/v1/pull-requests/ready", json={"ref": "github:octo/repo#12"}
+    ).json()
+    assert ready["exitCode"] == 0 and ready["changed"] is True
+    again = api.post(
+        "/api/v1/pull-requests/ready", json={"ref": "12", "workItem": REF}
+    ).json()
+    assert again["exitCode"] == 0 and again["changed"] is False
+
+    stranger = api.post(
+        "/api/v1/pull-requests/ready", json={"ref": "github:octo/repo#99"}
+    ).json()
+    assert stranger["exitCode"] == 1
+    assert fake.readied == ["PR_kw12"]
+
+
 def test_issue_466_a_linked_pull_request_is_listed_by_a_two_label_poller(
     fake, tmp_path
 ):

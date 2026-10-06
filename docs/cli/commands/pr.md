@@ -1,12 +1,13 @@
 # `pr`
 
-Open, inspect and merge a work item's pull request, without `gh`.
+Open, inspect, ready and merge a work item's pull request, without `gh`.
 
 ```bash
 the-loop pr create --work-item github:OWNER/REPO#N --title "feat: …" --body-file briefing.md
 the-loop pr status  github:OWNER/REPO#16            # or its URL, or: 16 --work-item …
 the-loop pr threads github:OWNER/REPO#16 [--all]
 the-loop pr resolve-thread github:OWNER/REPO#16 --thread PRRT_…
+the-loop pr ready   github:OWNER/REPO#16            # a draft → ready for review
 the-loop pr merge   github:OWNER/REPO#16 [--method squash] [--sha <reviewed-head>]
 ```
 
@@ -33,7 +34,7 @@ command prints a `note:` and still exits 0.
 | `--head` | the checkout's branch | The branch to merge from; `OWNER:BRANCH` for a fork. Read in the working directory, on the CLI side. A detached HEAD needs the flag. |
 | `--base` | the repository's default branch | The branch to merge into. |
 | `--repository` | the work item's | `[HOST/]OWNER/REPO` for a PR in a contributing repository. |
-| `--draft` | off | Open it as a draft. |
+| `--draft` | off | Open it as a draft. Take it out of draft with [`pr ready`](#pr-ready) before asking for review. |
 
 If the work item has no session registered on this instance, nothing is opened (exit
 1; register with `the-loop sessions register`). If the PR opens but the link still
@@ -67,6 +68,25 @@ Resolves one review thread, by the `id` that `pr threads` printed. The id must b
 **this** PR's threads, and the verb checks that before resolving. This is the reviewing
 procedure's "one finding, one commit, one resolved thread".
 
+## `pr ready`
+
+Takes a **draft** pull request out of draft, so it is ready for review
+([issue-465](https://github.com/MadaraUchiha-314/the-loop/issues/465)). This is what
+`gh pr ready` did. Run it before you ask for human review on a PR you opened with
+`pr create --draft`: a draft does not request its code owners' reviews and cannot be
+merged.
+
+The verb reads the PR first and then sends GitHub's `markPullRequestReadyForReview`
+mutation (GitHub's REST API cannot clear `draft`). It prints one line; the route and the
+MCP tool return `pullRequest`, `ready` and `changed`:
+
+| The PR is… | Result |
+|------------|--------|
+| an open draft | Marked ready: exit 0, `changed: true`, event `work_item.pr_ready`. |
+| already ready for review | Nothing is written: exit 0, `changed: false`. |
+| closed or merged | Nothing is written: exit 1, saying which. |
+| refused by GitHub, or still a draft after the request | Exit 1, with GitHub's message. |
+
 ## `pr merge`
 
 Merges with `--method merge|squash|rebase` (default `merge`), **only if** the
@@ -83,9 +103,9 @@ merge GitHub reports as not done is exit 1.
 
 ## Only for a registered work item
 
-`pr create`, `pr merge` and `pr resolve-thread` act only for a work item registered on
+`pr create`, `pr ready`, `pr merge` and `pr resolve-thread` act only for a work item registered on
 the instance that runs them (the owner's rule, [decision-140](/decisions/decision-140)
-D8). `pr create` needs its `--work-item` registered. `merge` and `resolve-thread` need
+D8). `pr create` needs its `--work-item` registered. `ready`, `merge` and `resolve-thread` need
 the PR to be recorded against a registered work item (`sessions link-pr`), or to be one
 itself. An ad-hoc work item (`the-loop do`) may act on a PR it names with `--work-item`.
 Anything else is exit 1, before GitHub is asked. `status` and `threads` are reads and are

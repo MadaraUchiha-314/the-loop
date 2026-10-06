@@ -327,6 +327,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/pull-requests/ready:
+    post:
+      summary: Mark Pull Request Ready
+      operationId: markPullRequestReady
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PullRequestReadyBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Markpullrequestready
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/pull-requests/merge:
     post:
       summary: Merge Pull Request
@@ -2459,6 +2484,24 @@ components:
       - title
       - head
       title: PullRequestCreateBody
+    PullRequestReadyBody:
+      properties:
+        ref:
+          type: string
+          title: Ref
+        workItem:
+          type: string
+          title: Workitem
+          default: ''
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
+      type: object
+      required:
+      - ref
+      title: PullRequestReadyBody
     PullRequestMergeBody:
       properties:
         ref:

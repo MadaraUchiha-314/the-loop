@@ -142,6 +142,14 @@ _RESOLVE_THREAD_MUTATION = (
     "{ thread { id isResolved } } }"
 )
 
+#: Take a pull request out of draft (issue-465). REST cannot: ``PATCH …/pulls/{n}``
+#: ignores ``draft``, so this is the only way, addressed by the PR's node id.
+_MARK_READY_MUTATION = (
+    "mutation($pullRequestId: ID!) "
+    "{ markPullRequestReadyForReview(input: {pullRequestId: $pullRequestId}) "
+    "{ pullRequest { id isDraft } } }"
+)
+
 #: Why an issue was closed — GitHub's ``state_reason`` values for a close.
 CLOSE_REASONS: Tuple[str, ...] = ("completed", "not_planned")
 
@@ -1254,6 +1262,15 @@ class GitHubClient:
         )
         thread = ((data.get("resolveReviewThread") or {}).get("thread")) or {}
         return bool(thread.get("isResolved"))
+
+    def mark_pull_ready(self, pull_id: str, host: str = "") -> bool:
+        """``markPullRequestReadyForReview`` on a pull request's node id (the REST
+        document's ``node_id``); whether it is now out of draft."""
+        if not _NODE_ID_RE.match(str(pull_id or "")):
+            raise GitHubApiError(f"unusable pull request id {pull_id!r}")
+        data = self.graphql(_MARK_READY_MUTATION, {"pullRequestId": pull_id}, host=host)
+        pull = (data.get("markPullRequestReadyForReview") or {}).get("pullRequest")
+        return isinstance(pull, Mapping) and pull.get("isDraft") is False
 
     # -- GraphQL paging and parsing ------------------------------------------------
 

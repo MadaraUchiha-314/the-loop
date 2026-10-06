@@ -327,6 +327,7 @@ runs `gh`; these verbs close the last hop, the agent's own session.
 | open the pull request — and record it | `the-loop pr create --work-item <ref> --title … --body-file …` |
 | read CI and the open review threads during `needs-review` | `the-loop pr status <pr>` · `the-loop pr threads <pr>` (JSON) |
 | resolve a review thread you addressed | `the-loop pr resolve-thread <pr> --thread <id>` |
+| take a PR you opened with `--draft` out of draft — before you request human review, since a draft requests no code-owner review and cannot merge | `the-loop pr ready <pr>` |
 | close the ticket at `finish-tasks` | `the-loop ticket close <ref> [--reason not_planned]` |
 | merge on approval | `the-loop pr merge <pr> --sha <reviewed head>` — refused when `routing.mergeOnApproval` is `false`; the `--sha` makes GitHub refuse a branch that moved after the review |
 
@@ -336,9 +337,9 @@ runs `gh`; these verbs close the last hop, the agent's own session.
   `integrations.github.api.tokenEnv` names (default `GH_TOKEN`), prints a note on
   stderr saying so, and never starts a service. The same operations are tools on the
   service's `/mcp` endpoint for a harness that prefers MCP.
-- **Only for a registered work item.** Opening, merging, resolving and closing act only
-  for a work item registered on the executing instance: the PR or ticket must be that
-  work item, or be recorded against it (`sessions link-pr`). A cloud session therefore
+- **Only for a registered work item.** Opening, readying, merging, resolving and closing
+  act only for a work item registered on the executing instance: the PR or ticket must be
+  that work item, or be recorded against it (`sessions link-pr`). A cloud session therefore
   runs `the-loop sessions register` first. An ad-hoc `the-loop do` work item may act on
   a PR or ticket it names with `--work-item`. Reads and comments are not gated.
 - **Only trusted hosts.** A verb addresses github.com and the operator's own GitHub

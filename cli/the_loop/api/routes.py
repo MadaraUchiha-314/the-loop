@@ -287,6 +287,12 @@ class ThreadResolveBody(BaseModel):
     instance: str = ""
 
 
+class PullRequestReadyBody(BaseModel):
+    ref: str
+    workItem: str = ""
+    instance: str = ""
+
+
 class PullRequestMergeBody(BaseModel):
     ref: str
     workItem: str = ""
@@ -814,6 +820,15 @@ def build_router(
     ) -> Dict[str, Any]:
         return facade.list_pull_request_threads(
             ref, workItem, include_resolved=all, instance=instance
+        )
+
+    @router.post(
+        f"{API_PREFIX}/pull-requests/ready",
+        operation_id="markPullRequestReady",
+    )
+    def mark_pull_request_ready(body: PullRequestReadyBody) -> Dict[str, Any]:
+        return facade.mark_pull_request_ready(
+            body.ref, body.workItem, instance=body.instance
         )
 
     @router.post(

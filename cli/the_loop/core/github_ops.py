@@ -57,6 +57,7 @@ __all__ = [
     "create_ticket",
     "discover_pull_requests",
     "link_pull_request",
+    "mark_ready",
     "merge_pull_request",
     "pull_request_status",
     "pull_request_threads",
@@ -858,6 +859,50 @@ def merge_pull_request(
         )
     eventlog.emit("work_item.pr_merged", pull_request=target.ref, method=method)
     return _done(data, f"merged {target.ref} ({method})")
+
+
+def mark_ready(
+    pr: str,
+    work_item: str = "",
+    config: Optional[Mapping[str, Any]] = None,
+    *,
+    registry_dir: str = "",
+    client: Optional[GitHubClient] = None,
+) -> Dict[str, Any]:
+    """Take a draft pull request out of draft — ready for review (issue-465).
+
+    A lifecycle act, so only for a registered work item's pull request
+    (:func:`_authority`): readying a draft notifies its code owners. The PR is
+    read first, so the mutation is addressed by the node id GitHub returned for
+    *this* PR, never one a caller names; an already-ready PR is a no-op (exit 0,
+    ``changed: false``) and a closed or merged one is refused without a write.
+    """
+    target = _trusted(resolve_pull_request(pr, work_item), config)
+    data: Dict[str, Any] = {"pullRequest": target.ref, "ready": False, "changed": False}
+    refusal = _authority(target, work_item, config, registry_dir)
+    if refusal:
+        return _failed(data, f"not marking ready: {refusal}")
+    gh = _client(config, client)
+    host = _host(target)
+    try:
+        doc = gh.get_pull(target.owner, target.repo, target.number, host=host)
+    except GitHubApiError as exc:
+        return _failed(data, f"could not read {target.ref}: {exc}")
+    if str(doc.get("state") or "") != "open":
+        state = "merged" if doc.get("merged") else "closed"
+        return _failed(data, f"{target.ref} is {state}; only an open draft is readied")
+    if not doc.get("draft"):
+        data["ready"] = True
+        return _done(data, f"{target.ref} is already ready for review")
+    try:
+        ready = gh.mark_pull_ready(str(doc.get("node_id") or ""), host=host)
+    except GitHubApiError as exc:
+        return _failed(data, f"could not mark {target.ref} ready for review: {exc}")
+    if not ready:
+        return _failed(data, f"GitHub left {target.ref} a draft")
+    data.update(ready=True, changed=True)
+    eventlog.emit("work_item.pr_ready", pull_request=target.ref)
+    return _done(data, f"marked {target.ref} ready for review")
 
 
 def _pull_ref(doc: Mapping[str, Any], target: WorkItemRef) -> WorkItemRef:

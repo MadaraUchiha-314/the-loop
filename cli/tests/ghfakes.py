@@ -100,6 +100,8 @@ class FakeGitHubClient(GitHubClient):
     merged: List[Tuple[str, str, int, str]] = field(default_factory=list)
     closed: List[Tuple[str, str, int, str]] = field(default_factory=list)
     resolved: List[str] = field(default_factory=list)
+    readied: List[str] = field(default_factory=list)  # mark_pull_ready node ids
+    stays_draft: bool = False  # mark_pull_ready answers isDraft: true
     label_calls: List[Tuple[str, ...]] = field(default_factory=list)
     calls: List[Tuple[str, Dict[str, Any]]] = field(default_factory=list)
 
@@ -354,4 +356,14 @@ class FakeGitHubClient(GitHubClient):
     def resolve_review_thread(self, thread_id, host="") -> bool:
         self._enter("resolve_review_thread", thread_id=thread_id, host=host)
         self.resolved.append(thread_id)
+        return True
+
+    def mark_pull_ready(self, pull_id, host="") -> bool:
+        self._enter("mark_pull_ready", pull_id=pull_id, host=host)
+        if self.stays_draft:
+            return False
+        self.readied.append(pull_id)
+        for doc in self.pulls.values():
+            if doc.get("node_id") == pull_id:
+                doc["draft"] = False
         return True
