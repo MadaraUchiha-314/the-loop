@@ -476,6 +476,23 @@ class CoreFacade:
         self._self(instance)
         return core_github.pull_request_status(ref, work_item, config=self.config)
 
+    def list_pull_request_checks(
+        self,
+        ref: str,
+        work_item: str = "",
+        failing_only: bool = False,
+        log_lines: int = core_github.DEFAULT_LOG_LINES,
+        instance: str = "",
+    ) -> Dict[str, Any]:
+        self._self(instance)
+        return core_github.pull_request_checks(
+            ref,
+            work_item,
+            failing_only=failing_only,
+            log_lines=log_lines,
+            config=self.config,
+        )
+
     def list_pull_request_threads(
         self,
         ref: str,

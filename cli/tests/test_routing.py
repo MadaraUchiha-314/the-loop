@@ -1708,10 +1708,10 @@ def make_control_dispatcher(tmp_path, tmux, **overrides):
     return make_dispatcher(tmp_path, tmux, **overrides)
 
 
-def test_the_settled_vocabulary_is_exactly_the_eleven_documented_outcomes():
+def test_the_settled_vocabulary_is_exactly_the_thirteen_documented_outcomes():
     """Adding a settlement means adding it here — and to the event catalogue.
 
-    `poll.comment_settled` documents these eleven as its `outcome` values, and the
+    `poll.comment_settled` documents these thirteen as its `outcome` values, and the
     poller records whatever it is handed without branching on it, so this tuple is
     the only place the vocabulary is stated.
     """
@@ -1728,6 +1728,9 @@ def test_the_settled_vocabulary_is_exactly_the_eleven_documented_outcomes():
         "unaddressed",
         "instance-locked",
         "ambiguous-address",
+        # issue-462: a CI event the CI gate kept from the session
+        "ci-not-actionable",
+        "ci-autofix-exhausted",
     )
     assert SETTLED_SUPPRESSED == (
         "awaiting-start",

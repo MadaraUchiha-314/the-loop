@@ -585,6 +585,117 @@ class GitHubPollProvider(PollProvider):
             labeled=False,
         )
 
+    # -- CI (issue-462) ----------------------------------------------------------
+
+    def ci_events(
+        self, item: WorkItem, refs: List[WorkItemRef]
+    ) -> List[Tuple[str, str, RoutedEvent]]:
+        """The completed checks on a pull request's head, as the webhook events
+        GitHub would have pushed for them: a ``check_run`` per check run, a
+        ``status`` per commit status — so the dispatcher's CI gate judges a
+        polled result by the same rule as a pushed one.
+
+        Three reads: the pull request (for its head), its check runs, its combined
+        status. A check still running is left out: it says nothing the gate acts
+        on, and its completion is what the next pass will see.
+        """
+        if item.kind != _KIND_PR:
+            return []
+        host = item.host
+        pull = _read(
+            f"pull request {item.ref}",
+            lambda: self.api.get_pull(item.owner, item.repo, item.number, host=host),
+        )
+        sha = str((pull.get("head") or {}).get("sha") or "")
+        if not sha:
+            return []
+        runs, statuses = _read(
+            f"checks of {item.ref}",
+            lambda: self.api.commit_checks(item.owner, item.repo, sha, host=host),
+        )
+        repository = {
+            "full_name": f"{item.owner}/{item.repo}",
+            "html_url": f"https://{host}/{item.owner}/{item.repo}",
+        }
+        out: List[Tuple[str, str, RoutedEvent]] = []
+        for run in runs:
+            name = str(run.get("name") or "")
+            if not name or run.get("status") != "completed":
+                continue
+            conclusion = str(run.get("conclusion") or "")
+            payload = {
+                "action": "completed",
+                "check_run": {
+                    "id": run.get("id"),
+                    "name": name,
+                    "status": "completed",
+                    "conclusion": conclusion,
+                    "head_sha": sha,
+                    "html_url": run.get("html_url") or "",
+                    "details_url": run.get("details_url") or "",
+                    "app": run.get("app") or {},
+                    "output": run.get("output") or {},
+                    "pull_requests": [{"number": item.number}],
+                },
+                "repository": repository,
+            }
+            out.append(
+                self._ci_event(
+                    item,
+                    refs,
+                    f"check-run:{name}",
+                    sha,
+                    conclusion,
+                    "check_run",
+                    payload,
+                )
+            )
+        for status in statuses:
+            context = str(status.get("context") or "")
+            state = str(status.get("state") or "")
+            if not context or state == "pending":
+                continue
+            payload = {
+                "state": state,
+                "context": context,
+                "sha": sha,
+                "description": status.get("description") or "",
+                "target_url": status.get("target_url") or "",
+                "repository": repository,
+            }
+            out.append(
+                self._ci_event(
+                    item, refs, f"status:{context}", sha, state, "status", payload
+                )
+            )
+        return out
+
+    @staticmethod
+    def _ci_event(
+        item: WorkItem,
+        refs: List[WorkItemRef],
+        check: str,
+        sha: str,
+        conclusion: str,
+        event: str,
+        payload: dict,
+    ) -> Tuple[str, str, RoutedEvent]:
+        value = f"{sha}:{conclusion}"
+        return (
+            check,
+            value,
+            RoutedEvent(
+                event=event,
+                action=str(payload.get("action") or ""),
+                # Stable per (item, check, result), so a repeat inside the dedup
+                # window is a no-op even before the ledger is consulted.
+                delivery_id=f"poll-ci-{item.ref}-{check}-{value}",
+                work_items=list(refs),
+                payload=payload,
+                labeled=False,
+            ),
+        )
+
     # -- closure reconciliation (issue-94) -------------------------------------
 
     def owns(self, ref: WorkItemRef) -> bool:

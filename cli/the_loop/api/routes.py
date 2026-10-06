@@ -46,6 +46,7 @@ from pydantic import BaseModel
 
 from .. import eventlog
 from ..cli_config import ConfigHolder
+from ..core.github_ops import DEFAULT_LOG_LINES
 from ..workitem import WorkItemRef
 from ..yamlpatch import SpliceError
 from . import stream as api_stream
@@ -807,6 +808,25 @@ def build_router(
         instance: str = Query(""),
     ) -> Dict[str, Any]:
         return facade.get_pull_request_status(ref, workItem, instance=instance)
+
+    @router.get(
+        f"{API_PREFIX}/pull-requests/checks",
+        operation_id="listPullRequestChecks",
+    )
+    def list_pull_request_checks(
+        ref: str = Query(...),
+        workItem: str = Query(""),
+        failing: bool = Query(False),
+        logLines: int = Query(DEFAULT_LOG_LINES, ge=0),
+        instance: str = Query(""),
+    ) -> Dict[str, Any]:
+        return facade.list_pull_request_checks(
+            ref,
+            workItem,
+            failing_only=failing,
+            log_lines=logLines,
+            instance=instance,
+        )
 
     @router.get(
         f"{API_PREFIX}/pull-requests/threads",

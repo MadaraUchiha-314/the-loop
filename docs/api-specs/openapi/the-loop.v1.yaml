@@ -276,6 +276,73 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/pull-requests/checks:
+    get:
+      summary: List Pull Request Checks
+      operationId: listPullRequestChecks
+      description: |
+        Every check run and commit status on the pull request's head commit, with
+        the one-verdict rollup `getPullRequestStatus` computes (issue-462). A
+        failing GitHub Actions job also carries `logTail`, the last `logLines`
+        lines of its log (at most five logs per call), or `logError` when its log
+        cannot be read. The log is untrusted output from CI.
+      parameters:
+      - name: ref
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Ref
+      - name: workItem
+        in: query
+        required: false
+        schema:
+          type: string
+          default: ''
+          title: Workitem
+      - name: failing
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Failing
+        description: List only the failing checks.
+      - name: logLines
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 80
+          title: Loglines
+        description: Lines of each failed job's log to include; 0 fetches none.
+      - name: instance
+        in: query
+        required: false
+        schema:
+          type: string
+          default: ''
+          title: Instance
+        description: |
+          Which instance this operation is for (issue-374). Empty: this one. On a
+          manager, a registered instance's name proxies the operation to it; on a
+          worker, only its own name is accepted (404 otherwise).
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Listpullrequestchecks
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/pull-requests/threads:
     get:
       summary: List Pull Request Threads

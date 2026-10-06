@@ -82,6 +82,7 @@ class FakeGitHubClient(GitHubClient):
     pulls: Dict[Tuple[str, str, int], Dict[str, Any]] = field(default_factory=dict)
     check_runs: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)  # sha
     statuses: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)  # sha
+    job_logs: Dict[int, List[str]] = field(default_factory=dict)  # job id (issue-462)
     threads: Dict[Tuple[str, str, int], List[Dict[str, Any]]] = field(
         default_factory=dict
     )
@@ -308,6 +309,12 @@ class FakeGitHubClient(GitHubClient):
     def commit_checks(self, owner, repo, sha, host=""):
         self._enter("commit_checks", owner=owner, repo=repo, sha=sha, host=host)
         return list(self.check_runs.get(sha, [])), list(self.statuses.get(sha, []))
+
+    def job_log_tail(self, owner, repo, job_id, lines=80, host="") -> List[str]:
+        self._enter("job_log_tail", owner=owner, repo=repo, job_id=job_id, host=host)
+        if job_id not in self.job_logs:
+            raise not_found()
+        return list(self.job_logs[job_id])[-lines:] if lines else []
 
     def merge_pull(
         self, owner, repo, number, method, host="", sha=""

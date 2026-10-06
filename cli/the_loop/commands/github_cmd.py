@@ -260,6 +260,24 @@ class PrCommand(Command):
         _add_pr(status)
         status.set_defaults(_action=self._status)
 
+        checks = actions.add_parser(
+            "checks",
+            help="Every check on the PR's head, with failed jobs' log tails, as JSON",
+        )
+        _add_pr(checks)
+        checks.add_argument(
+            "--failing", action="store_true", help="List only the failing checks."
+        )
+        checks.add_argument(
+            "--log-lines",
+            type=int,
+            default=github_ops.DEFAULT_LOG_LINES,
+            metavar="N",
+            help="Lines of each failed GitHub Actions job's log to include "
+            f"(default {github_ops.DEFAULT_LOG_LINES}; 0 fetches none).",
+        )
+        checks.set_defaults(_action=self._checks)
+
         threads = actions.add_parser(
             "threads", help="The PR's unresolved review threads, as JSON"
         )
@@ -348,6 +366,29 @@ class PrCommand(Command):
                 ),
                 lambda: github_ops.pull_request_status(
                     args.pull_request, args.work_item, _cli_config()
+                ),
+            ),
+            as_json=True,
+        )
+
+    def _checks(self, args: argparse.Namespace) -> int:
+        return _run(
+            lambda: harness_routed(
+                lambda c: c.get(
+                    "/pull-requests/checks",
+                    params={
+                        "ref": args.pull_request,
+                        "workItem": args.work_item,
+                        "failing": "true" if args.failing else "",
+                        "logLines": str(args.log_lines),
+                    },
+                ),
+                lambda: github_ops.pull_request_checks(
+                    args.pull_request,
+                    args.work_item,
+                    failing_only=bool(args.failing),
+                    log_lines=args.log_lines,
+                    config=_cli_config(),
                 ),
             ),
             as_json=True,

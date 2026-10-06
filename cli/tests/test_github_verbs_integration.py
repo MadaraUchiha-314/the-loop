@@ -287,6 +287,40 @@ def test_issue_465_the_service_marks_only_its_own_draft_ready(fake, api):
     assert fake.readied == ["PR_kw12"]
 
 
+def test_issue_462_the_service_lists_a_pull_requests_failing_checks(fake, api):
+    """
+    Feature: a failing check is diagnosed through the-loop, not gh
+      Scenario: The service lists the failing checks with the failed job's log
+        Given a pull request whose head commit has a passing and a failing
+              GitHub Actions job
+        When the checks route is called with failing=true
+        Then only the failing job is listed
+        And it carries the tail of its log
+
+    Requirement: docs/specs/issue-462/requirements.md R1.1, R1.3, R1.4, R2.2
+    """
+    sha = "c" * 40
+    fake.pulls[("octo", "repo", 12)] = {"state": "open", "head": {"sha": sha}}
+    fake.check_runs[sha] = [
+        {"id": 1, "name": "lint", "status": "completed", "conclusion": "success"},
+        {
+            "id": 2,
+            "name": "test",
+            "status": "completed",
+            "conclusion": "failure",
+            "app": {"slug": "github-actions"},
+        },
+    ]
+    fake.job_logs[2] = ["E   assert 1 == 2"]
+    result = api.get(
+        "/api/v1/pull-requests/checks",
+        params={"ref": "github:octo/repo#12", "failing": "true", "logLines": "5"},
+    ).json()
+    assert result["exitCode"] == 0
+    assert [c["name"] for c in result["checks"]] == ["test"]
+    assert result["checks"][0]["logTail"] == ["E   assert 1 == 2"]
+
+
 def test_issue_466_a_linked_pull_request_is_listed_by_a_two_label_poller(
     fake, tmp_path
 ):
