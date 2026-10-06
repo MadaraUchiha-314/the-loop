@@ -5,6 +5,9 @@
 # (Basic Information → App-Level Tokens, scope connections:write) for Socket Mode
 # and install the app to the workspace for the bot token; export both under the
 # names channels.slack.botTokenEnv / appTokenEnv name. (issue-334)
+# One click instead (issue-464): `the-loop channels manifest --name "<your app>"
+# --write` keeps a renamed copy beside the CLI config and prints Slack's
+# prefilled create-app link.
 display_information:
   name: the-loop
   description: Drive the-loop from Slack — one thread per work item, a slash command for the rest.

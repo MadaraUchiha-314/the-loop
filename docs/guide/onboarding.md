@@ -103,9 +103,11 @@ phone.
 - **GitHub stays the ledger.** Anything that starts in Slack is recorded on the work item
   first, and the loop reads it from there.
 
-Init walks the four setup steps — import the app manifest `the-loop channels manifest`
-prints, install for the bot token, mint an app-level token for Socket Mode, invite the bot
-and take the conversation id — then runs `the-loop channels status --probe` so a missing
+Init walks the four setup steps. First it asks your app's name and creates the app from
+one click: `the-loop channels manifest --name … --write` keeps the manifest beside your CLI
+config and prints Slack's prefilled create-app link. Then you install for the bot token,
+mint an app-level token for Socket Mode, invite the bot and take the conversation id.
+Tokens go in your environment or `env.file`, never into the chat. Then init runs `the-loop channels status --probe` so a missing
 scope is named while you are still in the session. The [Slack integration](/guide/slack)
 page is the full reference; you do not need it to get started.
 

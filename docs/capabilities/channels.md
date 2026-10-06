@@ -465,6 +465,22 @@ flowchart LR
   in the package and is printed by `the-loop channels manifest`; the
   [Slack integration guide](../guide/slack.md) is the operator's map of every mode of
   interaction.
+- **The app manifest, named and one click away** (issue-464). WHEN `channels manifest`
+  is given `--name NAME` THEN the manifest SHALL carry NAME as
+  `display_information.name` and NAME's handle (lowercase, each run outside `a-z0-9._-`
+  turned into `-`) as the bot's `display_name`, every other key the packaged one's; a
+  name Slack would refuse (empty, over 35 characters, a control character, no letter or
+  digit) SHALL exit 2 and write nothing. WHEN given `--link` THEN it SHALL print
+  `https://api.slack.com/apps?new_app=1&manifest_json=` and the percent-encoded compact
+  JSON, with no network call and no token. WHEN given `--write [PATH]` THEN it SHALL
+  keep the manifest as JSON (default `slack-app-manifest.json` beside the resolved CLI
+  config), reuse the kept name when no `--name` is given, leave an unchanged file
+  unwritten, name the bot scopes and events added and removed, say when the existing app
+  needs its *App Manifest* replaced and a reinstall, and print the link. A kept file it
+  cannot read as a manifest SHALL be left untouched unless `--name` is given.
+  Regeneration reads only the name back, so it never carries a scope the release does
+  not ship. `/the-loop:init` asks the name and hands over the link (tokens go to the
+  environment, never the chat); `/the-loop:upgrade-the-loop` regenerates the kept file.
 - **The service hosts the listener** (issue-334, the owner's review of PR #336). WHEN
   `the-loop start` runs with `channels.slack.enabled` and `read.mode: socket` under
   `service.hostIngresses` (the default) THEN the service's lifespan SHALL run
@@ -903,6 +919,7 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-464 | **The Slack app from one click, named by its operator** (2026-10-06): `channels manifest` gains `--name` (the app's name and the bot's derived handle), `--format json`, `--link` (Slack's prefilled `new_app=1&manifest_json=` create URL) and `--write [PATH]`, which keeps `slack-app-manifest.json` beside the CLI config, rebuilds it under the kept name and reports the scope and event delta. `/the-loop:init` asks the name and walks the link; `/the-loop:upgrade-the-loop` regenerates the file. The shipped scopes and events are unchanged | [spec](../specs/issue-464/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/464) |
 | issue-447 | `comment.agent` gained a second publisher: `the-loop comment` publishes it from the CLI with `record: true`, so the ledger writes the marked, enveloped comment and the room hears it once, before the ingress (which drops enveloped comments) could | [spec](../specs/issue-447/), [decision-140](../decisions/decision-140.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/447) |
 | issue-422 | **The subscription probe caches the directory where the docs say it does** (2026-09-22): resolving a channel configured by name, `probe_subscription` built its `SlackDirectory` without the CLI config, so `channels status --probe`, `doctor slack` and the listener's connect-time probe wrote `slack-directory.json` under `./.the-loop/local/` of whatever directory they ran in. It now takes the caller's `cli_config` and caches under `<state.root>/local/`. Found by the test suite's new guard against writes into a checked-in `.the-loop/`. No token, scope or config key changes | [spec](../specs/issue-422/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/422) |
 | issue-409 | **An event no channel took is queued, retried and counted** (2026-09-22): `publish` writes what every channel refused to `<root>/channels/undelivered.json` and warns (`channel.undelivered`), a drain thread in both daemons re-posts it oldest-first on a 60s cycle with a per-entry backoff and a per-cycle budget until a channel takes it (`channel.delivered_late`), and `the-loop status` names the backlog until it is empty. The drain posts and never records, so a replay cannot comment, open an issue or answer a gate. `the-loop ask` now says plainly when nobody was paged and carries `channels_posted` on its event. Before this the failure lived in one `debug` line in the publishing checkout's own event log — the report lost 144 of 144 asks to a rotated token over three days with every surface green | [spec](../specs/issue-409/), [state](../cli/state.md#undelivered-channel-events---rootchannelsundeliveredjson), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/409) |

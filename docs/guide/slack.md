@@ -33,8 +33,37 @@ flowchart LR
 ### 1. Create the Slack app from the manifest
 
 the-loop ships the app definition Slack imports — every scope, event subscription, the
-Socket Mode switch and the `/the-loop` command. Print it with `the-loop channels manifest`,
-or copy it from here; then at [api.slack.com/apps](https://api.slack.com/apps) choose
+Socket Mode switch and the `/the-loop` command. **Each operator creates their own app**,
+because its tokens are what their daemon runs on, so give it a name of your own. Two
+operators in one workspace then get two distinguishable bots.
+
+**One click** ([issue-464](https://github.com/MadaraUchiha-314/the-loop/issues/464),
+and what `/the-loop:init` walks you through):
+
+```bash
+the-loop channels manifest --name "the-loop-dana" --write
+```
+
+This keeps the renamed manifest as `slack-app-manifest.json` beside your CLI config
+(`.the-loop/` or `~/.the-loop/`) and prints a link,
+`https://api.slack.com/apps?new_app=1&manifest_json=…`. Open it, pick the workspace,
+confirm *Create*, then *Install to Workspace*. Building the link needs no token and
+makes no network call.
+
+- `--name` sets the app's name (35 characters at most). The bot's `@handle` is derived
+  from it: lowercase, with every run of other characters turned into `-`, so
+  `Dana's Loop` becomes `@dana-s-loop`. Everything else is the packaged manifest. The
+  slash command stays `/the-loop`. When two apps in a workspace declare it, Slack asks
+  which one you mean.
+- `--link` prints only the link, and `--format json` prints the manifest as JSON.
+- Run `--write` again, with no `--name`, after upgrading the-loop (or let
+  `/the-loop:upgrade-the-loop` do it). It rebuilds the file from the new release under
+  the kept name and names the bot scopes and events that changed. Then paste the file
+  over your app's *App Manifest* (see [1b](#upgrading-the-app-you-already-have-1b)).
+  Clicking the link again would create a second app.
+
+**By hand**: print the manifest with `the-loop channels manifest`, or copy it from here;
+then at [api.slack.com/apps](https://api.slack.com/apps) choose
 *Create New App → From a manifest*, pick the workspace, and paste it.
 
 ```yaml
@@ -45,6 +74,9 @@ or copy it from here; then at [api.slack.com/apps](https://api.slack.com/apps) c
 # (Basic Information → App-Level Tokens, scope connections:write) for Socket Mode
 # and install the app to the workspace for the bot token; export both under the
 # names channels.slack.botTokenEnv / appTokenEnv name. (issue-334)
+# One click instead (issue-464): `the-loop channels manifest --name "<your app>"
+# --write` keeps a renamed copy beside the CLI config and prints Slack's
+# prefilled create-app link.
 display_information:
   name: the-loop
   description: Drive the-loop from Slack — one thread per work item, a slash command for the rest.
@@ -155,13 +187,14 @@ typed in a channel or thread reaches the-loop** — `channels status --probe` an
 listener's connect-time probe say so), and — if it never used Socket Mode — Socket Mode
 itself. Two ways, pick one:
 
-- **Replace the manifest** (recommended, one step). At
+- **Replace the manifest** (recommended, one step). Regenerate yours with
+  `the-loop channels manifest --write` (add `--name "<your app's name>"` the first time,
+  if you created the app before issue-464), then at
   [api.slack.com/apps](https://api.slack.com/apps) open the app → *App Manifest* → paste
-  the manifest above over the existing one → *Save Changes*. Slack shows the diff and,
-  because scopes changed, asks you to **reinstall** the app to the workspace — do it
-  (*Install App → Reinstall*). The manifest's `display_information.name` and
-  `bot_user.display_name` replace yours; edit those two lines first if you want to keep
-  a different name.
+  `slack-app-manifest.json` over the existing one → *Save Changes*. Slack shows the diff
+  and, because scopes changed, asks you to **reinstall** the app to the workspace — do it
+  (*Install App → Reinstall*). Pasting the packaged manifest instead replaces your app's
+  `display_information.name` and `bot_user.display_name` with `the-loop`.
 - **By hand**, in the app's settings, then *Reinstall*:
 
   | Page | Add |
