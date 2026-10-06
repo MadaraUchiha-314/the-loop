@@ -416,7 +416,7 @@ class CoreFacade:
             )
         if not pull_request:
             raise ValueError("name the pull request, or ask to discover it")
-        return core_sessions.link_pull_request(ref, pull_request, config=self.config)
+        return core_github.link_pull_request(ref, pull_request, config=self.config)
 
     # -- the harness's GitHub verbs (issue-447) -----------------------------------
     #

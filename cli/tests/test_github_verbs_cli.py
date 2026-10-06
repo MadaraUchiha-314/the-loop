@@ -255,8 +255,11 @@ def test_link_pr_discover_links_the_branchs_pull_request(
     capsys.readouterr()
     argv = ["sessions", "link-pr", "--work-item", REF, "--discover"]
     assert _cli(path, *argv, "--registry-dir", registry) == 0
-    assert "recorded github:octo/repo#12" in capsys.readouterr().out
-    assert fake.calls[-1][1]["branch"] == "claude/issue-5"
+    out = capsys.readouterr().out
+    assert "recorded github:octo/repo#12" in out
+    assert "labelled github:octo/repo#12" in out  # issue-466
+    (lookup,) = [kw for name, kw in fake.calls if name == "open_pulls_for_head"]
+    assert lookup["branch"] == "claude/issue-5"
 
 
 def test_link_pr_discover_on_a_detached_head_is_exit_2(
@@ -398,4 +401,5 @@ def test_link_pr_discover_passes_a_fork_head_owner(fake, config, tmp_path, monke
         "me",
     ]
     assert _cli(path, *argv) == 0
-    assert fake.calls[-1][1]["head_owner"] == "me"
+    (lookup,) = [kw for name, kw in fake.calls if name == "open_pulls_for_head"]
+    assert lookup["head_owner"] == "me"

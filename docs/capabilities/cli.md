@@ -41,6 +41,11 @@ self-learning/ML capabilities.
   `link-pr --discover` (issue-447) SHALL ask GitHub instead of taking a number: every
   **open** pull request whose head is the checkout's branch, in the checkout's `origin`
   (else the work item's repository), is linked; none found is exit 0.
+  WHEN `link-pr`, `link-pr --discover` or `pr create` records a pull request THEN it
+  SHALL put every label in `routing.autoExecuteLabels` on that pull request (issue-466),
+  because the poller lists only a PR carrying all of them. `link-pr` labels only a PR it
+  newly recorded. `pr create` labels whenever its link succeeded, and never when the link
+  failed. A refusal from GitHub is a stderr note, and the exit code stays 0.
 - The coding harness SHALL reach GitHub through `the-loop` verbs, never `gh` (issue-447):
   `the-loop comment` (a marked, enveloped comment, mirrored to channels subscribed to
   `comment.agent`), `the-loop ticket show|create`, and `the-loop pr
@@ -469,6 +474,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-466 | A linked pull request carries every arming label (2026-10-06): `pr create`, `sessions link-pr` and `link-pr --discover` put the whole `routing.autoExecuteLabels` list on the PR they record (`core.github_ops.link_pull_request`, event `work_item.pr_labelled`). Before, labelling was the agent's job and the skill named "the label", so with two labels configured the PR carried one, the poller filtered it, and its review comments were never fetched | [spec](../specs/issue-466/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/466) |
 | issue-453 | Lifecycle authority for an accepted, parked work item (2026-10-02): `core.github_ops._authority` gains a second source of ownership beside the session registry — the control record this instance wrote for a work item not yet ended — so `ticket close`, `pr create`, `pr merge` and `pr resolve-thread` act on an item `sessions start` parked at its first human gate without a session; `ticket close` on such an item also records the `stop` that cancels its pending start (`startCancelled`), idempotently. A record another instance wrote, an ended item's and an unreadable one grant nothing | [spec](../specs/issue-453/), [decision-141](../decisions/decision-141.md), [ticket](../cli/commands/ticket.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/453) |
 | issue-452 | `check <ref>` and `graph status <ref>` report an ended work item whose checkout was cleaned up as `ARCHIVED — <outcome>`, with the closure, the frozen selections, the delivering pull requests and the evidence the closure recorded, or say the archived detail is unavailable — never the graph's start node (2026-10-02) | [spec](../specs/issue-452/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/452) |
 | issue-447 | The coding harness reaches GitHub through `the-loop`'s verbs (2026-09-30): `comment`, `ticket show\|create` and `pr create\|status\|threads\|merge` over `ghapi.GitHubClient`, routed through a running service and otherwise in-process with a stderr note (`harness_routed`, never an auto-start); `pr create` links what it opens; `pr merge` obeys `routing.mergeOnApproval`; `sessions link-pr --discover` asks GitHub for the branch's open pull requests. The skill and the slash commands name the verbs, `gh` only as the fallback | [spec](../specs/issue-447/), [decision-140](../decisions/decision-140.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/447) |

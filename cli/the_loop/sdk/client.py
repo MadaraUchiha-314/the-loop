@@ -33,6 +33,7 @@ from ..core import attention as core_attention
 from ..core import config as core_config
 from ..core import daemons as core_daemons
 from ..core import events as core_events
+from ..core import github_ops as core_github
 from ..core import graphs as core_graphs
 from ..core import instance as core_instance
 from ..core import instances as core_instances
@@ -116,7 +117,7 @@ class Sessions(_Namespace):
         )
 
     def link_pr(self, ref: str, pull_request: str) -> Dict[str, Any]:
-        return core_sessions.link_pull_request(ref, pull_request, config=self._config)
+        return core_github.link_pull_request(ref, pull_request, config=self._config)
 
     def close(self, ref: str, keep_tmux: Optional[bool] = None) -> Dict[str, Any]:
         return core_sessions.close_session(

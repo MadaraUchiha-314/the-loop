@@ -116,6 +116,15 @@ afterwards is harmless, since it is idempotent, and it is still the way in a har
 with no such hook.
 :::
 
+When the call records the pull request for the first time, it also puts **every** label in
+`routing.autoExecuteLabels` on it
+([issue-466](https://github.com/MadaraUchiha-314/the-loop/issues/466)). The poller lists
+a pull request only when it carries all of them, so a linked PR without one is never
+polled and its review comments reach no session. A re-run, or a pull request that was
+already recorded, asks GitHub nothing, so a label someone removed on purpose stays off.
+If GitHub refuses the labels, the link still stands: the call exits 0, prints a `note:`
+on stderr, and the labels have to be added by hand.
+
 Idempotent: a pull request already recorded is reported and exits 0. Exit 1 when the work
 item has no session record on this machine (register the session first — recording an
 endpoint for a record that does not exist would invent a work item), exit 2 for a

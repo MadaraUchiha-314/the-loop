@@ -244,3 +244,60 @@ def test_the_service_closes_and_resolves_only_for_a_registered_work_item(fake, a
     )
     assert unregistered.json()["exitCode"] == 1
     assert fake.closed == [("octo", "repo", 5, "completed")]
+
+
+def test_issue_466_a_linked_pull_request_is_listed_by_a_two_label_poller(
+    fake, tmp_path
+):
+    """
+    Feature: a pull request the-loop links is one the poller can see
+      Scenario: Every auto-execute label lands on the pull request it opens and records
+        Given an operator whose routing.autoExecuteLabels holds two labels
+        And a session registered for the work item
+        When the agent opens one pull request with `pr create` through the service
+        And records a second, opened by hand, with `sessions link-pr`
+        Then both pull requests carry both labels
+        And a poller requiring both labels lists both, so their review comments reach the session
+
+    Requirement: docs/specs/issue-466/bugfix.md R1, R2
+    """
+    from the_loop.ghapi import GhItem
+    from the_loop.poller.github import GitHubPollProvider, RepoSpec
+
+    labels = ["the-loop: auto-execute", "the-loop: rr"]
+    config = _config(tmp_path, autoExecuteLabels=labels)
+    SessionRegistry(layout_from_config(config).local_dir).register(
+        Session(
+            work_item=WorkItemRef.parse(REF),
+            harness="claude",
+            harness_session_id="s1",
+            cwd=str(tmp_path),
+        )
+    )
+    api = TestClient(create_app(config))
+    opened = api.post(
+        "/api/v1/work-items/pull-requests",
+        json={"ref": REF, "title": "T", "body": "B", "head": "claude/x"},
+    ).json()
+    assert opened["pullRequest"] == "github:octo/repo#12" and opened["linked"]
+    linked = api.post(
+        "/api/v1/sessions/link-pr", json={"ref": REF, "pullRequest": "23"}
+    ).json()
+    assert linked["exitCode"] == 0 and linked["linked"]
+
+    fake.prs[("octo", "repo")] = [
+        GhItem(
+            number=number,
+            title="T",
+            labels=fake.labels.get(("octo", "repo", number), []),
+            updated_at="",
+            url="",
+            is_pr=True,
+        )
+        for number in (12, 23)
+    ]
+    poller = GitHubPollProvider([RepoSpec("octo", "repo")], labels, api=fake)
+    assert [item.ref for item in poller.list_work_items()] == [
+        "github:octo/repo#12",
+        "github:octo/repo#23",
+    ]

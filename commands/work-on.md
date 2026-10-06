@@ -81,14 +81,16 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
      resume this session exactly as for a GitHub-ticketed item, and that PR's
      merge/close auto-closes it.
    - **A work item may be delivered by several PRs** (a spec PR then an implementation
-     PR, a stacked series, a follow-up after review, one PR per repository). Label
-     **every** PR you open for the item, **record every one of them against the work
-     item as you open it** — open it with `the-loop pr create --work-item
-     github:OWNER/REPO#N …`, which records it in the same act, or run `the-loop sessions
-     link-pr --work-item github:OWNER/REPO#N --pull-request <pr-number>` for one opened
-     another way (a PR the-loop authored carries none of the linkages the router can
-     infer, so its comments and reviews reach nothing without this; see the skill's
-     `reference/automation.md`), record **all** of them in
+     PR, a stacked series, a follow-up after review, one PR per repository). **Record
+     every one of them against the work item as you open it** — open it with `the-loop
+     pr create --work-item github:OWNER/REPO#N …`, which records it in the same act, or
+     run `the-loop sessions link-pr --work-item github:OWNER/REPO#N --pull-request
+     <pr-number>` for one opened another way (a PR the-loop authored carries none of the
+     linkages the router can infer, so its comments and reviews reach nothing without
+     this; see the skill's `reference/automation.md`). Recording it also puts **every**
+     auto-execute label on the PR (issue-466); add them by hand only when the verb
+     prints a `note:` that it could not, because the poller lists a PR only when it
+     carries all of them. Record **all** of them in
      `evidence/pull-requests.md`, and keep working the item in the same session: with
      GitHub ticketing each PR routes back to the issue's session, and one PR merging
      does **not** end the work item — closing the **ticket** does.

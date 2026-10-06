@@ -59,9 +59,11 @@ spec files read from disk, not the drafting conversation (plan-mode style).
    `the-loop sessions link-pr --work-item github:OWNER/REPO#N --pull-request
    <pr-number>` for one opened another way) — because a PR the-loop authored
    carries none of the linkages the router can infer, and without the binding its review
-   comments reach no session at all. **If the item takes more than one PR**, label
-   **every** one of them, record every one of them, and list them all in the execution
-   log's **Pull requests** table — one PR merging does not end the work item.
+   comments reach no session at all. Recording the PR also puts every label in
+   `routing.autoExecuteLabels` on it (issue-466); add them by hand only when the verb
+   prints a `note:` that it could not. **If the item takes more than one PR**, record
+   every one of them and list them all in `evidence/pull-requests.md` — one PR merging
+   does not end the work item.
 
 3. **Verification** (`verification`). Once every task is ticked, execute
    `testing-plan.md`: bring up the declared environment, run each planned activity, and

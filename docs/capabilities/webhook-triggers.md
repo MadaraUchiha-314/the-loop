@@ -506,7 +506,12 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     `create_pull_request`), which asks GitHub for the branch's open pull requests,
     resolving the work item from `THE_LOOP_WORK_ITEM` or the session registry and
     exiting 0 on every path. The prose rule remains the fallback for a harness that runs
-    no such hook (Cursor has no `PostToolUse` event).
+    no such hook (Cursor has no `PostToolUse` event). Since issue-466, recording a pull
+    request SHALL also arm it: every label in `routing.autoExecuteLabels` goes on the PR
+    when the link is new (`pr create`: whenever its link succeeded), because the poller
+    lists only a pull request carrying all of them. Before, the agent added the labels,
+    and the skill named one where the operator had configured two, so the PR was filtered
+    and a review comment on it was never fetched.
   - **Which pull requests deliver a work item is a fact the-loop recorded, never one it
     inferred** (issue-370). Routing and tracking asked the same three inference sources
     and only one of them should have: routing is re-decided on every event and wrong only
@@ -952,6 +957,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-466 | A pull request the-loop records is armed in the same act (2026-10-06): `pr create`, `sessions link-pr` and its `--discover` put every `routing.autoExecuteLabels` label on it, so the poller's every-label filter lists it and its comments reach the session. A link that fails adds no label, and so does a re-run on a PR that was already recorded. A GitHub refusal is a note. Routing is unchanged | [spec](../specs/issue-466/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/466) |
 | issue-452 | The closure keeps a terminal record (2026-10-02): `_close_ended_session` reads `work-item-state.json` before `close_session` removes the checkout, and the `ended` stamp gains `outcome` (`completed` only from a claimed completion node — never from the closure) and `terminal` (node, phase, frozen selections, pull requests, evidence); a session-less closure reads the registry's checkout, `cleanup` backfills a stamp that has none, and a polled closure now carries `state_reason`. `work_item.ended` carries the outcome | [spec](../specs/issue-452/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/452) |
 | issue-447 | The `PostToolUse` recorder stopped parsing `gh` output (2026-09-30): it fires on a `git push` or any pull-request-creating call and runs `sessions link-pr --discover`, which asks GitHub for the open pull requests of the checkout's branch; `the-loop pr create` links what it opens, so the hook is the safety net for PRs opened by hand or by MCP. Routing is unchanged | [spec](../specs/issue-447/), [decision-140](../decisions/decision-140.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/447) |
 | issue-442 | Every GitHub read and write of both ingresses moved from the operator's `gh` to the daemon's own client on PyGithub (2026-09-30): the poller's listings are the GraphQL queries `gh` ran (so `closingIssuesReferences`, node-id comment ids and every baselined thread survive the upgrade), the three pull-request surfaces are read over REST, the existence check, reactions, announcement, paper trail and give-up notice post under the token `integrations.github.api.tokenEnv` names; *Issues disabled* is classified from GitHub's 410; no rate-limit sleep, the caller's timeout on every request | [spec](../specs/issue-442/), [decision-139](../decisions/decision-139.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/442) |

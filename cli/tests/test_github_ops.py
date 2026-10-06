@@ -926,3 +926,142 @@ def test_a_parked_pull_request_work_item_may_be_acted_on(tmp_path):
         "github:octo/repo#12", config=config, client=fake
     )
     assert result["exitCode"] == 0 and fake.merged
+
+
+# -- a linked pull request carries every arming label (issue-466) -----------------
+
+TWO_LABELS = ["the-loop: auto-execute", "the-loop: rr"]
+
+
+def test_issue_466_pr_create_applies_every_auto_execute_label(tmp_path):
+    """R1: the PR is armed with the whole list, not the one label the skill named."""
+    _register(tmp_path)
+    fake = FakeGitHubClient()
+    result = github_ops.create_pull_request(
+        REF,
+        "T",
+        "B",
+        "claude/x",
+        base="main",
+        config=_config(tmp_path, autoExecuteLabels=TWO_LABELS),
+        client=fake,
+    )
+    assert result["exitCode"] == 0 and result["linked"] is True
+    assert fake.labels[("octo", "repo", 12)] == TWO_LABELS
+    assert result["labels"] == TWO_LABELS
+    assert "the-loop: rr" in _words(result)
+
+
+def test_issue_466_the_default_label_when_the_operator_set_none(tmp_path):
+    """R1: no `routing.autoExecuteLabels` reads as the dispatcher reads it."""
+    _register(tmp_path)
+    fake = FakeGitHubClient()
+    github_ops.create_pull_request(
+        REF, "T", "B", "claude/x", base="main", config=_config(tmp_path), client=fake
+    )
+    assert fake.labels[("octo", "repo", 12)] == ["the-loop: auto-execute"]
+
+
+def test_issue_466_an_empty_label_list_labels_nothing(tmp_path):
+    _register(tmp_path)
+    fake = FakeGitHubClient()
+    result = github_ops.create_pull_request(
+        REF,
+        "T",
+        "B",
+        "claude/x",
+        base="main",
+        config=_config(tmp_path, autoExecuteLabels=[]),
+        client=fake,
+    )
+    assert result["exitCode"] == 0 and result["labels"] == []
+    assert "add_labels" not in fake.calls_to
+
+
+def test_issue_466_a_pull_request_that_is_not_linked_is_not_labelled(
+    tmp_path, monkeypatch
+):
+    """R3: armed but untracked, the PR would be spawned as a work item of its own."""
+    _register(tmp_path)
+    monkeypatch.setattr(
+        "the_loop.core.sessions.link_pull_request",
+        lambda *a, **k: {
+            "exitCode": 1,
+            "messages": [{"stream": "err", "text": "registry is read-only"}],
+        },
+    )
+    fake = FakeGitHubClient()
+    result = github_ops.create_pull_request(
+        REF, "T", "B", "claude/x", base="main", config=_config(tmp_path), client=fake
+    )
+    assert result["linked"] is False and result["labels"] == []
+    assert "add_labels" not in fake.calls_to
+
+
+def test_issue_466_a_refused_label_is_a_note_not_a_failure(tmp_path):
+    """R4: the PR exists and is linked; exit 1 would invite a second PR."""
+    _register(tmp_path)
+    fake = FakeGitHubClient(fail_on={"add_labels": http_error(403, "no triage")})
+    result = github_ops.create_pull_request(
+        REF,
+        "T",
+        "B",
+        "claude/x",
+        base="main",
+        config=_config(tmp_path, autoExecuteLabels=TWO_LABELS),
+        client=fake,
+    )
+    assert result["exitCode"] == 0 and result["linked"] is True
+    assert result["labels"] == []
+    errs = " ".join(m["text"] for m in result["messages"] if m["stream"] == "err")
+    assert "not labelled" in errs and "the-loop: rr" in errs and "no triage" in errs
+
+
+def test_issue_466_link_pr_labels_a_newly_linked_pull_request_once(tmp_path):
+    """R2: `sessions link-pr` arms the PR it records; a re-run asks GitHub nothing."""
+    _register(tmp_path)
+    fake = FakeGitHubClient()
+    config = _config(tmp_path, autoExecuteLabels=TWO_LABELS)
+    first = github_ops.link_pull_request(REF, "12", config, client=fake)
+    assert first["exitCode"] == 0 and first["linked"] is True
+    assert first["labels"] == TWO_LABELS
+    assert fake.labels[("octo", "repo", 12)] == TWO_LABELS
+    again = github_ops.link_pull_request(REF, "12", config, client=fake)
+    assert again["exitCode"] == 0 and again["linked"] is False
+    assert again["labels"] == []
+    assert fake.calls_to.count("add_labels") == 1
+
+
+def test_issue_466_link_pr_without_a_session_labels_nothing(tmp_path):
+    fake = FakeGitHubClient()
+    result = github_ops.link_pull_request(REF, "12", _config(tmp_path), client=fake)
+    assert result["exitCode"] == 1 and fake.calls == []
+
+
+def test_issue_466_link_pr_to_an_untrusted_host_links_but_does_not_label(tmp_path):
+    """A3: the token is never sent to a host the operator did not configure."""
+    _register(tmp_path)
+    fake = FakeGitHubClient()
+    result = github_ops.link_pull_request(
+        REF, "github:evil.example/octo/repo#12", _config(tmp_path), client=fake
+    )
+    assert result["exitCode"] == 0 and result["linked"] is True
+    assert result["labels"] == [] and fake.calls == []
+    assert "not labelled" in _words(result)
+
+
+def test_issue_466_discover_labels_each_newly_linked_pull_request(tmp_path):
+    """R2: the PostToolUse hook's path arms a PR opened by hand or by MCP."""
+    _register(tmp_path)
+    fake = FakeGitHubClient()
+    fake.heads[("octo", "repo", "claude/x")] = [
+        {"number": 12, "html_url": "https://github.com/octo/repo/pull/12"},
+    ]
+    config = _config(tmp_path, autoExecuteLabels=TWO_LABELS)
+    result = github_ops.discover_pull_requests(
+        REF, "claude/x", config=config, client=fake
+    )
+    assert result["linked"] == ["github:octo/repo#12"]
+    assert fake.labels[("octo", "repo", 12)] == TWO_LABELS
+    github_ops.discover_pull_requests(REF, "claude/x", config=config, client=fake)
+    assert fake.calls_to.count("add_labels") == 1  # every push re-runs discovery
