@@ -312,9 +312,32 @@ command reconciles them.
    migration didn't just create it (that's the operator's choice, not upgrade's to make
    unprompted).
 
-5. **Update manifest.** Bump `theLoopVersion`/`manifestVersion` to match the plugin.
+5. **Regenerate the Slack app manifest** (issue-464). The kept manifest sits beside the
+   CLI config as `slack-app-manifest.json`, written by `/the-loop:init` under the name the
+   operator gave their app. A release that adds a scope or an event changes the shipped
+   manifest, and this step carries that change to the operator.
+   - **A kept manifest exists** → run `the-loop channels manifest --write
+     <cli-config dir>/slack-app-manifest.json`. It rebuilds the file from the shipped
+     manifest under the kept name and reports either `unchanged` or the bot scopes and
+     events added and removed. Put an `unchanged` result under **skipped**. Report a
+     change under **migrated** with its scope and event lines, plus the instruction
+     the command prints: paste the file over the app's *App Manifest* at
+     [api.slack.com/apps](https://api.slack.com/apps), and reinstall when scopes changed.
+     A kept file the command cannot read is left untouched. It says to pass `--name`,
+     so ask the operator for the app's name and run it again with `--name`.
+   - **Slack is enabled (`channels.slack.enabled: true`) but nothing is kept** (an
+     install from before issue-464) → ask the app's name the operator gave it in Slack
+     and run the same command with `--name "<name>"`. Then tell them to compare it with
+     their app's *App Manifest*.
+   - **Neither** → skip; Slack is not set up.
+   - A **home-directory** CLI config is in reach here: the command resolves the CLI
+     config the same way the daemon does, and writes beside it.
+   - Under `--dry-run`, write nothing: name the command this step would run, and put a
+     missing name under **needs-user**.
 
-6. **Report.** Summarize grouped as **created / skipped (up to date) / drifted
+6. **Update manifest.** Bump `theLoopVersion`/`manifestVersion` to match the plugin.
+
+7. **Report.** Summarize grouped as **created / skipped (up to date) / drifted
    (suggested) / removed (deprecated) / migrated / needs-user**. Make no silent
    breaking changes.
 

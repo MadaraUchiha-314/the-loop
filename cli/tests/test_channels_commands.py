@@ -736,6 +736,176 @@ def test_every_shortcut_name_fits_slacks_24_character_limit():
     )
 
 
+# -- the named manifest, the link and the kept file (issue-464) ---------------------
+
+
+def _manifest_cli(tmp_path, monkeypatch, *argv):
+    """Run `the-loop channels manifest …` with the CLI config in ``tmp_path``."""
+    import argparse
+
+    from the_loop.commands.channels_cmd import ChannelsCommand
+
+    monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(tmp_path / "cli-config.yaml"))
+    parser = argparse.ArgumentParser()
+    ChannelsCommand().add_arguments(parser)
+    return ChannelsCommand().run(parser.parse_args(["manifest", *argv]))
+
+
+def _decode_link(url):
+    from urllib.parse import parse_qs, urlsplit
+
+    parts = urlsplit(url)
+    assert (parts.scheme, parts.netloc, parts.path) == (
+        "https",
+        "api.slack.com",
+        "/apps",
+    )
+    query = parse_qs(parts.query, strict_parsing=True)
+    assert query["new_app"] == ["1"]
+    return json.loads(query["manifest_json"][0])
+
+
+def test_a_named_manifest_changes_the_two_name_fields_and_nothing_else():
+    """issue-464 R1.2, R1.3."""
+    from the_loop.channels import app_manifest
+
+    packaged = yaml.safe_load(commands.manifest_text())
+    named = app_manifest.build("Dana's Loop (prod)")
+    assert named["display_information"]["name"] == "Dana's Loop (prod)"
+    assert named["features"]["bot_user"]["display_name"] == "dana-s-loop-prod"
+    named["display_information"]["name"] = packaged["display_information"]["name"]
+    named["features"]["bot_user"]["display_name"] = packaged["features"]["bot_user"][
+        "display_name"
+    ]
+    assert named == packaged
+    assert app_manifest.build() == packaged
+    assert app_manifest.handle("  the_loop.Dana  ") == "the_loop.dana"
+
+
+@pytest.mark.parametrize(
+    "name", ["", "   ", "x" * 36, "the\nloop", "tab\there", "!!!", "✨"]
+)
+def test_a_name_slack_would_refuse_exits_2_and_writes_nothing(
+    tmp_path, monkeypatch, capsys, name
+):
+    """issue-464 R1.4."""
+    out = tmp_path / "slack-app-manifest.json"
+    assert _manifest_cli(tmp_path, monkeypatch, "--name", name) == 2
+    assert (
+        _manifest_cli(tmp_path, monkeypatch, "--name", name, "--write", str(out)) == 2
+    )
+    assert not out.exists()
+    captured = capsys.readouterr()
+    assert captured.out == "" and "name" in captured.err
+
+
+def test_no_option_still_prints_the_packaged_file_and_json_parses_back(
+    tmp_path, monkeypatch, capsys
+):
+    """issue-464 R1.1, R1.5."""
+    from the_loop.channels import app_manifest
+
+    assert _manifest_cli(tmp_path, monkeypatch) == 0
+    assert capsys.readouterr().out == commands.manifest_text()
+    assert (
+        _manifest_cli(tmp_path, monkeypatch, "--name", "loopy", "--format", "json") == 0
+    )
+    assert json.loads(capsys.readouterr().out) == app_manifest.build("loopy")
+    assert _manifest_cli(tmp_path, monkeypatch, "--name", "loopy") == 0
+    assert yaml.safe_load(capsys.readouterr().out) == app_manifest.build("loopy")
+
+
+def test_the_link_opens_slacks_create_dialog_with_the_manifest(
+    tmp_path, monkeypatch, capsys
+):
+    """issue-464 R2.1: the link decodes back to exactly the named manifest."""
+    from the_loop.channels import app_manifest
+
+    assert _manifest_cli(tmp_path, monkeypatch, "--name", "loopy", "--link") == 0
+    url = capsys.readouterr().out.strip()
+    assert url.startswith("https://api.slack.com/apps?new_app=1&manifest_json=")
+    assert " " not in url and "\n" not in url
+    assert _decode_link(url) == app_manifest.build("loopy")
+
+
+def test_write_keeps_the_manifest_beside_the_cli_config(tmp_path, monkeypatch, capsys):
+    """issue-464 R3.1, R3.4, R3.6: created, then unchanged and not rewritten."""
+    from the_loop.channels import app_manifest
+
+    kept = tmp_path / "slack-app-manifest.json"
+    assert _manifest_cli(tmp_path, monkeypatch, "--name", "loopy", "--write") == 0
+    out = capsys.readouterr().out
+    assert json.loads(kept.read_text(encoding="utf-8")) == app_manifest.build("loopy")
+    assert str(kept) in out and "loopy" in out
+    link = next(w for w in out.split() if w.startswith("https://api.slack.com/"))
+    assert _decode_link(link) == app_manifest.build("loopy")
+
+    stamp = kept.stat().st_mtime_ns
+    assert _manifest_cli(tmp_path, monkeypatch, "--write") == 0
+    out = capsys.readouterr().out
+    assert "unchanged" in out and "loopy" in out
+    assert kept.stat().st_mtime_ns == stamp
+
+
+def test_write_regenerates_under_the_kept_name_and_names_the_delta(
+    tmp_path, monkeypatch, capsys
+):
+    """issue-464 R3.2, R3.5: an upgrade restores the shipped scopes and events,
+    keeps the operator's name, and says what to change in Slack."""
+    from the_loop.channels import app_manifest
+
+    kept = tmp_path / "slack-app-manifest.json"
+    old = app_manifest.build("loopy")
+    old["oauth_config"]["scopes"]["bot"].remove("files:read")
+    old["oauth_config"]["scopes"]["bot"].append("admin")  # a tampered widening
+    old["settings"]["event_subscriptions"]["bot_events"].remove("app_mention")
+    kept.write_text(json.dumps(old), encoding="utf-8")
+
+    assert _manifest_cli(tmp_path, monkeypatch, "--write", str(kept)) == 0
+    out = capsys.readouterr().out
+    assert json.loads(kept.read_text(encoding="utf-8")) == app_manifest.build("loopy")
+    assert "+ files:read" in out and "- admin" in out and "+ app_mention" in out
+    assert "App Manifest" in out and "reinstall" in out
+
+
+def test_write_reports_no_reinstall_when_only_the_name_changed(
+    tmp_path, monkeypatch, capsys
+):
+    """issue-464 R3.5: a rename replaces the manifest but needs no new scopes."""
+    kept = tmp_path / "slack-app-manifest.json"
+    assert _manifest_cli(tmp_path, monkeypatch, "--name", "loopy", "--write") == 0
+    capsys.readouterr()
+    assert _manifest_cli(tmp_path, monkeypatch, "--name", "loopier", "--write") == 0
+    out = capsys.readouterr().out
+    assert json.loads(kept.read_text())["display_information"]["name"] == "loopier"
+    assert "App Manifest" in out and "reinstall" not in out
+
+
+def test_write_without_a_kept_file_uses_the_packaged_name(
+    tmp_path, monkeypatch, capsys
+):
+    """issue-464 R3.2."""
+    assert _manifest_cli(tmp_path, monkeypatch, "--write") == 0
+    kept = json.loads((tmp_path / "slack-app-manifest.json").read_text())
+    assert kept == yaml.safe_load(commands.manifest_text())
+
+
+@pytest.mark.parametrize(
+    "content", ["not json", "[]", '{"display_information": {}}', '{"x": 1}']
+)
+def test_write_leaves_a_file_it_cannot_read_untouched_without_a_name(
+    tmp_path, monkeypatch, capsys, content
+):
+    """issue-464 R3.3: fail closed; --name is the explicit override."""
+    kept = tmp_path / "slack-app-manifest.json"
+    kept.write_text(content, encoding="utf-8")
+    assert _manifest_cli(tmp_path, monkeypatch, "--write") == 2
+    assert kept.read_text(encoding="utf-8") == content
+    assert "--name" in capsys.readouterr().err
+    assert _manifest_cli(tmp_path, monkeypatch, "--name", "loopy", "--write") == 0
+    assert json.loads(kept.read_text())["display_information"]["name"] == "loopy"
+
+
 def test_channels_status_says_which_command_families_are_granted(
     tmp_path, monkeypatch, capsys
 ):

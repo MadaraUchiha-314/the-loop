@@ -161,16 +161,35 @@ to the plugin's install directory.)
    **If the user declines, set `channels.slack.enabled: false` and ask nothing more.**
 
    If they want it, walk the four steps and wait at each:
-   1. **The app** — `the-loop channels manifest` prints the app definition; at
-      [api.slack.com/apps](https://api.slack.com/apps) choose *Create New App → From a
-      manifest* and paste it. An app that already exists is upgraded by replacing its
-      manifest and reinstalling.
-   2. **The bot token** (`xoxb-…`) — *OAuth & Permissions → Install*. Export it under the
-      name `channels.slack.botTokenEnv` (default `THE_LOOP_SLACK_BOT_TOKEN`).
+   1. **The app, from one click** (issue-464). Each operator creates their own app,
+      because its tokens are what their daemon runs on. So first **ask the app's name**,
+      proposing `the-loop` and saying that a workspace other operators share needs a
+      distinct one (e.g. `the-loop-dana`). It is at most 35 characters, and the bot's
+      `@handle` is derived from it. Then write the manifest beside the CLI config, in
+      the directory step 4 chose:
+
+      ```bash
+      the-loop channels manifest --name "<name>" --write <cli-config dir>/slack-app-manifest.json
+      ```
+
+      It prints the path and a **link**
+      (`https://api.slack.com/apps?new_app=1&manifest_json=…`). Give the user the link:
+      they click it, pick the workspace, confirm *Create*, then *Install to Workspace*.
+      No token is needed to build it. The kept `slack-app-manifest.json` is what
+      `/the-loop:upgrade-the-loop` regenerates when a release changes the app's scopes.
+      An app that already exists is upgraded by pasting that file over its *App
+      Manifest* and reinstalling, not by clicking the link again (a second click
+      creates a second app). Under `--dry-run`, print the command and write nothing.
+   2. **The bot token** (`xoxb-…`) — *OAuth & Permissions*, shown once the app is
+      installed. The user puts it in their environment, or in the `env.file` when one is
+      configured, under the name `channels.slack.botTokenEnv` (default
+      `THE_LOOP_SLACK_BOT_TOKEN`). **Never ask them to paste a token into this
+      conversation**: step 10 reports only whether it is set.
    3. **The app-level token** (`xapp-…`, scope `connections:write`) — *Basic Information →
-      App-Level Tokens*. Export it under `channels.slack.appTokenEnv` (default
-      `THE_LOOP_SLACK_APP_TOKEN`). This is what Socket Mode connects with, and Socket Mode
-      is what makes the buttons and `/the-loop` work.
+      App-Level Tokens*. A manifest cannot mint it. It goes in the same place as the bot
+      token, under `channels.slack.appTokenEnv` (default `THE_LOOP_SLACK_APP_TOKEN`).
+      This is what Socket Mode connects with, and Socket Mode is what makes the buttons
+      and `/the-loop` work.
    4. **The conversation** — invite the bot to the channel and take that conversation's
       **id** from its details pane for `channels.slack.channel`.
 

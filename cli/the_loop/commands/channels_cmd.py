@@ -470,6 +470,64 @@ def _publish_meaning(name: str) -> str:
     return spec.description if spec else ""
 
 
+def _manifest(args: argparse.Namespace) -> int:
+    """`channels manifest`: the packaged file, renamed, linked or kept (issue-464)."""
+    from pathlib import Path
+
+    from ..channels import app_manifest
+    from ..channels.commands import manifest_text
+
+    try:
+        if args.write is not None:
+            path = Path(args.write) if args.write else app_manifest.default_path()
+            return _manifest_report(app_manifest.write(path, args.name))
+        if args.name is None and not args.link and args.format == "yaml":
+            print(manifest_text(), end="")
+            return 0
+        manifest = app_manifest.build(args.name)
+    except ValueError as exc:
+        print(f"the-loop channels manifest: {exc}", file=sys.stderr)
+        return 2
+    except OSError as exc:
+        print(f"the-loop channels manifest: {exc}", file=sys.stderr)
+        return 1
+    if args.link:
+        print(app_manifest.link(manifest))
+    elif args.format == "json":
+        print(app_manifest.render_json(manifest), end="")
+    else:
+        import yaml
+
+        print(yaml.safe_dump(manifest, sort_keys=False, allow_unicode=True), end="")
+    return 0
+
+
+def _manifest_report(result: dict) -> int:
+    """What `--write` did, what Slack needs from the operator, and the link (R3.5)."""
+    path, name, status = result["path"], result["name"], result["status"]
+    if status == "unchanged":
+        print(f"{path} unchanged (app {json.dumps(name)})")
+    else:
+        print(f"wrote {path} (app {json.dumps(name)})")
+    if status == "updated":
+        for label, key in (("bot scopes", "scopes"), ("bot events", "events")):
+            change = [f"+ {item}" for item in result[key]["added"]]
+            change += [f"- {item}" for item in result[key]["removed"]]
+            print(f"  {label}: {', '.join(change) if change else '(unchanged)'}")
+        scopes = result["scopes"]
+        reinstall = (
+            " and reinstall it, since its scopes changed"
+            if scopes["added"] or scopes["removed"]
+            else ""
+        )
+        print(
+            "  An app created from the old manifest: replace its manifest "
+            f"(api.slack.com/apps → your app → App Manifest){reinstall}."
+        )
+    print(f"create a new app from it: {result['link']}")
+    return 0
+
+
 @register
 class ChannelsCommand(Command):
     name = "channels"
@@ -545,11 +603,45 @@ class ChannelsCommand(Command):
                 "Slack Socket Mode in the foreground"
             ),
         )
-        sub.add_parser(
+        manifest = sub.add_parser(
             "manifest",
             help=(
                 "Print the Slack app manifest to import (scopes, events, Socket "
-                "Mode, the /the-loop command)"
+                "Mode, the /the-loop command), or Slack's one-click create link"
+            ),
+        )
+        manifest.add_argument(
+            "--name",
+            help=(
+                "The app's name in Slack (35 characters at most); the bot's handle "
+                "is derived from it. Default: the packaged name, or the kept "
+                "file's under --write"
+            ),
+        )
+        manifest.add_argument(
+            "--format",
+            choices=("yaml", "json"),
+            default="yaml",
+            help="Print the manifest as YAML (default) or JSON",
+        )
+        manifest.add_argument(
+            "--link",
+            action="store_true",
+            help=(
+                "Print Slack's create-app URL with the manifest prefilled "
+                "(api.slack.com/apps?new_app=1&manifest_json=…)"
+            ),
+        )
+        manifest.add_argument(
+            "--write",
+            nargs="?",
+            const="",
+            default=None,
+            metavar="PATH",
+            help=(
+                "Keep the manifest as JSON (default: slack-app-manifest.json beside "
+                "the CLI config), name what changed since the last write, and print "
+                "the link"
             ),
         )
 
@@ -563,10 +655,7 @@ class ChannelsCommand(Command):
         if args.channels_command == "records":
             return _records(config, args.work_item, args.type, args.format)
         if args.channels_command == "manifest":
-            from ..channels.commands import manifest_text
-
-            print(manifest_text(), end="")
-            return 0
+            return _manifest(args)
         if args.channels_command == "poll":
             summary = inbound.poll_once(config)
             if summary.get("skipped"):

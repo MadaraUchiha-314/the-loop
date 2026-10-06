@@ -12,6 +12,7 @@ the-loop channels records REF  # the context and decision records a channel wrot
 the-loop channels poll      # one read cycle: bound threads, and top-level messages when granted
 the-loop channels listen    # Socket Mode, foreground — replies, button presses (Approve, Execute, Start), kickoffs, /the-loop
 the-loop channels manifest  # the Slack app manifest to import (scopes, events, the command)
+the-loop channels manifest --name NAME --write  # renamed, kept beside the CLI config, with the one-click link
 ```
 
 ## What it does
@@ -99,6 +100,20 @@ the-loop channels manifest  # the Slack app manifest to import (scopes, events, 
   event subscriptions, interactivity, Socket Mode and the `/the-loop` command — for
   *Create New App → From a manifest*. No config, no token, no network. The
   [Slack integration guide](/guide/slack) walks the setup.
+  Since [issue-464](https://github.com/MadaraUchiha-314/the-loop/issues/464):
+  - `--name NAME` renames the app for its operator: `display_information.name` is
+    NAME (35 characters at most) and the bot's `display_name` is its handle
+    (lowercase, each run of characters outside `a-z0-9._-` turned into `-`). Every
+    other key is the packaged manifest's. A name Slack would refuse exits 2.
+  - `--format json` prints JSON. `--link` prints Slack's one-click create URL,
+    `https://api.slack.com/apps?new_app=1&manifest_json=…`.
+  - `--write [PATH]` keeps the manifest as JSON, by default as
+    `slack-app-manifest.json` beside the resolved CLI config. Without `--name` it
+    reuses the kept file's name, so a re-run after an upgrade rebuilds the file from
+    the new release. It prints `unchanged` (and does not rewrite the file), or the
+    bot scopes and events added and removed, and whether the existing app needs its
+    *App Manifest* replaced and a reinstall. Then it prints the link. A file it cannot
+    read as a manifest is left untouched unless `--name` is given (exit 2).
 - **`status`** also prints, since
   [issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389), a **`mentions:`**
   line — the mention is the address in every channel, delivered as `app_mention` over
@@ -144,6 +159,10 @@ on a message that was dropped.
 | Flag | Default | Meaning |
 |------|---------|---------|
 | *(action)* | required | One of `status`, `threads`, `records`, `poll`, `listen`, `manifest`. |
+| `--name NAME` | packaged name | `manifest` only: the app's name in Slack; the bot's handle is derived from it. Under `--write`, defaults to the kept file's name. |
+| `--format yaml\|json` | `yaml` | `manifest` only: print the manifest as YAML or JSON. |
+| `--link` | off | `manifest` only: print Slack's one-click create-app URL instead of the manifest. |
+| `--write [PATH]` | off | `manifest` only: keep the manifest as JSON (default `slack-app-manifest.json` beside the CLI config), report what changed, print the link. |
 | `--probe` | off | `status` only: ask Slack what the configured channel is and which bot scopes the app was granted, and report what it cannot receive. Two calls, no token printed, exit 0 whatever happens. |
 | `--work-item REF` | *(all)* | `threads` only: show one work item's conversation. |
 | `--json` | off | `threads` only: print the records as JSON. |
