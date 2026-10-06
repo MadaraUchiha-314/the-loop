@@ -68,6 +68,13 @@ the `/the-loop:work-on` superset command and granular per-step commands
   iterated on that pull request, and a **contribution** SHALL NOT be asked the question at
   all (issue-199): it joins a work item somebody else is running, so its one artifact is
   iterated on that thread and its record carries no surface.
+- WHEN an authorized `the-loop execute` ticks the `claude-artifact` row AND the work item
+  resolves to the `claude` harness THEN `work-item-state.json` SHALL record
+  `claudeArtifact: true`, and the session SHALL publish the spec chain as **one** Claude
+  artifact — a tab per spec file, republished to the same URL on every change, linked
+  once from the ticket (issue-471). The files SHALL stay the source of truth, and a
+  comment on the artifact SHALL NOT answer a gate. On any other harness the tick SHALL
+  NOT be applied, and the confirmation SHALL say so.
 - WHEN a work item starts as a fuzzy idea THEN the loop SHALL begin with a
   `brainstorm.md` root artifact (optional Phase 0) and convert it to requirements once
   its author says it has converged — the brainstorm has no approval gate and is never
@@ -161,6 +168,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-471 | The spec chain can also be read as one Claude artifact (2026-10-06): ticked at `phase-selection` on a `claude` work item, the session publishes one page with a tab per spec file, republishes it to the same URL on every change and links it once from the ticket. The markdown files stay the source of truth and the gates' subject; artifact comments are feedback, never a gate answer. Off by default, and not applied on any other harness | [spec](../specs/issue-471/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/471) |
 | issue-368 | The work item's spec directory carries its pull requests (2026-09-15): `work-item-state.json` gained `pullRequests[]` — ref, repository, number, URL, inner-loop directory, upstream state and who recorded it — so a reviewer reads which pull requests deliver the item from the branch, and a second machine does not re-derive them from `gh`. It lost the `session` block in the same change: a harness conversation id is a handle to one machine and never belonged in a repository | [spec](../specs/issue-368/), [decision-128](../decisions/decision-128.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/368) |
 | issue-365 (review) | The multi-repo declaration moved off artifacts (2026-09-14) and onto a verb the **agent** calls, `the-loop graph repos`, writing `work-item-state.json`. It cannot be a `phase-selection` question: that gate runs before requirements, design and tasks exist, and which repositories a change spans is not knowable until they do — so it is declared at `tasks-breakdown`, bounded by shape and by the instance's own `repositories`, with the flags as the full set so a declaration can be corrected. The state file was renamed in the same round | [spec](../specs/issue-365/), [decision-127](../decisions/decision-127.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/365) |
 | issue-365 | The execution log was retired (2026-09-14): no template, no scaffolding, no `log-entry` hook at 47 node boundaries, no phase mirror and no prose checkpoint before a context reset — every fact in it was already in `work-item-state.json`, the `loop:<phase>` label, the commits and the harness's own transcript. What the log *gated* stayed: each review-chain node now reads one record of its own under `evidence/`, and the multi-repo `repos` declaration moved to `work-item-state.json`, declared by the agent once the task DAG exists. Existing logs are left where they are — history, read by nothing | [spec](../specs/issue-365/), [decision-126](../decisions/decision-126.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/365) |

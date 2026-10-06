@@ -173,6 +173,10 @@ author at `phase-selection` (issue-183) — and it applies to the **outer** loop
   ordinary pull request on the repository it targets. A **review** (issue-279) and an
   **ad-hoc task** (issue-225) run no phase-selection gate at all, so neither ever meets
   the question: the thread is their whole surface.
+- A **Claude artifact** (issue-471, the `claude-artifact` box) is a *reading* surface
+  beside these two, not a third place to decide: its comments are feedback folded into
+  the files, and a gate is never answered there. See `workflow.md` § The spec chain as
+  one Claude artifact.
 - This is the *reference, don't duplicate* rule (`SKILL.md`) reaching its conclusion: the
   artifact is a checked-in file, and the file, the discussion and the approval belong in
   one place.

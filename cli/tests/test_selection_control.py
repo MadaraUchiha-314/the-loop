@@ -20,6 +20,7 @@ from the_loop.channels.slack import (
     read_summary,
     ACTION_PREFIX,
     CHECKBOX_LIMIT,
+    CLAUDE_ARTIFACT_TOKEN,
     DEFAULT_BOT_TOKEN_ENV,
     EXECUTE_ACTION,
     PHASE_BOX_ACTION,
@@ -234,12 +235,21 @@ def test_the_row_grammar_and_the_non_phase_tokens_are_the_hooks():
     ]
     assert ours == theirs and len(ours) == 4
     assert SURFACE_TOKEN == selection.SURFACE_TOKEN
+    assert CLAUDE_ARTIFACT_TOKEN == selection.CLAUDE_ARTIFACT_TOKEN
     assert selection.HARNESS_PREFIX in _NON_PHASE_PREFIXES
     assert selection.MODEL_PREFIX in _NON_PHASE_PREFIXES
     assert selection.EFFORT_PREFIX in _NON_PHASE_PREFIXES
     for token in (SURFACE_TOKEN, *selection.PR_SESSIONS_TOKENS, "model-x", "effort-y"):
         assert selection._is_non_phase(token)
         assert token == SURFACE_TOKEN or token.startswith(_NON_PHASE_PREFIXES)
+    # issue-471: the Claude-artifact row is a non-phase row on both sides.
+    assert selection._is_non_phase(CLAUDE_ARTIFACT_TOKEN)
+    rows = selection_rows(
+        f"{PHASE_SELECTION_MARKER}\n- [x] design\n- [ ] `{CLAUDE_ARTIFACT_TOKEN}` — x\n"
+    )
+    assert rows is not None
+    assert [r.token for r in rows.phases] == ["design"]
+    assert [r.token for r in rows.others] == [CLAUDE_ARTIFACT_TOKEN]
 
 
 # -- R9.1, R9.2: the control ----------------------------------------------------------

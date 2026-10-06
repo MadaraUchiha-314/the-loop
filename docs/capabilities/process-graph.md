@@ -287,6 +287,14 @@ There are exactly **two** runtime concepts and **one** contract between them.
     **inner** loop SHALL have no such choice: a pull request's loop is iterated on that
     pull request. WHEN a session enters a node THEN its assignment SHALL name the surface
     it is working on, and a cross-repo claim command SHALL carry `--pr-repo`.
+  - The same reply SHALL resolve one more non-phase row, `claude-artifact` (issue-471),
+    offered unticked wherever the surface row is. Ticked, it SHALL freeze
+    `claudeArtifact: true` only when the work item's resolved harness is `claude` or
+    unknown; on a known other harness it SHALL freeze `false` and the confirmation SHALL
+    name that harness. The value SHALL be read back only as the boolean `true`, and the
+    outer loop's graph-context block SHALL then carry one fixed line telling the session
+    to publish the spec chain as one Claude artifact. It SHALL NOT route the pointer,
+    declare a skip or answer a gate.
   - The daemon SHALL drive each inner loop from its PR's **own session** (the
     `pullRequests[]` endpoint, `routing.tmux.sessionPerPr`): the endpoint's spawn enters
     the loop at `implementation`, its events advance it, and the work item's outer loop
@@ -1012,6 +1020,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-471 | `phase-selection` offers the spec chain as one Claude artifact (2026-10-06): a non-phase `claude-artifact` row, unticked, offered wherever the surface row is. The signed reply freezes `claudeArtifact` into `work-item-state.json`, the decision record, the frozen graph and the archive — `true` only when ticked and the work item resolves to the `claude` harness (or one the gate cannot know); a tick on another harness is *not applied* and the confirmation names it. The outer loop's graph-context block then carries one fixed line, and the skill carries the procedure. The files stay what every gate reads; an artifact comment never answers a gate. The Slack mirror keeps the row as a non-phase row | [spec](../specs/issue-471/), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/471) |
 | issue-452 | A completed work item stays completed after normal cleanup (2026-10-02): `core.graphs.check` answers a ref whose state file is not found from the portable record's `ended` stamp — `archived` with the outcome and the terminal record the closure kept, no node findings, `ok` only for `completed`; the CLI prints `ARCHIVED — <outcome>` (or that the detail is unavailable). Before, `check github:…#3` from the deployment directory after `keepCheckoutOnClose: false` cleanup reported `phase-selection`, `ok: false` and the full process missing | [spec](../specs/issue-452/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/452) |
 | issue-429 | The stop gate stops demanding a phase the work item never entered (2026-09-28): the `check` report carries `pointer` (the node work-item state records) beside `currentNode`, and `the-loop-gate.py` blocks only on the first unmet node at or before it — inconclusive when there is no position. Before, a work item parked at `phase-selection` with its selection recorded was told on every turn to write `design.md`, because `--recompute` places `currentNode` at the first node the artifacts leave unmet | [spec](../specs/issue-429/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/429) |
 | issue-343 | Graphs of the operator's own (2026-09-23): the top-level `graphs` in the CLI config declares a YAML file, and `routing.control.commands` binds the commands that select it — a re-pointed `start`/`contribute`/`do`/`review`, or a new word that parses as `start` with a loop. The control record keeps the loop; `resolve_outer_loop` accepts a declared name and nothing else; a custom graph is compiled by the shipped compiler, held to `PHASE_VOCABULARY`, and may name the operator's `x-` hooks; a node's `command:` is grammar-checked in every graph and may name another plugin's slash command; attachments may be scoped with `loops`; `the-loop graph loops` lists and checks every loop | [spec](../specs/issue-343/), [decision-136](../decisions/decision-136.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/343) |

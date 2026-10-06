@@ -285,6 +285,10 @@ class GraphContext:
     #: (issue-405 P2) — what lets an issue's closure say it was delivered by a
     #: merge, which its own close event cannot say.
     delivered_by_merge: bool = False
+    #: Whether the spec chain is also published as one Claude artifact
+    #: (issue-471), frozen at `phase-selection` and already resolved against
+    #: the harness. Rendered for the outer loop only — the one with a spec chain.
+    claude_artifact: bool = False
 
     @property
     def at_human_gate(self) -> bool:
@@ -328,6 +332,19 @@ def _is_review(loop: str) -> bool:
     from .graph.model import PDLC_REVIEW_LOOP
 
     return loop == PDLC_REVIEW_LOOP
+
+
+#: The prompt line for a work item whose spec chain is also one Claude artifact
+#: (issue-471). The CLI cannot publish one — a Claude artifact is a tool of the
+#: session — so the whole contract is this sentence and the skill's procedure.
+CLAUDE_ARTIFACT_LINE = (
+    "  also publish the spec chain as ONE Claude artifact, chosen at "
+    "phase-selection: one tab per spec file, republished to the same URL "
+    "whenever a file changes, linked once from the work item — the markdown "
+    "files stay the source of truth, and a comment on the artifact is feedback, "
+    "never a gate answer (Claude Code only: with no artifact tool, say so once on "
+    "the work item and carry on)"
+)
 
 
 def _surface_line(surface: str) -> str:
@@ -467,6 +484,9 @@ def render_graph_context(
         lines.append(
             f"  iterate the outer loop's artifacts on: {_surface_line(ctx.surface)}"
         )
+        if ctx.claude_artifact:
+            # Fixed text and one boolean (issue-471): no payload enters it.
+            lines.append(CLAUDE_ARTIFACT_LINE)
     lines.append(
         "  when this node's work is done, run: "
         f"`the-loop graph complete {item_id}{claim_suffix}`"
@@ -1194,6 +1214,7 @@ class GraphLink:
             actor=node.actor,
             surface=str(getattr(state, "surface", "") or ""),
             loop=str(getattr(state, "loop", "") or ""),
+            claude_artifact=getattr(state, "claude_artifact", False) is True,
         )
 
     @staticmethod
@@ -1245,6 +1266,7 @@ class GraphLink:
                 getattr(pr, "state", "") == "merged"
                 for pr in getattr(state, "pull_requests", []) or []
             ),
+            claude_artifact=getattr(state, "claude_artifact", False) is True,
         )
 
     @staticmethod

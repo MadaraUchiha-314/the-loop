@@ -84,6 +84,8 @@ full process.
 
 - [ ] outer-loop-on-pull-request  ← not a phase: where the OUTER loop happens.
                                      Unticked (the default) = on the work item.
+- [ ] claude-artifact             ← not a phase: also publish the spec chain as
+                                     one Claude artifact (`claude` harness only).
 
 the-loop execute
 ```
@@ -118,6 +120,13 @@ outer loop whose surface could be placed, so the question is not asked, a
 `outer-loop-on-pull-request` row typed into the reply anyway is inert, and the frozen
 record carries no surface at all — which reads back as *never asked*, not as *the default
 was kept*. The checklist says where the conversation happens instead of offering a box.
+
+**`claude-artifact` asks for a page, not a process** (issue-471). Ticked, the session
+also publishes the spec chain as one Claude artifact — a tab per spec file, republished
+on every change — while the markdown files stay what every gate reads. It applies only
+when the work item runs on the `claude` harness: on any other, the confirmation says
+*not applied* and names the harness. Like the surface row, it is absent on a
+contribution, and it is frozen as `claudeArtifact` in `work-item-state.json`.
 
 ## `show`
 

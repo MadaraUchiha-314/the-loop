@@ -622,6 +622,11 @@ class Runtime:
                     if value:
                         record[key] = value
                         setattr(state, key, value)
+                if result.data.get("claudeArtifact") is True:
+                    # The spec chain as one Claude artifact (issue-471): only
+                    # the boolean itself turns it on.
+                    record["claudeArtifact"] = True
+                    state.claude_artifact = True
                 goal = result.data.get("goal")
                 if goal:
                     # The contribution loop's goal gate (issue-185): the goal
