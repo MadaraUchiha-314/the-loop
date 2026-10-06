@@ -49,12 +49,14 @@ from . import sessions as core_sessions
 logger = logging.getLogger("the-loop.github_ops")
 
 __all__ = [
+    "auto_execute_labels",
     "checks_rollup",
     "close_ticket",
     "comment",
     "create_pull_request",
     "create_ticket",
     "discover_pull_requests",
+    "link_pull_request",
     "merge_pull_request",
     "pull_request_status",
     "pull_request_threads",
@@ -585,8 +587,101 @@ def create_pull_request(
             messages.append(
                 {"stream": "err", "text": f"note: {pr.ref} is not linked: {text}"}
             )
-    data.update(exitCode=0, messages=messages)
+    data.update(exitCode=0, messages=messages, labels=[])
+    if data["linked"]:
+        # The PR was opened a moment ago, so no person has removed a label yet:
+        # arm it even when a racing webhook recorded the link first.
+        _arm(data, pr.ref, config, gh)
     return data
+
+
+# ------------------------------------------------------------------ arming labels
+
+
+def auto_execute_labels(config: Optional[Mapping[str, Any]]) -> List[str]:
+    """``routing.autoExecuteLabels``, read the way the dispatcher reads it."""
+    from ..webhook.dispatcher import DEFAULT_AUTO_EXECUTE_LABEL
+    from ..webhook.router import normalize_labels
+
+    routing = config.get("routing") if isinstance(config, Mapping) else None
+    if not isinstance(routing, Mapping):
+        routing = {}
+    return normalize_labels(
+        routing.get("autoExecuteLabels", [DEFAULT_AUTO_EXECUTE_LABEL])
+    )
+
+
+def _arm(
+    data: Dict[str, Any],
+    pull_request: str,
+    config: Optional[Mapping[str, Any]],
+    client: Optional[GitHubClient],
+) -> None:
+    """Put every ``routing.autoExecuteLabels`` label on a linked pull request.
+
+    The poller lists a pull request only when it carries every one of them
+    (issue-381), so a linked PR missing one is never polled and its review
+    comments reach no session (issue-466). Applying them was the agent's job,
+    and the skill named one label where the operator had configured two. Call
+    this only once the PR is linked: armed but untracked, it would be spawned
+    as a work item of its own. A refusal is a note, never a failure — the PR
+    exists and is linked. ``data["labels"]`` is what was applied.
+    """
+    labels = auto_execute_labels(config)
+    data["labels"] = []
+    if not labels:
+        return
+    wanted = ", ".join(repr(label) for label in labels)
+    try:
+        pr = _trusted(_github_ref(pull_request), config)
+        gh = _client(config, client)
+        gh.add_labels(pr.owner, pr.repo, pr.number, labels, host=_host(pr))
+    except (ValueError, GitHubApiError) as exc:
+        eventlog.emit(
+            "work_item.pr_labelled",
+            level="warning",
+            pull_request=pull_request,
+            labels=labels,
+            error=str(exc),
+        )
+        data.setdefault("messages", []).append(
+            {
+                "stream": "err",
+                "text": (
+                    f"note: {pull_request} is not labelled {wanted}: {exc} — add "
+                    "them by hand, or the poller will not list it"
+                ),
+            }
+        )
+        return
+    eventlog.emit("work_item.pr_labelled", pull_request=pr.ref, labels=labels)
+    data["labels"] = labels
+    data.setdefault("messages", []).append(
+        {"stream": "out", "text": f"labelled {pr.ref} {wanted}"}
+    )
+
+
+def link_pull_request(
+    ref: str,
+    pull_request: str,
+    config: Optional[Mapping[str, Any]] = None,
+    *,
+    registry_dir: str = "",
+    client: Optional[GitHubClient] = None,
+) -> Dict[str, Any]:
+    """``sessions link-pr``: record the pull request, then arm it (issue-466).
+
+    Labels go on only when this call newly recorded the link. Discovery re-runs
+    after every push, and a re-run must neither cost a request nor put back a
+    label a person took off on purpose.
+    """
+    result = core_sessions.link_pull_request(
+        ref, pull_request, config=dict(config or {}), registry_dir=registry_dir
+    )
+    result["labels"] = []
+    if result.get("exitCode") == 0 and result.get("linked"):
+        _arm(result, str(result["pullRequest"]), config, client)
+    return result
 
 
 def checks_rollup(
@@ -854,8 +949,8 @@ def discover_pull_requests(
     messages: List[Dict[str, str]] = []
     exit_code = 0
     for pr in found:
-        result = core_sessions.link_pull_request(
-            item.ref, pr.ref, config=dict(config or {}), registry_dir=registry_dir
+        result = link_pull_request(
+            item.ref, pr.ref, config, registry_dir=registry_dir, client=gh
         )
         if result.get("exitCode") == 0:
             if result.get("linked"):

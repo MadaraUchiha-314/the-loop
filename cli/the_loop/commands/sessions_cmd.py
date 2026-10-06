@@ -546,16 +546,18 @@ class SessionsCommand(Command):
         """
         if args.discover:
             return self._discover_prs(args)
+        from ..core import github_ops
+
         try:
             result = routed(
                 lambda connection: connection.post(
                     "/sessions/link-pr",
                     {"ref": args.work_item, "pullRequest": args.pull_request},
                 ),
-                lambda: core_sessions.link_pull_request(
+                lambda: github_ops.link_pull_request(
                     args.work_item,
                     args.pull_request,
-                    config=_cli_config(),
+                    _cli_config(),
                     registry_dir=args.registry_dir,
                 ),
             )

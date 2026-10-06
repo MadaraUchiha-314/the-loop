@@ -197,7 +197,9 @@ def build_server(cli_config: Optional[dict] = None, *, facade: Any = None) -> MC
         full ref (github:OWNER/REPO#16) for one in another repository. With
         `discover` and a `branch` instead, every open pull request whose head is
         that branch (in `repository`, default the work item's) is recorded.
-        A pull request opened with `create_pull_request` is already recorded."""
+        A newly recorded pull request also gets every routing.autoExecuteLabels
+        label, so the poller lists it. A pull request opened with
+        `create_pull_request` is already recorded."""
         if discover:
             return facade.link_session_pull_request(
                 ref,
@@ -250,8 +252,9 @@ def build_server(cli_config: Optional[dict] = None, *, facade: Any = None) -> MC
         instance: str = "",
     ) -> Dict[str, Any]:
         """Open a pull request from branch `head` for work item `ref`, and link
-        it to the work item in the same act. `base` defaults to the repository's
-        default branch, `repository` to the work item's."""
+        it to the work item in the same act, then put every
+        routing.autoExecuteLabels label on it. `base` defaults to the
+        repository's default branch, `repository` to the work item's."""
         return facade.create_pull_request(
             ref,
             title,

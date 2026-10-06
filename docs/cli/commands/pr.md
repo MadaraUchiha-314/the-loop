@@ -18,7 +18,12 @@ repository, as [`sessions link-pr`](/cli/commands/sessions) does).
 
 Opens the pull request **and records it against the work item in the same act**,
 exactly as `sessions link-pr` would. There is no second step to forget, and the
-plugin's `PostToolUse` hook does not need to catch it.
+plugin's `PostToolUse` hook does not need to catch it. Once the link is recorded, it
+puts every label in `routing.autoExecuteLabels` on the pull request
+([issue-466](https://github.com/MadaraUchiha-314/the-loop/issues/466)), so the poller
+lists it. If the link failed, it adds no labels, because a labelled PR that no work item
+tracks would be started as a work item of its own. If GitHub refuses the labels, the
+command prints a `note:` and still exits 0.
 
 | Flag | Default | Meaning |
 |------|---------|---------|

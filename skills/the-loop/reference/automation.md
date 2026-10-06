@@ -217,14 +217,18 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   the supported path when work items live in **Jira or another provider**: the ticket
   itself can't be routed, but the PR delivering it is still monitorable by the-loop's
   CLI. `/the-loop:work-on <jira-id>` applies this automatically — once the PR is opened
-  it adds the label to the PR and registers the session against the PR's ref, so PR
-  comments/reviews/CI resume the session and **that** PR's merge/close auto-closes it,
-  identical to the GitHub-ticketed flow.
+  it adds **every** auto-execute label to the PR and registers the session against the
+  PR's ref, so PR comments/reviews/CI resume the session and **that** PR's merge/close
+  auto-closes it, identical to the GitHub-ticketed flow.
 - **One work item, many PRs.** A work item is frequently delivered by more than one PR
   (a spec PR then an implementation PR, a stacked series, a follow-up after review, one
-  PR per repository). Every one of them is labelled and routes back to the **same**
-  session, and — because a PR is a delivery vehicle, not the work item — **a PR closing
-  or merging ends only the session registered against that PR itself**. A session
+  PR per repository). Every one of them carries every auto-execute label and routes back
+  to the **same** session. Recording a PR against its work item applies the labels:
+  `the-loop pr create`, `sessions link-pr` and its `--discover` put the whole
+  `routing.autoExecuteLabels` list on the PR they record (issue-466), because the poller
+  lists only a PR that carries all of them. Add them by hand only when the verb prints a
+  `note:` that it could not. Because a PR is a delivery vehicle, not the work item,
+  **a PR closing or merging ends only the session registered against that PR itself**. A session
   registered against the *issue* the PR is linked to is left running; the issue's own
   `closed` event (or the poller's closure reconciliation) is what ends it. The
   operational consequence: a PR that merges **without** closing its ticket leaves the

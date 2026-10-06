@@ -785,6 +785,14 @@ EVENT_TYPES: Dict[str, str] = {
         "(work_item, pull_request, url); the link that follows is its own "
         "`session.pr_linked`."
     ),
+    "work_item.pr_labelled": (
+        "Every `routing.autoExecuteLabels` label was put on a pull request "
+        "the-loop had just linked to a work item (pull_request, labels) — "
+        "`pr create`, `sessions link-pr` and its `--discover` (issue-466), so "
+        "the poller, which lists only a PR carrying all of them, sees it. "
+        "`warning` with `error` when GitHub refused or the host is untrusted; "
+        "the link stands either way."
+    ),
     "work_item.pr_merged": (
         "`the-loop pr merge` merged a pull request (pull_request, method)."
     ),
