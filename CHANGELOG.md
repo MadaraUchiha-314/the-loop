@@ -1,3 +1,9 @@
+## v19.26.0 (2026-10-06)
+
+### Feat
+
+- **issue-471**: offer the spec chain as one Claude artifact at phase-selection (#473)
+
 ## v19.25.0 (2026-10-06)
 
 ### Feat
