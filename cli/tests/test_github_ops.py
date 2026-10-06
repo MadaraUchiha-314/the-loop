@@ -1166,3 +1166,159 @@ def test_issue_466_discover_labels_each_newly_linked_pull_request(tmp_path):
     assert fake.labels[("octo", "repo", 12)] == TWO_LABELS
     github_ops.discover_pull_requests(REF, "claude/x", config=config, client=fake)
     assert fake.calls_to.count("add_labels") == 1  # every push re-runs discovery
+
+
+# -- pr checks (issue-462) -------------------------------------------------------
+
+
+def _actions_run(job, name, conclusion="failure", status="completed"):
+    return {
+        "id": job,
+        "name": name,
+        "status": status,
+        "conclusion": conclusion,
+        "html_url": f"https://github.com/octo/repo/actions/runs/1/job/{job}",
+        "app": {"slug": "github-actions"},
+        "output": {"title": f"{name} failed", "summary": "1 error"},
+    }
+
+
+def _checks_fake():
+    fake = FakeGitHubClient()
+    fake.pulls[("octo", "repo", 12)] = {
+        "state": "open",
+        "head": {"sha": SHA},
+        "html_url": "https://github.com/octo/repo/pull/12",
+    }
+    return fake
+
+
+def test_issue_462_pr_checks_lists_every_check_with_the_failing_logs(tmp_path):
+    fake = _checks_fake()
+    fake.check_runs[SHA] = [
+        _actions_run(1, "lint", "success"),
+        _actions_run(2, "test (3.12)"),
+        {
+            "id": 3,
+            "name": "codecov",
+            "status": "completed",
+            "conclusion": "failure",
+            "details_url": "https://codecov.example/x",
+            "app": {"slug": "codecov"},
+        },
+    ]
+    fake.statuses[SHA] = [
+        {"context": "ci/jenkins", "state": "error", "description": "boom"}
+    ]
+    fake.job_logs[2] = ["E   assert 1 == 2", "FAILED"]
+    result = github_ops.pull_request_checks(
+        "12", REF, config=_config(tmp_path), client=fake
+    )
+    assert result["exitCode"] == 0
+    assert result["headSha"] == SHA
+    assert result["rollup"]["conclusion"] == "failure"
+    by_name = {c["name"]: c for c in result["checks"]}
+    assert set(by_name) == {"lint", "test (3.12)", "codecov", "ci/jenkins"}
+    assert by_name["lint"]["failing"] is False and "logTail" not in by_name["lint"]
+    assert by_name["test (3.12)"] == {
+        "name": "test (3.12)",
+        "kind": "check-run",
+        "status": "completed",
+        "conclusion": "failure",
+        "failing": True,
+        "url": "https://github.com/octo/repo/actions/runs/1/job/2",
+        "summary": "test (3.12) failed\n\n1 error",
+        "logTail": ["E   assert 1 == 2", "FAILED"],
+    }
+    # Not GitHub Actions: no log the API can serve, so none is asked for.
+    assert by_name["codecov"]["failing"] is True
+    assert by_name["codecov"]["url"] == "https://codecov.example/x"
+    assert "logTail" not in by_name["codecov"]
+    assert by_name["ci/jenkins"]["kind"] == "status"
+    assert by_name["ci/jenkins"]["failing"] is True
+    assert by_name["ci/jenkins"]["summary"] == "boom"
+    assert fake.calls_to == ["get_pull", "commit_checks", "job_log_tail"]
+    assert sorted(result["rollup"]["failing"]) == sorted(
+        c["name"] for c in result["checks"] if c["failing"]
+    )
+
+
+def test_issue_462_pr_checks_failing_filters_and_log_lines_0_fetches_no_log(tmp_path):
+    fake = _checks_fake()
+    fake.check_runs[SHA] = [_actions_run(1, "lint", "success"), _actions_run(2, "test")]
+    result = github_ops.pull_request_checks(
+        "12", REF, failing_only=True, log_lines=0, config=_config(tmp_path), client=fake
+    )
+    assert [c["name"] for c in result["checks"]] == ["test"]
+    assert "logTail" not in result["checks"][0]
+    assert result["rollup"]["total"] == 2
+    assert "job_log_tail" not in fake.calls_to
+
+
+def test_issue_462_pr_checks_fetches_at_most_five_logs(tmp_path):
+    fake = _checks_fake()
+    fake.check_runs[SHA] = [_actions_run(n, f"job {n}") for n in range(1, 8)]
+    fake.job_logs.update({n: [f"log {n}"] for n in range(1, 8)})
+    result = github_ops.pull_request_checks(
+        "12", REF, config=_config(tmp_path), client=fake
+    )
+    with_logs = [c for c in result["checks"] if "logTail" in c]
+    assert len(with_logs) == 5
+    assert fake.calls_to.count("job_log_tail") == 5
+
+
+def test_issue_462_a_log_that_cannot_be_read_does_not_fail_the_read(tmp_path):
+    fake = _checks_fake()
+    fake.check_runs[SHA] = [_actions_run(2, "test")]
+    fake.fail_on["job_log_tail"] = http_error(403, "Resource not accessible")
+    result = github_ops.pull_request_checks(
+        "12", REF, config=_config(tmp_path), client=fake
+    )
+    assert result["exitCode"] == 0
+    assert "Resource not accessible" in result["checks"][0]["logError"]
+    assert "logTail" not in result["checks"][0]
+
+
+def test_issue_462_a_startup_failure_is_failing(tmp_path):
+    runs = [{"name": "wf", "status": "completed", "conclusion": "startup_failure"}]
+    assert github_ops.checks_rollup(runs, [])["conclusion"] == "failure"
+
+
+def test_issue_462_pr_checks_of_a_missing_pull_request_is_exit_1(tmp_path):
+    result = github_ops.pull_request_checks(
+        "github:octo/repo#99", config=_config(tmp_path), client=FakeGitHubClient()
+    )
+    assert result["exitCode"] == 1
+
+
+def test_issue_462_a_long_summary_is_capped(tmp_path):
+    fake = _checks_fake()
+    run = _actions_run(2, "test")
+    run["output"] = {"title": "", "summary": "x" * 5000}
+    fake.check_runs[SHA] = [run]
+    result = github_ops.pull_request_checks(
+        "12", REF, log_lines=0, config=_config(tmp_path), client=fake
+    )
+    assert len(result["checks"][0]["summary"]) == 2000
+
+
+@pytest.mark.parametrize(
+    "pr, work_item",
+    [("12", ""), ("github:evil.example/octo/repo#12", "")],
+)
+def test_abuse_462_pr_checks_refuses_before_any_request(tmp_path, pr, work_item):
+    fake = FakeGitHubClient()
+    with pytest.raises(ValueError):
+        github_ops.pull_request_checks(
+            pr, work_item, config=_config(tmp_path), client=fake
+        )
+    assert fake.calls == []
+
+
+def test_abuse_462_pr_checks_refuses_a_negative_log_line_count(tmp_path):
+    fake = FakeGitHubClient()
+    with pytest.raises(ValueError, match="log"):
+        github_ops.pull_request_checks(
+            "12", REF, log_lines=-1, config=_config(tmp_path), client=fake
+        )
+    assert fake.calls == []

@@ -1107,3 +1107,114 @@ def test_open_pulls_for_head_asks_for_a_forks_head(client, github_replay):
     assert "head=me%3Afeat%2Fx" in github_replay.exchanges[0].query
     with pytest.raises(GitHubApiError, match="head owner"):
         client.open_pulls_for_head(OWNER, REPO, "feat/x", head_owner="a b")
+
+
+# -- issue-462: a failed job's log tail --------------------------------------------
+
+_LOG_PATH = "/repos/octo/repo/actions/jobs/77/logs"
+_SIGNED = "https://results.example.blob.core.windows.net/logs/77?sig=abc"
+
+
+class _Body:
+    """The signed URL's answer: a file-like that hands back ``data`` in chunks."""
+
+    def __init__(self, data: bytes):
+        self._data = data
+        self._at = 0
+
+    def read(self, size: int = -1) -> bytes:
+        size = len(self._data) if size < 0 else size
+        chunk = self._data[self._at : self._at + size]
+        self._at += len(chunk)
+        return chunk
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+@pytest.fixture
+def signed(monkeypatch):
+    """Replace the one network seam the log download has; record what it was asked."""
+    from the_loop import ghapi
+
+    asked = []
+
+    def install(data: bytes):
+        def fake_urlopen(url, timeout):
+            asked.append((url, timeout))
+            return _Body(data)
+
+        monkeypatch.setattr(ghapi, "_urlopen", fake_urlopen)
+        return asked
+
+    return install
+
+
+def test_issue_462_job_log_tail_reads_the_redirect_and_fetches_it_without_the_token(
+    client, github_replay, signed
+):
+    """The API answers 302 to a signed URL; the client reads Location and fetches it
+    itself — so the token never travels to the log host — and cleans each line."""
+    github_replay.on("GET", _LOG_PATH, 302, "", {"location": _SIGNED})
+    log = (
+        "﻿2026-10-06T10:00:00.0000000Z ##[group]Run pytest\n"
+        "2026-10-06T10:00:01.1234567Z \x1b[31mFAILED\x1b[0m tests/test_x.py::test_y\n"
+        "2026-10-06T10:00:02.0000000Z E   assert 1 == 2\n"
+        "2026-10-06T10:00:03.0000000Z ##[error]Process completed with exit code 1.\n"
+    ).encode()
+    asked = signed(log)
+    tail = client.job_log_tail(OWNER, REPO, 77, lines=3)
+    assert tail == [
+        "FAILED tests/test_x.py::test_y",
+        "E   assert 1 == 2",
+        "##[error]Process completed with exit code 1.",
+    ]
+    assert asked == [(_SIGNED, 7)]
+    (call,) = github_replay.exchanges
+    assert (
+        call.path == _LOG_PATH and call.authorization
+    )  # the API call is authenticated
+
+
+def test_issue_462_a_long_log_keeps_only_its_tail_and_says_when_it_was_cut(
+    client, github_replay, signed, monkeypatch
+):
+    from the_loop import ghapi
+
+    monkeypatch.setattr(ghapi, "_LOG_READ_CAP", 4096)
+    monkeypatch.setattr(ghapi, "_LOG_KEEP", 1024)
+    github_replay.on("GET", _LOG_PATH, 302, "", {"location": _SIGNED})
+    signed(b"".join(f"line {n}\n".encode() for n in range(5000)))
+    tail = client.job_log_tail(OWNER, REPO, 77, lines=2)
+    assert tail[0].startswith("[the-loop: this log is longer than")
+    assert (
+        len(tail) == 3 and tail[1].startswith("line ") and tail[2].startswith("line ")
+    )
+
+
+def test_abuse_462_a_log_redirect_that_is_not_https_is_refused(
+    client, github_replay, signed
+):
+    github_replay.on("GET", _LOG_PATH, 302, "", {"location": "file:///etc/passwd"})
+    asked = signed(b"never")
+    with pytest.raises(GitHubApiError, match="https"):
+        client.job_log_tail(OWNER, REPO, 77)
+    assert asked == []
+
+
+def test_abuse_462_a_bad_job_id_is_refused_before_any_request(client, github_replay):
+    with pytest.raises(GitHubApiError, match="job id"):
+        client.job_log_tail(OWNER, REPO, "77/../../x")
+    assert github_replay.exchanges == []
+
+
+def test_issue_462_a_job_without_a_log_is_an_error_with_githubs_status(
+    client, github_replay, signed
+):
+    github_replay.on("GET", _LOG_PATH, 410, {"message": "Gone"})
+    with pytest.raises(GitHubApiError) as caught:
+        client.job_log_tail(OWNER, REPO, 77)
+    assert caught.value.status == 410

@@ -578,6 +578,25 @@
           "default": true,
           "description": "What an approval at the `human-approval` gate does (issue O9). `true` (default, the pre-O9 behaviour): once the gate is satisfied the session merges the pull request and closes the work item. `false`: the-loop stops at approved and leaves the merge to a person — right for a repository with branch protection or required reviews, where an auto-merge would be refused or unwanted. Either way the `pr-review-pending` message states which behaviour is in effect, so a reviewer knows before approving whether the tap merges now or only marks it approved. The session reads this same knob to decide whether to run the merge."
         },
+        "ci": {
+          "type": "object",
+          "description": "Which CI events wake a session, and how many times a failing check is healed before a person is asked (issue-462). CI webhooks (`check_run`, `status`, `check_suite`, `workflow_run`) are routed to the session working the pull request. With `autofix` on, only a check that FAILED is delivered, with a section naming the check, the commit and the attempt, and telling the session to diagnose with `the-loop pr checks` before it changes anything; queued, running, passing, cancelled and aggregate events are not delivered (`dispatch.dropped`, reason `ci-not-actionable`). Needs `check_run` (and `status`, for CI that reports commit statuses) in the webhook's events.",
+          "additionalProperties": false,
+          "properties": {
+            "autofix": {
+              "type": "boolean",
+              "default": true,
+              "description": "Run the CI gate. false delivers every CI event to the session as it came, with no section and no budget, as before issue-462."
+            },
+            "maxAttempts": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 3,
+              "description": "How many distinct commits a check may fail on, since it last passed, before the session is told once to stop changing code for it and escalate on the pull request. After that notice no failure of the check is delivered (`ci-autofix-exhausted`) until it passes. Counted per pull request and check name, in the daemon's memory: a restart starts the counts again."
+            }
+          }
+        },
         "control": {
           "type": "object",
           "description": "Execution control: the keywords an AUTHORIZED user steers the-loop with, in a comment on the work item or its PR (issue-106). Before this, `authorizedUsers` said WHO may be an input and `autoExecuteLabel` (now `autoExecuteLabels`) said WHICH items may run — nothing said WHEN, so labelling an issue was itself an irreversible trigger. A comment carrying a declared keyword is interpreted by the-loop and NOT forwarded to the harness; the five session commands are also available as `the-loop sessions start|pause|resume|stop|cleanup`, which post the same keyword back to the ticket (marked as the-loop's own so it is never read back). Control parsing runs strictly AFTER the existing guards — the self-comment marker and authorizedUsers — so it never becomes a second, weaker way in; the parser recognises the fixed vocabulary only and yields one of the declared commands, never text from the comment.",

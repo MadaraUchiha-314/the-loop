@@ -140,7 +140,13 @@ EVENT_TYPES: Dict[str, str] = {
         "A routed event was discarded at dispatch (reason: duplicate-delivery "
         "| already-processed | spawn-policy | awaiting-start | session-paused "
         "| collaborator-no-spawn | session-vanished | no-adapter | "
-        "session-occupied | work-item-not-found | no-work-item). "
+        "session-occupied | work-item-not-found | no-work-item | "
+        "ci-not-actionable | ci-autofix-exhausted). "
+        "`ci-not-actionable` and `ci-autofix-exhausted` (issue-462) are the CI "
+        "gate's (`routing.ci.autofix`): a CI event that needs no action (a "
+        "running, passing, cancelled or aggregate one), or a failure of a check "
+        "whose attempts are spent; both carry `check` and are settled, never "
+        "retried. "
         "`collaborator-no-spawn` (issue-307) means the event reached dispatch on a "
         "work-item collaborator grant, which admits input and never a new session. "
         "`work-item-not-found` (issue-269) means every work item the event named "
@@ -157,6 +163,17 @@ EVENT_TYPES: Dict[str, str] = {
         "resolves the comment instead of counting a retry against it — nothing "
         "is replayed when the item is started or the session resumed, and the "
         "session reads the thread itself instead (`poll.comment_settled`)."
+    ),
+    "ci.check_failed": (
+        "A failing CI check was delivered to its session to heal, within its "
+        "attempt budget (work_item, pull_request, check, attempt, max_attempts, "
+        "head_sha; issue-462)."
+    ),
+    "ci.autofix_exhausted": (
+        "A CI check failed on more distinct commits than `routing.ci.maxAttempts` "
+        "since it last passed: the session was told once to stop and escalate, and "
+        "no further failure of the check is delivered until it passes (same fields "
+        "as `ci.check_failed`; issue-462)."
     ),
     "dispatch.succeeded": (
         "An event was delivered to its harness session (work_item, harness, "
@@ -926,8 +943,11 @@ EVENT_TYPES: Dict[str, str] = {
         "collaborator-no-spawn | control-executed | control-rejected | "
         "control-ambiguous | parked-at-human-start-gate | "
         "addressed-elsewhere | unaddressed | "
-        "instance-locked | ambiguous-address, "
-        "will_retry=False) — issue-270. Either the event was suppressed on "
+        "instance-locked | ambiguous-address | ci-not-actionable | "
+        "ci-autofix-exhausted, "
+        "will_retry=False) — issue-270. (The two `ci-*` outcomes are the CI "
+        "gate's, issue-462: settled CI events. The poller lists no CI, so they "
+        "complete the dispatcher's vocabulary rather than occur here today.) Either the event was suppressed on "
         "purpose (the work item is not started, or its session is paused), or it "
         "WAS a control command, executed here and never forwarded, or its start "
         "was accepted and parked at a human gate (issue-449), or (issue-322) "

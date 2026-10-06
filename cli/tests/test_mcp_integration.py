@@ -247,6 +247,7 @@ def test_the_github_verbs_are_tools(mcp):
         "close_ticket",
         "merge_pull_request",
         "mark_pull_request_ready",
+        "pull_request_checks",
     } <= names
 
 

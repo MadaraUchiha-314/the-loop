@@ -59,6 +59,7 @@ __all__ = [
     "link_pull_request",
     "mark_ready",
     "merge_pull_request",
+    "pull_request_checks",
     "pull_request_status",
     "pull_request_threads",
     "resolve_pull_request",
@@ -73,10 +74,23 @@ _PR_URL_RE = re.compile(
 )
 
 #: Check-run conclusions that fail a pull request's checks.
-_FAILED_CONCLUSIONS = ("failure", "cancelled", "timed_out", "action_required")
+_FAILED_CONCLUSIONS = (
+    "failure",
+    "cancelled",
+    "timed_out",
+    "action_required",
+    "startup_failure",  # a workflow that could not start (issue-462)
+)
 
 #: Commit-status states that fail them.
 _FAILED_STATES = ("failure", "error")
+
+#: `pr checks` (issue-462): the default log tail, how many failed jobs' logs one
+#: call fetches, and the cap on a check's summary — a read bounded in requests
+#: and in what it hands an agent's context.
+DEFAULT_LOG_LINES = 80
+_MAX_LOGS = 5
+_SUMMARY_CAP = 2000
 
 
 # ------------------------------------------------------------------ plumbing
@@ -760,6 +774,111 @@ def pull_request_status(
         draft=bool(doc.get("draft")),
         headSha=sha,
         checks=checks_rollup(runs, statuses),
+    )
+    return _done(data)
+
+
+def _capped(text: str, limit: int = _SUMMARY_CAP) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _run_entry(run: Mapping[str, Any]) -> Dict[str, Any]:
+    status = str(run.get("status") or "")
+    conclusion = str(run.get("conclusion") or "")
+    output = run.get("output")
+    if not isinstance(output, Mapping):
+        output = {}
+    summary = "\n\n".join(
+        text
+        for text in (str(output.get("title") or ""), str(output.get("summary") or ""))
+        if text
+    )
+    return {
+        "name": str(run.get("name") or ""),
+        "kind": "check-run",
+        "status": status,
+        "conclusion": conclusion,
+        "failing": status == "completed" and conclusion in _FAILED_CONCLUSIONS,
+        "url": str(run.get("html_url") or run.get("details_url") or ""),
+        "summary": _capped(summary),
+    }
+
+
+def _status_entry(status: Mapping[str, Any]) -> Dict[str, Any]:
+    state = str(status.get("state") or "")
+    return {
+        "name": str(status.get("context") or ""),
+        "kind": "status",
+        "status": state,
+        "conclusion": state,
+        "failing": state in _FAILED_STATES,
+        "url": str(status.get("target_url") or ""),
+        "summary": _capped(str(status.get("description") or "")),
+    }
+
+
+def pull_request_checks(
+    pr: str,
+    work_item: str = "",
+    failing_only: bool = False,
+    log_lines: int = DEFAULT_LOG_LINES,
+    config: Optional[Mapping[str, Any]] = None,
+    *,
+    client: Optional[GitHubClient] = None,
+) -> Dict[str, Any]:
+    """Every check on a pull request's head, with failed jobs' log tails (issue-462).
+
+    The rollup is :func:`checks_rollup`'s, over every check, and each entry's
+    ``failing`` reads the same tables — so the two cannot disagree. A failing
+    check run GitHub Actions created gets ``logTail`` (its id is its job's id),
+    up to :data:`_MAX_LOGS` per call; a log that cannot be read is ``logError``
+    on its entry, never a failed read. Read-only, so open like ``pr status``.
+    """
+    target = _trusted(resolve_pull_request(pr, work_item), config)
+    if isinstance(log_lines, bool) or not isinstance(log_lines, int) or log_lines < 0:
+        raise ValueError(f"--log-lines must be 0 or more, not {log_lines!r}")
+    gh = _client(config, client)
+    host = _host(target)
+    data: Dict[str, Any] = {"pullRequest": target.ref}
+    try:
+        doc = gh.get_pull(target.owner, target.repo, target.number, host=host)
+        sha = str((doc.get("head") or {}).get("sha") or "")
+        runs, statuses = (
+            gh.commit_checks(target.owner, target.repo, sha, host=host)
+            if sha
+            else ([], [])
+        )
+    except GitHubApiError as exc:
+        return _failed(data, f"could not read {target.ref}: {exc}")
+    checks: List[Dict[str, Any]] = []
+    logs = 0
+    for run in runs:
+        entry = _run_entry(run)
+        app = run.get("app")
+        if not isinstance(app, Mapping):
+            app = {}
+        job = run.get("id")
+        if (
+            entry["failing"]
+            and log_lines
+            and logs < _MAX_LOGS
+            and app.get("slug") == "github-actions"
+            and isinstance(job, int)
+        ):
+            logs += 1
+            try:
+                entry["logTail"] = gh.job_log_tail(
+                    target.owner, target.repo, job, log_lines, host=host
+                )
+            except GitHubApiError as exc:
+                entry["logError"] = str(exc)
+        checks.append(entry)
+    checks.extend(_status_entry(status) for status in statuses)
+    data.update(
+        url=str(doc.get("html_url") or ""),
+        headSha=sha,
+        rollup=checks_rollup(runs, statuses),
+        checks=[c for c in checks if c["failing"]] if failing_only else checks,
     )
     return _done(data)
 

@@ -205,6 +205,46 @@ Either way the `pr-review-pending` message states which behaviour is in effect, 
 reviewer knows before approving whether the tap merges now or only marks it approved. The
 session reads this same knob to decide whether to run the merge.
 
+## CI: monitoring and self-healing
+
+CI webhooks (`check_run`, `status`, `check_suite`, `workflow_run`) are routed to the
+session working the pull request, like a comment. These options decide which of them wake
+the session, and for how long a failing check is healed before a person is asked
+(issue-462).
+
+With `ci.autofix` on, only a check that **failed** is delivered. The prompt then carries a
+section naming the check, the commit and the attempt, and telling the session to diagnose
+with [`the-loop pr checks`](/cli/commands/pr) before it changes anything. Queued, running,
+passing, cancelled and aggregate events (`check_suite`, `workflow_run`) are not delivered;
+each is recorded as `dispatch.dropped` with reason `ci-not-actionable`.
+
+The gate needs `check_run` in the webhook's events, and `status` too for CI that reports
+commit statuses. Both are in the receiver's default
+[`events`](/config/cli/webhook-options). The poller lists no CI, so a poll-only
+installation gets no CI events; its sessions can still run `pr checks` themselves.
+
+### `ci.autofix`
+
+- **Type:** `boolean`
+- **Default:** `true`
+
+Run the CI gate. `false` delivers every CI event to the session as it came, with no
+section and no budget, which is how the-loop behaved before issue-462.
+
+### `ci.maxAttempts`
+
+- **Type:** `integer` (1–20)
+- **Default:** `3`
+
+How many distinct commits a check may fail on, since it last passed, before the session is
+told to stop changing code for it and escalate on the pull request. That notice is
+delivered once (`ci.autofix_exhausted`). After it, no failure of the check is delivered
+(`dispatch.dropped`, reason `ci-autofix-exhausted`) until the check passes, which resets
+the count.
+
+The count is kept per pull request and check name, in the daemon's memory, so a restart
+starts it again.
+
 ## Execution control
 
 `authorizedUsers` says **who** may be an input and `autoExecuteLabels` says **which** items

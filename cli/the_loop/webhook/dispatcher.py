@@ -117,6 +117,14 @@ from ..identity import github_logins, parse_authorized_users
 from ..linkage import WorkItemVerifier
 from ..trust import TrustConfig, TrustResult, is_too_broad
 from ..workspace import RepoTarget, Workspace, WorkspaceError, repo_target_from_payload
+from .cimonitor import (
+    REASON_EXHAUSTED,
+    REASON_NOT_ACTIONABLE,
+    CiBudget,
+    CiConfig,
+    classify,
+    render_section,
+)
 from .excerpt import event_excerpt, payload_excerpt  # noqa: F401 — re-exported
 from .router import (
     POLL_CLOSURE_DELIVERY_PREFIX,
@@ -162,6 +170,10 @@ SETTLED_START_GATE = "parked-at-human-start-gate"
 # instance may own the work item, so the drop is deliberate and final — settled,
 # never retried into a different answer.
 SETTLED_OUT_OF_SCOPE = SCOPE_REFUSALS
+# A CI event the CI gate kept from the session on purpose (issue-462): one that
+# needs no action, or a failure of a check whose attempts are spent. Final, and
+# silent — a CI event has no comment to react to, so no ACK_STATES entry.
+SETTLED_CI = (REASON_NOT_ACTIONABLE, REASON_EXHAUSTED)
 SETTLED_OUTCOMES = (
     SETTLED_SUPPRESSED
     + (
@@ -171,6 +183,7 @@ SETTLED_OUTCOMES = (
         SETTLED_START_GATE,
     )
     + SETTLED_OUT_OF_SCOPE
+    + SETTLED_CI
 )
 
 # What each settled outcome is ACKNOWLEDGED with (issue-371). Issue-84 wired
@@ -513,6 +526,9 @@ class RoutingConfig:
     # block, fanned in under `_instance` by `cli_config.apply_instance`. A bare
     # routing mapping is an unnamed, open instance: 13.3.1.
     instance: InstanceConfig = field(default_factory=InstanceConfig)
+    # Which CI events wake a session, and how many failing commits a check gets
+    # before the session is told to stop and escalate (issue-462).
+    ci: CiConfig = field(default_factory=CiConfig)
 
     @classmethod
     def from_mapping(
@@ -574,6 +590,7 @@ class RoutingConfig:
             graph=GraphLinkConfig.from_mapping(data.get("graph") or {}),
             interaction=InteractionConfig.from_mapping(data.get("interaction") or {}),
             instance=InstanceConfig.from_mapping(data.get("_instance") or {}),
+            ci=CiConfig.from_mapping(data.get("ci") or {}),
         )
 
 
@@ -877,6 +894,9 @@ class Dispatcher:
         self._spawn_template = self._load_template(
             self.config.spawn_prompt_template, DEFAULT_SPAWN_TEMPLATE
         )
+        # The CI gate's attempt counts (issue-462). Owned by the instance, so a
+        # `reload` that swaps the config keeps them.
+        self.ci_budget = CiBudget()
         self._semaphore = threading.BoundedSemaphore(
             max(1, self.config.max_concurrent_dispatches)
         )
@@ -1340,6 +1360,14 @@ class Dispatcher:
         # suppressed by a pause or dropped as a duplicate.
         for session in matched:
             self._record_pr_binding(routed, session.work_item)
+        # The CI gate (issue-462): after matching — an unmatched CI event took
+        # the unmatched path above, exactly as before — and before the pause and
+        # duplicate filters, so a paused session's budget still learns of a pass.
+        if self.config.ci.autofix:
+            gated = self._ci_gate(routed, matched)
+            if gated is None:
+                return
+            routed = gated
         enqueued = paused = False
         for session in matched:
             if session.is_paused:
@@ -1389,6 +1417,69 @@ class Dispatcher:
             # the outcome (issue-270). A mixed match — one live, one paused — is a
             # delivery, and the session that took it records the id itself.
             self._settle(routed, "session-paused")
+
+    def _ci_gate(
+        self, routed: RoutedEvent, matched: List[Session]
+    ) -> Optional[RoutedEvent]:
+        """Judge a CI event: the event to enqueue, or ``None`` when it was kept
+        from the session (issue-462). A non-CI event is returned as it is.
+
+        The budget's scope is the pull request the payload names, resolved
+        against the refs the router already built (so it carries the host), or
+        else the matched work item.
+        """
+        signal = classify(routed.event, routed.payload)
+        if signal is None:
+            return routed
+        repository = str(
+            (routed.payload.get("repository") or {}).get("full_name") or ""
+        )
+        pull_request = next(
+            (
+                item.ref
+                for item in routed.work_items
+                if signal.pull_number is not None
+                and item.number == signal.pull_number
+                and f"{item.owner}/{item.repo}".lower() == repository.lower()
+            ),
+            "",
+        )
+        owner = matched[0].work_item.ref
+        scope = pull_request or owner
+        limit = self.config.ci.max_attempts
+        verdict = self.ci_budget.observe(scope, signal, limit)
+        if not verdict.deliver:
+            logger.info(
+                "not delivering %s for %s (%s): %s",
+                routed.event,
+                owner,
+                signal.name or "-",
+                verdict.reason,
+            )
+            eventlog.emit(
+                "dispatch.dropped",
+                reason=verdict.reason,
+                work_item=owner,
+                gh_event=routed.event,
+                check=signal.name or None,
+                delivery_id=routed.delivery_id or None,
+            )
+            self._settle(routed, verdict.reason)
+            return None
+        eventlog.emit(
+            "ci.autofix_exhausted" if verdict.exhausted else "ci.check_failed",
+            level="warning" if verdict.exhausted else "info",
+            work_item=owner,
+            pull_request=pull_request or None,
+            check=signal.name,
+            attempt=verdict.attempt,
+            max_attempts=limit,
+            head_sha=signal.head_sha,
+            delivery_id=routed.delivery_id or None,
+        )
+        return dataclasses.replace(
+            routed, ci_note=render_section(signal, verdict, limit, pull_request)
+        )
 
     # -- scope (issue-322) --------------------------------------------------------
 
@@ -4967,7 +5058,8 @@ class Dispatcher:
         # template's own placeholders — so a custom promptTemplate that never
         # heard of attachments still carries them, and an event with none
         # renders byte-identically to before.
-        return rendered + self._attachments_section(routed, work_item)
+        # A failing check's CI section (issue-462) goes last, for the same reason.
+        return rendered + self._attachments_section(routed, work_item) + routed.ci_note
 
     def _attachments_section(self, routed: RoutedEvent, work_item: WorkItemRef) -> str:
         """The Attachments section for the asset URLs in the event's bodies — the

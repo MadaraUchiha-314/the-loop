@@ -198,6 +198,10 @@ routing:
                                 # the session merges the PR and closes the item. false: it stops at
                                 # approved and a PERSON merges — right for branch protection / required
                                 # reviews. The pr-review-pending message states which is in effect.
+  # ci:                         # (issue-462) CI monitoring and self-healing
+  #   autofix: true             # deliver only FAILED checks, with a healing section; false = every
+  #                             # CI event raw, as before
+  #   maxAttempts: 3            # failing commits per check before the session is told to escalate
   # Execution control (issue-106): the label is necessary, NOT sufficient.
   # An authorized user starts/stops/pauses/resumes a work item by commenting
   # one of these keywords (or with `the-loop sessions start|stop|pause|

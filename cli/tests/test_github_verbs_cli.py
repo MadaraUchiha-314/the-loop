@@ -193,6 +193,29 @@ def test_pr_status_of_a_bare_number_without_a_work_item_is_exit_2(fake, config):
     assert _cli(config(), "pr", "status", "12") == 2
 
 
+def test_issue_462_pr_checks_prints_the_failing_checks_with_their_logs(
+    fake, config, capsys
+):
+    fake.pulls[("octo", "repo", 12)] = {"state": "open", "head": {"sha": SHA}}
+    fake.check_runs[SHA] = [
+        {"name": "lint", "status": "completed", "conclusion": "success"},
+        {
+            "id": 9,
+            "name": "test",
+            "status": "completed",
+            "conclusion": "failure",
+            "app": {"slug": "github-actions"},
+        },
+    ]
+    fake.job_logs[9] = ["a", "b", "E   boom"]
+    argv = ("pr", "checks", "12", "--work-item", REF, "--failing", "--log-lines", "2")
+    assert _cli(config(), *argv) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert [c["name"] for c in data["checks"]] == ["test"]
+    assert data["checks"][0]["logTail"] == ["b", "E   boom"]
+    assert data["rollup"]["conclusion"] == "failure"
+
+
 def test_pr_threads_prints_json(fake, config, capsys):
     fake.threads[("octo", "repo", 12)] = [{"id": "PRRT_1", "isResolved": False}]
     assert _cli(config(), "pr", "threads", "github:octo/repo#12") == 0

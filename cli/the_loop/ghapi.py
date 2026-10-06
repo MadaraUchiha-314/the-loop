@@ -49,6 +49,8 @@ import logging
 import os
 import re
 import threading
+import urllib.parse
+import urllib.request
 from http.client import RemoteDisconnected
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -130,6 +132,17 @@ _BRANCH_RE = re.compile(r"^(?![-/])(?!.*\.\.)(?!.*//)[A-Za-z0-9._/-]{1,255}(?<![
 
 #: A commit SHA, abbreviated or full.
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
+
+#: A failed job's log (issue-462): how much of it is read, how much is held, and in
+#: what chunks. The download streams; only the tail stays in memory.
+_LOG_READ_CAP = 32 * 1024 * 1024
+_LOG_KEEP = 256 * 1024
+_LOG_CHUNK = 64 * 1024
+
+#: GitHub's per-line timestamp on an Actions log (a byte-order mark may lead the
+#: first), and the ANSI escape sequences a test runner colours its output with.
+_LOG_TIMESTAMP_RE = re.compile(r"^\ufeff?\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z ")
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
 #: The three ways GitHub merges a pull request (``PUT …/pulls/{n}/merge``).
 MERGE_METHODS: Tuple[str, ...] = ("merge", "squash", "rebase")
@@ -455,6 +468,69 @@ def _iso(value: Any) -> str:
 
 def _login(node: Any) -> str:
     return str((node or {}).get("login") or "") if isinstance(node, Mapping) else ""
+
+
+def _urlopen(url: str, timeout: float) -> Any:
+    """Open a signed log URL — the one request of the-loop's that is not PyGithub's.
+
+    An opener with exactly the handlers it needs: ``https`` (and the redirects
+    within it), the environment's proxy, and the error processors. No ``http``,
+    ``file`` or ``ftp`` handler is installed, so a redirect to any of those fails
+    instead of being followed, and no credential is attached (issue-462).
+    """
+    opener = urllib.request.OpenerDirector()
+    for handler in (
+        urllib.request.ProxyHandler(),
+        urllib.request.HTTPSHandler(),
+        urllib.request.HTTPRedirectHandler(),
+        urllib.request.HTTPDefaultErrorHandler(),
+        urllib.request.HTTPErrorProcessor(),
+    ):
+        opener.add_handler(handler)
+    request = urllib.request.Request(url, headers={"User-Agent": "the-loop"})
+    return opener.open(request, timeout=timeout)
+
+
+def _download_tail(url: str, lines: int, timeout: float) -> List[str]:
+    """The last ``lines`` lines of the log at ``url``, cleaned (issue-462).
+
+    Streams the body in chunks and holds only the last :data:`_LOG_KEEP` bytes;
+    stops after :data:`_LOG_READ_CAP`, and then says so in the first line, because
+    the tail of a log that was cut is not the end of the job.
+    """
+    tail = b""
+    read = 0
+    cut = False
+    with _urlopen(url, timeout) as response:
+        while True:
+            chunk = response.read(min(_LOG_CHUNK, _LOG_READ_CAP - read))
+            if not chunk:
+                break
+            read += len(chunk)
+            tail = (tail + chunk)[-_LOG_KEEP:]
+            if read >= _LOG_READ_CAP:
+                cut = bool(response.read(1))
+                break
+    rows = tail.decode("utf-8", errors="replace").splitlines()
+    if read > len(tail) and rows:
+        rows = rows[1:]  # the first row held may have lost its start
+    if cut and rows:
+        rows = rows[:-1]  # and the last one read, its end
+    cleaned = [_ANSI_RE.sub("", _LOG_TIMESTAMP_RE.sub("", row)) for row in rows]
+    picked = cleaned[-lines:] if lines > 0 else []
+    if cut:
+        mib = 1024 * 1024
+        size = (
+            f"{_LOG_READ_CAP // mib} MiB"
+            if _LOG_READ_CAP >= mib
+            else f"{_LOG_READ_CAP} bytes"
+        )
+        picked.insert(
+            0,
+            f"[the-loop: this log is longer than {size}; these are the last "
+            "lines before that point]",
+        )
+    return picked
 
 
 class GitHubClient:
@@ -1127,6 +1203,34 @@ class GitHubClient:
         return (
             [r for r in (check_runs or []) if isinstance(r, dict)],
             [s for s in (statuses or []) if isinstance(s, dict)],
+        )
+
+    def job_log_tail(
+        self, owner: str, repo: str, job_id: Any, lines: int = 80, host: str = ""
+    ) -> List[str]:
+        """The tail of a GitHub Actions job's log — two requests (issue-462).
+
+        ``GET /repos/{o}/{r}/actions/jobs/{id}/logs`` answers ``302`` with a
+        short-lived signed URL; it is read without following it, as PyGithub's
+        own ``WorkflowJob.logs_url`` does, and the URL is then fetched here over
+        ``https`` with no credential, so the token never leaves the API host. A
+        check run created by GitHub Actions has its job's id as its own.
+        """
+        owner, repo = self._coordinates(owner, repo)
+        job = self._number(job_id, "job id")
+        path = f"/repos/{owner}/{repo}/actions/jobs/{job}/logs"
+        requester = self._requester(host)
+        headers, _data = self._call(
+            f"GET {path}", lambda: requester.requestBlobAndCheck("GET", path)
+        )
+        location = str((headers or {}).get("location") or "")
+        if not location:
+            raise GitHubApiError(f"{path} named no log location")
+        if urllib.parse.urlparse(location).scheme != "https":
+            raise GitHubApiError(f"{path} redirected off https; the log is not read")
+        return self._call(
+            f"GET the log of job {job}",
+            lambda: _download_tail(location, max(0, int(lines)), self.timeout),
         )
 
     def merge_pull(

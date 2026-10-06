@@ -28,6 +28,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 from ..api.facade import CoreFacade, note_left_out, note_target
 from ..cli_config import ConfigHolder
 from ..core import instances as core_instances
+from ..core.github_ops import DEFAULT_LOG_LINES
 from ..instance import Member
 from .fleet import Fleet, Transport, stamp_origin, urllib_transport
 from .stream import urllib_opener
@@ -505,6 +506,31 @@ class ManagerFacade:
             "GET",
             "/api/v1/pull-requests/status",
             query={"ref": ref, "workItem": work_item},
+        )
+
+    def list_pull_request_checks(
+        self,
+        ref: str,
+        work_item: str = "",
+        failing_only: bool = False,
+        log_lines: int = DEFAULT_LOG_LINES,
+        instance: str = "",
+    ) -> Dict[str, Any]:
+        member = self._target(instance)
+        if self.fleet.is_local(member):
+            return self.core.list_pull_request_checks(
+                ref, work_item, failing_only=failing_only, log_lines=log_lines
+            )
+        return self._proxy(
+            member,
+            "GET",
+            "/api/v1/pull-requests/checks",
+            query={
+                "ref": ref,
+                "workItem": work_item,
+                "failing": "true" if failing_only else "",
+                "logLines": str(log_lines),
+            },
         )
 
     def list_pull_request_threads(

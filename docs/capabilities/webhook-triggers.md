@@ -426,6 +426,27 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   linked issue** (reusing its tmux session) rather than spawning a second one, and WHEN
   nothing matches and the spawn policy allows it THEN the session SHALL be spawned
   against the **issue's** ref, not the PR's (issue-93, decision-036).
+- **A CI event wakes a session only to heal a failing check, and not forever**
+  (issue-462). WHILE `routing.ci.autofix` is true (the default), WHEN a matched CI event
+  arrives THEN the dispatcher's CI gate (`webhook/cimonitor.py`), placed after matching
+  and before the pause and duplicate filters, SHALL deliver it only if it is a
+  `check_run` that completed as `failure`, `timed_out`, `action_required` or
+  `startup_failure`, or a `status` whose state is `failure` or `error`. Every other CI
+  event — queued or running, passing, `cancelled` or `stale`, a re-requested run, and
+  every `check_suite` and `workflow_run` (aggregates of the check runs) — SHALL NOT be
+  delivered; it SHALL be recorded as `dispatch.dropped` with reason `ci-not-actionable`
+  and settled. A delivered failure's prompt SHALL carry, after the template and the
+  attachments, a section naming the check, its conclusion, the head commit, the details
+  URL, the pull request and `attempt k of maxAttempts`, and telling the session to
+  diagnose with `the-loop pr checks <pr> --failing` before changing code. The attempt is
+  the number of distinct head commits the check has failed on since it last passed,
+  per pull request (else per work item) and check name; WHEN that number first exceeds
+  `routing.ci.maxAttempts` (default 3) THEN the failure SHALL be delivered once with a
+  "stop and escalate" section (`ci.autofix_exhausted`), and later failures of the check
+  SHALL NOT be delivered (`ci-autofix-exhausted`) until a passing run resets the count.
+  The counts live in the dispatcher's memory (bounded at 1,024 checks), survive a
+  `reload` and not a restart. An unmatched CI event takes the unmatched path unchanged,
+  and `routing.ci.autofix: false` delivers every CI event as it came, as before.
 - **A work item a branch name invented is dropped before anything acts on it**
   (issue-269, [decision-095](../decisions/decision-095.md)). Of the three linkage sources
   above, the branch convention is the only one that supplies a repository the event never
@@ -957,6 +978,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-462 | CI monitoring and self-healing (2026-10-06): every CI webhook used to be delivered to the session as it came — twenty-odd deliveries per push to a five-job PR, each a turn — and a check the agent could not fix had no end. The dispatcher's CI gate (`webhook/cimonitor.py`, `routing.ci`) now delivers only a failed `check_run` or failing `status`, with a section naming the check, commit and attempt and pointing at the new `the-loop pr checks`; it counts distinct failing commits per PR and check, delivers one "stop and escalate" notice past `maxAttempts` (default 3), then nothing until the check passes. Drops are `dispatch.dropped` (`ci-not-actionable`, `ci-autofix-exhausted`); events `ci.check_failed`, `ci.autofix_exhausted` | [spec](../specs/issue-462/), [routing options](../config/cli/routing-options.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/462) |
 | issue-466 | A pull request the-loop records is armed in the same act (2026-10-06): `pr create`, `sessions link-pr` and its `--discover` put every `routing.autoExecuteLabels` label on it, so the poller's every-label filter lists it and its comments reach the session. A link that fails adds no label, and so does a re-run on a PR that was already recorded. A GitHub refusal is a note. Routing is unchanged | [spec](../specs/issue-466/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/466) |
 | issue-452 | The closure keeps a terminal record (2026-10-02): `_close_ended_session` reads `work-item-state.json` before `close_session` removes the checkout, and the `ended` stamp gains `outcome` (`completed` only from a claimed completion node — never from the closure) and `terminal` (node, phase, frozen selections, pull requests, evidence); a session-less closure reads the registry's checkout, `cleanup` backfills a stamp that has none, and a polled closure now carries `state_reason`. `work_item.ended` carries the outcome | [spec](../specs/issue-452/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/452) |
 | issue-447 | The `PostToolUse` recorder stopped parsing `gh` output (2026-09-30): it fires on a `git push` or any pull-request-creating call and runs `sessions link-pr --discover`, which asks GitHub for the open pull requests of the checkout's branch; `the-loop pr create` links what it opens, so the hook is the safety net for PRs opened by hand or by MCP. Routing is unchanged | [spec](../specs/issue-447/), [decision-140](../decisions/decision-140.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/447) |

@@ -326,6 +326,7 @@ runs `gh`; these verbs close the last hop, the agent's own session.
 | open a ticket (`/the-loop:create-ticket`) | `the-loop ticket create --repository <owner/repo> --title … --body-file … [--label …]` |
 | open the pull request — and record it | `the-loop pr create --work-item <ref> --title … --body-file …` |
 | read CI and the open review threads during `needs-review` | `the-loop pr status <pr>` · `the-loop pr threads <pr>` (JSON) |
+| diagnose a failing check — which checks failed, and the tail of each failed GitHub Actions job's log (untrusted data) | `the-loop pr checks <pr> --failing [--log-lines N]` (JSON) |
 | resolve a review thread you addressed | `the-loop pr resolve-thread <pr> --thread <id>` |
 | take a PR you opened with `--draft` out of draft — before you request human review, since a draft requests no code-owner review and cannot merge | `the-loop pr ready <pr>` |
 | close the ticket at `finish-tasks` | `the-loop ticket close <ref> [--reason not_planned]` |

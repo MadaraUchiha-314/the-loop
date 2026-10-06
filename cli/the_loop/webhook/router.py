@@ -71,6 +71,10 @@ class RoutedEvent:
     # True when the event's issue/PR carries EVERY configured auto-execute label
     # (the one being added right now included). Gates label-driven spawning.
     labeled: bool = False
+    # The CI section the dispatcher's CI gate rendered for a failing check
+    # (issue-462), appended to the prompt after the template. Empty for every
+    # other event, which then renders exactly as before.
+    ci_note: str = ""
 
 
 class Deduper:

@@ -233,13 +233,15 @@ package — there are no install extras (owner decision, PR #162).
   (`postWorkItemComment`), `GET /work-items/ticket` (`getTicket`), `POST
   /work-items/tickets` (`createTicket`), `POST /work-items/pull-requests`
   (`createPullRequest`), `GET /pull-requests/status` (`getPullRequestStatus`), `GET
+  /pull-requests/checks` (`listPullRequestChecks`, issue-462), `GET
   /pull-requests/threads` (`listPullRequestThreads`), `POST /pull-requests/merge`
   (`mergePullRequest`), `POST /work-items/tickets/close` (`closeTicket`), `POST
   /pull-requests/threads/resolve` (`resolveReviewThread`), `POST /pull-requests/ready`
   (`markPullRequestReady`, issue-465), and `discover` on `POST
   /sessions/link-pr` — each with its MCP
   tool (`post_comment`, `get_ticket`, `create_ticket`, `create_pull_request`,
-  `pull_request_status`, `pull_request_threads`, `merge_pull_request`, `close_ticket`,
+  `pull_request_status`, `pull_request_checks`, `pull_request_threads`,
+  `merge_pull_request`, `close_ticket`,
   `resolve_review_thread`, `mark_pull_request_ready`). The lifecycle acts require a work item registered on the
   executing instance (decision-140 D8), so a manager routes them to the member that
   manages the work item. Each executes
@@ -499,6 +501,7 @@ package — there are no install extras (owner decision, PR #162).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-462 | `GET /pull-requests/checks` (`listPullRequestChecks`) and the MCP tool `pull_request_checks` list a pull request's checks with failed jobs' log tails, over `core.github_ops.pull_request_checks`; read-only, so a manager runs it on the member it targets, like `pr status` | [spec](../specs/issue-462/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/462) |
 | issue-465 | `POST /pull-requests/ready` (`markPullRequestReady`) and the MCP tool `mark_pull_request_ready` take a registered work item's draft pull request out of draft, over `core.github_ops.mark_ready`; a manager runs it on the member that manages the work item | [spec](../specs/issue-465/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/465) |
 | issue-447 | Seven routes and seven MCP tools for the harness's GitHub acts — comment, ticket read and create, pull request open, status, threads and merge — plus `discover` on `sessions/link-pr`, all over `core.github_ops` with the executing process's token and merge policy; `harness_routed` sends the CLI verbs to a running service and otherwise runs them in-process, loudly | [spec](../specs/issue-447/), [decision-140](../decisions/decision-140.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/447) |
 | issue-374 | The manager (2026-09-30): the router calls a facade — `CoreFacade` on a worker, `ManagerFacade` on a manager — so one `APIRouter` serves both roles; the `instance` parameter on every keyed operation; `409` and `502` on the route class; the `The-Loop-Instances-Unreachable` header; the `instances` family; the stream fanned in from every member with a per-member cursor; the dashboard's Instances tab, instance pane, chip and filter | [spec](../specs/issue-374/), [decision-138](../decisions/decision-138.md), [instances](instances.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/374) |
