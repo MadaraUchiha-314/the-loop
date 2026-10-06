@@ -1,3 +1,9 @@
+## v19.24.0 (2026-10-06)
+
+### Feat
+
+- **issue-464**: create the Slack app from one click, named by its operator (#469)
+
 ## v19.23.0 (2026-10-06)
 
 ### Feat
