@@ -73,6 +73,15 @@ true answer — and a ticked one would promise a pull request the loop does not
 open. So the row is not rendered, not parsed, and not confirmed for a
 contribution; the frozen record simply carries no surface, which is exactly
 what "there was nothing to choose" looks like when read back.
+
+**And one more, offered rather than asked** (issue-471): *should the spec chain
+also be published as one Claude artifact* — a page with a tab per spec file,
+which its readers can comment on. Off unless ticked, and offered only where
+there is a spec chain to publish (the loops that own an outer loop). It is a
+Claude Code capability, so a tick on a work item resolved to any other harness
+is **not applied**, and the confirmation says so. The markdown files stay the
+source of truth either way: this gate freezes a boolean, and the session — not
+the CLI, which cannot publish an artifact — does the publishing.
 """
 
 from __future__ import annotations
@@ -149,6 +158,15 @@ DEFAULT_SURFACE = SURFACE_WORK_ITEM
 #: unticking boxes must never wonder whether they are dropping a phase.
 SURFACE_TOKEN = "outer-loop-on-pull-request"
 
+#: The checklist token that asks for the spec chain as one Claude artifact
+#: (issue-471). A bare token like the surface row's — there is one value, so a
+#: prefix would announce a family that does not exist.
+CLAUDE_ARTIFACT_TOKEN = "claude-artifact"
+
+#: The one harness that can publish a Claude artifact — the Claude Code
+#: adapter's name. A tick on a work item resolved to any other is not applied.
+CLAUDE_HARNESS = "claude"
+
 #: What a work item with no outer loop to place records instead of a surface
 #: (issue-199). Empty rather than the default, because the two are different
 #: facts: `work-item` is a choice that was offered and left alone, and `""` is a
@@ -195,7 +213,7 @@ CANDIDATE_LIMIT = 12
 #: a declared skip and never a refusal, whichever way it is ticked. The two
 #: choice groups are matched by PREFIX rather than listed, because their members
 #: come from the operator's config rather than from the graph.
-_NON_PHASE_TOKENS = {SURFACE_TOKEN, *PR_SESSIONS_TOKENS}
+_NON_PHASE_TOKENS = {SURFACE_TOKEN, CLAUDE_ARTIFACT_TOKEN, *PR_SESSIONS_TOKENS}
 
 
 def _is_non_phase(token: str) -> bool:
@@ -633,6 +651,20 @@ def _checklist_body(ctx: HookContext) -> str:
             "each repository this work item contributes code to gets its own "
             "pull request for the inner loop.",
             "",
+            # Offered where there is a spec chain to publish (issue-471), which
+            # is exactly where the surface question is asked.
+            "**Publish the spec chain as a Claude artifact too?** Not a phase, "
+            "and off unless you tick it — the requirements, design, testing plan "
+            "and task list become one page with a tab per file, which you can "
+            "read and comment on in Claude:",
+            "",
+            f"- [ ] `{CLAUDE_ARTIFACT_TOKEN}` — one Claude artifact for this work "
+            f"item (`{CLAUDE_HARNESS}` harness only).",
+            "",
+            f"**Only the `{CLAUDE_HARNESS}` harness can publish one.** On any other "
+            "harness the-loop ignores this box. The markdown files stay the source "
+            "of truth either way, and every gate still reads them.",
+            "",
         ]
     else:
         # A contribution has no outer loop to place (issue-199), so there is no
@@ -756,6 +788,7 @@ def _frozen_graph(
     model: str = "",
     effort: str = "",
     harness: str = "",
+    claude_artifact: bool = False,
 ) -> Dict[str, Any]:
     """The graph this work item will actually walk, as a record.
 
@@ -802,6 +835,9 @@ def _frozen_graph(
         "harness": harness,
         "model": model,
         "effort": effort,
+        # Whether the spec chain is also published as one Claude artifact
+        # (issue-471) — the effective value, already resolved against the harness.
+        "claudeArtifact": claude_artifact,
         "nodes": nodes,
     }
 
@@ -867,6 +903,29 @@ def _parse_surface(body: str) -> str:
     return DEFAULT_SURFACE
 
 
+def _parse_claude_artifact(body: str) -> bool:
+    """Whether one reply ticks the Claude-artifact row (issue-471).
+
+    Only a **ticked** row asks for it; unticked, absent and unreadable all mean
+    no — an offered addition fails toward *off*, like an opt-in phase.
+    """
+    for match in _CHECK_LINE.finditer(body):
+        if match.group("token") == CLAUDE_ARTIFACT_TOKEN:
+            return bool(match.group("mark").strip())
+    return False
+
+
+def _claude_artifact_applies(harness: str) -> bool:
+    """Whether a work item resolved to ``harness`` can publish a Claude artifact.
+
+    A known harness other than :data:`CLAUDE_HARNESS` rules it out. An unknown
+    one (``""`` — no CLI config seeded a default, as in a ``check`` run outside a
+    deployment) does not: the session guards itself, because the skill tells a
+    session with no artifact tool to ignore the choice.
+    """
+    return harness in ("", CLAUDE_HARNESS)
+
+
 def _parse_pr_sessions(body: str, default: str) -> str:
     """The chosen ``sessionPerPr`` mode from one reply — the default otherwise.
 
@@ -906,6 +965,8 @@ def _confirmation(
     harness_offered: Optional[List[str]] = None,
     default_harness: str = "",
     dropped: Optional[List[Tuple[str, str]]] = None,
+    claude_artifact_requested: bool = False,
+    claude_artifact: bool = False,
 ) -> str:
     lines = ["🤖 _the-loop_ — **phase selection recorded**", ""]
     if skips:
@@ -955,6 +1016,25 @@ def _confirmation(
                 "its own pull request for the inner loop."
             ),
         ]
+    # Named in all three directions (issue-471), and only where it was offered:
+    # the surface question and this one are asked of the same loops.
+    if surface:
+        resolved_harness = harness or default_harness
+        if claude_artifact:
+            line = (
+                "Spec artifacts: also published as **one Claude artifact** (a tab "
+                f"per file), as @{actor} chose. The markdown files stay the source "
+                "of truth."
+            )
+        elif claude_artifact_requested:
+            line = (
+                f"Not applied: `{CLAUDE_ARTIFACT_TOKEN}` — this work item runs on "
+                f"`{resolved_harness}`, which cannot publish a Claude artifact. The "
+                "spec chain stays in markdown files only."
+            )
+        else:
+            line = "Spec artifacts: markdown files only (the default)."
+        lines += ["", line]
     # A loop that was never asked the surface question confirms nothing about
     # it (issue-199): claiming a default here would report a choice the human
     # was never offered.
@@ -1108,6 +1188,15 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
         if effort and effort not in _effort_rows(ctx, resolved_harness):
             dropped.append(("effort", effort))
             effort = ""
+    # Offered only where there is a spec chain (issue-471), and resolved against
+    # the harness this item ends up on: the record states the effective value, so
+    # it and the confirmation never disagree about a page that will not appear.
+    claude_artifact_requested = (
+        _parse_claude_artifact(body) if _asks_surface(ctx) else False
+    )
+    claude_artifact = claude_artifact_requested and _claude_artifact_applies(
+        resolved_harness
+    )
     actor = str(reply["author"]).lstrip("@")
 
     confirmation_error = ""
@@ -1133,6 +1222,8 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
                 harness_offered=harness_offered,
                 default_harness=_harness_for(ctx),
                 dropped=dropped,
+                claude_artifact_requested=claude_artifact_requested,
+                claude_artifact=claude_artifact,
             ),
         )
     except Exception as exc:  # noqa: BLE001
@@ -1164,6 +1255,7 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
             "harness": harness,
             "model": model,
             "effort": effort,
+            "claudeArtifact": claude_artifact,
             "frozenGraph": _frozen_graph(
                 ctx,
                 skips,
@@ -1173,6 +1265,7 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
                 model=model,
                 effort=effort,
                 harness=harness,
+                claude_artifact=claude_artifact,
             ),
             "selectionSource": source,
             **({"error": confirmation_error} if confirmation_error else {}),

@@ -409,6 +409,11 @@ class WorkItemState:
     harness: str = ""
     model: str = ""
     effort: str = ""
+    #: Whether the spec chain is also published as one Claude artifact
+    #: (issue-471) — frozen by the same reply, already resolved against the
+    #: harness. Read with ``is True``: the file is agent-writable, and only the
+    #: boolean itself turns it on.
+    claude_artifact: bool = False
     #: The pull requests delivering this work item (issue-368, R2.1) — the
     #: repository's own objects, so they are recorded on the work item's branch
     #: rather than only in a machine-local session record that never travels.
@@ -493,6 +498,7 @@ class WorkItemState:
             harness=str(data.get("harness") or ""),
             model=str(data.get("model") or ""),
             effort=str(data.get("effort") or ""),
+            claude_artifact=data.get("claudeArtifact") is True,
             pull_requests=_pull_requests(
                 data.get("pullRequests"),
                 repository_of(str(data.get("workItem", work_item))),
@@ -532,6 +538,7 @@ class WorkItemState:
             "harness": self.harness,
             "model": self.model,
             "effort": self.effort,
+            "claudeArtifact": self.claude_artifact,
             "repos": self.repos,
             "pullRequests": [pr.as_dict() for pr in self.pull_requests],
             "loop": self.loop,

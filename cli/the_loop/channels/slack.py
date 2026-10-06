@@ -646,10 +646,12 @@ _PLAIN_ROW = re.compile(
 #: validated against before either is written into a record.
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,74}$")
 
-#: The checklist's rows that are NOT phases: the hook's ``SURFACE_TOKEN`` and the
-#: prefixes of its ``PR_SESSIONS_TOKENS`` / ``HARNESS_PREFIX`` / ``MODEL_PREFIX`` / ``EFFORT_PREFIX``
+#: The checklist's rows that are NOT phases: the hook's ``SURFACE_TOKEN`` and
+#: ``CLAUDE_ARTIFACT_TOKEN`` (issue-471), and the prefixes of its
+#: ``PR_SESSIONS_TOKENS`` / ``HARNESS_PREFIX`` / ``MODEL_PREFIX`` / ``EFFORT_PREFIX``
 #: rows. Pinned to the hook's by a test, like the marker.
 SURFACE_TOKEN = "outer-loop-on-pull-request"
+CLAUDE_ARTIFACT_TOKEN = "claude-artifact"
 _NON_PHASE_PREFIXES = ("pr-sessions-", "harness-", "model-", "effort-")
 
 #: The control's own ids. A block id under :data:`SELECTION_BLOCK` is part of the
@@ -747,7 +749,7 @@ def selection_rows(text: str) -> Optional[SelectionRows]:
         )
         if token == SURFACE_TOKEN:
             surface = row
-        elif token.startswith(_NON_PHASE_PREFIXES):
+        elif token == CLAUDE_ARTIFACT_TOKEN or token.startswith(_NON_PHASE_PREFIXES):
             others.append(row)
         else:
             phases.append(row)
@@ -868,8 +870,9 @@ def selection_control_blocks(rows: SelectionRows, keyword: str) -> List[Dict[str
             "Always run: " + ", ".join(f"`{node}`" for node in rows.always) + "."
         )
     notes.append(
-        "Sessions per pull request, harness, model and effort keep this deployment's "
-        "defaults from here — to choose them, tick them on GitHub and reply "
+        "Sessions per pull request, harness, model, effort and the Claude artifact "
+        "keep this deployment's defaults from here — to choose them, tick them on "
+        "GitHub and reply "
         f"`{keyword}` there instead."
     )
     blocks.append({"type": "context", "elements": [_mrkdwn(" ".join(notes))]})

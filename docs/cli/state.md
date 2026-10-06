@@ -124,6 +124,7 @@ from the artifacts alone.
 | `surface` | human decision | where the outer loop is iterated ([issue-183](https://github.com/MadaraUchiha-314/the-loop/issues/183)) |
 | `sessionPerPr` | human decision | how many sessions its pull requests get ([issue-260](https://github.com/MadaraUchiha-314/the-loop/issues/260)) |
 | `model` / `effort` | human decision | what it runs on, and at what effort ([issue-358](https://github.com/MadaraUchiha-314/the-loop/issues/358)) |
+| `claudeArtifact` | human decision | whether the spec chain is also published as one Claude artifact — `true` only when ticked and resolved to the `claude` harness; anything but the boolean `true` reads as `false` ([issue-471](https://github.com/MadaraUchiha-314/the-loop/issues/471)) |
 | `repos` | human decision | the repositories it contributes to |
 | `pullRequests` | repository entity | each pull request delivering it |
 
@@ -503,7 +504,7 @@ next update, and messages in the room are dropped at the ingress as `unmapped`.
 | `source` | which ingress saw the closure: `webhook` (a `closed` event) or `poll` (the item left the listing and GitHub confirmed it) |
 | `actor` | who closed it — the webhook's `sender`, or GitHub's `closed_by` on a polled closure; `""` when neither names anyone |
 | `outcome` | how the work item ended ([issue-452](https://github.com/MadaraUchiha-314/the-loop/issues/452)): `completed` (its session claimed the loop's completion node), `cancelled` (an issue closed as not planned or as a duplicate, or a pull request closed unmerged), `closed-externally` (closed without that claim), `unknown` (no terminal record could be read). Absent on a stamp written before issue-452 |
-| `terminal` | the work item's ending, copied from its `work-item-state.json` **before** the close path removed the checkout: `workItem`, `loop`, `node`, `phase`, `completed`, `completedAt`, `selections` (`skipped`, `optedIn`, `surface`, `harness`, `model`, `effort`, `sessionPerPr`, `repos`), `pullRequests` (`ref`, `url`, `state`), `specDir`, `evidence` (file names under the spec directory's `evidence/`, at most 50) and `recordedAt`. Absent when no checkout could be read |
+| `terminal` | the work item's ending, copied from its `work-item-state.json` **before** the close path removed the checkout: `workItem`, `loop`, `node`, `phase`, `completed`, `completedAt`, `selections` (`skipped`, `optedIn`, `surface`, `harness`, `model`, `effort`, `sessionPerPr`, `claudeArtifact`, `repos`), `pullRequests` (`ref`, `url`, `state`), `specDir`, `evidence` (file names under the spec directory's `evidence/`, at most 50) and `recordedAt`. Absent when no checkout could be read |
 
 Written by the daemon's one close path
 ([issue-329](https://github.com/MadaraUchiha-314/the-loop/issues/329),

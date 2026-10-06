@@ -647,6 +647,12 @@ ATTRIBUTES: Tuple[Attribute, ...] = (
     ),
     Attribute(
         REPOSITORY_FILE,
+        "claudeArtifact",
+        "human-decision",
+        "whether the spec chain is also one Claude artifact (issue-471)",
+    ),
+    Attribute(
+        REPOSITORY_FILE,
         "repos",
         "human-decision",
         "the repositories it contributes to (issue-183, issue-365)",

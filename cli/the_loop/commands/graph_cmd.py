@@ -607,6 +607,8 @@ def _archived_lines(report: Dict[str, Any]) -> List[str]:
         for key in ("harness", "model", "effort", "surface", "sessionPerPr")
         if selections.get(key)
     ]
+    if selections.get("claudeArtifact") is True:
+        chosen.append("claude-artifact")  # issue-471
     if chosen:
         lines.append(f"  choices: {', '.join(chosen)}")
     for pr in terminal.get("pullRequests") or []:
