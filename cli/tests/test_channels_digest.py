@@ -142,6 +142,28 @@ def test_to_mrkdwn_is_idempotent_and_leaves_prose_alone():
     assert to_mrkdwn(once) == once
 
 
+def test_collapsed_blocks_unfold_for_slack():
+    """issue-472 R3.4 — Slack has no collapsible block and reads `<…>` as link
+    syntax, so `<details>` goes and a `<summary>` becomes a bold line."""
+    text = (
+        "Pick one:\n\n- [ ] `model-a`\n\n<details>\n"
+        "<summary>ℹ️ What this means</summary>\n\n"
+        "Leave it alone and the default stands.\n\n</details>\n\n"
+        "Keep `<details>` here.\n\n```html\n<details>\n```\n"
+    )
+    out = to_mrkdwn(text)
+    assert "*ℹ️ What this means*" in out
+    assert "<summary>" not in out and "</details>" not in out
+    assert "Leave it alone and the default stands." in out
+    # code is drawn as written, HTML included
+    assert "Keep `<details>` here." in out and "```html\n<details>\n```" in out
+    assert to_mrkdwn(out) == out
+    digest = condense(text, 600)
+    assert "*ℹ️ What this means*" in digest
+    assert "<summary>" not in digest and "</details>" not in digest
+    assert "Leave it alone and the default stands." in digest
+
+
 def test_html_comments_never_reach_slack():
     assert strip_comments("a <!-- x --> b") == "a  b"
     assert strip_comments("a <!-- x\ny --> b <!-- z -->") == "a  b "

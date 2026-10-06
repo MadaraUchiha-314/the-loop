@@ -126,7 +126,7 @@ def test_the_harness_section_comes_first_with_one_row_per_harness():
     assert "- [ ] `harness-claude`" in body
     assert "- [ ] `harness-codex`" in body
     assert body.index("harness-claude") < body.index("model-opus-5")
-    assert "runs on `claude`, this deployment's default" in body
+    assert "**Default:** `claude`, this deployment's default" in body
 
 
 @pytest.mark.parametrize("offered", [[], ["claude"]])

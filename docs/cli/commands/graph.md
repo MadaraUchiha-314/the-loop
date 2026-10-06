@@ -105,6 +105,15 @@ edited and never by whom. A checklist inside the `the-loop execute` comment itse
 over the boxes, for anyone who prefers to be explicit. Either way the gate exists to keep
 the harness from choosing its own workload.
 
+**The comment is laid out to be skimmed** (issue-472). It opens with a quick start: reply
+`the-loop execute` with the boxes untouched to run the full process. Below it are two
+groups: **🧩 Phases**, and **⚙️ Settings** for everything that is not a phase (where the
+outer loop happens, the Claude artifact, sessions per pull request, the collaboration
+channel, harness, model and effort). Each question is a heading with an emoji of its
+own, states its **Default:** before its rows, and keeps its explanation in a collapsed
+`<details>` block. The rows above are exactly what the comment carries, so a reply with a
+checklist in it is written the same way.
+
 The last row is not a phase (issue-183): it says where the **outer** loop is collaborated
 on. Leave it and the requirements, design, testing plan and task list are iterated on the
 work item itself — the default, so a work item whose code lands in *other* repositories

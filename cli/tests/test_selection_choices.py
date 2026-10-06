@@ -88,7 +88,7 @@ def test_the_model_section_names_the_default_harnesss_default_model():
     """issue-451 R3.1 — what "no tick" means is readable before anyone replies."""
     harnesses = [{"name": "claude", "default": True, "defaultModel": "opus-5"}]
     body = "\n".join(selection._choice_lines(_ctx(**_declared(harnesses=harnesses))))
-    assert "runs on `opus-5`, the `claude` harness's default model" in body
+    assert "**Default:** `opus-5`, the `claude` harness's default model" in body
 
     plain = "\n".join(selection._choice_lines(_ctx(**_declared())))
     assert "the model this harness is configured with" in plain
@@ -355,7 +355,7 @@ def test_the_channel_section_says_how_to_declare_one_when_none_is():
     Requirement: docs/specs/issue-375/requirements.md R4.1
     """
     body = "\n".join(selection._channel_lines(_ctx()))
-    assert "None declared" in body
+    assert "none declared" in body
     assert "the-loop add-channel slack@C0123ABCD" in body
 
 
