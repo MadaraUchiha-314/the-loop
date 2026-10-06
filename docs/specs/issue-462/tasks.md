@@ -35,6 +35,11 @@ overrides: {}
 - [x] **C2: docs and evidence.** CLI reference, capability docs (`cli.md`,
       `control-plane.md`, `webhook-triggers.md`), the evidence files. *Deps:* A4, B4, C1.
 
+- [x] **D1: CI on the poll ingress (review ask).** `polling.ci` config, schema and docs;
+      `PollProvider.ci_events` and its GitHub implementation; `Poller._poll_ci` with the
+      `ciSeen` ledger; `poll.cycle`'s `ci_forwarded`; `test_poll_ci.py`. *Req:* R6 ·
+      *Test:* T13. *Deps:* B3.
+
 ## Dependency graph (DAG)
 
 ```mermaid
@@ -43,4 +48,5 @@ flowchart LR
   B1 --> B2 --> B3 --> B4 --> C2
   A3 --> C1
   B3 --> C1 --> C2
+  B3 --> D1 --> C2
 ```

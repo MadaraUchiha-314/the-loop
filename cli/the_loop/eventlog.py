@@ -871,7 +871,8 @@ EVENT_TYPES: Dict[str, str] = {
         "closures, errors; scopes_polled and scopes_degraded — the repositories "
         "that answered, and the ones that failed or were skipped, issue-315; "
         "ledger_checks — how many ledger-only records were asked whether they "
-        "ended, issue-332)."
+        "ended, issue-332; ci_forwarded — how many new CI results from "
+        "`polling.ci` were handed to the dispatcher's CI gate, issue-462)."
     ),
     "poll.closure_detected": (
         "A poll cycle found that a tracked work item — one with a session "

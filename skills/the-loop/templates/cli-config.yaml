@@ -594,6 +594,9 @@ standingSessions:
 polling:
   enabled: false                    # `the-loop start` brings the poller up when true
   intervalSeconds: 60               # seconds between poll cycles (all sources)
+  # ci:                             # (issue-462) read live PRs' checks for the CI gate
+  #   enabled: true
+  #   intervalSeconds: 300          # its own, slower clock: 3 requests per PR per read
   sources: []                       # e.g. the github source below (empty = nothing polled)
     # - provider: github            # WHAT is polled is the top-level `repositories`
     #                               # above (issue-348); a source says only HOW.

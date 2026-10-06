@@ -10,7 +10,8 @@ workItem: "github:MadaraUchiha-314/the-loop#462"
 
 - **[`docs/capabilities/webhook-triggers.md`](../../../capabilities/webhook-triggers.md)**
   gains the CI gate's EARS criteria: which CI events are delivered, the CI section, the
-  attempt budget and its reset, the drop reasons, and the `autofix: false` escape hatch.
+  attempt budget and its reset, the drop reasons, and the `autofix: false` escape hatch;
+  and the poller's CI read (`polling.ci`, the `ciSeen` ledger, `ci_forwarded`).
   It also gains a history row.
 - **[`docs/capabilities/cli.md`](../../../capabilities/cli.md)** gains the `pr checks`
   criteria (entries, `--failing`, log tails, the bounds, `logError`), plus a history row
@@ -26,7 +27,9 @@ workItem: "github:MadaraUchiha-314/the-loop#462"
   table gains `startup_failure`. `docs/cli/commands/index.md` lists `checks` on the `pr`
   row.
 - **Configuration reference:** `docs/config/cli/routing-options.md` gains *CI: monitoring
-  and self-healing* with `ci.autofix` and `ci.maxAttempts`. The schema (both copies)
+  and self-healing* with `ci.autofix` and `ci.maxAttempts`;
+  `docs/config/cli/polling-options.md` gains *CI monitoring* with `ci.enabled` and
+  `ci.intervalSeconds` (the poll ingress, added on review). The schema (both copies)
   describes them, and the template `skills/the-loop/templates/cli-config.yaml` shows
   them commented out.
 - **API contract:** `docs/api-specs/openapi/the-loop.v1.yaml` gains the route.
@@ -36,8 +39,9 @@ workItem: "github:MadaraUchiha-314/the-loop#462"
   gains `pr checks`.
 - **Slash command:** `/the-loop:work-on` lists `pr … checks`.
 - **MCP tool description** (`api/mcp.py`) for `pull_request_checks`.
-- **Event catalogue:** `ci.check_failed`, `ci.autofix_exhausted`, and the two new
-  `dispatch.dropped` reasons in `eventlog.EVENT_TYPES`.
+- **Event catalogue:** `ci.check_failed`, `ci.autofix_exhausted`, the two new
+  `dispatch.dropped` reasons, and `poll.cycle`'s `ci_forwarded` in
+  `eventlog.EVENT_TYPES`.
 - **`README.md`** does not list the `pr` subcommands or the routing keys, so it is
   unchanged. The event prompt template (`webhook-event-prompt.md`) already says
   "diagnose, then fix and push, for failed checks"; the CI section is appended after any

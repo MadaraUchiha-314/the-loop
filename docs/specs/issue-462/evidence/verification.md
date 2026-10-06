@@ -16,6 +16,7 @@ autouse fixture refuses any real socket.
 
 - [x] T1–T6 and T7–T8 written first and seen red against the code before the change.
 - [x] T1–T9 green after the change.
+- [x] T13 poll-ingress CI (added on review), red with the change stashed, then green.
 - [x] T10 full suite, ruff (lint and format), pyright, markdownlint, config validation.
 - [x] T11 security review (`security-review.md`).
 
@@ -78,11 +79,30 @@ only because `routing-options.md` documents `ci.autofix` and `ci.maxAttempts` wi
 their type and default. `test_routing.py`'s settled-vocabulary test was extended with
 the two `ci-*` outcomes, as its docstring requires of a new settlement.
 
+## T13: CI on the poll ingress (added on review)
+
+Written in the same step as the code, so "red" here is the suite run against the
+poller and schema with the change stashed (the test file imports `PollCiConfig`, which
+did not exist):
+
+```text
+$ git stash push -- cli/the_loop/poller cli/the_loop/schemas .the-loop/cli-config.schema.json
+$ cd cli && uv run python -m pytest -q tests/test_poll_ci.py
+ERROR tests/test_poll_ci.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+$ git stash pop
+
+$ cd cli && uv run python -m pytest -q tests/test_poll_ci.py tests/test_docs_parity.py \
+    tests/test_config_schema_parity.py tests/test_poller.py \
+    tests/test_poller_integration.py tests/test_poll_daemon_integration.py
+287 passed in 34.51s
+```
+
 ## T10: the full suite and the hooks
 
 ```text
 $ cd cli && uv run python -m pytest -q
-5472 passed, 1 skipped, 4 warnings in 245.38s (0:04:05)
+5483 passed, 1 skipped, 2 warnings in 235.16s (0:03:55)
 
 $ uv run ruff check cli hooks
 All checks passed!
@@ -116,4 +136,5 @@ VALID   skills/the-loop/templates/cli-config.yaml
 | T9 config | `test_cimonitor.py -k schema`, parity tests, `validate_config.py` | pass | above |
 | T10 regression | full suite + hooks | pass | above |
 | T11 security | review | pass | [`security-review.md`](security-review.md) |
-| T12 | — | n/a | no UI, no stored data |
+| T12 | — | n/a | no UI; the only stored data is the poll ledger's `ciSeen` map |
+| T13 poll CI | `pytest tests/test_poll_ci.py` | pass (red with the change stashed) | above |

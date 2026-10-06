@@ -422,7 +422,9 @@ def _run_locked(
         data = cli_config.load_cli_config(_config_path(), strict=False)
         cfg = PollConfig.from_mapping(data.get("polling") or {})
         providers = _build_providers(data, default_labels=routing.auto_execute_labels)
-        return PollPlan(providers=providers, interval_seconds=cfg.interval_seconds)
+        return PollPlan(
+            providers=providers, interval_seconds=cfg.interval_seconds, ci=cfg.ci
+        )
 
     try:
         plan = build_plan()

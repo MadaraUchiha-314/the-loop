@@ -21,6 +21,7 @@ polling:
   enabled: false
   intervalSeconds: 60
   maxRetries: 3
+  ci: { enabled: true, intervalSeconds: 300 }   # read PR checks (issue-462)
   sources:
     - provider: github     # HOW it is polled
       monitor: { issues: true, pullRequests: true }
@@ -106,6 +107,40 @@ The two rules compose, which is how a comment lost to a the-loop bug comes back 
 upgrading past the release that fixed it re-arms the comment, the delivery now works, and
 if it somehow still does not, the notice above says so on the ticket. Nothing on disk needs
 editing in either case.
+
+## CI monitoring
+
+A webhook pushes CI results; a poller has to ask
+([issue-462](https://github.com/MadaraUchiha-314/the-loop/issues/462)). On its own clock,
+the poller reads the checks of every listed pull request that a **live session** owns. It
+hands each new completed result, failed or passed, to the dispatcher's CI gate. The gate
+judges it exactly as it judges a pushed one ([`routing.ci`](/config/cli/routing-options#ci-monitoring-and-self-healing)):
+a failure wakes the session with the healing section, and a pass resets the check's
+attempt count.
+
+One read costs three requests per pull request: the pull request for its head commit, its
+check runs, and its combined status. A pull request with no live session is not read,
+because its result could reach nobody. The last result forwarded per check is kept in the
+pull request's poll ledger (`ciSeen`), so a result is forwarded once across cycles and
+restarts.
+
+### `ci.enabled`
+
+- **Type:** `boolean`
+- **Default:** `true`
+
+Read pull requests' checks on the poll ingress. `false` leaves a poll-only installation
+with no CI results, as before issue-462.
+
+### `ci.intervalSeconds`
+
+- **Type:** `integer` (at least 60)
+- **Default:** `300`
+
+Seconds between CI reads. This is separate from, and normally longer than,
+[`intervalSeconds`](#intervalseconds), because each read costs three requests per pull
+request. The CI read happens inside a poll cycle, so it never runs more often than
+`intervalSeconds`.
 
 ## Sources
 

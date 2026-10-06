@@ -27,9 +27,10 @@ overrides: {}
 | T7 | Unit (gate) | yes | `classify` for every row of the design's table; `CiBudget` counts distinct SHAs, repeats a counted SHA's attempt, delivers the exhausted notice once, drops afterwards, resets on a pass, ignores `cancelled`, evicts the least recently seen key; `render_section` names check, SHA, PR, attempt and the `pr checks` command | `cli/tests/test_cimonitor.py` |
 | T8 | Integration (Gherkin, dispatcher) | yes | through `Dispatcher.handle` with a registered session and `FakeTmux`: a failing `check_run` is delivered with the CI section; a success, an in-progress run and a `workflow_run` are not delivered and are recorded `ci-not-actionable`; the fourth failing commit delivers the "stop and escalate" frame and the fifth is dropped `ci-autofix-exhausted`; a pass resets; `autofix: false` delivers every CI event with no section; a non-CI event's prompt is unchanged; an unmatched CI event takes the unmatched path | `cli/tests/test_ci_autofix_integration.py` |
 | T9 | Config | yes | `routing.ci` parses with defaults; schema accepts it and rejects `maxAttempts: 0`; both schema copies identical; docs parity covers the new leaves | `test_cimonitor.py`, `test_config_schema_parity.py`, `test_docs_parity.py`, `scripts/validate_config.py` |
+| T13 | Unit + integration (poll CI, Gherkin) | yes | the provider turns completed check runs and non-pending statuses into webhook-shaped events (issue → none); the poller forwards each result once, a new result again, nothing after a restart, reads on its own interval, skips a PR with no live session, honours `enabled: false`, reports a failed read and goes on; config defaults, floor and schema; end to end through the real dispatcher, a polled failure reaches the session with the CI section and a polled pass does not | `cli/tests/test_poll_ci.py` |
 | T10 | Regression (full suite + hooks) | yes | ruff, ruff format, pyright, all CLI tests, markdownlint, config validation | `make check` equivalents |
 | T11 | Security | yes (review) | no token to the log host, https only, logs never in the event prompt, bounded reads, every drop logged | `evidence/security-review.md` |
-| T12 | UI / accessibility / snapshot / migration / performance | n/a | no UI; no stored data (the budget is in memory); at most 3 + 2×5 requests per `pr checks` call | |
+| T12 | UI / accessibility / snapshot / migration / performance | n/a | no UI; the budget is in memory, and the only stored data is the poll ledger's additive `ciSeen` map (no migration: an absent map reads as nothing seen); at most 3 + 2×5 requests per `pr checks` call | |
 
 ## Requirement trace
 
@@ -43,6 +44,7 @@ overrides: {}
 | R3.3, R3.4 | T8 |
 | R4.1–R4.7 | T7, T8 |
 | R5 | review of the doc diff (`evidence/documentation.md`) |
+| R6 | T13 |
 | Security considerations | T1, T3, T11 |
 
 ## Verification environment

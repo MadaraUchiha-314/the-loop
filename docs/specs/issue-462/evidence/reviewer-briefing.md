@@ -16,8 +16,11 @@ Now the dispatcher's **CI gate** delivers only a check that *failed*. It adds a 
 naming the check, the commit and `attempt k of 3`, and points at the new **`the-loop pr
 checks`**, which lists the failing checks with the tail of each failed Actions job's log.
 Past `routing.ci.maxAttempts` failing commits, the session is told once to stop and
-escalate, and the gate goes quiet for that check until it passes. The skill gains the
-healing procedure and its never-list. Risk tier 3.
+escalate, and the gate goes quiet for that check until it passes. A poll-only
+installation gets the same events: on its own clock (`polling.ci.intervalSeconds`,
+default 300 s), the poller reads each live pull request's checks and forwards each new
+result to the same gate. The skill gains the healing procedure and its never-list. Risk
+tier 3.
 
 ## Where to focus
 
@@ -32,7 +35,9 @@ healing procedure and its never-list. Risk tier 3.
 3. **`GitHubClient.job_log_tail` / `_download_tail` / `_urlopen`.** It reads the `302`
    without following it, then fetches the signed URL over https only, with no
    credential, holding only the tail.
-4. **Skim:** `github_ops.pull_request_checks` and its seams (CLI, route, both facades,
+4. **`Poller._poll_ci` and `GitHubPollProvider.ci_events`** (added on review): only a PR
+   a live session owns is read, and the `ciSeen` ledger forwards each result once.
+5. **Skim:** `github_ops.pull_request_checks` and its seams (CLI, route, both facades,
    MCP, OpenAPI), the `routing.ci` schema and docs, the event catalogue, and the skill
    text in `workflow.md` § Self-healing CI.
 
@@ -69,7 +74,7 @@ flowchart TB
   pyright, markdownlint and config validation clean
   ([`verification.md`](verification.md)).
 - Security checklist: pass ([`security-review.md`](security-review.md)).
-- Self-review converged in 4 rounds; no critics configured in this cloud checkout
+- Self-review converged in 6 rounds (two after the poll-ingress ask); no critics configured in this cloud checkout
   ([`self-review.md`](self-review.md)).
 - Docs touched: [`documentation.md`](documentation.md).
 
@@ -78,5 +83,6 @@ flowchart TB
 - **Default on.** `routing.ci.autofix` defaults to `true`, which changes what existing
   installations deliver: no more raw success and in-progress events. Is that the default
   you want, or should it ship off and be opted into?
-- **Poll-only installations** get no CI events, as before. Polling each tracked PR's head
-  checks would cost two requests per PR per cycle. Is that worth a follow-up work item?
+- **Poll-only installations** — answered on the PR: they now get CI too, on
+  `polling.ci.intervalSeconds` (default 300 s, floor 60). Is five minutes the default you
+  want?

@@ -760,7 +760,8 @@ its own front page still described one loop and three.
 
 ## Self-healing CI (issue-462)
 
-The daemon routes a pull request's CI webhooks to the session working it, and its CI gate
+The daemon routes a pull request's CI webhooks to the session working it (a poll-only
+installation reads the same results on its own clock, `polling.ci`), and its CI gate
 (`routing.ci.autofix`, on by default) decides which ones reach you. Only a check that
 **failed** does. Queued, running, passing, cancelled and aggregate (`check_suite`,
 `workflow_run`) events never arrive, so silence after a push means nothing failed yet;

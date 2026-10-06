@@ -53,6 +53,9 @@ things go wrong:
   `routing.ci.maxAttempts` distinct commits have failed the same check, it delivers one
   last frame telling the session to stop and escalate. After that it delivers no more
   failures of that check until the check passes again.
+- A poll-only installation gets the same CI events: on a clock of its own
+  (`polling.ci.intervalSeconds`), the poller reads the checks of each pull request a
+  live session owns, and hands each new result to the same gate.
 - The skill gains the self-healing procedure.
 
 ## Requirements
@@ -189,12 +192,42 @@ pushing an empty commit to re-run CI.
 
 5.4 The skill's GitHub verb lists SHALL name `the-loop pr checks`.
 
+### Requirement 6 — a poll-only installation gets the same CI events
+
+**User story:** As an operator whose host no webhook can reach, I want the poller to read
+my pull requests' checks on a schedule of its own, so self-healing works without a
+webhook (the owner on [PR #470](https://github.com/MadaraUchiha-314/the-loop/pull/470):
+"it's important that this feature is available for users who want to poll as well").
+
+#### Acceptance criteria (EARS)
+
+6.1 WHILE `polling.ci.enabled` is true (the default), WHEN a poll cycle starts and at
+least `polling.ci.intervalSeconds` (default 300, at least 60) have passed since the
+poller last read CI THEN the poller SHALL read the checks of every listed pull request
+whose refs a live session record owns.
+
+6.2 The GitHub provider SHALL read a pull request's head commit, its check runs and its
+combined status (three requests). It SHALL turn each completed check run into a
+`check_run` event and each non-pending status into a `status` event, shaped as the
+webhook would deliver them and routed to the pull request's refs.
+
+6.3 The poller SHALL hand an event to the dispatcher only when its result
+(`<sha>:<conclusion>`) differs from the last one forwarded for that check, recorded in
+the pull request's poll ledger (`ciSeen`), so a result is forwarded once across cycles
+and restarts.
+
+6.4 A pull request no live session owns SHALL NOT be read.
+
+6.5 WHEN a read fails THEN the poller SHALL record `poll.item_error`, add the failure to
+the cycle's errors, and go on with the next pull request.
+
+6.6 The CI events the poller forwards SHALL pass through the same CI gate (R3, R4) as a
+webhook's.
+
 ## Non-goals
 
-- **Polling CI.** The poller does not list check runs, so a poll-only installation still
-  gets no CI events. A session there can still run `pr checks` itself. Polling every
-  tracked pull request's head commit each cycle would cost two requests per pull request
-  per cycle; that belongs in a separate work item if anyone asks.
+- **Polling CI for a pull request nobody is working.** Only a pull request a live
+  session owns is read (R6.4): its result could reach nobody else.
 - **Re-running jobs.** No verb re-runs a failed job. A re-run hides a failure instead of
   diagnosing it.
 - **A budget that survives a daemon restart.** The counts live in the daemon's memory. A

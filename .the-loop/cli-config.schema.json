@@ -481,6 +481,24 @@
           "default": 3,
           "description": "Per-event delivery attempts before the poller gives up (issue-80). A spawn or comment forward whose dispatch keeps failing is retried each cycle up to this many attempts; after that the poller logs a terminal failure (poll.spawn_failed / poll.comment_failed) and ignores the event on later polls until new activity re-arms it. An in-flight (still-processing) dispatch is not counted as a failed attempt."
         },
+        "ci": {
+          "type": "object",
+          "description": "CI monitoring on the poll ingress (issue-462). A webhook pushes CI results; a poller has to ask. On its own clock, the poller reads the checks of every listed pull request a live session owns — three requests per pull request: the PR for its head, its check runs, its combined status — and hands each NEW completed result to the dispatcher's CI gate (`routing.ci`), which judges it exactly as it judges a pushed one. The last result forwarded per check is kept in the pull request's poll ledger (`ciSeen`), so a result is forwarded once across cycles and restarts.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Read pull requests' checks on the poll ingress. false: a poll-only installation gets no CI results, as before issue-462."
+            },
+            "intervalSeconds": {
+              "type": "integer",
+              "minimum": 60,
+              "default": 300,
+              "description": "Seconds between CI reads — separate from, and normally longer than, `polling.intervalSeconds`, because each read costs three requests per pull request with a live session. The CI read rides a poll cycle, so it never runs more often than `polling.intervalSeconds`."
+            }
+          }
+        },
         "sources": {
           "type": "array",
           "description": "Ordered list of provider-specific poll sources. Each entry MUST name a `provider`; the remaining keys are that provider's own config (unknown to the core) and describe HOW to poll — label, monitored entity kinds, binary. WHAT to poll is the top-level `repositories` (issue-348), read by every ingress; every github source polls every declared repository.",

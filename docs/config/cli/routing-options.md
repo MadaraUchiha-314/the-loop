@@ -220,8 +220,9 @@ each is recorded as `dispatch.dropped` with reason `ci-not-actionable`.
 
 The gate needs `check_run` in the webhook's events, and `status` too for CI that reports
 commit statuses. Both are in the receiver's default
-[`events`](/config/cli/webhook-options). The poller lists no CI, so a poll-only
-installation gets no CI events; its sessions can still run `pr checks` themselves.
+[`events`](/config/cli/webhook-options). A poll-only installation gets the same events
+from the poller, which reads each live pull request's checks on its own clock
+([`polling.ci`](/config/cli/polling-options#ci-monitoring)).
 
 ### `ci.autofix`
 

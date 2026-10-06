@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -163,6 +164,8 @@ class PollConfig:
     interval_seconds: int = 60
     max_retries: int = 3
     sources: List[dict] = field(default_factory=list)
+    #: CI monitoring on the poll ingress (issue-462): whether, and how often.
+    ci: "PollCiConfig" = field(default_factory=lambda: PollCiConfig())
 
     @classmethod
     def from_mapping(cls, data: Optional[dict]) -> "PollConfig":
@@ -171,6 +174,40 @@ class PollConfig:
             interval_seconds=int(data.get("intervalSeconds", 60)),
             max_retries=max(1, int(data.get("maxRetries", 3))),
             sources=[dict(s) for s in (data.get("sources") or []) if s],
+            ci=PollCiConfig.from_mapping(data.get("ci")),
+        )
+
+
+#: The default and the floor of `polling.ci.intervalSeconds` (issue-462).
+CI_INTERVAL_DEFAULT = 300
+CI_INTERVAL_MIN = 60
+
+
+@dataclass
+class PollCiConfig:
+    """``polling.ci`` — reading a pull request's checks on the poll ingress.
+
+    A webhook delivers CI; a poller has to ask. Asking costs three requests per
+    pull request (the PR for its head, its check runs, its combined status), so
+    it runs on its own, slower clock than the comment poll — and never more
+    often than the poll cycle itself, which is what wakes it.
+    """
+
+    enabled: bool = True
+    interval_seconds: int = CI_INTERVAL_DEFAULT
+
+    @classmethod
+    def from_mapping(cls, data: Optional[dict]) -> "PollCiConfig":
+        data = data or {}
+        raw = data.get("intervalSeconds", CI_INTERVAL_DEFAULT)
+        interval = (
+            raw
+            if isinstance(raw, int) and not isinstance(raw, bool)
+            else CI_INTERVAL_DEFAULT
+        )
+        return cls(
+            enabled=bool(data.get("enabled", True)),
+            interval_seconds=max(CI_INTERVAL_MIN, interval),
         )
 
 
@@ -346,6 +383,18 @@ class PollState:
         item = self._items.setdefault(ref, dict(self._read(ref)))
         self._dirty.add(ref)
         return item
+
+    # -- CI (issue-462) ----------------------------------------------------------
+
+    def ci_seen(self, ref: str, check: str) -> str:
+        """The last ``<sha>:<conclusion>`` forwarded for ``check`` on ``ref``."""
+        return str((self._read(ref).get("ciSeen") or {}).get(check, ""))
+
+    def note_ci(self, ref: str, check: str, value: str) -> None:
+        item = self._item(ref)
+        seen = dict(item.get("ciSeen") or {})
+        seen[check] = value
+        item["ciSeen"] = seen
 
     def is_known(self, ref: str) -> bool:
         return ref in self._items or self._load(ref) is not None
@@ -625,6 +674,7 @@ class PollSummary:
     comments_forwarded: int = 0
     closures: int = 0  # sessions closed because their item ended (issue-94)
     ledger_checks: int = 0  # ledger-only records asked whether they ended (issue-332)
+    ci_forwarded: int = 0  # CI results handed to the dispatcher's CI gate (issue-462)
     failures: int = 0  # events given up after exhausting the retry budget (issue-80)
     errors: List[str] = field(default_factory=list)
     interrupted: bool = False  # a stop was requested mid-cycle (issue-159)
@@ -667,6 +717,7 @@ class PollPlan:
 
     providers: List[PollProvider]
     interval_seconds: int
+    ci: PollCiConfig = field(default_factory=PollCiConfig)
 
 
 class Poller:
@@ -741,6 +792,11 @@ class Poller:
         # notice without a network.
         self._comment_client = comment_client
         self._warned_missing_token = False
+        # When the CI pass last ran (issue-462), on the monotonic clock: in
+        # memory, so a restart reads CI on its first cycle — the ledger's
+        # `ciSeen` is what keeps that from forwarding a result twice.
+        self._ci_last: Optional[float] = None
+        self._ci_due = False
 
     @property
     def control(self) -> ControlConfig:
@@ -794,6 +850,7 @@ class Poller:
         The item in flight always finishes; nothing below it starts.
         """
         summary = PollSummary()
+        self._ci_due = self._ci_is_due()
         for provider in self.providers:
             if stop_event is not None and stop_event.is_set():
                 summary.interrupted = True
@@ -825,6 +882,7 @@ class Poller:
             comments_forwarded=summary.comments_forwarded,
             closures=summary.closures or None,
             ledger_checks=summary.ledger_checks or None,
+            ci_forwarded=summary.ci_forwarded or None,
             failures=summary.failures or None,
             errors=summary.errors or None,
             scopes_polled=summary.scopes_polled or None,
@@ -902,6 +960,8 @@ class Poller:
                 # including after a failure, so an attempt already spent cannot
                 # be spent twice by the next start (issue-159, AC3.2).
                 self.state.flush(item.ref)
+        if self._ci_due:
+            self._poll_ci(provider, listing.items, summary, stop_event)
         # Only ever reached on a SUCCESSFUL and COMPLETE listing: the
         # ProviderError path above returns first, and so does an interrupted
         # walk. Reconciliation closes every active session whose item is absent
@@ -911,6 +971,67 @@ class Poller:
         # complete for some scopes and failed for others (issue-315) reconciles
         # the former and leaves the latter alone: the rule, at the finer grain.
         self._reconcile_closures(provider, open_refs, summary, listing.degraded)
+
+    # -- CI (issue-462) ------------------------------------------------------------
+
+    def _ci_is_due(self) -> bool:
+        """Whether this cycle reads CI: enabled, and its own interval has passed."""
+        ci = self.config.ci
+        if not ci.enabled:
+            return False
+        now = time.monotonic()
+        if self._ci_last is not None and now - self._ci_last < ci.interval_seconds:
+            return False
+        self._ci_last = now
+        return True
+
+    def _poll_ci(
+        self,
+        provider: PollProvider,
+        items: Sequence[WorkItem],
+        summary: PollSummary,
+        stop_event: Optional[threading.Event] = None,
+    ) -> None:
+        """Read the checks of every listed pull request a live session owns, and
+        hand each **new** completed result to the dispatcher (issue-462).
+
+        The dispatcher's CI gate does the judging, exactly as for a webhook: a
+        failure wakes the session with the healing section, a pass resets its
+        count. What this adds is only *seeing* the result: ``ciSeen`` in the
+        item's ledger holds the last ``<sha>:<conclusion>`` forwarded per check,
+        so a result is forwarded once across cycles and restarts. A PR with no
+        live session is not read at all — its result could reach nobody.
+        """
+        for item in items:
+            if stop_event is not None and stop_event.is_set():
+                summary.interrupted = True
+                return
+            refs = provider.refs(item)
+            if not any(self.registry.record_owning(ref) for ref in refs):
+                continue
+            try:
+                events = provider.ci_events(item, refs)
+            except ProviderError as exc:
+                logger.warning("reading the checks of %s failed: %s", item.ref, exc)
+                eventlog.emit(
+                    "poll.item_error",
+                    level="warning",
+                    work_item=item.ref,
+                    error=f"checks: {exc}",
+                    will_retry=True,
+                )
+                summary.errors.append(f"{item.ref} checks: {exc}")
+                continue
+            for check, value, routed in events:
+                if self.state.ci_seen(item.ref, check) == value:
+                    continue
+                # Recorded before the hand-off: at most once. A result lost to a
+                # failed dispatch is superseded by the next push's, and the
+                # session can always ask `the-loop pr status`.
+                self.state.note_ci(item.ref, check, value)
+                summary.ci_forwarded += 1
+                self.dispatcher.handle(routed)
+            self.state.flush(item.ref)
 
     def _record_scopes(
         self, provider: PollProvider, listing: Listing, summary: PollSummary
@@ -1809,6 +1930,7 @@ class Poller:
             return
         self.providers = plan.providers
         self.config.interval_seconds = plan.interval_seconds
+        self.config.ci = plan.ci
         logger.info(
             "hot-reloaded polling: %d source(s), interval=%ss",
             len(plan.providers),

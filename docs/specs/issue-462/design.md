@@ -239,6 +239,44 @@ budget, which belongs to the dispatcher instance.
 - `ci.autofix_exhausted` — the "attempts spent" notice delivered (same fields).
 - `dispatch.dropped` gains the reasons `ci-not-actionable` and `ci-autofix-exhausted`.
 
+## Part D — CI on the poll ingress (R6)
+
+Added on review ([PR #470](https://github.com/MadaraUchiha-314/the-loop/pull/470)): a
+poll-only installation must get the feature too, on a polling frequency of its own.
+
+```mermaid
+flowchart LR
+  T["poll cycle"] --> D{"polling.ci due?<br/>(own interval)"}
+  D -- no --> X["comments only"]
+  D -- yes --> L["each listed PR<br/>a live session owns"]
+  L --> P["provider.ci_events<br/>get_pull · check-runs · status"]
+  P --> C{"ciSeen[check] ==<br/>sha:conclusion?"}
+  C -- yes --> S["skip"]
+  C -- no --> N["note it, then<br/>dispatcher.handle"] --> G["CI gate (Part B)"]
+```
+
+- **Config.** `polling.ci.enabled` (default `true`) and `polling.ci.intervalSeconds`
+  (default 300, floor 60), parsed into `PollConfig.ci` (`PollCiConfig`) and carried on
+  `PollPlan`, so a hot reload changes them like `intervalSeconds`.
+- **When.** `Poller._ci_is_due` decides once per cycle, on the monotonic clock. The CI
+  read rides the cycle, so its effective cadence is the larger of the two intervals.
+  The clock is in memory; after a restart the first cycle reads CI, and the ledger keeps
+  that from forwarding a result twice.
+- **What.** `Poller._poll_ci` runs after a provider's items are processed, for each item
+  whose refs `registry.record_owning` finds. The provider contract gains
+  `ci_events(item, refs) -> [(check key, "<sha>:<conclusion>", RoutedEvent)]`, default
+  `[]`, so the core stays provider-agnostic. `GitHubPollProvider.ci_events` makes the
+  three reads and builds a `check_run` payload (with `pull_requests: [{number}]`, the
+  check run's `id`, `app` and `output`) or a `status` payload. A check still running is
+  left out.
+- **Once.** `PollState.ci_seen` / `note_ci` keep `ciSeen: {check key: "<sha>:<conclusion>"}`
+  in the pull request's poll ledger. The value is recorded *before* the hand-off (at
+  most once): a result lost to a failed dispatch is superseded by the next push's, and
+  the session can always run `pr status`. The delivery id is stable per (PR, check,
+  result), so the dispatcher's dedup also drops a repeat inside its window.
+- **Errors.** A `ProviderError` from one pull request's read is `poll.item_error` plus a
+  cycle error; the next pull request is still read.
+
 ## Part C — the skill
 
 - `reference/workflow.md` gains **§ Self-healing CI**: the procedure (R5.1–R5.3), what
@@ -279,7 +317,9 @@ budget, which belongs to the dispatcher instance.
   be another lookup. And a repository that sends only `check_run` would get nothing.
 - **The daemon posts the escalation comment itself.** It would need its own wording of
   what was tried, which only the session knows.
-- **Poll CI for poll-only installs.** Out of scope (requirements § Non-goals).
+- **Add `headRefOid` to the PR listing** to save the `get_pull` read. It would change the
+  listing's GraphQL document, which the poller's comment path depends on, for one request
+  per PR per CI read. Not worth it at a five-minute default.
 - **Follow the redirect with PyGithub (`getStream`).** PyGithub strips the token on a
   cross-host redirect, but its stream path cannot be exercised by the suite's replay
   double. Reading `Location` and fetching it ourselves is as safe, and testable.

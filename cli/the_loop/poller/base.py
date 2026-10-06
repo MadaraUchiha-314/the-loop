@@ -14,7 +14,7 @@ Spec: docs/specs/issue-34/design.md §2.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Type, TypeVar
+from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Tuple, Type, TypeVar
 
 from ..sessions import WorkItemRef, host_from_url
 from ..webhook.router import RoutedEvent
@@ -273,6 +273,20 @@ class PollProvider:
     ) -> RoutedEvent:
         """A ``labeled=False`` event routing ``comment`` to ``item``'s session."""
         raise NotImplementedError
+
+    def ci_events(
+        self, item: WorkItem, refs: List[WorkItemRef]
+    ) -> List[Tuple[str, str, RoutedEvent]]:
+        """The completed CI results on ``item``'s head, as webhook-shaped events
+        (issue-462): ``(check key, "<sha>:<conclusion>", event)`` each.
+
+        The key names the check within the item; the value changes when the
+        result does, which is what the core's ledger compares. The default says
+        "this provider does not read CI" — an issue, or a backing system with no
+        checks, returns nothing. Raise :class:`ProviderError` when the backing
+        system could not be reached.
+        """
+        return []
 
     # -- closure reconciliation (issue-94, opt-in) -----------------------------
     #
