@@ -1,3 +1,9 @@
+## v19.25.0 (2026-10-06)
+
+### Feat
+
+- **issue-462**: CI monitoring and self-healing for a pull request's checks (#470)
+
 ## v19.24.0 (2026-10-06)
 
 ### Feat
