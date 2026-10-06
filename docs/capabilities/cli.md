@@ -55,9 +55,13 @@ self-learning/ML capabilities.
   `false`. Each SHALL run through the control-plane service when one answers `/health`
   (the daemon's token; the session holds none), and otherwise in-process on
   `integrations.github.api.tokenEnv` with a note on stderr — never auto-starting a
-  service (decision-140). `ticket close` and `pr resolve-thread` (a thread of that PR
-  only) complete the set. Every lifecycle act (`pr create`, `pr merge`, `pr
-  resolve-thread`, `ticket close`) SHALL act only for a work item registered on the
+  service (decision-140). `ticket close`, `pr resolve-thread` (a thread of that PR
+  only) and `pr ready` complete the set. WHEN `pr ready` is run for an open draft THEN
+  it SHALL take the PR out of draft (GitHub's `markPullRequestReadyForReview`, addressed
+  by the node id GitHub returned for that PR) and exit 0; an already-ready PR SHALL be a
+  no-op that exits 0 (`changed: false`), and a closed or merged one SHALL be refused
+  with no write (issue-465). Every lifecycle act (`pr create`, `pr ready`, `pr merge`,
+  `pr resolve-thread`, `ticket close`) SHALL act only for a work item registered on the
   executing instance, with an ad-hoc `the-loop do` work item as the one exception
   (decision-140 D8). Registered means **accepted** (issue-453, decision-141): a live
   session record, a live session recording the target as its pull request, **or** a
@@ -474,6 +478,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-465 | `the-loop pr ready <pr>` takes a draft pull request out of draft (2026-10-06): `core.github_ops.mark_ready` reads the PR, then sends `markPullRequestReadyForReview` with the node id GitHub returned (`GitHubClient.mark_pull_ready`; REST cannot clear `draft`), behind the same lifecycle guard as `pr merge`. An already-ready PR is a no-op, a closed or merged one is refused, event `work_item.pr_ready`. Before, a PR opened with `pr create --draft` could leave draft only through `gh` | [spec](../specs/issue-465/), [pr](../cli/commands/pr.md), [control-plane](control-plane.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/465) |
 | issue-466 | A linked pull request carries every arming label (2026-10-06): `pr create`, `sessions link-pr` and `link-pr --discover` put the whole `routing.autoExecuteLabels` list on the PR they record (`core.github_ops.link_pull_request`, event `work_item.pr_labelled`). Before, labelling was the agent's job and the skill named "the label", so with two labels configured the PR carried one, the poller filtered it, and its review comments were never fetched | [spec](../specs/issue-466/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/466) |
 | issue-453 | Lifecycle authority for an accepted, parked work item (2026-10-02): `core.github_ops._authority` gains a second source of ownership beside the session registry — the control record this instance wrote for a work item not yet ended — so `ticket close`, `pr create`, `pr merge` and `pr resolve-thread` act on an item `sessions start` parked at its first human gate without a session; `ticket close` on such an item also records the `stop` that cancels its pending start (`startCancelled`), idempotently. A record another instance wrote, an ended item's and an unreadable one grant nothing | [spec](../specs/issue-453/), [decision-141](../decisions/decision-141.md), [ticket](../cli/commands/ticket.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/453) |
 | issue-452 | `check <ref>` and `graph status <ref>` report an ended work item whose checkout was cleaned up as `ARCHIVED — <outcome>`, with the closure, the frozen selections, the delivering pull requests and the evidence the closure recorded, or say the archived detail is unavailable — never the graph's start node (2026-10-02) | [spec](../specs/issue-452/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/452) |

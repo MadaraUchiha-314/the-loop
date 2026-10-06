@@ -384,6 +384,21 @@ def test_ticket_close_and_pr_resolve_thread(fake, config, tmp_path, capsys):
     assert fake.closed == [("octo", "repo", 5, "not_planned")]
 
 
+def test_issue_465_pr_ready_marks_the_draft_ready(fake, config, tmp_path, capsys):
+    path = config()
+    _cli(path, *_register_argv(tmp_path))
+    _cli(path, "sessions", "link-pr", "--work-item", REF, "--pull-request", "12")
+    fake.pulls[("octo", "repo", 12)] = {
+        "state": "open",
+        "draft": True,
+        "node_id": "PR_kw12",
+    }
+    capsys.readouterr()
+    assert _cli(path, "pr", "ready", "12", "--work-item", REF) == 0
+    assert fake.readied == ["PR_kw12"]
+    assert "marked github:octo/repo#12 ready for review" in capsys.readouterr().out
+
+
 def test_link_pr_discover_passes_a_fork_head_owner(fake, config, tmp_path, monkeypatch):
     checkout = tmp_path / "checkout"
     _git_checkout(checkout, "feat/x")

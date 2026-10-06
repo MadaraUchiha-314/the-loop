@@ -1069,6 +1069,38 @@ def test_resolve_review_thread_is_the_mutation_with_the_id_as_a_variable(
         client.resolve_review_thread("x y")
 
 
+def test_mark_pull_ready_is_the_mutation_with_the_node_id_as_a_variable(
+    client, github_replay
+):
+    """issue-465 — REST cannot clear ``draft``; the GraphQL mutation does."""
+    github_replay.graphql(
+        "markPullRequestReadyForReview",
+        {
+            "markPullRequestReadyForReview": {
+                "pullRequest": {"id": "PR_kw1", "isDraft": False}
+            }
+        },
+    )
+    assert client.mark_pull_ready("PR_kw1") is True
+    (call,) = github_replay.graphql_calls()
+    assert call.json["variables"] == {"pullRequestId": "PR_kw1"}
+    with pytest.raises(GitHubApiError, match="pull request id"):
+        client.mark_pull_ready("x y")
+    assert len(github_replay.graphql_calls()) == 1
+
+
+def test_mark_pull_ready_reports_a_pull_request_still_in_draft(client, github_replay):
+    github_replay.graphql(
+        "markPullRequestReadyForReview",
+        {
+            "markPullRequestReadyForReview": {
+                "pullRequest": {"id": "PR_kw1", "isDraft": True}
+            }
+        },
+    )
+    assert client.mark_pull_ready("PR_kw1") is False
+
+
 def test_open_pulls_for_head_asks_for_a_forks_head(client, github_replay):
     github_replay.on("GET", "/repos/octo/repo/pulls", 200, [])
     client.open_pulls_for_head(OWNER, REPO, "feat/x", head_owner="me")

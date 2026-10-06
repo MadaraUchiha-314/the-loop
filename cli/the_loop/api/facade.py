@@ -504,6 +504,12 @@ class CoreFacade:
         self._self(instance)
         return core_github.resolve_thread(ref, thread, work_item, config=self.config)
 
+    def mark_pull_request_ready(
+        self, ref: str, work_item: str = "", instance: str = ""
+    ) -> Dict[str, Any]:
+        self._self(instance)
+        return core_github.mark_ready(ref, work_item, config=self.config)
+
     def merge_pull_request(
         self,
         ref: str,

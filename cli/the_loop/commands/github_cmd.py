@@ -218,7 +218,9 @@ def _add_pr(parser: argparse.ArgumentParser) -> None:
 @register
 class PrCommand(Command):
     name = "pr"
-    help = "Open, inspect or merge a pull request for a work item (never needs gh)"
+    help = (
+        "Open, inspect, ready or merge a pull request for a work item (never needs gh)"
+    )
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         actions = parser.add_subparsers(dest="pr_command", required=True)
@@ -276,6 +278,13 @@ class PrCommand(Command):
             "--thread", required=True, help="The thread's id (PRRT_…)."
         )
         resolve.set_defaults(_action=self._resolve)
+
+        ready = actions.add_parser(
+            "ready",
+            help="Take a draft PR out of draft, ready for review",
+        )
+        _add_pr(ready)
+        ready.set_defaults(_action=self._ready)
 
         merge = actions.add_parser(
             "merge",
@@ -378,6 +387,19 @@ class PrCommand(Command):
                 ),
                 lambda: github_ops.resolve_thread(
                     args.pull_request, args.thread, args.work_item, _cli_config()
+                ),
+            )
+        )
+
+    def _ready(self, args: argparse.Namespace) -> int:
+        return _run(
+            lambda: harness_routed(
+                lambda c: c.post(
+                    "/pull-requests/ready",
+                    {"ref": args.pull_request, "workItem": args.work_item},
+                ),
+                lambda: github_ops.mark_ready(
+                    args.pull_request, args.work_item, _cli_config()
                 ),
             )
         )

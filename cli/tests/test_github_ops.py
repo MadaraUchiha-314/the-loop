@@ -739,6 +739,107 @@ def test_resolve_thread_of_an_unowned_pull_request_is_refused(tmp_path):
     assert result["exitCode"] == 1 and fake.calls == []
 
 
+# -- pr ready (issue-465) ---------------------------------------------------------
+
+
+def _draft(fake, number=12, **fields):
+    doc = {"number": number, "state": "open", "draft": True, "node_id": "PR_kw12"}
+    doc.update(fields)
+    fake.pulls[("octo", "repo", number)] = doc
+
+
+def test_issue_465_pr_ready_marks_a_registered_work_items_draft_ready(
+    tmp_path, monkeypatch
+):
+    _register_pr(tmp_path)
+    fake = FakeGitHubClient()
+    _draft(fake)
+    emitted = []
+    monkeypatch.setattr(
+        github_ops.eventlog, "emit", lambda name, **kw: emitted.append((name, kw))
+    )
+    result = github_ops.mark_ready("12", REF, _config(tmp_path), client=fake)
+    assert result["exitCode"] == 0
+    assert result["pullRequest"] == "github:octo/repo#12"
+    assert result["ready"] is True and result["changed"] is True
+    assert fake.readied == ["PR_kw12"]
+    assert fake.pulls[("octo", "repo", 12)]["draft"] is False
+    assert "ready for review" in _words(result)
+    assert ("work_item.pr_ready", {"pull_request": "github:octo/repo#12"}) in emitted
+
+
+def test_issue_465_pr_ready_on_a_ready_pull_request_writes_nothing(tmp_path):
+    _register_pr(tmp_path)
+    fake = FakeGitHubClient()
+    _draft(fake, draft=False)
+    result = github_ops.mark_ready("12", REF, _config(tmp_path), client=fake)
+    assert result["exitCode"] == 0
+    assert result["ready"] is True and result["changed"] is False
+    assert fake.readied == [] and fake.calls_to == ["get_pull"]
+    assert "already ready" in _words(result)
+
+
+@pytest.mark.parametrize(
+    "fields, word",
+    [({"state": "closed", "merged": True}, "merged"), ({"state": "closed"}, "closed")],
+)
+def test_issue_465_pr_ready_refuses_a_pull_request_that_is_not_open(
+    tmp_path, fields, word
+):
+    _register_pr(tmp_path)
+    fake = FakeGitHubClient()
+    _draft(fake, **fields)
+    result = github_ops.mark_ready("12", REF, _config(tmp_path), client=fake)
+    assert result["exitCode"] == 1 and result["ready"] is False
+    assert fake.readied == [] and word in _words(result)
+
+
+def test_issue_465_pr_ready_still_draft_after_the_mutation_is_exit_1(tmp_path):
+    _register_pr(tmp_path)
+    fake = FakeGitHubClient()
+    _draft(fake)
+    fake.stays_draft = True
+    result = github_ops.mark_ready("12", REF, _config(tmp_path), client=fake)
+    assert result["exitCode"] == 1 and result["ready"] is False
+
+
+@pytest.mark.parametrize("method", ["get_pull", "mark_pull_ready"])
+def test_issue_465_pr_ready_refused_by_github_is_exit_1(tmp_path, method):
+    _register_pr(tmp_path)
+    fake = FakeGitHubClient(
+        fail_on={method: http_error(403, "Resource not accessible")}
+    )
+    _draft(fake)
+    result = github_ops.mark_ready("12", REF, _config(tmp_path), client=fake)
+    assert result["exitCode"] == 1 and result["changed"] is False
+    assert "403" in _words(result) and "Resource not accessible" in _words(result)
+
+
+def test_abuse_465_pr_ready_of_an_unowned_pull_request_asks_github_nothing(tmp_path):
+    fake = FakeGitHubClient()
+    _draft(fake)
+    result = github_ops.mark_ready(
+        "github:octo/repo#12", config=_config(tmp_path), client=fake
+    )
+    assert result["exitCode"] == 1 and fake.calls == []
+    assert "not a work item registered" in _words(result)
+
+
+def test_abuse_465_pr_ready_on_an_untrusted_host_is_refused_before_a_request(
+    tmp_path,
+):
+    fake = FakeGitHubClient()
+    with pytest.raises(ValueError, match="not a GitHub host"):
+        github_ops.mark_ready(
+            "https://evil.example/octo/repo/pull/12",
+            config=_config(tmp_path),
+            client=fake,
+        )
+    with pytest.raises(ValueError, match="--work-item"):
+        github_ops.mark_ready("12", config=_config(tmp_path), client=fake)
+    assert fake.calls == []
+
+
 def test_discover_finds_a_pull_request_opened_from_a_fork(tmp_path):
     """R4.5 — the checkout is a fork; the PR lives in the work item's repository."""
     _register(tmp_path)

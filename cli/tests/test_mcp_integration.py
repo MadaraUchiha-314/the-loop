@@ -228,9 +228,11 @@ def test_the_github_verbs_are_tools(mcp):
     Feature: a harness that prefers MCP reaches GitHub through the-loop too
       Scenario: an agent discovers the GitHub tools
         When the host calls tools/list
-        Then the comment, ticket and pull-request tools are present, merge included
+        Then the comment, ticket and pull-request tools are present, merge and
+             ready included
 
-    Requirement: docs/specs/issue-447/requirements.md R3.2
+    Requirement: docs/specs/issue-447/requirements.md R3.2;
+                 docs/specs/issue-465/requirements.md R2.3
     """
     client, _ = mcp
     names = {t["name"] for t in client.request("tools/list")["result"]["tools"]}
@@ -244,6 +246,7 @@ def test_the_github_verbs_are_tools(mcp):
         "resolve_review_thread",
         "close_ticket",
         "merge_pull_request",
+        "mark_pull_request_ready",
     } <= names
 
 

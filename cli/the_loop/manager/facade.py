@@ -572,6 +572,19 @@ class ManagerFacade:
             body={"ref": ref, "thread": thread, "workItem": work_item},
         )
 
+    def mark_pull_request_ready(
+        self, ref: str, work_item: str = "", instance: str = ""
+    ) -> Dict[str, Any]:
+        member = self._acting_member(ref, work_item, instance)
+        if self.fleet.is_local(member):
+            return self.core.mark_pull_request_ready(ref, work_item)
+        return self._proxy(
+            member,
+            "POST",
+            "/api/v1/pull-requests/ready",
+            body={"ref": ref, "workItem": work_item},
+        )
+
     def merge_pull_request(
         self,
         ref: str,

@@ -60,7 +60,8 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
    **Reach GitHub through the-loop's verbs, never `gh`** (issue-447; the skill's
    `reference/automation.md` § Reaching GitHub): `the-loop ticket show <ref>` to read the
    ticket now, `the-loop comment` for every comment the loop posts, `the-loop ask` for a
-   question, `the-loop pr create|status|threads|merge` for the pull request. They need no
+   question, `the-loop pr create|status|threads|ready|merge` for the pull request (`pr
+   ready` takes a PR you opened as a draft out of draft before review). They need no
    `gh` login, and where a daemon runs no token in this session; `gh` is only the
    fallback when the CLI is not installed.
 

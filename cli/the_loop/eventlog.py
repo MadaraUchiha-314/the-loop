@@ -796,6 +796,10 @@ EVENT_TYPES: Dict[str, str] = {
     "work_item.pr_merged": (
         "`the-loop pr merge` merged a pull request (pull_request, method)."
     ),
+    "work_item.pr_ready": (
+        "`the-loop pr ready` took a registered work item's draft pull request "
+        "out of draft, ready for review (pull_request; issue-465)."
+    ),
     "work_item.ticket_closed": (
         "`the-loop ticket close` closed a registered work item's ticket "
         "(work_item, reason: completed | not_planned)."
