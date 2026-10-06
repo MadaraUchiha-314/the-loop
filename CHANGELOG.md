@@ -1,3 +1,9 @@
+## v19.22.2 (2026-10-06)
+
+### Fix
+
+- **issue-466**: a linked pull request carries every arming label (#467)
+
 ## v19.22.1 (2026-10-03)
 
 ### Fix
