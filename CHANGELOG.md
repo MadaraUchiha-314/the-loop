@@ -1,3 +1,9 @@
+## v19.27.0 (2026-10-06)
+
+### Feat
+
+- **issue-472**: lay the phase-selection comment out to be skimmed (#474)
+
 ## v19.26.0 (2026-10-06)
 
 ### Feat
