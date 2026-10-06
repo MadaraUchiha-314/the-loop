@@ -69,6 +69,11 @@ _LINK = re.compile(r"!?\[([^\[\]\n]+)\]\(([^()\s]+)\)")
 _TASK_DONE = re.compile(r"^(\s*)[-*+]\s+\[[xX]\]\s*", re.MULTILINE)
 _TASK_OPEN = re.compile(r"^(\s*)[-*+]\s+\[ \]\s*", re.MULTILINE)
 _BULLET = re.compile(r"^(\s*)[-*+]\s+(?=\S)", re.MULTILINE)
+#: A collapsed block's tags (issue-472). Slack has no collapsible block and reads
+#: `<…>` as link syntax, so the open and close lines go and the summary becomes a
+#: bold line of its own; what was collapsed is simply shown.
+_DETAILS_TAG = re.compile(r"^[ \t]*</?details\b[^>\n]*>[ \t]*\n?", re.MULTILINE)
+_SUMMARY = re.compile(r"<summary\b[^>\n]*>([^<\n]*)</summary>")
 #: `<!channel>`, `<!here>`, `<!everyone>`, `<!subteam^…>` — the one thing in a
 #: comment's text that ACTS on Slack (A2). Rewritten after the comment scan, so
 #: the-loop's own `<!-- … -->` markers are already gone. Both rules live in
@@ -140,7 +145,13 @@ def _neutralise(text: str) -> str:
     return neutralise_broadcasts(text)
 
 
+def _unfold(text: str) -> str:
+    """``<details>`` blocks opened: the tags dropped, each summary drawn bold."""
+    return _SUMMARY.sub(r"**\1**", _DETAILS_TAG.sub("", text))
+
+
 def _line_rules(text: str) -> str:
+    text = _unfold(text)
     text = _HEADING.sub(r"*\1*", text)
     text = _TASK_DONE.sub("\\1☑ ", text)
     text = _TASK_OPEN.sub("\\1☐ ", text)
@@ -424,7 +435,7 @@ def condense(text: str, limit: int, url: str = "") -> str:
     the block that no longer fits is cut at a sentence; one closing line links
     the full text whenever anything was cut, left out or replaced.
     """
-    text = _neutralise(strip_comments(text)).strip()
+    text = _outside_code(_neutralise(strip_comments(text)), _unfold).strip()
     if not text:
         return ""
     blocks = _parse(text)

@@ -450,6 +450,15 @@ The other default, at the same gate and by the same person
   Ticking one SHALL select it; leaving it unticked, or never naming it in the reply, SHALL
   leave it unselected. Every unreadable-input path SHALL resolve to *not selected* — the
   fail-closed direction for a phase that adds a review rather than gating one.
+- The phase-selection checklist SHALL be laid out to be skimmed (issue-472). It SHALL
+  open with a titled question and a quick start (the one reply that runs the full
+  process, and how to tailor it). It SHALL group the phase rows under one heading and
+  every non-phase setting under a second. Each question SHALL be a heading opened by an
+  emoji no other heading uses. Each setting SHALL state its default before its rows, and
+  every explanation SHALL sit in a collapsed `<details>` block that holds no row. The
+  rows' shape and order SHALL NOT change with the layout, because they are what the
+  reply parser and the Slack mirror read. Relayed to Slack, `<details>` SHALL be unfolded
+  and a `<summary>` drawn as a bold line.
 - A selection SHALL be recorded in `work-item-state.json` as `optIns[<node>] = {via, token,
   by, at}` (`graph.opt_ins_selected`), filtered through the compiled graph on every read
   exactly as `skips` is, and never applied to a node the pointer already entered. The
@@ -1020,6 +1029,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-472 | The `phase-selection` comment is laid out to be skimmed (2026-10-06): a titled question and a quick start first, then the phases and the non-phase settings as two groups, a heading per question opened by an emoji of its own, each setting's default stated before its rows, and every explanation collapsed under `<details>`. The rows, and so the reply parser and the Slack mirror, are unchanged; the Slack digest unfolds `<details>` and draws a `<summary>` bold. With every section offered, the visible text drops from 989 to 554 words | [spec](../specs/issue-472/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/472) |
 | issue-471 | `phase-selection` offers the spec chain as one Claude artifact (2026-10-06): a non-phase `claude-artifact` row, unticked, offered wherever the surface row is. The signed reply freezes `claudeArtifact` into `work-item-state.json`, the decision record, the frozen graph and the archive — `true` only when ticked and the work item resolves to the `claude` harness (or one the gate cannot know); a tick on another harness is *not applied* and the confirmation names it. The outer loop's graph-context block then carries one fixed line, and the skill carries the procedure. The files stay what every gate reads; an artifact comment never answers a gate. The Slack mirror keeps the row as a non-phase row | [spec](../specs/issue-471/), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/471) |
 | issue-452 | A completed work item stays completed after normal cleanup (2026-10-02): `core.graphs.check` answers a ref whose state file is not found from the portable record's `ended` stamp — `archived` with the outcome and the terminal record the closure kept, no node findings, `ok` only for `completed`; the CLI prints `ARCHIVED — <outcome>` (or that the detail is unavailable). Before, `check github:…#3` from the deployment directory after `keepCheckoutOnClose: false` cleanup reported `phase-selection`, `ok: false` and the full process missing | [spec](../specs/issue-452/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/452) |
 | issue-429 | The stop gate stops demanding a phase the work item never entered (2026-09-28): the `check` report carries `pointer` (the node work-item state records) beside `currentNode`, and `the-loop-gate.py` blocks only on the first unmet node at or before it — inconclusive when there is no position. Before, a work item parked at `phase-selection` with its selection recorded was told on every turn to write `design.md`, because `--recompute` places `currentNode` at the first node the artifacts leave unmet | [spec](../specs/issue-429/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/429) |

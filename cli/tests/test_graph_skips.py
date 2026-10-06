@@ -1362,7 +1362,7 @@ def test_the_checklist_offers_opt_in_phases_unticked_and_described(
     body = fake_github.posted[0]
     assert "- [ ] deep-review — a different model reads the locked requirements" in body
     assert "- [x] deep-review" not in body
-    assert "do NOT run unless you tick them" in body
+    assert "Optional phases — off unless you tick them" in body
     assert "- [x] requirements" in body  # the other default, untouched
 
 

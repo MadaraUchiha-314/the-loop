@@ -386,31 +386,31 @@ def _channel_lines(ctx: HookContext) -> List[str]:
     back to the person about to sign the selection.
     """
     declared = _declared_channels(ctx)
-    lines = [
-        "**Is this work item worked in a channel of its own?** Also not a "
-        "phase — it is where the-loop posts this item's updates, and where "
-        "messages from authorized users reach it:",
-        "",
-    ]
+    lines = ["#### 💬 Is this work item worked in a channel of its own?", ""]
     if declared:
         lines += [
-            "Already declared: " + ", ".join(f"`{ref}`" for ref in declared) + ".",
+            "**Declared:** " + ", ".join(f"`{ref}`" for ref in declared) + ".",
             "",
             "Reply `the-loop remove-channel <type>@<target>` to undeclare one, or "
             "`the-loop add-channel <type>@<target>` to move the conversation.",
+            "",
         ]
     else:
         lines += [
-            "None declared — this item's updates go to the operator's central "
-            "channel. Reply `the-loop add-channel slack@C0123ABCD` (its "
-            "conversation id, not `#name`) to give it a room of its own.",
+            "**Default:** none declared — this item's updates go to the operator's "
+            "central channel.",
+            "",
+            "Reply `the-loop add-channel slack@C0123ABCD` (its conversation id, not "
+            "`#name`) to give it a room of its own.",
+            "",
         ]
-    lines += [
-        "",
+    lines += _collapsed(
+        "ℹ️ What this means",
+        "Not a phase — it is where the-loop posts this item's updates, and where "
+        "messages from authorized users reach it.",
         "Declare it in a comment of its own, before or after this gate — the "
         "order does not matter, and a comment may carry only one keyword.",
-        "",
-    ]
+    )
     return lines
 
 
@@ -428,68 +428,68 @@ def _choice_lines(ctx: HookContext) -> List[str]:
     Two sections, never one: a work item chooses a model and an effort level
     **separately**, and a reader scanning boxes must never have to work out which
     of two coupled things a row means. Each appears only when it has something to
-    offer, so an install that declared neither gets a byte-identical checklist to
-    the one it gets today.
+    offer, so an install that declared none of them gets no choice sections.
     """
     lines: List[str] = []
-    harnesses = _harness_rows(ctx)
-    models = _model_rows(ctx)
-    effort = _effort_rows(ctx)
+    harness = _harness_for(ctx)
     # What an unticked model section means (issue-451): the default harness's own
     # default model when the operator declared one, named so nobody is surprised.
-    fallback = default_model(ctx.config, _harness_for(ctx))
-    for kind, prefix, names, heading, tail in (
+    fallback = default_model(ctx.config, harness)
+    for kind, prefix, names, heading, default, about in (
         (
             "harness",
             HARNESS_PREFIX,
-            harnesses,
-            "**Which harness should this work item run on?** Not a phase — it is "
-            "the agent CLI its session is. **Tick at most one:**",
-            f"Leave them alone and this work item runs on `{_harness_for(ctx)}`, "
-            "this deployment's default. A model or effort ticked below is kept "
-            "only if the harness it ends up on can run it.",
+            _harness_rows(ctx),
+            "🛠️ Which harness should this work item run on?",
+            f"`{harness}`, this deployment's default.",
+            "Not a phase — it is the agent CLI its session is. A model or effort "
+            "ticked below is kept only if the harness it ends up on can run it.",
         ),
         (
             "model",
             MODEL_PREFIX,
-            models,
-            "**Which model should this work item run on?** Not a phase — it is "
-            "what the session is. **Tick at most one:**",
+            _model_rows(ctx),
+            "🧠 Which model should this work item run on?",
             (
-                f"Leave them alone and this work item runs on `{fallback}`, the "
-                f"`{_harness_for(ctx)}` harness's default model."
+                f"`{fallback}`, the `{harness}` harness's default model."
                 if fallback
-                else "Leave them alone and this work item runs on the model this "
-                "harness is configured with."
+                else "the model this harness is configured with."
             ),
+            "Not a phase — it is what the session is.",
         ),
         (
             "effort",
             EFFORT_PREFIX,
-            effort,
-            "**How hard should it think?** Also not a phase, and independent of "
-            "the model above. **Tick at most one:**",
-            "Leave them alone and the harness's own default effort stands.",
+            _effort_rows(ctx),
+            "🎚️ How hard should it think?",
+            "the harness's own default effort.",
+            "Not a phase, and independent of the model above.",
         ),
     ):
         if not names:
             continue
-        lines += [heading, ""]
+        lines += [
+            f"#### {heading}",
+            "",
+            f"**Default:** {default} **Tick at most one** to change it.",
+            "",
+        ]
         for name in names[:CANDIDATE_LIMIT]:
-            about = _about(ctx, name) if kind == "model" else ""
-            lines.append(f"- [ ] `{prefix}{name}`" + (f" — {about}" if about else ""))
+            detail = _about(ctx, name) if kind == "model" else ""
+            lines.append(f"- [ ] `{prefix}{name}`" + (f" — {detail}" if detail else ""))
         if len(names) > CANDIDATE_LIMIT:
             lines.append(
                 f"- …and {len(names) - CANDIDATE_LIMIT} more not shown "
                 f"(`the-loop models check` lists them all)."
             )
-        lines += [
-            "",
-            tail + " Ticking more than one means the same thing — two ticks are not a "
-            "choice, and guessing which one you meant is how a work item ends up "
-            "somewhere nobody asked for.",
-            "",
-        ]
+        lines += [""]
+        lines += _collapsed(
+            "ℹ️ What this means",
+            about,
+            "Leave them alone and the default stands. Ticking more than one means "
+            "the same thing — two ticks are not a choice, and guessing which one you "
+            "meant is how a work item ends up somewhere nobody asked for.",
+        )
     return lines
 
 
@@ -583,43 +583,85 @@ def _describe(ctx: HookContext, node_id: str) -> str:
     return " ".join(str(getattr(node, "description", "") or "").split())
 
 
+def _collapsed(summary: str, *paragraphs: str) -> List[str]:
+    """An explanation behind a click (issue-472): ``summary`` shown, the prose not.
+
+    Never a row: a collapsed box is a default nobody sees. The summary is plain
+    text, because GitHub does not reliably render markdown inside ``<summary>``,
+    and the blank lines are what make GitHub render the markdown between the tags.
+    """
+    lines = ["<details>", f"<summary>{summary}</summary>", ""]
+    for paragraph in paragraphs:
+        lines += [paragraph, ""]
+    return lines + ["</details>", ""]
+
+
 def _checklist_body(ctx: HookContext) -> str:
+    """The checklist comment, laid out to be skimmed (issue-472).
+
+    The action first, then two groups — the phases, and the settings that are not
+    phases — with one heading per question, each opened by an emoji of its own.
+    Every setting says its default before its rows; every explanation sits in a
+    collapsed ``<details>`` block. The rows themselves are the reply contract, so
+    their shape and order never change with the layout around them.
+    """
     skippable, opt_in, protected = _phase_rows(ctx)
     keyword = _execute_keyword(ctx)
     lines = [
-        "🤖 _the-loop_ — **which phases does this work item need?**",
+        "## 🤖 the-loop — which phases does this work item need?",
         "",
-        "Before the loop starts, tell it what this item actually needs. "
-        "**Untick anything this work item does not need"
+        f"> **⚡ Quick start:** reply `{keyword}` with the boxes untouched to run "
+        "the full process"
+        + (
+            " — every phase that is already ticked, and none of the optional ones."
+            if opt_in
+            else "."
+        ),
+        ">",
+        "> **✏️ To tailor it:** untick anything this work item does not need"
         + (", tick anything optional it does want" if opt_in else "")
-        + f", then reply `{keyword}`.** The tick state at that moment is "
-        "frozen and becomes the graph this item walks.",
+        + f", then reply `{keyword}`.",
         "",
     ]
-    lines += [f"- [x] {node}" for node in skippable]
-    lines += [""]
+    lines += _collapsed(
+        "ℹ️ How this works",
+        f"Nothing runs until an authorized user replies `{keyword}`. The tick state "
+        "at that moment is frozen and becomes the graph this item walks.",
+        "A doc fix usually needs little more than implementation and verification; "
+        "a feature usually needs every phase.",
+        f"You can also put the list in the reply itself — a checklist in the "
+        f"`{keyword}` comment wins over the boxes here. Either way the "
+        "**authorization is your reply**: the tick state is a proposal, and saying "
+        "the keyword is what makes it yours.",
+        "Only the boxes under **Phases** change what work is done. Everything under "
+        "**Settings** is about how and where it is done, and each has a default.",
+    )
+    if skippable or opt_in or protected:
+        # No graph in context means no truthful rows, so no empty heading either.
+        lines += ["### 🧩 Phases — ticked ones run", ""]
+        lines += [f"- [x] {node}" for node in skippable]
+        lines += [""]
     if opt_in:
-        # The other default (issue-188). Rendered unticked, in a section of its
+        # The other default (issue-188). Rendered unticked, under a heading of its
         # own, because a reader scanning boxes must never have to work out which
         # way a given row leans: above, unticking removes work; here, ticking
         # adds it.
-        lines += [
-            "**Optional phases — these do NOT run unless you tick them.** They "
-            "are offered, not planned:",
-            "",
-        ]
+        lines += ["#### ➕ Optional phases — off unless you tick them", ""]
         for node in opt_in:
             about = _describe(ctx, node)
             lines.append(f"- [ ] {node}" + (f" — {about}" if about else ""))
         lines += [""]
     if protected:
-        lines += [
-            "These phases always run and are not selectable — they are what keeps "
-            "a lighter work item honest:",
-            "",
-        ]
-        lines += [f"- {node}" for node in protected]
-        lines += [""]
+        # Collapsed, unlike every other list here, because none of it is a choice.
+        # Still bare bullets: that is the shape the Slack mirror reads as
+        # "always runs" (`channels/slack.py`'s `_PLAIN_ROW`).
+        many = len(protected) != 1
+        lines += _collapsed(
+            f"🔒 {len(protected)} more {'phases' if many else 'phase'} always "
+            f"{'run and are' if many else 'runs and is'} not selectable",
+            "They are what keeps a lighter work item honest:",
+            "\n".join(f"- {node}" for node in protected),
+        )
     elif skippable:
         # No protected rows is not an empty section — it is the loudest thing
         # this comment has to say (issue-179). The outer loop protects nothing
@@ -629,43 +671,64 @@ def _checklist_body(ctx: HookContext) -> str:
         # state, in the confirmation here, in every `the-loop check` — and that
         # record is the whole of it; no threat rides on the sentence.
         lines += [
-            "**Every phase of this loop is selectable — including the reviews, the "
-            "security review and the approval gate.** Nothing but this question is "
-            "mandatory. The phases this item skips are recorded as its own "
-            "declared choice — in its work-item state, in a confirmation comment "
-            "here, and in every `the-loop check` from now on — so a lighter run "
-            "is always a visible one.",
+            "⚠️ **Every phase of this loop is selectable — including the reviews, "
+            "the security review and the approval gate.** Nothing but this "
+            "question is mandatory.",
             "",
         ]
+        lines += _collapsed(
+            "ℹ️ How a skipped phase is recorded",
+            "The phases this item skips are recorded as its own declared choice — "
+            "in its work-item state, in a confirmation comment here, and in every "
+            "`the-loop check` from now on — so a lighter run is always a visible one.",
+        )
+    lines += [
+        "### ⚙️ Settings — not phases; each has a default",
+        "",
+        "These decide how and where the work happens, not what work is done. "
+        "Leave alone any you do not care about.",
+        "",
+    ]
     if _asks_surface(ctx):
         lines += [
-            "**Where should the outer loop happen?** This is not a phase — it "
-            "is where the requirements, design, testing plan and task list are "
-            "iterated with you:",
+            "#### 📍 Where should the outer loop happen?",
+            "",
+            "**Default:** on **this work item**, here. Tick the box to move it to a "
+            "pull request.",
             "",
             f"- [ ] `{SURFACE_TOKEN}` — on a pull request in this repository.",
             "",
-            "Leave it unticked (the default) and they happen **on this work "
-            "item**, here. Tick it and they happen on a pull request instead. "
-            "Either way the artifacts are committed files linked from here, and "
-            "each repository this work item contributes code to gets its own "
-            "pull request for the inner loop.",
+        ]
+        lines += _collapsed(
+            "ℹ️ What this means",
+            "Not a phase — it is where the requirements, design, testing plan and "
+            "task list are iterated with you. Leave it unticked (the default) and "
+            "they happen **on this work item**, here. Tick it and they happen on a "
+            "pull request instead.",
+            "Either way the artifacts are committed files linked from here, and each "
+            "repository this work item contributes code to gets its own pull request "
+            "for the inner loop.",
+        )
+        # Offered where there is a spec chain to publish (issue-471), which is
+        # exactly where the surface question is asked.
+        lines += [
+            "#### 📄 Publish the spec chain as a Claude artifact too?",
             "",
-            # Offered where there is a spec chain to publish (issue-471), which
-            # is exactly where the surface question is asked.
-            "**Publish the spec chain as a Claude artifact too?** Not a phase, "
-            "and off unless you tick it — the requirements, design, testing plan "
-            "and task list become one page with a tab per file, which you can "
-            "read and comment on in Claude:",
+            "**Default:** no — the markdown files only. Only the "
+            f"`{CLAUDE_HARNESS}` harness can publish one.",
             "",
             f"- [ ] `{CLAUDE_ARTIFACT_TOKEN}` — one Claude artifact for this work "
             f"item (`{CLAUDE_HARNESS}` harness only).",
             "",
-            f"**Only the `{CLAUDE_HARNESS}` harness can publish one.** On any other "
-            "harness the-loop ignores this box. The markdown files stay the source "
-            "of truth either way, and every gate still reads them.",
-            "",
         ]
+        lines += _collapsed(
+            "ℹ️ What this means",
+            "Not a phase, and off unless you tick it. The requirements, design, "
+            "testing plan and task list become one page with a tab per file, which "
+            "you can read and comment on in Claude.",
+            "On any other harness the-loop ignores this box. The markdown files "
+            "stay the source of truth either way, and every gate still reads them.",
+        )
     else:
         # A contribution has no outer loop to place (issue-199), so there is no
         # box here — but say where the conversation happens anyway, rather than
@@ -680,42 +743,33 @@ def _checklist_body(ctx: HookContext) -> str:
         ]
     default_mode = _pr_sessions_default(ctx)
     lines += [
-        "**How many sessions should this work item's pull requests get?** Also "
-        "not a phase — it is how many harness conversations run for this item. "
-        "**Tick exactly one**; this deployment's default is already ticked:",
+        "#### 🧵 How many sessions should this work item's pull requests get?",
+        "",
+        f"**Default:** `{default_mode}`, already ticked. **Tick exactly one** to "
+        "change it.",
         "",
     ]
     for token, mode in PR_SESSIONS_TOKENS.items():
         mark = "x" if mode == default_mode else " "
         lines.append(f"- [{mark}] `{token}` — {PR_SESSIONS_ROW_TEXT[mode]}")
-    lines += [
-        "",
+    lines += [""]
+    lines += _collapsed(
+        "ℹ️ What this means",
+        "Not a phase — it is how many harness conversations run for this item.",
         f"Leave them alone and `{default_mode}` stands — the operator's "
         "`routing.tmux.sessionPerPr`. Ticking none, or more than one, means the "
-        "same thing. A pull request only ever gets a session when it can get a "
-        "**working tree of its own**, in every mode: where it cannot, the event "
-        "is delivered into this work item's session and recorded as "
-        "`session.pr_session_declined`.",
-        "",
-    ]
+        "same thing.",
+        "A pull request only ever gets a session when it can get a **working tree "
+        "of its own**, in every mode: where it cannot, the event is delivered into "
+        "this work item's session and recorded as `session.pr_session_declined`.",
+    )
     lines += _channel_lines(ctx)
     lines += _choice_lines(ctx)
     lines += [
-        "A doc fix usually needs little more than implementation and "
-        "verification; a feature usually needs every phase. Reply "
-        f"`{keyword}` with the boxes untouched "
-        "to run the full process"
-        + (
-            " — every phase above that is already ticked, and none of the "
-            "optional ones."
-            if opt_in
-            else "."
-        ),
+        "### ✅ Ready?",
         "",
-        f"You can also put the list in the reply itself — a checklist in the "
-        f"`{keyword}` comment wins over the boxes above. Either way the "
-        "**authorization is your reply**: the tick state is a proposal, and "
-        "saying the keyword is what makes it yours.",
+        f"Reply `{keyword}`. The boxes as they stand at that moment are frozen as "
+        "this work item's selection.",
         "",
         SELECTION_MARKER,
     ]
