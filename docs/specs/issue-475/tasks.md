@@ -197,7 +197,7 @@ Two decisions from the gate are carried here:
 
 ### PR 4 — ingress (poller, webhook doorbell, allow-list)
 
-- [ ] 4.1 **Allow-list by provider.**
+- [x] 4.1 **Allow-list by provider.**
   - Red first: `test_jira_authz.py`, covering an exact `accountId` match, an unlisted
     author, `test_missing_actor_is_unauthorized_on_jira`, and DC `key`.
   - Then add `authz.is_authorized_on`, the explicit `jira` property in the

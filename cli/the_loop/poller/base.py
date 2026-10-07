@@ -260,6 +260,20 @@ class PollProvider:
         """All conversation comments currently on ``item``."""
         raise NotImplementedError
 
+    def comment_origin(self, comment: Comment) -> str:
+        """Whose words ``comment`` is: ``"self"``, ``"relay"`` or ``"human"``.
+
+        The default is the marker test every provider had (issue-64): a body
+        carrying the-loop's self-marker is the-loop's own, anything else is a
+        person's, judged by its own author. A provider that can say more
+        overrides it — Jira, whose service account's own comments are the-loop's
+        whatever their text, and whose relays carry a marker of their own
+        (issue-475, :func:`~the_loop.authz.jira_comment_origin`).
+        """
+        from ..authz import ORIGIN_HUMAN, ORIGIN_SELF, is_self_authored
+
+        return ORIGIN_SELF if is_self_authored(comment.body) else ORIGIN_HUMAN
+
     def refs(self, item: WorkItem) -> List[WorkItemRef]:
         """Registry refs an item maps to (itself + any linked items)."""
         raise NotImplementedError

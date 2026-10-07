@@ -106,6 +106,27 @@ convenience of a readable config outweighs that, and know which you chose.
 A **display name** is not accepted in either form. It is neither unique nor
 constrained — the person sets it themselves — so only the handle resolves.
 
+### `authorizedUsers[].jira`
+
+- **Type:** `string`
+- **Default:** none
+
+The person's Jira id on [`integrations.jira.site`](/config/cli/integrations-options#jira-site):
+the Cloud `accountId` (`5b10ac8d82e05b22cc7d4ef5`), or the Data Center user `key`
+(`JIRAUSER10100`). It is the immutable id the Jira API returns, never a display name or
+an email (issue-475, R7). A Jira comment on a Jira work item is authorized on this id,
+by both ingresses and by the control seam's named-actor re-check, with an exact match.
+
+Two rules differ from GitHub on purpose:
+
+- A Jira event with **no author** is never authorized. GitHub's "no actor means a CI
+  event" exemption has no counterpart on Jira.
+- A person's GitHub login does not stand in for their Jira id, and the reverse is also
+  true. Name both ids on one entry to let a person act on both trackers.
+
+Find an `accountId` in the person's Jira profile URL (`/jira/people/<accountId>`), or
+from `GET /rest/api/3/myself` while signed in as them.
+
 ### `authorizedUsers[].name`
 
 - **Type:** `string`

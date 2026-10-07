@@ -43,7 +43,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Sequence, Tuple
 
 from .. import __version__, eventlog
-from ..authz import is_authorized, is_self_authored, mark_self_authored
+from ..authz import (
+    ORIGIN_RELAY,
+    ORIGIN_SELF,
+    is_authorized,
+    is_authorized_on,
+    is_self_authored,
+    mark_self_authored,
+)
 from ..comments import post_issue_comment
 from ..ghapi import GitHubClient
 from ..control import ControlConfig, ControlStore, parse_command
@@ -1364,7 +1371,7 @@ class Poller:
         # (issue-197, decision-074). It is not evidence about a comment, which
         # carries its own author; those are judged one by one below, exactly as
         # the webhook path judges an event by its actor.
-        item_authorized = is_authorized(item.author, self.authorized_users)
+        item_authorized = self._authorized_on(item.provider, item.author)
         # An authorized user's *recorded* arming command is better evidence of the
         # same thing — it names who asked and when — so either satisfies the
         # presence gate. Only the dispatcher writes that record, and only for a
@@ -1413,7 +1420,7 @@ class Poller:
         # guards are per COMMENT, so who opened the item never silences an
         # authorized user's instruction (issue-197).
         if first_sight:
-            pending = self._pending_control_ids(ref, comments)
+            pending = self._pending_control_ids(ref, comments, provider, item.provider)
             self.state.baseline_comments(
                 ref,
                 [cid for cid in live_ids if cid not in pending],
@@ -1455,11 +1462,21 @@ class Poller:
             # grant buys delivery and nothing else — `spawn_authorized` above and
             # `_pending_control_ids` below keep asking `is_authorized` alone, so a
             # collaborator can neither arm the item nor command the daemon.
-            allowed = is_authorized(
-                comment.author, self.authorized_users
-            ) or self.collaborator_store.permits(comment.author, refs)
-            if not allowed or is_self_authored(comment.body):
-                if is_self_authored(comment.body):
+            origin = provider.comment_origin(comment)
+            if item.provider == "github":
+                allowed = is_authorized(
+                    comment.author, self.authorized_users
+                ) or self.collaborator_store.permits(comment.author, refs)
+            else:
+                # Another tracker's comment is judged on that tracker's ids
+                # (issue-475, R7) — and a collaborator roster holds GitHub logins,
+                # so it grants nothing there. A relay the provider verified came
+                # from its service account is the operator's words.
+                allowed = origin == ORIGIN_RELAY or self._authorized_on(
+                    item.provider, comment.author
+                )
+            if not allowed or origin == ORIGIN_SELF:
+                if origin == ORIGIN_SELF:
                     self._publish("agent", ref, comment)
                 self.state.resolve_comment(ref, comment.id)
                 continue
@@ -1574,7 +1591,25 @@ class Poller:
         except Exception:  # noqa: BLE001 — the bus never touches ingress
             logger.exception("comment publisher raised for %s", ref)
 
-    def _pending_control_ids(self, ref: str, comments: Sequence[Comment]) -> set:
+    def _authorized_on(self, provider: str, actor: Optional[str]) -> bool:
+        """``actor`` on the allow-list of ``provider``'s tracker (issue-475, R7).
+
+        GitHub: :func:`is_authorized` over this poller's logins, as before. Any
+        other provider: the exact id on that channel of the dispatcher's
+        principals — a missing actor is unauthorized there.
+        """
+        if provider == "github":
+            return is_authorized(actor, self.authorized_users)
+        principals = getattr(getattr(self.dispatcher, "config", None), "principals", [])
+        return is_authorized_on(provider, actor, principals or [])
+
+    def _pending_control_ids(
+        self,
+        ref: str,
+        comments: Sequence[Comment],
+        provider: Optional[PollProvider] = None,
+        provider_name: str = "github",
+    ) -> set:
         """Ids of comments carrying a control command nobody has processed (issue-119).
 
         The poller's *only* job here is to decide which comments are still
@@ -1608,9 +1643,16 @@ class Poller:
         for comment in comments:
             if not comment.id:
                 continue
-            if not is_authorized(comment.author, self.authorized_users):
+            origin = (
+                provider.comment_origin(comment)
+                if provider is not None
+                else (ORIGIN_SELF if is_self_authored(comment.body) else "")
+            )
+            if origin != ORIGIN_RELAY and not self._authorized_on(
+                provider_name, comment.author
+            ):
                 continue
-            if is_self_authored(comment.body):
+            if origin == ORIGIN_SELF:
                 continue
             if parse_command(comment.body, control).command:
                 pending.add(comment.id)

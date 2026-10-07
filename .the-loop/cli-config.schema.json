@@ -874,6 +874,11 @@
               "slack": {
                 "type": "string",
                 "description": "The person's Slack MEMBER ID (U…, never a display name — names are attacker-chosen): what the Slack channel authorizes replies, button presses and kickoffs on."
+              },
+              "jira": {
+                "type": "string",
+                "pattern": "\\S",
+                "description": "The person's Jira id on `integrations.jira.site` (issue-475): the Cloud `accountId` (e.g. 5b10ac8d82e05b22cc7d4ef5) or the Data Center user `key` — the immutable id the API returns, never a display name or an email. What both ingresses authorize a Jira comment on, and what the control seam re-checks for a command given on a Jira ticket; matched exactly, and a Jira event with no author is never authorized."
               }
             },
             "description": "One PERSON (issue-309, decision-103): a bare string is a GitHub login; a mapping names that person's id on every channel they act on (`github`, `slack`, … — any channel name a provider registers), plus an optional `name`. An entry naming no `github` id may act on the channels it is named on and on nothing that reads GitHub logins."

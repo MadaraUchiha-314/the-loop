@@ -20,6 +20,7 @@ from the_loop.authz import (
     SELF_COMMENT_MARKER,
     is_self_authored,
     mark_self_authored,
+    mark_relayed_on_jira,
     mark_self_authored_on_jira,
 )
 from the_loop.graph.contract import HookContext, WorkItem
@@ -383,18 +384,39 @@ def test_pr_event_still_recorded_on_github():
     "event_type",
     [
         "session.awaiting_input",  # the ask
-        "gate.feedback",  # a relay
         "work-item.reply",  # a mirror
         "phase.started",  # any other event, stamped
     ],
 )
 def test_jira_ledger_stamps_visible_marker(event_type):
     ledger, _, client = _routed(_jira_cli_config())
-    detail = {"gate": "design-approval"} if event_type == "gate.feedback" else {}
-    assert ledger.record(_event(event_type, detail=detail)).ok
+    assert ledger.record(_event(event_type)).ok
     [posted] = client.posted
     assert posted["body"].rstrip("\n").endswith(JIRA_SELF_ATTRIBUTION)
     assert SELF_COMMENT_MARKER not in posted["body"]
+
+
+@pytest.mark.parametrize("event_type", ["gate.feedback", "control.command"])
+def test_jira_ledger_marks_a_relay_with_the_relay_marker(event_type):
+    """A relay is the operator's words on Jira as on GitHub (PR 4 design addendum).
+
+    It carries the relay marker and NOT the self-marker — the self-marker would
+    make the Jira ingress drop the very answer the relay exists to deliver — and
+    its keywords are kept. The marker survives the trip to ADF and back as text.
+    """
+    from the_loop.authz import JIRA_RELAY_ATTRIBUTION, JIRA_RELAY_MARKER
+    from the_loop.jiraformat import adf_to_markdown, markdown_to_adf
+
+    ledger, _, client = _routed(_jira_cli_config())
+    detail = {"gate": "design-approval"} if event_type == "gate.feedback" else {}
+    text = "approved" if event_type == "gate.feedback" else "the-loop pause"
+    assert ledger.record(_event(event_type, detail=detail, text=text)).ok
+    [posted] = client.posted
+    body = posted["body"]
+    assert body.rstrip("\n").endswith(JIRA_RELAY_ATTRIBUTION)
+    assert JIRA_SELF_MARKER not in body and SELF_COMMENT_MARKER not in body
+    assert text in body
+    assert JIRA_RELAY_MARKER in adf_to_markdown(markdown_to_adf(body))
 
 
 def test_jira_ledger_bodies_are_the_github_bodies():
@@ -406,7 +428,10 @@ def test_jira_ledger_bodies_are_the_github_bodies():
         ledger, _, client = _routed(cli_config)
         event = _event(event_type)
         ledger.record(event)
-        expected = mark_self_authored_on_jira(ledger_body(event, cli_config))
+        if event_type == "gate.feedback":  # a relay: the relay marker (PR 4)
+            expected = mark_relayed_on_jira(ledger_body(event, cli_config))
+        else:
+            expected = mark_self_authored_on_jira(ledger_body(event, cli_config))
         assert _no_ts(client.posted[0]["body"]) == _no_ts(expected)
 
 

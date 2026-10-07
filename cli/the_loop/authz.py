@@ -56,7 +56,10 @@ announced.
 from __future__ import annotations
 
 import logging
-from typing import List, Optional, Sequence
+from typing import TYPE_CHECKING, List, Optional, Sequence
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from .identity import Principal
 
 logger = logging.getLogger("the-loop.authz")
 
@@ -84,6 +87,25 @@ JIRA_SELF_ATTRIBUTION = f"🤖 the-loop, autonomous comment · {JIRA_SELF_MARKER
 
 #: What :func:`mark_self_authored` appends, so the Jira form can replace it.
 _GITHUB_STAMP = f"{SELF_COMMENT_ATTRIBUTION}\n{SELF_COMMENT_MARKER}"
+
+# The relay marker (issue-475, design addendum to §C7/§C8). On GitHub a relay — a
+# gate answer or control command an authorized person gave on another channel,
+# recorded on the work item by the ledger — is posted UNMARKED under the
+# operator's own credentials, so both ingresses read it back as the operator's
+# authorized words. On Jira the ledger writes as a dedicated service account, and
+# every comment by that account is the-loop's own (the author test). So a relay
+# carries this visible marker INSTEAD of the agent marker, and the Jira ingress
+# accepts a service-account comment that carries it (and not the agent marker) as
+# authorized — the operator's identity, exactly as on GitHub. On anyone else's
+# comment the marker is just text and grants nothing (:func:`jira_comment_origin`).
+# Like the self-marker, it must never change once shipped.
+JIRA_RELAY_MARKER = "[the-loop:relay]"
+JIRA_RELAY_ATTRIBUTION = f"🗣️ relayed by the-loop · {JIRA_RELAY_MARKER}"
+
+#: What :func:`jira_comment_origin` answers.
+ORIGIN_SELF = "self"
+ORIGIN_RELAY = "relay"
+ORIGIN_HUMAN = "human"
 
 
 def is_self_authored(body: Optional[str]) -> bool:
@@ -131,6 +153,61 @@ def mark_self_authored_on_jira(body: str) -> str:
         .replace(SELF_COMMENT_MARKER, "")
     )
     return f"{text.rstrip()}\n\n{JIRA_SELF_ATTRIBUTION}\n"
+
+
+def mark_relayed_on_jira(body: str) -> str:
+    """A relay's body for Jira: the relay marker, never the agent marker.
+
+    Apply it only to a relay the ledger composed (``relay_body``): the record of
+    an authorized person's gate answer or control command from another channel.
+    Idempotent. Keywords in the body are left intact — the ingress acts on them.
+    """
+    if JIRA_RELAY_MARKER in body:
+        return body
+    return f"{body.rstrip()}\n\n{JIRA_RELAY_ATTRIBUTION}\n"
+
+
+def jira_comment_origin(
+    body: Optional[str], author_id: str, service_account: str
+) -> str:
+    """Whose words a Jira comment is: :data:`ORIGIN_SELF`, ``RELAY`` or ``HUMAN``.
+
+    * any self-marker (the Jira one, or GitHub's) → the-loop's own, whoever posted;
+    * by the service account (``service_account``, from ``myself``) → a **relay**
+      when it carries :data:`JIRA_RELAY_MARKER`, else the-loop's own;
+    * anyone else → a human's, judged by its own author — a relay marker typed by
+      a person grants nothing.
+
+    ``service_account`` empty (``myself`` could not be read) makes nothing a
+    relay: the comment is then judged as a person's, by an author that is on no
+    allow-list unless the operator put it there.
+    """
+    text = body or ""
+    if is_self_authored(text):
+        return ORIGIN_SELF
+    if service_account and author_id == service_account:
+        return ORIGIN_RELAY if JIRA_RELAY_MARKER in text else ORIGIN_SELF
+    return ORIGIN_HUMAN
+
+
+def is_authorized_on(
+    provider: str, actor: Optional[str], principals: Sequence["Principal"]
+) -> bool:
+    """Whether ``actor`` is on the allow-list **for** ``provider`` (issue-475, R7).
+
+    The exact id against :func:`~the_loop.identity.ids_for` on that provider's
+    channel. On ``jira`` the id is the Cloud ``accountId`` or the Data Center
+    user ``key``, and a **missing** actor is unauthorized: GitHub's "no actor is a
+    CI event" exemption (:func:`is_authorized`) does not carry over (R7.2). On
+    ``github`` this is :func:`is_authorized` over the GitHub logins, unchanged.
+    """
+    from .identity import ids_for
+
+    if provider == "github":
+        return is_authorized(actor, ids_for(principals, "github"))
+    if not actor:
+        return False
+    return actor in set(ids_for(principals, provider))
 
 
 def resolve_authorized_users(configured: Sequence) -> List[str]:

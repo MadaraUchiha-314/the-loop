@@ -33,7 +33,7 @@ from ..instance import (
     decide as decide_scope,
     parse_address,
 )
-from ..authz import is_authorized, mark_self_authored
+from ..authz import is_authorized, is_authorized_on, mark_self_authored
 from ..comments import post_issue_comment
 from ..cleanup import CleanupOutcome, cleanup_work_item
 from ..collaborators import CollaboratorStore
@@ -135,6 +135,8 @@ from .router import (
     event_actor,
     event_body,
     event_carries_labels,
+    event_provider,
+    event_relayed,
     normalize_labels,
     pr_work_item,
 )
@@ -1005,6 +1007,21 @@ class Dispatcher:
             config.spawn_prompt_template, DEFAULT_SPAWN_TEMPLATE
         )
 
+    def _actor_authorized(self, routed: RoutedEvent, actor: Optional[str]) -> bool:
+        """Whether ``actor`` is on the allow-list of the tracker ``routed`` came from.
+
+        A GitHub event: :func:`is_authorized` over the GitHub logins, exactly as
+        before issue-475. A Jira event (:func:`event_provider`): the exact Jira id
+        on the configured principals — a missing actor is unauthorized (R7.2) — or a
+        relay the Jira ingress verified came from the service account, which is
+        the operator's words as an unmarked relay is on GitHub.
+        """
+        if event_provider(routed) == "jira":
+            return event_relayed(routed) or is_authorized_on(
+                "jira", actor, self.config.principals
+            )
+        return is_authorized(actor, self.config.authorized_users)
+
     def _is_armed(self, routed: RoutedEvent) -> bool:
         """Whether the spawn policy alone would let this event spawn (R3.3).
 
@@ -1065,7 +1082,7 @@ class Dispatcher:
         actor = event_actor(routed.event, routed.payload)
         if (
             actor
-            and not is_authorized(actor, self.config.authorized_users)
+            and not self._actor_authorized(routed, actor)
             and self.collaborator_store.permits(actor, routed.work_items)
         ):
             return "collaborator-no-spawn"
@@ -1230,7 +1247,7 @@ class Dispatcher:
             # can start or stop a session. So the control path re-checks, and
             # fails closed.
             actor = event_actor(routed.event, routed.payload)
-            if not actor or not is_authorized(actor, self.config.authorized_users):
+            if not actor or not self._actor_authorized(routed, actor):
                 self._reject_control(
                     control.command, routed, actor or "", "unauthorized-actor"
                 )
@@ -1517,11 +1534,7 @@ class Dispatcher:
         """
         actor = event_actor(routed.event, routed.payload) or ""
         refs = [item.ref for item in routed.work_items]
-        if (
-            control.command
-            and actor
-            and is_authorized(actor, self.config.authorized_users)
-        ):
+        if control.command and actor and self._actor_authorized(routed, actor):
             self._reject_control(
                 control.command, routed, actor, scope.outcome, acknowledge=False
             )
@@ -3355,7 +3368,7 @@ class Dispatcher:
         works on an open one.
         """
         actor = event_actor(routed.event, routed.payload) or ""
-        if not actor or not is_authorized(actor, self.config.authorized_users):
+        if not actor or not self._actor_authorized(routed, actor):
             logger.info(
                 "not cleaning up %s: the %s event names %s, so nothing is "
                 "authorized to release its local resources — an authorized user "

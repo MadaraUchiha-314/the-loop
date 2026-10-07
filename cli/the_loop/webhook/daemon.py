@@ -223,6 +223,8 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
         # channels. Reads the config per call, so a reload is honoured.
         publisher=comment_publisher(lambda: cli_config.load_cli_config(_config_path())),
         repositories=repositories,
+        # The Jira ids on the same allow-list (issue-475, R7).
+        principals=config.principals,
     )
 
     def apply(cfg: dict) -> None:
@@ -238,6 +240,7 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
         warn_on_missing_lifecycle_events(router.events)
         router.auto_execute_labels = list(new.auto_execute_labels)
         router.authorized_users = resolve_authorized_users(new.authorized_users)
+        router.principals = list(new.principals)
         # The whole document, not `routing`: `repositories` is a top-level sibling.
         router.repositories = repository_bounds(cfg)
         logger.info(
