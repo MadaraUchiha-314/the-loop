@@ -893,7 +893,9 @@ flowchart LR
   posts there ends with `🤖 the-loop, autonomous comment · [the-loop:agent-comment]`.
   WHEN a Jira comment carries that marker **or** its author is the service account
   (`myself`) THEN it SHALL be the-loop's own, and no gate or ingress SHALL read it as a
-  person's words. Either test alone is enough.
+  person's words. Either test alone is enough. The visible marker counts on a **Jira**
+  body only: on GitHub it is text a person may quote, and a GitHub comment quoting it
+  SHALL be judged by its author as any other.
 - **A relay is the operator's words on Jira, too** (issue-475 PR 4, a design addendum to
   §C7). On GitHub the ledger posts a relay (`gate.feedback`, `control.command`) unmarked,
   under the operator's credentials, so the ingress reads it as that authorized person's

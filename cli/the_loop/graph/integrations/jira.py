@@ -27,6 +27,7 @@ from ...authz import (
     ORIGIN_RELAY,
     is_self_authored,
     jira_comment_origin,
+    mark_self_authored,
     mark_self_authored_on_jira,
 )
 from ...jiraapi import (
@@ -147,7 +148,7 @@ class JiraProvider:
         if (
             comment.is_self
             and JIRA_RELAY_MARKER in comment.body_md
-            and not is_self_authored(comment.body_md)
+            and not is_self_authored(comment.body_md, "jira")
         ):
             try:
                 me = self.client.myself()
@@ -205,12 +206,14 @@ def _as_read(comment: JiraComment) -> str:
     """A comment's body as every gate reads it.
 
     A comment the service account wrote is the-loop's own even when its text
-    lost the marker (an edit in Jira, abuse case 4), so it is handed on carrying
-    the marker: every reader that drops a self-authored comment by its body —
+    lost the marker (an edit in Jira, abuse case 4) or carries only Jira's
+    visible one, so it is handed on carrying both markers: every reader that drops a self-authored comment by its body —
     the feedback gates, the goal and review hooks — then drops this one too.
     """
     if comment.is_self and not is_self_authored(comment.body_md):
-        return mark_self_authored_on_jira(comment.body_md)
+        # Jira's visible marker, and the GitHub one too: the gate readers judge
+        # a body by `is_self_authored`'s default, where Jira's is only text.
+        return mark_self_authored(mark_self_authored_on_jira(comment.body_md))
     return comment.body_md
 
 

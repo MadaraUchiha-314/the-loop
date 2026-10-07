@@ -629,12 +629,15 @@ class JiraClient:
         key = self._key(key)
         found = self._call("list comments", lambda j: j.comments(key))
         read = [self._comment_of(key, getattr(c, "raw", {}) or {}) for c in found or []]
-        unmarked = [c for c in read if not is_self_authored(c.body_md)]
+        unmarked = [c for c in read if not is_self_authored(c.body_md, "jira")]
         me = self._self_id() if unmarked else ""
         return [
             replace(
                 c,
-                is_self=is_self_authored(c.body_md) or bool(me and c.author_id == me),
+                is_self=(
+                    is_self_authored(c.body_md, "jira")
+                    or bool(me and c.author_id == me)
+                ),
             )
             for c in read
         ]

@@ -901,7 +901,10 @@ class Router:
         # the operator's own credentials, so they would otherwise pass the
         # actor check below and re-enter the loop. Checked before authorization
         # so it applies regardless of who technically posted it.
-        if is_self_authored(event_body(event, payload)):
+        if is_self_authored(
+            event_body(event, payload),
+            "jira" if (payload or {}).get(PROVIDER_KEY) == "jira" else "github",
+        ):
             logger.debug("ignoring %s: the-loop's own reply (marker present)", event)
             self._publish("agent", event, payload, work_items)
             eventlog.emit(

@@ -441,7 +441,7 @@ def post_on_ticket(
         _, key = _jira_ref(item.ref, api)
         text = (
             mark_relayed_on_jira(body)
-            if relay and not is_self_authored(body)
+            if relay and not is_self_authored(body, "jira")
             else mark_self_authored_on_jira(body)
         )
         made = _jira_client(config, jira_client).add_comment(key, text)

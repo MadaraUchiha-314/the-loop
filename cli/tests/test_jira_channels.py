@@ -65,9 +65,9 @@ def test_the_jira_marker_is_visible_and_recognised():
     assert JIRA_SELF_ATTRIBUTION == (
         "🤖 the-loop, autonomous comment · [the-loop:agent-comment]"
     )
-    assert is_self_authored(f"done\n\n{JIRA_SELF_ATTRIBUTION}")
-    assert is_self_authored(f"x {SELF_COMMENT_MARKER}")
-    assert not is_self_authored("the-loop:agent-comment without brackets")
+    assert is_self_authored(f"done\n\n{JIRA_SELF_ATTRIBUTION}", provider="jira")
+    assert is_self_authored(f"x {SELF_COMMENT_MARKER}", provider="jira")
+    assert not is_self_authored("the-loop:agent-comment without brackets", "jira")
 
 
 def test_marking_for_jira_replaces_the_hidden_marker_with_the_visible_line():
@@ -99,7 +99,8 @@ def test_the_marker_survives_jira_storage(cloud_env):
     [stored] = sdk.comment_docs[KEY]
     stored["author"] = {"accountId": "someone-else"}  # isolate the marker test
     [read] = client.comments(KEY)
-    assert JIRA_SELF_MARKER in read.body_md and is_self_authored(read.body_md)
+    assert JIRA_SELF_MARKER in read.body_md
+    assert is_self_authored(read.body_md, provider="jira")
 
 
 # -- abuse case 4: a self comment never resumes -------------------------------------
