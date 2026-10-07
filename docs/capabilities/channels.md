@@ -887,7 +887,12 @@ flowchart LR
   HTML comments and envelopes are dropped, a `<summary>` kept bold. A bare the-loop
   marker (`<!-- the-loop:phase-selection -->`, `goal-request`, `review-brief-request`)
   becomes a visible `[the-loop:<name>]` and is restored on read, so a gate finds its own
-  comment on Jira as on GitHub. An ADF node the converter does not know is read as its
+  comment on Jira as on GitHub — only on a service-account comment, and only as a
+  top-level paragraph that opens the body or closes it (before the attribution line);
+  one inside a quote, list or table, mid-body, or typed as HTML text stays text, and
+  the Jira ledger and channel break every marker in the words they quote
+  (`[the‑loop:…]`, a non-breaking hyphen) before appending their own trailer (critic
+  C1). An ADF node the converter does not know is read as its
   text, with a debug log. Wiki round-trips keep a nested list's nesting (an item is
   indented to its parent's text), inline code holding backticks, a `|` inside a table
   cell's code (written `{{p\|q}}`) and a code block's language (`py` is written

@@ -37,6 +37,15 @@ literal text on read, because it *is* the Jira self-marker (``authz``) — and s
 does the relay marker ``[the-loop:relay]``, for the same reason. An
 envelope (``<!-- the-loop:event {…} -->``) carries a payload and is dropped.
 
+A sentinel is promoted back to a marker only where a gate body puts it — a
+**top-level** paragraph that opens the body or closes it (followed by nothing
+but other sentinels and the self/relay attribution line). One inside a quote, a
+list, a table, a panel or between two paragraphs stays text, and so does an
+HTML marker that arrives as *text* (``&lt;!-- the-loop:… --&gt;``): a record
+quoting someone else's words can never carry a gate marker (critic C1). The
+writers that quote untrusted text break its markers first
+(:func:`defang_markers`).
+
 A Jira task item is a checkbox a person ticks in place, so the phase-selection
 checklist is ticked on the ticket, and :func:`adf_to_markdown` turns a
 ``taskItem{state: DONE}`` back into ``- [x] …`` for ``selection``'s parser. On
@@ -54,7 +63,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 logger = logging.getLogger("the-loop.jiraformat")
 
@@ -63,6 +72,7 @@ __all__ = [
     "SELF_SENTINEL_NAME",
     "adf_to_markdown",
     "adf_to_wiki",
+    "defang_markers",
     "from_jira",
     "literal_markers",
     "markdown_to_adf",
@@ -84,6 +94,16 @@ _SUMMARY = re.compile(r"<summary\b[^>]*>(.*?)</summary>", re.DOTALL | re.IGNOREC
 _TAG = re.compile(r"<[^>]+>")
 #: A paragraph that is nothing but a sentinel: ``[the-loop:phase-selection]``.
 _SENTINEL_LINE = re.compile(r"^\[the-loop:([a-z0-9][a-z0-9:-]*)\]$")
+#: ``the-loop:`` as Markdown can spell it — each character literal, backslash-
+#: escaped or an HTML entity — when a marker name follows (so ``the-loop: x``,
+#: prose, is left alone). What :func:`defang_markers` breaks.
+_MARKER_TOKEN = re.compile(
+    "".join(rf"(?:\\?{re.escape(c)}|&#?[A-Za-z0-9]+;)" for c in "the-loop:")
+    + r"(?=[A-Za-z0-9&\\])",
+    re.IGNORECASE,
+)
+#: What a broken marker reads: a non-breaking hyphen (U+2011) no gate matches.
+_DEFANGED = "the\u2011loop:"
 _TASK_PREFIX = re.compile(r"^\[([ xX])\]\s+")
 _BREAK_TAG = re.compile(r"^<br\s*/?>$", re.IGNORECASE)
 _TAG_NAME = re.compile(r"^</?([A-Za-z][A-Za-z0-9-]*)")
@@ -155,6 +175,20 @@ def from_jira(body: Any, markers: bool = True) -> str:
     if isinstance(body, Mapping):
         return adf_to_markdown(body, markers=markers)
     return ""
+
+
+def defang_markers(text: str) -> str:
+    """``text`` with every the-loop marker it spells broken — for Markdown the
+    service account posts that quotes someone else's words.
+
+    ``[the-loop:phase-selection]``, ``<!-- the-loop:goal-request -->``, the
+    self and relay markers, and their escaped (``\\[the\\-loop…``) or
+    entity-encoded (``the&#45;loop&#58;…``) spellings all read
+    ``the‑loop:…`` (a non-breaking hyphen) afterwards, which no gate, no
+    self-marker test and no relay test matches. A writer applies it to the
+    quoted text BEFORE it appends its own trailer (critic C1).
+    """
+    return _MARKER_TOKEN.sub(_DEFANGED, text or "")
 
 
 def literal_markers(markdown: str) -> str:
@@ -459,9 +493,61 @@ def adf_to_markdown(doc: Any, markers: bool = True) -> str:
     """
     if not isinstance(doc, Mapping):
         return ""
-    nodes = doc.get("content") if doc.get("type") == "doc" else [doc]
-    markdown = _md_blocks(nodes or []).strip("\n")
-    return markdown if markers else literal_markers(markdown)
+    if doc.get("type") == "doc":
+        nodes = _objects(doc.get("content"), "doc")
+    else:
+        nodes = [doc]
+    raw = [_md_block(node) for node in nodes]
+    parts = [literal_markers(part) for part in raw]
+    if markers:
+        kinds = [node.get("type") == "paragraph" for node in nodes]
+        parts = _promoted(parts, raw, kinds)
+    return "\n\n".join(part for part in parts if part != "").strip("\n")
+
+
+def _sentinel_name(part: str) -> str:
+    """The marker name of a paragraph that is only a gate sentinel, else ``""``."""
+    match = _SENTINEL_LINE.match(part.strip())
+    if match and match.group(1) not in _LITERAL_SENTINELS:
+        return match.group(1)
+    return ""
+
+
+def _is_trailer(part: str) -> bool:
+    """A line the-loop closes its own comment with: the Jira self or relay
+    attribution, or the GitHub stamp's visible half (``mark_self_authored``)."""
+    from .authz import SELF_COMMENT_ATTRIBUTION
+
+    line = part.strip()
+    if "\n" in line:
+        return False
+    return line == SELF_COMMENT_ATTRIBUTION or any(
+        f"[the-loop:{name}]" in line for name in _LITERAL_SENTINELS
+    )
+
+
+def _promoted(
+    parts: List[str], raw: Sequence[str], paragraphs: Sequence[bool]
+) -> List[str]:
+    """``parts`` with each gate sentinel the-loop placed turned back into its
+    hidden marker: a top-level paragraph whose ``raw`` text is only a sentinel,
+    and which is the body's first block or is followed only by sentinels and
+    the attribution line (critic C1). ``raw`` is each part before
+    :func:`literal_markers`, so an HTML marker typed as text never qualifies."""
+    out = list(parts)
+    filled = [i for i, part in enumerate(raw) if part.strip()]
+
+    def sentinel(i: int) -> str:
+        return _sentinel_name(raw[i]) if paragraphs[i] else ""
+
+    for i in filled:
+        name = sentinel(i)
+        if name and (
+            i == filled[0]
+            or all(sentinel(j) or _is_trailer(raw[j]) for j in filled if j > i)
+        ):
+            out[i] = f"<!-- the-loop:{name} -->"
+    return out
 
 
 def _md_blocks(nodes: Iterable[Any]) -> str:
@@ -528,11 +614,7 @@ def _md_block(node: Mapping[str, Any]) -> str:
     content = _objects(node.get("content"), str(kind))
     attrs = _attrs(node)
     if kind == "paragraph":
-        text = _md_inline(content)
-        sentinel = _SENTINEL_LINE.match(text.strip())
-        if sentinel and sentinel.group(1) not in _LITERAL_SENTINELS:
-            return f"<!-- the-loop:{sentinel.group(1)} -->"
-        return text
+        return _md_inline(content)
     if kind == "heading":
         level = min(max(_number(attrs.get("level"), 1), 1), 6)
         return "#" * level + " " + _md_inline(content)
@@ -852,10 +934,18 @@ def wiki_to_markdown(text: str, markers: bool = True) -> str:
     ``markers=False`` leaves every the-loop marker as visible text
     (:func:`literal_markers`) — for a body the service account did not write.
     """
-    if not markers:
-        return literal_markers(wiki_to_markdown(text))
+    blocks, paragraphs = _wiki_parts(text)
+    parts = [literal_markers(block) for block in blocks]
+    if markers:
+        parts = _promoted(parts, blocks, paragraphs)
+    return "\n\n".join(parts)
+
+
+def _wiki_parts(text: str) -> Tuple[List[str], List[bool]]:
+    """Wiki markup's top-level blocks as Markdown, and which are paragraphs."""
     lines = str(text or "").replace("\r\n", "\n").split("\n")
     blocks: List[str] = []
+    paragraphs: List[bool] = []
     i = 0
     while i < len(lines):
         line = lines[i]
@@ -880,7 +970,7 @@ def wiki_to_markdown(text: str, markers: bool = True) -> str:
                 body.append(lines[i])
                 i += 1
             i += 1
-            inner = wiki_to_markdown("\n".join(body))
+            inner = "\n\n".join(_wiki_parts("\n".join(body))[0])
             blocks.append(
                 "\n".join(f"> {ln}" if ln else ">" for ln in inner.split("\n"))
             )
@@ -917,12 +1007,11 @@ def wiki_to_markdown(text: str, markers: bool = True) -> str:
         if not paragraph:  # a block opener the loop above did not take
             paragraph.append(stripped)
             i += 1
-        md = _wiki_inline_md("\n".join(paragraph))
-        sentinel = _SENTINEL_LINE.match(md.strip())
-        if sentinel and sentinel.group(1) not in _LITERAL_SENTINELS:
-            md = f"<!-- the-loop:{sentinel.group(1)} -->"
-        blocks.append(md)
-    return "\n\n".join(blocks)
+        paragraphs.extend([False] * (len(blocks) - len(paragraphs)))
+        blocks.append(_wiki_inline_md("\n".join(paragraph)))
+        paragraphs.append(True)
+    paragraphs.extend([False] * (len(blocks) - len(paragraphs)))
+    return blocks, paragraphs
 
 
 def _wiki_code_language(params: str) -> str:
