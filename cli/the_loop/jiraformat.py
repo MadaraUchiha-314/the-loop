@@ -102,6 +102,24 @@ _WIKI_LANGUAGES = frozenset(
     "ruby scala sh sql swift visualbasic xml yaml".split()
 )
 
+#: Common Markdown fence names for a language Jira's ``{code}`` macro knows by
+#: another name — so ```` ```py ```` keeps its highlighting on Data Center.
+_WIKI_LANGUAGE_ALIASES = {
+    "py": "python",
+    "python3": "python",
+    "rb": "ruby",
+    "yml": "yaml",
+    "shell": "bash",
+    "zsh": "bash",
+    "console": "bash",
+    "golang": "go",
+    "objective-c": "objc",
+    "objectivec": "objc",
+    "csharp": "c#",
+    "cs": "c#",
+    "vb": "visualbasic",
+}
+
 _parser: Any = None
 
 
@@ -564,11 +582,25 @@ def _md_inline_node(node: Mapping[str, Any]) -> str:
     return _md_inline(node.get("content") or []) or str(node.get("text") or "")
 
 
+def _md_code(text: str) -> str:
+    """``text`` as one Markdown code span, whatever backticks it holds: fenced by
+    one more backtick than its longest run, and padded with a space when it
+    starts or ends with a backtick (or with a space on both ends), which
+    CommonMark then strips — so the span reads back as exactly ``text``."""
+    runs = re.findall(r"`+", text)
+    fence = "`" * (max((len(run) for run in runs), default=0) + 1)
+    pad = ""
+    if text.startswith("`") or text.endswith("`"):
+        pad = " "
+    elif text.startswith(" ") and text.endswith(" ") and text.strip():
+        pad = " "
+    return f"{fence}{pad}{text}{pad}{fence}"
+
+
 def _md_marked(text: str, marks: Sequence[Any]) -> str:
     kinds = {str(m.get("type")): m for m in marks if isinstance(m, Mapping)}
     if "code" in kinds:
-        tick = "``" if "`" in text else "`"
-        text = f"{tick}{text}{tick}"
+        text = _md_code(text)
     if "em" in kinds:
         text = f"_{text}_"
     if "strong" in kinds:
@@ -611,6 +643,7 @@ def _wiki_block(node: Mapping[str, Any]) -> str:
         return "\n".join(_wiki_list(node, ""))
     if kind == "codeBlock":
         language = str(attrs.get("language") or "").lower()
+        language = _WIKI_LANGUAGE_ALIASES.get(language, language)
         code = "".join(str(n.get("text") or "") for n in content)
         opener = "{code:" + language + "}" if language in _WIKI_LANGUAGES else "{code}"
         return f"{opener}\n{code}\n{{code}}"
@@ -624,7 +657,7 @@ def _wiki_block(node: Mapping[str, Any]) -> str:
             cells = [c for c in row.get("content") or [] if isinstance(c, Mapping)]
             texts = [
                 " ".join(
-                    _wiki_inline(b.get("content") or [], in_cell=True)
+                    _wiki_inline(b.get("content") or [], in_cell=True, in_table=True)
                     for b in cell.get("content") or []
                 )
                 for cell in cells
@@ -669,7 +702,9 @@ def _wiki_list(node: Mapping[str, Any], prefix: str) -> List[str]:
     return lines
 
 
-def _wiki_inline(nodes: Sequence[Any], in_cell: bool = False) -> str:
+def _wiki_inline(
+    nodes: Sequence[Any], in_cell: bool = False, in_table: bool = False
+) -> str:
     out = []
     for node in nodes:
         if not isinstance(node, Mapping):
@@ -677,7 +712,9 @@ def _wiki_inline(nodes: Sequence[Any], in_cell: bool = False) -> str:
         kind = node.get("type")
         if kind == "text":
             out.append(
-                _wiki_marked(str(node.get("text") or ""), node.get("marks") or [])
+                _wiki_marked(
+                    str(node.get("text") or ""), node.get("marks") or [], in_table
+                )
             )
         elif kind == "hardBreak":
             # Inside a list item or a table cell a newline would end the row.
@@ -706,10 +743,11 @@ def _wiki_escape(text: str) -> str:
     return "".join(out)
 
 
-def _wiki_marked(text: str, marks: Sequence[Any]) -> str:
+def _wiki_marked(text: str, marks: Sequence[Any], in_table: bool = False) -> str:
     kinds = {str(m.get("type")): m for m in marks if isinstance(m, Mapping)}
     if "code" in kinds:
-        text = "{{" + text + "}}"
+        # In a table a bare `|` inside `{{…}}` would still end the cell.
+        text = "{{" + (text.replace("|", "\\|") if in_table else text) + "}}"
     else:
         text = _wiki_escape(text)
     if "em" in kinds:
@@ -751,8 +789,7 @@ def wiki_to_markdown(text: str) -> str:
                 body.append(lines[i])
                 i += 1
             i += 1
-            language = (code.group(2) or "").split("|")[0].strip()
-            language = "" if "=" in language else language
+            language = _wiki_code_language(code.group(2) or "")
             blocks.append(f"```{language}\n" + "\n".join(body) + "\n```")
             continue
         if stripped == "{quote}":
@@ -806,6 +843,20 @@ def wiki_to_markdown(text: str) -> str:
     return "\n\n".join(blocks)
 
 
+def _wiki_code_language(params: str) -> str:
+    """The language of a ``{code:…}`` macro: its bare first parameter
+    (``{code:python}``), or its ``language=`` one (``{code:title=F|language=go}``)."""
+    for index, part in enumerate(params.split("|")):
+        key, eq, value = part.partition("=")
+        if not eq:
+            if index == 0:
+                return part.strip()
+            continue
+        if key.strip().lower() == "language":
+            return value.strip()
+    return ""
+
+
 def _wiki_block_start(line: str) -> bool:
     stripped = line.strip()
     return bool(
@@ -819,28 +870,39 @@ def _wiki_block_start(line: str) -> bool:
 
 
 def _wiki_list_md(rows: Sequence[str]) -> str:
+    """Wiki list rows as a Markdown list. A nested item is indented to its
+    parent's **text** — two spaces under ``- ``, three under ``1. ``, four under
+    ``10. `` — which is what CommonMark needs to read it as nested."""
     out = []
     counters: Dict[int, int] = {}
+    # widths[d]: how far the text of the last item at depth d is indented.
+    widths: Dict[int, int] = {0: 0}
     for row in rows:
         match = _WIKI_LIST.match(row)
         if not match:
             continue
         markers, text = match.group(1), match.group(2)
         depth = len(markers)
-        pad = "  " * (depth - 1)
         for deeper in [d for d in counters if d > depth]:
             del counters[deeper]
+        for deeper in [d for d in widths if d >= depth]:
+            del widths[deeper]
+        indent = widths.get(depth - 1, max(widths.values()))
+        pad = " " * indent
         if markers[-1] == "#":
             counters[depth] = counters.get(depth, 0) + 1
-            out.append(f"{pad}{counters[depth]}. {_wiki_inline_md(text)}")
-            continue
-        counters.pop(depth, None)
-        task = _WIKI_TASK.match(text)
-        if task:
-            box = "[x]" if task.group(1) == "/" else "[ ]"
-            out.append(f"{pad}- {box} {_wiki_inline_md(task.group(2))}")
+            marker = f"{counters[depth]}. "
+            body = _wiki_inline_md(text)
         else:
-            out.append(f"{pad}- {_wiki_inline_md(text)}")
+            counters.pop(depth, None)
+            task = _WIKI_TASK.match(text)
+            if task:
+                box = "[x]" if task.group(1) == "/" else "[ ]"
+                marker, body = "- ", f"{box} {_wiki_inline_md(task.group(2))}"
+            else:
+                marker, body = "- ", _wiki_inline_md(text)
+        widths[depth] = indent + len(marker)
+        out.append(f"{pad}{marker}{body}")
     return "\n".join(out)
 
 
@@ -855,6 +917,13 @@ def _split_cells(row: str, separator: str) -> List[str]:
         if body[i] == "\\" and i + 1 < len(body):
             current += body[i : i + 2]
             i += 2
+            continue
+        # A `|` inside `{{code}}` or a `[text|link]` is not a cell boundary.
+        closer = "}}" if body.startswith("{{", i) else "]" if body[i] == "[" else ""
+        end = body.find(closer, i + 1) if closer else -1
+        if end != -1:
+            current += body[i : end + len(closer)]
+            i = end + len(closer)
             continue
         if body.startswith(separator, i):
             cells.append(current)
@@ -901,7 +970,7 @@ def _wiki_inline_md(text: str) -> str:
     # A forced line break (`\\`) before single-character escapes.
     out = out.replace(" \\\\ ", "\n").replace("\\\\", "\n")
     out = _WIKI_ESCAPED.sub(lambda m: hold(m.group(1)), out)
-    out = _WIKI_CODE.sub(lambda m: hold(f"`{m.group(1)}`"), out)
+    out = _WIKI_CODE.sub(lambda m: hold(_md_code(_restore(m.group(1), held))), out)
     out = _WIKI_MENTION.sub(lambda m: hold(f"@{m.group(1)}"), out)
     out = _WIKI_LINK.sub(
         lambda m: hold(f"[{_restore(m.group(1), held)}]({m.group(2)})"), out

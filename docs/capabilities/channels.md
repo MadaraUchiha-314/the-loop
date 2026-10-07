@@ -888,7 +888,10 @@ flowchart LR
   marker (`<!-- the-loop:phase-selection -->`, `goal-request`, `review-brief-request`)
   becomes a visible `[the-loop:<name>]` and is restored on read, so a gate finds its own
   comment on Jira as on GitHub. An ADF node the converter does not know is read as its
-  text, with a debug log.
+  text, with a debug log. Wiki round-trips keep a nested list's nesting (an item is
+  indented to its parent's text), inline code holding backticks, a `|` inside a table
+  cell's code (written `{{p\|q}}`) and a code block's language (`py` is written
+  `{code:python}`, and `{code:…|language=x}` is read).
 - **The Jira self-marker** (R4.6). Jira has no hidden text, so every comment the-loop
   posts there ends with `🤖 the-loop, autonomous comment · [the-loop:agent-comment]`.
   WHEN a Jira comment carries that marker **or** its author is the service account

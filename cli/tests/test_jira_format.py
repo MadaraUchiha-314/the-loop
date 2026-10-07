@@ -337,6 +337,74 @@ def test_tables_have_a_header_row():
     )
 
 
+# -- Data Center edge cases (self-review L5) --------------------------------------------
+
+
+def _list_shape(adf: Dict[str, Any]) -> List[Any]:
+    """A list document's nesting, as ``[(type, [child shapes…]), …]``."""
+
+    def shape(node: Dict[str, Any]) -> Any:
+        children = [
+            shape(grand)
+            for item in node.get("content") or []
+            for grand in item.get("content") or []
+            if grand.get("type") in ("bulletList", "orderedList")
+        ]
+        return (node["type"], children)
+
+    return [shape(n) for n in adf["content"]]
+
+
+def test_a_nested_ordered_list_round_trips_through_wiki():
+    """`## y` under `# x` is a nested item: CommonMark needs it indented to the
+    parent's text (three spaces under `1. `), or it reads as a sibling."""
+    wiki = "# x\n## y\n# z"
+    md = wiki_to_markdown(wiki)
+    assert md == "1. x\n   1. y\n2. z"
+    assert _list_shape(markdown_to_adf(md)) == [("orderedList", [("orderedList", [])])]
+    assert markdown_to_wiki(md) == wiki
+    for mixed, expected in [
+        ("# x\n#* y\n# z", "1. x\n   - y\n2. z"),
+        ("* x\n*# y\n*# z", "- x\n  1. y\n  2. z"),
+    ]:
+        assert wiki_to_markdown(mixed) == expected
+        assert markdown_to_wiki(expected) == mixed
+
+
+def test_inline_code_with_a_backtick_round_trips_through_wiki():
+    for wiki, md in [
+        ("{{a`b}}", "``a`b``"),
+        ("{{`x}}", "`` `x ``"),
+        ("{{a``b}}", "```a``b```"),
+    ]:
+        assert wiki_to_markdown(wiki) == md
+        [para] = markdown_to_adf(md)["content"]
+        [text] = para["content"]
+        assert text["text"] == wiki[2:-2] and text["marks"] == [{"type": "code"}]
+        assert markdown_to_wiki(md) == wiki
+        assert adf_to_markdown(markdown_to_adf(md)) == md
+
+
+def test_a_pipe_inside_a_table_cell_round_trips_through_wiki():
+    md = "| h | i |\n| --- | --- |\n| `p\\|q` | r |"
+    wiki = markdown_to_wiki(md)
+    assert wiki == "||h||i||\n|{{p\\|q}}|r|"
+    assert wiki_to_markdown(wiki) == md
+    # Typed in Jira unescaped, the pipe inside `{{…}}` still does not split a cell.
+    assert wiki_to_markdown("||h||i||\n|{{p|q}}|r|") == md
+
+
+def test_a_code_language_round_trips_through_wiki():
+    assert markdown_to_wiki("```py\nx = 1\n```") == "{code:python}\nx = 1\n{code}"
+    assert wiki_to_markdown("{code:py}\nx = 1\n{code}") == "```py\nx = 1\n```"
+    assert (
+        wiki_to_markdown("{code:title=F.py|language=python}\nx = 1\n{code}")
+        == "```python\nx = 1\n```"
+    )
+    md = "```python\nx = 1\n```"
+    assert wiki_to_markdown(markdown_to_wiki("```py\nx = 1\n```")) == md
+
+
 def test_quotes_and_rules():
     md = "> quoted **text**\n\n---\n\nafter\n"
     adf = markdown_to_adf(md)
