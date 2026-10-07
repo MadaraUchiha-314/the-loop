@@ -183,7 +183,7 @@ def test_registry_ignores_files_it_did_not_write(tmp_path, caplog):
         "github:octo/repo#15",
         "github:octo/repo#1234567",
         "github:Octo-Corp/my.repo-2#3",
-        "jira:some.owner/PROJ_x#42",
+        "jira:acme.atlassian.net/PROJ_X-42",
     ],
 )
 def test_registry_lists_every_name_it_can_write(tmp_path, ref):

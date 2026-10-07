@@ -38,7 +38,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ none
   - _Requirements:_ R1.1–R1.3, R1.5, R2.1, R2.2
   - _Test:_ T1, T7 (abuse case 8: `test_ref_on_unknown_site_sends_no_credential`) — red
-- [ ] 1.2 **`sessions/refs.py`: `RefScheme`, `GitHubScheme`, `JiraScheme`, `SCHEMES`.**
+- [x] 1.2 **`sessions/refs.py`: `RefScheme`, `GitHubScheme`, `JiraScheme`, `SCHEMES`.**
   - Move today's GitHub parse/render/url/slug into `GitHubScheme` byte for byte.
   - `WorkItemRef.parse`/`.ref`/`.url`/`.slug` delegate to the scheme, and a
     `spec_id` property is added.

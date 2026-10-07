@@ -548,7 +548,7 @@ def test_provider_lists_nothing_when_the_repository_has_issues_disabled():
         ("github:octo/repo#15", True),
         ("github:OCTO/Repo#15", True),  # GitHub is case-insensitive
         ("github:other/repo#15", False),
-        ("jira:octo/repo#15", False),
+        ("jira:acme.atlassian.net/PROJ-15", False),
     ],
 )
 def test_provider_owns_only_its_configured_scope(ref, owned):
@@ -3671,7 +3671,7 @@ def test_listing_without_repos_is_still_a_whole_provider_failure():
         ("github:octo/repo-m#3", "octo/repo-m"),
         ("github:OCTO/Repo-M#3", "octo/repo-m"),
         (f"github:{GHE}/octo/repo-m#3", f"{GHE}/octo/repo-m"),
-        ("jira:octo/repo-m#3", ""),
+        ("jira:acme.atlassian.net/PROJ-3", ""),
     ],
 )
 def test_scope_of_spells_the_repository_the_way_failures_do(ref, scope):

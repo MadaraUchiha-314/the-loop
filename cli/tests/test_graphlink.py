@@ -130,7 +130,7 @@ def test_spec_id_for_a_github_ref():
 
 def test_spec_id_for_another_provider_is_none():
     """Only GitHub's `issue-<n>` convention is known; guessing would be worse."""
-    assert spec_id_for(WorkItemRef.parse("jira:acme/proj#42")) is None
+    assert spec_id_for(WorkItemRef.parse("gitlab:acme/proj#42")) is None
 
 
 def test_spec_id_cannot_escape_the_spec_root():
@@ -231,7 +231,7 @@ def test_an_advance_still_requires_the_spec_directory(tmp_path):
 def test_a_non_github_ref_is_skipped(repo):
     runtime = _FakeRuntime()
     link = _link(repo, runtime)
-    link.on_spawn(WorkItemRef.parse("jira:acme/proj#42"), str(repo))
+    link.on_spawn(WorkItemRef.parse("gitlab:acme/proj#42"), str(repo))
     assert runtime.started == []
 
 
@@ -628,7 +628,7 @@ def test_the_quiet_skip_paths_stay_quiet(repo, tmp_path):
         control=ControlConfig(enabled=True, require_start_command=True),
         control_store=ControlStore(repo / "control.json"),
     ).on_spawn(REF, str(repo))
-    _link(repo, runtime).on_spawn(WorkItemRef.parse("jira:acme/proj#42"), str(repo))
+    _link(repo, runtime).on_spawn(WorkItemRef.parse("gitlab:acme/proj#42"), str(repo))
 
     assert [r for r in _records(events) if r["event"] == "graph.skipped"] == []
 

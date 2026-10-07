@@ -141,7 +141,9 @@ def test_sessions_without_a_tmux_target_are_not_announced():
 def test_non_github_work_items_are_a_noop():
     gh = FakeGitHubClient()
     announcer = SessionAnnouncer(AnnounceConfig(), client=gh)
-    session = make_session(work_item=WorkItemRef.parse("jira:acme/proj#4"))
+    session = make_session(
+        work_item=WorkItemRef.parse("jira:acme.atlassian.net/PROJ-4")
+    )
     assert announcer.announce(session) is False
     assert gh.calls == []
 
