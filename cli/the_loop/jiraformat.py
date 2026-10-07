@@ -33,7 +33,8 @@ has no hidden text, so each becomes a visible ``[the-loop:<name>]`` sentinel and
 reading turns a paragraph holding only that sentinel back into the HTML comment
 — so a gate reads a Jira ticket exactly as it reads a GitHub issue. The
 self-authored sentinel ``[the-loop:agent-comment]`` is the exception: it stays
-literal text on read, because it *is* the Jira self-marker (``authz``). An
+literal text on read, because it *is* the Jira self-marker (``authz``) — and so
+does the relay marker ``[the-loop:relay]``, for the same reason. An
 envelope (``<!-- the-loop:event {…} -->``) carries a payload and is dropped.
 
 A Jira task item is a checkbox a person ticks in place, so the phase-selection
@@ -58,6 +59,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 logger = logging.getLogger("the-loop.jiraformat")
 
 __all__ = [
+    "RELAY_SENTINEL_NAME",
     "SELF_SENTINEL_NAME",
     "adf_to_markdown",
     "adf_to_wiki",
@@ -70,6 +72,10 @@ __all__ = [
 
 #: The marker name that stays visible text when read back (the Jira self-marker).
 SELF_SENTINEL_NAME = "agent-comment"
+#: The relay marker (``authz.JIRA_RELAY_MARKER``) stays visible text too: the
+#: ingress reads it as text, on a comment by the service account (issue-475).
+RELAY_SENTINEL_NAME = "relay"
+_LITERAL_SENTINELS = frozenset({SELF_SENTINEL_NAME, RELAY_SENTINEL_NAME})
 
 #: A bare the-loop marker inside HTML: ``<!-- the-loop:phase-selection -->``.
 _MARKER_IN_HTML = re.compile(r"<!--\s*the-loop:([a-z0-9][a-z0-9:-]*)\s*-->")
@@ -439,7 +445,7 @@ def _md_block(node: Mapping[str, Any]) -> str:
     if kind == "paragraph":
         text = _md_inline(content)
         sentinel = _SENTINEL_LINE.match(text.strip())
-        if sentinel and sentinel.group(1) != SELF_SENTINEL_NAME:
+        if sentinel and sentinel.group(1) not in _LITERAL_SENTINELS:
             return f"<!-- the-loop:{sentinel.group(1)} -->"
         return text
     if kind == "heading":
@@ -794,7 +800,7 @@ def wiki_to_markdown(text: str) -> str:
             i += 1
         md = _wiki_inline_md("\n".join(paragraph))
         sentinel = _SENTINEL_LINE.match(md.strip())
-        if sentinel and sentinel.group(1) != SELF_SENTINEL_NAME:
+        if sentinel and sentinel.group(1) not in _LITERAL_SENTINELS:
             md = f"<!-- the-loop:{sentinel.group(1)} -->"
         blocks.append(md)
     return "\n\n".join(blocks)

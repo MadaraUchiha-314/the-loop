@@ -1,7 +1,8 @@
 # Capability: webhook-triggers
 
-> GitHub events (comments, reviews, CI results) reach the *right* running harness
-> session on the user's own machine, programmatically.
+> GitHub events (comments, reviews, CI results) — and, since issue-475, Jira comments
+> — reach the *right* running harness session on the user's own machine,
+> programmatically.
 
 ## What it is
 
@@ -982,15 +983,120 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   `_checkout_belongs_to` still proves via the `origin` remote that a checkout is the work
   item's before a graph is driven in it (issue-113 A6).
 
+### Jira
+
+Since [issue-475](https://github.com/MadaraUchiha-314/the-loop/issues/475) a Jira ticket
+reaches its session through both ingresses, as a GitHub issue does. Both build the same
+events and then share the router, the dispatcher and the session registry. Nothing here
+runs without `integrations.jira`.
+
+```mermaid
+flowchart LR
+  J["Jira"] -->|"signed POST /jira-webhook"| W["doorbell<br/>webhook/jira.py"]
+  P["poller<br/>JiraPollProvider"] -->|"JQL per project<br/>+ comments"| C["JiraClient"]
+  W -->|"re-fetch issue + comment"| C
+  W --> R["Router<br/>self · Jira allow-list"]
+  P --> D["Dispatcher"]
+  R --> D
+  D -->|"dedupe on jira-comment-&lt;site&gt;-&lt;id&gt;"| S["session"]
+```
+
+- **Polling** (R5). WHEN `polling.sources[]` holds `{provider: jira, projects: [KEY]}`
+  THEN the poller SHALL run one JQL query per project each cycle. The query lists the
+  tickets carrying **every** arming label in its Jira-safe form that are not in the
+  *Done* status category. Every value SHALL be a quoted JQL string, and no value from a
+  ticket SHALL reach the query. A polled project SHALL be listed under
+  `integrations.jira.projects` **with** a `repository`. Polling a mirror-only or an
+  unconfigured project SHALL stop the poller at its pre-flight, naming the project.
+- **Comments and the cursor** (R5.3, R5.6). Every comment is listed each cycle, and the
+  poll ledger's `seenComments` is the cursor, exactly as on GitHub. WHEN a project's
+  listing is rate-limited (429) or fails (5xx) THEN that project SHALL be degraded for
+  the cycle and the cursor kept, so on recovery no comment is dropped and none is
+  delivered twice. A missing credential fails the whole source.
+- **Closure** (R5.4). WHEN a polled ticket's status category is `done` THEN its work
+  item SHALL be closed as a closed GitHub issue is. Jira names nobody the-loop
+  authorizes on for a status change, so the session's local resources wait for a named
+  authorized `the-loop cleanup` (issue-329's rule).
+- **The webhook doorbell** (R6). WHEN `integrations.jira.webhook.secretEnv` names a
+  variable that is set THEN the receiver SHALL serve a second route, `/jira-webhook`.
+  WHEN no such variable is set THEN that path SHALL answer 404. WHEN a delivery's
+  `X-Hub-Signature` is missing or wrong THEN the receiver SHALL answer 401 **before**
+  parsing the body. A verified delivery SHALL be read for `webhookEvent`, `issue.key`
+  and `comment.id` only. The issue and the comment SHALL be fetched again with the
+  daemon's credential, so a forged-but-signed body injects neither text nor identity.
+  `X-Atlassian-Webhook-Identifier` is logged and never used as a key.
+
+  | `webhookEvent` | What the doorbell does |
+  |---|---|
+  | `comment_created` | the comment on an armed ticket goes through the router (self-marker, Jira allow-list) to the dispatcher |
+  | `jira:issue_updated` | status category `done`: the close event. Armed **and** started by an authorized `the-loop start`: presence. Otherwise ignored |
+  | anything else | ignored with a 202 |
+
+  A key that is not a key, or a ticket outside the source projects, is ignored before
+  anything is fetched.
+- **Once, by either ingress** (R6.4). Both ingresses give a comment the delivery id
+  `jira-comment-<site>-<id>`. WHEN the webhook and the poller both see one comment THEN
+  the session SHALL receive it once: the id is in the session's persisted
+  `recentDeliveries`, which both processes read.
+- **Who may act on a Jira ticket** (R7). A Jira comment is authorized on the
+  [`routing.authorizedUsers[].jira`](/config/cli/routing-options#authorizedusers-jira) ids:
+  the Cloud `accountId` or the Data Center user `key`, matched exactly. WHEN a Jira
+  comment has no author, or an unlisted one, THEN it SHALL be neither input nor a
+  command nor a gate answer. A GitHub login never stands in for a Jira id, and the
+  reverse is also true. The control seam's named-actor re-check and the human gates read
+  the same ids. A gate sees a Jira author as `jira:<id>`, a namespace no GitHub login can
+  spell. Work-item collaborator grants hold GitHub logins, so they grant nothing on a
+  Jira ticket.
+- **Whose comment it is.** WHEN a Jira comment carries the self-marker, or its author is
+  the service account (`myself`), THEN it SHALL be the-loop's own and dropped on both
+  ingresses. The exception is a **relay** (a design addendum to §C7/§C8). A
+  service-account comment carrying `[the-loop:relay]` and not the self-marker is the
+  Jira ledger's record of an authorized person's gate answer or control command from
+  another channel. Both ingresses SHALL accept it as authorized, and a gate SHALL read it
+  as the operator's answer, as the GitHub ingress reads an unmarked relay posted under
+  the operator's credentials. On anyone else's comment the relay marker grants nothing.
+  See [channels § Jira](channels.md#jira).
+- **Arming is a label, starting is a person** (abuse case 5). A Jira listing carries no
+  reporter, so no Jira ticket starts on its label alone. Only a recorded `the-loop start`
+  by an authorized Jira user arms a spawn, on both ingresses.
+- **The prompt frame is unchanged** (abuse case 10). A Jira comment reaches the session
+  inside the same untrusted-data frame as a GitHub comment.
+
+**Setting up the Jira webhook.** Polling needs no inbound route. The webhook only
+removes poll latency.
+
+1. Give the receiver a public HTTPS endpoint, for example a tunnel to `the-loop start`.
+2. Choose a secret, and export it on the machine running the receiver:
+   `export THE_LOOP_JIRA_WEBHOOK_SECRET=…`.
+3. Name that variable in the CLI config:
+
+   ```yaml
+   integrations:
+     jira:
+       webhook:
+         secretEnv: THE_LOOP_JIRA_WEBHOOK_SECRET
+   ```
+
+4. A **Jira admin** registers the webhook (*Settings → System → WebHooks*). the-loop
+   holds no admin scope and never registers it. Set the URL to
+   `https://<your-host>/jira-webhook` and the secret to the value from step 2. Select the
+   events *Comment → created* (`comment_created`) and *Issue → updated*
+   (`jira:issue_updated`). Optionally narrow it with a JQL filter on your source projects.
+5. Restart the receiver. It logs `Jira webhook doorbell on …/jira-webhook` when the
+   route is served.
+
 ## Design
 
 [`docs/specs/issue-15/design.md`](../specs/issue-15/design.md) ·
-[architecture § triggers](../architecture/architecture.md)
+[architecture § triggers](../architecture/architecture.md) ·
+[`docs/specs/issue-475/design.md`](../specs/issue-475/design.md) §C8 (the Jira poll
+provider, the webhook doorbell, the allow-list by provider)
 
 ## History
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-475 | **Jira tickets reach their sessions** (2026-10-06, PR 4 of 5): a `jira` poll source (`polling.sources[].projects`) lists each project's armed tickets with one quoted JQL query per cycle and reads every comment against the poll ledger's cursor. A 429 or 5xx degrades the project for the cycle and keeps the cursor. A `done` status category closes the work item. The receiver gains `/jira-webhook`, served only when `integrations.jira.webhook.secretEnv` resolves: signature first (401 before parsing), then a doorbell that re-fetches the issue and the comment and builds the poller's own events, so one comment by both ingresses is delivered once (`jira-comment-<site>-<id>`). Jira comments are authorized on `routing.authorizedUsers[].jira` (exact id; no author is unauthorized), at the router, the poller, the control seam and the human gates (`jira:<id>`). A Jira relay (`[the-loop:relay]` by the service account) is the operator's words | [spec](../specs/issue-475/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-462 | CI monitoring and self-healing (2026-10-06): every CI webhook used to be delivered to the session as it came — twenty-odd deliveries per push to a five-job PR, each a turn — and a check the agent could not fix had no end. The dispatcher's CI gate (`webhook/cimonitor.py`, `routing.ci`) now delivers only a failed `check_run` or failing `status`, with a section naming the check, commit and attempt and pointing at the new `the-loop pr checks`; it counts distinct failing commits per PR and check, delivers one "stop and escalate" notice past `maxAttempts` (default 3), then nothing until the check passes. Drops are `dispatch.dropped` (`ci-not-actionable`, `ci-autofix-exhausted`); events `ci.check_failed`, `ci.autofix_exhausted`. A poll-only installation gets the same events: `polling.ci` reads each live pull request's checks on its own interval (default 300 s) and forwards each new result once (`ciSeen` in the poll ledger) | [spec](../specs/issue-462/), [routing options](../config/cli/routing-options.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/462) |
 | issue-466 | A pull request the-loop records is armed in the same act (2026-10-06): `pr create`, `sessions link-pr` and its `--discover` put every `routing.autoExecuteLabels` label on it, so the poller's every-label filter lists it and its comments reach the session. A link that fails adds no label, and so does a re-run on a PR that was already recorded. A GitHub refusal is a note. Routing is unchanged | [spec](../specs/issue-466/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/466) |
 | issue-452 | The closure keeps a terminal record (2026-10-02): `_close_ended_session` reads `work-item-state.json` before `close_session` removes the checkout, and the `ended` stamp gains `outcome` (`completed` only from a claimed completion node — never from the closure) and `terminal` (node, phase, frozen selections, pull requests, evidence); a session-less closure reads the registry's checkout, `cleanup` backfills a stamp that has none, and a polled closure now carries `state_reason`. `work_item.ended` carries the outcome | [spec](../specs/issue-452/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/452) |

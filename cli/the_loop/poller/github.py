@@ -26,7 +26,17 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Sequence, Tuple, TypeVar
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    TypeVar,
+)
 
 from .. import eventlog
 
@@ -261,6 +271,7 @@ class GitHubPollProvider(PollProvider):
         default_host: str = "",
         repositories: Sequence[str] = (),
         api: Optional[GitHubApiConfig] = None,
+        config: Optional[Mapping[str, Any]] = None,
     ) -> "GitHubPollProvider":
         """The source says *how* to poll; ``repositories`` says *what* (issue-348);
         ``api`` says where the token is (issue-442, `integrations.github.api`).

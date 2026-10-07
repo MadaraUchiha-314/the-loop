@@ -14,7 +14,18 @@ Spec: docs/specs/issue-34/design.md §2.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Tuple, Type, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+)
 
 from ..sessions import WorkItemRef, host_from_url
 from ..webhook.router import RoutedEvent
@@ -202,6 +213,7 @@ class PollProvider:
         default_host: str = "",
         repositories: Sequence[str] = (),
         api: Optional["GitHubApiConfig"] = None,
+        config: Optional[Mapping[str, Any]] = None,
     ) -> "PollProvider":
         """Build a bound provider from one ``polling.sources`` config entry.
 
@@ -219,6 +231,10 @@ class PollProvider:
 
         ``api`` is where the daemon's GitHub token is (``integrations.github.api``,
         issue-442); a provider that does not read GitHub ignores it.
+
+        ``config`` is the whole CLI config document (issue-475): a provider whose
+        backing system is configured elsewhere — Jira, under
+        ``integrations.jira`` — reads it from there. GitHub ignores it.
         """
         raise NotImplementedError
 
@@ -259,6 +275,20 @@ class PollProvider:
     def list_comments(self, item: WorkItem) -> List[Comment]:
         """All conversation comments currently on ``item``."""
         raise NotImplementedError
+
+    def comment_origin(self, comment: Comment) -> str:
+        """Whose words ``comment`` is: ``"self"``, ``"relay"`` or ``"human"``.
+
+        The default is the marker test every provider had (issue-64): a body
+        carrying the-loop's self-marker is the-loop's own, anything else is a
+        person's, judged by its own author. A provider that can say more
+        overrides it — Jira, whose service account's own comments are the-loop's
+        whatever their text, and whose relays carry a marker of their own
+        (issue-475, :func:`~the_loop.authz.jira_comment_origin`).
+        """
+        from ..authz import ORIGIN_HUMAN, ORIGIN_SELF, is_self_authored
+
+        return ORIGIN_SELF if is_self_authored(comment.body) else ORIGIN_HUMAN
 
     def refs(self, item: WorkItem) -> List[WorkItemRef]:
         """Registry refs an item maps to (itself + any linked items)."""
@@ -339,10 +369,11 @@ def build_provider(
     default_host: str = "",
     repositories: Sequence[str] = (),
     api: Optional["GitHubApiConfig"] = None,
+    config: Optional[Mapping[str, Any]] = None,
 ) -> PollProvider:
     """Resolve a ``polling.sources`` entry to a bound :class:`PollProvider`.
 
-    ``default_host``, ``repositories`` and ``api`` are handed to
+    ``default_host``, ``repositories``, ``api`` and ``config`` are handed to
     :meth:`PollProvider.from_source` as is.
     """
     name = str((source or {}).get("provider") or "").strip()
@@ -363,4 +394,5 @@ def build_provider(
         default_host=default_host,
         repositories=repositories,
         api=api,
+        config=config,
     )

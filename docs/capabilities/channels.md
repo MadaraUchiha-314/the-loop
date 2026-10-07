@@ -894,6 +894,18 @@ flowchart LR
   WHEN a Jira comment carries that marker **or** its author is the service account
   (`myself`) THEN it SHALL be the-loop's own, and no gate or ingress SHALL read it as a
   person's words. Either test alone is enough.
+- **A relay is the operator's words on Jira, too** (issue-475 PR 4, a design addendum to
+  §C7). On GitHub the ledger posts a relay (`gate.feedback`, `control.command`) unmarked,
+  under the operator's credentials, so the ingress reads it as that authorized person's
+  words. On Jira the ledger writes as the service account, and every comment by that
+  account is the-loop's own. WHEN the Jira ledger records a relay THEN it SHALL end the
+  comment with `🗣️ relayed by the-loop · [the-loop:relay]` **instead of** the
+  self-marker, keeping its keywords. WHEN a Jira comment by the service account carries
+  `[the-loop:relay]` and not `[the-loop:agent-comment]` THEN both Jira ingresses SHALL
+  accept it as authorized and the human gates SHALL read it as the operator's answer.
+  WHEN anyone else's comment carries `[the-loop:relay]` THEN it SHALL gain nothing: it is
+  judged by its own author against the allow-list. `jiraformat` keeps the relay marker
+  as literal text, as it keeps the self-marker.
 - **Hooks follow the ref.** `set-phase-label`, the review request, the phase-selection,
   goal and review gates, the runtime's audit comments and the Slack pipeline's
   checklist read resolve their integration from the work item's ref
@@ -1023,6 +1035,7 @@ ticket, with no Jira work items, ingress or ledger:
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-475 | **A relay is the operator's words on Jira** (2026-10-06, PR 4 of 5, a design addendum to §C7): the Jira ledger posts a relay (`gate.feedback`, `control.command`) with the visible relay marker `[the-loop:relay]` instead of the self-marker, and the Jira ingress accepts a service-account comment carrying it as authorized — as the GitHub ingress reads an unmarked relay posted under the operator's credentials. The marker on anyone else's comment grants nothing | [spec](../specs/issue-475/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-475 | **Jira as ledger and channel** (2026-10-06, PR 3 of 5): with `integrations.jira` configured the ledger records each event on its own work item's tracker (`RoutedLedger`: a Jira work item's on its ticket, a pull request's on GitHub, `work-item.create` where `channels.ledger` says, which now takes `jira`); the GitHub ledger's bodies moved to `channels/bodies.py` unchanged and the Jira ledger posts the same ones. Bodies are converted to ADF or wiki markup (`jiraformat`, over `markdown-it-py`), the phase checklist becoming Jira task items ticked in place; every Jira comment ends with a visible self-marker, backed by the service-account check. Hooks resolve their integration from the ref. Labels written to Jira are made Jira-safe, and a label with no safe form fails the config load. A `jira@<KEY>-<n>` room is an output-only mirror (`channels.jira`: `enabled`, `subscribe`, `verbosity`, no `publish`), with a mirror-only project setup. Without `integrations.jira` nothing changes | [spec](../specs/issue-475/), [decision-142](../decisions/decision-142.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-464 | **The Slack app from one click, named by its operator** (2026-10-06): `channels manifest` gains `--name` (the app's name and the bot's derived handle), `--format json`, `--link` (Slack's prefilled `new_app=1&manifest_json=` create URL) and `--write [PATH]`, which keeps `slack-app-manifest.json` beside the CLI config, rebuilds it under the kept name and reports the scope and event delta. `/the-loop:init` asks the name and walks the link; `/the-loop:upgrade-the-loop` regenerates the file. The shipped scopes and events are unchanged | [spec](../specs/issue-464/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/464) |
 | issue-447 | `comment.agent` gained a second publisher: `the-loop comment` publishes it from the CLI with `record: true`, so the ledger writes the marked, enveloped comment and the room hears it once, before the ingress (which drops enveloped comments) could | [spec](../specs/issue-447/), [decision-140](../decisions/decision-140.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/447) |

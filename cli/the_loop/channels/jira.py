@@ -6,7 +6,10 @@ GitHub ledger records it on an issue. It writes the **same body** —
 both trackers — and then does the two things only Jira needs: the body carries
 the visible Jira self-marker (:func:`~the_loop.authz.mark_self_authored_on_jira`;
 the GitHub HTML marker does not survive ADF), and it is converted to ADF or wiki
-markup by :class:`~the_loop.jiraapi.JiraClient` (``jiraformat``).
+markup by :class:`~the_loop.jiraapi.JiraClient` (``jiraformat``). A **relay**
+(``gate.feedback``, ``control.command``) carries the relay marker instead
+(:func:`~the_loop.authz.mark_relayed_on_jira`), so the Jira ingress reads it as
+the operator's authorized words, as GitHub's reads an unmarked relay (PR 4).
 
 ``work-item.create`` with ``channels.ledger: jira`` opens a ticket in the
 project the event names (``detail["project"]``), which must be one with a
@@ -40,11 +43,11 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 
-from ..authz import mark_self_authored_on_jira
+from ..authz import mark_relayed_on_jira, mark_self_authored_on_jira
 from ..jiraapi import JiraApiConfig, JiraApiError, JiraClient, issue_key_for
 from ..jiralabels import JiraLabelError, jira_label
 from .base import DEFAULT_EVENTS, VERBOSITIES, Event, PostResult, render
-from .bodies import issue_body, issue_title, ledger_body
+from .bodies import RELAYED, issue_body, issue_title, ledger_body
 
 logger = logging.getLogger("the-loop.channels")
 
@@ -53,6 +56,7 @@ __all__ = [
     "JiraChannel",
     "JiraChannelConfig",
     "JiraLedger",
+    "jira_ledger_body",
     "load_jira_channel",
     "origin_projects",
 ]
@@ -76,6 +80,23 @@ def origin_projects(cli_config: Optional[Mapping[str, Any]]) -> Dict[str, str]:
         if isinstance(repository, str) and repository.strip():
             out[str(key)] = repository.strip()
     return out
+
+
+def jira_ledger_body(event: Event, cli_config: Optional[Mapping[str, Any]]) -> str:
+    """What the Jira ledger posts for ``event`` — the shared body, marked for Jira.
+
+    Every record carries the visible self-marker **except a relay**
+    (``gate.feedback``, ``control.command``): on GitHub a relay is posted
+    unmarked under the operator's credentials so the ingress reads it as the
+    operator's authorized words, and on Jira — where the ledger writes as the
+    service account — it carries the relay marker instead, which the Jira
+    ingress accepts on a service-account comment and on nobody else's (design
+    addendum, issue-475 PR 4; :func:`~the_loop.authz.jira_comment_origin`).
+    """
+    body = ledger_body(event, cli_config)
+    if event.event_type in RELAYED:
+        return mark_relayed_on_jira(body)
+    return mark_self_authored_on_jira(body)
 
 
 class JiraLedger:
@@ -120,7 +141,7 @@ class JiraLedger:
             key = issue_key_for(event.work_item, self.api)
         except JiraApiError as exc:
             return self._failed(str(exc))
-        body = mark_self_authored_on_jira(ledger_body(event, self.cli_config))
+        body = jira_ledger_body(event, self.cli_config)
         try:
             comment = self.client.add_comment(key, body)
         except JiraApiError as exc:  # best-effort, like every ledger write

@@ -197,7 +197,7 @@ Two decisions from the gate are carried here:
 
 ### PR 4 — ingress (poller, webhook doorbell, allow-list)
 
-- [ ] 4.1 **Allow-list by provider.**
+- [x] 4.1 **Allow-list by provider.**
   - Red first: `test_jira_authz.py`, covering an exact `accountId` match, an unlisted
     author, `test_missing_actor_is_unauthorized_on_jira`, and DC `key`.
   - Then add `authz.is_authorized_on`, the explicit `jira` property in the
@@ -205,7 +205,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 3.7
   - _Requirements:_ R7.1–R7.3
   - _Test:_ T5, T7 (abuse case 3) — red → green
-- [ ] 4.2 **`JiraPollProvider`.**
+- [x] 4.2 **`JiraPollProvider`.**
   - Red first: `test_jira_poller.py`, covering one JQL clause per label,
     `test_jql_values_are_quoted`, comments, `test_done_status_category_is_closure`,
     `test_rate_limited_scope_keeps_cursor` and owns/presence.
@@ -215,7 +215,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 4.1
   - _Requirements:_ R5.1–R5.6
   - _Test:_ T5, T7 (abuse case 6) — red → green
-- [ ] 4.3 **Webhook doorbell.**
+- [x] 4.3 **Webhook doorbell.**
   - Red first: `test_jira_webhook.py`, covering `test_jira_webhook_rejects_bad_signature`,
     `test_jira_webhook_absent_without_secret`,
     `test_doorbell_refetches_comment_and_issue` and the event mapping.
@@ -224,7 +224,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 4.2
   - _Requirements:_ R6.1–R6.3
   - _Test:_ T5, T7 (abuse cases 1, 2) — red → green
-- [ ] 4.4 **Integration scenarios for ingress.** Add `test_jira_integration.py`, with
+- [x] 4.4 **Integration scenarios for ingress.** Add `test_jira_integration.py`, with
   Gherkin docstrings and `Requirement:` links:
   - _an authorized Jira comment resumes the work item's session_
   - _the same Jira comment by webhook and by poll is delivered once_
@@ -235,7 +235,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 4.3
   - _Requirements:_ R5.3, R5.5, R6.3, R6.4
   - _Test:_ T6, T7 (abuse cases 5, 10)
-- [ ] 4.5 **Docs for PR 4.** Polling and the Jira webhook in
+- [x] 4.5 **Docs for PR 4.** Polling and the Jira webhook in
   `docs/capabilities/webhook-triggers.md`, `docs/config/` for `polling.sources[]` Jira
   and `routing.authorizedUsers[].jira`, Jira webhook setup steps (admin-registered,
   secret), and `evidence/documentation.md` rows.

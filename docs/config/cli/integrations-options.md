@@ -227,6 +227,35 @@ The transition name that closes a ticket. Unset, the one available transition in
 *Done* status category is used. None, or several, is an error that lists them: the-loop
 never guesses.
 
+### `jira.webhook.secretEnv`
+
+- **Type:** `string` (an environment variable name)
+- **Default:** none — no Jira webhook route
+
+The environment variable that holds the Jira webhook secret (issue-475). The receiver
+serves its second route, `/jira-webhook`, **only** when this names a variable that is set
+and not empty. Otherwise the path answers 404, because an unsigned Jira route is not
+served at all.
+
+```yaml
+integrations:
+  jira:
+    webhook:
+      secretEnv: THE_LOOP_JIRA_WEBHOOK_SECRET
+```
+
+A Jira admin registers the webhook against `https://<your-host>/jira-webhook` with the
+same secret, for the events `comment_created` and `jira:issue_updated`. The steps are in
+[Webhook triggers](/capabilities/webhook-triggers#jira). Every delivery's
+`X-Hub-Signature` HMAC is checked before its body is parsed. A verified delivery is then
+read for three fields only: the event name, the issue key and the comment id. The issue
+and the comment are fetched again with the daemon's own credential, so a forged body can
+inject neither text nor identity.
+
+::: danger A variable name, never the secret
+The value matches `^[A-Z_][A-Z0-9_]*$`. A secret written here fails validation.
+:::
+
 ## Next
 
 - [Observability options](/config/cli/observability-options) — the event log and who gets

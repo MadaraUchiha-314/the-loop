@@ -48,10 +48,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from . import eventlog
+from .authz import JIRA_GATE_PREFIX, JIRA_RELAY_GATE_AUTHOR, gate_authorized_users
 from .ghhost import repo_slug as _repo_slug
 from .control import START, ControlConfig, ControlStore
 from .sessions import WorkItemRef
 from .sessions.refs import UnknownJiraProject, origin_ref, origin_repository
+from .webhook.router import event_provider, event_relayed
 
 logger = logging.getLogger("the-loop.graph")
 
@@ -276,6 +278,13 @@ def comments_from(routed, authorized: Sequence[str] = ()) -> List[Dict[str, str]
     an envelope is comment text, so it may narrow from one authorized identity
     to another and never widen. A work-item collaborator's forged envelope
     (A3) rewrites nothing.
+
+    A **Jira** event (issue-475) names its author in the gate's Jira namespace,
+    ``jira:<accountId>`` — which no GitHub login can spell — and a relay the
+    Jira ingress verified as the operator's words is
+    :data:`~the_loop.authz.JIRA_RELAY_GATE_AUTHOR`. The gate's allow-list
+    (:func:`~the_loop.authz.gate_authorized_users`) carries both on a deployment
+    with Jira; the gate itself still decides.
     """
     key = _COMMENT_EVENTS.get(getattr(routed, "event", ""))
     if not key:
@@ -285,6 +294,13 @@ def comments_from(routed, authorized: Sequence[str] = ()) -> List[Dict[str, str]
     author = str((raw.get("user") or {}).get("login") or "").strip()
     if not body or not author:
         return []
+    if event_provider(routed) == "jira":
+        # A Jira comment (issue-475): its author in the gate's Jira namespace
+        # — `jira:<accountId>` — or, for a relay the ingress verified, the
+        # operator's words. No envelope narrowing: Jira keeps no envelope.
+        if event_relayed(routed):
+            return [{"author": JIRA_RELAY_GATE_AUTHOR, "body": body}]
+        return [{"author": f"{JIRA_GATE_PREFIX}{author}", "body": body}]
     return [{"author": _attributed(author, body, authorized), "body": body}]
 
 
@@ -571,6 +587,7 @@ class GraphLink:
         authorized_users: Optional[Sequence[str]] = None,
         assignment_sink: Optional[Any] = None,
         cli_config: Optional[Mapping[str, Any]] = None,
+        principals: Optional[Sequence[Any]] = None,
     ):
         self.config = config
         # The CLI config, read for one thing (issue-475): which repository a
@@ -580,6 +597,16 @@ class GraphLink:
         self.control = control or ControlConfig()
         self.control_store = control_store
         self.authorized_users = list(authorized_users or [])
+        # What a human gate accepts (issue-475): the GitHub logins, plus — on a
+        # deployment with Jira — the Jira ids as `jira:<id>` and the relay
+        # author. Exactly `authorized_users` on a GitHub-only one.
+        from .sessions.refs import jira_site
+
+        self.gate_authorized = gate_authorized_users(
+            self.authorized_users,
+            list(principals or []),
+            jira=bool(jira_site(self.cli_config)),
+        )
         # The graph-assigns channel (issue-172): a callable
         # ``(work_item, pr_number, text) -> bool`` the dispatcher provides so
         # the `deliver-assignment` entry hook can push an entered node's
@@ -712,7 +739,7 @@ class GraphLink:
             rt.advance(
                 item,
                 ref=work_item.ref,
-                event={"comments": comments_from(routed, self.authorized_users)},
+                event={"comments": comments_from(routed, self.gate_authorized)},
             )
             return self._parked_on_a_human_start_gate(rt, item)
 
@@ -764,7 +791,7 @@ class GraphLink:
             rt.advance(
                 item,
                 ref=work_item.ref,
-                event={"comments": comments_from(routed, self.authorized_users)},
+                event={"comments": comments_from(routed, self.gate_authorized)},
             )
 
         self._guarded("start", work_item, cwd, call)
@@ -781,7 +808,7 @@ class GraphLink:
         on any skip or fault (issue-148, D4) — the consult-first path renders
         the gate's verdict into the prompt it delivers.
         """
-        event = {"comments": comments_from(routed, self.authorized_users)}
+        event = {"comments": comments_from(routed, self.gate_authorized)}
         return self._guarded(
             "advance",
             work_item,
@@ -906,7 +933,7 @@ class GraphLink:
         being advanced from a PR's events. That one-way flow is what keeps a PR
         from walking the work item past gates the work item has not earned.
         """
-        event = {"comments": comments_from(routed, self.authorized_users)}
+        event = {"comments": comments_from(routed, self.gate_authorized)}
         return self._guarded(
             "advance",
             work_item,
@@ -1544,7 +1571,7 @@ class GraphLink:
         return build_runtime(
             Path(cwd),
             spec_root=spec_dir,
-            authorized_users=self.authorized_users,
+            authorized_users=self.gate_authorized,
             pr_number=pr_number,
             pr_repo=pr_repo,
             loop=loop,

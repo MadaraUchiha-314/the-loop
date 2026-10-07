@@ -507,13 +507,43 @@
             "required": [
               "provider"
             ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "provider": {
+                      "const": "jira"
+                    }
+                  },
+                  "required": [
+                    "provider"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "projects"
+                  ]
+                }
+              }
+            ],
             "properties": {
               "provider": {
                 "type": "string",
                 "enum": [
-                  "github"
+                  "github",
+                  "jira"
                 ],
-                "description": "Which poll provider handles this source. Only `github` ships today (jira is reserved for a follow-up)."
+                "description": "Which poll provider handles this source: `github` (every declared repository) or `jira` (the Jira projects listed in `projects`, on `integrations.jira.site` — issue-475)."
+              },
+              "projects": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z0-9_]{1,9}$"
+                },
+                "description": "[jira] The Jira project keys this source polls — one JQL query per project per cycle. Each must be listed under `integrations.jira.projects` WITH a `repository`: a mirror-only project is a `jira@` room, never a work-item source, and polling one is refused at startup."
               },
               "labels": {
                 "type": "array",
@@ -874,6 +904,11 @@
               "slack": {
                 "type": "string",
                 "description": "The person's Slack MEMBER ID (U…, never a display name — names are attacker-chosen): what the Slack channel authorizes replies, button presses and kickoffs on."
+              },
+              "jira": {
+                "type": "string",
+                "pattern": "\\S",
+                "description": "The person's Jira id on `integrations.jira.site` (issue-475): the Cloud `accountId` (e.g. 5b10ac8d82e05b22cc7d4ef5) or the Data Center user `key` — the immutable id the API returns, never a display name or an email. What both ingresses authorize a Jira comment on, and what the control seam re-checks for a command given on a Jira ticket; matched exactly, and a Jira event with no author is never authorized."
               }
             },
             "description": "One PERSON (issue-309, decision-103): a bare string is a GitHub login; a mapping names that person's id on every channel they act on (`github`, `slack`, … — any channel name a provider registers), plus an optional `name`. An entry naming no `github` id may act on the channels it is named on and on nothing that reads GitHub logins."
@@ -1849,6 +1884,18 @@
             "closeTransition": {
               "type": "string",
               "description": "The transition name that closes a ticket (`ticket close`, `finish-tasks`). Unset, the one available transition into the Done status category is used; none or several is an error listing them — never a guess."
+            },
+            "webhook": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "The Jira webhook doorbell (issue-475): the receiver's second route, `/jira-webhook`, served ONLY when `secretEnv` names a variable that is set — without one the path is a 404. A Jira admin registers the webhook (events `comment_created` and `jira:issue_updated`) with the same secret; every delivery's `X-Hub-Signature` HMAC is verified before its body is parsed, and only the event name, the issue key and the comment id are read — the issue and the comment are re-fetched with the daemon's credential.",
+              "properties": {
+                "secretEnv": {
+                  "type": "string",
+                  "pattern": "^[A-Z_][A-Z0-9_]*$",
+                  "description": "The environment variable holding the webhook secret — its NAME, never the secret (e.g. THE_LOOP_JIRA_WEBHOOK_SECRET). Unset, or naming an empty variable: no Jira route."
+                }
+              }
             }
           },
           "allOf": [

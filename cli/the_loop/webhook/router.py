@@ -15,11 +15,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, List, Optional, Sequence, Set, Tuple
 
 from .. import eventlog
-from ..authz import is_authorized, is_self_authored
+from ..authz import is_authorized, is_authorized_on, is_self_authored
 from ..sessions import DEFAULT_GITHUB_HOST, WorkItemRef, host_from_url
 
 if TYPE_CHECKING:  # the roster is injected, never built here (issue-307)
     from ..collaborators import CollaboratorStore
+    from ..identity import Principal
 
 logger = logging.getLogger("the-loop.gh-webhook")
 
@@ -59,6 +60,19 @@ SOURCE_ENTITY = "entity"  # the issue/PR the event is about (GitHub said so)
 POLL_CLOSURE_DELIVERY_PREFIX = "poll-close-"
 
 
+#: The top-level payload key the in-process Jira ingress (the poller's
+#: ``JiraPollProvider`` and the webhook doorbell) sets on every event it builds
+#: (issue-475, design §C8). A pushed GitHub delivery never carries it — the
+#: router refuses one that does — and it is honoured only on an event whose work
+#: items are all Jira refs (:func:`event_provider`), so the flag alone can never
+#: move a GitHub work item's event onto the Jira allow-list.
+PROVIDER_KEY = "x-the-loop-provider"
+#: Set by the Jira ingress on a comment it read as a **relay** — by the service
+#: account, carrying the relay marker (``authz.jira_comment_origin``): the
+#: operator's authorized words, as an unmarked relay is on GitHub.
+RELAY_KEY = "x-the-loop-relay"
+
+
 @dataclass
 class RoutedEvent:
     """A verified, filtered, deduplicated event ready for dispatch."""
@@ -75,6 +89,29 @@ class RoutedEvent:
     # (issue-462), appended to the prompt after the template. Empty for every
     # other event, which then renders exactly as before.
     ci_note: str = ""
+
+
+def event_provider(routed: "RoutedEvent") -> str:
+    """Which tracker's allow-list judges ``routed``'s actor: ``jira`` or ``github``.
+
+    ``jira`` only when the payload says so (:data:`PROVIDER_KEY`, set by the
+    in-process Jira ingress) **and** every work item is a Jira ref — both, so
+    neither a payload flag on a GitHub event nor a Jira ref linked from a GitHub
+    event (a pull request naming a Jira key) changes whose ids authorize it.
+    """
+    payload = routed.payload or {}
+    if payload.get(PROVIDER_KEY) == "jira" and routed.work_items:
+        if all(item.provider == "jira" for item in routed.work_items):
+            return "jira"
+    return "github"
+
+
+def event_relayed(routed: "RoutedEvent") -> bool:
+    """Whether ``routed`` is a Jira relay — the operator's words (:data:`RELAY_KEY`)."""
+    return (
+        event_provider(routed) == "jira"
+        and (routed.payload or {}).get(RELAY_KEY) is True
+    )
 
 
 class Deduper:
@@ -570,8 +607,13 @@ class Router:
         collaborators: Optional["CollaboratorStore"] = None,
         publisher: Optional[Callable[[str, str, str, str, str], None]] = None,
         repositories: Optional[Set[str]] = None,
+        principals: Sequence["Principal"] = (),
     ):
         self.events = list(events)
+        # The whole allow-list, person by person (issue-309): read for the ids of
+        # a provider other than GitHub — a Jira event's author is matched on the
+        # `jira` ids (issue-475, R7). GitHub events keep `authorized_users`.
+        self.principals = list(principals)
         # Every one of these must be on the item for it to count as labelled
         # (issue-381); an empty list flags nothing.
         self.auto_execute_labels = normalize_labels(auto_execute_labels)
@@ -599,10 +641,38 @@ class Router:
         self.deduper = deduper if deduper is not None else Deduper(maxsize=dedup_size)
 
     def route(
-        self, event: str, payload: dict, delivery_id: str
+        self,
+        event: str,
+        payload: dict,
+        delivery_id: str,
+        work_items: Optional[List[WorkItemRef]] = None,
     ) -> Optional[RoutedEvent]:
-        """Return a RoutedEvent, or None when filtered / duplicate / unmappable."""
+        """Return a RoutedEvent, or None when filtered / duplicate / unmappable.
+
+        ``work_items`` is passed only by an in-process ingress that already knows
+        the refs — the Jira doorbell (issue-475): its events are about a Jira
+        ticket, so the GitHub repository bound and GitHub's ref extraction have
+        nothing to say about them, and its author is judged on the Jira ids. A
+        pushed (GitHub) delivery never passes it, and one whose body claims a
+        provider (:data:`PROVIDER_KEY`) is refused.
+        """
         action = str(payload.get("action") or "")
+        if work_items is None and PROVIDER_KEY in payload:
+            logger.warning(
+                "ignoring %s: a pushed delivery names a provider (%s) — only "
+                "the-loop's own ingress may",
+                event,
+                PROVIDER_KEY,
+            )
+            eventlog.emit(
+                "routing.dropped",
+                level="warning",
+                reason="forged-provider",
+                gh_event=event,
+                action=action,
+                delivery_id=delivery_id,
+            )
+            return None
         if self.events and event not in self.events:
             logger.debug("ignoring disabled event type %s", event)
             eventlog.emit(
@@ -628,7 +698,7 @@ class Router:
         # the bus on purpose: a delivery for a repository the operator never declared
         # should reach as little of this process as possible, and reading an actor off
         # it — let alone publishing its comment to a channel — is already too much.
-        delivery_repo = repository_key(payload)
+        delivery_repo = repository_key(payload) if work_items is None else ""
         if (
             self.repositories is not None
             and delivery_repo
@@ -650,8 +720,9 @@ class Router:
                 repository=delivery_repo,
             )
             return None
-        work_items = extract_work_items(event, payload)
-        if self.repositories is not None and work_items:
+        known = work_items is not None
+        work_items = list(work_items) if known else extract_work_items(event, payload)
+        if self.repositories is not None and work_items and not known:
             # A pull request may link a work item in ANOTHER repository (issue-183).
             # That repository has to be declared too, or a linked ref becomes the way
             # to name a work item on a repository nobody pointed this instance at.
@@ -714,6 +785,10 @@ class Router:
             str(payload.get("action") or "") == "closed"
         )
         actor = event_actor(event, payload)
+        on_jira = (
+            event_provider(RoutedEvent(event, action, "", work_items, payload))
+            == "jira"
+        )
         # A work-item collaborator is the narrower answer to the same question
         # (issue-307): an authorized user granted this login the right to be *input*
         # on these work items. Only the refs THIS event named are consulted, which is
@@ -721,9 +796,22 @@ class Router:
         # does not buy is checked further in: the control seam and the spawn seam
         # both re-check `authorizedUsers` for a named actor. Consulted only once the
         # allow-list has said no, so the ordinary path reads no rosters at all.
-        authorized = is_lifecycle_close or is_authorized(actor, self.authorized_users)
+        if on_jira:
+            # The Jira allow-list (issue-475, R7): the exact Jira id, a missing
+            # actor unauthorized; or a relay the ingress verified came from the
+            # service account (the operator's words, as on GitHub).
+            authorized = (
+                is_lifecycle_close
+                or payload.get(RELAY_KEY) is True
+                or is_authorized_on("jira", actor, self.principals)
+            )
+        else:
+            authorized = is_lifecycle_close or is_authorized(
+                actor, self.authorized_users
+            )
         collaborator = (
             not authorized
+            and not on_jira  # a roster holds GitHub logins, never Jira ids
             and bool(actor)
             and self.collaborators is not None
             and self.collaborators.permits(actor, work_items)
