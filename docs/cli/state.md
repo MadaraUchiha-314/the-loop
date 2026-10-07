@@ -325,9 +325,10 @@ and what the pre-issue-128 shim keys on. `url` is the same fact in the form you 
 added beside it rather than replacing it, because these files are tracked and therefore
 read by people.
 
-The URL is **derived, never guessed**: only `github` refs resolve, to the host the ref
+The URL is **derived, never guessed**. A `github` ref resolves to the host the ref
 names — `github.com` unless it says otherwise — and only when the host, owner and repo are
-the shapes GitHub accepts. Anything else, such as a `jira:` ref, has no `url` field at
+the shapes GitHub accepts. A `jira` ref resolves to `https://<site>/browse/<KEY>-<n>` when
+its site and key match the Jira grammar (issue-475). Anything else has no `url` field at
 all, because a link somewhere other than the work item is worse than no link. When the
 number belongs to a pull request, GitHub redirects `…/issues/<n>` to `…/pull/<n>`, so one
 form serves both.
