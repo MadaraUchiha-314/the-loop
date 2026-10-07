@@ -31,7 +31,7 @@ Two decisions from the gate are carried here:
 
 ### PR 1 — identity (#476: spec chain + refs, spec ids, origin repository)
 
-- [ ] 1.1 **Red tests for the Jira ref scheme and spec ids.** Add `test_jira_refs.py`
+- [x] 1.1 **Red tests for the Jira ref scheme and spec ids.** Add `test_jira_refs.py`
   with round-trip, grammar rejections (site, key, number), slug and URL, `spec_id`
   disjointness (including key `ISSUE`), `derive_ref` for `jira-<key>-<n>`, and
   `origin_repository` (mapped, mirror-only, unknown project, wrong site).
