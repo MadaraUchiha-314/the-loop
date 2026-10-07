@@ -100,7 +100,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 2.2
   - _Requirements:_ R3.4–R3.6
   - _Test:_ T8 — green, including `test_config_schema_parity.py`
-- [ ] 2.4 **Red tests for `JiraApiConfig`/`JiraClient` against `FakeJiraClient`.**
+- [x] 2.4 **Red tests for `JiraApiConfig`/`JiraClient` against `FakeJiraClient`.**
   - Add `cli/tests/jirafakes.py` and `test_jira_api.py`.
   - Cover the server URL and REST version per deployment, credentials read at call
     time, missing-credential errors, and error scrubbing.
