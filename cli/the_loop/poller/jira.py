@@ -149,7 +149,6 @@ class JiraPollProvider(PollProvider):
         self.labels = normalize_labels(labels)
         self.site = str(site).strip().lower()
         self.client = client
-        self._me: Optional[str] = None
 
     # -- construction -------------------------------------------------------------
 
@@ -282,15 +281,15 @@ class JiraPollProvider(PollProvider):
         return [self._comment(c, me) for c in found]
 
     def _service_account(self) -> str:
-        """The service account's id (``myself``), cached; ``""`` when unreadable —
-        then nothing is a relay, and the marker is the only self test."""
-        if self._me is None:
-            try:
-                self._me = self.client.myself()
-            except JiraApiError as exc:
-                logger.debug("could not read the Jira service account's id: %s", exc)
-                return ""
-        return self._me
+        """The service account's id (``myself``); ``""`` when unreadable — then
+        nothing is a relay, and the marker is the only self test. Read from the
+        client every time: the client caches it, and drops that cache when the
+        credential changes, so a copy here would outlive a rotation."""
+        try:
+            return self.client.myself()
+        except JiraApiError as exc:
+            logger.debug("could not read the Jira service account's id: %s", exc)
+            return ""
 
     @staticmethod
     def _comment(comment: JiraComment, me: str) -> Comment:

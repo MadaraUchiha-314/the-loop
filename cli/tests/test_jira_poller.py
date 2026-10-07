@@ -227,6 +227,26 @@ def test_comments_are_listed_with_their_origin():
     ]
 
 
+def test_a_rotated_credentials_service_account_is_the_one_read():
+    """The provider keeps no copy of the service account's id: the client owns that
+    cache and resets it when the credential changes, so after a rotation the new
+    account's comments are the-loop's own, and the old account's are a person's."""
+    new_bot = "5b10-the-new-bot"
+    client = SearchingFake(account_id=BOT)
+    client.comment_table[KEY] = [
+        _comment("1", BOT, mark_relayed_on_jira("> approved")),
+        _comment("2", new_bot, mark_relayed_on_jira("> approved")),
+    ]
+    client.by_project["PROJ"] = [_issue()]
+    provider = _provider(client)
+    [item] = provider.listing().items
+    origins = [provider.comment_origin(c) for c in provider.list_comments(item)]
+    assert origins == ["relay", "human"]
+    client.account_id = new_bot  # the credential was rotated to another account
+    origins = [provider.comment_origin(c) for c in provider.list_comments(item)]
+    assert origins == ["human", "relay"]
+
+
 def test_comment_event_is_an_issue_comment_flagged_as_jira():
     client = SearchingFake(account_id=BOT)
     client.by_project["PROJ"] = [_issue()]
