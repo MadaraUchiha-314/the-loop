@@ -266,7 +266,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 5.1
   - _Requirements:_ R8.2, R3.7
   - _Test:_ T6 — red → green; T9
-- [ ] 5.3 **Skill, commands and `/init`.**
+- [x] 5.3 **Skill, commands and `/init`.**
   - `commands/work-on.md`, `create-ticket.md`, `finish-tasks.md` and
     `skills/the-loop/reference/automation.md` replace the PR-ref workaround with the
     `jira:` flow, keeping MCP as the no-CLI fallback.

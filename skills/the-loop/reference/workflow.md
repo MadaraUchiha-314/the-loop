@@ -906,10 +906,11 @@ using dependency relationships:
 ## Interacting with the rest of the harness
 
 the-loop may freely use other MCP tools, skills and plugins available in the harness
-(e.g. Jira via MCP, plugins like superpowers). Nothing registers them: discover what
-the harness offers rather than assuming it. GitHub is the exception — reach it through
-the-loop's verbs (`the-loop comment`, `ticket`, `pr`, `ask`; issue-447), with `gh` only
-as the fallback when the CLI is not installed. See `collaboration.md` and
+(e.g. plugins like superpowers). Nothing registers them: discover what the harness
+offers rather than assuming it. GitHub and a configured Jira are the exception — reach
+them through the-loop's verbs (`the-loop comment`, `ticket`, `pr`, `ask`; issue-447,
+issue-475), with `gh` or the Jira MCP tools only as the fallback when the CLI is not
+installed. See `collaboration.md` and
 `automation.md` § Reaching GitHub.
 
 ## Predictability & guarantees

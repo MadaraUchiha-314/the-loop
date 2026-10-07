@@ -211,15 +211,22 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   `harnessTrust.enabled: false` if that is not what you want. Design:
   `docs/specs/issue-90/design.md` and `docs/specs/issue-136/design.md`,
   decisions: `docs/decisions/decision-037.md`, `docs/decisions/decision-052.md`.
-- **The labels work on PRs directly — the ticketing system need not be GitHub.** A PR
-  carrying every auto-execute label is routed as its own work item
-  (`github:OWNER/REPO#<pr-number>`) when it is linked to no GitHub issue. This is
-  the supported path when work items live in **Jira or another provider**: the ticket
-  itself can't be routed, but the PR delivering it is still monitorable by the-loop's
-  CLI. `/the-loop:work-on <jira-id>` applies this automatically — once the PR is opened
-  it adds **every** auto-execute label to the PR and registers the session against the
-  PR's ref, so PR comments/reviews/CI resume the session and **that** PR's merge/close
-  auto-closes it, identical to the GitHub-ticketed flow.
+- **A Jira ticket is a work item of its own** (issue-475). With `integrations.jira`
+  configured, `jira:SITE/KEY-N` is routed like `github:OWNER/REPO#N`: the poller and
+  the `/jira-webhook` doorbell read the ticket's comments, the session registers against
+  the Jira ref, and `the-loop ticket`, `comment`, `ask` and `pr create` act on it.
+  Its pull requests open in the repository `integrations.jira.projects.<KEY>.repository`
+  names; each one recorded by `pr create`, or naming the key in its branch or title,
+  routes back to the Jira work item's session. Closing the Jira ticket ends it. The Jira
+  MCP tools are the fallback only when the CLI is not installed.
+- **The labels work on PRs directly — for any other ticketing system.** A PR carrying
+  every auto-execute label is routed as its own work item
+  (`github:OWNER/REPO#<pr-number>`) when it is linked to no work item. That is the path
+  when work items live in a provider the-loop does not read: the ticket itself can't be
+  routed, but the PR delivering it is. `/the-loop:work-on` applies it — once the PR is
+  opened it adds **every** auto-execute label to the PR and registers the session
+  against the PR's ref, so PR comments/reviews/CI resume the session and **that** PR's
+  merge/close auto-closes it.
 - **One work item, many PRs.** A work item is frequently delivered by more than one PR
   (a spec PR then an implementation PR, a stacked series, a follow-up after review, one
   PR per repository). Every one of them carries every auto-execute label and routes back
@@ -237,9 +244,9 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   `docs/decisions/decision-039.md` (issue-101).
 - **Session registration is a workflow step.** When the harness starts executing a
   work item (execute-tasks / work-on), it registers itself so events can find it —
-  and closes the registration in finish-tasks. `N` is the GitHub issue number — or,
-  for a non-GitHub-ticketed item (Jira, …), the **PR number** once the PR exists
-  (the ref names the routable GitHub object, not the ticket):
+  and closes the registration in finish-tasks. The ref is the work item's own:
+  `github:OWNER/REPO#N` for a GitHub issue, `jira:SITE/KEY-N` for a Jira ticket — or,
+  for an item in a provider the-loop does not read, the **PR's** ref once the PR exists:
 
   ```bash
   # Claude Code (session id is exposed to hooks/commands as $CLAUDE_SESSION_ID)

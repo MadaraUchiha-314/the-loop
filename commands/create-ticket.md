@@ -11,8 +11,9 @@ harness works on must have a ticket — this command creates it and wires the sp
 
 **Read the `the-loop` skill, `reference/collaboration.md` and `reference/workflow.md`.**
 Load `.the-loop/harness-config.yaml`. The ticketing system is whatever the repository's
-remote and the available integration are (GitHub via `the-loop ticket create`, Jira via
-MCP) — it is no longer a harness-config key (issue-352).
+remote and the available integration are (GitHub via `the-loop ticket create
+--repository`, Jira via `the-loop ticket create --project`) — it is no longer a
+harness-config key (issue-352).
 
 ## Steps
 
@@ -22,14 +23,17 @@ MCP) — it is no longer a harness-config key (issue-352).
 2. **Create the ticket** in the project's ticketing system (GitHub: `the-loop ticket
    create --repository OWNER/REPO --title … --body-file … --label
    loop:requirements-definition`, which needs no `gh` — issue-447; `gh` only when the CLI
-   is not installed. Jira: via MCP):
+   is not installed. Jira: `the-loop ticket create --project KEY …` with the same flags,
+   in a project listed under `integrations.jira.projects`; it prints the new
+   `jira:SITE/KEY-N` ref and writes labels in their Jira-safe form. The Jira MCP tools
+   only when the CLI is not installed):
    - Title from the requirement's summary; body links to the spec (do not paste the whole
      file — reference it, single source of truth).
    - Apply the initial phase label `loop:requirements-definition`
      (labels are created by `/the-loop:init`).
 
 3. **Promote the folder.** Derive the canonical id from the new ticket (e.g. `issue-42`,
-   `PROJ-42`). If the requirements live under `docs/specs/draft-<slug>/`, rename that
+   or `jira-proj-42` for `jira:SITE/PROJ-42`). If the requirements live under `docs/specs/draft-<slug>/`, rename that
    folder to `docs/specs/<id>/` — this carries any sibling `brainstorm.md` (the root
    artifact) along with it. Update the front-matter of every promoted file (`brainstorm.md`
    included): `workItem: <id>`, `status` as appropriate.
