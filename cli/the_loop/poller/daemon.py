@@ -110,6 +110,9 @@ def _build_providers(
             default_host=default_host,
             repositories=repositories,
             api=api,
+            # The whole document (issue-475): a jira source reads its site,
+            # projects and credential names from `integrations.jira`.
+            config=data,
         )
         for source in PollConfig.from_mapping(data.get("polling") or {}).sources
     ]

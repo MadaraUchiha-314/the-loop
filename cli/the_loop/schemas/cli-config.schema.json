@@ -507,13 +507,43 @@
             "required": [
               "provider"
             ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "provider": {
+                      "const": "jira"
+                    }
+                  },
+                  "required": [
+                    "provider"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "projects"
+                  ]
+                }
+              }
+            ],
             "properties": {
               "provider": {
                 "type": "string",
                 "enum": [
-                  "github"
+                  "github",
+                  "jira"
                 ],
-                "description": "Which poll provider handles this source. Only `github` ships today (jira is reserved for a follow-up)."
+                "description": "Which poll provider handles this source: `github` (every declared repository) or `jira` (the Jira projects listed in `projects`, on `integrations.jira.site` — issue-475)."
+              },
+              "projects": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z0-9_]{1,9}$"
+                },
+                "description": "[jira] The Jira project keys this source polls — one JQL query per project per cycle. Each must be listed under `integrations.jira.projects` WITH a `repository`: a mirror-only project is a `jira@` room, never a work-item source, and polling one is refused at startup."
               },
               "labels": {
                 "type": "array",

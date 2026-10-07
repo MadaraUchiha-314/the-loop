@@ -30,6 +30,7 @@ from .github import (  # noqa: F401
     check_github_credentials,
     parse_repos,
 )
+from .jira import JiraPollProvider  # noqa: F401 — registers the `jira` provider
 from .heartbeat import (  # noqa: F401
     Heartbeat,
     PollHeartbeat,
@@ -67,6 +68,7 @@ __all__ = [
     "ScopeFailure",
     "WorkItem",
     "build_provider",
+    "JiraPollProvider",
     "check_github_credentials",
     "parse_repos",
     "provider_names",

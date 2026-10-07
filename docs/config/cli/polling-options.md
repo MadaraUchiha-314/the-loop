@@ -146,7 +146,7 @@ request. The CI read happens inside a poll cycle, so it never runs more often th
 
 `sources` is an ordered list. Each entry names a `provider`; the remaining keys are that
 provider's own config, unknown to the poller core — which is what keeps the core
-provider-agnostic. GitHub ships today; the seam admits others.
+provider-agnostic. Two providers ship: `github` and, since issue-475, `jira`.
 
 ::: warning An empty `sources` list polls nothing
 A directly run poller exits with `no polling sources configured` rather than looping
@@ -156,10 +156,13 @@ enabled-but-sourceless poller as *misconfigured* without spawning one.
 
 ### `sources[].provider`
 
-- **Type:** `'github'`
+- **Type:** `'github' | 'jira'`
 - **Default:** none — **required**
 
-Which poll provider handles this source.
+Which poll provider handles this source. A `github` source polls every declared
+[repository](/config/cli/repositories-options). A `jira` source polls the Jira projects
+it lists in [`projects`](#sources-projects), on
+[`integrations.jira.site`](/config/cli/integrations-options#jira-site).
 
 ### `sources[].labels`
 
@@ -204,6 +207,41 @@ reloads the sources, and on restart; a re-probe that answers logs
 stays transient — retried next cycle, isolated, never quarantined. While anything is
 failed or skipped, [`the-loop status`](/cli/commands/status) names it beneath the last
 cycle as `degraded:`.
+
+### `sources[].projects`
+
+- **Type:** `string[]`
+- **Default:** none — **required** when `provider` is `jira`
+
+The Jira project keys a `jira` source polls (issue-475). Each key must match
+`^[A-Z][A-Z0-9_]{1,9}$` and be listed under
+[`integrations.jira.projects`](/config/cli/integrations-options#jira-projects) **with** a
+`repository`. A mirror-only project (one with no `repository`) can be a `jira@` room but
+never a work-item source, so polling one stops the poller at startup with an error that
+names it.
+
+```yaml
+polling:
+  enabled: true
+  sources:
+    - provider: jira
+      projects: [PROJ]
+```
+
+Each cycle runs one JQL query per project. The query lists the tickets that carry
+**every** arming label, in its Jira-safe form (`the-loop: auto-execute` becomes
+`the-loop:auto-execute`), and are not in the *Done* status category:
+
+```text
+project = "PROJ" AND labels = "the-loop:auto-execute" AND statusCategory != Done ORDER BY updated DESC
+```
+
+Every value in the query is a quoted string literal, and no value from a ticket is ever
+placed in it. A project is its own scope. A rate limit (429) or a server error (5xx)
+degrades that project for the cycle and keeps the poll ledger's cursor, so on recovery no
+comment is dropped and none is delivered twice. A ticket moving to *Done* closes its work
+item, as a closed GitHub issue does. Setup and the identities that may act on a Jira
+ticket are in [Webhook triggers](/capabilities/webhook-triggers#jira).
 
 ### `sources[].monitor.issues`
 

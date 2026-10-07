@@ -205,7 +205,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 3.7
   - _Requirements:_ R7.1–R7.3
   - _Test:_ T5, T7 (abuse case 3) — red → green
-- [ ] 4.2 **`JiraPollProvider`.**
+- [x] 4.2 **`JiraPollProvider`.**
   - Red first: `test_jira_poller.py`, covering one JQL clause per label,
     `test_jql_values_are_quoted`, comments, `test_done_status_category_is_closure`,
     `test_rate_limited_scope_keeps_cursor` and owns/presence.
