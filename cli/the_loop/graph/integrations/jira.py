@@ -27,9 +27,9 @@ from ...jiraapi import (
     JiraClient,
     JiraComment,
     JiraTransition,
+    issue_key_for,
 )
 from ...jiralabels import JiraLabelError, jira_label
-from ...sessions import WorkItemRef
 from .base import IntegrationError, OperationUnsupported
 from .github import OPERATIONS as GITHUB_OPERATIONS
 
@@ -74,25 +74,9 @@ class JiraProvider:
     def _key(self, ref: str) -> str:
         """``jira:<site>/<KEY>-<n>`` → ``KEY-n``, or refuse before any request."""
         try:
-            parsed = WorkItemRef.parse(str(ref))
-        except ValueError as exc:
-            raise IntegrationError(f"jira: malformed work item ref {ref!r}: {exc}")
-        if parsed.provider != "jira":
-            raise IntegrationError(
-                f"jira: {ref!r} is not a Jira ref — expected 'jira:<site>/<KEY>-<n>'"
-            )
-        site = self.config.site
-        if not site or parsed.host.lower() != site:
-            raise IntegrationError(
-                f"jira: {parsed.ref} is on {parsed.host}, not the configured Jira "
-                f"site ({site or 'none'}); nothing was sent"
-            )
-        if parsed.owner not in self.config.projects:
-            raise IntegrationError(
-                f"jira: project {parsed.owner} is not configured under "
-                "integrations.jira.projects; nothing was sent"
-            )
-        return f"{parsed.owner}-{parsed.number}"
+            return issue_key_for(ref, self.config)
+        except JiraApiError as exc:
+            raise IntegrationError(f"jira: {exc}") from None
 
     def call(self, op: str, **params: Any) -> Dict[str, Any]:
         if op not in self.operations:

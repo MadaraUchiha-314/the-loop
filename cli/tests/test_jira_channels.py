@@ -307,3 +307,185 @@ def test_a_slack_reply_reads_the_jira_checklist(monkeypatch):
     _as_stored_on_jira(client)
     body = inbound._selection_checklist(REF, cloud_config())
     assert SELECTION_MARKER in body and "- [ ] `design`" in body
+
+
+# -- the ledger routes by the ref (design §C7, R4.1) -------------------------------
+
+from the_loop.channels.base import Event, RoutedLedger, ledger_name, load_ledger  # noqa: E402
+from the_loop.channels.github import GitHubLedger  # noqa: E402
+from the_loop.identity import Principal  # noqa: E402
+
+PR_REF = "github:acme/web#41"
+PERSON = Principal(ids={"github": "octocat", "slack": "U1"}, name="Octo")
+
+
+def _jira_cli_config(**channels: Any) -> Dict[str, Any]:
+    config = cloud_config()
+    if channels:
+        config["channels"] = dict(channels)
+    return config
+
+
+def _routed(cli_config: Dict[str, Any]):
+    from the_loop.channels.jira import JiraLedger
+
+    posted: List[Any] = []
+
+    def post(item, body, api=None):
+        posted.append((item.ref, body))
+        return True, "", "https://github.com/acme/web/pull/41#c1"
+
+    github = GitHubLedger(cli_config, post_comment=post)
+    client = FakeJiraClient()
+    jira = JiraLedger(cli_config, client=client)
+    ledger = RoutedLedger(
+        {"github": github, "jira": jira}, default=ledger_name(cli_config)
+    )
+    return ledger, posted, client
+
+
+def _event(event_type: str, work_item: str = REF, **kw: Any) -> Event:
+    return Event(
+        event_type=event_type,
+        work_item=work_item,
+        text=kw.pop("text", "A or B?"),
+        source=kw.pop("source", "slack"),
+        actor=kw.pop("actor", PERSON),
+        **kw,
+    )
+
+
+def test_routed_ledger_records_jira_event_on_jira():
+    """
+    Scenario: an ask on a Jira work item is recorded on its ticket
+      Given a deployment with the Jira integration configured
+      When a session.awaiting_input event is recorded for a Jira work item
+      Then the Jira ticket gets the comment and GitHub gets nothing
+    """
+    ledger, posted, client = _routed(_jira_cli_config())
+    result = ledger.record(_event("session.awaiting_input", source="cli"))
+    assert result.ok and result.channel == "jira"
+    assert result.url.endswith("/browse/PROJ-7?focusedCommentId=10001")
+    assert [p["key"] for p in client.posted] == [KEY]
+    assert posted == []
+
+
+def test_pr_event_still_recorded_on_github():
+    """channels.ledger: jira changes where a ticket is CREATED, not where a PR is."""
+    ledger, posted, client = _routed(_jira_cli_config(ledger="jira"))
+    result = ledger.record(_event("work-item.reply", work_item=PR_REF))
+    assert result.ok and result.channel == "github"
+    assert [ref for ref, _ in posted] == [PR_REF]
+    assert client.posted == []
+
+
+@pytest.mark.parametrize(
+    "event_type",
+    [
+        "session.awaiting_input",  # the ask
+        "gate.feedback",  # a relay
+        "work-item.reply",  # a mirror
+        "phase.started",  # any other event, stamped
+    ],
+)
+def test_jira_ledger_stamps_visible_marker(event_type):
+    ledger, _, client = _routed(_jira_cli_config())
+    detail = {"gate": "design-approval"} if event_type == "gate.feedback" else {}
+    assert ledger.record(_event(event_type, detail=detail)).ok
+    [posted] = client.posted
+    assert posted["body"].rstrip("\n").endswith(JIRA_SELF_ATTRIBUTION)
+    assert SELF_COMMENT_MARKER not in posted["body"]
+
+
+def test_jira_ledger_bodies_are_the_github_bodies():
+    """One body selection for both ledgers (channels/bodies.py)."""
+    from the_loop.channels.bodies import ledger_body
+
+    cli_config = _jira_cli_config()
+    for event_type in ("session.awaiting_input", "gate.feedback", "work-item.reply"):
+        ledger, _, client = _routed(cli_config)
+        event = _event(event_type)
+        ledger.record(event)
+        expected = mark_self_authored_on_jira(ledger_body(event, cli_config))
+        assert _no_ts(client.posted[0]["body"]) == _no_ts(expected)
+
+
+def _no_ts(body: str) -> str:
+    import re
+
+    return re.sub(r'"ts":"[^"]*"', '"ts":""', body)
+
+
+def test_work_item_create_opens_a_jira_ticket_when_the_ledger_is_jira():
+    ledger, posted, client = _routed(_jira_cli_config(ledger="jira"))
+    result = ledger.record(
+        Event(
+            event_type="work-item.create",
+            work_item="",
+            text="Fix the login page\n\nIt 500s.",
+            detail={"project": "PROJ", "labels": "the-loop: auto-execute,bug"},
+            source="slack",
+            actor=PERSON,
+        )
+    )
+    assert result.ok and result.channel == "jira"
+    assert result.ref == f"jira:{SITE}/PROJ-101"
+    assert client.created == [
+        {
+            "key": "PROJ-101",
+            "summary": "Fix the login page",
+            "labels": ["the-loop:auto-execute", "bug"],
+        }
+    ]
+    assert posted == []
+
+
+def test_work_item_create_refuses_a_mirror_only_project():
+    ledger, _, client = _routed(_jira_cli_config(ledger="jira"))
+    result = ledger.record(
+        Event(
+            event_type="work-item.create",
+            work_item="",
+            text="x",
+            detail={"project": "OPS"},
+            source="slack",
+        )
+    )
+    assert not result.ok and "OPS" in result.error
+    assert client.created == []
+
+
+def test_work_item_create_stays_on_github_by_default():
+    ledger, posted, client = _routed(_jira_cli_config())
+    assert ledger.route(Event("work-item.create", "", "x")).name == "github"
+
+
+def test_a_jira_ledger_refuses_a_github_ref_and_an_unknown_project():
+    from the_loop.channels.jira import JiraLedger
+
+    client = FakeJiraClient()
+    jira = JiraLedger(_jira_cli_config(), client=client)
+    assert not jira.record(_event("phase.started", work_item=PR_REF)).ok
+    bad = jira.record(_event("phase.started", work_item=f"jira:{SITE}/NOPE-1"))
+    assert not bad.ok and "NOPE" in bad.error
+    assert client.calls == []
+
+
+def test_load_ledger_routes_only_when_jira_is_configured():
+    assert isinstance(load_ledger({}), GitHubLedger)
+    routed = load_ledger(_jira_cli_config(ledger="jira"))
+    assert isinstance(routed, RoutedLedger)
+    assert ledger_name(_jira_cli_config(ledger="jira")) == "jira"
+    # Without integrations.jira, `jira` still resolves to github (and is logged).
+    assert ledger_name({"channels": {"ledger": "jira"}}) == "github"
+
+
+def test_the_bus_never_records_an_event_back_on_its_own_tracker():
+    """A Jira-sourced event on a Jira item is not re-recorded on the Jira ticket."""
+    from the_loop.channels.bus import publish
+
+    ledger, posted, client = _routed(_jira_cli_config())
+    publish(_event("work-item.reply", source="jira"), channels=[], ledger=ledger)
+    assert client.posted == []
+    publish(_event("work-item.reply", source="slack"), channels=[], ledger=ledger)
+    assert len(client.posted) == 1

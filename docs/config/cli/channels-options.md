@@ -90,16 +90,23 @@ as any message in the room does.
 
 ### `ledger`
 
-- **Type:** `'github'`
+- **Type:** `'github' | 'jira'`
 - **Default:** `github`
 
-The channel of record. Every event that originates elsewhere is written here before
+The channel of record. Every event that originates elsewhere is written down before
 any other channel receives it — as a comment carrying a machine-readable **envelope**
-naming the event type, the source channel and the person, or as the issue itself for
+naming the event type, the source channel and the person, or as the ticket itself for
 `work-item.create`. The ledger's ingress (the webhook receiver and the poller) is what
 acts on a relayed gate answer or control keyword, through the same guards a typed
-comment goes through. GitHub is the only value this release ships; the key is the
-extension point the owner named. An unknown value is refused at load.
+comment goes through.
+
+Each event is recorded on the tracker of **its own work item**
+([issue-475](https://github.com/MadaraUchiha-314/the-loop/issues/475)): a Jira work
+item's events on its Jira ticket, a pull request's on GitHub. So this key decides one
+thing — the tracker `work-item.create` opens a ticket in. `jira` needs
+[`integrations.jira`](/config/cli/integrations-options) and a project with a
+`repository` named by the event; without `integrations.jira` it records on `github`
+and logs an error. An unknown value is refused at load.
 
 ## Slack
 

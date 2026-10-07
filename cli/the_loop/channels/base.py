@@ -43,6 +43,8 @@ __all__ = [
     "OutboundEvent",
     "PostResult",
     "PublishResult",
+    "RoutedLedger",
+    "jira_configured",
     "ledger_name",
     "load_channels",
     "load_ledger",
@@ -61,8 +63,8 @@ DEFAULT_PUBLISH: Tuple[str, ...] = ("work-item.reply",)
 VERBOSITIES: Tuple[str, ...] = ("quiet", "normal", "verbose")
 
 #: The ledgers this release ships. The key is the extension point the owner named;
-#: a second value is a second provider (decision-103 D8).
-LEDGERS: Tuple[str, ...] = ("github",)
+#: a second value is a second provider (decision-103 D8) — Jira since issue-475.
+LEDGERS: Tuple[str, ...] = ("github", "jira")
 
 
 class ChannelError(RuntimeError):
@@ -213,19 +215,33 @@ def render(event: Event, verbosity: str) -> str:
     return f"{normal}\n\n{detail}" if detail else normal
 
 
+def jira_configured(cli_config: Optional[Mapping[str, Any]]) -> bool:
+    """Whether ``integrations.jira`` names a site and a deployment (issue-475)."""
+    from ..jiraapi import JiraApiConfig
+
+    return JiraApiConfig.from_cli_config(dict(cli_config or {})).configured
+
+
 def ledger_name(cli_config: Optional[Mapping[str, Any]]) -> str:
     """The configured ledger — ``github`` by default; an unknown name resolves
     to ``github`` with an error logged (load refuses it; this is the runtime's
-    belt and braces, and it never resolves to *no* ledger)."""
+    belt and braces, and it never resolves to *no* ledger).
+
+    Since issue-475 the value means one thing: the tracker ``work-item.create``
+    opens tickets in. Every other event is recorded on its own work item's
+    tracker (:class:`RoutedLedger`). ``jira`` without a configured
+    ``integrations.jira`` has nowhere to open a ticket, and resolves to
+    ``github`` the same loud way."""
     section = (dict(cli_config or {}).get("channels") or {}) if cli_config else {}
     name = (
         str((section or {}).get("ledger") or "github")
         if isinstance(section, Mapping)
         else "github"
     )
-    if name not in LEDGERS:
+    if name not in LEDGERS or (name == "jira" and not jira_configured(cli_config)):
         logger.error(
-            "channels.ledger %r is not one of %s — recording on 'github'",
+            "channels.ledger %r is not one of %s (jira needs integrations.jira) "
+            "— recording on 'github'",
             name,
             "/".join(LEDGERS),
         )
@@ -233,11 +249,77 @@ def ledger_name(cli_config: Optional[Mapping[str, Any]]) -> str:
     return name
 
 
+class RoutedLedger:
+    """The ledger of a deployment with more than one tracker (issue-475, §C7).
+
+    Each event is recorded on the tracker of **its own work item** — a Jira
+    work item's events on its Jira ticket, a pull request's on GitHub — and
+    ``work-item.create``, which has no work item yet, on ``default`` (the
+    configured ``channels.ledger``). An event whose work item belongs to no
+    configured tracker is a failed record, never a guess.
+    """
+
+    name = "ticket"
+
+    def __init__(self, ledgers: Mapping[str, "Ledger"], default: str = "github"):
+        self.ledgers: Dict[str, Ledger] = dict(ledgers)
+        self.default = default if default in self.ledgers else "github"
+
+    def subscribes(self, event_type: str) -> bool:
+        return False
+
+    def may_publish(self, event_type: str) -> bool:
+        return False
+
+    def post(self, event: Event) -> PostResult:
+        return self.record(event)
+
+    def route(self, event: Event) -> "Ledger":
+        """The ledger ``event`` is recorded on; raises ``ValueError`` for none."""
+        if event.event_type == "work-item.create":
+            return self.ledgers[self.default]
+        from ..sessions import WorkItemRef
+
+        provider = WorkItemRef.parse(event.work_item).provider
+        ledger = self.ledgers.get(provider)
+        if ledger is None:
+            raise ValueError(f"{event.work_item}: no {provider} ledger is configured")
+        return ledger
+
+    def name_for(self, event: Event) -> str:
+        """The name of the ledger ``event`` lands on — what the bus compares
+        with the event's source, so nothing is recorded back where it came from."""
+        try:
+            return self.route(event).name
+        except ValueError:
+            return self.name
+
+    def record(self, event: Event) -> PostResult:
+        try:
+            ledger = self.route(event)
+        except ValueError as exc:
+            return PostResult(channel=self.name, ok=False, error=str(exc))
+        return ledger.record(event)
+
+
 def load_ledger(cli_config: Optional[Mapping[str, Any]]) -> Ledger:
-    """The ledger channel. Always exists: GitHub needs no `channels` section."""
+    """The ledger channel. Always exists: GitHub needs no `channels` section.
+
+    With ``integrations.jira`` configured it is a :class:`RoutedLedger` over the
+    GitHub and the Jira ledgers (issue-475); without, the GitHub ledger itself,
+    exactly as before.
+    """
     from .github import GitHubLedger
 
-    return GitHubLedger(dict(cli_config or {}))
+    config = dict(cli_config or {})
+    github = GitHubLedger(config)
+    if not jira_configured(config):
+        return github
+    from .jira import JiraLedger
+
+    return RoutedLedger(
+        {"github": github, "jira": JiraLedger(config)}, default=ledger_name(config)
+    )
 
 
 #: ``(cli_config, client_factory) -> Channel | None`` — build one channel type

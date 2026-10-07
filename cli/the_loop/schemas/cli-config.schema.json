@@ -1496,10 +1496,11 @@
         "ledger": {
           "type": "string",
           "enum": [
-            "github"
+            "github",
+            "jira"
           ],
           "default": "github",
-          "description": "The channel of record: every event that originates elsewhere is written here first (a comment with a machine-readable envelope, or the issue itself for `work-item.create`), and the ledger's own ingress is what judges a relayed gate answer or control command. GitHub is the only ledger this release ships; the key is the extension point the owner named (issue-309). An unknown value is refused at load."
+          "description": "The channel of record: every event that originates elsewhere is written down first (a comment with a machine-readable envelope, or the ticket itself for `work-item.create`), and the ledger's own ingress is what judges a relayed gate answer or control command. Each event is recorded on the tracker of ITS OWN work item — a Jira work item's on its Jira ticket, a pull request's on GitHub (issue-475) — so this key decides one thing: the tracker `work-item.create` opens a ticket in. `jira` needs `integrations.jira` (otherwise it records on github, logged). An unknown value is refused at load."
         },
         "slack": {
           "type": "object",

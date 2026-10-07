@@ -77,6 +77,7 @@ __all__ = [
     "JiraTransition",
     "MissingCredential",
     "is_issue_key",
+    "issue_key_for",
 ]
 
 #: The three deployments a config can name.
@@ -109,6 +110,36 @@ _REDACTED = "[redacted]"
 def is_issue_key(value: str) -> bool:
     """Whether ``value`` is a Jira issue key (``PROJ-123``) — checked before a URL."""
     return bool(_ISSUE_KEY_RE.match(value or ""))
+
+
+def issue_key_for(ref: str, config: "JiraApiConfig") -> str:
+    """``jira:<site>/<KEY>-<n>`` → ``KEY-n``, or :class:`JiraApiError` before any
+    request: the ref must be a Jira ref, on the configured site, in a project
+    listed under ``integrations.jira.projects`` (mirror-only included). A ref
+    naming another site never carries this deployment's credential there
+    (abuse case 8)."""
+    from .sessions import WorkItemRef
+
+    try:
+        parsed = WorkItemRef.parse(str(ref))
+    except ValueError as exc:
+        raise JiraApiError(f"malformed work item ref {ref!r}: {exc}") from None
+    if parsed.provider != "jira":
+        raise JiraApiError(
+            f"{ref!r} is not a Jira ref — expected 'jira:<site>/<KEY>-<n>'"
+        )
+    site = config.site
+    if not site or parsed.host.lower() != site:
+        raise JiraApiError(
+            f"{parsed.ref} is on {parsed.host}, not the configured Jira "
+            f"site ({site or 'none'}); nothing was sent"
+        )
+    if parsed.owner not in config.projects:
+        raise JiraApiError(
+            f"project {parsed.owner} is not configured under "
+            "integrations.jira.projects; nothing was sent"
+        )
+    return f"{parsed.owner}-{parsed.number}"
 
 
 # ------------------------------------------------------------------ redaction

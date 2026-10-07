@@ -69,16 +69,20 @@ def publish(
     book = ledger if ledger is not None else load_ledger(cli_config)
     should_record = is_recorded(event.event_type) if record is None else bool(record)
     recorded: Optional[PostResult] = None
-    if should_record and event.source != book.name:
+    # A routed ledger (issue-475) answers per event: the tracker this event lands
+    # on is the one it must not be recorded back onto.
+    name_for = getattr(book, "name_for", None)
+    book_name = str(name_for(event)) if callable(name_for) else book.name
+    if should_record and event.source != book_name:
         try:
             recorded = book.record(event)
         except Exception as exc:  # noqa: BLE001 — a ledger bug never breaks the caller
-            logger.exception("ledger %s record raised", book.name)
-            recorded = PostResult(channel=book.name, ok=False, error=str(exc))
+            logger.exception("ledger %s record raised", book_name)
+            recorded = PostResult(channel=book_name, ok=False, error=str(exc))
         if recorded.ok:
             eventlog.emit(
                 "bus.recorded",
-                ledger=book.name,
+                ledger=book_name,
                 work_item=recorded.ref or event.work_item,
                 event_type=event.event_type,
                 source=event.source,
@@ -92,7 +96,7 @@ def publish(
             eventlog.emit(
                 "bus.record_failed",
                 level="warning",
-                ledger=book.name,
+                ledger=book_name,
                 work_item=event.work_item or None,
                 event_type=event.event_type,
                 source=event.source,

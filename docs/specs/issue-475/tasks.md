@@ -165,7 +165,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 3.3
   - _Requirements:_ R4.3, R5.5
   - _Test:_ T4 — red → green; T9 GitHub hook tests unmodified
-- [ ] 3.5 **`RoutedLedger` + `JiraLedger`.**
+- [x] 3.5 **`RoutedLedger` + `JiraLedger`.**
   - Red first: `test_routed_ledger_records_jira_event_on_jira`,
     `test_pr_event_still_recorded_on_github` and `test_jira_ledger_stamps_visible_marker`.
   - Then extract `channels/bodies.py` from `GitHubLedger`, add `RoutedLedger`, and make
