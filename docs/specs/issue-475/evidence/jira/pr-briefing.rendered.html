@@ -1,0 +1,44 @@
+<h1><a name="%3CPRtitle%3E%E2%80%94reviewerbriefing"></a>&lt;PR title&gt; — reviewer briefing</h1>
+
+<h2><a name="TL%3BDR"></a>TL;DR</h2>
+
+<p>One or two sentences: what this PR does and why.</p>
+
+<h2><a name="Wheretofocus%28inthisorder%29"></a>Where to focus (in this order)</h2>
+
+<p>Prioritized so a reviewer of AI-authored work knows what to scrutinize first.</p>
+
+<ol>
+	<li><b>&lt;highest-priority area&gt;</b> — <tt>&lt;path&gt;</tt> — why it matters / what to check.</li>
+	<li><b>&lt;next&gt;</b> — <tt>&lt;path&gt;</tt> — …</li>
+	<li><b>&lt;lower-risk / skim&gt;</b> — …</li>
+</ol>
+
+
+<h2><a name="Whatchanged%28map%29"></a>What changed (map)</h2>
+
+<div class="preformatted panel" style="border-width: 1px;"><div class="preformattedContent panelContent">
+<pre>%% A diagram of the change — components touched, or commit-by-commit evolution.
+flowchart TD
+  A[area] --&gt; B[area]</pre>
+</div></div>
+
+<h2><a name="Keydecisions%26why%28education%29"></a>Key decisions &amp; why (education)</h2>
+
+<p>The low-level calls the harness made, so the reviewer learns the design, not just the diff.</p>
+
+<ul>
+	<li><b>&lt;decision&gt;</b> — why; trade-off; link to <tt>docs/decisions/decision-&lt;nnn&gt;.md</tt>.</li>
+</ul>
+
+
+<h2><a name="Evidence"></a>Evidence</h2>
+
+<p>Tests / checks / screenshots proving the acceptance criteria are met (e.g. CI green,<br/>
+<tt>pre-commit</tt> output, live smoke test).</p>
+
+<h2><a name="Openquestionsforthereviewer"></a>Open questions for the reviewer</h2>
+
+<p>Anything the reviewer must decide or is explicitly being asked to confirm.</p>
+
+<p>🤖 the-loop, autonomous comment · <span class="error">&#91;the-loop:agent-comment&#93;</span></p>

@@ -1,0 +1,34 @@
+{
+  "type": "taskList",
+  "content": [
+    {
+      "type": "taskItem",
+      "content": [
+        {
+          "type": "text",
+          "text": "brainstorming"
+        }
+      ],
+      "attrs": {
+        "localId": "the-loop-task-1",
+        "state": "DONE"
+      }
+    },
+    {
+      "type": "taskItem",
+      "content": [
+        {
+          "type": "text",
+          "text": "requirements-definition"
+        }
+      ],
+      "attrs": {
+        "localId": "the-loop-task-2",
+        "state": "DONE"
+      }
+    }
+  ],
+  "attrs": {
+    "localId": "the-loop-tasks-1"
+  }
+}

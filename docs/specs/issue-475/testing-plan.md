@@ -114,7 +114,7 @@ provide, it is the one activity that may not run (see *Open question for the gat
 - [x] T8 — `cd cli && uv run python -m pytest -q tests/test_migrations.py tests/test_config_schema_parity.py tests/test_jira_config.py`
 - [x] T9 — `uv run pre-commit run --all-files --show-diff-on-failure`
 - [x] T10 — generate and commit the four rendered bodies (`evidence/jira-bodies.md`)
-- [ ] T11 — run the manual procedure against the sandbox:
+- [x] T11 — run the manual procedure against the sandbox:
   1. Register `jira:<sandbox>/LOOPTEST-1` with `the-loop sessions register`.
   2. Post with `the-loop comment` and check the ADF rendering.
   3. Set and remove a label through `set-phase-label`.
@@ -124,6 +124,19 @@ provide, it is the one activity that may not run (see *Open question for the gat
   7. Run `the-loop ticket close` and confirm the status is Done.
 
   Record each step's outcome.
+
+  **Replanned at verification (2026-10-07), with the operator on #475:**
+  - Project `KAN` instead of `LOOPTEST`, which the service account could not see ("Just
+    use KAN for now").
+  - Step 6 (webhook) dropped: polling alone delivers everything, the webhook is off unless
+    its secret is set, and the operator chose not to expose a tunnel ("do we really need
+    webhook if we are polling ?"). Webhook signing stays proven by unit test only.
+  - Steps 1–5 and 7 driven through the-loop's own `JiraClient`, `JiraProvider` and
+    `JiraPollProvider` from a script (`evidence/jira/t11_run.py`), not through the daemon:
+    the daemon's config has no Jira block, and registering a session would have spawned
+    one. A box was ticked by editing the stored ADF through the API, and rendering is
+    evidenced by Jira's own rendered HTML rather than screenshots, because no browser
+    session was available.
 
 ## Verification results
 
@@ -144,10 +157,11 @@ too. The full record is [`evidence/verification.md`](evidence/verification.md).
 | T8 | migration, schema-parity and Jira config test files | pass: 108 passed | [unit.md](evidence/unit.md#t8) |
 | T9 | `uv run pre-commit run --all-files --show-diff-on-failure` | pass: all six hooks; full suite 5950 passed | [regression.md](evidence/regression.md) |
 | T10 | four rendered bodies, golden-file tests | pass: eight blocks equal the fixtures; 4 golden tests passed | [jira-bodies.md](evidence/jira-bodies.md) |
-| T11 | manual procedure against a Jira Cloud sandbox | not executed | — |
+| T11 | `evidence/jira/t11_run.py` against the Jira Cloud sandbox, project `KAN` (replanned, above) | pass: create, ADF comment (taskList stored), author == `myself`, self checks, Jira-safe labels set/removed, poller found the armed ticket via `/search/jql`, a tick read back as `- [x]` (exactly one line changed), transition to Done, closure seen, ticket deleted; a table/link/code probe rendered correctly. Webhook signing not run live (operator's choice) | [manual-jira.md](evidence/manual-jira.md) |
 
-**Not executed:** T11. No Jira Cloud sandbox is configured; escalated on the ticket
-(see *Open question for the gate*).
+**Not executed:** T11 step 6 only (a live signed webhook). It was dropped with the
+operator, because polling covers delivery. Webhook signing is proven by unit test against
+Atlassian's documented format.
 
 ## Open question for the gate
 

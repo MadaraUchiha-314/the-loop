@@ -10,7 +10,8 @@ Run on 2026-10-06 on branch `feat/issue-475-jira-5-edges` at `b5c1154`, the top 
 five-PR stack, using uv 0.12.10. Jira is `FakeJiraClient` everywhere except T11, and the
 suite's autouse fixture refuses any real socket.
 
-T1–T10 passed. T11 was not run, because no Jira Cloud sandbox is configured.
+T1–T10 passed. T11 first could not run (no sandbox); the operator then provided one, and
+it ran on 2026-10-07 in replanned form and passed — see the T11 section.
 
 ## Environment note
 
@@ -34,7 +35,7 @@ are older than this change. Removing the variables gives the clean environment C
 | T8 | `cd cli && uv run python -m pytest -q tests/test_migrations.py tests/test_config_schema_parity.py tests/test_jira_config.py` | pass: 108 passed | [unit.md](unit.md#t8) |
 | T9 | `uv run pre-commit run --all-files --show-diff-on-failure` | pass: all six hooks; full suite 5950 passed | [regression.md](regression.md) |
 | T10 | four bodies in `evidence/jira-bodies.md`; `pytest -k golden tests/test_jira_format.py` | pass: four bodies, each as ADF JSON and wiki. The eight blocks equal the golden fixtures byte for byte, and `test_golden_bodies` gives 4 passed | [jira-bodies.md](jira-bodies.md) |
-| T11 | manual procedure against a Jira Cloud sandbox | not executed: no Jira Cloud sandbox configured; escalated on the ticket (see testing-plan Open question) | — |
+| T11 | `evidence/jira/t11_run.py` against the Jira Cloud sandbox, project `KAN` | pass, replanned: webhook step dropped with the operator (polling covers delivery) | [manual-jira.md](manual-jira.md) |
 
 ## Deviations
 
@@ -49,15 +50,19 @@ are older than this change. Removing the variables gives the clean environment C
   against the daemon's working directory. An absolute `--root` fixes it. This is older
   than issue-475 and is noted, not fixed.
 
-## T11: not executed
+## T11: run on 2026-10-07, replanned
 
-`JIRA_SANDBOX_SITE`, `JIRA_EMAIL`, `JIRA_API_TOKEN` and `THE_LOOP_JIRA_WEBHOOK_SECRET`
-are unset on this host. The plan's opening paragraph names four facts the fakes cannot
-prove, and they stay unproven:
+First pass (2026-10-06): not executed. The sandbox variables were unset, and the gap was
+escalated on #475. The operator then set `JIRA_SANDBOX_SITE`, `JIRA_EMAIL`,
+`JIRA_API_TOKEN` and `THE_LOOP_JIRA_WEBHOOK_SECRET` on the daemon host.
+
+Second pass: three of the four facts the fakes cannot prove are now proven against live
+Jira Cloud:
 
 - ADF renders as intended;
-- `/search/jql` accepts our JQL;
-- Jira signs webhooks the way C8 assumes;
-- `myself` returns the comment author id.
+- `/search/jql` accepts the poller's JQL;
+- `myself` equals the author of the-loop's comments.
 
-T11 is left unticked. The gate is not passed with it silently skipped.
+The fourth, live webhook signing, was dropped with the operator because polling covers
+delivery. Signing remains proven by unit test only. The replan and its reasons are in
+`testing-plan.md` under T11, and every step is in [manual-jira.md](manual-jira.md).
