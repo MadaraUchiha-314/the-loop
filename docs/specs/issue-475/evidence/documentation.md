@@ -99,6 +99,23 @@ deferred and where it closed.
   records on the work item's own tracker, `list-comments` reads a relay as the
   operator's words, and the `channels status` Jira block. Plus a history row.
 
+### Review fixes (on #480)
+
+The fixes from the self-review, critic and security rounds added one-sentence notes to the
+capability docs they changed:
+
+- `docs/capabilities/channels.md`: GitHub bodies are unaffected by the visible marker (L1);
+  wiki round-trip edges (L5); markers in mirrored content are broken before posting to Jira,
+  and only a standalone opening paragraph from the service account is a gate record (C1).
+- `docs/capabilities/webhook-triggers.md`: control comments run once across both ingresses
+  (M1, R2-2); the doorbell refuses a moved ticket (L2) and is rebuilt on hot reload (L3);
+  only the service account's comments carry gate markers (R2-4); the doorbell fetches its
+  comment by id, and all comment pages are read (C2).
+- `docs/capabilities/cli.md`: a PR in a Jira item's mapped repository is that item's own
+  delivery (C3).
+- `docs/capabilities/process-graph.md`: a migrated Jira stub that can't pass the schema is
+  dropped with a note (R2-1).
+
 ## Documentation
 
 ### PR 1 — identity
@@ -199,6 +216,11 @@ deferred and where it closed.
   (`SOURCE_JIRA_KEY`, `JiraLinkage`, `jira_linkage`), `core/github_ops.
   _pull_request_owner`, `channels/jira.ledger_for_ref`, `graph/integrations/jira.
   JiraProvider._as_read` and `graph/bootstrap` are updated.
+
+### Review fixes (on #480)
+
+- `docs/cli/state.md`: a `jira:` ref has a browse URL; the new
+  `<state.root>/local/control-deliveries.json` store is documented (M1).
 
 ## Design addendum (PR 4, recorded here and in both capability docs)
 
