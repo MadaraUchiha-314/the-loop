@@ -285,7 +285,11 @@ Two decisions from the gate are carried here:
 
 ### Verification and review (top of the stack)
 
-- [ ] V1 **Verify.** Run `testing-plan.md` T1–T10 on the top of the stack. Then T11:
+These two are the graph's own `verification` and review nodes, not implementation
+tasks, so they carry no checkbox: the nodes gate them (`testing-plan.md`'s activities
+and the `evidence/` records).
+
+- V1 **Verify.** Run `testing-plan.md` T1–T10 on the top of the stack. Then T11:
   - If a sandbox is configured, run the manual procedure and commit the redacted
     evidence.
   - Otherwise, leave T11 unticked, record why, and escalate on the PR with `the-loop
@@ -295,7 +299,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 5.4
   - _Requirements:_ all
   - _Test:_ T1–T11
-- [ ] V2 **Review chain.** This step happens in the graph's review nodes, not as an
+- V2 **Review chain.** This step happens in the graph's review nodes, not as an
   implementation task:
   - self and critic rounds per `the-loop critic policy`;
   - the security review, where tier 4 requires a named human sign-off;
