@@ -524,3 +524,114 @@ def test_the_client_sends_wiki_on_data_center_and_reads_it_back(monkeypatch):
     [call] = [c for c in sdk.calls if c["method"] == "add_comment"]
     assert call["body"] == "*bold* and {{code}}"
     assert comment.body_md == "**bold** and `code`"
+
+
+# -- the ADF reader takes whatever Jira (or a person) sends (self-review R2-3) -------
+
+
+def _doc(*blocks: Any) -> Dict[str, Any]:
+    return {"type": "doc", "version": 1, "content": list(blocks)}
+
+
+def _para(text: str) -> Dict[str, Any]:
+    return {"type": "paragraph", "content": [{"type": "text", "text": text}]}
+
+
+@pytest.mark.parametrize(
+    "block, expected",
+    [
+        (
+            {
+                "type": "table",
+                "content": [
+                    "junk",
+                    {"type": "tableRow", "content": [{"content": [_para("c")]}]},
+                ],
+            },
+            "| c |\n| --- |",
+        ),
+        (
+            {"type": "bulletList", "content": [7, {"content": [_para("kept")]}]},
+            "- kept",
+        ),
+        (
+            {"type": "orderedList", "content": [None, {"content": [_para("one")]}]},
+            "1. one",
+        ),
+        (
+            {"type": "taskList", "content": ["x", {"type": "taskItem", "content": []}]},
+            "- [ ] ",
+        ),
+        (
+            {"type": "codeBlock", "content": ["junk", {"text": "a = 1"}]},
+            "```\na = 1\n```",
+        ),
+    ],
+    ids=["table-row", "bullet-item", "ordered-item", "task-item", "code-text"],
+)
+def test_a_non_object_child_is_skipped_not_raised(block, expected):
+    assert adf_to_markdown(_doc(block, _para("after"))) == f"{expected}\n\nafter"
+
+
+@pytest.mark.parametrize(
+    "block, expected",
+    [
+        ({"type": "heading", "attrs": {"level": "x"}, "content": []}, "# "),
+        ({"type": "heading", "attrs": {"level": "3"}, "content": []}, "### "),
+        (
+            {
+                "type": "orderedList",
+                "attrs": {"order": "x"},
+                "content": [{"content": [_para("one")]}],
+            },
+            "1. one",
+        ),
+        ({"type": "heading", "attrs": "junk", "content": []}, "# "),
+    ],
+    ids=["heading-level-x", "heading-level-str", "order-x", "attrs-not-object"],
+)
+def test_a_non_numeric_attribute_falls_back(block, expected):
+    assert adf_to_markdown(_doc(block)) == expected
+
+
+def test_media_reads_as_an_attachment_placeholder():
+    media = {"type": "media", "attrs": {"id": "abc-123", "type": "file"}}
+    doc = _doc(
+        {"type": "mediaSingle", "content": [{**media, "attrs": {"alt": "shot.png"}}]},
+        {
+            "type": "mediaGroup",
+            "content": [
+                {"type": "media", "attrs": {"__fileName": "log.txt"}},
+                media,
+            ],
+        },
+        {
+            "type": "paragraph",
+            "content": [
+                {"type": "text", "text": "see "},
+                {"type": "mediaInline", "attrs": {"id": "inl-9"}},
+            ],
+        },
+        media,
+    )
+    assert adf_to_markdown(doc) == (
+        "[attachment: shot.png]\n\n"
+        "[attachment: log.txt]\n[attachment: abc-123]\n\n"
+        "see [attachment: inl-9]\n\n"
+        "[attachment: abc-123]"
+    )
+
+
+def test_a_media_name_never_reads_as_a_the_loop_marker():
+    """A file named like a marker is a placeholder, never a gate's marker."""
+    doc = _doc(
+        {
+            "type": "mediaSingle",
+            "content": [
+                {"type": "media", "attrs": {"alt": "[the-loop:phase-selection]"}}
+            ],
+        }
+    )
+    read = adf_to_markdown(doc)
+    assert "<!--" not in read
+    assert read.startswith("[attachment: ")

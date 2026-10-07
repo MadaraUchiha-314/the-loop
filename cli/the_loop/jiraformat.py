@@ -456,10 +456,55 @@ def _indent(text: str, prefix: str, width: int) -> str:
     )
 
 
+def _objects(nodes: Any, where: str) -> List[Mapping[str, Any]]:
+    """The object children of ``nodes``; anything else is skipped, with a debug
+    log — Jira (or a hand-made body) can send a list holding a non-object, and a
+    reader must not raise on it (self-review R2-3)."""
+    if not isinstance(nodes, (list, tuple)):
+        return []
+    kept = [node for node in nodes if isinstance(node, Mapping)]
+    if len(kept) != len(nodes):
+        logger.debug(
+            "ADF %s: skipped %d non-object child(ren)", where, len(nodes) - len(kept)
+        )
+    return kept
+
+
+def _attrs(node: Mapping[str, Any]) -> Mapping[str, Any]:
+    attrs = node.get("attrs")
+    return attrs if isinstance(attrs, Mapping) else {}
+
+
+def _number(value: Any, default: int) -> int:
+    """``value`` as an int, or ``default`` when it is not one ("x", None, 2.5…)."""
+    try:
+        return int(value) if value is not None and value != "" else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _attachment(node: Mapping[str, Any]) -> str:
+    """A media node as a visible placeholder: ``[attachment: <alt|filename|id>]``.
+
+    Brackets and line breaks are taken out of the name, so a file named like a
+    marker (``[the-loop:phase-selection]``) can never read as one."""
+    attrs = _attrs(node)
+    name = next(
+        (
+            str(attrs[key])
+            for key in ("alt", "__fileName", "fileName", "id", "url")
+            if attrs.get(key)
+        ),
+        "",
+    )
+    name = " ".join(re.sub(r"[\[\]<>]", "", name).split()) or "file"
+    return f"[attachment: {name}]"
+
+
 def _md_block(node: Mapping[str, Any]) -> str:
     kind = node.get("type")
-    content = node.get("content") or []
-    attrs = node.get("attrs") or {}
+    content = _objects(node.get("content"), str(kind))
+    attrs = _attrs(node)
     if kind == "paragraph":
         text = _md_inline(content)
         sentinel = _SENTINEL_LINE.match(text.strip())
@@ -467,12 +512,12 @@ def _md_block(node: Mapping[str, Any]) -> str:
             return f"<!-- the-loop:{sentinel.group(1)} -->"
         return text
     if kind == "heading":
-        level = min(max(int(attrs.get("level") or 1), 1), 6)
+        level = min(max(_number(attrs.get("level"), 1), 1), 6)
         return "#" * level + " " + _md_inline(content)
     if kind == "bulletList":
         return "\n".join(_md_item(item, "- ") for item in content)
     if kind == "orderedList":
-        start = int(attrs.get("order") or 1)
+        start = _number(attrs.get("order"), 1)
         return "\n".join(
             _md_item(item, f"{start + n}. ") for n, item in enumerate(content)
         )
@@ -482,7 +527,7 @@ def _md_block(node: Mapping[str, Any]) -> str:
             if item.get("type") == "taskList":
                 lines.append(_indent(_md_block(item), "  ", 2))
                 continue
-            state = (item.get("attrs") or {}).get("state")
+            state = _attrs(item).get("state")
             box = "[x]" if state == "DONE" else "[ ]"
             lines.append(_indent(_md_inline(item.get("content") or []), f"- {box} ", 2))
         return "\n".join(lines)
@@ -504,7 +549,13 @@ def _md_block(node: Mapping[str, Any]) -> str:
         title = str(attrs.get("title") or "")
         body = _md_blocks(content)
         return f"**{title}**\n\n{body}" if title else body
-    if kind in ("mediaSingle", "mediaGroup", "media", "extension"):
+    if kind == "media":
+        return _attachment(node)
+    if kind in ("mediaSingle", "mediaGroup"):
+        return "\n".join(
+            _attachment(child) for child in content if child.get("type") == "media"
+        )
+    if kind == "extension":
         logger.debug("ADF %s node has no Markdown form; skipped", kind)
         return ""
     logger.debug("ADF block %r is not known; read as its text", kind)
@@ -536,20 +587,21 @@ _BLOCK_TYPES = frozenset(
 
 
 def _md_item(item: Mapping[str, Any], marker: str) -> str:
-    children = [c for c in item.get("content") or [] if isinstance(c, Mapping)]
+    children = _objects(item.get("content"), "list item")
     text = "\n".join(_md_block(child) for child in children)
     return _indent(text, marker, len(marker))
 
 
 def _md_table(rows: Sequence[Any]) -> str:
     lines = []
-    for index, row in enumerate(rows):
+    for index, row in enumerate(_objects(rows, "table")):
         cells = [
-            " ".join(_md_block(block) for block in (cell.get("content") or []))
+            " ".join(
+                _md_block(block) for block in _objects(cell.get("content"), "cell")
+            )
             .replace("\n", " ")
             .replace("|", "\\|")
-            for cell in (row.get("content") or [])
-            if isinstance(cell, Mapping)
+            for cell in _objects(row.get("content"), "table row")
         ]
         lines.append("| " + " | ".join(cells) + " |")
         if index == 0:
@@ -558,12 +610,12 @@ def _md_table(rows: Sequence[Any]) -> str:
 
 
 def _md_inline(nodes: Sequence[Any]) -> str:
-    return "".join(_md_inline_node(n) for n in nodes if isinstance(n, Mapping))
+    return "".join(_md_inline_node(n) for n in _objects(nodes, "inline content"))
 
 
 def _md_inline_node(node: Mapping[str, Any]) -> str:
     kind = node.get("type")
-    attrs = node.get("attrs") or {}
+    attrs = _attrs(node)
     if kind == "text":
         return _md_marked(str(node.get("text") or ""), node.get("marks") or [])
     if kind == "hardBreak":
@@ -578,6 +630,8 @@ def _md_inline_node(node: Mapping[str, Any]) -> str:
         return str(attrs.get("text") or "")
     if kind == "date":
         return str(attrs.get("timestamp") or "")
+    if kind in ("mediaInline", "media"):
+        return _attachment(node)
     logger.debug("ADF inline %r is not known; read as its text", kind)
     return _md_inline(node.get("content") or []) or str(node.get("text") or "")
 
@@ -608,7 +662,7 @@ def _md_marked(text: str, marks: Sequence[Any]) -> str:
     if "strike" in kinds:
         text = f"~~{text}~~"
     if "link" in kinds:
-        href = str((kinds["link"].get("attrs") or {}).get("href") or "")
+        href = str(_attrs(kinds["link"]).get("href") or "")
         text = f"[{text}]({href})"
     return text
 
