@@ -63,7 +63,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 1.2
   - _Requirements:_ R1.5, R8 (worktree from the mapped repository)
   - _Test:_ T1 — `origin_repository` cases; T9 full suite
-- [ ] 1.5 **Docs for PR 1.**
+- [x] 1.5 **Docs for PR 1.**
   - Add the Jira ref grammar and spec ids to the capability doc that documents work-item
     refs (`docs/capabilities/control-plane.md`, or a new `work-items.md` if the review
     prefers one), with a history row.

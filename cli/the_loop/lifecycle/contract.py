@@ -89,11 +89,12 @@ class WorkItem:
     point knows of the item's shape. Travels as one JSON object inside the context.
     """
 
-    #: ``<provider>:[<host>/]<owner>/<repo>#<number>`` — the-loop's name for the item.
+    #: ``<provider>:[<host>/]<owner>/<repo>#<number>``, or ``jira:<site>/<KEY>-<n>``
+    #: (issue-475) — the-loop's name for the item.
     ref: str = ""
-    #: The tracker: ``github`` today (``jira`` is reserved for the Jira follow-up).
+    #: The tracker: ``github`` or ``jira``.
     provider: str = ""
-    #: The tracker's host — ``github.com``, or a GitHub Enterprise host.
+    #: The tracker's host — ``github.com``, a GitHub Enterprise host, or a Jira site.
     host: str = ""
     owner: str = ""
     repo: str = ""
@@ -104,7 +105,8 @@ class WorkItem:
     kind: str = ""
     #: The browser link, derived from the ref; ``""`` when none can be derived.
     url: str = ""
-    #: The-loop's id for it — ``issue-<number>``, the spec folder under ``docs/specs/``.
+    #: The-loop's id for it — ``issue-<number>`` (``jira-<key>-<number>`` for a Jira
+    #: ticket), the spec folder under ``docs/specs/``.
     id: str = ""
 
     @classmethod

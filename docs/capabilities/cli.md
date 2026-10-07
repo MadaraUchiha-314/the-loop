@@ -227,6 +227,28 @@ self-learning/ML capabilities.
   github.com, so a github.com deployment's argvs, refs and URLs are unchanged. A poll
   source's `repos` entry SHALL accept `[HOST/]OWNER/REPO` and SHALL claim only refs on
   that host.
+- A Jira work-item ref SHALL be `jira:<site>/<KEY>-<number>` (issue-475), for example
+  `jira:acme.atlassian.net/PROJ-123`: the site a bare hostname (no scheme, path or
+  user-info, lower-cased), the key `[A-Z][A-Z0-9_]{1,9}`, the number positive. Anything
+  else SHALL be rejected with an error naming that form. Parsing, rendering, the slug
+  (`jira-<site>-<KEY>-<n>`), the URL (`https://<site>/browse/<KEY>-<n>`) and the spec id
+  come from the provider's scheme (`the_loop.sessions.refs`); a `github:` ref takes
+  exactly its old path, and a provider with no scheme keeps the
+  `<provider>:[<host>/]<owner>/<repo>#<number>` grammar with no URL and no spec id.
+- A work item's spec id SHALL be derived in one place, `WorkItemRef.spec_id`:
+  `issue-<n>` for GitHub and `jira-<key lower>-<n>` for Jira, so the two id spaces are
+  disjoint by prefix even for a project keyed `ISSUE` (issue-475). `graph/refs.derive_ref`
+  SHALL invert `jira-<key>-<n>` with the one configured `integrations.jira.site`, and
+  SHALL derive nothing without it. A ref whose Jira key moved SHALL NOT open a second spec
+  folder: `graphlink.spec_folder_for` refuses and names both paths.
+- A Jira work item's code SHALL live in the GitHub repository its project maps to,
+  `integrations.jira.projects.<KEY>.repository` (`sessions.refs.origin_repository`,
+  issue-475). The paths that read "the work item's repository" — the dispatcher's repo
+  payload and PR endpoint ref, the graph coupling's checkout check, origin repo and
+  `link_pr` rows, and `sessions start`'s payload — SHALL ask it. A Jira ref on another
+  site, in an unconfigured project or in a mirror-only one (no `repository`) SHALL be
+  refused (`UnknownJiraProject`) before anything is resolved or sent, and a GitHub-only
+  verb given a Jira ref SHALL refuse it rather than coerce it.
 - The pre-issue-128 locations (`<root>/sessions/`, `<root>/sessions/control/`,
   `<root>/sessions/poll-state.json`, and the pre-issue-106 `.the-loop/poll-state.json`)
   SHALL still be **read** when a work item's new record has no such section, and written
@@ -486,6 +508,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-475 | Jira tickets are work-item refs (2026-10-06, PR 1 of 5): `jira:<site>/<KEY>-<n>` parses, renders, slugs and links through a per-provider `RefScheme` (`sessions/refs.py`), with the GitHub scheme moved unchanged. Spec ids come from `WorkItemRef.spec_id` (`jira-<key>-<n>` beside `issue-<n>`), `derive_ref` inverts them with the configured site, and `origin_repository` maps a Jira project to its GitHub repository at the six shared owner/repo reads. Before, the `jira:` prefix was reserved and every non-GitHub ref had no spec id | [spec](../specs/issue-475/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-462 | `the-loop pr checks <pr>` lists every check on a pull request's head with failed GitHub Actions jobs' log tails (2026-10-06): `core.github_ops.pull_request_checks` over `GitHubClient.job_log_tail`, which reads the `302` from `actions/jobs/{id}/logs` without following it and fetches the signed URL itself (https only, no credential, tail-only in memory). Read-only, like `pr status`. `startup_failure` now counts as a failing conclusion in the rollup. Before, a failed job's log was reachable only through `gh run view` | [spec](../specs/issue-462/), [pr](../cli/commands/pr.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/462) |
 | issue-465 | `the-loop pr ready <pr>` takes a draft pull request out of draft (2026-10-06): `core.github_ops.mark_ready` reads the PR, then sends `markPullRequestReadyForReview` with the node id GitHub returned (`GitHubClient.mark_pull_ready`; REST cannot clear `draft`), behind the same lifecycle guard as `pr merge`. An already-ready PR is a no-op, a closed or merged one is refused, event `work_item.pr_ready`. Before, a PR opened with `pr create --draft` could leave draft only through `gh` | [spec](../specs/issue-465/), [pr](../cli/commands/pr.md), [control-plane](control-plane.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/465) |
 | issue-466 | A linked pull request carries every arming label (2026-10-06): `pr create`, `sessions link-pr` and `link-pr --discover` put the whole `routing.autoExecuteLabels` list on the PR they record (`core.github_ops.link_pull_request`, event `work_item.pr_labelled`). Before, labelling was the agent's job and the skill named "the label", so with two labels configured the PR carried one, the poller filtered it, and its review comments were never fetched | [spec](../specs/issue-466/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/466) |
