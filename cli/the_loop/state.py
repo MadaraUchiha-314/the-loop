@@ -18,6 +18,7 @@ two negations to express one idea. This one groups them by **what they are**:
 portable state       ``<root>/portable/<slug>.json``            travels
 session handles      ``<root>/local/<slug>.json``               local
 poll clocks          ``<root>/local/poll-clocks.json``          local
+control deliveries   ``<root>/local/control-deliveries.json``   local
 event log            ``<root>/logs/events.jsonl``               local
 poller log           ``<root>/logs/poller.out``                 local
 receiver pidfile     ``<root>/gh-webhook.pid``                  local
@@ -116,6 +117,14 @@ class StateLayout:
         tracked record, where the poller rewrote it every minute. See
         :mod:`the_loop.pollclocks`."""
         return str(self.root_path / "local" / "poll-clocks.json")
+
+    @property
+    def control_deliveries(self) -> str:
+        """The control comments this machine already executed, by delivery id
+        (issue-475, R6.4) — shared by the receiver and the poller, so a Jira
+        comment both ingresses see is executed once. See
+        :class:`the_loop.control.ControlDeliveries`."""
+        return str(self.root_path / "local" / "control-deliveries.json")
 
     @property
     def event_log(self) -> str:
@@ -313,6 +322,25 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
             "tracked record until issue-382, where being rewritten every cycle "
             "left every operator whose state.root is a repository with a "
             "permanently dirty working tree."
+        ),
+    ),
+    GeneratedPath(
+        name="executed control deliveries",
+        attr="control_deliveries",
+        default="<root>/local/control-deliveries.json",
+        portable=False,
+        holds=(
+            "the delivery ids of the newest control comments this machine "
+            "executed, bounded — the cross-process check that a Jira comment "
+            "seen by both the webhook receiver and the poller is executed once "
+            "(issue-475)"
+        ),
+        why=(
+            "a record of what THIS machine's two ingresses already did, shared "
+            "between them under a flock (the sibling .lock file is kernel state "
+            "that cannot travel). Another machine runs its own ingresses, and "
+            "the session-level dedup in the tracked record already covers "
+            "delivery; losing it costs at most one repeated command."
         ),
     ),
     GeneratedPath(

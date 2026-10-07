@@ -77,6 +77,9 @@ _JIRA_KEY_RE = re.compile(r"\b([A-Z][A-Z0-9_]{1,9})-([1-9][0-9]{0,9})\b")
 #: close, so the stamp it writes can say `source: poll` (issue-329). Owned here,
 #: beside the event shape both ingresses share, so neither imports the other.
 POLL_CLOSURE_DELIVERY_PREFIX = "poll-close-"
+#: The delivery-id prefix of a Jira comment, the same from the poller and the
+#: webhook doorbell (issue-475, R6.4): ``jira-comment-<site>-<id>``.
+JIRA_COMMENT_DELIVERY_PREFIX = "jira-comment-"
 
 
 #: The top-level payload key the in-process Jira ingress (the poller's

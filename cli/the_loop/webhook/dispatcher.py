@@ -52,6 +52,7 @@ from ..control import (
     STOP,
     TEARDOWN_COMMANDS,
     ControlConfig,
+    ControlDeliveries,
     ControlRecord,
     ControlResult,
     ControlStore,
@@ -128,6 +129,7 @@ from .cimonitor import (
 )
 from .excerpt import event_excerpt, payload_excerpt  # noqa: F401 — re-exported
 from .router import (
+    JIRA_COMMENT_DELIVERY_PREFIX,
     POLL_CLOSURE_DELIVERY_PREFIX,
     Deduper,
     RoutedEvent,
@@ -1248,6 +1250,9 @@ class Dispatcher:
         if routed.event in _CLOSE_EVENTS and routed.action == "reopened":
             self._record_reopen(routed, source="webhook")
 
+        if control.command and not self._first_execution(routed, control.command):
+            return
+
         if control.command:
             # A command needs a NAMED, allowlisted human — stricter than the
             # ingress guard, on purpose. `is_authorized` deliberately allows an
@@ -1570,6 +1575,35 @@ class Dispatcher:
         self._settle(routed, scope.outcome)
 
     # -- linkage verification (issue-269) ----------------------------------------
+
+    def _first_execution(self, routed: RoutedEvent, command: str) -> bool:
+        """Whether this control comment has not been executed on this machine yet.
+
+        A Jira comment (``jira-comment-…``, issue-475 R6.4) is seen by the
+        webhook doorbell AND the poller — two processes, two in-memory dedupers
+        — and a control command runs before the session's persisted
+        ``recent_deliveries`` check. So its delivery id is checked and recorded
+        in :class:`ControlDeliveries` first. Any other delivery is unaffected.
+        """
+        delivery_id = routed.delivery_id or ""
+        if not delivery_id.startswith(JIRA_COMMENT_DELIVERY_PREFIX):
+            return True
+        if ControlDeliveries.beside(self.config.portable_dir).claim(delivery_id):
+            return True
+        logger.info(
+            "control command %s in delivery %s was already executed; ignoring",
+            command,
+            delivery_id,
+        )
+        eventlog.emit(
+            "dispatch.dropped",
+            reason="already-processed",
+            gh_event=routed.event,
+            delivery_id=delivery_id,
+        )
+        # The first execution already reacted on the comment.
+        self._settle(routed, "already-processed", acknowledge=False)
+        return False
 
     def _with_origin_repository(self, routed: RoutedEvent) -> RoutedEvent:
         """``routed`` with its work item's origin repository on the payload, when

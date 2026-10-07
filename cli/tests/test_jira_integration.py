@@ -25,7 +25,7 @@ from jirafakes import FakeJiraClient, cloud_config
 from the_loop.authz import JIRA_RELAY_MARKER
 from the_loop.channels.base import Event
 from the_loop.channels.jira import JiraLedger
-from the_loop.control import ControlConfig
+from the_loop.control import ControlConfig, ControlStore
 from the_loop.graph.integrations.jira import JiraProvider
 from the_loop.graph.state import WorkItemState
 from the_loop.identity import Principal
@@ -284,6 +284,48 @@ def test_the_same_jira_comment_by_webhook_and_by_poll_is_delivered_once(tmp_path
         poll.dispatcher.stop()
     assert len(webhook.tmux.delivers) == 1
     assert poll.tmux.delivers == [], "the poll saw a comment already delivered"
+
+
+def test_a_jira_control_comment_by_webhook_and_by_poll_is_executed_once(
+    tmp_path, monkeypatch
+):
+    """
+    Feature: Jira as a work-item source
+    Scenario: a Jira control comment seen by both ingresses is executed once
+      Given a webhook receiver and a poller, two processes over one state root
+      And an armed Jira ticket with a live session
+      When an authorized `the-loop pause` rings the webhook doorbell
+      And the poller then lists the same comment
+      Then the command was executed exactly once
+
+    Requirement: docs/specs/issue-475/requirements.md#R6.4
+    """
+    executed = []
+    record = ControlStore.record
+
+    def counting(self, work_item, command, *args, **kwargs):
+        executed.append(command)
+        return record(self, work_item, command, *args, **kwargs)
+
+    monkeypatch.setattr(ControlStore, "record", counting)
+    client = _client()
+    registry_dir = tmp_path / "sessions"
+    webhook = _Process(tmp_path, registry_dir, client)
+    poll = _Process(tmp_path, registry_dir, client)
+    webhook.register(tmp_path)
+    poller = poll.poller(tmp_path)
+    try:
+        poller.poll_once()  # the poller knows the ticket before the comment
+        client.comment_table[KEY].append(_comment("60001", ADA, "the-loop pause"))
+        assert _ring(webhook.doorbell(), "60001") == "routed"
+        assert executed == ["pause"]
+        poller.poll_once()
+        poller.poll_once()
+        time.sleep(0.1)
+    finally:
+        webhook.dispatcher.stop()
+        poll.dispatcher.stop()
+    assert executed == ["pause"], "the poller executed a command already executed"
 
 
 def _tick_an_optional_box(client: FakeJiraClient) -> str:

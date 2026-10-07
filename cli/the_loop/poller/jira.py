@@ -53,6 +53,7 @@ from ..jiralabels import JiraLabelError, jira_label
 from ..sessions import WorkItemRef
 from ..sessions.refs import JIRA_KEY_PATTERN
 from ..webhook.router import (
+    JIRA_COMMENT_DELIVERY_PREFIX,
     POLL_CLOSURE_DELIVERY_PREFIX,
     PROVIDER_KEY,
     RELAY_KEY,
@@ -113,7 +114,7 @@ def build_jql(project: str, labels: Sequence[str]) -> str:
 
 def jira_comment_delivery_id(site: str, comment_id: str) -> str:
     """``jira-comment-<site>-<id>`` — the same from the poller and the doorbell (R6.4)."""
-    return f"jira-comment-{site}-{comment_id}"
+    return f"{JIRA_COMMENT_DELIVERY_PREFIX}{site}-{comment_id}"
 
 
 def _read(what: str, fn: Callable[[], _T]) -> _T:

@@ -1037,7 +1037,11 @@ flowchart LR
 - **Once, by either ingress** (R6.4). Both ingresses give a comment the delivery id
   `jira-comment-<site>-<id>`. WHEN the webhook and the poller both see one comment THEN
   the session SHALL receive it once: the id is in the session's persisted
-  `recentDeliveries`, which both processes read.
+  `recentDeliveries`, which both processes read. A control command runs before that
+  check, so WHEN a Jira comment carries one THEN its id SHALL first be checked and
+  recorded in `<state.root>/local/control-deliveries.json` (bounded, under a `flock`
+  both processes take), and a comment already recorded there SHALL NOT be executed
+  again.
 - **Who may act on a Jira ticket** (R7). A Jira comment is authorized on the
   [`routing.authorizedUsers[].jira`](/config/cli/routing-options#authorizedusers-jira) ids:
   the Cloud `accountId` or the Data Center user `key`, matched exactly. WHEN a Jira
