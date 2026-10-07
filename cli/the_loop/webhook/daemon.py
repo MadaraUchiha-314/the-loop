@@ -25,6 +25,7 @@ import os
 import signal
 import threading
 from dataclasses import dataclass
+from typing import Any, Callable, Optional
 
 from .. import cli_config, eventlog, lifecycle
 from ..runlock import RunLock
@@ -140,7 +141,16 @@ def warn_on_missing_lifecycle_events(events) -> list:
 
 
 def _build_routing(routing_config: dict, gh_webhook_config: dict):
+    """``(on_event, dispatcher, config)`` — :func:`_build_ingress` without Jira."""
+    on_event, dispatcher, config, _ = _build_ingress(routing_config, gh_webhook_config)
+    return on_event, dispatcher, config
+
+
+def _build_ingress(routing_config: dict, gh_webhook_config: dict):
     """Compose router + dispatcher into the server's on_event callback.
+
+    The fourth element is the Jira doorbell's callback (issue-475), ``None``
+    unless ``integrations.jira`` is configured.
 
     Takes the two blocks separately, because they are two concerns: the shared
     top-level ``routing`` policy, and the receiver's own event filter
@@ -161,6 +171,7 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
     from .router import Router
 
     from ..modelchoice import launch_args
+    from ..sessions.refs import jira_site
 
     layout = _state_layout()
     config = RoutingConfig.from_mapping(routing_config or {}, layout)
@@ -290,6 +301,37 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
         if routed is not None:
             dispatcher.handle(routed)
 
+    # The Jira doorbell (issue-475, design §C8): built only with the Jira
+    # integration configured; the route itself is served only with a secret
+    # (`build_receiver`). Its comments go through the same router — the self
+    # marker and the allow-list, on the Jira ids — and the same dispatcher.
+    on_jira: Optional[Callable[[Any, str], str]] = None
+    if jira_site(whole):
+        from .jira import JiraDoorbell
+
+        doorbell = JiraDoorbell.from_config(
+            whole,
+            config.auto_execute_labels,
+            route=lambda event: router.route(
+                event.event, event.payload, event.delivery_id, event.work_items
+            ),
+            dispatch=dispatcher.handle,
+            start_requested=dispatcher.control_store.start_requested,
+        )
+
+        def ring(bell, ident: str) -> str:
+            outcome = doorbell.ring(bell)
+            logger.info(
+                "Jira %s for %s (webhook %s): %s",
+                bell.event or "?",
+                bell.issue_key or "?",
+                ident,
+                outcome,
+            )
+            return outcome
+
+        on_jira = ring
+
     logger.info(
         "routing enabled: registry=%s defaultHarness=%s spawnOnUnmatched=%s "
         "requireStartCommand=%s (routing config hot-reloads on change)",
@@ -306,7 +348,7 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
             "label-alone behaviour",
             config.control.keyword("start"),
         )
-    return on_event, dispatcher, config
+    return on_event, dispatcher, config, on_jira
 
 
 def run(options: ReceiverOptions | None = None) -> int:
@@ -370,9 +412,15 @@ def build_receiver(options: ReceiverOptions):
 
     from ..runner import check_dependencies, start_web_terminal, stop_web_terminal
 
-    on_event = dispatcher = web_proc = None
+    # The Jira route (issue-475): only with a secret, read from the variable
+    # `integrations.jira.webhook.secretEnv` names — never from the config itself.
+    from .jira import jira_webhook_secret
+
+    jira_secret = jira_webhook_secret(cli_config.load_cli_config(_config_path()))
+
+    on_event = on_jira = dispatcher = web_proc = None
     if options.route:
-        on_event, dispatcher, routing_config = _build_routing(
+        on_event, dispatcher, routing_config, on_jira = _build_ingress(
             cli_config.load_routing_config(_config_path()), _load_config_defaults()
         )
         missing = check_dependencies(routing_config.web_terminal.enabled)
@@ -390,6 +438,8 @@ def build_receiver(options: ReceiverOptions):
             path=options.path,
             secret=secret,
             on_event=on_event,
+            jira_secret=jira_secret or None,
+            on_jira=on_jira,
         )
     except OSError as exc:
         logger.error("could not bind %s:%s — %s", options.host, options.port, exc)
@@ -410,7 +460,15 @@ def build_receiver(options: ReceiverOptions):
         path=options.path,
         routing=bool(options.route),
         verifying_signatures=bool(secret),
+        jira_route=bool(jira_secret),
     )
+    if jira_secret:
+        logger.info(
+            "Jira webhook doorbell on http://%s:%s/jira-webhook (signed deliveries "
+            "only)",
+            options.host,
+            options.port,
+        )
 
     # Background watchers, all opt-in and bounded by this receiver's
     # lifetime: self-diagnosis (issue-242) scanning the event log, the

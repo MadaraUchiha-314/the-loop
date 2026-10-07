@@ -215,7 +215,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 4.1
   - _Requirements:_ R5.1–R5.6
   - _Test:_ T5, T7 (abuse case 6) — red → green
-- [ ] 4.3 **Webhook doorbell.**
+- [x] 4.3 **Webhook doorbell.**
   - Red first: `test_jira_webhook.py`, covering `test_jira_webhook_rejects_bad_signature`,
     `test_jira_webhook_absent_without_secret`,
     `test_doorbell_refetches_comment_and_issue` and the event mapping.

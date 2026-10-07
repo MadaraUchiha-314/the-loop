@@ -1884,6 +1884,18 @@
             "closeTransition": {
               "type": "string",
               "description": "The transition name that closes a ticket (`ticket close`, `finish-tasks`). Unset, the one available transition into the Done status category is used; none or several is an error listing them — never a guess."
+            },
+            "webhook": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "The Jira webhook doorbell (issue-475): the receiver's second route, `/jira-webhook`, served ONLY when `secretEnv` names a variable that is set — without one the path is a 404. A Jira admin registers the webhook (events `comment_created` and `jira:issue_updated`) with the same secret; every delivery's `X-Hub-Signature` HMAC is verified before its body is parsed, and only the event name, the issue key and the comment id are read — the issue and the comment are re-fetched with the daemon's credential.",
+              "properties": {
+                "secretEnv": {
+                  "type": "string",
+                  "pattern": "^[A-Z_][A-Z0-9_]*$",
+                  "description": "The environment variable holding the webhook secret — its NAME, never the secret (e.g. THE_LOOP_JIRA_WEBHOOK_SECRET). Unset, or naming an empty variable: no Jira route."
+                }
+              }
             }
           },
           "allOf": [
