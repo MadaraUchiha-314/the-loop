@@ -24,6 +24,7 @@ import copy
 
 import pytest
 
+from the_loop import configschema
 from the_loop.migrations import (
     CURRENT_CONFIG_VERSION,
     ConfigTooOld,
@@ -963,12 +964,12 @@ def test_migrate_jira_stub_to_0_12():
     assert JIRA_STUB == before  # the input is never mutated
     assert report.changed is True
     assert report.config["version"] == CURRENT_CONFIG_VERSION == "0.12.0"
-    assert report.config["integrations"]["jira"] == {
-        "site": "acme.atlassian.net",
-        "deployment": "cloud",
-        "api": {"tokenEnv": ["JIRA_API_TOKEN"]},
-    }
+    # The stub held no `projects`, so what it migrates to could never be a working
+    # 0.12 block — and an invalid block would refuse every later config write. It
+    # is dropped, and the move says what went and why (self-review R2-1).
+    assert "integrations" not in report.config
     moves = " | ".join(report.moves)
+    assert "integrations.jira removed" in moves and "/the-loop:init" in moves
     assert "integrations.jira.transport" in moves
     assert "integrations.jira.cli" in moves
     assert "integrations.jira.api.baseUrl" in moves and "site" in moves
@@ -1024,3 +1025,93 @@ def test_old_jira_stub_refused_with_hint():
     assert "integrations.jira.cli" in message
     assert "integrations.jira.api.tokenEnv" in message
     assert "the-loop migrate-config" in message
+
+
+#: Every shape the 0.11 stub could take, and the leftovers a half-migration leaves.
+JIRA_STUB_SHAPES = {
+    "transport": {"transport": "api"},
+    "transport-and-token": {"transport": "api", "api": {"tokenEnv": "JIRA_TOKEN"}},
+    "string-tokenEnv": {"api": {"tokenEnv": "JIRA_TOKEN"}},
+    "blank-tokenEnv": {"api": {"tokenEnv": "  "}},
+    "list-tokenEnv-and-transport": {"transport": "cli", "api": {"tokenEnv": ["X"]}},
+    "baseUrl": {"api": {"baseUrl": "https://acme.atlassian.net"}},
+    "baseUrl-and-token": {
+        "api": {"baseUrl": "https://acme.atlassian.net/jira", "tokenEnv": "JIRA_TOKEN"}
+    },
+    "cli": {"cli": {"binary": "jira"}},
+    "full": JIRA_STUB["integrations"]["jira"],
+    "empty": {},
+    "empty-api": {"api": {}},
+}
+
+
+@pytest.mark.parametrize("version", ["0.11.0", CURRENT_CONFIG_VERSION])
+@pytest.mark.parametrize(
+    "jira", list(JIRA_STUB_SHAPES.values()), ids=list(JIRA_STUB_SHAPES)
+)
+def test_every_migrated_jira_stub_passes_the_schema(jira, version):
+    """
+    Feature: a migrated stub never leaves an invalid config (self-review R2-1)
+      Scenario: any 0.11 stub shape, or an empty leftover, is migrated
+        Given integrations.jira holding a stub with no `site` or no `projects`
+        When the-loop migrate-config runs
+        Then the result validates against the real CLI config schema
+        And migrating again changes nothing
+        And a sibling integration is kept while an emptied `integrations` goes
+    """
+    config = {
+        "version": version,
+        "integrations": {"jira": copy.deepcopy(jira)},
+    }
+    assert needs_migration(config)
+    report = migrate_cli_config(config)
+    assert configschema.validate(report.config) == []
+    assert "integrations" not in report.config
+    assert not needs_migration(report.config)
+    again = migrate_cli_config(report.config)
+    assert again.changed is False and again.config == report.config
+
+    with_github = {
+        "version": version,
+        "integrations": {
+            "jira": copy.deepcopy(jira),
+            "github": {"api": {"tokenEnv": ["GH_TOKEN"]}},
+        },
+    }
+    kept = migrate_cli_config(with_github).config
+    assert configschema.validate(kept) == []
+    assert kept["integrations"] == {"github": {"api": {"tokenEnv": ["GH_TOKEN"]}}}
+
+
+def test_a_dropped_jira_stub_says_what_went_and_why():
+    report = migrate_cli_config(
+        {
+            "version": "0.11.0",
+            "integrations": {
+                "jira": {"api": {"baseUrl": "https://acme.atlassian.net"}}
+            },
+        }
+    )
+    moves = " | ".join(report.moves)
+    assert "integrations.jira removed" in moves
+    assert "inert" in moves and "projects" in moves and "/the-loop:init" in moves
+
+
+def test_a_stub_key_beside_a_working_block_keeps_the_block():
+    """A block with a site and projects can be a working 0.12 block: only the stub
+    keys go, and the note still asks for what the schema needs."""
+    config = {
+        "version": "0.11.0",
+        "integrations": {
+            "jira": {
+                "transport": "api",
+                "site": "acme.atlassian.net",
+                "deployment": "cloud",
+                "api": {"emailEnv": ["JIRA_EMAIL"], "tokenEnv": "JIRA_TOKEN"},
+                "projects": {"PROJ": {"repository": "acme/web"}},
+            }
+        },
+    }
+    report = migrate_cli_config(config)
+    assert configschema.validate(report.config) == []
+    assert report.config["integrations"]["jira"]["api"]["tokenEnv"] == ["JIRA_TOKEN"]

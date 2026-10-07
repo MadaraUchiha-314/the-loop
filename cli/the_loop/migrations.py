@@ -196,6 +196,20 @@ def _jira_stub_keys(config: Mapping[str, Any]) -> List[str]:
     return stale
 
 
+def _jira_husk(config: Mapping[str, Any]) -> bool:
+    """An ``integrations.jira`` left as ``{}`` or ``{api: {}}`` — a stub's remains.
+
+    Neither can be a working 0.12 block (the schema requires ``site``, ``deployment``,
+    ``api`` and ``projects``), and either refuses every config write (self-review
+    R2-1). Narrow on purpose: a half-written block with real keys is the operator's
+    to finish, not this module's to drop.
+    """
+    jira = _dig(config, _JIRA_SITE)
+    if jira is None:
+        return False
+    return all(key == "api" and value == {} for key, value in jira.items())
+
+
 def _github_sources(config: Mapping[str, Any]) -> List[Dict[str, Any]]:
     """Every ``provider: github`` entry of ``polling.sources``.
 
@@ -279,7 +293,7 @@ def needs_migration(config: Mapping[str, Any]) -> bool:
         return True
     if any(key in (_dig(config, _GITHUB_SITE) or {}) for key in _GITHUB_RETIRED_KEYS):
         return True
-    if _jira_stub_keys(config):
+    if _jira_stub_keys(config) or _jira_husk(config):
         return True
     return any(
         (section or {}).get("ghBinary") is not None
@@ -760,9 +774,14 @@ def _migrate_jira_stub(data: Dict[str, Any], report: MigrationReport) -> None:
     one token described. What the stub could not say — the account email's
     variable and the project → repository map — no migration can invent, so the
     note asks for them. A stub with nothing left is removed, leaving no husk.
+
+    A block that ends up without ``site`` or ``projects`` cannot be a working 0.12
+    block — and left in place it fails the schema, so every later config write is
+    refused (self-review R2-1). The stub was inert (nothing read it at 0.11), so
+    such a block is removed whole, and the move says what went and why.
     """
     jira = _dig(data, _JIRA_SITE)
-    if jira is None or not _jira_stub_keys(data):
+    if jira is None or not (_jira_stub_keys(data) or _jira_husk(data)):
         return
     report.changed = True
     for key in _JIRA_RETIRED_KEYS:
@@ -801,6 +820,22 @@ def _migrate_jira_stub(data: Dict[str, Any], report: MigrationReport) -> None:
             )
     if isinstance(api_block, dict) and not api:
         jira.pop("api", None)
+    if jira and ("site" not in jira or "projects" not in jira):
+        report.moves.append(
+            f"integrations.jira removed ({jira!r}) — what the stub migrates to has "
+            "no `site` or no `projects`, so it cannot be a working 0.12 block, and "
+            "left in place it would fail the schema and refuse every config write. "
+            "The stub was inert (nothing read it before 0.12), so nothing that ran "
+            "is lost. To work Jira tickets, re-add it with /the-loop:init"
+        )
+        report.notes.append(
+            "Jira is off until the block is re-added (/the-loop:init): it needs "
+            "`integrations.jira.site`, `deployment`, `api.tokenEnv`, "
+            "`integrations.jira.api.emailEnv` (Cloud only) and "
+            "`integrations.jira.projects` (each project key, with the `repository` "
+            "its tickets' code lives in) — the stub never held the last two"
+        )
+        jira.clear()
     if not jira:
         integrations = data.get("integrations")
         if isinstance(integrations, dict):
