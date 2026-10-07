@@ -2,8 +2,8 @@
 type: requirements
 phase: requirements-definition
 workItem: "github:MadaraUchiha-314/the-loop#475"
-status: in-review            # draft | in-review | approved — the requirements-approval gate locks it
-approvedBy: []
+status: approved             # draft | in-review | approved — the requirements-approval gate locks it
+approvedBy: ["MadaraUchiha-314"]
 collaborators: [engineer, security]
 overrides: {}
 riskTier: 4                  # new credentials (Jira tokens), a new inbound webhook route, new identity grammar, schema changes
@@ -393,3 +393,9 @@ path, keeping the MCP path only as the fallback when the CLI is not installed.
 > comments (issue-109). Append-only and attributed: an approval never silently
 > discards a reviewer's suggestions, and the feedback travels with the document
 > it concerns rather than living in a side-channel tracker.
+
+### 2026-10-06 — approved
+
+**@MadaraUchiha-314** wrote:
+
+Approved
