@@ -923,6 +923,16 @@ flowchart LR
   | `loop:design` | `loop:design` | already safe |
   | empty, or over 255 characters | — | refused at load |
 
+- **Every verb records on the work item's own tracker** (PR 5). `the-loop comment`,
+  `ask`, a reply's delivery report, a control announcement, an `add-channel`
+  declaration, a Slack reply mirrored to the ledger and a refusal mirrored to the
+  ticket SHALL be recorded on a Jira work item's Jira ticket (`channels/jira.
+  ledger_for_ref`, `core/tickets.post_on_ticket`) — the-loop's own text with the
+  self-marker, an announcement of the operator's command as a relay — and never on
+  GitHub. WHEN a gate reads a Jira ticket's comments through `list-comments` THEN a
+  service-account relay SHALL read as `jira-relay:operator` with its body unmarked, and
+  every other author as `jira:<id>`, the identities the daemon's gates already use.
+  `the-loop channels status` SHALL print a `jira:` block, presence only.
 - **The Jira channel is an output-only mirror.** WHEN `channels.jira.enabled` is true and
   an event the channel subscribes to concerns a work item with a declared `jira@<KEY>-<n>`
   room THEN the channel SHALL post it, rendered at `channels.jira.verbosity`, with the
@@ -1035,6 +1045,7 @@ ticket, with no Jira work items, ingress or ledger:
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-475 | **Verbs record on the Jira ticket** (2026-10-06, PR 5 of 5): `comment`, `ask`, announcements, `add-channel` declarations and Slack mirrors on a Jira work item go to its Jira ticket (announcements as relays); `list-comments` reads a service-account relay as the operator's words and names authors `jira:<id>`; `channels status` prints a `jira:` block. Before, each of these posted through a GitHub-only path | [spec](../specs/issue-475/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-475 | **A relay is the operator's words on Jira** (2026-10-06, PR 4 of 5, a design addendum to §C7): the Jira ledger posts a relay (`gate.feedback`, `control.command`) with the visible relay marker `[the-loop:relay]` instead of the self-marker, and the Jira ingress accepts a service-account comment carrying it as authorized — as the GitHub ingress reads an unmarked relay posted under the operator's credentials. The marker on anyone else's comment grants nothing | [spec](../specs/issue-475/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-475 | **Jira as ledger and channel** (2026-10-06, PR 3 of 5): with `integrations.jira` configured the ledger records each event on its own work item's tracker (`RoutedLedger`: a Jira work item's on its ticket, a pull request's on GitHub, `work-item.create` where `channels.ledger` says, which now takes `jira`); the GitHub ledger's bodies moved to `channels/bodies.py` unchanged and the Jira ledger posts the same ones. Bodies are converted to ADF or wiki markup (`jiraformat`, over `markdown-it-py`), the phase checklist becoming Jira task items ticked in place; every Jira comment ends with a visible self-marker, backed by the service-account check. Hooks resolve their integration from the ref. Labels written to Jira are made Jira-safe, and a label with no safe form fails the config load. A `jira@<KEY>-<n>` room is an output-only mirror (`channels.jira`: `enabled`, `subscribe`, `verbosity`, no `publish`), with a mirror-only project setup. Without `integrations.jira` nothing changes | [spec](../specs/issue-475/), [decision-142](../decisions/decision-142.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-464 | **The Slack app from one click, named by its operator** (2026-10-06): `channels manifest` gains `--name` (the app's name and the bot's derived handle), `--format json`, `--link` (Slack's prefilled `new_app=1&manifest_json=` create URL) and `--write [PATH]`, which keeps `slack-app-manifest.json` beside the CLI config, rebuilds it under the kept name and reports the scope and event delta. `/the-loop:init` asks the name and walks the link; `/the-loop:upgrade-the-loop` regenerates the file. The shipped scopes and events are unchanged | [spec](../specs/issue-464/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/464) |

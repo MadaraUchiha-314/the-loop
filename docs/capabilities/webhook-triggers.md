@@ -1060,7 +1060,21 @@ flowchart LR
   reporter, so no Jira ticket starts on its label alone. Only a recorded `the-loop start`
   by an authorized Jira user arms a spawn, on both ingresses.
 - **The prompt frame is unchanged** (abuse case 10). A Jira comment reaches the session
-  inside the same untrusted-data frame as a GitHub comment.
+  inside the same untrusted-data frame as a GitHub comment. The prompt names its source:
+  `# Jira event for jira:<site>/<KEY>-<n>`, the repository line the project's origin
+  repository, the frame "UNTRUSTED data from Jira" (`$event_source` and `$event_origin`
+  in the templates; a GitHub event renders exactly as before).
+- **A pull request naming a Jira key routes to the Jira work item** (R8.1, abuse case
+  7). With `integrations.jira` configured the router has a fourth linkage source,
+  `jira-key`: a key (`[A-Z][A-Z0-9_]{1,9}-[1-9][0-9]*`) in the pull request's **head
+  branch or title** — never its body. WHEN the key's project is configured with a
+  repository, that repository is the pull request's own, and the Jira ref has a live
+  session record THEN the pull request's events SHALL route to that Jira work item
+  (and the dispatcher binds the pull request to it). Otherwise the match SHALL be
+  dropped with a debug log: a branch name cannot link an unregistered work item, a
+  mirror-only project, or a project mapped to another repository. Both ingresses (the
+  receiver and the GitHub poller) apply it; a GitHub event's actor is still judged on the
+  GitHub logins.
 
 **Setting up the Jira webhook.** Polling needs no inbound route. The webhook only
 removes poll latency.
@@ -1096,6 +1110,7 @@ provider, the webhook doorbell, the allow-list by provider)
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-475 | **A PR naming a Jira key routes to it** (2026-10-06, PR 5 of 5): `SOURCE_JIRA_KEY` links a pull request whose head branch or title names a key, only for a registered Jira work item whose project maps to the PR's repository; the body is never read. The delivered prompt names Jira and the origin repository. Before, a Jira item's PR was routed only through a PR-ref registration | [spec](../specs/issue-475/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-475 | **Jira tickets reach their sessions** (2026-10-06, PR 4 of 5): a `jira` poll source (`polling.sources[].projects`) lists each project's armed tickets with one quoted JQL query per cycle and reads every comment against the poll ledger's cursor. A 429 or 5xx degrades the project for the cycle and keeps the cursor. A `done` status category closes the work item. The receiver gains `/jira-webhook`, served only when `integrations.jira.webhook.secretEnv` resolves: signature first (401 before parsing), then a doorbell that re-fetches the issue and the comment and builds the poller's own events, so one comment by both ingresses is delivered once (`jira-comment-<site>-<id>`). Jira comments are authorized on `routing.authorizedUsers[].jira` (exact id; no author is unauthorized), at the router, the poller, the control seam and the human gates (`jira:<id>`). A Jira relay (`[the-loop:relay]` by the service account) is the operator's words | [spec](../specs/issue-475/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-462 | CI monitoring and self-healing (2026-10-06): every CI webhook used to be delivered to the session as it came — twenty-odd deliveries per push to a five-job PR, each a turn — and a check the agent could not fix had no end. The dispatcher's CI gate (`webhook/cimonitor.py`, `routing.ci`) now delivers only a failed `check_run` or failing `status`, with a section naming the check, commit and attempt and pointing at the new `the-loop pr checks`; it counts distinct failing commits per PR and check, delivers one "stop and escalate" notice past `maxAttempts` (default 3), then nothing until the check passes. Drops are `dispatch.dropped` (`ci-not-actionable`, `ci-autofix-exhausted`); events `ci.check_failed`, `ci.autofix_exhausted`. A poll-only installation gets the same events: `polling.ci` reads each live pull request's checks on its own interval (default 300 s) and forwards each new result once (`ciSeen` in the poll ledger) | [spec](../specs/issue-462/), [routing options](../config/cli/routing-options.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/462) |
 | issue-466 | A pull request the-loop records is armed in the same act (2026-10-06): `pr create`, `sessions link-pr` and its `--discover` put every `routing.autoExecuteLabels` label on it, so the poller's every-label filter lists it and its comments reach the session. A link that fails adds no label, and so does a re-run on a PR that was already recorded. A GitHub refusal is a note. Routing is unchanged | [spec](../specs/issue-466/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/466) |

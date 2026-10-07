@@ -275,7 +275,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 5.2
   - _Requirements:_ R8.3, R8.4, R9.3
   - _Test:_ reviewed at self/critic review; T9 markdownlint
-- [ ] 5.4 **Docs for PR 5.**
+- [x] 5.4 **Docs for PR 5.**
   - `docs/capabilities/cli.md` for the verbs.
   - README/docs-site lines that say Jira works "via MCP only".
   - `evidence/documentation.md` complete.

@@ -29,7 +29,7 @@ It prints the comment's URL. To **ask** a human and wait for the answer, use
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| `--work-item` | required | The ref the comment goes to (`github:[HOST/]OWNER/REPO#N`). |
+| `--work-item` | required | The ref the comment goes to (`github:[HOST/]OWNER/REPO#N`, or `jira:<site>/<KEY>-<n>` with `integrations.jira` configured). |
 | `--body` | — | The comment (markdown). |
 | `--body-file` | — | Read the comment from a file; `-` reads stdin. Exactly one of the two. |
 
@@ -42,6 +42,11 @@ in-process on the token `integrations.github.api.tokenEnv` names (default
 for this ([decision-140](/decisions/decision-140)). A service older than the CLI, which
 lacks the route, is treated the same way, with a note to restart it. The same holds for
 [`ticket`](/cli/commands/ticket) and [`pr`](/cli/commands/pr).
+
+On a Jira ref the Jira ledger posts the comment on the ticket through the configured
+service account, ending with the visible self-marker Jira keeps (a Jira comment cannot
+hide text), and a ref on another site or in an unconfigured project is refused with
+exit 2 before anything is sent.
 
 Every verb addresses only github.com and the operator's own GitHub host
 (`integrations.github.host`, an enterprise `baseUrl`, `$GH_HOST`). A ref, URL or

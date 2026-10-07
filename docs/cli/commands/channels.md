@@ -133,6 +133,13 @@ the-loop channels manifest --name NAME --write  # renamed, kept beside the CLI c
 - **`status`** also prints a `commands:` line: which slash-command families this channel
   may run (`work-item` — `control.command`; `instance` — `instance.command`; `standing` —
   `standing.command`), or that none can arrive because `read.mode` is not `socket`.
+- **`status`** also prints a **`jira:`** block
+  ([issue-475](https://github.com/MadaraUchiha-314/the-loop/issues/475)): whether
+  `integrations.jira` is configured, its site and deployment, each project with the
+  repository it maps to (or `mirror-only`), whether the credential variables are set
+  (by name, never the value), the webhook route and its secret's presence, where the
+  ledger records a Jira work item's events, and the `channels.jira` mirror. Nothing is
+  sent to Jira.
 
 However a message arrives — a poll cycle here, the daemons' background reader, or the
 listener — it goes through the same pipeline: bindings decide relevance, the bot's own

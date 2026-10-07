@@ -169,7 +169,7 @@ every context (and `endpoint` on the two spawn points is one too):
 @dataclass(frozen=True)
 class WorkItem:                          # on every context; built by the-loop, never by a hook
     ref: str                             # github:[HOST/]OWNER/REPO#N — the-loop's name for it, keys everything; a bare issue-N when a graph verb was given one (the rest then empty)
-    provider: str                        # github (jira reserved)
+    provider: str                        # github | jira
     host: str                            # github.com, or a GitHub Enterprise host
     owner: str
     repo: str

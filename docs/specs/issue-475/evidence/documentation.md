@@ -6,11 +6,15 @@ workItem: "github:MadaraUchiha-314/the-loop#475"
 
 # Documentation: Jira as a first-class work-item source and update channel (issue-475)
 
-Filled in one PR at a time. This record covers **PR 1 — identity** (tasks 1.1–1.5),
-**PR 2 — control-plane integration** (tasks 2.1–2.7), **PR 3 — Jira as ledger and
-channel** (tasks 3.1–3.7) and **PR 4 — ingress** (tasks 4.1–4.5).
+This record covers all five PRs of the stack: **PR 1 — identity** (tasks 1.1–1.5),
+**PR 2 — control-plane integration** (2.1–2.7), **PR 3 — Jira as ledger and channel**
+(3.1–3.7), **PR 4 — ingress** (4.1–4.5) and **PR 5 — edges** (5.1–5.4). Each PR updated
+its capability docs in the same PR as the behaviour; the last section lists what a PR
+deferred and where it closed.
 
 ## Capability docs
+
+### PR 1 — identity
 
 - **[`docs/capabilities/cli.md`](../../../capabilities/cli.md)** documents work-item
   refs, so it gains three EARS criteria beside the existing `github:` ref grammar:
@@ -25,25 +29,7 @@ channel** (tasks 3.1–3.7) and **PR 4 — ingress** (tasks 4.1–4.5).
 
   Plus a history row for issue-475.
 
-## Documentation
-
-- **Docstrings:** the "`jira:` prefix is reserved" note on `WorkItemRef`
-  (`cli/the_loop/sessions/registry.py`) and the `provider`/`id` field notes in
-  `cli/the_loop/lifecycle/contract.py` now describe the Jira scheme. The contract's
-  `repository` field note says that for a Jira ticket it is the tracker path, not the
-  origin repository.
-- **Not changed yet, and why:**
-  - `migrations._github_sources` and the `polling.sources[].provider` schema description
-    still call `jira` reserved for polling. That stays true until PR 4 adds the Jira
-    poll provider, and the schema is PR 2's.
-  - `docs/config/` and the `integrations.jira` schema are PR 2's. PR 1 reads only
-    `integrations.jira.site` and `integrations.jira.projects.<KEY>.repository`, by plain
-    mapping access.
-  - The skill, the commands and `/init` change in PR 5, when the verbs accept Jira refs.
-
-## PR 2 — control-plane integration
-
-### Capability docs
+### PR 2 — control-plane integration
 
 - **[`docs/capabilities/process-graph.md`](../../../capabilities/process-graph.md)**
   documents the integrations, under *Two call planes*. The task named
@@ -55,34 +41,7 @@ channel** (tasks 3.1–3.7) and **PR 4 — ingress** (tasks 4.1–4.5).
   a missing credential, and credentials kept out of errors and logs. Plus a history
   row for issue-475.
 
-### Documentation
-
-- **[`docs/decisions/decision-142.md`](../../../decisions/decision-142.md)** and its
-  row in `decisions.md`: the pycontribs SDK, REST v3/ADF and v2/wiki, one site per
-  deployment, the project → repository map. It supersedes decision-042 point 13.
-- **[`docs/config/cli/integrations-options.md`](../../../config/cli/integrations-options.md)**:
-  the Jira section is rewritten for the 0.12.0 block. It gains a deployment table, an
-  example, one heading per key, the upgrade note for the stub, and the
-  `doctor jira` pointer.
-- **[`docs/cli/commands/migrate-config.md`](../../../cli/commands/migrate-config.md)**:
-  the stub migration, and the current version is now `0.12.0` (the page still said
-  `0.10.0`).
-- **[`docs/cli/commands/doctor.md`](../../../cli/commands/doctor.md)**: a
-  `doctor jira` section.
-- **Docstrings:** `graph/integrations/__init__.py` and `resolve()` name the Jira
-  provider. The `migrations` module docstring names the issue-475 migration.
-- **Not changed yet, and why:**
-  - The "jira is reserved" notes on `polling.sources[].provider` and
-    `migrations._github_sources` are about polling. They change in PR 4.
-  - `webhook.secretEnv` from the design's data model is not in the 0.12.0 schema yet.
-    PR 4 adds it with the route it configures, so the key never sits unread.
-  - The Markdown → ADF/wiki conversion and the Jira self-marker are PR 3's. Until then
-    `JiraClient._body`/`_markdown` send a minimal ADF document (v3) or the text as
-    given (v2).
-
-## PR 3 — Jira as ledger and channel
-
-### Capability docs
+### PR 3 — Jira as ledger and channel
 
 - **[`docs/capabilities/channels.md`](../../../capabilities/channels.md)** gains a
   *Jira* section under *Current behaviour*, with a diagram and EARS criteria for:
@@ -101,38 +60,7 @@ channel** (tasks 3.1–3.7) and **PR 4 — ingress** (tasks 4.1–4.5).
   The ledger bullet now names `jira` as a value, the summary line names the Jira ticket
   as a ledger, and the *Design* list and *History* table gain issue-475 rows.
 
-### Documentation
-
-- **[`docs/config/cli/channels-options.md`](../../../config/cli/channels-options.md)**:
-  `ledger` takes `github | jira` and says it decides only where `work-item.create`
-  opens a ticket; a new *Jira* section with an example and one heading per key
-  (`jira.enabled`, `jira.subscribe`, `jira.verbosity`). It changed in the same commits
-  as the schema, as the docs-parity test requires.
-- **[`docs/cli/commands/add-channel.md`](../../../cli/commands/add-channel.md)**: a
-  `jira` row in the type table (an issue key, output only, the configured-project
-  rule).
-- **[`evidence/jira-bodies.md`](jira-bodies.md)** (T10): the checklist, request-review,
-  ask and PR-briefing bodies as ADF and wiki markup, generated from the golden files
-  T2 checks on every run.
-- **Docstrings:** `jiraformat`, `jiralabels`, `channels/bodies.py` and
-  `channels/jira.py` are new and carry their contracts; `jiraapi` (bodies through
-  `jiraformat`, `is_self`), `authz` (the Jira marker), `channels/base.py`
-  (`RoutedLedger`, `LEDGERS`, `ledger_name`), `channels/bus.py` (routed name,
-  `addresses`), `workchannels` (the `jira` type) and `graph/integrations`
-  (`integration_for`, the Jira provider's marker and labels) are updated.
-- **Not changed yet, and why:**
-  - `the-loop channels status` prints the Slack block only; a Jira block can follow
-    when the channel has more than three keys to show.
-  - The `ask`, `comment` and `add-channel` verbs still write their confirmation through
-    GitHub-only paths (`core/sessions.py`, `core/workchannels.py`,
-    `core/github_ops.py`, `channels/commands.py` and `channels/inbound.py` construct a
-    `GitHubLedger` directly). Making the verbs dispatch by tracker is PR 5 (task 5.2),
-    and the CLI capability doc changes with it.
-  - The skill, the commands and `/init` change in PR 5.
-
-## PR 4 — ingress
-
-### Capability docs
+### PR 4 — ingress
 
 - **[`docs/capabilities/webhook-triggers.md`](../../../capabilities/webhook-triggers.md)**
   gains a *Jira* section under *Current behaviour*, with a diagram and EARS criteria for:
@@ -155,7 +83,124 @@ channel** (tasks 3.1–3.7) and **PR 4 — ingress** (tasks 4.1–4.5).
 - **[`docs/capabilities/channels.md`](../../../capabilities/channels.md)**: the *Jira*
   section gains the relay criterion, and *History* a PR 4 row.
 
-### Design addendum (recorded here and in both capability docs)
+### PR 5 — edges
+
+- **[`docs/capabilities/cli.md`](../../../capabilities/cli.md)** gains two EARS
+  criteria: the ticket verbs dispatch by tracker (`core/tickets.tracker_for`), with
+  each verb's Jira behaviour (`ticket show` in the GitHub shape, `ticket create
+  --project`, `ticket close` transitioning into Done and refusing an ambiguous choice,
+  `comment` and `ask` on the Jira ledger, `pr create` in the origin repository, the
+  refusals before any request, announcements as relays); and the CLI graph path
+  accepting the daemon's provider-aware gate identities. Plus a history row.
+- **[`docs/capabilities/webhook-triggers.md`](../../../capabilities/webhook-triggers.md)**:
+  the `jira-key` linkage source as an EARS criterion (branch and title only, the three
+  checks, abuse case 7), and the provider-aware prompt header. Plus a history row.
+- **[`docs/capabilities/channels.md`](../../../capabilities/channels.md)**: every verb
+  records on the work item's own tracker, `list-comments` reads a relay as the
+  operator's words, and the `channels status` Jira block. Plus a history row.
+
+## Documentation
+
+### PR 1 — identity
+
+- **Docstrings:** the "`jira:` prefix is reserved" note on `WorkItemRef`
+  (`cli/the_loop/sessions/registry.py`) and the `provider`/`id` field notes in
+  `cli/the_loop/lifecycle/contract.py` now describe the Jira scheme. The contract's
+  `repository` field note says that for a Jira ticket it is the tracker path, not the
+  origin repository.
+
+### PR 2 — control-plane integration
+
+- **[`docs/decisions/decision-142.md`](../../../decisions/decision-142.md)** and its
+  row in `decisions.md`: the pycontribs SDK, REST v3/ADF and v2/wiki, one site per
+  deployment, the project → repository map. It supersedes decision-042 point 13.
+- **[`docs/config/cli/integrations-options.md`](../../../config/cli/integrations-options.md)**:
+  the Jira section is rewritten for the 0.12.0 block. It gains a deployment table, an
+  example, one heading per key, the upgrade note for the stub, and the
+  `doctor jira` pointer.
+- **[`docs/cli/commands/migrate-config.md`](../../../cli/commands/migrate-config.md)**:
+  the stub migration, and the current version is now `0.12.0` (the page still said
+  `0.10.0`).
+- **[`docs/cli/commands/doctor.md`](../../../cli/commands/doctor.md)**: a
+  `doctor jira` section.
+- **Docstrings:** `graph/integrations/__init__.py` and `resolve()` name the Jira
+  provider. The `migrations` module docstring names the issue-475 migration.
+
+### PR 3 — Jira as ledger and channel
+
+- **[`docs/config/cli/channels-options.md`](../../../config/cli/channels-options.md)**:
+  `ledger` takes `github | jira` and says it decides only where `work-item.create`
+  opens a ticket; a new *Jira* section with an example and one heading per key
+  (`jira.enabled`, `jira.subscribe`, `jira.verbosity`). It changed in the same commits
+  as the schema, as the docs-parity test requires.
+- **[`docs/cli/commands/add-channel.md`](../../../cli/commands/add-channel.md)**: a
+  `jira` row in the type table (an issue key, output only, the configured-project
+  rule).
+- **[`evidence/jira-bodies.md`](jira-bodies.md)** (T10): the checklist, request-review,
+  ask and PR-briefing bodies as ADF and wiki markup, generated from the golden files
+  T2 checks on every run.
+- **Docstrings:** `jiraformat`, `jiralabels`, `channels/bodies.py` and
+  `channels/jira.py` are new and carry their contracts; `jiraapi` (bodies through
+  `jiraformat`, `is_self`), `authz` (the Jira marker), `channels/base.py`
+  (`RoutedLedger`, `LEDGERS`, `ledger_name`), `channels/bus.py` (routed name,
+  `addresses`), `workchannels` (the `jira` type) and `graph/integrations`
+  (`integration_for`, the Jira provider's marker and labels) are updated.
+
+### PR 4 — ingress
+
+- **[`docs/config/cli/routing-options.md`](../../../config/cli/routing-options.md)**:
+  `authorizedUsers[].jira`, with the two rules that differ from GitHub.
+- **[`docs/config/cli/polling-options.md`](../../../config/cli/polling-options.md)**:
+  `sources[].provider` takes `github | jira`, and a new `sources[].projects` heading has
+  an example, the JQL and the rate-limit behaviour.
+- **[`docs/config/cli/integrations-options.md`](../../../config/cli/integrations-options.md)**:
+  `jira.webhook.secretEnv`.
+- Each config page changed in the same commit as its schema key, in both schema copies,
+  as the docs-parity test requires.
+- **Docstrings:** `poller/jira.py` and `webhook/jira.py` are new and carry their
+  contracts. `authz` (relay marker, `is_authorized_on`, `jira_comment_origin`,
+  `gate_authorized_users`), `webhook/router.py` (`PROVIDER_KEY`, `RELAY_KEY`,
+  `event_provider`, `route(work_items=…)`), `webhook/server.py` (the Jira route),
+  `poller/base.py` (`comment_origin`, `from_source(config=…)`), `graphlink.comments_from`,
+  `channels/jira.py`, `jiraformat` and `migrations._github_sources` are updated.
+
+### PR 5 — edges
+
+- **[`docs/cli/commands/ticket.md`](../../../cli/commands/ticket.md)**: the Jira
+  examples, `ticket show`'s Jira shape, `--project` beside `--repository`, the
+  transition rule for `ticket close`, and the exit-2 cases.
+- **[`docs/cli/commands/comment.md`](../../../cli/commands/comment.md)**,
+  **[`ask.md`](../../../cli/commands/ask.md)** and
+  **[`pr.md`](../../../cli/commands/pr.md)**: a `jira:` ref in `--work-item`, and
+  `pr create`'s origin-repository rule.
+- **[`docs/cli/commands/channels.md`](../../../cli/commands/channels.md)**: the
+  `status` Jira block.
+- **[`docs/cli/lifecycle-hooks.md`](../../../cli/lifecycle-hooks.md)**: `provider` is
+  `github | jira`, no longer "jira reserved".
+- **[`docs/guide/quickstart.md`](../../../guide/quickstart.md)**: `/the-loop:work-on`
+  takes a `jira:` ref when `integrations.jira` is configured.
+- **README and docs site.** A search of `README.md` and `docs/` (outside `docs/specs/`)
+  for Jira-via-MCP wording found none to change. The "Jira via MCP" lines were in the
+  skill (`reference/collaboration.md`, `reference/workflow.md`) and the commands, and
+  changed in task 5.3.
+- **[`docs/api-specs/openapi/the-loop.v1.yaml`](../../../api-specs/openapi/the-loop.v1.yaml)**:
+  `TicketCreateBody` gains `project`, and `repository` is no longer required (T12).
+  The MCP `create_ticket` tool takes `project` too.
+- **The skill and the commands (task 5.3):** `commands/work-on.md`,
+  `create-ticket.md`, `finish-tasks.md`, `skills/the-loop/reference/automation.md`,
+  `collaboration.md` and `workflow.md` run a Jira-ticketed item on its `jira:` ref, the
+  Jira MCP tools only the fallback without the CLI. `commands/init.md` (step 5) and
+  `reference/onboarding.md` § Jira onboarding add the Jira walk, and the credential
+  preflight collects the Jira variable names.
+- **Prompt templates:** `skills/the-loop/templates/webhook-event-prompt.md` and
+  `webhook-autoexecute-prompt.md` take `$event_source` and `$event_origin`, in step with
+  the dispatcher's built-in defaults.
+- **Docstrings:** `core/tickets.py` is new and carries its contract; `webhook/router.py`
+  (`SOURCE_JIRA_KEY`, `JiraLinkage`, `jira_linkage`), `core/github_ops.
+  _pull_request_owner`, `channels/jira.ledger_for_ref`, `graph/integrations/jira.
+  JiraProvider._as_read` and `graph/bootstrap` are updated.
+
+## Design addendum (PR 4, recorded here and in both capability docs)
 
 PR 3's `JiraLedger` marked every body it posted, relays included, and the Jira ledger
 writes as the service account. A Slack-relayed gate answer or control command on a Jira
@@ -174,34 +219,22 @@ operator's authorized words. PR 4 mirrors that trust model:
 - `jiraformat` keeps `[the-loop:relay]` as literal text on read, as it keeps the
   self-marker.
 
-### Documentation
+PR 5 carries the same rule to the remaining readers: `JiraProvider`'s `list-comments`
+reads a service-account relay as `jira-relay:operator`, and the CLI's own announcements
+on a Jira ticket (a control command, an `add-channel` declaration) are posted as relays.
 
-- **[`docs/config/cli/routing-options.md`](../../../config/cli/routing-options.md)**:
-  `authorizedUsers[].jira`, with the two rules that differ from GitHub.
-- **[`docs/config/cli/polling-options.md`](../../../config/cli/polling-options.md)**:
-  `sources[].provider` takes `github | jira`, and a new `sources[].projects` heading has
-  an example, the JQL and the rate-limit behaviour.
-- **[`docs/config/cli/integrations-options.md`](../../../config/cli/integrations-options.md)**:
-  `jira.webhook.secretEnv`.
-- Each config page changed in the same commit as its schema key, in both schema copies,
-  as the docs-parity test requires.
-- **Docstrings:** `poller/jira.py` and `webhook/jira.py` are new and carry their
-  contracts. `authz` (relay marker, `is_authorized_on`, `jira_comment_origin`,
-  `gate_authorized_users`), `webhook/router.py` (`PROVIDER_KEY`, `RELAY_KEY`,
-  `event_provider`, `route(work_items=…)`), `webhook/server.py` (the Jira route),
-  `poller/base.py` (`comment_origin`, `from_source(config=…)`), `graphlink.comments_from`,
-  `channels/jira.py`, `jiraformat` and `migrations._github_sources` are updated.
-- **Not changed yet, and why:**
-  - The delivered prompt's header still reads `# GitHub webhook event for <ref>` with an
-    empty `Repository:` line for a Jira event. The template is provider-blind, and
-    making it provider-aware belongs with the verbs in PR 5.
-  - `JiraProvider`'s `list-comments` still marks every service-account comment,
-    relays included, as the-loop's own. No gate reads answers from `list-comments` (they
-    arrive on the event), so it changes nothing today. Revisit it if a gate ever does.
-  - The CLI graph path's own allow-list (`graph.bootstrap` with no
-    `authorized_users`) still reads the GitHub logins only. The daemon passes the Jira
-    gate list. The CLI's `the-loop graph` on a Jira ref is PR 5's.
-  - `authorizedUsers[].jira` holds one id per person, not a list. One id per channel is
-    how every other channel's id works (`identity.Principal`), and a second Jira account
-    for the same person is a second entry.
-  - The skill, the commands and `/init` change in PR 5.
+## Deferred items, and where they closed
+
+| Deferred in | Item | Closed in |
+|---|---|---|
+| PR 1 | `polling.sources[].provider` and `migrations._github_sources` called `jira` reserved | PR 4 |
+| PR 1 | `docs/config/` and the `integrations.jira` schema | PR 2 |
+| PR 1, 2, 3, 4 | the skill, the commands and `/init` | PR 5 (task 5.3) |
+| PR 2 | `webhook.secretEnv` absent from the 0.12.0 schema | PR 4 |
+| PR 2 | Markdown → ADF / wiki conversion and the Jira self-marker | PR 3 |
+| PR 3 | `channels status` printed no Jira block | PR 5 |
+| PR 3 | `ask`, `comment` and `add-channel` wrote through GitHub-only paths | PR 5 (task 5.2) |
+| PR 4 | the delivered prompt read `# GitHub webhook event` with an empty repository line | PR 5 |
+| PR 4 | `list-comments` read a relay as the-loop's own | PR 5 |
+| PR 4 | the CLI graph path accepted GitHub logins only at a gate | PR 5 |
+| PR 4 | `authorizedUsers[].jira` holds one id per person | stays, by design: one id per channel, as every channel |
