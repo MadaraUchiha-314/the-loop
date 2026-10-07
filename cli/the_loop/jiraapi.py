@@ -31,10 +31,9 @@ data-center     ``https://<site>``                              PAT (Bearer)    
 ==============  ==============================================  ==================  ====
 
 Bodies: a Cloud comment is ADF, a Data Center one wiki markup. The conversion
-from the-loop's Markdown is ``jiraformat``'s job (issue-475 PR 3). Until it
-lands, :meth:`JiraClient._body` and :meth:`JiraClient._markdown` are the one seam
-it fills: a v3 body is a minimal ADF document (one paragraph per blank-line
-block), a v2 body is the text as written.
+from the-loop's Markdown, and back, is :mod:`the_loop.jiraformat`'s, through
+:meth:`JiraClient._body` and :meth:`JiraClient._markdown` — every body this
+client sends or returns passes through them.
 
 The SDK logs through the ``jira`` and ``jira.resilientsession`` loggers. A
 redaction filter is installed on both, so neither a development log nor a
@@ -48,7 +47,7 @@ import logging
 import os
 import re
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import (
     Any,
     Callable,
@@ -61,6 +60,8 @@ from typing import (
     Set,
     Tuple,
 )
+
+from .authz import is_self_authored
 
 logger = logging.getLogger("the-loop.jiraapi")
 
@@ -76,6 +77,7 @@ __all__ = [
     "JiraTransition",
     "MissingCredential",
     "is_issue_key",
+    "issue_key_for",
 ]
 
 #: The three deployments a config can name.
@@ -108,6 +110,36 @@ _REDACTED = "[redacted]"
 def is_issue_key(value: str) -> bool:
     """Whether ``value`` is a Jira issue key (``PROJ-123``) — checked before a URL."""
     return bool(_ISSUE_KEY_RE.match(value or ""))
+
+
+def issue_key_for(ref: str, config: "JiraApiConfig") -> str:
+    """``jira:<site>/<KEY>-<n>`` → ``KEY-n``, or :class:`JiraApiError` before any
+    request: the ref must be a Jira ref, on the configured site, in a project
+    listed under ``integrations.jira.projects`` (mirror-only included). A ref
+    naming another site never carries this deployment's credential there
+    (abuse case 8)."""
+    from .sessions import WorkItemRef
+
+    try:
+        parsed = WorkItemRef.parse(str(ref))
+    except ValueError as exc:
+        raise JiraApiError(f"malformed work item ref {ref!r}: {exc}") from None
+    if parsed.provider != "jira":
+        raise JiraApiError(
+            f"{ref!r} is not a Jira ref — expected 'jira:<site>/<KEY>-<n>'"
+        )
+    site = config.site
+    if not site or parsed.host.lower() != site:
+        raise JiraApiError(
+            f"{parsed.ref} is on {parsed.host}, not the configured Jira "
+            f"site ({site or 'none'}); nothing was sent"
+        )
+    if parsed.owner not in config.projects:
+        raise JiraApiError(
+            f"project {parsed.owner} is not configured under "
+            "integrations.jira.projects; nothing was sent"
+        )
+    return f"{parsed.owner}-{parsed.number}"
 
 
 # ------------------------------------------------------------------ redaction
@@ -361,7 +393,8 @@ class JiraComment:
     body_md: str
     created: str = ""
     url: str = ""
-    #: Whether the-loop wrote it. The Jira self-marker sets this (issue-475 PR 3).
+    #: Whether the-loop wrote it: a self-marker in the body, or the author is the
+    #: service account (:meth:`JiraClient.comments`).
     is_self: bool = False
 
 
@@ -496,54 +529,21 @@ class JiraClient:
             raise JiraApiError(f"unusable Jira issue key {key!r}")
         return key
 
-    # -- the PR 3 seam: bodies ------------------------------------------------------
+    # -- bodies -------------------------------------------------------------------
 
     def _body(self, markdown: str) -> Any:
-        """A body in this deployment's format. ``jiraformat`` replaces this (PR 3).
+        """``markdown`` in this deployment's format, through ``jiraformat``:
+        an ADF document on REST v3 (Cloud), wiki markup on v2 (Data Center)."""
+        from .jiraformat import to_jira
 
-        v3: a minimal ADF document, one paragraph per blank-line block, a single
-        line break kept as an ADF ``hardBreak``. v2: the text as written.
-        """
-        if self.config.rest_version != "3":
-            return markdown
-        blocks = [b for b in re.split(r"\n\s*\n", markdown.strip()) if b.strip()]
-        content = []
-        for block in blocks:
-            nodes: List[Dict[str, Any]] = []
-            for index, line in enumerate(block.split("\n")):
-                if index:
-                    nodes.append({"type": "hardBreak"})
-                if line:
-                    nodes.append({"type": "text", "text": line})
-            content.append({"type": "paragraph", "content": nodes})
-        return {"type": "doc", "version": 1, "content": content}
+        return to_jira(markdown, self.config.rest_version)
 
     @classmethod
     def _markdown(cls, body: Any) -> str:
-        """A body read back as text. ``jiraformat`` replaces this (PR 3).
+        """A body Jira returned, as Markdown: ADF (a mapping) or wiki (a string)."""
+        from .jiraformat import from_jira
 
-        ADF: the text of each block, blocks separated by a blank line. Wiki markup
-        or anything else that is a string: as written.
-        """
-        if isinstance(body, str):
-            return body
-        if not isinstance(body, Mapping):
-            return ""
-        if body.get("type") == "doc":
-            blocks = [cls._adf_text(node) for node in body.get("content") or []]
-            return "\n\n".join(b for b in blocks if b)
-        return cls._adf_text(body)
-
-    @classmethod
-    def _adf_text(cls, node: Any) -> str:
-        if not isinstance(node, Mapping):
-            return ""
-        kind = node.get("type")
-        if kind == "text":
-            return str(node.get("text") or "")
-        if kind == "hardBreak":
-            return "\n"
-        return "".join(cls._adf_text(child) for child in node.get("content") or [])
+        return from_jira(body)
 
     # -- reading SDK documents -----------------------------------------------------
 
@@ -618,15 +618,41 @@ class JiraClient:
         return bool(self._call("remove label", run))
 
     def comments(self, key: str) -> List[JiraComment]:
+        """The issue's comments, each with ``is_self`` decided (R4.6).
+
+        A comment is the-loop's own when its body carries a self-marker **or**
+        its author is this client's account (:meth:`myself`) — two independent
+        tests, either one enough (design §C6, trade-off 6). ``myself`` is asked
+        only when some comment is unmarked, and an answer that cannot be had
+        leaves the marker as the only test.
+        """
         key = self._key(key)
         found = self._call("list comments", lambda j: j.comments(key))
-        return [self._comment_of(key, getattr(c, "raw", {}) or {}) for c in found or []]
+        read = [self._comment_of(key, getattr(c, "raw", {}) or {}) for c in found or []]
+        unmarked = [c for c in read if not is_self_authored(c.body_md)]
+        me = self._self_id() if unmarked else ""
+        return [
+            replace(
+                c,
+                is_self=is_self_authored(c.body_md) or bool(me and c.author_id == me),
+            )
+            for c in read
+        ]
+
+    def _self_id(self) -> str:
+        try:
+            return self.myself()
+        except JiraApiError as exc:
+            logger.debug("could not read the Jira account's own id: %s", exc)
+            return ""
 
     def add_comment(self, key: str, markdown: str) -> JiraComment:
         key = self._key(key)
         body = self._body(markdown)
         made = self._call("add comment", lambda j: j.add_comment(key, body))
-        return self._comment_of(key, getattr(made, "raw", {}) or {})
+        return replace(
+            self._comment_of(key, getattr(made, "raw", {}) or {}), is_self=True
+        )
 
     def transitions(self, key: str) -> List[JiraTransition]:
         key = self._key(key)

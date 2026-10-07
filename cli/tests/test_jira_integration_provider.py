@@ -45,8 +45,13 @@ def test_add_comment_returns_the_comment_permalink():
             "html_url": "https://acme.atlassian.net/browse/PROJ-7?focusedCommentId=10001"
         }
     }
+    # The body carries the visible Jira self-marker (PR 3, R4.6).
     assert client.posted == [
-        {"key": KEY, "body": "Hello", "url": result["result"]["html_url"]}
+        {
+            "key": KEY,
+            "body": "Hello\n\n🤖 the-loop, autonomous comment · [the-loop:agent-comment]\n",
+            "url": result["result"]["html_url"],
+        }
     ]
 
 

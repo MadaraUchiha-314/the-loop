@@ -1,0 +1,5 @@
+🤖 _the-loop_ — **design-approval** is ready for review.
+
+Work item `jira-proj-7` has reached a human gate. Reply with an approval, an approval with comments, or the changes you want.
+
+🤖 the-loop, autonomous comment · [the-loop:agent-comment]

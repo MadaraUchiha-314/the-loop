@@ -1,0 +1,8 @@
+*Question:* which database should the migration target?
+
+# Postgres 16 — what production runs today
+# MySQL 8 — what the reporting replica runs
+
+Reply on this ticket; the default is {{postgres}} if nobody answers.
+
+🤖 the-loop, autonomous comment · \[the-loop:agent-comment\]

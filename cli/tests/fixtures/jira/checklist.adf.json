@@ -1,0 +1,1587 @@
+{
+  "type": "doc",
+  "version": 1,
+  "content": [
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 2
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "🤖 the-loop — which phases does this work item need?"
+        }
+      ]
+    },
+    {
+      "type": "blockquote",
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "⚡ Quick start:",
+              "marks": [
+                {
+                  "type": "strong"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " reply "
+            },
+            {
+              "type": "text",
+              "text": "the-loop execute",
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " with the boxes untouched to run the full process — every phase that is already ticked, and none of the optional ones."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "✏️ To tailor it:",
+              "marks": [
+                {
+                  "type": "strong"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " untick anything this work item does not need, tick anything optional it does want, then reply "
+            },
+            {
+              "type": "text",
+              "text": "the-loop execute",
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": "."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "ℹ️ How this works",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Nothing runs until an authorized user replies "
+        },
+        {
+          "type": "text",
+          "text": "the-loop execute",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ". The tick state at that moment is frozen and becomes the graph this item walks."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "A doc fix usually needs little more than implementation and verification; a feature usually needs every phase."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "You can also put the list in the reply itself — a checklist in the "
+        },
+        {
+          "type": "text",
+          "text": "the-loop execute",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " comment wins over the boxes here. Either way the "
+        },
+        {
+          "type": "text",
+          "text": "authorization is your reply",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ": the tick state is a proposal, and saying the keyword is what makes it yours."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Only the boxes under "
+        },
+        {
+          "type": "text",
+          "text": "Phases",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " change what work is done. Everything under "
+        },
+        {
+          "type": "text",
+          "text": "Settings",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " is about how and where it is done, and each has a default."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 3
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "🧩 Phases — ticked ones run"
+        }
+      ]
+    },
+    {
+      "type": "taskList",
+      "attrs": {
+        "localId": "the-loop-tasks-1"
+      },
+      "content": [
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-1",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "brainstorming"
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-2",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "requirements-definition"
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-3",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "requirements-approval"
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-4",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "design"
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-5",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "test-planning"
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-6",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "design-approval"
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-7",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "tasks-breakdown"
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-8",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "implementation"
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-9",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "verification"
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-10",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "self-review"
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-11",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "critic-review"
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-12",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "security-review"
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-13",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "evidence"
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-14",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "capability-docs"
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-15",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "reviewer-briefing"
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-16",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "human-approval"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 4
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "➕ Optional phases — off unless you tick them"
+        }
+      ]
+    },
+    {
+      "type": "taskList",
+      "attrs": {
+        "localId": "the-loop-tasks-2"
+      },
+      "content": [
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-17",
+            "state": "TODO"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "design-critic-review — a different model/harness reviews the completed design.md against the requirements, before the testing plan and the task DAG are derived from it (the design is locked later, at design-approval — issue-281)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "⚠️ "
+        },
+        {
+          "type": "text",
+          "text": "Every phase of this loop is selectable — including the reviews, the security review and the approval gate.",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " Nothing but this question is mandatory."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "ℹ️ How a skipped phase is recorded",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "The phases this item skips are recorded as its own declared choice — in its work-item state, in a confirmation comment here, and in every "
+        },
+        {
+          "type": "text",
+          "text": "the-loop check",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " from now on — so a lighter run is always a visible one."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 3
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "⚙️ Settings — not phases; each has a default"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "These decide how and where the work happens, not what work is done. Leave alone any you do not care about."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 4
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "📍 Where should the outer loop happen?"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Default:",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " on "
+        },
+        {
+          "type": "text",
+          "text": "this work item",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ", here. Tick the box to move it to a pull request."
+        }
+      ]
+    },
+    {
+      "type": "taskList",
+      "attrs": {
+        "localId": "the-loop-tasks-3"
+      },
+      "content": [
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-18",
+            "state": "TODO"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "outer-loop-on-pull-request",
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " — on a pull request in this repository."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "ℹ️ What this means",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Not a phase — it is where the requirements, design, testing plan and task list are iterated with you. Leave it unticked (the default) and they happen "
+        },
+        {
+          "type": "text",
+          "text": "on this work item",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ", here. Tick it and they happen on a pull request instead."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Either way the artifacts are committed files linked from here, and each repository this work item contributes code to gets its own pull request for the inner loop."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 4
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "📄 Publish the spec chain as a Claude artifact too?"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Default:",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " no — the markdown files only. Only the "
+        },
+        {
+          "type": "text",
+          "text": "claude",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " harness can publish one."
+        }
+      ]
+    },
+    {
+      "type": "taskList",
+      "attrs": {
+        "localId": "the-loop-tasks-4"
+      },
+      "content": [
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-19",
+            "state": "TODO"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "claude-artifact",
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " — one Claude artifact for this work item ("
+            },
+            {
+              "type": "text",
+              "text": "claude",
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " harness only)."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "ℹ️ What this means",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Not a phase, and off unless you tick it. The requirements, design, testing plan and task list become one page with a tab per file, which you can read and comment on in Claude."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "On any other harness the-loop ignores this box. The markdown files stay the source of truth either way, and every gate still reads them."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 4
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "🧵 How many sessions should this work item's pull requests get?"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Default:",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " "
+        },
+        {
+          "type": "text",
+          "text": "cross-repository",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ", already ticked. "
+        },
+        {
+          "type": "text",
+          "text": "Tick exactly one",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " to change it."
+        }
+      ]
+    },
+    {
+      "type": "taskList",
+      "attrs": {
+        "localId": "the-loop-tasks-5"
+      },
+      "content": [
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-20",
+            "state": "TODO"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "pr-sessions-never",
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " — every pull request's events land in "
+            },
+            {
+              "type": "text",
+              "text": "this",
+              "marks": [
+                {
+                  "type": "strong"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " work item's one session."
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-21",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "pr-sessions-cross-repository",
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " — only a pull request in "
+            },
+            {
+              "type": "text",
+              "text": "another",
+              "marks": [
+                {
+                  "type": "strong"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " repository gets its own session; one in this repository is this work item's own delivery."
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-22",
+            "state": "TODO"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "pr-sessions-always",
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " — "
+            },
+            {
+              "type": "text",
+              "text": "every",
+              "marks": [
+                {
+                  "type": "strong"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " pull request delivering this work item gets its own session, this repository's included."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "ℹ️ What this means",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Not a phase — it is how many harness conversations run for this item."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Leave them alone and "
+        },
+        {
+          "type": "text",
+          "text": "cross-repository",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " stands — the operator's "
+        },
+        {
+          "type": "text",
+          "text": "routing.tmux.sessionPerPr",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ". Ticking none, or more than one, means the same thing."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "A pull request only ever gets a session when it can get a "
+        },
+        {
+          "type": "text",
+          "text": "working tree of its own",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ", in every mode: where it cannot, the event is delivered into this work item's session and recorded as "
+        },
+        {
+          "type": "text",
+          "text": "session.pr_session_declined",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 4
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "💬 Is this work item worked in a channel of its own?"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Default:",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " none declared — this item's updates go to the operator's central channel."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Reply "
+        },
+        {
+          "type": "text",
+          "text": "the-loop add-channel slack@C0123ABCD",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " (its conversation id, not "
+        },
+        {
+          "type": "text",
+          "text": "#name",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ") to give it a room of its own."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "ℹ️ What this means",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Not a phase — it is where the-loop posts this item's updates, and where messages from authorized users reach it."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Declare it in a comment of its own, before or after this gate — the order does not matter, and a comment may carry only one keyword."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 4
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "🛠️ Which harness should this work item run on?"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Default:",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " "
+        },
+        {
+          "type": "text",
+          "text": "claude",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ", this deployment's default. "
+        },
+        {
+          "type": "text",
+          "text": "Tick at most one",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " to change it."
+        }
+      ]
+    },
+    {
+      "type": "taskList",
+      "attrs": {
+        "localId": "the-loop-tasks-6"
+      },
+      "content": [
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-23",
+            "state": "TODO"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "harness-claude",
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-24",
+            "state": "TODO"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "harness-codex",
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "ℹ️ What this means",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Not a phase — it is the agent CLI its session is. A model or effort ticked below is kept only if the harness it ends up on can run it."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Leave them alone and the default stands. Ticking more than one means the same thing — two ticks are not a choice, and guessing which one you meant is how a work item ends up somewhere nobody asked for."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 4
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "🧠 Which model should this work item run on?"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Default:",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " "
+        },
+        {
+          "type": "text",
+          "text": "sonnet",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ", the "
+        },
+        {
+          "type": "text",
+          "text": "claude",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " harness's default model. "
+        },
+        {
+          "type": "text",
+          "text": "Tick at most one",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " to change it."
+        }
+      ]
+    },
+    {
+      "type": "taskList",
+      "attrs": {
+        "localId": "the-loop-tasks-7"
+      },
+      "content": [
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-25",
+            "state": "TODO"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "model-opus",
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " — deepest"
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-26",
+            "state": "TODO"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "model-sonnet",
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "ℹ️ What this means",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Not a phase — it is what the session is."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Leave them alone and the default stands. Ticking more than one means the same thing — two ticks are not a choice, and guessing which one you meant is how a work item ends up somewhere nobody asked for."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 4
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "🎚️ How hard should it think?"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Default:",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " the harness's own default effort. "
+        },
+        {
+          "type": "text",
+          "text": "Tick at most one",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " to change it."
+        }
+      ]
+    },
+    {
+      "type": "taskList",
+      "attrs": {
+        "localId": "the-loop-tasks-8"
+      },
+      "content": [
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-27",
+            "state": "TODO"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "effort-low",
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-28",
+            "state": "TODO"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "effort-high",
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "ℹ️ What this means",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Not a phase, and independent of the model above."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Leave them alone and the default stands. Ticking more than one means the same thing — two ticks are not a choice, and guessing which one you meant is how a work item ends up somewhere nobody asked for."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 3
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "✅ Ready?"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Reply "
+        },
+        {
+          "type": "text",
+          "text": "the-loop execute",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ". The boxes as they stand at that moment are frozen as this work item's selection."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "[the-loop:phase-selection]"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "🤖 the-loop, autonomous comment · [the-loop:agent-comment]"
+        }
+      ]
+    }
+  ]
+}

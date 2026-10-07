@@ -133,7 +133,7 @@ Two decisions from the gate are carried here:
 
 ### PR 3 — Jira as ledger and channel
 
-- [ ] 3.1 **Red tests for labels and format.**
+- [x] 3.1 **Red tests for labels and format.**
   - `test_jira_labels.py` covers the mapping table and the no-safe-form failure.
   - `test_jira_format.py` uses golden files under `cli/tests/fixtures/jira/`:
     Markdown→ADF, Markdown→wiki and ADF→Markdown for the checklist, request-review, ask
@@ -142,13 +142,13 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 2.7
   - _Requirements:_ R4.4, R4.5, R5.5
   - _Test:_ T2 — red
-- [ ] 3.2 **`jiralabels.py` + `jiraformat.py`.** Add `markdown-it-py` to dependencies.
+- [x] 3.2 **`jiralabels.py` + `jiraformat.py`.** Add `markdown-it-py` to dependencies.
   Label validation is wired into config load. `JiraClient` converts bodies by REST
   version.
   - _Depends on:_ 3.1
   - _Requirements:_ R4.4, R4.5
   - _Test:_ T2 — green; T10 bodies generated
-- [ ] 3.3 **Self-marker for Jira.**
+- [x] 3.3 **Self-marker for Jira.**
   - Red first: `test_jira_self_comment_never_resumes`, with the marker variant and the
     `author_id == myself` variant.
   - Then add `authz.JIRA_SELF_MARKER`, make `is_self_authored` match either marker, set
@@ -156,7 +156,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 3.2
   - _Requirements:_ R4.6
   - _Test:_ T7 (abuse case 4) — red → green
-- [ ] 3.4 **Hooks resolve the integration from the ref.**
+- [x] 3.4 **Hooks resolve the integration from the ref.**
   - Red first: `test_set_phase_label_on_jira_keeps_one_loop_label`, plus a selection
     hook reading a Jira checklist through `list-comments`.
   - Then add `integration_for(ref, config)` and replace the six `resolve("github", …)`
@@ -165,7 +165,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 3.3
   - _Requirements:_ R4.3, R5.5
   - _Test:_ T4 — red → green; T9 GitHub hook tests unmodified
-- [ ] 3.5 **`RoutedLedger` + `JiraLedger`.**
+- [x] 3.5 **`RoutedLedger` + `JiraLedger`.**
   - Red first: `test_routed_ledger_records_jira_event_on_jira`,
     `test_pr_event_still_recorded_on_github` and `test_jira_ledger_stamps_visible_marker`.
   - Then extract `channels/bodies.py` from `GitHubLedger`, add `RoutedLedger`, and make
@@ -174,7 +174,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 3.4
   - _Requirements:_ R4.1
   - _Test:_ T4 — red → green
-- [ ] 3.6 **`JiraChannel` + room grammar (mirror-only included).**
+- [x] 3.6 **`JiraChannel` + room grammar (mirror-only included).**
   - Red first: `test_mirror_only_project_accepts_room_refuses_work_item`,
     `test_jira_channel_without_room_mirrors_nothing`,
     `test_comment_on_mirror_ticket_never_reaches_session`, and `jira@PROJ-1`
@@ -185,7 +185,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 3.5
   - _Requirements:_ R4.2
   - _Test:_ T4 — red → green
-- [ ] 3.7 **Docs for PR 3.**
+- [x] 3.7 **Docs for PR 3.**
   - `docs/capabilities/channels.md`: the Jira ledger, the Jira channel, the mirror-only
     setup and the label mapping table.
   - `docs/config/` for `channels.jira` and `channels.ledger`.

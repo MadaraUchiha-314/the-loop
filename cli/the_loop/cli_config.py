@@ -246,6 +246,11 @@ def load_cli_config(path: Path, strict: bool = False) -> dict:
         from .migrations import assert_current
 
         assert_current(data)
+        # issue-475 (R4.4): a label the-loop would write to Jira with no Jira-safe
+        # form is refused here, naming it, rather than at the first label write.
+        from .jiralabels import check_config_labels
+
+        check_config_labels(data)
         from .cli_config import apply_instance as _apply_instance
         from .cli_config import apply_integrations as _apply
 

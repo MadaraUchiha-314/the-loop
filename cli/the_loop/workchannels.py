@@ -90,7 +90,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from .sessions import WorkItemRef
 from .state import LegacyLayout
@@ -108,6 +108,7 @@ __all__ = [
     "resolve_channel_ref",
     "CollaborationChannel",
     "CollaborationChannelStore",
+    "JIRA",
     "SLACK",
     "listen_mode_for",
     "parse_channel_ref",
@@ -116,6 +117,12 @@ __all__ = [
 
 #: The one channel type the-loop can actually carry a conversation on today.
 SLACK = "slack"
+
+#: A Jira issue as a room (issue-475): an output-only mirror of the work item.
+JIRA = "jira"
+
+#: A Jira issue key — the only thing of a ``jira@`` room that is stored.
+_JIRA_TARGET_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,9}-[1-9][0-9]{0,9}$")
 
 #: The two ways a room listens (issue-389 R2.1): ``mentions`` — the-loop hears a
 #: message there only when it is addressed — and ``all`` — every message there is
@@ -143,6 +150,11 @@ CHANNEL_TYPES: Dict[str, Tuple[re.Pattern, str]] = {
         "name is resolved to an id when the channel is declared, so the bot "
         "must be able to see the channel and the app must carry the "
         "`channels:read` / `groups:read` scopes",
+    ),
+    JIRA: (
+        _JIRA_TARGET_RE,
+        "a Jira issue key, e.g. PROJ-123, in a project listed under "
+        "`integrations.jira.projects`",
     ),
 }
 
@@ -217,6 +229,9 @@ def resolve_channel_ref(
     unresolvable name would move the failure to the first post — the worst moment
     to learn the room does not exist.
     """
+    if channel.type == JIRA:
+        _check_jira_room(channel, cli_config)
+        return channel, ""
     if channel.is_id:
         return channel, ""
     if channel.type != SLACK:  # unreachable while slack is the only directory
@@ -251,6 +266,32 @@ def resolve_channel_ref(
             "(private) scopes. Its conversation id always works"
         )
     return ChannelRef(type=channel.type, target=resolved), channel.name
+
+
+def _check_jira_room(channel: "ChannelRef", cli_config: Optional[Any]) -> None:
+    """A ``jira@`` room must be in a configured project (issue-475, §C7).
+
+    ``integrations.jira.projects`` is the allow-list of where the-loop may write —
+    a mirror-only project (no ``repository``) included. Refused at declaration,
+    naming the project, rather than stored and refused at every post.
+    """
+    from .jiraapi import JiraApiConfig
+
+    api = JiraApiConfig.from_cli_config(
+        dict(cli_config) if isinstance(cli_config, Mapping) else {}
+    )
+    project = channel.target.rsplit("-", 1)[0]
+    if not api.configured:
+        raise ValueError(
+            f"{channel.ref} needs the Jira integration: integrations.jira is not "
+            "configured on this deployment"
+        )
+    if project not in api.projects:
+        raise ValueError(
+            f"{channel.ref}: project {project} is not listed under "
+            "integrations.jira.projects — add it (a project without a "
+            "`repository` is a mirror-only room)"
+        )
 
 
 def parse_channel_ref(raw: object) -> Optional[ChannelRef]:

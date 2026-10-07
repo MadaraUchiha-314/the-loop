@@ -73,15 +73,28 @@ SELF_COMMENT_MARKER = "<!-- the-loop:agent-comment -->"
 # invisible HTML comment). See `reference/collaboration.md`.
 SELF_COMMENT_ATTRIBUTION = "🤖 _the-loop, autonomous comment_"
 
+# Jira's form of the same contract (issue-475, design §C6, R4.6). An HTML comment
+# does not survive ADF — Jira has no hidden text — so on Jira the marker is a
+# VISIBLE sentinel carried by the attribution line itself. Like the GitHub
+# marker, it must never change once shipped. The ingress backs it with a second,
+# independent test: a comment whose author is the service account
+# (``JiraComment.is_self``) is the-loop's own whatever its text says.
+JIRA_SELF_MARKER = "[the-loop:agent-comment]"
+JIRA_SELF_ATTRIBUTION = f"🤖 the-loop, autonomous comment · {JIRA_SELF_MARKER}"
+
+#: What :func:`mark_self_authored` appends, so the Jira form can replace it.
+_GITHUB_STAMP = f"{SELF_COMMENT_ATTRIBUTION}\n{SELF_COMMENT_MARKER}"
+
 
 def is_self_authored(body: Optional[str]) -> bool:
     """Whether ``body`` carries the-loop's own authorship marker.
 
     True for any comment/review/reply the-loop itself posted, regardless of
-    which GitHub login posted it — the router/poller use this to drop it
+    which login posted it — the GitHub marker (an HTML comment) or the Jira
+    one (the visible ``[the-loop:agent-comment]``, issue-475) — the router/poller use this to drop it
     before it can re-enter the loop as if a human had written it (issue-64).
     """
-    return bool(body) and SELF_COMMENT_MARKER in body
+    return bool(body) and (SELF_COMMENT_MARKER in body or JIRA_SELF_MARKER in body)
 
 
 def mark_self_authored(body: str) -> str:
@@ -96,9 +109,28 @@ def mark_self_authored(body: str) -> str:
     text or another author's comment. The marker asserts authorship, and both
     trigger paths silently drop whatever carries it (issue-104).
     """
-    if is_self_authored(body):
+    if body and SELF_COMMENT_MARKER in body:
         return body
     return f"{body.rstrip()}\n\n{SELF_COMMENT_ATTRIBUTION}\n{SELF_COMMENT_MARKER}\n"
+
+
+def mark_self_authored_on_jira(body: str) -> str:
+    """``body`` stamped as the-loop's own **for Jira** (issue-475, R4.6).
+
+    The GitHub stamp (:func:`mark_self_authored`) is replaced by the one visible
+    line Jira keeps — :data:`JIRA_SELF_ATTRIBUTION`, which carries
+    :data:`JIRA_SELF_MARKER` — and an unmarked body gets that line appended.
+    Idempotent. The same rule as the GitHub producer: apply it only to text
+    the-loop composed.
+    """
+    if JIRA_SELF_MARKER in body:
+        return body
+    text = (
+        body.replace(f"\n\n{_GITHUB_STAMP}", "")
+        .replace(_GITHUB_STAMP, "")
+        .replace(SELF_COMMENT_MARKER, "")
+    )
+    return f"{text.rstrip()}\n\n{JIRA_SELF_ATTRIBUTION}\n"
 
 
 def resolve_authorized_users(configured: Sequence) -> List[str]:

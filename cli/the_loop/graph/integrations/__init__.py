@@ -24,6 +24,8 @@ time — a graph needing an operation the configured provider lacks fails at
 startup, naming the operation, not three nodes deep.
 """
 
+from typing import Any, Mapping
+
 from .base import (  # noqa: F401
     Integration,
     IntegrationError,
@@ -37,5 +39,26 @@ __all__ = [
     "IntegrationError",
     "OperationUnsupported",
     "TransportUnavailable",
+    "integration_for",
     "resolve",
 ]
+
+
+def integration_for(ref: object, config: Mapping[str, Any]) -> "Integration":
+    """The provider for the work item ``ref`` names — by the ref, not by a name
+    (issue-475, design §C4).
+
+    ``jira:<site>/<KEY>-<n>`` resolves ``jira``, ``github:…`` resolves
+    ``github``. Anything that does not parse as a work-item ref resolves
+    ``github``, which is what every caller did before issue-475.
+
+    ``resolve`` is looked up in this module **at call time**, so the seam every
+    test patches (``the_loop.graph.integrations.resolve``) applies here too.
+    """
+    from ...sessions import WorkItemRef
+
+    try:
+        provider = WorkItemRef.parse(str(ref)).provider
+    except ValueError:
+        provider = "github"
+    return resolve(provider, config)

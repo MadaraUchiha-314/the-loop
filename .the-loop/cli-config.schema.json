@@ -1496,10 +1496,43 @@
         "ledger": {
           "type": "string",
           "enum": [
-            "github"
+            "github",
+            "jira"
           ],
           "default": "github",
-          "description": "The channel of record: every event that originates elsewhere is written here first (a comment with a machine-readable envelope, or the issue itself for `work-item.create`), and the ledger's own ingress is what judges a relayed gate answer or control command. GitHub is the only ledger this release ships; the key is the extension point the owner named (issue-309). An unknown value is refused at load."
+          "description": "The channel of record: every event that originates elsewhere is written down first (a comment with a machine-readable envelope, or the ticket itself for `work-item.create`), and the ledger's own ingress is what judges a relayed gate answer or control command. Each event is recorded on the tracker of ITS OWN work item — a Jira work item's on its Jira ticket, a pull request's on GitHub (issue-475) — so this key decides one thing: the tracker `work-item.create` opens a ticket in. `jira` needs `integrations.jira` (otherwise it records on github, logged). An unknown value is refused at load."
+        },
+        "jira": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "A Jira issue as an output-only mirror of a work item (issue-475): an authorized user declares the room on the work item with `the-loop add-channel jira@<KEY>-<n>`, and every subscribed event is posted there as a comment carrying the visible self-marker. No central fallback — a work item with no declared jira@ room is not mirrored — and no `publish`: nothing written on the mirror ticket reaches a session. Needs `integrations.jira`; the room's project must be listed under `integrations.jira.projects` (one without a `repository` is mirror-only).",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Default off: configuring the Jira integration never becomes consent to mirroring into a Jira ticket."
+            },
+            "subscribe": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "session.awaiting_input"
+              ],
+              "description": "The event types this channel RECEIVES, as `channels.slack.subscribe` — e.g. work-item.started, phase.started, phase.completed, session.awaiting_input, work-item.closed. `the-loop channels status` prints the catalog."
+            },
+            "verbosity": {
+              "type": "string",
+              "enum": [
+                "quiet",
+                "normal",
+                "verbose"
+              ],
+              "default": "normal",
+              "description": "quiet = one line + the work-item link; normal = + the event text; verbose = + context detail. Strict supersets, as on Slack."
+            }
+          }
         },
         "slack": {
           "type": "object",

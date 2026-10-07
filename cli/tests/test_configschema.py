@@ -130,7 +130,7 @@ INVALID = [
         {"channels": {"slack": {"events": ["session.awaiting_input"]}}},
         "renamed `subscribe` in issue-309",
     ),
-    ({"channels": {"ledger": "jira"}}, "a ledger this release does not ship"),
+    ({"channels": {"ledger": "linear"}}, "a ledger this release does not ship"),
     (
         {"routing": {"authorizedUsers": [{"github": 42}]}},
         "a channel id that is not a string",
