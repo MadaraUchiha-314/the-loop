@@ -75,7 +75,7 @@ Two decisions from the gate are carried here:
 
 ### PR 2 — control-plane integration (client, provider, config, decision)
 
-- [ ] 2.1 **Decision record.** Add `docs/decisions/decision-<nnn>.md`: the pycontribs
+- [x] 2.1 **Decision record.** Add `docs/decisions/decision-<nnn>.md`: the pycontribs
   `jira` SDK on REST v3/ADF (Cloud) and v2/wiki (DC), one site per deployment, and a
   project→repository map. It supersedes decision-042 point 13. Add its row in
   `decisions.md`.
