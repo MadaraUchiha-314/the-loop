@@ -1,10 +1,11 @@
 # `doctor`
 
-Deployment-wide diagnosis of one integration. Today that is Slack
-([issue-393](https://github.com/MadaraUchiha-314/the-loop/issues/393), F2): the three
-questions an e2e failure could not answer from any log — does the installed app hear what
-the manifest says it should, does every room this daemon declares resolve in its own
-directory, and is a **second Socket Mode consumer** quietly taking half of the events.
+Deployment-wide diagnosis of one integration: Slack, or [Jira](#doctor-jira).
+For Slack ([issue-393](https://github.com/MadaraUchiha-314/the-loop/issues/393), F2) it
+answers the three questions an e2e failure could not answer from any log: does the
+installed app hear what the manifest says it should, does every room this daemon declares
+resolve in its own directory, and is a **second Socket Mode consumer** quietly taking half
+of the events.
 
 ```bash
 the-loop doctor slack [--beats N] [--window SECONDS] [--no-heartbeat]
@@ -78,3 +79,34 @@ listener makes the same measurement **on its own**, at connect and on every reco
 reports it through [`status`](/cli/commands/status) and
 [`channels status`](/cli/commands/channels) — so this verb is for confirming a suspicion
 on demand rather than for finding the problem in the first place.
+
+## `doctor jira`
+
+```bash
+the-loop doctor jira
+```
+
+Checks the [`integrations.jira`](/config/cli/integrations-options#jira) block
+(issue-475) offline: nothing is sent to Jira. It reports the same findings that make
+the daemon's Jira integration refuse to start, so you see them before a gate hook does.
+It prints variable names, never their values. Exit 1 when any `[!]` finding was printed.
+
+```text
+jira doctor — variable names only, never values; nothing is sent to Jira
+  [ok] acme.atlassian.net (cloud) → https://acme.atlassian.net, REST v3
+credentials:
+  [ok] JIRA_EMAIL is set
+  [!] JIRA_API_TOKEN is not set — the daemon's Jira calls are refused until the token is in its environment
+projects:
+  [ok] OPS — mirror-only (a room, never a work-item source)
+  [ok] PROJ → acme/web
+```
+
+- **The site line** names where requests go. A `cloud-scoped` block without `cloudId`
+  is a finding.
+- **credentials** lists each credential the deployment needs: the email and the token on
+  Cloud, the token alone on Data Center.
+- **projects** lists each project's origin repository, or marks it mirror-only.
+
+With no `integrations.jira` block it prints `[?] integrations.jira is not configured`
+and exits 0: Jira is off, which is not a fault.

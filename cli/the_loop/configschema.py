@@ -28,9 +28,9 @@ Why the validator is ours
 (``scripts/validate_config.py``), but as a *runtime* dependency it would pull ``attrs``,
 ``referencing`` and the compiled ``rpds-py`` into a CLI whose dependency set is an
 argument in itself, to be imported by every poller process in order to validate
-nothing. The schemas being validated are the-loop's own, and they use sixteen keywords
-between them. :data:`SUPPORTED` names all seventeen; :func:`validate` implements the
-eleven that constrain data and ignores the six that document it.
+nothing. The schemas being validated are the-loop's own, and they use a small set of
+keywords between them. :data:`SUPPORTED` names every one; :func:`validate` implements
+the ones in :data:`CONSTRAINING` and ignores the ones that only document a shape.
 
 That trade is only safe because two tests hold it up: a **keyword guard** fails when a
 schema grows a construct not in :data:`SUPPORTED`, and a **differential test** runs this
@@ -84,6 +84,15 @@ SUPPORTED = frozenset(
         "minItems",
         "uniqueItems",
         "pattern",
+        # issue-475: the Jira block's guard rails — a project-key grammar, at least
+        # one project, and the keys a deployment kind requires
+        "const",
+        "minProperties",
+        "propertyNames",
+        "allOf",
+        "if",
+        "then",
+        "else",
         # documentation only — read by clients, ignored here
         "title",
         "description",
@@ -111,6 +120,13 @@ CONSTRAINING = frozenset(
         "minItems",
         "uniqueItems",
         "pattern",
+        "const",
+        "minProperties",
+        "propertyNames",
+        "allOf",
+        "if",
+        "then",
+        "else",
     }
 )
 
@@ -153,6 +169,18 @@ RETIRED: Dict[str, str] = {
         "moved into `routing.authorizedUsers` in issue-309 — each entry there is one "
         "person, a GitHub login or a mapping of channel name to id (`slack: U…`), so "
         "identity is declared once and read per channel. Run `the-loop migrate-config`"
+    ),
+    "integrations.jira.transport": (
+        "retired at config 0.12.0 (issue-475, decision-142) — CLI transports were "
+        "retired by issue-442; the daemon reaches Jira through the pycontribs `jira` "
+        "SDK under the credentials `integrations.jira.api.emailEnv`/`tokenEnv` name. "
+        "Run `the-loop migrate-config`"
+    ),
+    "integrations.jira.cli": (
+        "retired at config 0.12.0 (issue-475, decision-142) — the-loop runs no `jira` "
+        "binary (CLI transports were retired by issue-442); the daemon reaches Jira "
+        "through the pycontribs `jira` SDK under the credentials "
+        "`integrations.jira.api.emailEnv`/`tokenEnv` name. Run `the-loop migrate-config`"
     ),
 }
 
@@ -308,16 +336,50 @@ def _check(value: Any, schema: Any, path: str, errors: List[str]) -> None:
         if maximum is not None and value > maximum:
             errors.append(f"{_label(path)}: {value} is above the maximum {maximum}")
 
+    if "const" in schema and not _equal(value, schema["const"]):
+        errors.append(
+            f"{_label(path)}: {json.dumps(value)} is not {json.dumps(schema['const'])}"
+        )
+
     if isinstance(value, dict):
         _check_object(value, schema, path, errors)
     elif isinstance(value, (list, tuple)):
         _check_array(value, schema, path, errors)
+
+    for sub in schema.get("allOf") or []:
+        _check(value, sub, path, errors)
+    if "if" in schema:
+        # `if` only selects: its own failures are never reported, only which of
+        # `then`/`else` applies.
+        probe: List[str] = []
+        _check(value, schema["if"], path, probe)
+        branch = schema.get("then") if not probe else schema.get("else")
+        if branch is not None:
+            _check(value, branch, path, errors)
+
+
+def _equal(left: Any, right: Any) -> bool:
+    """JSON equality — ``true`` is not ``1`` here, as it is not in JSON Schema."""
+    if isinstance(left, bool) or isinstance(right, bool):
+        return type(left) is type(right) and left == right
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return left == right
+    return _kind(left) == _kind(right) and left == right
 
 
 def _check_object(
     value: Mapping[str, Any], schema: Mapping[str, Any], path: str, errors: List[str]
 ) -> None:
     properties = schema.get("properties") or {}
+    least = schema.get("minProperties")
+    if isinstance(least, int) and len(value) < least:
+        errors.append(
+            f"{_label(path)}: needs at least {least} key(s), got {len(value)}"
+        )
+    names = schema.get("propertyNames")
+    if isinstance(names, Mapping):
+        for key in value:
+            _check(key, names, f"{path}.{key}" if path else str(key), errors)
     for name in schema.get("required") or []:
         if name not in value:
             errors.append(f"{_label(path)}: missing required key {name!r}")

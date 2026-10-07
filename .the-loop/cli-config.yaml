@@ -16,7 +16,7 @@
 # agent's file (workflow, tooling, reviews, …), which the CLI never
 # reads (issue-352, decision-123).
 
-version: "0.11.0"
+version: "0.12.0"
 
 # Everything the CLI GENERATES lives under this root (issue-106), organised by
 # whether it travels between machines (issue-128, decision-046):

@@ -786,6 +786,29 @@ included, however empty the log was.
 - WHEN a service is reachable only over MCP THEN the-loop SHALL reach it **by delegation
   to the harness** (`mcp-call`), because MCP is an agent protocol, not a daemon protocol
   ([decision-042](../decisions/decision-042.md)).
+- **Jira** (issue-475, [decision-142](../decisions/decision-142.md)). WHEN
+  `integrations.jira` is configured AND its credential variables are set THEN
+  `resolve("jira")` SHALL return the Jira provider, which runs every operation the GitHub
+  provider runs, with the same result shapes, plus `transition`. It SHALL reach Jira
+  through one `jiraapi.JiraClient` on the pycontribs `jira` SDK: REST v3 with ADF on
+  Cloud, REST v2 with wiki markup on Data Center.
+  - `create-label` SHALL be a no-op that says so (`"jira creates labels on use"`), and
+    `set-labels` SHALL add labels while keeping the others.
+  - WHEN `transition` is asked to close a ticket (`to: done`) THEN it SHALL take
+    `integrations.jira.closeTransition`, else the one available transition into the
+    *Done* status category. IF there are none or several THEN it SHALL fail listing
+    the available transitions and SHALL NOT transition.
+  - WHEN a ref names another site, or a project not under `integrations.jira.projects`,
+    THEN the provider SHALL refuse it before any request, so no credential is sent.
+  - IF a credential variable is unset THEN `resolve("jira")` SHALL raise
+    `TransportUnavailable` naming the variable, and `the-loop doctor jira` SHALL report
+    the same finding. A retired `cli` transport SHALL be refused by name.
+  - Credentials SHALL be read from the environment at call time and SHALL never appear
+    in an error message or a log line: errors are built from the server's text and
+    scrubbed, and the SDK's loggers carry a redaction filter.
+  - The provider joins the shared contract suite (`test_integration_contract.py`). The
+    graph's hooks still resolve `github` until PR 3 of issue-475 routes them by the
+    work item's provider.
 
 ### Which ticket a control-plane call reaches (issue-194)
 
@@ -1029,6 +1052,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-475 | Jira joins the control plane (2026-10-06, PR 2): `jiraapi.JiraClient` on the pycontribs `jira` SDK (REST v3/ADF on Cloud, v2/wiki on Data Center, credentials read from env vars at call time, errors and SDK logs scrubbed), `JiraProvider` with GitHub's operations plus `transition` in the contract suite, a `jira` branch in `resolve()`, the `integrations.jira` block at config `0.12.0` with a migration from the stub, and `the-loop doctor jira` | [spec](../specs/issue-475/), [decision-142](../decisions/decision-142.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-472 | The `phase-selection` comment is laid out to be skimmed (2026-10-06): a titled question and a quick start first, then the phases and the non-phase settings as two groups, a heading per question opened by an emoji of its own, each setting's default stated before its rows, and every explanation collapsed under `<details>`. The rows, and so the reply parser and the Slack mirror, are unchanged; the Slack digest unfolds `<details>` and draws a `<summary>` bold. With every section offered, the visible text drops from 989 to 554 words | [spec](../specs/issue-472/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/472) |
 | issue-471 | `phase-selection` offers the spec chain as one Claude artifact (2026-10-06): a non-phase `claude-artifact` row, unticked, offered wherever the surface row is. The signed reply freezes `claudeArtifact` into `work-item-state.json`, the decision record, the frozen graph and the archive — `true` only when ticked and the work item resolves to the `claude` harness (or one the gate cannot know); a tick on another harness is *not applied* and the confirmation names it. The outer loop's graph-context block then carries one fixed line, and the skill carries the procedure. The files stay what every gate reads; an artifact comment never answers a gate. The Slack mirror keeps the row as a non-phase row | [spec](../specs/issue-471/), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/471) |
 | issue-452 | A completed work item stays completed after normal cleanup (2026-10-02): `core.graphs.check` answers a ref whose state file is not found from the portable record's `ended` stamp — `archived` with the outcome and the terminal record the closure kept, no node findings, `ok` only for `completed`; the CLI prints `ARCHIVED — <outcome>` (or that the detail is unavailable). Before, `check github:…#3` from the deployment directory after `keepCheckoutOnClose: false` cleanup reported `phase-selection`, `ok: false` and the full process missing | [spec](../specs/issue-452/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/452) |

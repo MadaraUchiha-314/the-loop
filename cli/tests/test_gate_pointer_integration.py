@@ -168,7 +168,7 @@ class TestTheStopHookEndToEnd:
         shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m the_loop "$@"\n')
         shim.chmod(0o755)
         config = tmp_path / "cli-config.yaml"
-        config.write_text('version: "0.11.0"\n')
+        config.write_text('version: "0.12.0"\n')
 
         def run(repo: Path) -> subprocess.CompletedProcess:
             env = {

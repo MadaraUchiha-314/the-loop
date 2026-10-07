@@ -17,8 +17,8 @@ declared separately under `routing.control`, `routing.reactions` and `routing.an
 Since issue-442 there is no binary at all: the daemon reaches GitHub through
 [PyGithub](https://github.com/pygithub/pygithub/) under **one token**, named here and read
 from the process environment. A config still carrying a retired key (`ghBinary`,
-`github.transport`, `github.cli`) is **refused**, naming the replacement — see
-[`the-loop migrate-config`](/cli/commands/migrate-config).
+`github.transport`, `github.cli`, `jira.transport`, `jira.cli`) is **refused**, naming
+the replacement — see [`the-loop migrate-config`](/cli/commands/migrate-config).
 
 ```yaml
 integrations:
@@ -125,33 +125,107 @@ call; it also answers [`github.host`](/config/cli/integrations-options#github-ho
 
 ## Jira
 
-### `jira.transport`
+**One Jira site per deployment** (issue-475, [decision-142](/decisions/decision-142)).
+Absent, Jira is off and the daemon loads nothing from the Jira SDK. Present, the daemon
+reaches the site through the pycontribs [`jira`](https://jira.readthedocs.io/) SDK:
 
-- **Type:** `'auto' | 'api' | 'cli'`
-- **Default:** `api`
+| `deployment` | Requests go to | Credential | REST, comment format |
+|---|---|---|---|
+| `cloud` | `https://<site>` | account email + API token (basic) | v3, ADF |
+| `cloud-scoped` | `https://api.atlassian.com/ex/jira/<cloudId>` | account email + scoped API token | v3, ADF |
+| `data-center` | `https://<site>` | personal access token (Bearer) | v2, wiki markup |
 
-How Jira calls are made. Same semantics as GitHub's.
+```yaml
+integrations:
+  jira:
+    site: acme.atlassian.net
+    deployment: cloud
+    api:
+      emailEnv: [JIRA_EMAIL]
+      tokenEnv: [JIRA_API_TOKEN]
+    projects:
+      PROJ: {repository: acme/web}   # PROJ tickets' code, specs and PRs live in acme/web
+      OPS: {}                        # mirror-only: a room, never a work-item source
+    # closeTransition: Done
+```
 
-### `jira.api.baseUrl`
+A ref on another site, or on a project not listed under `projects`, is refused before any
+request is sent. Use a **dedicated service account**. A scoped token needs
+`read:jira-work`, `write:jira-work` and `read:jira-user`; no admin scope is needed.
+[`the-loop doctor jira`](/cli/commands/doctor#doctor-jira) reports a block whose
+credential variables are not set.
+
+::: details Upgrading from the 0.11 stub
+`jira.transport` and `jira.cli` are gone: the-loop runs no `jira` binary.
+[`the-loop migrate-config`](/cli/commands/migrate-config) removes them, turns a string
+`api.tokenEnv` into a list, and turns a legacy `api.baseUrl` into `site` with
+`deployment: cloud`. It then asks for the two things the stub never held: `api.emailEnv`
+and `projects`.
+:::
+
+### `jira.site`
 
 - **Type:** `string`
-- **Default:** none
+- **Default:** none — required
 
-Jira API base URL, e.g. `https://your-org.atlassian.net`.
+The Jira site as a bare host, e.g. `acme.atlassian.net`: no scheme, no path. Every
+`jira:<site>/<KEY>-<n>` ref names it.
+
+### `jira.deployment`
+
+- **Type:** `'cloud' | 'cloud-scoped' | 'data-center'`
+- **Default:** none — required
+
+Which Jira this is. It picks the server URL, the authentication and the REST version (the
+table above).
+
+### `jira.cloudId`
+
+- **Type:** `string`
+- **Default:** none — required for `cloud-scoped`
+
+The site's cloud id, from `https://<site>/_edge/tenant_info`. Scoped-token calls go
+through `https://api.atlassian.com/ex/jira/<cloudId>`.
+
+### `jira.api.emailEnv`
+
+- **Type:** `string[]`
+- **Default:** none — required for `cloud` and `cloud-scoped`
+
+Environment variables holding the Jira account's email, tried in order and read at call
+time. Unused on `data-center`.
 
 ### `jira.api.tokenEnv`
 
+- **Type:** `string[]`
+- **Default:** none — required
+
+Environment variables holding the token, tried in order and read at call time: a Cloud
+API token, or a Data Center personal access token.
+
+::: danger Variable names, never values
+Both lists hold *variable names* matching `^[A-Z_][A-Z0-9_]*$`. A token or an email
+written here fails validation.
+:::
+
+### `jira.projects`
+
+- **Type:** `map<KEY, {repository?: string}>`
+- **Default:** none — at least one required
+
+The Jira projects this deployment works with. A key matches `^[A-Z][A-Z0-9_]{1,9}$`.
+`repository` (`owner/repo`, on [`github.host`](/config/cli/integrations-options#github-host)) is where that project's
+tickets get their spec chain, worktree and pull requests. A project without one is
+**mirror-only**: it can be a `jira@` room, never a work-item source.
+
+### `jira.closeTransition`
+
 - **Type:** `string`
 - **Default:** none
 
-Environment variable holding the Jira API token. A name, not a token.
-
-### `jira.cli.binary`
-
-- **Type:** `string`
-- **Default:** `jira`
-
-Path or name of the Jira CLI.
+The transition name that closes a ticket. Unset, the one available transition into the
+*Done* status category is used. None, or several, is an error that lists them: the-loop
+never guesses.
 
 ## Next
 

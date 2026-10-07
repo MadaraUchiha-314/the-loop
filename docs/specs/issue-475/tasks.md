@@ -75,14 +75,14 @@ Two decisions from the gate are carried here:
 
 ### PR 2 — control-plane integration (client, provider, config, decision)
 
-- [ ] 2.1 **Decision record.** Add `docs/decisions/decision-<nnn>.md`: the pycontribs
+- [x] 2.1 **Decision record.** Add `docs/decisions/decision-<nnn>.md`: the pycontribs
   `jira` SDK on REST v3/ADF (Cloud) and v2/wiki (DC), one site per deployment, and a
   project→repository map. It supersedes decision-042 point 13. Add its row in
   `decisions.md`.
   - _Depends on:_ 1.5
   - _Requirements:_ R3.8, R9.1
   - _Test:_ T9 — markdownlint
-- [ ] 2.2 **Red tests for config, schema and migration 0.12.0.** These are
+- [x] 2.2 **Red tests for config, schema and migration 0.12.0.** These are
   `test_jira_config.py` and new cases in `test_migrations.py`:
   - the stub migrates, idempotently;
   - an old stub is refused with the migration hint;
@@ -92,7 +92,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 1.5
   - _Requirements:_ R3.4–R3.6
   - _Test:_ T8 — red
-- [ ] 2.3 **Schema + migration.**
+- [x] 2.3 **Schema + migration.**
   - Replace `integrations.jira` in `cli/the_loop/schemas/cli-config.schema.json` and
     its `.the-loop/` copy.
   - Add `migrations._migrate_jira_stub`, bump `CURRENT_CONFIG_VERSION` to `0.12.0`, and
@@ -100,20 +100,20 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 2.2
   - _Requirements:_ R3.4–R3.6
   - _Test:_ T8 — green, including `test_config_schema_parity.py`
-- [ ] 2.4 **Red tests for `JiraApiConfig`/`JiraClient` against `FakeJiraClient`.**
+- [x] 2.4 **Red tests for `JiraApiConfig`/`JiraClient` against `FakeJiraClient`.**
   - Add `cli/tests/jirafakes.py` and `test_jira_api.py`.
   - Cover the server URL and REST version per deployment, credentials read at call
     time, missing-credential errors, and error scrubbing.
   - _Depends on:_ 2.3
   - _Requirements:_ R3.4, R3.5
   - _Test:_ T2, T7 (abuse case 9: `test_jira_errors_and_logs_carry_no_secret`) — red
-- [ ] 2.5 **`jiraapi.py`.** `JiraApiConfig`, `JiraClient` over `jira.JIRA` (lazy, with
+- [x] 2.5 **`jiraapi.py`.** `JiraApiConfig`, `JiraClient` over `jira.JIRA` (lazy, with
   `get_server_info=False`), the SDK-logger redaction filter, and `JiraApiError`. Add
   `jira>=3.10,<4` to `cli/pyproject.toml` dependencies and update `uv.lock`.
   - _Depends on:_ 2.4
   - _Requirements:_ R3.4, R3.5, R3.8
   - _Test:_ T2 — green
-- [ ] 2.6 **`JiraProvider` + `resolve()` branch.**
+- [x] 2.6 **`JiraProvider` + `resolve()` branch.**
   - Red first: add `JiraProvider(client=FakeJiraClient())` to `ALL_PROVIDERS`, plus
     `test_jira_integration_provider.py` for per-op shapes, the `create-label` no-op, and
     `transition` with a single or ambiguous candidate.
@@ -122,7 +122,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 2.5
   - _Requirements:_ R3.1–R3.3, R3.7
   - _Test:_ T3 — red → green
-- [ ] 2.7 **Docs for PR 2.**
+- [x] 2.7 **Docs for PR 2.**
   - Capability doc for integrations (`docs/capabilities/control-plane.md` § integrations).
   - `docs/config/` reference for `integrations.jira`.
   - A `the-loop doctor` Jira credential check, with its test.

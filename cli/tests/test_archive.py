@@ -276,7 +276,7 @@ def portable(tmp_path, monkeypatch) -> WorkItemStore:
     """A CLI config whose state root holds the portable records, selected for `check`."""
     root = tmp_path / "state"
     config = tmp_path / "cli-config.yaml"
-    config.write_text(f'version: "0.11.0"\nstate:\n  root: {root}\n')
+    config.write_text(f'version: "0.12.0"\nstate:\n  root: {root}\n')
     monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(config))
     return WorkItemStore(root / "portable")
 

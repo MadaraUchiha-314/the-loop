@@ -614,11 +614,6 @@ WITH_POLL_REPOS = {
 }
 
 
-def test_the_current_config_version_is_0_11_0():
-    """The version the break is gated on (issue-348, issue-381, then issue-442)."""
-    assert CURRENT_CONFIG_VERSION == "0.11.0"
-
-
 def test_the_repository_lists_move_up():
     """R5.1 — every github source's list, in declaration order, deduplicated."""
     before = copy.deepcopy(WITH_POLL_REPOS)
@@ -743,7 +738,7 @@ def test_the_label_keys_become_lists():
         {"provider": "github"},
         {"provider": "jira", "label": "PROJ"},
     ]
-    assert report.config["version"] == "0.11.0"
+    assert report.config["version"] == "0.12.0"
     assert WITH_ONE_LABEL == before  # the input is never mutated
     assert any(
         "autoExecuteLabel" in m and "autoExecuteLabels" in m for m in report.moves
@@ -907,3 +902,125 @@ def test_the_gh_transport_migration_is_idempotent():
     once = migrate_cli_config(WITH_CLI_TRANSPORT)
     twice = migrate_cli_config(once.config)
     assert twice.changed is False and twice.config == once.config
+
+
+# --- integrations.jira: the 0.11 stub becomes the real block (issue-475, 0.12.0) -----
+
+#: The stub every config up to 0.11.0 could carry: a transport choice (`cli` was
+#: retired by issue-442), a `baseUrl`, and ONE token variable as a string.
+JIRA_STUB = {
+    "version": "0.11.0",
+    "integrations": {
+        "jira": {
+            "transport": "cli",
+            "api": {
+                "baseUrl": "https://acme.atlassian.net/jira",
+                "tokenEnv": "JIRA_API_TOKEN",
+            },
+            "cli": {"binary": "jira"},
+        }
+    },
+}
+
+
+def test_the_current_config_version_is_0_12_0():
+    """The version the Jira block is gated on (issue-475)."""
+    assert CURRENT_CONFIG_VERSION == "0.12.0"
+
+
+@pytest.mark.parametrize(
+    "jira",
+    [
+        {"transport": "api"},
+        {"cli": {"binary": "jira"}},
+        {"api": {"tokenEnv": "JIRA_API_TOKEN"}},
+        {"api": {"baseUrl": "https://acme.atlassian.net"}},
+    ],
+    ids=["transport", "cli", "string-tokenEnv", "baseUrl"],
+)
+def test_a_config_still_declaring_the_jira_stub_is_detected(jira):
+    """Belt and braces: detected by key even under the current version."""
+    assert needs_migration(
+        {"version": CURRENT_CONFIG_VERSION, "integrations": {"jira": jira}}
+    )
+
+
+def test_migrate_jira_stub_to_0_12():
+    """
+    Feature: the Jira stub migrates mechanically
+      Scenario: a 0.11 config carrying the stub is migrated
+        Given integrations.jira with transport, cli, a string tokenEnv and a baseUrl
+        When the-loop migrate-config runs
+        Then transport and cli are removed, naming the replacement
+        And baseUrl becomes site (scheme and path stripped) with deployment cloud
+        And tokenEnv becomes a one-item list
+        And the version is 0.12.0
+
+    Requirement: docs/specs/issue-475/requirements.md R3.6
+    """
+    before = copy.deepcopy(JIRA_STUB)
+    report = migrate_cli_config(JIRA_STUB)
+    assert JIRA_STUB == before  # the input is never mutated
+    assert report.changed is True
+    assert report.config["version"] == CURRENT_CONFIG_VERSION == "0.12.0"
+    assert report.config["integrations"]["jira"] == {
+        "site": "acme.atlassian.net",
+        "deployment": "cloud",
+        "api": {"tokenEnv": ["JIRA_API_TOKEN"]},
+    }
+    moves = " | ".join(report.moves)
+    assert "integrations.jira.transport" in moves
+    assert "integrations.jira.cli" in moves
+    assert "integrations.jira.api.baseUrl" in moves and "site" in moves
+    assert "tokenEnv" in moves
+    # What the stub could not say, the note asks for: the email variable and the
+    # project map are new, and no migration can invent them.
+    assert any("emailEnv" in note and "projects" in note for note in report.notes)
+
+
+def test_migrate_jira_stub_is_idempotent():
+    once = migrate_cli_config(JIRA_STUB)
+    twice = migrate_cli_config(once.config)
+    assert twice.changed is False and twice.config == once.config
+
+
+def test_a_stub_with_nothing_left_leaves_no_husk():
+    report = migrate_cli_config(
+        {"version": "0.11.0", "integrations": {"jira": {"transport": "api"}}}
+    )
+    assert "integrations" not in report.config
+
+
+def test_a_config_without_a_jira_block_migrates_with_no_jira_change():
+    config = {
+        "version": "0.11.0",
+        "integrations": {"github": {"api": {"tokenEnv": ["GH_TOKEN"]}}},
+    }
+    report = migrate_cli_config(config)
+    assert report.config == {**config, "version": CURRENT_CONFIG_VERSION}
+    assert report.moves == ["version '0.11.0' → '0.12.0'"]
+
+
+def test_a_current_jira_block_is_left_alone():
+    jira = {
+        "site": "acme.atlassian.net",
+        "deployment": "cloud",
+        "api": {"emailEnv": ["JIRA_EMAIL"], "tokenEnv": ["JIRA_API_TOKEN"]},
+        "projects": {"PROJ": {"repository": "acme/web"}},
+    }
+    config = {"version": CURRENT_CONFIG_VERSION, "integrations": {"jira": jira}}
+    assert needs_migration(config) is False
+    assert migrate_cli_config(config).changed is False
+    assert_current(config)
+
+
+def test_old_jira_stub_refused_with_hint():
+    """A transport you chose that is silently served another way is worse than an
+    error: the refusal names the keys, the replacement and the command."""
+    with pytest.raises(ConfigTooOld) as exc:
+        assert_current({**JIRA_STUB, "version": CURRENT_CONFIG_VERSION})
+    message = str(exc.value)
+    assert "integrations.jira.transport" in message
+    assert "integrations.jira.cli" in message
+    assert "integrations.jira.api.tokenEnv" in message
+    assert "the-loop migrate-config" in message
