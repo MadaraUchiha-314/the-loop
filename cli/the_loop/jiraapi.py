@@ -539,11 +539,15 @@ class JiraClient:
         return to_jira(markdown, self.config.rest_version)
 
     @classmethod
-    def _markdown(cls, body: Any) -> str:
-        """A body Jira returned, as Markdown: ADF (a mapping) or wiki (a string)."""
+    def _markdown(cls, body: Any, markers: bool = True) -> str:
+        """A body Jira returned, as Markdown: ADF (a mapping) or wiki (a string).
+
+        ``markers=False`` keeps its the-loop markers visible text — for a body
+        the service account did not write (:func:`~the_loop.jiraformat.from_jira`).
+        """
         from .jiraformat import from_jira
 
-        return from_jira(body)
+        return from_jira(body, markers=markers)
 
     # -- reading SDK documents -----------------------------------------------------
 
@@ -562,14 +566,16 @@ class JiraClient:
             url=self.config.browse_url(key),
         )
 
-    def _comment_of(self, key: str, raw: Mapping[str, Any]) -> JiraComment:
+    def _comment_of(
+        self, key: str, raw: Mapping[str, Any], markers: bool = True
+    ) -> JiraComment:
         author = raw.get("author") or {}
         author_id = str(author.get("accountId") or author.get("key") or "")
         comment_id = str(raw.get("id") or "")
         return JiraComment(
             id=comment_id,
             author_id=author_id,
-            body_md=self._markdown(raw.get("body")),
+            body_md=self._markdown(raw.get("body"), markers=markers),
             created=str(raw.get("created") or ""),
             url=self.config.comment_url(key, comment_id),
         )
@@ -623,23 +629,34 @@ class JiraClient:
         A comment is the-loop's own when its body carries a self-marker **or**
         its author is this client's account (:meth:`myself`) — two independent
         tests, either one enough (design §C6, trade-off 6). ``myself`` is asked
-        only when some comment is unmarked, and an answer that cannot be had
-        leaves the marker as the only test.
+        only when some comment is unmarked or carries a gate marker, and an
+        answer that cannot be had leaves the marker as the only test.
+
+        A visible gate marker (``[the-loop:phase-selection]``, …) becomes the
+        hidden one a gate matches ONLY on a comment by the service account —
+        never on the strength of a self-marker, which anyone can type. Anyone
+        else's reads as literal text, so a Jira user cannot plant a checklist
+        an authorized ``execute`` then freezes (self-review R2-4). Unreadable
+        ``myself``: no comment's markers are converted (fail closed).
         """
         key = self._key(key)
         found = self._call("list comments", lambda j: j.comments(key))
-        read = [self._comment_of(key, getattr(c, "raw", {}) or {}) for c in found or []]
+        raws = [getattr(c, "raw", {}) or {} for c in found or []]
+        read = [self._comment_of(key, raw, markers=False) for raw in raws]
+        marked = [self._markdown(raw.get("body")) for raw in raws]
         unmarked = [c for c in read if not is_self_authored(c.body_md, "jira")]
-        me = self._self_id() if unmarked else ""
+        gated = any(md != c.body_md for md, c in zip(marked, read))
+        me = self._self_id() if unmarked or gated else ""
         return [
             replace(
                 c,
+                body_md=md if me and c.author_id == me else c.body_md,
                 is_self=(
                     is_self_authored(c.body_md, "jira")
                     or bool(me and c.author_id == me)
                 ),
             )
-            for c in read
+            for md, c in zip(marked, read)
         ]
 
     def _self_id(self) -> str:

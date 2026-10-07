@@ -266,8 +266,10 @@ def _announce(
             listen=listen if (verb == ADD_CHANNEL and listen != DEFAULT_LISTEN) else "",
         )
         if work_item.provider == "jira":
-            # The declaration recorded on the Jira ticket (issue-475) — a relay,
-            # as the operator's own comment is on GitHub.
+            # The declaration recorded on the Jira ticket (issue-475). Not a
+            # relay: `command_comment` is already self-marked (it was applied
+            # locally), so `post_on_ticket` stamps it the-loop's own and both
+            # ingresses ignore it — `relay=True` does not change that.
             from .tickets import post_on_ticket
 
             ok, error, _ = post_on_ticket(work_item, body, cli_conf, relay=True)

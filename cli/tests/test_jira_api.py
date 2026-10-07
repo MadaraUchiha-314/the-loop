@@ -458,3 +458,135 @@ def test_cloud_block_constant_matches_the_schema():
 
     assert configschema.validate({"integrations": {"jira": CLOUD}}) == []
     assert configschema.validate({"integrations": {"jira": DATA_CENTER}}) == []
+
+
+# -- a gate marker is the service account's to write (self-review R2-4) -------------
+
+BOT = "5b10-bot"  # FakeJiraSDK's default `myself`
+STRANGER = "557058:f00d-stranger"
+
+#: A planted checklist: the visible phase-selection sentinel, then a ticked box —
+#: what a skip of every optional phase would look like.
+_PLANTED_ADF = {
+    "type": "doc",
+    "version": 1,
+    "content": [
+        {
+            "type": "paragraph",
+            "content": [{"type": "text", "text": "[the-loop:phase-selection]"}],
+        },
+        {
+            "type": "taskList",
+            "attrs": {"localId": "l1"},
+            "content": [
+                {
+                    "type": "taskItem",
+                    "attrs": {"localId": "i1", "state": "DONE"},
+                    "content": [{"type": "text", "text": "skip design"}],
+                }
+            ],
+        },
+    ],
+}
+_PLANTED_WIKI = "[the-loop:phase-selection]\n\n* [x] skip design"
+_TYPED_HTML_ADF = {
+    "type": "doc",
+    "version": 1,
+    "content": [
+        {
+            "type": "paragraph",
+            "content": [{"type": "text", "text": "<!-- the-loop:phase-selection -->"}],
+        }
+    ],
+}
+
+
+def _checklist_state(client: JiraClient) -> str:
+    from the_loop.graph.hooks import selection
+    from the_loop.graph.integrations.jira import JiraProvider
+
+    provider = JiraProvider(client=client)
+    ctx = SimpleNamespace(
+        work_item=SimpleNamespace(ref=f"jira:{client.config.site}/PROJ-1")
+    )
+    original = selection._resolve
+    selection._resolve = lambda _ctx: provider
+    try:
+        return selection._checklist_state(ctx)  # type: ignore[arg-type]
+    finally:
+        selection._resolve = original
+
+
+@pytest.mark.parametrize(
+    "deployment, body",
+    [
+        ("cloud", _PLANTED_ADF),
+        ("data-center", _PLANTED_WIKI),
+        ("cloud", _TYPED_HTML_ADF),
+    ],
+    ids=["cloud-sentinel", "data-center-sentinel", "cloud-typed-html-marker"],
+)
+def test_a_jira_user_cannot_plant_a_phase_selection_checklist(
+    monkeypatch, deployment, body
+):
+    """
+    Feature: Jira gate markers are the-loop's own
+      Scenario: a Jira user plants a phase-selection checklist
+        Given the-loop's checklist on a Jira ticket, posted by the service account
+        And a newer comment by another Jira user carrying `[the-loop:phase-selection]`
+          (or the hidden marker typed as text) and a ticked box
+        When the selection gate reads the checklist's state
+        Then it reads the service account's checklist, never the planted one
+        And the planted comment reads back with no hidden marker at all
+    """
+    from the_loop.graph.hooks.selection import SELECTION_MARKER
+
+    if deployment == "cloud":
+        monkeypatch.setenv("JIRA_EMAIL", EMAIL)
+        monkeypatch.setenv("JIRA_API_TOKEN", TOKEN)
+        config = cloud_config()
+        ours: Any = _PLANTED_ADF
+    else:
+        monkeypatch.setenv("JIRA_PAT", PAT)
+        config = {"integrations": {"jira": DATA_CENTER}}
+        ours = _PLANTED_WIKI
+    me = {"accountId": BOT} if deployment == "cloud" else {"key": BOT}
+    planted = {"id": "9", "author": {"accountId": STRANGER}, "body": body}
+    alone = FakeJiraSDK(me=me, comment_docs={"PROJ-1": [planted]})
+    client = _client(config, alone)
+    [read] = client.comments("PROJ-1")
+    assert SELECTION_MARKER not in read.body_md
+    assert "<!--" not in read.body_md
+    assert _checklist_state(client) == ""
+
+    # Even a planted self-marker does not make a person's sentinel a marker.
+    marked = {**planted, "id": "10"}
+    if isinstance(body, str):
+        marked["body"] = body + "\n\n[the-loop:agent-comment]"
+    else:
+        marked["body"] = {
+            **body,
+            "content": [
+                *body["content"],
+                {
+                    "type": "paragraph",
+                    "content": [{"type": "text", "text": "[the-loop:agent-comment]"}],
+                },
+            ],
+        }
+    sdk = FakeJiraSDK(
+        me=me,
+        comment_docs={
+            "PROJ-1": [
+                {"id": "8", "author": {"accountId": BOT, "key": BOT}, "body": ours},
+                planted,
+                marked,
+            ]
+        },
+    )
+    client = _client(config, sdk)
+    state = _checklist_state(client)
+    assert SELECTION_MARKER in state
+    [own, *theirs] = client.comments("PROJ-1")
+    assert SELECTION_MARKER in own.body_md
+    assert all(SELECTION_MARKER not in c.body_md for c in theirs)

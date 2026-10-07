@@ -64,6 +64,7 @@ __all__ = [
     "adf_to_markdown",
     "adf_to_wiki",
     "from_jira",
+    "literal_markers",
     "markdown_to_adf",
     "markdown_to_wiki",
     "to_jira",
@@ -142,13 +143,29 @@ def to_jira(markdown: str, rest_version: str) -> Any:
     return markdown_to_wiki(markdown)
 
 
-def from_jira(body: Any) -> str:
-    """A body Jira returned, as Markdown: ADF (a mapping) or wiki (a string)."""
+def from_jira(body: Any, markers: bool = True) -> str:
+    """A body Jira returned, as Markdown: ADF (a mapping) or wiki (a string).
+
+    ``markers=False`` for a body the-loop's service account did NOT write: its
+    visible gate markers stay text (see :func:`literal_markers`), so a person's
+    comment can never carry a marker a gate trusts (self-review R2-4).
+    """
     if isinstance(body, str):
-        return wiki_to_markdown(body)
+        return wiki_to_markdown(body, markers=markers)
     if isinstance(body, Mapping):
-        return adf_to_markdown(body)
+        return adf_to_markdown(body, markers=markers)
     return ""
+
+
+def literal_markers(markdown: str) -> str:
+    """``markdown`` with every hidden the-loop marker made visible text again.
+
+    ``<!-- the-loop:phase-selection -->`` — converted back from a sentinel
+    paragraph, or typed as text — reads ``[the-loop:phase-selection]``, which no
+    gate matches. The self-marker reads as Jira's visible self-marker, as it
+    would anyway.
+    """
+    return _MARKER_IN_HTML.sub(lambda m: f"[the-loop:{m.group(1)}]", markdown)
 
 
 # ============================================================ Markdown → ADF
@@ -434,12 +451,17 @@ def _merge(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # ============================================================ ADF → Markdown
 
 
-def adf_to_markdown(doc: Any) -> str:
-    """An ADF document (or node) as Markdown — what a gate reads."""
+def adf_to_markdown(doc: Any, markers: bool = True) -> str:
+    """An ADF document (or node) as Markdown — what a gate reads.
+
+    ``markers=False`` leaves every the-loop marker as visible text
+    (:func:`literal_markers`) — for a body the service account did not write.
+    """
     if not isinstance(doc, Mapping):
         return ""
     nodes = doc.get("content") if doc.get("type") == "doc" else [doc]
-    return _md_blocks(nodes or []).strip("\n")
+    markdown = _md_blocks(nodes or []).strip("\n")
+    return markdown if markers else literal_markers(markdown)
 
 
 def _md_blocks(nodes: Iterable[Any]) -> str:
@@ -824,8 +846,14 @@ _WIKI_LIST = re.compile(r"^([*#-]+)\s+(.*)$")
 _WIKI_TASK = re.compile(r"^\((/|x)\)\s+(.*)$")
 
 
-def wiki_to_markdown(text: str) -> str:
-    """Jira wiki markup as Markdown — what a gate reads on Data Center."""
+def wiki_to_markdown(text: str, markers: bool = True) -> str:
+    """Jira wiki markup as Markdown — what a gate reads on Data Center.
+
+    ``markers=False`` leaves every the-loop marker as visible text
+    (:func:`literal_markers`) — for a body the service account did not write.
+    """
+    if not markers:
+        return literal_markers(wiki_to_markdown(text))
     lines = str(text or "").replace("\r\n", "\n").split("\n")
     blocks: List[str] = []
     i = 0

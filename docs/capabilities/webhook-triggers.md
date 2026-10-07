@@ -1063,7 +1063,9 @@ flowchart LR
   Jira ledger's record of an authorized person's gate answer or control command from
   another channel. Both ingresses SHALL accept it as authorized, and a gate SHALL read it
   as the operator's answer, as the GitHub ingress reads an unmarked relay posted under
-  the operator's credentials. On anyone else's comment the relay marker grants nothing.
+  the operator's credentials. On anyone else's comment the relay marker grants nothing,
+  and a visible gate marker (`[the-loop:phase-selection]`, …) stays text, so no person
+  can plant a checklist a gate trusts.
   See [channels § Jira](channels.md#jira).
 - **Arming is a label, starting is a person** (abuse case 5). A Jira listing carries no
   reporter, so no Jira ticket starts on its label alone. Only a recorded `the-loop start`

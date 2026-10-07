@@ -1569,8 +1569,10 @@ def _announce(
     config = _control_config(cli_conf)
     body = command_comment(verb, config, actor=actor, address=_instance(cli_conf).name)
     if work_item.provider == "jira":
-        # On Jira the record is a relay (issue-475): the operator's command, as
-        # an unmarked comment under their own credentials is on GitHub.
+        # The record on the Jira ticket (issue-475). Not a relay:
+        # `command_comment` is already self-marked (the action was applied
+        # locally), so `post_on_ticket` stamps it the-loop's own and both
+        # ingresses ignore it — `relay=True` does not change that.
         from .tickets import post_on_ticket
 
         ok, error, _ = post_on_ticket(work_item, body, cli_conf, relay=True)
