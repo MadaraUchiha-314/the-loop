@@ -51,7 +51,7 @@ from . import eventlog
 from .ghhost import repo_slug as _repo_slug
 from .control import START, ControlConfig, ControlStore
 from .sessions import WorkItemRef
-from .sessions.refs import UnknownJiraProject, origin_repository
+from .sessions.refs import UnknownJiraProject, origin_ref, origin_repository
 
 logger = logging.getLogger("the-loop.graph")
 
@@ -189,7 +189,11 @@ def spec_folder_for(
     return target
 
 
-def _pr_repo(work_item: WorkItemRef, pr: WorkItemRef) -> str:
+def _pr_repo(
+    work_item: WorkItemRef,
+    pr: WorkItemRef,
+    cli_config: Optional[Mapping[str, Any]] = None,
+) -> str:
     """The repository qualifier for ``pr``'s inner loop — ``""`` in the origin repo.
 
     A work item may be delivered by pull requests in several repositories
@@ -198,8 +202,30 @@ def _pr_repo(work_item: WorkItemRef, pr: WorkItemRef) -> str:
     same repository as the ticket ⇒ the shipped ``pr-loops/pr-<n>/`` path;
     another repository ⇒ ``pr-loops/<owner>__<repo>/pr-<n>/``, still under the
     ONE spec directory in the origin repository's checkout.
+
+    "The same repository" is the work item's **origin** (issue-475): a GitHub
+    issue's own, a Jira ticket's mapped one — so a Jira item's pull request in
+    that repository keeps the shipped layout too. A Jira item this deployment
+    cannot place has no origin, and every pull request is qualified.
     """
-    return "" if pr.path == work_item.path else pr.path
+    try:
+        origin = origin_ref(work_item, cli_config).path
+    except UnknownJiraProject:
+        return pr.path
+    return "" if pr.path == origin else pr.path
+
+
+def _layout_origin(
+    work_item: WorkItemRef, cli_config: Optional[Mapping[str, Any]]
+) -> str:
+    """The origin a Jira item's recorded PR layout is derived against; ``""`` —
+    "read it off the state" — for every other item, or one that cannot be placed."""
+    if work_item.repo:
+        return ""
+    try:
+        return origin_repository(work_item, cli_config)
+    except UnknownJiraProject:
+        return ""
 
 
 def _is_contained(root: Path, spec_dir: str) -> bool:
@@ -867,7 +893,7 @@ class GraphLink:
             cwd,
             call,
             pr_number=pr.number,
-            pr_repo=_pr_repo(work_item, pr),
+            pr_repo=_pr_repo(work_item, pr, self.cli_config),
         )
 
     def on_pr_event(
@@ -887,7 +913,7 @@ class GraphLink:
             cwd,
             lambda rt, item: rt.advance(item, ref=pr.ref, event=event),
             pr_number=pr.number,
-            pr_repo=_pr_repo(work_item, pr),
+            pr_repo=_pr_repo(work_item, pr, self.cli_config),
         )
 
     def pr_context(
@@ -900,7 +926,7 @@ class GraphLink:
             cwd,
             lambda rt, item: self._context_from(rt, item),
             pr_number=pr.number,
-            pr_repo=_pr_repo(work_item, pr),
+            pr_repo=_pr_repo(work_item, pr, self.cli_config),
         )
 
     def on_pr_linked(
@@ -941,6 +967,10 @@ class GraphLink:
                 number=pr.number,
                 url=pr.url,
                 linked_by="session",
+                # A Jira item's state names it by id, so its origin repository —
+                # which decides the PR's layout — is passed (issue-475). A GitHub
+                # item's is read off the state as before.
+                origin=_layout_origin(work_item, self.cli_config),
             )
             if entry is None:
                 return
@@ -1020,7 +1050,7 @@ class GraphLink:
             cwd,
             call,
             pr_number=pr.number,
-            pr_repo=_pr_repo(work_item, pr),
+            pr_repo=_pr_repo(work_item, pr, self.cli_config),
         )
 
     # -- internals --------------------------------------------------------------

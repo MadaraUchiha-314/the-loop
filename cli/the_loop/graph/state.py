@@ -277,13 +277,18 @@ def repository_of(ref: str) -> str:
     The work item's **origin** repository, which is what decides whether a pull
     request's inner loop keeps the shipped ``pr-loops/pr-<n>`` layout or the
     qualified one (issue-183).
+
+    ``""`` for a Jira ref (issue-475): it names no repository of its own, and its
+    origin is configuration this module does not read — the caller that knows it
+    passes it to :meth:`WorkItemState.link_pr` as ``origin``.
     """
     from ..sessions import WorkItemRef
 
     try:
-        return WorkItemRef.parse(ref).path
+        parsed = WorkItemRef.parse(ref)
     except ValueError:
         return ""
+    return parsed.path if parsed.repo else ""
 
 
 def _pr_state_dir(repository: str, number: int, origin: str = "") -> str:
@@ -562,6 +567,7 @@ class WorkItemState:
         url: str = "",
         linked_by: str = "session",
         is_self: bool = False,
+        origin: str = "",
     ) -> Optional[PullRequest]:
         """Record that ``ref`` delivers this work item; ``None`` when it already did.
 
@@ -585,6 +591,10 @@ class WorkItemState:
         re-running the link after a retry costs nothing. Refuses an entry that
         does not validate (an unusable repository path), because this value
         becomes a directory name.
+
+        ``origin`` is the work item's origin repository when the caller knows it
+        (a Jira work item's mapped repository, issue-475); otherwise it is read
+        off :attr:`work_item` as before.
         """
         if not ref or self.pull_request(ref) is not None:
             return None
@@ -601,7 +611,7 @@ class WorkItemState:
                 "linkedBy": linked_by,
                 **({"self": True} if is_self else {}),
             },
-            origin=repository_of(self.work_item),
+            origin=origin or repository_of(self.work_item),
         )
         if entry is None:
             return None

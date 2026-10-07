@@ -17,7 +17,9 @@ Filled in one PR at a time. This record covers **PR 1 â€” identity** (tasks 1.1â
   - one spec-id derivation (`issue-<n>` / `jira-<key>-<n>`), the `derive_ref` inverse
     from the configured site, and the moved-key refusal;
   - `origin_repository`: a Jira project's mapped GitHub repository, the shared call
-    sites that ask it, and the fail-closed refusal of an unplaceable Jira ref.
+    sites that ask it, the fail-closed refusal of an unplaceable Jira ref, and the
+    unqualified `pr-loops/pr-<n>/` layout for a Jira item's pull request in that
+    repository.
 
   Plus a history row for issue-475.
 
@@ -25,7 +27,9 @@ Filled in one PR at a time. This record covers **PR 1 â€” identity** (tasks 1.1â
 
 - **Docstrings:** the "`jira:` prefix is reserved" note on `WorkItemRef`
   (`cli/the_loop/sessions/registry.py`) and the `provider`/`id` field notes in
-  `cli/the_loop/lifecycle/contract.py` now describe the Jira scheme.
+  `cli/the_loop/lifecycle/contract.py` now describe the Jira scheme. The contract's
+  `repository` field note says that for a Jira ticket it is the tracker path, not the
+  origin repository.
 - **Not changed yet, and why:**
   - `migrations._github_sources` and the `polling.sources[].provider` schema description
     still call `jira` reserved for polling. That stays true until PR 4 adds the Jira

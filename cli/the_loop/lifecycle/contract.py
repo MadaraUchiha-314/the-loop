@@ -99,6 +99,9 @@ class WorkItem:
     owner: str = ""
     repo: str = ""
     #: ``owner/repo``, host-qualified when the host is not the provider's default.
+    #: For a Jira ticket it is the tracker path, ``<site>/<KEY>`` — not the GitHub
+    #: repository its code lives in, which only configuration knows
+    #: (``sessions.refs.origin_repository``); nothing derives a PR layout from it.
     repository: str = ""
     number: int = 0
     #: ``issue`` | ``pull-request``; ``""`` when the point does not know.

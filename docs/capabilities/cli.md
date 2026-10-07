@@ -248,7 +248,10 @@ self-learning/ML capabilities.
   `link_pr` rows, and `sessions start`'s payload — SHALL ask it. A Jira ref on another
   site, in an unconfigured project or in a mirror-only one (no `repository`) SHALL be
   refused (`UnknownJiraProject`) before anything is resolved or sent, and a GitHub-only
-  verb given a Jira ref SHALL refuse it rather than coerce it.
+  verb given a Jira ref SHALL refuse it rather than coerce it. A Jira item's pull request
+  in that mapped repository SHALL get the shipped `pr-loops/pr-<n>/` layout, exactly as a
+  GitHub issue's pull request in its own repository does; one in any other repository
+  SHALL get the qualified `pr-loops/<owner>__<repo>/pr-<n>/`.
 - The pre-issue-128 locations (`<root>/sessions/`, `<root>/sessions/control/`,
   `<root>/sessions/poll-state.json`, and the pre-issue-106 `.the-loop/poll-state.json`)
   SHALL still be **read** when a work item's new record has no such section, and written

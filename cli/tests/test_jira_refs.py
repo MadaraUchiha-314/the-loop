@@ -364,3 +364,58 @@ def test_a_jira_items_checkout_is_its_origin_repositorys(
     link = GraphLink(GraphLinkConfig(), cli_config=CONFIG)
     monkeypatch.setattr(GraphLink, "_origin_url", staticmethod(lambda root: origin))
     assert link._checkout_belongs_to(tmp_path, WorkItemRef.parse(ref)) is belongs
+
+
+# -- a Jira item's pull requests keep the shipped layout in its origin repo ------------
+
+
+@pytest.mark.parametrize(
+    "pr, qualifier",
+    [
+        ("github:acme/web#9", ""),  # the mapped origin repository: unqualified
+        ("github:acme/infra#9", "acme/infra"),  # another repository: qualified
+    ],
+)
+def test_pr_repo_of_a_jira_item_compares_against_its_origin(pr, qualifier):
+    from the_loop.graphlink import _pr_repo
+
+    item = WorkItemRef.parse(REF)
+    assert _pr_repo(item, WorkItemRef.parse(pr), CONFIG) == qualifier
+
+
+def test_pr_repo_of_an_unplaceable_jira_item_is_qualified():
+    from the_loop.graphlink import _pr_repo
+
+    item = WorkItemRef.parse(f"jira:{SITE}/OPS-1")  # mirror-only
+    assert _pr_repo(item, WorkItemRef.parse("github:acme/web#9"), CONFIG) == "acme/web"
+
+
+def test_pr_repo_of_a_github_item_is_unchanged():
+    from the_loop.graphlink import _pr_repo
+
+    item = WorkItemRef.parse("github:octo/app#15")
+    assert _pr_repo(item, WorkItemRef.parse("github:octo/app#16")) == ""
+    assert _pr_repo(item, WorkItemRef.parse("github:octo/lib#7"), CONFIG) == "octo/lib"
+
+
+@pytest.mark.parametrize(
+    "pr, repository, state_dir",
+    [
+        ("github:acme/web#9", "acme/web", "pr-loops/pr-9"),
+        ("github:acme/infra#9", "acme/infra", "pr-loops/acme__infra/pr-9"),
+    ],
+)
+def test_a_jira_items_recorded_pr_layout_follows_its_origin(pr, repository, state_dir):
+    from the_loop.graph.state import WorkItemState
+
+    state = WorkItemState(work_item=REF)
+    entry = state.link_pr(pr, repository=repository, number=9, origin="acme/web")
+    assert entry is not None and entry.state_dir == state_dir
+
+
+def test_repository_of_a_jira_ref_is_unknown_without_config():
+    """A Jira ref names no repository of its own; ``site/KEY`` is not one."""
+    from the_loop.graph.state import repository_of
+
+    assert repository_of(REF) == ""
+    assert repository_of("github:octo/app#15") == "octo/app"
