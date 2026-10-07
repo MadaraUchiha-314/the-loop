@@ -45,12 +45,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from . import eventlog
 from .ghhost import repo_slug as _repo_slug
 from .control import START, ControlConfig, ControlStore
 from .sessions import WorkItemRef
+from .sessions.refs import UnknownJiraProject, origin_repository
 
 logger = logging.getLogger("the-loop.graph")
 
@@ -543,8 +544,13 @@ class GraphLink:
         control_store: Optional[ControlStore] = None,
         authorized_users: Optional[Sequence[str]] = None,
         assignment_sink: Optional[Any] = None,
+        cli_config: Optional[Mapping[str, Any]] = None,
     ):
         self.config = config
+        # The CLI config, read for one thing (issue-475): which repository a
+        # Jira work item's code lives in (`integrations.jira.projects`). A
+        # GitHub work item's repository is its ref's own, so None changes nothing.
+        self.cli_config: Mapping[str, Any] = cli_config or {}
         self.control = control or ControlConfig()
         self.control_store = control_store
         self.authorized_users = list(authorized_users or [])
@@ -617,7 +623,7 @@ class GraphLink:
         state = WorkItemState.load(state_dir, item)
         entry = state.link_pr(
             work_item.ref,
-            repository=f"{work_item.owner}/{work_item.repo}",
+            repository=origin_repository(work_item, self.cli_config),
             number=work_item.number,
             url=work_item.url,
             linked_by="session",
@@ -931,7 +937,7 @@ class GraphLink:
             state = WorkItemState.load(state_dir, item)
             entry = state.link_pr(
                 pr.ref,
-                repository=f"{pr.owner}/{pr.repo}",
+                repository=origin_repository(pr, self.cli_config),
                 number=pr.number,
                 url=pr.url,
                 linked_by="session",
@@ -1105,7 +1111,7 @@ class GraphLink:
             # runtime factory (tests, embedders) built for two arguments still
             # serves every outer-path caller. A contribution item (issue-185)
             # is the one exception: its resolved loop name rides along.
-            origin = f"{work_item.owner}/{work_item.repo}"
+            origin = origin_repository(work_item, self.cli_config)
             if pr_number is None:
                 runtime = (
                     self._build_runtime(
@@ -1442,10 +1448,17 @@ class GraphLink:
         checkout, has no origin, or cannot be interrogated is not a match — it
         is exactly the case where we cannot tell whose work item this is.
         """
+        try:
+            # A Jira work item's repository is the one its project maps to
+            # (issue-475); one this deployment cannot place belongs nowhere.
+            origin = origin_repository(work_item, self.cli_config)
+        except UnknownJiraProject as exc:
+            logger.debug("%s", exc)
+            return False
         url = self._origin_url(root)
         if not url:
             return False
-        return _repo_slug(url) == f"{work_item.owner}/{work_item.repo}".lower()
+        return _repo_slug(url) == origin.lower()
 
     @staticmethod
     def _origin_url(root: Path) -> str:

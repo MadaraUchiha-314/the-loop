@@ -55,7 +55,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 1.2
   - _Requirements:_ R2.1–R2.4
   - _Test:_ T1 — `test_issue_project_key_never_collides_with_github`, `test_moved_jira_key_refuses_second_spec_folder`
-- [ ] 1.4 **`origin_repository(ref, config)` and the shared call sites.** Swap the six
+- [x] 1.4 **`origin_repository(ref, config)` and the shared call sites.** Swap the six
   owner/repo reads listed in design C2: `dispatcher._repo_payload`, the PR endpoint ref,
   the `graphlink` `origin_repo`/`_checkout_belongs_to`/`link_pr` calls, and the
   `core/sessions` control-start payload. GitHub-only verbs given a Jira ref raise the

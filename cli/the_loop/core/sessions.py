@@ -45,6 +45,7 @@ from ..harness.base import UnsupportedRunnerError
 from ..codex_support import native_session_id, rollout_path, transcript_entry
 from ..instance import INSTANCE_LOCKED, LOCKED, InstanceConfig
 from ..runner import TmuxRunner
+from ..sessions.refs import origin_repository
 from ..sessions.registry import RegistryError, Session, SessionRegistry
 from ..state import layout_from_config, legacy_layout
 from ..webhook.dispatcher import SETTLED_START_GATE, TmuxConfig
@@ -532,6 +533,7 @@ def _record_pull_request_in_state(
         # without it a work item walking one would resolve to the default here.
         _control_config(config),
         control_store=_control_store(config),
+        cli_config=config,
     )
     link.on_pr_linked(work_item, pr, record.cwd)
 
@@ -1484,7 +1486,7 @@ def _spawn_for_start(
         work_items=[work_item],
         payload={
             "action": "control-start",
-            "repository": {"full_name": f"{work_item.owner}/{work_item.repo}"},
+            "repository": {"full_name": origin_repository(work_item, config)},
             "issue": {"number": work_item.number},
         },
         labeled=True,

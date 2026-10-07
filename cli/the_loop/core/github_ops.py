@@ -113,6 +113,12 @@ def _host(ref: WorkItemRef) -> str:
 
 def _github_ref(ref: str) -> WorkItemRef:
     item = WorkItemRef.parse(ref)  # ValueError on a malformed ref
+    if item.provider == "jira":
+        # Refused, never coerced into a repository (issue-475, R1.5).
+        raise ValueError(
+            f"{item.ref} is a Jira work item, not a GitHub work item; this verb "
+            "needs a GitHub repository"
+        )
     if item.provider != "github":
         raise ValueError(f"{item.ref} is not a GitHub work item")
     return item

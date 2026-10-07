@@ -316,3 +316,51 @@ def test_spec_folder_for_a_provider_without_a_convention_is_none(tmp_path):
     from the_loop.graphlink import spec_folder_for
 
     assert spec_folder_for(tmp_path, WorkItemRef.parse("gitlab:o/r#1")) is None
+
+
+# -- the shared call sites read origin_repository (design § C2) ------------------------
+
+
+def test_repo_payload_of_a_jira_item_names_its_origin_repository():
+    from the_loop.webhook.dispatcher import _repo_payload
+
+    payload = _repo_payload(WorkItemRef.parse(REF), CONFIG)
+    assert payload["repository"]["full_name"] == "acme/web"
+    assert payload["repository"]["html_url"].startswith("https://github.com/acme/web/")
+
+
+def test_repo_payload_of_a_github_item_is_unchanged():
+    from the_loop.webhook.dispatcher import _repo_payload
+
+    ref = WorkItemRef.parse("github:ghe.corp.example/octo/repo#15")
+    assert (
+        _repo_payload(ref)
+        == _repo_payload(ref, CONFIG)
+        == {
+            "repository": {
+                "full_name": "octo/repo",
+                "html_url": "https://ghe.corp.example/octo/repo/issues/15",
+            }
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "ref, origin, belongs",
+    [
+        (REF, "https://github.com/acme/web.git", True),
+        (REF, "git@github.com:Acme/Web.git", True),
+        (REF, "https://github.com/acme/other.git", False),
+        (f"jira:{SITE}/OPS-1", "https://github.com/acme/web.git", False),  # mirror-only
+        ("jira:evil.example.com/PROJ-1", "https://github.com/acme/web.git", False),
+        ("github:acme/web#1", "https://github.com/acme/web.git", True),
+    ],
+)
+def test_a_jira_items_checkout_is_its_origin_repositorys(
+    tmp_path, monkeypatch, ref, origin, belongs
+):
+    from the_loop.graphlink import GraphLink, GraphLinkConfig
+
+    link = GraphLink(GraphLinkConfig(), cli_config=CONFIG)
+    monkeypatch.setattr(GraphLink, "_origin_url", staticmethod(lambda root: origin))
+    assert link._checkout_belongs_to(tmp_path, WorkItemRef.parse(ref)) is belongs
