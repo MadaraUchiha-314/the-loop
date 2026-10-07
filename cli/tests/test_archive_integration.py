@@ -57,7 +57,7 @@ def state_root(tmp_path, monkeypatch) -> Path:
     """The operator's state root, named by the CLI config `check` reads."""
     root = tmp_path / "state"
     config = tmp_path / "cli-config.yaml"
-    config.write_text(f'version: "0.11.0"\nstate:\n  root: {root}\n')
+    config.write_text(f'version: "0.12.0"\nstate:\n  root: {root}\n')
     monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(config))
     return root
 

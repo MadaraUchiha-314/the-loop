@@ -115,7 +115,7 @@ def _setup(tmp_path: Path, monkeypatch):
     (tmp_path / "graphs" / "quick.yaml").write_text(TRIAGE.lstrip())
     config_path = tmp_path / "cli-config.yaml"
     config_path.write_text(
-        'version: "0.11.0"\n'
+        'version: "0.12.0"\n'
         "graphs:\n"
         f"  - {{name: {NAME}, path: graphs/triage.yaml}}\n"
         f"  - {{name: {QUICK}, path: graphs/quick.yaml}}\n"

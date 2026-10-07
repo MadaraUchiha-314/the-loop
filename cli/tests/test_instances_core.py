@@ -15,7 +15,7 @@ from the_loop.core import instance as core_instance
 from the_loop.core import instances as core_instances
 
 MANAGER_CONFIG = """# the manager's config — this comment must survive a registration
-version: "0.11.0"
+version: "0.12.0"
 instance:
   name: hq
   role: manager
@@ -60,7 +60,7 @@ def test_describe_instance_carries_the_session_count(tmp_path):
 def test_a_worker_refuses_to_register(tmp_path):
     """R4.4: the routes exist on every instance and do nothing on a worker."""
     path = tmp_path / "cli-config.yaml"
-    path.write_text('version: "0.11.0"\ninstance:\n  name: laptop-a\n')
+    path.write_text('version: "0.12.0"\ninstance:\n  name: laptop-a\n')
     with pytest.raises(ValueError) as excinfo:
         core_instances.register_instance(
             _config(path), "b", "http://b:1", config_path=path
@@ -183,7 +183,7 @@ def test_assert_self_accepts_empty_and_own_name_and_refuses_a_foreign_one():
         core_instance.assert_self("anyone", {})
 
 
-HAND_EDITED = """version: "0.11.0"
+HAND_EDITED = """version: "0.12.0"
 instance:
   name: hq
   role: manager

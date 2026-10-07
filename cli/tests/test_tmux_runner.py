@@ -498,7 +498,7 @@ class TestTmuxRunner:
         exports THE_LOOP_CLI_CONFIG = the daemon's own resolved, absolute path.
         """
         cfg = tmp_path / "cli-config.yaml"
-        cfg.write_text("version: '0.11.0'\n")
+        cfg.write_text("version: '0.12.0'\n")
         monkeypatch.setattr(
             runner_mod, "_cli_config_export", lambda: str(cfg.resolve())
         )

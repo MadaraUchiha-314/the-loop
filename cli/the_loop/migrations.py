@@ -30,6 +30,11 @@ are raised nowhere under ``the_loop/``, so an operator who filled it in
 configured nothing and was never told. A config surface that quietly does nothing
 is worse than one that is gone, because it looks like the job is done.
 
+issue-475 replaces the ``integrations.jira`` stub with the real Jira block
+(decision-142): its ``transport`` and ``cli`` promised a ``jira`` binary nothing
+runs, its one-string ``api.tokenEnv`` becomes a list, and its ``api.baseUrl``
+becomes a bare ``site`` with a ``deployment``.
+
 A breaking change is only as good as its migration, so four properties hold:
 
 1. **Version the schema, don't sniff for keys** — detection is exact.
@@ -61,9 +66,9 @@ __all__ = [
 ]
 
 #: Bumped by issue-109, then issue-128, then issue-142, then issue-245, then
-#: issue-304, then issue-309, then issue-348, then issue-381, then issue-442. A
-#: config below this needs `/the-loop:upgrade-the-loop`.
-CURRENT_CONFIG_VERSION = "0.11.0"
+#: issue-304, then issue-309, then issue-348, then issue-381, then issue-442, then
+#: issue-475. A config below this needs `/the-loop:upgrade-the-loop`.
+CURRENT_CONFIG_VERSION = "0.12.0"
 
 _UPGRADE = "/the-loop:upgrade-the-loop"
 
@@ -167,6 +172,29 @@ _GITHUB_SITE: Tuple[str, ...] = ("integrations", "github")
 _GITHUB_RETIRED_KEYS: Tuple[str, ...] = ("transport", "cli")
 _GITHUB_REPLACEMENT = "integrations.github.api.tokenEnv"
 
+# issue-475 replaces the `integrations.jira` stub with the real block (decision-142).
+# The stub's `transport` and `cli` promised a `jira` binary nothing runs (issue-442
+# retired every CLI transport); its `api.tokenEnv` was ONE string where every other
+# credential key is a list; its `api.baseUrl` was a URL where the block now names a
+# bare `site` and a `deployment`. All four are moved, not read.
+_JIRA_SITE: Tuple[str, ...] = ("integrations", "jira")
+_JIRA_RETIRED_KEYS: Tuple[str, ...] = ("transport", "cli")
+_JIRA_REPLACEMENT = "integrations.jira.api.tokenEnv"
+_MIGRATE_CONFIG = "the-loop migrate-config"
+
+
+def _jira_stub_keys(config: Mapping[str, Any]) -> List[str]:
+    """The stub's keys this config still declares, as option paths."""
+    jira = _dig(config, _JIRA_SITE) or {}
+    stale = [f"integrations.jira.{key}" for key in _JIRA_RETIRED_KEYS if key in jira]
+    api = jira.get("api")
+    if isinstance(api, Mapping):
+        if isinstance(api.get("tokenEnv"), str):
+            stale.append("integrations.jira.api.tokenEnv")
+        if "baseUrl" in api:
+            stale.append("integrations.jira.api.baseUrl")
+    return stale
+
 
 def _github_sources(config: Mapping[str, Any]) -> List[Dict[str, Any]]:
     """Every ``provider: github`` entry of ``polling.sources``.
@@ -250,6 +278,8 @@ def needs_migration(config: Mapping[str, Any]) -> bool:
     if any(_SOURCE_LABEL_KEY in source for source in _github_sources(config)):
         return True
     if any(key in (_dig(config, _GITHUB_SITE) or {}) for key in _GITHUB_RETIRED_KEYS):
+        return True
+    if _jira_stub_keys(config):
         return True
     return any(
         (section or {}).get("ghBinary") is not None
@@ -398,6 +428,20 @@ def assert_current(config: Mapping[str, Any]) -> None:
             "more. It is NOT being ignored — a transport you chose that is "
             f"silently served another way is worse than an error. Run `{_UPGRADE}` "
             "to migrate."
+        )
+    jira_stub = _jira_stub_keys(config)
+    if jira_stub:
+        raise ConfigTooOld(
+            "this CLI config still declares "
+            + " and ".join(f"`{key}`" for key in jira_stub)
+            + " — the `integrations.jira` stub. The daemon reaches Jira through the "
+            "pycontribs `jira` SDK now (issue-475, decision-142), never a `jira` "
+            "binary, with credentials named as LISTS of environment variables "
+            f"(`{_JIRA_REPLACEMENT}`, and `integrations.jira.api.emailEnv` on Cloud) "
+            "and the site as a bare `integrations.jira.site`. It is NOT being "
+            "ignored — a transport you chose that is silently served another way is "
+            f"worse than an error. Run `{_MIGRATE_CONFIG}` (or `{_UPGRADE}`) to "
+            "migrate."
         )
     declared = config.get("version")
     if declared is not None and _parts(str(declared)) < _parts(CURRENT_CONFIG_VERSION):
@@ -568,6 +612,7 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
     _retire_repo_hooks(data, report)
     _migrate_auto_execute_labels(data, report)
     _retire_github_cli(data, report)
+    _migrate_jira_stub(data, report)
     _migrate_harness_args(data, report)
 
     if _parts(str(data.get("version", "0"))) < _parts(CURRENT_CONFIG_VERSION):
@@ -704,6 +749,73 @@ def _retire_github_cli(data: Dict[str, Any], report: MigrationReport) -> None:
             integrations.pop("github", None)
             if not integrations:
                 data.pop("integrations", None)
+
+
+def _migrate_jira_stub(data: Dict[str, Any], report: MigrationReport) -> None:
+    """Turn the 0.11 ``integrations.jira`` stub into the 0.12 block (issue-475, R3.6).
+
+    ``transport`` and ``cli`` are dropped; a string ``api.tokenEnv`` becomes a
+    one-item list; a legacy ``api.baseUrl`` becomes ``site`` (scheme and path
+    stripped) with ``deployment: cloud`` — Cloud is what a stub with a base URL and
+    one token described. What the stub could not say — the account email's
+    variable and the project → repository map — no migration can invent, so the
+    note asks for them. A stub with nothing left is removed, leaving no husk.
+    """
+    jira = _dig(data, _JIRA_SITE)
+    if jira is None or not _jira_stub_keys(data):
+        return
+    report.changed = True
+    for key in _JIRA_RETIRED_KEYS:
+        if key in jira:
+            value = jira.pop(key)
+            report.moves.append(
+                f"integrations.jira.{key} ({value!r}) removed — CLI transports were "
+                "retired (issue-442); the daemon reaches Jira through the pycontribs "
+                f"`jira` SDK with the credentials `{_JIRA_REPLACEMENT}` names "
+                "(decision-142)"
+            )
+    api_block = jira.get("api")
+    api: Dict[str, Any] = api_block if isinstance(api_block, dict) else {}
+    token = api.get("tokenEnv")
+    if isinstance(token, str):
+        api["tokenEnv"] = [token] if token.strip() else []
+        if not api["tokenEnv"]:
+            api.pop("tokenEnv")
+        report.moves.append(
+            f"integrations.jira.api.tokenEnv ({token!r}) → a list of variable names"
+        )
+    if "baseUrl" in api:
+        base = str(api.pop("baseUrl") or "").strip()
+        host = base.split("://", 1)[-1].split("/", 1)[0].strip().lower()
+        if host and "site" not in jira:
+            jira["site"] = host
+            jira.setdefault("deployment", "cloud")
+            report.moves.append(
+                f"integrations.jira.api.baseUrl ({base!r}) → integrations.jira.site "
+                f"({host!r}), deployment 'cloud'"
+            )
+        else:
+            report.moves.append(
+                f"integrations.jira.api.baseUrl ({base!r}) removed — "
+                "integrations.jira.site names the site"
+            )
+    if isinstance(api_block, dict) and not api:
+        jira.pop("api", None)
+    if not jira:
+        integrations = data.get("integrations")
+        if isinstance(integrations, dict):
+            integrations.pop("jira", None)
+            if not integrations:
+                data.pop("integrations", None)
+        return
+    report.notes.append(
+        "the Jira block needs two things the stub never held: "
+        "`integrations.jira.api.emailEnv` (the variable holding the Jira account's "
+        "email — Cloud only) and `integrations.jira.projects` (each project key, with "
+        "the `repository` its tickets' code lives in). Check `deployment` too: "
+        "`cloud-scoped` (with `cloudId`) for a scoped token, `data-center` for a "
+        "personal access token"
+    )
 
 
 def _migrate_auto_execute_labels(data: Dict[str, Any], report: MigrationReport) -> None:

@@ -92,7 +92,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 1.5
   - _Requirements:_ R3.4–R3.6
   - _Test:_ T8 — red
-- [ ] 2.3 **Schema + migration.**
+- [x] 2.3 **Schema + migration.**
   - Replace `integrations.jira` in `cli/the_loop/schemas/cli-config.schema.json` and
     its `.the-loop/` copy.
   - Add `migrations._migrate_jira_stub`, bump `CURRENT_CONFIG_VERSION` to `0.12.0`, and

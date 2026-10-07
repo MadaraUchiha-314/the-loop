@@ -27,7 +27,16 @@ A breaking change is only as good as its migration, so four properties hold:
 
 ## What it migrates today
 
-Current version: **`0.10.0`**.
+Current version: **`0.12.0`**.
+
+**The `integrations.jira` stub → the Jira block** (issue-475,
+[decision-142](/decisions/decision-142)). `jira.transport` and `jira.cli` are removed: the
+daemon reaches Jira through the pycontribs `jira` SDK and runs no `jira` binary. A string
+`jira.api.tokenEnv` becomes a one-item list, and a legacy `jira.api.baseUrl` becomes a
+bare [`jira.site`](/config/cli/integrations-options#jira-site) with
+`deployment: cloud`. The stub never named the account email's variable or the project →
+repository map, and no migration can invent them, so the report asks for
+`jira.api.emailEnv` and `jira.projects`. A stub with nothing left in it is removed.
 
 **`routing.autoExecuteLabel` → `routing.autoExecuteLabels`, and `polling.sources[].label`
 → `polling.sources[].labels`** (issue-381,

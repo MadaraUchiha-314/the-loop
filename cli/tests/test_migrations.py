@@ -614,11 +614,6 @@ WITH_POLL_REPOS = {
 }
 
 
-def test_the_current_config_version_is_0_11_0():
-    """The version the break is gated on (issue-348, issue-381, then issue-442)."""
-    assert CURRENT_CONFIG_VERSION == "0.11.0"
-
-
 def test_the_repository_lists_move_up():
     """R5.1 — every github source's list, in declaration order, deduplicated."""
     before = copy.deepcopy(WITH_POLL_REPOS)
@@ -743,7 +738,7 @@ def test_the_label_keys_become_lists():
         {"provider": "github"},
         {"provider": "jira", "label": "PROJ"},
     ]
-    assert report.config["version"] == "0.11.0"
+    assert report.config["version"] == "0.12.0"
     assert WITH_ONE_LABEL == before  # the input is never mutated
     assert any(
         "autoExecuteLabel" in m and "autoExecuteLabels" in m for m in report.moves

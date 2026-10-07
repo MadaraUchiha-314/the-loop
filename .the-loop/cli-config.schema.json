@@ -1695,7 +1695,7 @@
     },
     "integrations": {
       "type": "object",
-      "description": "How the-loop's OWN calls reach external services (issue-109). This governs the control plane only — what the AGENT does from inside its session is unconstrained (CLI, MCP, API, whatever the harness has). GitHub is reached through PyGithub under ONE token (issue-442, decision-139): the first set variable of `github.api.tokenEnv`, read from the daemon's environment at call time (`env.file` can hold it). There is no `gh` transport any more — `github.transport` and `github.cli` were retired and `the-loop migrate-config` removes them; a missing token is reported by every writer, by the poller's pre-flight and by the graph's integration, never silently worked around.",
+      "description": "How the-loop's OWN calls reach external services (issue-109). This governs the control plane only — what the AGENT does from inside its session is unconstrained (CLI, MCP, API, whatever the harness has). GitHub is reached through PyGithub under ONE token (issue-442, decision-139): the first set variable of `github.api.tokenEnv`, read from the daemon's environment at call time (`env.file` can hold it). There is no `gh` transport any more — `github.transport` and `github.cli` were retired and `the-loop migrate-config` removes them; a missing token is reported by every writer, by the poller's pre-flight and by the graph's integration, never silently worked around. Jira (issue-475, decision-142) is reached through the pycontribs `jira` SDK under the credentials `jira.api` names, on ONE site per deployment; `jira.transport` and `jira.cli` were retired at 0.12.0 (`the-loop migrate-config` removes them).",
       "additionalProperties": false,
       "properties": {
         "github": {
@@ -1727,40 +1727,145 @@
         },
         "jira": {
           "type": "object",
+          "description": "The one Jira site this deployment works with (issue-475, decision-142). Absent, Jira is off and nothing loads the SDK. The daemon reaches the site through the pycontribs `jira` SDK — REST v3 with ADF comments on Cloud, REST v2 with wiki markup on Data Center — under the credentials `api` NAMES (environment variables, read at call time, never logged). A Jira ref on another site, or on a project not listed under `projects`, is refused before any request is made.",
           "additionalProperties": false,
+          "required": [
+            "site",
+            "deployment",
+            "api",
+            "projects"
+          ],
           "properties": {
-            "transport": {
+            "site": {
+              "type": "string",
+              "pattern": "^(?:[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+(?::[0-9]+)?|[A-Za-z0-9-]+:[0-9]+)$",
+              "description": "The Jira site as a bare host — no scheme, no path (e.g. acme.atlassian.net, jira.corp.example). It is the site every `jira:<site>/<KEY>-<n>` ref names, and (except for `cloud-scoped`) where requests go: `https://<site>`.",
+              "examples": [
+                "acme.atlassian.net"
+              ]
+            },
+            "deployment": {
               "type": "string",
               "enum": [
-                "auto",
-                "api",
-                "cli"
+                "cloud",
+                "cloud-scoped",
+                "data-center"
               ],
-              "default": "api"
+              "description": "Which Jira this is. `cloud`: basic auth with an account email and an API token, REST v3. `cloud-scoped`: the same with a scoped API token, through the Atlassian gateway `https://api.atlassian.com/ex/jira/<cloudId>` (needs `cloudId`). `data-center`: a personal access token as a Bearer, REST v2 (Data Center has no v3)."
+            },
+            "cloudId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]*$",
+              "description": "The site's cloud id (`https://<site>/_edge/tenant_info`). Required when `deployment` is `cloud-scoped`; unused otherwise."
             },
             "api": {
               "type": "object",
               "additionalProperties": false,
+              "required": [
+                "tokenEnv"
+              ],
+              "description": "Where the credentials are — environment variable NAMES, never values. A value that looks like a token or an email fails this schema.",
               "properties": {
-                "baseUrl": {
-                  "type": "string"
+                "emailEnv": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Z_][A-Z0-9_]*$"
+                  },
+                  "description": "Environment variables holding the Jira account's email, tried in order. Required for `cloud` and `cloud-scoped`; unused on `data-center`. Use a dedicated service account."
                 },
                 "tokenEnv": {
-                  "type": "string"
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Z_][A-Z0-9_]*$"
+                  },
+                  "description": "Environment variables holding the token, tried in order: a Cloud API token (scoped for `cloud-scoped`: read:jira-work, write:jira-work, read:jira-user), or a Data Center personal access token."
                 }
               }
             },
-            "cli": {
+            "projects": {
               "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "binary": {
-                  "type": "string",
-                  "default": "jira"
+              "minProperties": 1,
+              "propertyNames": {
+                "pattern": "^[A-Z][A-Z0-9_]{1,9}$"
+              },
+              "description": "The Jira projects this deployment works with, by key (`^[A-Z][A-Z0-9_]{1,9}$`). A project's `repository` is the GitHub repository (`owner/repo`, on `integrations.github.host`) its tickets' code, spec chain and pull requests live in. A project with no `repository` is mirror-only: it can be a `jira@` room, never a work-item source.",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "repository": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$",
+                    "description": "The origin repository, `owner/repo`."
+                  }
+                }
+              },
+              "examples": [
+                {
+                  "PROJ": {
+                    "repository": "acme/web"
+                  },
+                  "OPS": {}
+                }
+              ]
+            },
+            "closeTransition": {
+              "type": "string",
+              "description": "The transition name that closes a ticket (`ticket close`, `finish-tasks`). Unset, the one available transition into the Done status category is used; none or several is an error listing them — never a guess."
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "deployment": {
+                    "const": "cloud-scoped"
+                  }
+                },
+                "required": [
+                  "deployment"
+                ]
+              },
+              "then": {
+                "required": [
+                  "cloudId"
+                ],
+                "properties": {
+                  "cloudId": {
+                    "pattern": "^[A-Za-z0-9-]+$"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "deployment": {
+                    "enum": [
+                      "cloud",
+                      "cloud-scoped"
+                    ]
+                  }
+                },
+                "required": [
+                  "deployment"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "api": {
+                    "required": [
+                      "emailEnv"
+                    ]
+                  }
                 }
               }
             }
-          }
+          ]
         }
       }
     },

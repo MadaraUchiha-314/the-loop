@@ -45,7 +45,7 @@ def _registry(tmp_path: Path, monkeypatch, cwd: Path) -> Path:
     """A CLI config naming a registry directory, and one record pointing at ``cwd``."""
     registry_dir = tmp_path / "registry"
     config = tmp_path / "cli-config.yaml"
-    config.write_text(f'version: "0.11.0"\nrouting:\n  registryDir: {registry_dir}\n')
+    config.write_text(f'version: "0.12.0"\nrouting:\n  registryDir: {registry_dir}\n')
     monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(config))
     SessionRegistry(registry_dir).register(
         Session(

@@ -28,9 +28,28 @@ def _template() -> dict:
     return yaml.safe_load(TEMPLATE.read_text(encoding="utf-8"))
 
 
+#: A Cloud Jira block (issue-475): it exercises allOf/if/then/const, propertyNames
+#: and minProperties, the keywords the Jira guard rails added to the validator.
+_JIRA = {
+    "site": "acme.atlassian.net",
+    "deployment": "cloud",
+    "api": {"emailEnv": ["JIRA_EMAIL"], "tokenEnv": ["JIRA_API_TOKEN"]},
+    "projects": {"PROJ": {"repository": "acme/web"}, "OPS": {}},
+}
+
 #: Documents that must validate, and documents that must not, with what is wrong.
 VALID = [
     {},
+    {"integrations": {"jira": _JIRA}},
+    {
+        "integrations": {
+            "jira": {
+                **_JIRA,
+                "deployment": "data-center",
+                "api": {"tokenEnv": ["JIRA_PAT"]},
+            }
+        }
+    },
     {"version": "0.4.0"},
     {"routing": {"enabled": True, "authorizedUsers": ["octocat"]}},
     {"polling": {"intervalSeconds": 30, "sources": []}},
@@ -64,6 +83,22 @@ VALID = [
 ]
 INVALID = [
     ({"nope": 1}, "unknown top-level key"),
+    (
+        {"integrations": {"jira": {**_JIRA, "deployment": "cloud-scoped"}}},
+        "cloud-scoped without a cloudId (if/then, issue-475)",
+    ),
+    (
+        {"integrations": {"jira": {**_JIRA, "projects": {"proj": {}}}}},
+        "a project key outside the grammar (propertyNames)",
+    ),
+    (
+        {"integrations": {"jira": {**_JIRA, "projects": {}}}},
+        "no project at all (minProperties)",
+    ),
+    (
+        {"integrations": {"jira": {**_JIRA, "api": {"tokenEnv": ["T"]}}}},
+        "a Cloud deployment naming no email variable (allOf/if/then)",
+    ),
     ({"routing": {"nope": 1}}, "unknown nested key"),
     ({"polling": {"intervalSeconds": "soon"}}, "wrong type"),
     ({"routing": {"enabled": "yes"}}, "string where a boolean belongs"),
@@ -373,12 +408,16 @@ def test_every_retired_key_is_absent_from_the_schema_it_names():
     assert "notifications" not in collaborator
     slack = cli["channels"]["properties"]["slack"]["properties"]
     assert "events" not in slack and "authorizedUsers" not in slack
+    jira = cli["integrations"]["properties"]["jira"]["properties"]
+    assert "transport" not in jira and "cli" not in jira
     assert set(configschema.RETIRED) == {
         "collaborators",
         "notifications",
         "collaborators[].notifications",
         "channels.slack.events",
         "channels.slack.authorizedUsers",
+        "integrations.jira.transport",
+        "integrations.jira.cli",
     }
 
 

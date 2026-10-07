@@ -141,13 +141,5 @@ def test_schema_rejects_the_retired_transport_keys_and_names_the_replacement(key
     assert "the-loop migrate-config" in error
 
 
-def test_the_optional_keys_validate():
-    document = _config(
-        closeTransition="Done",
-        webhook={"secretEnv": "THE_LOOP_JIRA_WEBHOOK_SECRET"},
-    )
-    assert _verdict(document) == []
-
-
-def test_a_literal_webhook_secret_is_rejected():
-    assert _verdict(_config(webhook={"secretEnv": "s3cr3t-value!"}))
+def test_the_optional_close_transition_validates():
+    assert _verdict(_config(closeTransition="Done")) == []

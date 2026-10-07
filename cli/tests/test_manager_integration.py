@@ -68,7 +68,7 @@ def _worker(tmp_path, name, refs):
     path = root / "cli-config.yaml"
     root.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        f'version: "0.11.0"\ninstance:\n  name: {name}\n  scope:\n    mode: addressed\n'
+        f'version: "0.12.0"\ninstance:\n  name: {name}\n  scope:\n    mode: addressed\n'
     )
     return TestClient(create_app(config, config_path=path)), config
 
@@ -85,7 +85,7 @@ def fleet(tmp_path):
     path = root / "cli-config.yaml"
     path.write_text(
         "# the manager\n"
-        'version: "0.11.0"\n'
+        'version: "0.12.0"\n'
         "instance:\n  name: hq\n  role: manager\n  manager:\n"
         f"    instances:\n      - name: laptop-a\n        url: {A_URL}\n"
         f"      - name: ci-box\n        url: {B_URL}\n"
@@ -357,7 +357,7 @@ def test_a_mismatched_member_is_neither_served_nor_sent_to(tmp_path):
     root.mkdir()
     path = root / "cli-config.yaml"
     path.write_text(
-        'version: "0.11.0"\ninstance:\n  name: hq\n  role: manager\n  manager:\n'
+        'version: "0.12.0"\ninstance:\n  name: hq\n  role: manager\n  manager:\n'
         f"    instances:\n      - name: laptop-a\n        url: {A_URL}\n"
     )
     import yaml
