@@ -412,10 +412,12 @@ def test_jira_errors_and_logs_carry_no_secret(caplog, cloud_env):
         f"Unauthorized: {EMAIL} with Authorization: Basic {basic}",
         status_code=401,
         url="https://acme.atlassian.net/rest/api/3/issue/PROJ-1",
-        request=SimpleNamespace(
+        request=SimpleNamespace(  # type: ignore[arg-type]
             headers={"Authorization": f"Basic {basic}"}, text=TOKEN
         ),
-        response=SimpleNamespace(headers={}, text=f"token {TOKEN} rejected"),
+        response=SimpleNamespace(  # type: ignore[arg-type]
+            headers={}, text=f"token {TOKEN} rejected"
+        ),
     )
 
     def chatter(method):

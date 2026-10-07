@@ -39,6 +39,7 @@ dependencies = [
     "mcp>=1.2",         # the OFFICIAL MCP SDK — no hand-rolled protocol code
     "slack-sdk>=3",     # the `sdk` Slack notification transport
     "pygithub>=2.5",
+    "jira>=3.10,<4",    # the daemon's Jira client (issue-475, decision-142)
     "tomli>=2; python_version < '3.11'",
 ]
 

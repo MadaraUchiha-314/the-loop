@@ -107,7 +107,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 2.3
   - _Requirements:_ R3.4, R3.5
   - _Test:_ T2, T7 (abuse case 9: `test_jira_errors_and_logs_carry_no_secret`) — red
-- [ ] 2.5 **`jiraapi.py`.** `JiraApiConfig`, `JiraClient` over `jira.JIRA` (lazy, with
+- [x] 2.5 **`jiraapi.py`.** `JiraApiConfig`, `JiraClient` over `jira.JIRA` (lazy, with
   `get_server_info=False`), the SDK-logger redaction filter, and `JiraApiError`. Add
   `jira>=3.10,<4` to `cli/pyproject.toml` dependencies and update `uv.lock`.
   - _Depends on:_ 2.4
