@@ -15,6 +15,12 @@ ids and channel names only, never a token; where it cannot measure it says
 *unverifiable*, and where it can it says *evidence, not proof* — Slack exposes
 no API that lists an app's connections. Exit 1 when it found something
 (``[!]``), 0 otherwise; the probes live in :mod:`the_loop.channels.doctor`.
+
+``doctor jira`` (issue-475) checks a configured ``integrations.jira`` block the
+daemon could not use: the site and deployment it would reach, each credential
+variable set or not (by name, never a value), and the project map. Offline — it
+sends nothing to Jira. ``resolve("jira")`` refuses on exactly these findings, so
+the doctor is the same verdict, asked before a gate hook asks it.
 """
 
 from __future__ import annotations
@@ -32,6 +38,7 @@ from ..channels.doctor import (
 )
 from ..channels.slack import SlackChannelConfig
 from ..core import selfdiagnosis
+from ..jiraapi import JiraApiConfig, JiraApiError
 from ..state import layout_from_config
 from .base import Command, register
 from .channels_cmd import _subscription_lines
@@ -128,7 +135,8 @@ class DoctorCommand(Command):
         "Deployment-wide diagnosis of one integration — `doctor slack`: the "
         "app's scopes and expected events, every declared channel against the "
         "bot's directory, and a heartbeat probe for a second Socket Mode "
-        "consumer (evidence, not proof; ids only, never tokens)"
+        "consumer (evidence, not proof; ids only, never tokens); `doctor jira`: "
+        "whether the configured Jira block is usable (variable names, never values)"
     )
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
@@ -166,10 +174,20 @@ class DoctorCommand(Command):
             action="store_true",
             help="Skip the second-consumer probe — the doctor then posts nothing to Slack",
         )
+        sub.add_parser(
+            "jira",
+            help=(
+                "Check the integrations.jira block: the site and deployment, each "
+                "credential variable set or not (names only), and the project map. "
+                "Offline — nothing is sent to Jira"
+            ),
+        )
 
     def run(self, args: argparse.Namespace) -> int:
         eventlog.configure_from_file("doctor")
         data = cli_config.load_cli_config(cli_config.default_cli_config_path())
+        if getattr(args, "doctor_command", "slack") == "jira":
+            return _doctor_jira(data)
         return _doctor_slack(
             data,
             beats=int(getattr(args, "beats", DEFAULT_BEATS) or DEFAULT_BEATS),
@@ -179,6 +197,58 @@ class DoctorCommand(Command):
             ),
             heartbeat=not bool(getattr(args, "no_heartbeat", False)),
         )
+
+
+def _doctor_jira(config: dict) -> int:
+    """Is the configured Jira block usable? Exit 1 when any ``[!]`` was printed.
+
+    The same checks ``resolve("jira")`` fails closed on — the block, the server
+    it would reach, every credential variable — so a finding here is a gate hook
+    that would refuse. Variable names only; no value is read into the output.
+    """
+    api = JiraApiConfig.from_cli_config(config)
+    print("jira doctor — variable names only, never values; nothing is sent to Jira")
+    if not api.configured:
+        print(f"  {_UNKNOWN} integrations.jira is not configured — Jira is off")
+        return 0
+    findings = 0
+    try:
+        server = api.server()
+        print(
+            f"  {_OK} {api.site} ({api.deployment}) → {server}, REST v{api.rest_version}"
+        )
+    except JiraApiError as exc:
+        findings += 1
+        print(f"  {_FINDING} {exc}")
+    print("credentials:")
+    needed = [("email", api.email_env)] if api.cloud else []
+    needed.append(("token", api.token_env))
+    missing = set(api.missing_credentials())
+    for what, names in needed:
+        label = " or ".join(names) if names else f"(no {what} variable named)"
+        if label in missing or not names:
+            findings += 1
+            print(
+                f"  {_FINDING} {label} is not set — the daemon's Jira calls are "
+                f"refused until the {what} is in its environment"
+            )
+        else:
+            print(f"  {_OK} {label} is set")
+    print("projects:")
+    section = ((config.get("integrations") or {}).get("jira")) or {}
+    projects = section.get("projects") if isinstance(section, dict) else None
+    if not isinstance(projects, dict) or not projects:
+        findings += 1
+        print(f"  {_FINDING} integrations.jira.projects lists no project")
+    else:
+        for key in sorted(projects):
+            entry = projects[key] if isinstance(projects[key], dict) else {}
+            repository = str(entry.get("repository") or "").strip()
+            if repository:
+                print(f"  {_OK} {key} → {repository}")
+            else:
+                print(f"  {_OK} {key} — mirror-only (a room, never a work-item source)")
+    return 1 if findings else 0
 
 
 def _doctor_slack(config: dict, *, beats: int, window: float, heartbeat: bool) -> int:

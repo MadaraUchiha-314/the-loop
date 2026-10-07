@@ -16,7 +16,9 @@ Two call planes, and only one of them is governed here (issue-109, decision-042)
 
 GitHub has one transport since issue-442 — PyGithub under the token
 ``integrations.github.api.tokenEnv`` names (the ``cli`` transport over the
-operator's ``gh`` was retired; decision-139). Providers **declare the
+operator's ``gh`` was retired; decision-139). Jira has one too since issue-475 —
+the pycontribs ``jira`` SDK under the credentials ``integrations.jira.api`` names
+(decision-142) — with GitHub's operations plus ``transition``. Providers **declare the
 operations they implement**, and the runtime checks that declaration at load
 time — a graph needing an operation the configured provider lacks fails at
 startup, naming the operation, not three nodes deep.

@@ -122,7 +122,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 2.5
   - _Requirements:_ R3.1–R3.3, R3.7
   - _Test:_ T3 — red → green
-- [ ] 2.7 **Docs for PR 2.**
+- [x] 2.7 **Docs for PR 2.**
   - Capability doc for integrations (`docs/capabilities/control-plane.md` § integrations).
   - `docs/config/` reference for `integrations.jira`.
   - A `the-loop doctor` Jira credential check, with its test.

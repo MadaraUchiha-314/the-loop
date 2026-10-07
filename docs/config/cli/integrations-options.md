@@ -152,6 +152,8 @@ integrations:
 A ref on another site, or on a project not listed under `projects`, is refused before any
 request is sent. Use a **dedicated service account**. A scoped token needs
 `read:jira-work`, `write:jira-work` and `read:jira-user`; no admin scope is needed.
+[`the-loop doctor jira`](/cli/commands/doctor#doctor-jira) reports a block whose
+credential variables are not set.
 
 ::: details Upgrading from the 0.11 stub
 `jira.transport` and `jira.cli` are gone: the-loop runs no `jira` binary.
