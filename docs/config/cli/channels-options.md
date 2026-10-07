@@ -108,6 +108,63 @@ thing — the tracker `work-item.create` opens a ticket in. `jira` needs
 `repository` named by the event; without `integrations.jira` it records on `github`
 and logs an error. An unknown value is refused at load.
 
+## Jira
+
+A Jira issue as an **output-only mirror** of a work item
+([issue-475](https://github.com/MadaraUchiha-314/the-loop/issues/475)). An authorized
+user declares the room on the work item — `the-loop add-channel jira@OPS-12` — and every
+subscribed event is posted there as a comment carrying the visible self-marker. It
+differs from Slack in two deliberate ways: there is **no central fallback** (a work item
+with no declared `jira@` room is not mirrored), and there is **no `publish`** (nothing
+written on the mirror ticket ever reaches a session). It needs
+[`integrations.jira`](/config/cli/integrations-options); the room's project must be
+listed under `integrations.jira.projects`, and a project listed **without** a
+`repository` is mirror-only — a room, never a work item. The full setup is in
+[Channels — Jira](/capabilities/channels#jira).
+
+```yaml
+integrations:
+  jira:
+    site: acme.atlassian.net
+    deployment: cloud
+    api: {emailEnv: [JIRA_EMAIL], tokenEnv: [JIRA_API_TOKEN]}
+    projects:
+      OPS: {}                     # no repository: mirror-only
+channels:
+  jira:
+    enabled: true
+    subscribe: [work-item.started, phase.started, phase.completed,
+                session.awaiting_input, work-item.closed]
+    verbosity: normal
+```
+
+### `jira.enabled`
+
+- **Type:** `boolean`
+- **Default:** `false`
+
+Default off: configuring the Jira integration never becomes consent to mirroring into a
+Jira ticket. Enabled without `integrations.jira`, the channel is not loaded and an error
+is logged (fail closed).
+
+### `jira.subscribe`
+
+- **Type:** `string[]`
+- **Default:** `["session.awaiting_input"]`
+
+The event types this channel receives, exactly as [`slack.subscribe`](#slacksubscribe)
+— for example `work-item.started`, `phase.started`, `phase.completed`,
+`session.awaiting_input` and `work-item.closed`. `the-loop channels status` prints the
+catalog. A name outside it is kept, with a warning.
+
+### `jira.verbosity`
+
+- **Type:** `'quiet' | 'normal' | 'verbose'`
+- **Default:** `normal`
+
+`quiet` is one line and the work-item link; `normal` adds the event text; `verbose` adds
+the context detail. Strict supersets, as on Slack.
+
 ## Slack
 
 ### `slack.enabled`

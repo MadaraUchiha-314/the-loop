@@ -174,7 +174,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 3.4
   - _Requirements:_ R4.1
   - _Test:_ T4 — red → green
-- [ ] 3.6 **`JiraChannel` + room grammar (mirror-only included).**
+- [x] 3.6 **`JiraChannel` + room grammar (mirror-only included).**
   - Red first: `test_mirror_only_project_accepts_room_refuses_work_item`,
     `test_jira_channel_without_room_mirrors_nothing`,
     `test_comment_on_mirror_ticket_never_reaches_session`, and `jira@PROJ-1`

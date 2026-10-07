@@ -112,6 +112,11 @@ def publish(
     for channel in resolved:
         if channel.name == event.source or not channel.subscribes(event.event_type):
             continue
+        # A channel whose rooms are per work item (Jira, issue-475) may have no
+        # room for this one: skipped, neither a post nor a failure to queue.
+        addresses = getattr(channel, "addresses", None)
+        if callable(addresses) and not addresses(event):
+            continue
         try:
             result = channel.post(event)
         except ChannelError as exc:

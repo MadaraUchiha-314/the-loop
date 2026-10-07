@@ -81,7 +81,7 @@ def test_a_channel_ref_is_canonicalised(raw, expected):
         "slack",
         "slack@",
         "@C0TMP375",
-        "jira@PROJ-1",  # no adapter on this deployment
+        "whatsapp@15550100",  # no adapter on this deployment (jira has one: issue-475)
         "Slack@C0TMP375",  # the type is lower case
         "slack@C0TMP375/../etc",
         "slack@C0TMP375 --permission-mode bypass",
@@ -212,7 +212,7 @@ def test_removing_and_clearing(store):
 
 def test_a_malformed_ref_is_a_valueerror_not_a_write(store):
     with pytest.raises(ValueError):
-        store.add(REF, "jira@PROJ-1")
+        store.add(REF, "whatsapp@15550100")
     with pytest.raises(ValueError):
         store.remove(REF, "nonsense")
     assert store.list(REF) == []

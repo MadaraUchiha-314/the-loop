@@ -489,3 +489,154 @@ def test_the_bus_never_records_an_event_back_on_its_own_tracker():
     assert client.posted == []
     publish(_event("work-item.reply", source="slack"), channels=[], ledger=ledger)
     assert len(client.posted) == 1
+
+
+# -- the Jira channel and the room grammar (design §C7, R4.2) ----------------------
+
+from the_loop.workchannels import (  # noqa: E402
+    CollaborationChannelStore,
+    describe_refusal,
+    parse_channel_ref,
+    resolve_channel_ref,
+)
+
+GH_ITEM = "github:acme/web#15"
+MIRROR_ROOM = "jira@OPS-5"
+
+
+def _channel_config(tmp_path, **jira: Any) -> Dict[str, Any]:
+    config = cloud_config()
+    config["state"] = {"root": str(tmp_path / "state")}
+    config["channels"] = {
+        "jira": {
+            "enabled": True,
+            "subscribe": ["phase.started", "work-item.closed"],
+            **jira,
+        }
+    }
+    return config
+
+
+def _jira_channel(tmp_path, **jira: Any):
+    from the_loop.channels.jira import JiraChannel, JiraChannelConfig
+
+    config = _channel_config(tmp_path, **jira)
+    client = FakeJiraClient()
+    store = CollaborationChannelStore(tmp_path / "state" / "portable")
+    channel = JiraChannel(
+        JiraChannelConfig.from_mapping(config), config, client=client, store=store
+    )
+    return channel, client, store, config
+
+
+@pytest.mark.parametrize("raw", ["jira@PROJ-1", "jira://PROJ-1", "jira@OPS_2-99"])
+def test_a_jira_room_ref_parses(raw):
+    channel = parse_channel_ref(raw)
+    assert channel is not None and channel.type == "jira"
+    assert channel.ref == f"jira@{raw.split('@')[-1].split('//')[-1]}"
+    assert channel.is_id
+
+
+@pytest.mark.parametrize(
+    "raw", ["jira@proj-1", "jira@PROJ", "jira@PROJ-0", "jira@P-1", "jira@PROJ-1/x"]
+)
+def test_a_bad_jira_room_ref_is_refused(raw):
+    assert parse_channel_ref(raw) is None
+    if raw != "jira@PROJ-1/x":
+        assert "Jira issue key" in describe_refusal(raw)
+
+
+def test_mirror_only_project_accepts_room_refuses_work_item(tmp_path):
+    """
+    Scenario: OPS is configured with no repository — a mirror-only project
+      When an authorized user declares jira@OPS-5 on a GitHub work item
+      Then the room is accepted and the channel posts there
+      But a ticket in OPS is never a work item
+    """
+    from the_loop.sessions import WorkItemRef
+    from the_loop.sessions.refs import UnknownJiraProject, origin_repository
+
+    channel, client, store, config = _jira_channel(tmp_path)
+    room = parse_channel_ref(MIRROR_ROOM)
+    assert room is not None
+    resolved, name = resolve_channel_ref(room, config)
+    assert (resolved, name) == (room, "")
+    store.add(GH_ITEM, resolved)
+
+    result = channel.post(_event("phase.started", work_item=GH_ITEM, text="design"))
+    assert result.ok and [p["key"] for p in client.posted] == ["OPS-5"]
+
+    with pytest.raises(UnknownJiraProject):
+        origin_repository(WorkItemRef.parse(f"jira:{SITE}/OPS-1"), config)
+
+
+def test_a_room_in_an_unconfigured_project_is_refused_at_declaration(tmp_path):
+    config = _channel_config(tmp_path)
+    room = parse_channel_ref("jira@NOPE-1")
+    assert room is not None
+    with pytest.raises(ValueError, match="NOPE"):
+        resolve_channel_ref(room, config)
+
+
+def test_jira_channel_without_room_mirrors_nothing(tmp_path):
+    """No central fallback: a work item with no declared jira@ room is not mirrored."""
+    from the_loop.channels.bus import publish
+
+    channel, client, _, _ = _jira_channel(tmp_path)
+    event = _event("phase.started", work_item=GH_ITEM, text="design")
+    assert channel.addresses(event) is False
+    result = publish(event, channels=[channel], record=False)
+    assert result.posts == [] and client.posted == []
+
+
+def test_comment_on_mirror_ticket_never_reaches_session(tmp_path):
+    """Output only: the channel opens no conversation and may publish nothing."""
+    from the_loop.channels.base import Conversational
+    from the_loop.channels.events import PUBLISHABLE_EVENTS
+
+    channel, _, _, _ = _jira_channel(tmp_path, subscribe=["phase.started"])
+    assert not isinstance(channel, Conversational)
+    assert not any(channel.may_publish(e) for e in PUBLISHABLE_EVENTS)
+    assert not hasattr(channel, "read") and not hasattr(channel, "poll")
+
+
+def test_the_channel_honours_subscribe_and_verbosity(tmp_path):
+    channel, client, store, _ = _jira_channel(tmp_path, verbosity="quiet")
+    store.add(GH_ITEM, MIRROR_ROOM)
+    assert channel.subscribes("phase.started")
+    assert not channel.subscribes("session.awaiting_input")
+    channel.post(_event("phase.started", work_item=GH_ITEM, text="the long words"))
+    [posted] = client.posted
+    assert posted["body"].startswith(f"the-loop: phase.started on {GH_ITEM}")
+    assert "the long words" not in posted["body"]
+    assert posted["body"].rstrip("\n").endswith(JIRA_SELF_ATTRIBUTION)
+
+
+def test_a_room_outside_the_configured_projects_is_not_written(tmp_path):
+    channel, client, store, _ = _jira_channel(tmp_path)
+    store.add(GH_ITEM, "jira@NOPE-1")
+    result = channel.post(_event("phase.started", work_item=GH_ITEM))
+    assert not result.ok and "NOPE" in result.error
+    assert client.calls == []
+
+
+def test_the_jira_channel_loads_from_config(tmp_path):
+    from the_loop.channels.base import load_channels
+    from the_loop.channels.jira import JiraChannel
+
+    loaded = load_channels(_channel_config(tmp_path))
+    assert [type(c) for c in loaded] == [JiraChannel]
+    disabled = _channel_config(tmp_path, enabled=False)
+    assert load_channels(disabled) == []
+    no_jira = _channel_config(tmp_path)
+    del no_jira["integrations"]
+    assert load_channels(no_jira) == []  # a room needs the integration
+
+
+def test_the_schema_has_no_publish_for_jira():
+    from the_loop.configschema import validate
+
+    ok = {"channels": {"jira": {"enabled": True, "subscribe": ["phase.started"]}}}
+    assert validate(ok) == []
+    bad = {"channels": {"jira": {"enabled": True, "publish": ["work-item.reply"]}}}
+    assert any("publish" in error for error in validate(bad))

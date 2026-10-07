@@ -340,12 +340,18 @@ def _load_slack(config: Mapping[str, Any], client_factory: Optional[Callable]):
     )
 
 
+def _load_jira(config: Mapping[str, Any], client_factory: Optional[Callable]):
+    from .jira import load_jira_channel
+
+    return load_jira_channel(config, client_factory)
+
+
 #: The channel types this process can load, ``name → loader`` (issue-378 R6.2).
 #: **The extension point**: the next type — Jira, WhatsApp — is a row here plus
 #: a module, and the bus, the runtime and the dispatcher never learn its name.
 #: Module-level and mutable on purpose, so an embedder registers its own without
 #: forking the loader. Walked in declaration order.
-CHANNEL_PROVIDERS: Dict[str, Loader] = {"slack": _load_slack}
+CHANNEL_PROVIDERS: Dict[str, Loader] = {"slack": _load_slack, "jira": _load_jira}
 
 
 def load_channels(
