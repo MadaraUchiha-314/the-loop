@@ -245,7 +245,7 @@ Two decisions from the gate are carried here:
 
 ### PR 5 — edges (linkage, verbs, onboarding, skill text)
 
-- [ ] 5.1 **PR → Jira linkage.**
+- [x] 5.1 **PR → Jira linkage.**
   - Red first: `test_pr_naming_unregistered_jira_key_does_not_link` and
     `test_pr_in_other_repository_does_not_link`, plus the positive scenario _a PR naming
     a registered Jira key routes to the Jira work item_.

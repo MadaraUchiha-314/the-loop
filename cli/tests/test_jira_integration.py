@@ -497,3 +497,64 @@ def test_jira_comment_is_framed_untrusted(tmp_path):
     [(_, prompt)] = proc.tmux.delivers
     assert "UNTRUSTED" in prompt and text in prompt
     assert prompt.index("UNTRUSTED") < prompt.index(text)
+
+
+def test_a_pr_naming_a_registered_jira_key_routes_to_the_jira_work_item(tmp_path):
+    """
+    Feature: Jira as a work-item source
+    Scenario: a PR naming a registered Jira key routes to the Jira work item
+      Given a Jira work item PROJ-7 with a live session, its project mapped to acme/web
+      And a pull request in acme/web whose head branch names PROJ-7
+      When an authorized user comments on the pull request
+      Then the comment is delivered into the Jira work item's session
+      And the pull request is bound to the Jira work item
+      And a pull request naming an unregistered key, PROJ-8, routes to itself only
+
+    Requirement: docs/specs/issue-475/requirements.md#R8.1
+    """
+    from the_loop.webhook.router import jira_linkage
+
+    client = _client()
+    proc = _Process(tmp_path, tmp_path / "sessions", client)
+    proc.register(tmp_path)
+    router = Router(
+        authorized_users=["ada"],
+        principals=proc.dispatcher.config.principals,
+        deduper=proc.dispatcher.deduper,
+        repositories={"github.com/acme/web"},
+        jira_linkage=jira_linkage(_cli_config(), proc.registry),
+    )
+
+    def comment(number, branch, body, delivery):
+        return router.route(
+            "issue_comment",
+            {
+                "action": "created",
+                "repository": {"full_name": "acme/web"},
+                "pull_request": {
+                    "number": number,
+                    "head": {"ref": branch},
+                    "title": "Fix the login page",
+                    "body": "",
+                },
+                "comment": {"body": body, "user": {"login": "ada"}},
+                "sender": {"login": "ada"},
+            },
+            delivery,
+        )
+
+    try:
+        routed = comment(48, f"feat/{KEY}-login", "zz-looks-good-to-me", "pr-1")
+        assert routed is not None
+        assert [w.ref for w in routed.work_items] == [REF.ref, "github:acme/web#48"]
+        proc.dispatcher.handle(routed)
+        assert _wait(lambda: len(proc.tmux.delivers) == 1)
+        stray = comment(49, "feat/PROJ-8-other", "zz-not-for-proj-7", "pr-2")
+        assert stray is not None
+        assert [w.ref for w in stray.work_items] == ["github:acme/web#49"]
+    finally:
+        proc.dispatcher.stop()
+    [(ref, prompt)] = proc.tmux.delivers
+    assert ref == REF.ref and "zz-looks-good-to-me" in prompt
+    bound = proc.registry.record_owning(WorkItemRef.parse("github:acme/web#48"))
+    assert bound is not None and bound.work_item == REF

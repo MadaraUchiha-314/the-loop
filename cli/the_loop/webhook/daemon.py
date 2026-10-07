@@ -168,7 +168,7 @@ def _build_ingress(routing_config: dict, gh_webhook_config: dict):
     from ..repos import repository_bounds
     from ..sessions import SessionRegistry
     from .dispatcher import Dispatcher, RoutingConfig
-    from .router import Router
+    from .router import Router, jira_linkage
 
     from ..modelchoice import launch_args
     from ..sessions.refs import jira_site
@@ -236,6 +236,8 @@ def _build_ingress(routing_config: dict, gh_webhook_config: dict):
         repositories=repositories,
         # The Jira ids on the same allow-list (issue-475, R7).
         principals=config.principals,
+        # A PR naming a registered Jira key routes to it (issue-475, §C9).
+        jira_linkage=jira_linkage(whole, dispatcher.registry),
     )
 
     def apply(cfg: dict) -> None:
@@ -254,6 +256,7 @@ def _build_ingress(routing_config: dict, gh_webhook_config: dict):
         router.principals = list(new.principals)
         # The whole document, not `routing`: `repositories` is a top-level sibling.
         router.repositories = repository_bounds(cfg)
+        router.jira_linkage = jira_linkage(cfg, dispatcher.registry)
         logger.info(
             "hot-reloaded gh-webhook routing: spawnOnUnmatched=%s "
             "labels=%r events=%d authorizedUsers=%d repositories=%s",
