@@ -76,8 +76,18 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
      this repo's plugin config, decision-032); an item is armed only when it carries all
      of them (issue-381). Read the list there when reachable, otherwise use the
      documented default `["the-loop: auto-execute"]`.
-   - **Jira / other ticketing providers:** the ticket itself is not a GitHub object, but
-     the **PR still is** — as soon as the PR exists, **automatically add the same
+   - **Jira ticketing:** the same flow on the Jira ref. Register the session against
+     `jira:SITE/KEY-N` (`the-loop sessions register --work-item jira:SITE/KEY-N …`);
+     `the-loop ticket show`, `comment` and `ask` act on the Jira ticket. The arming
+     labels sit on the Jira ticket in their Jira-safe form (`the-loop:auto-execute`).
+     Open each PR with `the-loop pr create --work-item jira:SITE/KEY-N`: it opens in the
+     repository the project maps to (`integrations.jira.projects`), and its comments,
+     reviews and CI reach this session. A PR whose branch or title names the key is
+     linked too, once the work item is registered. Closing the Jira ticket ends the work
+     item. Only when the CLI is not installed, read and comment on the ticket through
+     the Jira MCP tools instead.
+   - **Other ticketing providers:** the ticket itself is not a GitHub object, but the
+     **PR still is** — as soon as the PR exists, **automatically add the same
      auto-execute labels to the PR directly** and register the session against the PR's
      own ref (`github:OWNER/REPO#<pr-number>`). PR comments, reviews and CI results then
      resume this session exactly as for a GitHub-ticketed item, and that PR's

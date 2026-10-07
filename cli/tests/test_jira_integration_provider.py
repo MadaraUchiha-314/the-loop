@@ -109,8 +109,10 @@ def test_list_comments_has_the_shape_github_returns():
     assert comment == {
         "id": "7",
         "body": "the-loop start",
-        "author": {"login": "5b10ac8d"},
-        "user": {"login": "5b10ac8d"},
+        # The gate's Jira namespace (issue-475 PR 5): a Jira author never
+        # reads as a GitHub login, on this path as on the daemon's.
+        "author": {"login": "jira:5b10ac8d"},
+        "user": {"login": "jira:5b10ac8d"},
         "created_at": "2026-10-06T01:02:03.000+0000",
         "createdAt": "2026-10-06T01:02:03.000+0000",
         "html_url": "https://acme.atlassian.net/browse/PROJ-7?focusedCommentId=7",

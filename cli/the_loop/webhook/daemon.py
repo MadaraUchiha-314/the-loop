@@ -25,7 +25,7 @@ import os
 import signal
 import threading
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 from .. import cli_config, eventlog, lifecycle
 from ..runlock import RunLock
@@ -168,7 +168,7 @@ def _build_ingress(routing_config: dict, gh_webhook_config: dict):
     from ..repos import repository_bounds
     from ..sessions import SessionRegistry
     from .dispatcher import Dispatcher, RoutingConfig
-    from .router import Router
+    from .router import Router, jira_linkage
 
     from ..modelchoice import launch_args
     from ..sessions.refs import jira_site
@@ -236,7 +236,35 @@ def _build_ingress(routing_config: dict, gh_webhook_config: dict):
         repositories=repositories,
         # The Jira ids on the same allow-list (issue-475, R7).
         principals=config.principals,
+        # A PR naming a registered Jira key routes to it (issue-475, §C9).
+        jira_linkage=jira_linkage(whole, dispatcher.registry),
     )
+
+    # The Jira doorbell (issue-475, design §C8): built only with the Jira
+    # integration configured; the route itself is served only with a secret
+    # (`build_receiver`). Its comments go through the same router — the self
+    # marker and the allow-list, on the Jira ids — and the same dispatcher. Held
+    # in a box because it is built from the config like the router's policy is,
+    # and so rebuilt by `apply` on a hot reload (its projects and labels).
+    doorbells: Dict[str, Any] = {}
+
+    def build_doorbell(cfg: dict, labels: Any) -> None:
+        if not jira_site(cfg):
+            doorbells.pop("bell", None)
+            return
+        from .jira import JiraDoorbell
+
+        doorbells["bell"] = JiraDoorbell.from_config(
+            cfg,
+            labels,
+            route=lambda event: router.route(
+                event.event, event.payload, event.delivery_id, event.work_items
+            ),
+            dispatch=dispatcher.handle,
+            start_requested=dispatcher.control_store.start_requested,
+        )
+
+    build_doorbell(whole, config.auto_execute_labels)
 
     def apply(cfg: dict) -> None:
         """Hot-swap the soft routing policy from a freshly read config.
@@ -254,6 +282,8 @@ def _build_ingress(routing_config: dict, gh_webhook_config: dict):
         router.principals = list(new.principals)
         # The whole document, not `routing`: `repositories` is a top-level sibling.
         router.repositories = repository_bounds(cfg)
+        router.jira_linkage = jira_linkage(cfg, dispatcher.registry)
+        build_doorbell(cfg, new.auto_execute_labels)
         logger.info(
             "hot-reloaded gh-webhook routing: spawnOnUnmatched=%s "
             "labels=%r events=%d authorizedUsers=%d repositories=%s",
@@ -287,7 +317,7 @@ def _build_ingress(routing_config: dict, gh_webhook_config: dict):
     )
     reload_lock = threading.Lock()
 
-    def on_event(event: str, payload: dict, delivery_id: str) -> None:
+    def reload_if_changed() -> None:
         # One thread reloads at a time; others skip and pick it up next event
         # (the ThreadingHTTPServer handles events concurrently).
         if reload_lock.acquire(blocking=False):
@@ -297,29 +327,21 @@ def _build_ingress(routing_config: dict, gh_webhook_config: dict):
                     apply(changed)
             finally:
                 reload_lock.release()
+
+    def on_event(event: str, payload: dict, delivery_id: str) -> None:
+        reload_if_changed()
         routed = router.route(event, payload, delivery_id)
         if routed is not None:
             dispatcher.handle(routed)
 
-    # The Jira doorbell (issue-475, design §C8): built only with the Jira
-    # integration configured; the route itself is served only with a secret
-    # (`build_receiver`). Its comments go through the same router — the self
-    # marker and the allow-list, on the Jira ids — and the same dispatcher.
     on_jira: Optional[Callable[[Any, str], str]] = None
-    if jira_site(whole):
-        from .jira import JiraDoorbell
-
-        doorbell = JiraDoorbell.from_config(
-            whole,
-            config.auto_execute_labels,
-            route=lambda event: router.route(
-                event.event, event.payload, event.delivery_id, event.work_items
-            ),
-            dispatch=dispatcher.handle,
-            start_requested=dispatcher.control_store.start_requested,
-        )
+    if "bell" in doorbells:
 
         def ring(bell, ident: str) -> str:
+            reload_if_changed()
+            doorbell = doorbells.get("bell")
+            if doorbell is None:  # the Jira integration was removed by a reload
+                return "ignored:unconfigured"
             outcome = doorbell.ring(bell)
             logger.info(
                 "Jira %s for %s (webhook %s): %s",

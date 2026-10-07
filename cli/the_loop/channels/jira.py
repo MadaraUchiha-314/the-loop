@@ -40,11 +40,12 @@ write. A project without one is **mirror-only**: a room, never a work item.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 
 from ..authz import mark_relayed_on_jira, mark_self_authored_on_jira
 from ..jiraapi import JiraApiConfig, JiraApiError, JiraClient, issue_key_for
+from ..jiraformat import defang_markers
 from ..jiralabels import JiraLabelError, jira_label
 from .base import DEFAULT_EVENTS, VERBOSITIES, Event, PostResult, render
 from .bodies import RELAYED, issue_body, issue_title, ledger_body
@@ -57,6 +58,7 @@ __all__ = [
     "JiraChannelConfig",
     "JiraLedger",
     "jira_ledger_body",
+    "ledger_for_ref",
     "load_jira_channel",
     "origin_projects",
 ]
@@ -92,11 +94,28 @@ def jira_ledger_body(event: Event, cli_config: Optional[Mapping[str, Any]]) -> s
     service account — it carries the relay marker instead, which the Jira
     ingress accepts on a service-account comment and on nobody else's (design
     addendum, issue-475 PR 4; :func:`~the_loop.authz.jira_comment_origin`).
+
+    The event's text and detail — a person's words, a Slack snapshot, a relayed
+    answer — have every the-loop marker broken first
+    (:func:`~the_loop.jiraformat.defang_markers`): the service account writes
+    this comment, and a marker it merely quoted must never read back as a gate
+    record, a self-marker or a relay marker (critic C1). Only the trailer
+    appended here is live.
     """
-    body = ledger_body(event, cli_config)
+    body = ledger_body(_defanged(event), cli_config)
     if event.event_type in RELAYED:
         return mark_relayed_on_jira(body)
     return mark_self_authored_on_jira(body)
+
+
+def _defanged(event: Event) -> Event:
+    """``event`` with the-loop markers broken in its text and detail values."""
+    return replace(
+        event,
+        text=defang_markers(event.text),
+        detail={str(k): defang_markers(str(v)) for k, v in event.detail.items()},
+        summary=defang_markers(event.summary),
+    )
 
 
 class JiraLedger:
@@ -177,6 +196,23 @@ class JiraLedger:
             url=issue.url,
             ref=f"jira:{self.api.site}/{issue.key}" if issue.key else "",
         )
+
+
+def ledger_for_ref(
+    work_item: str, cli_config: Optional[Mapping[str, Any]], github: Callable[[], Any]
+) -> Any:
+    """The ledger an event on ``work_item`` is recorded on: the Jira ledger for a
+    Jira ref (issue-475, §C9), else ``github()`` — the caller's GitHub ledger,
+    built only when it is the one used. A malformed ref is GitHub's to refuse."""
+    from ..sessions import WorkItemRef
+
+    try:
+        provider = WorkItemRef.parse(work_item).provider
+    except ValueError:
+        provider = ""
+    if provider == "jira":
+        return JiraLedger(cli_config)
+    return github()
 
 
 # ---------------------------------------------------------------- the channel
@@ -330,7 +366,11 @@ class JiraChannel:
                 error=f"jira@{key}: project {project} is not configured under "
                 "integrations.jira.projects; nothing was sent",
             )
-        body = mark_self_authored_on_jira(render(event, self.config.verbosity))
+        # The room is output only: nothing posted there is a gate record, so
+        # every marker the rendered event carries is broken (critic C1).
+        body = mark_self_authored_on_jira(
+            defang_markers(render(event, self.config.verbosity))
+        )
         try:
             comment = self.client.add_comment(key, body)
         except JiraApiError as exc:

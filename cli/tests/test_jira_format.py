@@ -337,6 +337,74 @@ def test_tables_have_a_header_row():
     )
 
 
+# -- Data Center edge cases (self-review L5) --------------------------------------------
+
+
+def _list_shape(adf: Dict[str, Any]) -> List[Any]:
+    """A list document's nesting, as ``[(type, [child shapes…]), …]``."""
+
+    def shape(node: Dict[str, Any]) -> Any:
+        children = [
+            shape(grand)
+            for item in node.get("content") or []
+            for grand in item.get("content") or []
+            if grand.get("type") in ("bulletList", "orderedList")
+        ]
+        return (node["type"], children)
+
+    return [shape(n) for n in adf["content"]]
+
+
+def test_a_nested_ordered_list_round_trips_through_wiki():
+    """`## y` under `# x` is a nested item: CommonMark needs it indented to the
+    parent's text (three spaces under `1. `), or it reads as a sibling."""
+    wiki = "# x\n## y\n# z"
+    md = wiki_to_markdown(wiki)
+    assert md == "1. x\n   1. y\n2. z"
+    assert _list_shape(markdown_to_adf(md)) == [("orderedList", [("orderedList", [])])]
+    assert markdown_to_wiki(md) == wiki
+    for mixed, expected in [
+        ("# x\n#* y\n# z", "1. x\n   - y\n2. z"),
+        ("* x\n*# y\n*# z", "- x\n  1. y\n  2. z"),
+    ]:
+        assert wiki_to_markdown(mixed) == expected
+        assert markdown_to_wiki(expected) == mixed
+
+
+def test_inline_code_with_a_backtick_round_trips_through_wiki():
+    for wiki, md in [
+        ("{{a`b}}", "``a`b``"),
+        ("{{`x}}", "`` `x ``"),
+        ("{{a``b}}", "```a``b```"),
+    ]:
+        assert wiki_to_markdown(wiki) == md
+        [para] = markdown_to_adf(md)["content"]
+        [text] = para["content"]
+        assert text["text"] == wiki[2:-2] and text["marks"] == [{"type": "code"}]
+        assert markdown_to_wiki(md) == wiki
+        assert adf_to_markdown(markdown_to_adf(md)) == md
+
+
+def test_a_pipe_inside_a_table_cell_round_trips_through_wiki():
+    md = "| h | i |\n| --- | --- |\n| `p\\|q` | r |"
+    wiki = markdown_to_wiki(md)
+    assert wiki == "||h||i||\n|{{p\\|q}}|r|"
+    assert wiki_to_markdown(wiki) == md
+    # Typed in Jira unescaped, the pipe inside `{{…}}` still does not split a cell.
+    assert wiki_to_markdown("||h||i||\n|{{p|q}}|r|") == md
+
+
+def test_a_code_language_round_trips_through_wiki():
+    assert markdown_to_wiki("```py\nx = 1\n```") == "{code:python}\nx = 1\n{code}"
+    assert wiki_to_markdown("{code:py}\nx = 1\n{code}") == "```py\nx = 1\n```"
+    assert (
+        wiki_to_markdown("{code:title=F.py|language=python}\nx = 1\n{code}")
+        == "```python\nx = 1\n```"
+    )
+    md = "```python\nx = 1\n```"
+    assert wiki_to_markdown(markdown_to_wiki("```py\nx = 1\n```")) == md
+
+
 def test_quotes_and_rules():
     md = "> quoted **text**\n\n---\n\nafter\n"
     adf = markdown_to_adf(md)
@@ -456,3 +524,114 @@ def test_the_client_sends_wiki_on_data_center_and_reads_it_back(monkeypatch):
     [call] = [c for c in sdk.calls if c["method"] == "add_comment"]
     assert call["body"] == "*bold* and {{code}}"
     assert comment.body_md == "**bold** and `code`"
+
+
+# -- the ADF reader takes whatever Jira (or a person) sends (self-review R2-3) -------
+
+
+def _doc(*blocks: Any) -> Dict[str, Any]:
+    return {"type": "doc", "version": 1, "content": list(blocks)}
+
+
+def _para(text: str) -> Dict[str, Any]:
+    return {"type": "paragraph", "content": [{"type": "text", "text": text}]}
+
+
+@pytest.mark.parametrize(
+    "block, expected",
+    [
+        (
+            {
+                "type": "table",
+                "content": [
+                    "junk",
+                    {"type": "tableRow", "content": [{"content": [_para("c")]}]},
+                ],
+            },
+            "| c |\n| --- |",
+        ),
+        (
+            {"type": "bulletList", "content": [7, {"content": [_para("kept")]}]},
+            "- kept",
+        ),
+        (
+            {"type": "orderedList", "content": [None, {"content": [_para("one")]}]},
+            "1. one",
+        ),
+        (
+            {"type": "taskList", "content": ["x", {"type": "taskItem", "content": []}]},
+            "- [ ] ",
+        ),
+        (
+            {"type": "codeBlock", "content": ["junk", {"text": "a = 1"}]},
+            "```\na = 1\n```",
+        ),
+    ],
+    ids=["table-row", "bullet-item", "ordered-item", "task-item", "code-text"],
+)
+def test_a_non_object_child_is_skipped_not_raised(block, expected):
+    assert adf_to_markdown(_doc(block, _para("after"))) == f"{expected}\n\nafter"
+
+
+@pytest.mark.parametrize(
+    "block, expected",
+    [
+        ({"type": "heading", "attrs": {"level": "x"}, "content": []}, "# "),
+        ({"type": "heading", "attrs": {"level": "3"}, "content": []}, "### "),
+        (
+            {
+                "type": "orderedList",
+                "attrs": {"order": "x"},
+                "content": [{"content": [_para("one")]}],
+            },
+            "1. one",
+        ),
+        ({"type": "heading", "attrs": "junk", "content": []}, "# "),
+    ],
+    ids=["heading-level-x", "heading-level-str", "order-x", "attrs-not-object"],
+)
+def test_a_non_numeric_attribute_falls_back(block, expected):
+    assert adf_to_markdown(_doc(block)) == expected
+
+
+def test_media_reads_as_an_attachment_placeholder():
+    media = {"type": "media", "attrs": {"id": "abc-123", "type": "file"}}
+    doc = _doc(
+        {"type": "mediaSingle", "content": [{**media, "attrs": {"alt": "shot.png"}}]},
+        {
+            "type": "mediaGroup",
+            "content": [
+                {"type": "media", "attrs": {"__fileName": "log.txt"}},
+                media,
+            ],
+        },
+        {
+            "type": "paragraph",
+            "content": [
+                {"type": "text", "text": "see "},
+                {"type": "mediaInline", "attrs": {"id": "inl-9"}},
+            ],
+        },
+        media,
+    )
+    assert adf_to_markdown(doc) == (
+        "[attachment: shot.png]\n\n"
+        "[attachment: log.txt]\n[attachment: abc-123]\n\n"
+        "see [attachment: inl-9]\n\n"
+        "[attachment: abc-123]"
+    )
+
+
+def test_a_media_name_never_reads_as_a_the_loop_marker():
+    """A file named like a marker is a placeholder, never a gate's marker."""
+    doc = _doc(
+        {
+            "type": "mediaSingle",
+            "content": [
+                {"type": "media", "attrs": {"alt": "[the-loop:phase-selection]"}}
+            ],
+        }
+    )
+    read = adf_to_markdown(doc)
+    assert "<!--" not in read
+    assert read.startswith("[attachment: ")

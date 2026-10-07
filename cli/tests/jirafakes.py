@@ -137,6 +137,13 @@ class FakeJiraClient(JiraClient):
         self._enter("comments", key=key)
         return list(self.comment_table.get(key, []))
 
+    def comment(self, key: str, comment_id: str) -> Optional[JiraComment]:
+        self._enter("comment", key=key, comment_id=comment_id)
+        return next(
+            (c for c in self.comment_table.get(key, []) if c.id == str(comment_id)),
+            None,
+        )
+
     def add_comment(self, key: str, markdown: str) -> JiraComment:
         self._enter("add_comment", key=key, body=markdown)
         self.next_comment_id += 1
@@ -237,6 +244,9 @@ class FakeJiraSDK:
     transition_docs: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)
     pages: List[Dict[str, Any]] = field(default_factory=list)
     me: Dict[str, Any] = field(default_factory=lambda: {"accountId": "5b10-bot"})
+    #: The most comments one ``issue/{key}/comment`` page answers with, whatever
+    #: ``maxResults`` asked — Jira caps it server side.
+    comment_page_cap: int = 50
     raise_on: Dict[str, BaseException] = field(default_factory=dict)
     on_call: Optional[Any] = None
     calls: List[Dict[str, Any]] = field(default_factory=list)
@@ -261,6 +271,34 @@ class FakeJiraSDK:
     def comments(self, issue: str, **kwargs: Any) -> List[FakeSDKComment]:
         self._enter("comments", key=issue, **kwargs)
         return [FakeSDKComment(doc) for doc in self.comment_docs.get(issue, [])]
+
+    def _get_json(self, path: str, params: Any = None, **kwargs: Any) -> Any:
+        """``GET issue/{key}/comment`` (paged by ``startAt``/``maxResults``) and
+        ``GET issue/{key}/comment/{id}`` — the only raw paths the client reads."""
+        params = dict(params or {})
+        self._enter("_get_json", path=path, **params)
+        parts = path.split("/")
+        if len(parts) >= 3 and parts[0] == "issue" and parts[2] == "comment":
+            docs = self.comment_docs.get(parts[1], [])
+            if len(parts) == 4:
+                found = next((d for d in docs if str(d.get("id")) == parts[3]), None)
+                if found is None:
+                    from jira.exceptions import JIRAError
+
+                    raise JIRAError("Comment does not exist", status_code=404)
+                return found
+            start = int(params.get("startAt") or 0)
+            size = min(int(params.get("maxResults") or 50), self.comment_page_cap)
+            return {
+                "startAt": start,
+                "maxResults": size,
+                "total": len(docs),
+                "comments": docs[start : start + size],
+            }
+        raise AssertionError(f"FakeJiraSDK has no raw path {path!r}")
+
+    def comment(self, issue: str, comment: str, **kwargs: Any) -> FakeSDKComment:
+        return FakeSDKComment(self._get_json(f"issue/{issue}/comment/{comment}"))
 
     def add_comment(self, issue: str, body: Any, **kwargs: Any) -> FakeSDKComment:
         self._enter("add_comment", key=issue, body=body)

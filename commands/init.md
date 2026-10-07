@@ -197,6 +197,16 @@ to the plugin's install directory.)
    **never widen it unasked** — each grant is authority the channel did not have.
    Verification happens in step 10.
 
+   **Then offer Jira, the same way** — only when work items (or mirror rooms) live on
+   Jira; **if the user declines, write no `integrations.jira` block**. Walk
+   `reference/onboarding.md` § Jira onboarding: the site; the deployment kind (`cloud`,
+   `cloud-scoped`, `data-center`); the **names** of the variables holding the email and
+   token, plus the `cloudId` when scoped; a dedicated service account with least
+   privilege (`read:jira-work`, `write:jira-work`, `read:jira-user` for a scoped token);
+   the projects and the repository each maps to (none = mirror-only), with a
+   `polling.sources` entry for those polled; and the webhook secret's variable. Print
+   the Jira-safe label table. Never take a credential's value.
+
 6. **Reconcile against the manifest (idempotent, non-clobbering).** For every managed
    path, classify it and act:
    - **missing** → create it (from the template/default);
@@ -230,8 +240,9 @@ to the plugin's install directory.)
    `loop:test-planning`, `loop:tasks-breakdown`, `loop:implementation`,
    `loop:verification`, `loop:needs-review`, `loop:complete`, `loop:cleanup`. The graph
    is the source (`the-loop graph show --format json` lists each node's `phase`); the
-   config declares no phase list. On GitHub create issue labels; on Jira create the
-   equivalent statuses/labels. Skip any that already exist. Create the
+   config declares no phase list. On GitHub create issue labels; on Jira create
+   **nothing** — Jira creates a label the first time an issue carries it, in the
+   Jira-safe form step 5 printed. Skip any that already exist. Create the
    `routing.autoExecuteLabels` entries too where routing was enabled — an arming label
    that does not exist cannot be applied. **No skip labels are needed** (issue-177):
    which phases a work item walks is chosen on the ticket itself, at the loop's
@@ -269,8 +280,10 @@ to the plugin's install directory.)
 
     Collect the environment-variable **names** the configs just written declare —
     `channels.slack.botTokenEnv`, `channels.slack.appTokenEnv`,
-    `webhooks.ghWebhook.secretEnv`, `integrations.github.api.tokenEnv` — from the files
-    themselves, not from a hardcoded list, and report **presence only** for each one that
+    `webhooks.ghWebhook.secretEnv`, `integrations.github.api.tokenEnv`, and with Jira
+    `integrations.jira.api.emailEnv`, `integrations.jira.api.tokenEnv` and
+    `integrations.jira.webhook.secretEnv` — from the files themselves, not from a
+    hardcoded list, and report **presence only** for each one that
     this configuration actually needs.
 
     **Report whether it is set. Never the value, a prefix of it, its length, or a hash of
@@ -284,7 +297,8 @@ to the plugin's install directory.)
     environment would carry is reported as *unverified*, which is not the same as *unset*.
 
     Then verify: `the-loop channels status` (and `--probe` where a token is present) for
-    a configured Slack channel, and `the-loop doctor slack` for the deployment-wide view.
+    a configured Slack channel, `the-loop doctor slack` for the deployment-wide view,
+    and `the-loop doctor jira` for a configured Jira (offline: it sends nothing).
     Where the CLI is not on this machine, print the commands for the user to run and
     report the channel as **unverified** — never as working. A failed probe is a finding
     for the report, not an init failure.

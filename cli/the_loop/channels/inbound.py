@@ -42,6 +42,7 @@ from .attachments import record_lines, render_section, unfetched
 from .base import ChannelError, Event, InboundReply, PostResult
 from .bus import publish
 from .github import GitHubLedger
+from .jira import ledger_for_ref
 from .kickoff import question_text, refusal_text, resolve_target
 from .once import first_sight
 from .slack import (
@@ -908,7 +909,11 @@ def _record(
             reason="standing-session",
         )
         return None
-    ledger = GitHubLedger(cli_config, post_comment=post_comment)
+    ledger = ledger_for_ref(
+        reply.work_item,
+        cli_config,
+        lambda: GitHubLedger(cli_config, post_comment=post_comment),
+    )
     result = publish(event, cli_config, channels=[], ledger=ledger).record
     ok = bool(result and result.ok)
     if ok:
@@ -1577,9 +1582,14 @@ def _say_on_ticket(
         from ..sessions import WorkItemRef
 
         item = WorkItemRef.parse(reply.work_item)
-        ok, error, _ = post_issue_comment_with_url(
-            item, mark_self_authored(text), api=_control_config(cli_config).github
-        )
+        if item.provider == "jira":
+            from ..core.tickets import post_on_ticket
+
+            ok, error, _ = post_on_ticket(item, mark_self_authored(text), cli_config)
+        else:
+            ok, error, _ = post_issue_comment_with_url(
+                item, mark_self_authored(text), api=_control_config(cli_config).github
+            )
         if not ok:
             logger.debug(
                 "slack: could not mirror the refusal on %s (%s)",

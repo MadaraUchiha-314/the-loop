@@ -56,6 +56,7 @@ from ..webhook.router import (
     POLL_CLOSURE_DELIVERY_PREFIX,
     RoutedEvent,
     event_carries_labels,
+    JiraLinkage,
     extract_work_items,
     normalize_labels,
 )
@@ -261,6 +262,10 @@ class GitHubPollProvider(PollProvider):
         #: The missing labels last reported per filtered item, so a filtered item
         #: is logged once per change rather than on every poll cycle.
         self._filtered: Dict[Tuple[str, int], Tuple[str, ...]] = {}
+        #: PR → Jira linkage (issue-475, design §C9). Attached by the poll
+        #: daemon, which holds the config and the registry; ``None`` links no
+        #: Jira key.
+        self.jira_linkage: Optional[JiraLinkage] = None
 
     @classmethod
     def from_source(
@@ -511,7 +516,9 @@ class GitHubPollProvider(PollProvider):
     # -- event construction ----------------------------------------------------
 
     def refs(self, item: WorkItem) -> List[WorkItemRef]:
-        return extract_work_items(self._event_name(item), self._item_payload(item))
+        return extract_work_items(
+            self._event_name(item), self._item_payload(item), self.jira_linkage
+        )
 
     def presence_event(self, item: WorkItem, refs: List[WorkItemRef]) -> RoutedEvent:
         payload = self._item_payload(item)

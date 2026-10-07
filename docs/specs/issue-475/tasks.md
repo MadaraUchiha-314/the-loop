@@ -245,7 +245,7 @@ Two decisions from the gate are carried here:
 
 ### PR 5 — edges (linkage, verbs, onboarding, skill text)
 
-- [ ] 5.1 **PR → Jira linkage.**
+- [x] 5.1 **PR → Jira linkage.**
   - Red first: `test_pr_naming_unregistered_jira_key_does_not_link` and
     `test_pr_in_other_repository_does_not_link`, plus the positive scenario _a PR naming
     a registered Jira key routes to the Jira work item_.
@@ -254,7 +254,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 4.5
   - _Requirements:_ R8.1
   - _Test:_ T6, T7 (abuse case 7) — red → green
-- [ ] 5.2 **Ticket verbs dispatch by tracker.**
+- [x] 5.2 **Ticket verbs dispatch by tracker.**
   - Red first: tests for `ticket show/create --project/close`, `comment` and `ask` on a
     Jira ref, plus the scenarios _finish-tasks transitions the Jira ticket to Done_ and
     _the-loop comment on a Jira ref is recorded on the Jira ticket_.
@@ -266,7 +266,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 5.1
   - _Requirements:_ R8.2, R3.7
   - _Test:_ T6 — red → green; T9
-- [ ] 5.3 **Skill, commands and `/init`.**
+- [x] 5.3 **Skill, commands and `/init`.**
   - `commands/work-on.md`, `create-ticket.md`, `finish-tasks.md` and
     `skills/the-loop/reference/automation.md` replace the PR-ref workaround with the
     `jira:` flow, keeping MCP as the no-CLI fallback.
@@ -275,7 +275,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 5.2
   - _Requirements:_ R8.3, R8.4, R9.3
   - _Test:_ reviewed at self/critic review; T9 markdownlint
-- [ ] 5.4 **Docs for PR 5.**
+- [x] 5.4 **Docs for PR 5.**
   - `docs/capabilities/cli.md` for the verbs.
   - README/docs-site lines that say Jira works "via MCP only".
   - `evidence/documentation.md` complete.
@@ -285,7 +285,11 @@ Two decisions from the gate are carried here:
 
 ### Verification and review (top of the stack)
 
-- [ ] V1 **Verify.** Run `testing-plan.md` T1–T10 on the top of the stack. Then T11:
+These two are the graph's own `verification` and review nodes, not implementation
+tasks, so they carry no checkbox: the nodes gate them (`testing-plan.md`'s activities
+and the `evidence/` records).
+
+- V1 **Verify.** Run `testing-plan.md` T1–T10 on the top of the stack. Then T11:
   - If a sandbox is configured, run the manual procedure and commit the redacted
     evidence.
   - Otherwise, leave T11 unticked, record why, and escalate on the PR with `the-loop
@@ -295,7 +299,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 5.4
   - _Requirements:_ all
   - _Test:_ T1–T11
-- [ ] V2 **Review chain.** This step happens in the graph's review nodes, not as an
+- V2 **Review chain.** This step happens in the graph's review nodes, not as an
   implementation task:
   - self and critic rounds per `the-loop critic policy`;
   - the security review, where tier 4 requires a named human sign-off;

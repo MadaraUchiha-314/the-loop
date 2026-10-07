@@ -18,7 +18,7 @@ import argparse
 import json
 import os
 import sys
-from typing import Optional
+from typing import Mapping, Optional
 
 from .base import Command, register
 from .sessions_cmd import _cli_config
@@ -176,6 +176,8 @@ def _status(config: dict, probe: bool = False) -> int:
         f"{len(state.threads)} bound thread(s), {len(state.cursors)} cursor(s) "
         "— `the-loop channels threads` lists them"
     )
+    for line in _jira_lines(config):
+        print(line)
     # The common event definition (PR #267 review): what CAN be subscribed,
     # with what IS — so configuring `subscribe` never means guessing names.
     print("subscribable events ([x] = in channels.slack.subscribe):")
@@ -195,6 +197,62 @@ def _status(config: dict, probe: bool = False) -> int:
             f"  [{tick}] {name} — {SUBSCRIBABLE_EVENTS.get(name) or _publish_meaning(name)}"
         )
     return 0
+
+
+def _jira_lines(config: dict) -> list:
+    """The Jira block (issue-475): the integration, its projects, the ledger and
+    the mirror channel. Presence only for the credentials and the webhook
+    secret — a variable's name, never its value — and no API call."""
+    from ..channels.jira import JiraChannelConfig, origin_projects
+    from ..jiraapi import JiraApiConfig
+    from ..sessions.refs import jira_section
+
+    api = JiraApiConfig.from_cli_config(config)
+    lines = ["jira:"]
+    if not api.configured:
+        lines.append("  integration:  not configured (integrations.jira)")
+        return lines
+    lines.append(f"  integration:  {api.site} ({api.deployment})")
+    origins = origin_projects(config)
+    projects = [
+        f"{key} → {origins[key]}" if key in origins else f"{key} (mirror-only)"
+        for key in api.projects
+    ]
+    lines.append(f"  projects:     {', '.join(projects) or '(none)'}")
+    names = [name for _, group in api._required() for name in group]  # noqa: SLF001
+    missing = api.missing_credentials()
+    lines.append(
+        "  credentials:  "
+        + ("set" if not missing else "unset — set " + " and ".join(missing))
+        + (f" ({', '.join(names)})" if names else "")
+    )
+    webhook = jira_section(config).get("webhook")
+    secret_env = (
+        str(webhook.get("secretEnv") or "") if isinstance(webhook, Mapping) else ""
+    )
+    lines.append(
+        "  webhook:      "
+        + (
+            f"/jira-webhook, secret {_presence(secret_env)} ({secret_env})"
+            if secret_env
+            else "off (no integrations.jira.webhook.secretEnv) — polling only"
+        )
+    )
+    lines.append(
+        "  ledger:       a Jira work item's events on its Jira ticket; "
+        "work-item.create on the channels.ledger tracker"
+    )
+    channel = JiraChannelConfig.from_mapping(config)
+    lines.append(
+        "  channel:      "
+        + (
+            f"enabled — {', '.join(channel.subscribe)} ({channel.verbosity}), "
+            "into declared jira@ rooms"
+            if channel.enabled
+            else "off (channels.jira.enabled)"
+        )
+    )
+    return lines
 
 
 def _split_check_lines(slack: SlackChannelConfig, config: dict) -> list:

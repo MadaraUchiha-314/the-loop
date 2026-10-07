@@ -53,6 +53,7 @@ from ..jiralabels import JiraLabelError, jira_label
 from ..sessions import WorkItemRef
 from ..sessions.refs import JIRA_KEY_PATTERN
 from ..webhook.router import (
+    JIRA_COMMENT_DELIVERY_PREFIX,
     POLL_CLOSURE_DELIVERY_PREFIX,
     PROVIDER_KEY,
     RELAY_KEY,
@@ -113,7 +114,7 @@ def build_jql(project: str, labels: Sequence[str]) -> str:
 
 def jira_comment_delivery_id(site: str, comment_id: str) -> str:
     """``jira-comment-<site>-<id>`` — the same from the poller and the doorbell (R6.4)."""
-    return f"jira-comment-{site}-{comment_id}"
+    return f"{JIRA_COMMENT_DELIVERY_PREFIX}{site}-{comment_id}"
 
 
 def _read(what: str, fn: Callable[[], _T]) -> _T:
@@ -148,7 +149,6 @@ class JiraPollProvider(PollProvider):
         self.labels = normalize_labels(labels)
         self.site = str(site).strip().lower()
         self.client = client
-        self._me: Optional[str] = None
 
     # -- construction -------------------------------------------------------------
 
@@ -280,16 +280,29 @@ class JiraPollProvider(PollProvider):
         me = self._service_account()
         return [self._comment(c, me) for c in found]
 
+    def comment(self, item: WorkItem, comment_id: str) -> Optional[Comment]:
+        """One comment by id — the webhook doorbell's read (critic C2): the
+        delivered comment wherever it sits in the thread, ``None`` when Jira
+        has no such comment."""
+        key = self._key(item)
+        found = _read(
+            f"comment {comment_id} of {item.ref}",
+            lambda: self.client.comment(key, comment_id),
+        )
+        if found is None:
+            return None
+        return self._comment(found, self._service_account())
+
     def _service_account(self) -> str:
-        """The service account's id (``myself``), cached; ``""`` when unreadable —
-        then nothing is a relay, and the marker is the only self test."""
-        if self._me is None:
-            try:
-                self._me = self.client.myself()
-            except JiraApiError as exc:
-                logger.debug("could not read the Jira service account's id: %s", exc)
-                return ""
-        return self._me
+        """The service account's id (``myself``); ``""`` when unreadable — then
+        nothing is a relay, and the marker is the only self test. Read from the
+        client every time: the client caches it, and drops that cache when the
+        credential changes, so a copy here would outlive a rotation."""
+        try:
+            return self.client.myself()
+        except JiraApiError as exc:
+            logger.debug("could not read the Jira service account's id: %s", exc)
+            return ""
 
     @staticmethod
     def _comment(comment: JiraComment, me: str) -> Comment:

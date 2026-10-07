@@ -31,6 +31,7 @@ you say otherwise, never relative to whatever directory a command was run from
 │   ├── github-octo-repo-15.json   # that item's session handle(s) — never tracked
 │   ├── model-verdicts.json        # which models this box's harnesses accept — never tracked
 │   ├── poll-clocks.json           # when this box's poller last looked at each item — never tracked
+│   ├── control-deliveries.json    # the control comments this box already executed (+ its .lock) — never tracked
 │   ├── slack-split.json           # what this listener's own split check last measured — never tracked
 │   └── attachments/               # files people attached, fetched for this box's sessions to read — never tracked
 │       └── github-octo-repo-15/   #   one directory per work item (issue-416)
@@ -212,6 +213,7 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 | `<root>/local/<slug>.json` | the session registry | one entry per ref this machine holds a session for — the work item's own and one per pull request — each with its conversation id, `cwd`, tmux target and status; plus what this deployment has already mirrored of the item's channel threads | **local** |
 | `<root>/local/model-verdicts.json` | `the-loop models check` (issue-358) | one verdict per harness × model-or-effort name: `ok`, `refused` or `unknown`, the argv it was taken against, and when — re-measured every 24h | **local** |
 | `<root>/local/poll-clocks.json` | the poller, as it finishes each item (issue-382) | per work-item ref — and per pull request delivering one — `lastPolledAt` and `closureCheckedAt`: when a cycle on **this** machine last listed it, and last asked whether an unlisted item had ended | **local** |
+| `<root>/local/control-deliveries.json` | the dispatcher, before it executes a Jira control comment (issue-475) | the delivery ids of the newest control comments this machine executed (bounded), shared by the receiver and the poller under a `flock` on `control-deliveries.json.lock` — so a Jira comment both ingresses see is executed once | **local** |
 | `<root>/local/slack-split.json` | the Socket Mode listener, after every split check (issue-413) | what this listener last measured of its own share of the traffic: the verdict, the beats posted and echoed, the window, the channel id, the rolling window of recent verdicts and the consecutive-short count the warning ladder reads | **local** |
 | `<root>/local/attachments/<slug>/` | the Slack channel and the GitHub dispatcher, as a message with a file is forwarded (issue-416) | the files people attached — a Slack upload saved as `<file id>-<name>`, a GitHub asset by its id — as opaque bytes for the session on this machine to read; the-loop never opens them and never removes them | **local** |
 | `<root>/local/standing/<name>.json` | the standing-session registry (issue-277, opt-in) | per standing session: harness, conversation id, `cwd`, tmux target, status, the Slack channel/thread its chat runs in — and, for a session created through the API, its whole definition | **local** |
@@ -325,9 +327,10 @@ and what the pre-issue-128 shim keys on. `url` is the same fact in the form you 
 added beside it rather than replacing it, because these files are tracked and therefore
 read by people.
 
-The URL is **derived, never guessed**: only `github` refs resolve, to the host the ref
+The URL is **derived, never guessed**. A `github` ref resolves to the host the ref
 names — `github.com` unless it says otherwise — and only when the host, owner and repo are
-the shapes GitHub accepts. Anything else, such as a `jira:` ref, has no `url` field at
+the shapes GitHub accepts. A `jira` ref resolves to `https://<site>/browse/<KEY>-<n>` when
+its site and key match the Jira grammar (issue-475). Anything else has no `url` field at
 all, because a link somewhere other than the work item is worse than no link. When the
 number belongs to a pull request, GitHub redirects `…/issues/<n>` to `…/pull/<n>`, so one
 form serves both.

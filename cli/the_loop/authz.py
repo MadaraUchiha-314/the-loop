@@ -117,15 +117,24 @@ ORIGIN_RELAY = "relay"
 ORIGIN_HUMAN = "human"
 
 
-def is_self_authored(body: Optional[str]) -> bool:
+def is_self_authored(body: Optional[str], provider: str = "github") -> bool:
     """Whether ``body`` carries the-loop's own authorship marker.
 
     True for any comment/review/reply the-loop itself posted, regardless of
-    which login posted it — the GitHub marker (an HTML comment) or the Jira
-    one (the visible ``[the-loop:agent-comment]``, issue-475) — the router/poller use this to drop it
-    before it can re-enter the loop as if a human had written it (issue-64).
+    which login posted it — the router/poller use this to drop it before it can
+    re-enter the loop as if a human had written it (issue-64).
+
+    Which marker counts depends on where the body was read (issue-475): the
+    GitHub marker (an HTML comment, invisible, so nobody quotes it by accident)
+    everywhere; the Jira one (the visible ``[the-loop:agent-comment]``) only for a
+    body read from Jira, ``provider="jira"`` — on GitHub that text is just text a
+    person may quote, and a quoted marker must not silence their comment.
     """
-    return bool(body) and (SELF_COMMENT_MARKER in body or JIRA_SELF_MARKER in body)
+    if not body:
+        return False
+    if SELF_COMMENT_MARKER in body:
+        return True
+    return provider == "jira" and JIRA_SELF_MARKER in body
 
 
 def mark_self_authored(body: str) -> str:
@@ -192,7 +201,7 @@ def jira_comment_origin(
     allow-list unless the operator put it there.
     """
     text = body or ""
-    if is_self_authored(text):
+    if is_self_authored(text, provider="jira"):
         return ORIGIN_SELF
     if service_account and author_id == service_account:
         return ORIGIN_RELAY if JIRA_RELAY_MARKER in text else ORIGIN_SELF

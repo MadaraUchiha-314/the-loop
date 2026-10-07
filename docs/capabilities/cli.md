@@ -251,7 +251,41 @@ self-learning/ML capabilities.
   verb given a Jira ref SHALL refuse it rather than coerce it. A Jira item's pull request
   in that mapped repository SHALL get the shipped `pr-loops/pr-<n>/` layout, exactly as a
   GitHub issue's pull request in its own repository does; one in any other repository
-  SHALL get the qualified `pr-loops/<owner>__<repo>/pr-<n>/`.
+  SHALL get the qualified `pr-loops/<owner>__<repo>/pr-<n>/`. The dispatcher SHALL make
+  the same comparison against the mapped repository: under `sessionPerPr:
+  cross-repository` such a pull request is delivered into the Jira item's own session,
+  under `always` its session requires the head branch, and its claim command carries no
+  `--pr-repo`; an unplaceable Jira item treats every pull request as cross-repository,
+  with a warning (critic C3).
+- The ticket verbs SHALL act on a work item's **own** tracker (issue-475, R8.2):
+  `core/tickets.tracker_for(ref)` SHALL return the GitHub verbs (`core/github_ops`,
+  unchanged) for a `github:` ref and the Jira verbs for a `jira:` ref, and the CLI, the
+  control-plane routes and the MCP tools SHALL all call through it. On a Jira ref:
+  - `ticket show` SHALL print the issue's fields and its comments as Markdown in the
+    GitHub JSON shape (`attachments` empty), and a moved key SHALL fail naming both keys;
+  - `ticket create --project KEY` SHALL open a Jira ticket in a project listed under
+    `integrations.jira.projects`, its labels in their Jira-safe form, and print its
+    `jira:` ref; `--project` and `--repository` SHALL be mutually exclusive, exactly one
+    required (`POST /work-items/tickets` takes `project` beside `repository`);
+  - `ticket close` SHALL transition a registered work item's ticket into the *Done*
+    status category, or into `integrations.jira.closeTransition`; zero or several
+    candidates SHALL fail listing the available transitions, transitioning nothing;
+  - `comment` and `ask` SHALL be recorded on the Jira ticket by the Jira ledger, with the
+    visible self-marker, and mirrored to subscribed channels as on GitHub;
+  - `pr create --work-item <jira ref>` SHALL open the pull request in the project's
+    origin repository and record it against the Jira work item; a `--repository` naming
+    any other repository SHALL be refused.
+
+  A Jira ref on another site or in an unconfigured project, or with
+  `integrations.jira` absent, SHALL be refused before any request (exit 2). Control
+  announcements and `add-channel` declarations on a Jira work item SHALL be recorded on
+  its ticket as relays (`[the-loop:relay]`), the operator's words, as an unmarked
+  comment under the operator's credentials is on GitHub.
+- WHEN `the-loop graph complete` or `graph check` builds a runtime outside the daemon on
+  a deployment with Jira THEN its human gates SHALL accept the same identities the
+  daemon's do: the GitHub logins, each listed Jira id as `jira:<id>`, and
+  `jira-relay:operator` (issue-475). A GitHub-only deployment SHALL get the logins
+  alone, as before.
 - The pre-issue-128 locations (`<root>/sessions/`, `<root>/sessions/control/`,
   `<root>/sessions/poll-state.json`, and the pre-issue-106 `.the-loop/poll-state.json`)
   SHALL still be **read** when a work item's new record has no such section, and written
@@ -511,6 +545,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-475 | The ticket verbs act on a Jira ref (2026-10-06, PR 5 of 5): `core/tickets.tracker_for` dispatches `ticket show\|create\|close`, `comment`, `ask` and `pr create` by tracker, the GitHub functions unchanged. `ticket create --project` opens a Jira ticket, `ticket close` transitions into Done (refusing an ambiguous choice), `pr create` on a Jira ref opens in the origin repository. Announcements reach a Jira ticket as relays, and the CLI graph path accepts Jira gate authors. Before, every verb refused a Jira ref and `/the-loop:work-on` registered a Jira item against its PR | [spec](../specs/issue-475/), [ticket](../cli/commands/ticket.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-475 | Jira tickets are work-item refs (2026-10-06, PR 1 of 5): `jira:<site>/<KEY>-<n>` parses, renders, slugs and links through a per-provider `RefScheme` (`sessions/refs.py`), with the GitHub scheme moved unchanged. Spec ids come from `WorkItemRef.spec_id` (`jira-<key>-<n>` beside `issue-<n>`), `derive_ref` inverts them with the configured site, and `origin_repository` maps a Jira project to its GitHub repository at the six shared owner/repo reads. Before, the `jira:` prefix was reserved and every non-GitHub ref had no spec id | [spec](../specs/issue-475/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-462 | `the-loop pr checks <pr>` lists every check on a pull request's head with failed GitHub Actions jobs' log tails (2026-10-06): `core.github_ops.pull_request_checks` over `GitHubClient.job_log_tail`, which reads the `302` from `actions/jobs/{id}/logs` without following it and fetches the signed URL itself (https only, no credential, tail-only in memory). Read-only, like `pr status`. `startup_failure` now counts as a failing conclusion in the rollup. Before, a failed job's log was reachable only through `gh run view` | [spec](../specs/issue-462/), [pr](../cli/commands/pr.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/462) |
 | issue-465 | `the-loop pr ready <pr>` takes a draft pull request out of draft (2026-10-06): `core.github_ops.mark_ready` reads the PR, then sends `markPullRequestReadyForReview` with the node id GitHub returned (`GitHubClient.mark_pull_ready`; REST cannot clear `draft`), behind the same lifecycle guard as `pr merge`. An already-ready PR is a no-op, a closed or merged one is refused, event `work_item.pr_ready`. Before, a PR opened with `pr create --draft` could leave draft only through `gh` | [spec](../specs/issue-465/), [pr](../cli/commands/pr.md), [control-plane](control-plane.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/465) |

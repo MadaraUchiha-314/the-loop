@@ -12,11 +12,22 @@ import logging
 import re
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable, List, Optional, Sequence, Set, Tuple
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+)
 
 from .. import eventlog
 from ..authz import is_authorized, is_authorized_on, is_self_authored
 from ..sessions import DEFAULT_GITHUB_HOST, WorkItemRef, host_from_url
+from ..sessions.refs import UnknownJiraProject, jira_site, origin_ref
 
 if TYPE_CHECKING:  # the roster is injected, never built here (issue-307)
     from ..collaborators import CollaboratorStore
@@ -51,6 +62,14 @@ SOURCE_REFERENCE = "closing-reference"  # GitHub's own closingIssuesReferences
 SOURCE_BRANCH = "branch"  # the issue-<n> head-branch / CI-branch convention
 SOURCE_KEYWORD = "keyword"  # a closing keyword in the pull request's body
 SOURCE_ENTITY = "entity"  # the issue/PR the event is about (GitHub said so)
+#: A Jira key in the pull request's head branch or title (issue-475, design §C9),
+#: kept only for a **registered** Jira work item whose project maps to this pull
+#: request's repository — see :class:`JiraLinkage`.
+SOURCE_JIRA_KEY = "jira-key"
+
+#: A Jira issue key as it appears in a branch name or a PR title: the project key
+#: grammar the config enforces, a dash, a number with no leading zero.
+_JIRA_KEY_RE = re.compile(r"\b([A-Z][A-Z0-9_]{1,9})-([1-9][0-9]{0,9})\b")
 
 
 #: The delivery-id prefix of a closure the POLLER reconstructed from an item's
@@ -58,6 +77,9 @@ SOURCE_ENTITY = "entity"  # the issue/PR the event is about (GitHub said so)
 #: close, so the stamp it writes can say `source: poll` (issue-329). Owned here,
 #: beside the event shape both ingresses share, so neither imports the other.
 POLL_CLOSURE_DELIVERY_PREFIX = "poll-close-"
+#: The delivery-id prefix of a Jira comment, the same from the poller and the
+#: webhook doorbell (issue-475, R6.4): ``jira-comment-<site>-<id>``.
+JIRA_COMMENT_DELIVERY_PREFIX = "jira-comment-"
 
 
 #: The top-level payload key the in-process Jira ingress (the poller's
@@ -271,8 +293,101 @@ def _reference_repo(reference: dict, owner: str, repo: str) -> Tuple[str, str]:
     return owner, repo
 
 
+@dataclass
+class JiraLinkage:
+    """Which Jira work items a pull request may name (issue-475, design §C9).
+
+    A Jira key in a pull request's head branch or title links it to a Jira work
+    item only when all three hold: the key's project is configured under
+    ``integrations.jira.projects`` **with** a repository, that repository is the
+    pull request's own, and the Jira ref is registered in the session registry.
+    Anything else is dropped and logged at debug (abuse case 7). The PR body is
+    never read: anyone who can open a pull request writes it.
+
+    ``config`` is the whole CLI config document; ``is_registered`` answers "is
+    there a live session for this ref?" — injected, so the router keeps knowing
+    nothing about where state lives. A check that raises answers *no*.
+    """
+
+    config: Mapping[str, Any]
+    is_registered: Callable[[WorkItemRef], bool]
+
+    def refs(
+        self, entity: dict, owner: str, repo: str, host: str = ""
+    ) -> List[WorkItemRef]:
+        """The Jira refs ``entity`` (a PR-shaped object) links to, in order found."""
+        site = jira_site(self.config)
+        if not site:
+            return []
+        here = _ref_key(
+            WorkItemRef(provider="github", owner=owner, repo=repo, number=1, host=host)
+        )
+        texts = (
+            str((entity.get("head") or {}).get("ref") or ""),
+            str(entity.get("title") or ""),
+        )
+        found: List[WorkItemRef] = []
+        for text in texts:
+            for match in _JIRA_KEY_RE.finditer(text):
+                ref = WorkItemRef(
+                    provider="jira",
+                    owner=match.group(1),
+                    repo="",
+                    number=int(match.group(2)),
+                    host=site,
+                )
+                if ref in found:
+                    continue
+                reason = self._refusal(ref, here)
+                if reason:
+                    logger.debug(
+                        "not linking %s to the pull request in %s: %s",
+                        ref.ref,
+                        here,
+                        reason,
+                    )
+                    continue
+                found.append(ref)
+        return found
+
+    def _refusal(self, ref: WorkItemRef, here: str) -> str:
+        try:
+            origin = origin_ref(ref, self.config, 1)
+        except UnknownJiraProject:
+            return "not a configured project with a repository"
+        if _ref_key(origin) != here:
+            return "its project maps to another repository"
+        try:
+            registered = bool(self.is_registered(ref))
+        except Exception:  # noqa: BLE001 — an unanswerable check links nothing
+            logger.debug("registry check for %s raised", ref.ref, exc_info=True)
+            registered = False
+        return "" if registered else "not a registered work item"
+
+
+def jira_linkage(
+    config: Optional[Mapping[str, Any]], registry: Any
+) -> Optional[JiraLinkage]:
+    """The :class:`JiraLinkage` an ingress builds from its CLI config and registry.
+
+    ``None`` when ``integrations.jira`` names no site: with Jira unconfigured, no
+    key in any branch or title links to anything. "Registered" is a **live**
+    session record for the ref (``SessionRegistry.find_by_work_item``).
+    """
+    if not jira_site(config):
+        return None
+    return JiraLinkage(
+        config=dict(config or {}),
+        is_registered=lambda ref: registry.find_by_work_item(ref) is not None,
+    )
+
+
 def linked_work_item_sources(
-    entity: dict, owner: str, repo: str, host: str = ""
+    entity: dict,
+    owner: str,
+    repo: str,
+    host: str = "",
+    jira: Optional[JiraLinkage] = None,
 ) -> "OrderedDict[str, Tuple[WorkItemRef, Set[str]]]":
     """The traversal :func:`linked_work_items` renders, with each ref's sources.
 
@@ -328,6 +443,13 @@ def linked_work_item_sources(
             add(int(raw), SOURCE_KEYWORD, other_owner, other_repo)
         else:
             add(int(raw), SOURCE_KEYWORD)
+    if jira is not None:
+        for ref in jira.refs(entity, owner, repo, host):
+            known = items.get(ref.ref)
+            if known is None:
+                items[ref.ref] = (ref, {SOURCE_JIRA_KEY})
+            else:
+                known[1].add(SOURCE_JIRA_KEY)
     return items
 
 
@@ -495,7 +617,7 @@ def event_body(event: str, payload: dict) -> Optional[str]:
 
 
 def work_item_sources(
-    event: str, payload: dict
+    event: str, payload: dict, jira: Optional[JiraLinkage] = None
 ) -> "OrderedDict[str, Tuple[WorkItemRef, Set[str]]]":
     """:func:`extract_work_items` with each ref's provenance (issue-269).
 
@@ -532,7 +654,8 @@ def work_item_sources(
         # A PR's linked work items may live in ANOTHER repository (issue-183),
         # so they are carried as refs; everything else here is a number in the
         # event's own repository.
-        for item, sources in linked_work_item_sources(pr, owner, repo, host).values():
+        linked = linked_work_item_sources(pr, owner, repo, host, jira=jira)
+        for item, sources in linked.values():
             for source in sources:
                 add_ref(item, source)
         add(pr.get("number"), SOURCE_ENTITY)
@@ -555,7 +678,9 @@ def work_item_sources(
     return items
 
 
-def extract_work_items(event: str, payload: dict) -> List[WorkItemRef]:
+def extract_work_items(
+    event: str, payload: dict, jira: Optional[JiraLinkage] = None
+) -> List[WorkItemRef]:
     """Map a GitHub event payload to the work item(s) it concerns (R3.1).
 
     A PR event yields the issue(s) the PR is **linked** to *before* the PR's own
@@ -563,8 +688,11 @@ def extract_work_items(event: str, payload: dict) -> List[WorkItemRef]:
     session registered against it is the one that must receive the event, and an
     unmatched event spawns against it rather than against the PR. A PR linked to
     no issue still routes as its own work item (non-GitHub ticketing).
+
+    ``jira`` (issue-475) adds the Jira work items the pull request names in its
+    branch or title, under :class:`JiraLinkage`'s checks; ``None`` adds none.
     """
-    return [item for item, _ in work_item_sources(event, payload).values()]
+    return [item for item, _ in work_item_sources(event, payload, jira).values()]
 
 
 def branch_derived_refs(event: str, payload: dict) -> List[str]:
@@ -608,8 +736,12 @@ class Router:
         publisher: Optional[Callable[[str, str, str, str, str], None]] = None,
         repositories: Optional[Set[str]] = None,
         principals: Sequence["Principal"] = (),
+        jira_linkage: Optional[JiraLinkage] = None,
     ):
         self.events = list(events)
+        # PR → Jira linkage (issue-475, design §C9): ``None`` unless
+        # ``integrations.jira`` is configured, which links no Jira key at all.
+        self.jira_linkage = jira_linkage
         # The whole allow-list, person by person (issue-309): read for the ids of
         # a provider other than GitHub — a Jira event's author is matched on the
         # `jira` ids (issue-475, R7). GitHub events keep `authorized_users`.
@@ -721,14 +853,20 @@ class Router:
             )
             return None
         known = work_items is not None
-        work_items = list(work_items) if known else extract_work_items(event, payload)
+        work_items = (
+            list(work_items)
+            if known
+            else extract_work_items(event, payload, self.jira_linkage)
+        )
         if self.repositories is not None and work_items and not known:
             # A pull request may link a work item in ANOTHER repository (issue-183).
             # That repository has to be declared too, or a linked ref becomes the way
             # to name a work item on a repository nobody pointed this instance at.
             kept, dropped = [], []
             for item in work_items:
-                inside = _ref_key(item) in self.repositories
+                # A linked Jira ref (issue-475) was kept only because its project
+                # maps to THIS delivery's repository, which is declared (above).
+                inside = item.provider == "jira" or _ref_key(item) in self.repositories
                 (kept if inside else dropped).append(item)
             if dropped:
                 logger.warning(
@@ -763,7 +901,10 @@ class Router:
         # the operator's own credentials, so they would otherwise pass the
         # actor check below and re-enter the loop. Checked before authorization
         # so it applies regardless of who technically posted it.
-        if is_self_authored(event_body(event, payload)):
+        if is_self_authored(
+            event_body(event, payload),
+            "jira" if (payload or {}).get(PROVIDER_KEY) == "jira" else "github",
+        ):
             logger.debug("ignoring %s: the-loop's own reply (marker present)", event)
             self._publish("agent", event, payload, work_items)
             eventlog.emit(

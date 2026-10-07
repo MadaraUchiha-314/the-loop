@@ -356,9 +356,10 @@ fixed — the `userInteraction` block left the harness config in issue-352.
 ## Working with other tools (MCP / CLIs / plugins)
 
 the-loop is allowed to freely interact with the MCP tools, skills and plugins available
-in the harness — Jira via MCP, plugins such as superpowers. GitHub is reached through
-the-loop's own verbs (`the-loop comment`, `ticket`, `pr`, `ask` — issue-447, see
-`automation.md` § Reaching GitHub), with `gh` or a GitHub MCP server only as the
-fallback when the CLI is not installed. Nothing
+in the harness — plugins such as superpowers. GitHub, and Jira where
+`integrations.jira` is configured, are reached through the-loop's own verbs (`the-loop
+comment`, `ticket`, `pr`, `ask` — issue-447, issue-475, see `automation.md` § Reaching
+GitHub), with `gh`, a GitHub MCP server or the Jira MCP tools only as the fallback when
+the CLI is not installed. Nothing
 declares them in the config: discover what the harness offers (its MCP servers,
 plugins, skills and CLIs) and check before assuming a capability is or isn't available.

@@ -32,7 +32,9 @@ is what gives your editor completion and validation while you edit it.
 /the-loop:work-on <ticket>
 ```
 
-`<ticket>` is a GitHub issue or Jira id. This is the superset command: it runs
+`<ticket>` is a GitHub issue or, with
+[`integrations.jira`](/config/cli/integrations-options) configured, a Jira ticket
+(`jira:<site>/<KEY>-<n>`). This is the superset command: it runs
 requirements → design → tasks → execute, pausing for human review at each phase gate,
 and is resumable per phase if you stop partway through.
 

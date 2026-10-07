@@ -25,7 +25,7 @@ from jirafakes import FakeJiraClient, cloud_config
 from the_loop.authz import JIRA_RELAY_MARKER
 from the_loop.channels.base import Event
 from the_loop.channels.jira import JiraLedger
-from the_loop.control import ControlConfig
+from the_loop.control import ControlConfig, ControlStore
 from the_loop.graph.integrations.jira import JiraProvider
 from the_loop.graph.state import WorkItemState
 from the_loop.identity import Principal
@@ -38,6 +38,7 @@ from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
 from the_loop.webhook.jira import JiraDoorbell, read_doorbell
 from the_loop.webhook.router import Router
 from the_loop.workitem import WorkItemStore
+from the_loop.workspace import Workspace, WorkspaceError
 
 SITE = "acme.atlassian.net"
 LABEL = "the-loop: auto-execute"
@@ -131,7 +132,9 @@ def jira_integration(monkeypatch):
 class _Process:
     """One ingress process: its own dispatcher over the shared registry."""
 
-    def __init__(self, tmp_path, registry_dir, client, require_start=False):
+    def __init__(
+        self, tmp_path, registry_dir, client, require_start=False, workspace=None
+    ):
         self.registry = SessionRegistry(registry_dir)
         self.tmux = FakeTmux()
         config = RoutingConfig.from_mapping(
@@ -150,6 +153,7 @@ class _Process:
             config=config,
             tmux_runner=self.tmux,
             cli_config=_cli_config(),
+            workspace=workspace,
         )
         self.provider = JiraPollProvider(
             projects=["PROJ"], labels=[LABEL], site=SITE, client=client
@@ -280,6 +284,48 @@ def test_the_same_jira_comment_by_webhook_and_by_poll_is_delivered_once(tmp_path
         poll.dispatcher.stop()
     assert len(webhook.tmux.delivers) == 1
     assert poll.tmux.delivers == [], "the poll saw a comment already delivered"
+
+
+def test_a_jira_control_comment_by_webhook_and_by_poll_is_executed_once(
+    tmp_path, monkeypatch
+):
+    """
+    Feature: Jira as a work-item source
+    Scenario: a Jira control comment seen by both ingresses is executed once
+      Given a webhook receiver and a poller, two processes over one state root
+      And an armed Jira ticket with a live session
+      When an authorized `the-loop pause` rings the webhook doorbell
+      And the poller then lists the same comment
+      Then the command was executed exactly once
+
+    Requirement: docs/specs/issue-475/requirements.md#R6.4
+    """
+    executed = []
+    record = ControlStore.record
+
+    def counting(self, work_item, command, *args, **kwargs):
+        executed.append(command)
+        return record(self, work_item, command, *args, **kwargs)
+
+    monkeypatch.setattr(ControlStore, "record", counting)
+    client = _client()
+    registry_dir = tmp_path / "sessions"
+    webhook = _Process(tmp_path, registry_dir, client)
+    poll = _Process(tmp_path, registry_dir, client)
+    webhook.register(tmp_path)
+    poller = poll.poller(tmp_path)
+    try:
+        poller.poll_once()  # the poller knows the ticket before the comment
+        client.comment_table[KEY].append(_comment("60001", ADA, "the-loop pause"))
+        assert _ring(webhook.doorbell(), "60001") == "routed"
+        assert executed == ["pause"]
+        poller.poll_once()
+        poller.poll_once()
+        time.sleep(0.1)
+    finally:
+        webhook.dispatcher.stop()
+        poll.dispatcher.stop()
+    assert executed == ["pause"], "the poller executed a command already executed"
 
 
 def _tick_an_optional_box(client: FakeJiraClient) -> str:
@@ -472,6 +518,139 @@ def test_jira_label_alone_does_not_start(tmp_path):
     assert proc.tmux.spawns[0][0] == REF.ref
 
 
+class _RecordingWorkspace(Workspace):
+    """A real workspace layout without the git: `prepare` hands back the
+    worktree path it would have made, `cleanup` records what it would remove."""
+
+    def __init__(self, root):
+        super().__init__(root)
+        self.prepared = []
+        self.cleaned = []
+
+    def prepare(self, target, slug, *, branch=None, require_branch=False, timeout=None):
+        self.prepared.append(target)
+        checkout = self.worktree_dir(target, slug)
+        checkout.mkdir(parents=True, exist_ok=True)
+        return checkout
+
+    def cleanup(self, target, slug, *, timeout=None):
+        self.cleaned.append((target, slug))
+        return True
+
+
+def test_a_jira_work_item_runs_in_and_releases_its_origin_repositorys_worktree(
+    tmp_path,
+):
+    """
+    Feature: Jira as a work-item source
+    Scenario: a Jira work item's session runs in its origin repository's worktree
+      Given routing.workspace.root configured, and PROJ mapped to acme/web
+      When an authorized user starts the armed Jira ticket and its session spawns
+      Then the session's cwd is a worktree of acme/web under the workspace root
+      And when the ticket is Done, the closure removes that worktree
+
+    Requirement: docs/specs/issue-475/requirements.md#R5.4
+    """
+    client = _client()
+    workspace = _RecordingWorkspace(tmp_path / "ws")
+    proc = _Process(tmp_path, tmp_path / "sessions", client, workspace=workspace)
+    poller = proc.poller(tmp_path)
+    try:
+        client.comment_table[KEY].append(_comment("50001", ADA, "the-loop start"))
+        poller.poll_once()
+        assert _wait(lambda: len(proc.tmux.spawns) == 1)
+        client.issues[KEY] = replace(client.issues[KEY], status_category="done")
+        poller.poll_once()
+        assert _wait(lambda: len(workspace.cleaned) == 1)
+    finally:
+        proc.dispatcher.stop()
+    [(ref, _, cwd, _)] = proc.tmux.spawns
+    assert ref == REF.ref
+    [target] = workspace.prepared
+    assert (target.host, target.owner, target.repo) == ("github.com", "acme", "web")
+    assert cwd == str(workspace.worktree_dir(target, REF.slug))
+    assert cwd.startswith(str(tmp_path / "ws" / ".worktrees" / "github.com" / "acme"))
+    [(cleaned, slug)] = workspace.cleaned
+    assert (cleaned.owner, cleaned.repo, slug) == ("acme", "web", REF.slug)
+
+
+class _FlakyWorkspace(_RecordingWorkspace):
+    """A workspace whose first `prepare` fails, as a git clone can."""
+
+    def prepare(self, target, slug, *, branch=None, require_branch=False, timeout=None):
+        if not self.prepared:
+            self.prepared.append(None)
+            raise WorkspaceError("clone failed: the network went away")
+        return super().prepare(
+            target, slug, branch=branch, require_branch=require_branch, timeout=timeout
+        )
+
+
+def test_a_jira_start_whose_spawn_failed_is_attempted_again(tmp_path):
+    """
+    Feature: Jira as a work-item source
+    Scenario: a Jira `the-loop start` whose spawn failed is retried
+      Given an armed Jira ticket with no session
+      When an authorized `the-loop start` is polled and the workspace prep fails
+      And the dispatcher releases the delivery so the poller re-forwards it
+      Then the re-forwarded start is executed again — not settled
+        already-processed by the claim its failed first attempt left
+      And the session spawns (self-review R2-2)
+
+    Requirement: docs/specs/issue-475/requirements.md#R6.4
+    """
+    client = _client()
+    workspace = _FlakyWorkspace(tmp_path / "ws")
+    proc = _Process(tmp_path, tmp_path / "sessions", client, workspace=workspace)
+    poller = proc.poller(tmp_path)
+    try:
+        client.comment_table[KEY].append(_comment("70001", ADA, "the-loop start"))
+        poller.poll_once()
+        assert _wait(lambda: len(workspace.prepared) == 1)
+        time.sleep(0.1)
+        assert proc.tmux.spawns == []
+        for _ in range(3):
+            poller.poll_once()
+            if _wait(lambda: len(proc.tmux.spawns) == 1, timeout=1.0):
+                break
+    finally:
+        proc.dispatcher.stop()
+    assert len(workspace.prepared) == 2, "the re-forwarded start was not attempted"
+    assert [spawn[0] for spawn in proc.tmux.spawns] == [REF.ref]
+
+
+def test_a_session_whose_project_mapping_was_removed_still_closes(tmp_path, caplog):
+    """
+    Feature: Jira as a work-item source
+    Scenario: a live Jira session outlives its project's mapping
+      Given a live session for PROJ-7, with routing.workspace.root configured
+      When PROJ's repository mapping is removed from the config
+      Then stopping, cleaning up and assigning to it degrade, with a warning,
+      to "no repository" — and none of them raises
+
+    Requirement: docs/specs/issue-475/requirements.md#R5.4
+    """
+    client = _client()
+    workspace = _RecordingWorkspace(tmp_path / "ws")
+    proc = _Process(tmp_path, tmp_path / "sessions", client, workspace=workspace)
+    proc.register(tmp_path)
+    dispatcher = proc.dispatcher
+    dispatcher.cli_config = copy.deepcopy(dispatcher.cli_config)
+    del dispatcher.cli_config["integrations"]["jira"]["projects"]["PROJ"]
+    try:
+        with caplog.at_level("WARNING", logger="the-loop.gh-webhook"):
+            session = proc.registry.find_by_work_item(REF)
+            assert session is not None
+            assert dispatcher.close_session(session, reason="stopped") is False
+            outcome = dispatcher.cleanup_work_item(REF, reason="cleanup requested")
+            assert outcome.ok
+            assert dispatcher._deliver_assignment(REF, 12, "next") is False
+    finally:
+        dispatcher.stop()
+    assert workspace.cleaned == []
+    assert any("PROJ" in r.getMessage() for r in caplog.records)
+
+
 def test_jira_comment_is_framed_untrusted(tmp_path):
     """
     Feature: Jira as a work-item source
@@ -497,3 +676,182 @@ def test_jira_comment_is_framed_untrusted(tmp_path):
     [(_, prompt)] = proc.tmux.delivers
     assert "UNTRUSTED" in prompt and text in prompt
     assert prompt.index("UNTRUSTED") < prompt.index(text)
+
+
+def test_a_pr_naming_a_registered_jira_key_routes_to_the_jira_work_item(tmp_path):
+    """
+    Feature: Jira as a work-item source
+    Scenario: a PR naming a registered Jira key routes to the Jira work item
+      Given a Jira work item PROJ-7 with a live session, its project mapped to acme/web
+      And a pull request in acme/web whose head branch names PROJ-7
+      When an authorized user comments on the pull request
+      Then the comment is delivered into the Jira work item's session
+      And the pull request is bound to the Jira work item
+      And a pull request naming an unregistered key, PROJ-8, routes to itself only
+
+    Requirement: docs/specs/issue-475/requirements.md#R8.1
+    """
+    from the_loop.webhook.router import jira_linkage
+
+    client = _client()
+    proc = _Process(tmp_path, tmp_path / "sessions", client)
+    proc.register(tmp_path)
+    router = Router(
+        authorized_users=["ada"],
+        principals=proc.dispatcher.config.principals,
+        deduper=proc.dispatcher.deduper,
+        repositories={"github.com/acme/web"},
+        jira_linkage=jira_linkage(_cli_config(), proc.registry),
+    )
+
+    def comment(number, branch, body, delivery):
+        return router.route(
+            "issue_comment",
+            {
+                "action": "created",
+                "repository": {"full_name": "acme/web"},
+                "pull_request": {
+                    "number": number,
+                    "head": {"ref": branch},
+                    "title": "Fix the login page",
+                    "body": "",
+                },
+                "comment": {"body": body, "user": {"login": "ada"}},
+                "sender": {"login": "ada"},
+            },
+            delivery,
+        )
+
+    try:
+        routed = comment(48, f"feat/{KEY}-login", "zz-looks-good-to-me", "pr-1")
+        assert routed is not None
+        assert [w.ref for w in routed.work_items] == [REF.ref, "github:acme/web#48"]
+        proc.dispatcher.handle(routed)
+        assert _wait(lambda: len(proc.tmux.delivers) == 1)
+        stray = comment(49, "feat/PROJ-8-other", "zz-not-for-proj-7", "pr-2")
+        assert stray is not None
+        assert [w.ref for w in stray.work_items] == ["github:acme/web#49"]
+    finally:
+        proc.dispatcher.stop()
+    [(ref, prompt)] = proc.tmux.delivers
+    assert ref == REF.ref and "zz-looks-good-to-me" in prompt
+    bound = proc.registry.record_owning(WorkItemRef.parse("github:acme/web#48"))
+    assert bound is not None and bound.work_item == REF
+
+
+def _service(tmp_path, monkeypatch, client):
+    """The control-plane app over a config with Jira, its client the fake."""
+    from fastapi.testclient import TestClient
+
+    from the_loop.api.app import create_app
+    from the_loop.jiraapi import JiraClient
+
+    monkeypatch.setattr(JiraClient, "shared", classmethod(lambda cls, *a, **k: client))
+    monkeypatch.setattr("the_loop.channels.bus.load_channels", lambda *a, **k: [])
+    config = {**_cli_config(), "state": {"root": str(tmp_path / ".the-loop")}}
+    from the_loop.state import layout_from_config
+
+    registry = SessionRegistry(layout_from_config(config).local_dir)
+    registry.register(
+        Session(work_item=REF, harness="claude", harness_session_id="s7", cwd="/w")
+    )
+    return TestClient(create_app(config)), registry
+
+
+def test_finish_tasks_transitions_the_jira_ticket_to_done(tmp_path, monkeypatch):
+    """
+    Feature: Jira as a work-item source
+    Scenario: finish-tasks transitions the Jira ticket to Done
+      Given a registered Jira work item whose ticket offers one transition into Done
+      When finish-tasks closes the ticket through the control plane
+      Then Jira is asked for exactly that transition
+      And when the ticket offers two, nothing is transitioned and both are named
+
+    Requirement: docs/specs/issue-475/requirements.md#R3.7
+    """
+    from the_loop.jiraapi import JiraTransition
+
+    client = _client()
+    api, _ = _service(tmp_path, monkeypatch, client)
+    client.transition_table[KEY] = [
+        JiraTransition(id="31", name="Done", to_status="Done", to_category="done"),
+        JiraTransition(id="11", name="Start", to_status="Doing", to_category="new"),
+    ]
+    closed = api.post("/api/v1/work-items/tickets/close", json={"ref": REF.ref})
+    assert closed.status_code == 200 and closed.json()["exitCode"] == 0
+    assert client.transitioned == [{"key": KEY, "transition_id": "31"}]
+
+    client.transitioned.clear()
+    client.transition_table[KEY].append(
+        JiraTransition(id="41", name="Closed", to_status="Closed", to_category="done")
+    )
+    again = api.post("/api/v1/work-items/tickets/close", json={"ref": REF.ref}).json()
+    assert again["exitCode"] == 1 and client.transitioned == []
+    assert "'Done'" in again["messages"][0]["text"]
+    assert "'Closed'" in again["messages"][0]["text"]
+
+
+def test_the_loop_comment_on_a_jira_ref_is_recorded_on_the_jira_ticket(
+    tmp_path, monkeypatch
+):
+    """
+    Feature: Jira as a work-item source
+    Scenario: the-loop comment on a Jira ref is recorded on the Jira ticket
+      Given a registered Jira work item and a running control plane
+      When the agent runs `the-loop comment` on its Jira ref
+      Then the comment lands on the Jira ticket with the visible self-marker
+      And when the poller reads it back it is the-loop's own and is not delivered
+
+    Requirement: docs/specs/issue-475/requirements.md#R8.2
+    """
+    from the_loop.authz import JIRA_SELF_MARKER
+
+    client = _client()
+    api, _ = _service(tmp_path, monkeypatch, client)
+    proc = _Process(tmp_path, tmp_path / "sessions", client)
+    proc.register(tmp_path)
+    poller = proc.poller(tmp_path)
+    try:
+        poller.poll_once()
+        posted = api.post(
+            "/api/v1/work-items/comments",
+            json={"ref": REF.ref, "body": "zz-the-completion-summary"},
+        )
+        assert posted.status_code == 200 and posted.json()["exitCode"] == 0
+        [comment] = client.comment_table[KEY]
+        assert "zz-the-completion-summary" in comment.body_md
+        assert JIRA_SELF_MARKER in comment.body_md
+        poller.poll_once()
+        time.sleep(0.1)
+    finally:
+        proc.dispatcher.stop()
+    assert proc.tmux.delivers == []
+
+
+def test_a_delivered_jira_event_says_it_came_from_jira(tmp_path):
+    """
+    Feature: Jira as a work-item source
+    Scenario: the delivered prompt names Jira and the origin repository
+      Given an armed Jira ticket with a live session, its project mapped to acme/web
+      When an authorized comment is delivered
+      Then the prompt is headed as a Jira event for the Jira ref
+      And its repository line is the origin repository
+
+    Requirement: docs/specs/issue-475/requirements.md#R5.3
+    """
+    client = _client()
+    proc = _Process(tmp_path, tmp_path / "sessions", client)
+    proc.register(tmp_path)
+    poller = proc.poller(tmp_path)
+    try:
+        poller.poll_once()
+        client.comment_table[KEY].append(_comment("50001", ADA, "zz-hello"))
+        poller.poll_once()
+        assert _wait(lambda: len(proc.tmux.delivers) == 1)
+    finally:
+        proc.dispatcher.stop()
+    [(_, prompt)] = proc.tmux.delivers
+    assert prompt.startswith(f"# Jira event for {REF.ref}")
+    assert "- Repository: acme/web" in prompt
+    assert "UNTRUSTED data from Jira" in prompt
+    assert "GitHub webhook event" not in prompt

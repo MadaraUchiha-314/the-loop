@@ -206,16 +206,46 @@ class JiraDoorbell:
         armed = self.provider._armed(issue, self.provider.jira_labels)
         return issue, item, armed
 
+    def _moved(self, key: str, issue: Any) -> str:
+        """The refusal for a ticket Jira answered under another key, else ``""``.
+
+        ``get_issue`` follows Jira's redirect for a moved ticket, so the issue
+        fetched for ``key`` may be a different one — or one in a project that is
+        no work-item source. The doorbell acts on the key it was rung for or not
+        at all: a ticket in an unconfigured project is never read as armed."""
+        if issue.key == key:
+            return ""
+        project = issue.key.rpartition("-")[0]
+        if project not in self.provider.projects:
+            reason, outcome = "a project that is not a configured source", "project"
+        else:
+            reason, outcome = "another key", "moved"
+        logger.warning(
+            "ignoring a Jira doorbell for %s: Jira answered with %s (moved to %s)",
+            key,
+            issue.key,
+            reason,
+        )
+        eventlog.emit(
+            "routing.dropped",
+            level="warning",
+            reason=f"jira-ticket-{outcome}",
+            provider="jira",
+        )
+        return f"ignored:{outcome}"
+
     def _comment(self, key: str, comment_id: str) -> str:
         if not comment_id:
             return "ignored:no-such-comment"
         issue, item, armed = self._armed_item(key)
+        refused = self._moved(key, issue)
+        if refused:
+            return refused
         if not armed or issue.status_category == "done":
             logger.debug("ignoring a comment on %s: the ticket is not armed", key)
             return "ignored:unarmed"
-        comment = next(
-            (c for c in self.provider.list_comments(item) if c.id == comment_id), None
-        )
+        # By id, wherever it sits in the thread — never a scan of a page.
+        comment = self.provider.comment(item, comment_id)
         if comment is None:
             return "ignored:no-such-comment"
         if self.provider.comment_origin(comment) == ORIGIN_SELF:
@@ -231,6 +261,9 @@ class JiraDoorbell:
 
     def _issue_updated(self, key: str) -> str:
         issue, item, armed = self._armed_item(key)
+        refused = self._moved(key, issue)
+        if refused:
+            return refused
         ref = WorkItemRef.parse(item.ref)
         if issue.status_category == "done":
             from ..poller.base import Closure

@@ -1024,7 +1024,13 @@ flowchart LR
   parsing the body. A verified delivery SHALL be read for `webhookEvent`, `issue.key`
   and `comment.id` only. The issue and the comment SHALL be fetched again with the
   daemon's credential, so a forged-but-signed body injects neither text nor identity.
-  `X-Atlassian-Webhook-Identifier` is logged and never used as a key.
+  The comment is fetched by its id (`issue/{key}/comment/{id}`), wherever it sits in the
+  thread; a full listing (the poller, the gates) reads every page of
+  `issue/{key}/comment` and raises rather than return a truncated list, keeping the
+  newest 5,000 of a longer thread with a warning (critic C2).
+  `X-Atlassian-Webhook-Identifier` is logged and never used as a key. The doorbell's
+  source projects and arming labels hot-reload with the routing policy, on the next
+  delivery by either route.
 
   | `webhookEvent` | What the doorbell does |
   |---|---|
@@ -1033,11 +1039,18 @@ flowchart LR
   | anything else | ignored with a 202 |
 
   A key that is not a key, or a ticket outside the source projects, is ignored before
-  anything is fetched.
+  anything is fetched. WHEN Jira answers the fetch with another key (the ticket was moved,
+  and Jira followed the redirect) THEN the doorbell SHALL ignore the delivery with a
+  warning, whether the new key is in a source project or not.
 - **Once, by either ingress** (R6.4). Both ingresses give a comment the delivery id
   `jira-comment-<site>-<id>`. WHEN the webhook and the poller both see one comment THEN
   the session SHALL receive it once: the id is in the session's persisted
-  `recentDeliveries`, which both processes read.
+  `recentDeliveries`, which both processes read. A control command runs before that
+  check, so WHEN a Jira comment carries one THEN its id SHALL first be checked and
+  recorded in `<state.root>/local/control-deliveries.json` (bounded, under a `flock`
+  both processes take), and a comment already recorded there SHALL NOT be executed
+  again. WHEN the dispatcher releases that delivery for a retry (a failed spawn) THEN
+  its record SHALL be released with it, so the retry executes.
 - **Who may act on a Jira ticket** (R7). A Jira comment is authorized on the
   [`routing.authorizedUsers[].jira`](/config/cli/routing-options#authorizedusers-jira) ids:
   the Cloud `accountId` or the Data Center user `key`, matched exactly. WHEN a Jira
@@ -1054,13 +1067,29 @@ flowchart LR
   Jira ledger's record of an authorized person's gate answer or control command from
   another channel. Both ingresses SHALL accept it as authorized, and a gate SHALL read it
   as the operator's answer, as the GitHub ingress reads an unmarked relay posted under
-  the operator's credentials. On anyone else's comment the relay marker grants nothing.
+  the operator's credentials. On anyone else's comment the relay marker grants nothing,
+  and a visible gate marker (`[the-loop:phase-selection]`, …) stays text, so no person
+  can plant a checklist a gate trusts.
   See [channels § Jira](channels.md#jira).
 - **Arming is a label, starting is a person** (abuse case 5). A Jira listing carries no
   reporter, so no Jira ticket starts on its label alone. Only a recorded `the-loop start`
   by an authorized Jira user arms a spawn, on both ingresses.
 - **The prompt frame is unchanged** (abuse case 10). A Jira comment reaches the session
-  inside the same untrusted-data frame as a GitHub comment.
+  inside the same untrusted-data frame as a GitHub comment. The prompt names its source:
+  `# Jira event for jira:<site>/<KEY>-<n>`, the repository line the project's origin
+  repository, the frame "UNTRUSTED data from Jira" (`$event_source` and `$event_origin`
+  in the templates; a GitHub event renders exactly as before).
+- **A pull request naming a Jira key routes to the Jira work item** (R8.1, abuse case
+  7). With `integrations.jira` configured the router has a fourth linkage source,
+  `jira-key`: a key (`[A-Z][A-Z0-9_]{1,9}-[1-9][0-9]*`) in the pull request's **head
+  branch or title** — never its body. WHEN the key's project is configured with a
+  repository, that repository is the pull request's own, and the Jira ref has a live
+  session record THEN the pull request's events SHALL route to that Jira work item
+  (and the dispatcher binds the pull request to it). Otherwise the match SHALL be
+  dropped with a debug log: a branch name cannot link an unregistered work item, a
+  mirror-only project, or a project mapped to another repository. Both ingresses (the
+  receiver and the GitHub poller) apply it; a GitHub event's actor is still judged on the
+  GitHub logins.
 
 **Setting up the Jira webhook.** Polling needs no inbound route. The webhook only
 removes poll latency.
@@ -1096,6 +1125,7 @@ provider, the webhook doorbell, the allow-list by provider)
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-475 | **A PR naming a Jira key routes to it** (2026-10-06, PR 5 of 5): `SOURCE_JIRA_KEY` links a pull request whose head branch or title names a key, only for a registered Jira work item whose project maps to the PR's repository; the body is never read. The delivered prompt names Jira and the origin repository. Before, a Jira item's PR was routed only through a PR-ref registration | [spec](../specs/issue-475/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-475 | **Jira tickets reach their sessions** (2026-10-06, PR 4 of 5): a `jira` poll source (`polling.sources[].projects`) lists each project's armed tickets with one quoted JQL query per cycle and reads every comment against the poll ledger's cursor. A 429 or 5xx degrades the project for the cycle and keeps the cursor. A `done` status category closes the work item. The receiver gains `/jira-webhook`, served only when `integrations.jira.webhook.secretEnv` resolves: signature first (401 before parsing), then a doorbell that re-fetches the issue and the comment and builds the poller's own events, so one comment by both ingresses is delivered once (`jira-comment-<site>-<id>`). Jira comments are authorized on `routing.authorizedUsers[].jira` (exact id; no author is unauthorized), at the router, the poller, the control seam and the human gates (`jira:<id>`). A Jira relay (`[the-loop:relay]` by the service account) is the operator's words | [spec](../specs/issue-475/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-462 | CI monitoring and self-healing (2026-10-06): every CI webhook used to be delivered to the session as it came — twenty-odd deliveries per push to a five-job PR, each a turn — and a check the agent could not fix had no end. The dispatcher's CI gate (`webhook/cimonitor.py`, `routing.ci`) now delivers only a failed `check_run` or failing `status`, with a section naming the check, commit and attempt and pointing at the new `the-loop pr checks`; it counts distinct failing commits per PR and check, delivers one "stop and escalate" notice past `maxAttempts` (default 3), then nothing until the check passes. Drops are `dispatch.dropped` (`ci-not-actionable`, `ci-autofix-exhausted`); events `ci.check_failed`, `ci.autofix_exhausted`. A poll-only installation gets the same events: `polling.ci` reads each live pull request's checks on its own interval (default 300 s) and forwards each new result once (`ciSeen` in the poll ledger) | [spec](../specs/issue-462/), [routing options](../config/cli/routing-options.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/462) |
 | issue-466 | A pull request the-loop records is armed in the same act (2026-10-06): `pr create`, `sessions link-pr` and its `--discover` put every `routing.autoExecuteLabels` label on it, so the poller's every-label filter lists it and its comments reach the session. A link that fails adds no label, and so does a re-run on a PR that was already recorded. A GitHub refusal is a note. Routing is unchanged | [spec](../specs/issue-466/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/466) |

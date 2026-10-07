@@ -29,12 +29,12 @@ command prints a `note:` and still exits 0.
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| `--work-item` | required | The work item the PR delivers. |
+| `--work-item` | required | The work item the PR delivers: a `github:` ref, or a `jira:` ref, whose PR opens in the repository `integrations.jira.projects.<KEY>.repository` names. |
 | `--title` | required | The PR title. |
 | `--body` / `--body-file` | required (one) | The PR body; `--body-file -` reads stdin. |
 | `--head` | the checkout's branch | The branch to merge from; `OWNER:BRANCH` for a fork. Read in the working directory, on the CLI side. A detached HEAD needs the flag. |
 | `--base` | the repository's default branch | The branch to merge into. |
-| `--repository` | the work item's | `[HOST/]OWNER/REPO` for a PR in a contributing repository. |
+| `--repository` | the work item's | `[HOST/]OWNER/REPO` for a PR in a contributing repository. On a Jira work item only its origin repository is accepted: the project's mapping is config, never the caller's choice. |
 | `--draft` | off | Open it as a draft. Take it out of draft with [`pr ready`](#pr-ready) before asking for review. |
 
 If the work item has no session registered on this instance, nothing is opened (exit

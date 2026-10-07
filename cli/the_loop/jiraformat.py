@@ -37,6 +37,15 @@ literal text on read, because it *is* the Jira self-marker (``authz``) — and s
 does the relay marker ``[the-loop:relay]``, for the same reason. An
 envelope (``<!-- the-loop:event {…} -->``) carries a payload and is dropped.
 
+A sentinel is promoted back to a marker only where a gate body puts it — a
+**top-level** paragraph that opens the body or closes it (followed by nothing
+but other sentinels and the self/relay attribution line). One inside a quote, a
+list, a table, a panel or between two paragraphs stays text, and so does an
+HTML marker that arrives as *text* (``&lt;!-- the-loop:… --&gt;``): a record
+quoting someone else's words can never carry a gate marker (critic C1). The
+writers that quote untrusted text break its markers first
+(:func:`defang_markers`).
+
 A Jira task item is a checkbox a person ticks in place, so the phase-selection
 checklist is ticked on the ticket, and :func:`adf_to_markdown` turns a
 ``taskItem{state: DONE}`` back into ``- [x] …`` for ``selection``'s parser. On
@@ -54,7 +63,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 logger = logging.getLogger("the-loop.jiraformat")
 
@@ -63,7 +72,9 @@ __all__ = [
     "SELF_SENTINEL_NAME",
     "adf_to_markdown",
     "adf_to_wiki",
+    "defang_markers",
     "from_jira",
+    "literal_markers",
     "markdown_to_adf",
     "markdown_to_wiki",
     "to_jira",
@@ -83,6 +94,16 @@ _SUMMARY = re.compile(r"<summary\b[^>]*>(.*?)</summary>", re.DOTALL | re.IGNOREC
 _TAG = re.compile(r"<[^>]+>")
 #: A paragraph that is nothing but a sentinel: ``[the-loop:phase-selection]``.
 _SENTINEL_LINE = re.compile(r"^\[the-loop:([a-z0-9][a-z0-9:-]*)\]$")
+#: ``the-loop:`` as Markdown can spell it — each character literal, backslash-
+#: escaped or an HTML entity — when a marker name follows (so ``the-loop: x``,
+#: prose, is left alone). What :func:`defang_markers` breaks.
+_MARKER_TOKEN = re.compile(
+    "".join(rf"(?:\\?{re.escape(c)}|&#?[A-Za-z0-9]+;)" for c in "the-loop:")
+    + r"(?=[A-Za-z0-9&\\])",
+    re.IGNORECASE,
+)
+#: What a broken marker reads: a non-breaking hyphen (U+2011) no gate matches.
+_DEFANGED = "the\u2011loop:"
 _TASK_PREFIX = re.compile(r"^\[([ xX])\]\s+")
 _BREAK_TAG = re.compile(r"^<br\s*/?>$", re.IGNORECASE)
 _TAG_NAME = re.compile(r"^</?([A-Za-z][A-Za-z0-9-]*)")
@@ -101,6 +122,24 @@ _WIKI_LANGUAGES = frozenset(
     "html java javascript js json lua none nyan objc perl php python r rainbow "
     "ruby scala sh sql swift visualbasic xml yaml".split()
 )
+
+#: Common Markdown fence names for a language Jira's ``{code}`` macro knows by
+#: another name — so ```` ```py ```` keeps its highlighting on Data Center.
+_WIKI_LANGUAGE_ALIASES = {
+    "py": "python",
+    "python3": "python",
+    "rb": "ruby",
+    "yml": "yaml",
+    "shell": "bash",
+    "zsh": "bash",
+    "console": "bash",
+    "golang": "go",
+    "objective-c": "objc",
+    "objectivec": "objc",
+    "csharp": "c#",
+    "cs": "c#",
+    "vb": "visualbasic",
+}
 
 _parser: Any = None
 
@@ -124,13 +163,43 @@ def to_jira(markdown: str, rest_version: str) -> Any:
     return markdown_to_wiki(markdown)
 
 
-def from_jira(body: Any) -> str:
-    """A body Jira returned, as Markdown: ADF (a mapping) or wiki (a string)."""
+def from_jira(body: Any, markers: bool = True) -> str:
+    """A body Jira returned, as Markdown: ADF (a mapping) or wiki (a string).
+
+    ``markers=False`` for a body the-loop's service account did NOT write: its
+    visible gate markers stay text (see :func:`literal_markers`), so a person's
+    comment can never carry a marker a gate trusts (self-review R2-4).
+    """
     if isinstance(body, str):
-        return wiki_to_markdown(body)
+        return wiki_to_markdown(body, markers=markers)
     if isinstance(body, Mapping):
-        return adf_to_markdown(body)
+        return adf_to_markdown(body, markers=markers)
     return ""
+
+
+def defang_markers(text: str) -> str:
+    """``text`` with every the-loop marker it spells broken — for Markdown the
+    service account posts that quotes someone else's words.
+
+    ``[the-loop:phase-selection]``, ``<!-- the-loop:goal-request -->``, the
+    self and relay markers, and their escaped (``\\[the\\-loop…``) or
+    entity-encoded (``the&#45;loop&#58;…``) spellings all read
+    ``the‑loop:…`` (a non-breaking hyphen) afterwards, which no gate, no
+    self-marker test and no relay test matches. A writer applies it to the
+    quoted text BEFORE it appends its own trailer (critic C1).
+    """
+    return _MARKER_TOKEN.sub(_DEFANGED, text or "")
+
+
+def literal_markers(markdown: str) -> str:
+    """``markdown`` with every hidden the-loop marker made visible text again.
+
+    ``<!-- the-loop:phase-selection -->`` — converted back from a sentinel
+    paragraph, or typed as text — reads ``[the-loop:phase-selection]``, which no
+    gate matches. The self-marker reads as Jira's visible self-marker, as it
+    would anyway.
+    """
+    return _MARKER_IN_HTML.sub(lambda m: f"[the-loop:{m.group(1)}]", markdown)
 
 
 # ============================================================ Markdown → ADF
@@ -416,12 +485,69 @@ def _merge(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # ============================================================ ADF → Markdown
 
 
-def adf_to_markdown(doc: Any) -> str:
-    """An ADF document (or node) as Markdown — what a gate reads."""
+def adf_to_markdown(doc: Any, markers: bool = True) -> str:
+    """An ADF document (or node) as Markdown — what a gate reads.
+
+    ``markers=False`` leaves every the-loop marker as visible text
+    (:func:`literal_markers`) — for a body the service account did not write.
+    """
     if not isinstance(doc, Mapping):
         return ""
-    nodes = doc.get("content") if doc.get("type") == "doc" else [doc]
-    return _md_blocks(nodes or []).strip("\n")
+    if doc.get("type") == "doc":
+        nodes = _objects(doc.get("content"), "doc")
+    else:
+        nodes = [doc]
+    raw = [_md_block(node) for node in nodes]
+    parts = [literal_markers(part) for part in raw]
+    if markers:
+        kinds = [node.get("type") == "paragraph" for node in nodes]
+        parts = _promoted(parts, raw, kinds)
+    return "\n\n".join(part for part in parts if part != "").strip("\n")
+
+
+def _sentinel_name(part: str) -> str:
+    """The marker name of a paragraph that is only a gate sentinel, else ``""``."""
+    match = _SENTINEL_LINE.match(part.strip())
+    if match and match.group(1) not in _LITERAL_SENTINELS:
+        return match.group(1)
+    return ""
+
+
+def _is_trailer(part: str) -> bool:
+    """A line the-loop closes its own comment with: the Jira self or relay
+    attribution, or the GitHub stamp's visible half (``mark_self_authored``)."""
+    from .authz import SELF_COMMENT_ATTRIBUTION
+
+    line = part.strip()
+    if "\n" in line:
+        return False
+    return line == SELF_COMMENT_ATTRIBUTION or any(
+        f"[the-loop:{name}]" in line for name in _LITERAL_SENTINELS
+    )
+
+
+def _promoted(
+    parts: List[str], raw: Sequence[str], paragraphs: Sequence[bool]
+) -> List[str]:
+    """``parts`` with each gate sentinel the-loop placed turned back into its
+    hidden marker: a top-level paragraph whose ``raw`` text is only a sentinel,
+    and which is the body's first block or is followed only by sentinels and
+    the attribution line (critic C1). ``raw`` is each part before
+    :func:`literal_markers`, so an HTML marker typed as text never qualifies."""
+    out = list(parts)
+    filled = [i for i, part in enumerate(raw) if part.strip()]
+
+    def sentinel(i: int) -> str:
+        return _sentinel_name(raw[i]) if paragraphs[i] else ""
+
+    for i in filled:
+        name = sentinel(i)
+        if name and (
+            i == filled[0]
+            or all(sentinel(j) or _is_trailer(raw[j]) for j in filled if j > i)
+        ):
+            out[i] = f"<!-- the-loop:{name} -->"
+    return out
 
 
 def _md_blocks(nodes: Iterable[Any]) -> str:
@@ -438,23 +564,64 @@ def _indent(text: str, prefix: str, width: int) -> str:
     )
 
 
+def _objects(nodes: Any, where: str) -> List[Mapping[str, Any]]:
+    """The object children of ``nodes``; anything else is skipped, with a debug
+    log — Jira (or a hand-made body) can send a list holding a non-object, and a
+    reader must not raise on it (self-review R2-3)."""
+    if not isinstance(nodes, (list, tuple)):
+        return []
+    kept = [node for node in nodes if isinstance(node, Mapping)]
+    if len(kept) != len(nodes):
+        logger.debug(
+            "ADF %s: skipped %d non-object child(ren)", where, len(nodes) - len(kept)
+        )
+    return kept
+
+
+def _attrs(node: Mapping[str, Any]) -> Mapping[str, Any]:
+    attrs = node.get("attrs")
+    return attrs if isinstance(attrs, Mapping) else {}
+
+
+def _number(value: Any, default: int) -> int:
+    """``value`` as an int, or ``default`` when it is not one ("x", None, 2.5…)."""
+    try:
+        return int(value) if value is not None and value != "" else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _attachment(node: Mapping[str, Any]) -> str:
+    """A media node as a visible placeholder: ``[attachment: <alt|filename|id>]``.
+
+    Brackets and line breaks are taken out of the name, so a file named like a
+    marker (``[the-loop:phase-selection]``) can never read as one."""
+    attrs = _attrs(node)
+    name = next(
+        (
+            str(attrs[key])
+            for key in ("alt", "__fileName", "fileName", "id", "url")
+            if attrs.get(key)
+        ),
+        "",
+    )
+    name = " ".join(re.sub(r"[\[\]<>]", "", name).split()) or "file"
+    return f"[attachment: {name}]"
+
+
 def _md_block(node: Mapping[str, Any]) -> str:
     kind = node.get("type")
-    content = node.get("content") or []
-    attrs = node.get("attrs") or {}
+    content = _objects(node.get("content"), str(kind))
+    attrs = _attrs(node)
     if kind == "paragraph":
-        text = _md_inline(content)
-        sentinel = _SENTINEL_LINE.match(text.strip())
-        if sentinel and sentinel.group(1) not in _LITERAL_SENTINELS:
-            return f"<!-- the-loop:{sentinel.group(1)} -->"
-        return text
+        return _md_inline(content)
     if kind == "heading":
-        level = min(max(int(attrs.get("level") or 1), 1), 6)
+        level = min(max(_number(attrs.get("level"), 1), 1), 6)
         return "#" * level + " " + _md_inline(content)
     if kind == "bulletList":
         return "\n".join(_md_item(item, "- ") for item in content)
     if kind == "orderedList":
-        start = int(attrs.get("order") or 1)
+        start = _number(attrs.get("order"), 1)
         return "\n".join(
             _md_item(item, f"{start + n}. ") for n, item in enumerate(content)
         )
@@ -464,7 +631,7 @@ def _md_block(node: Mapping[str, Any]) -> str:
             if item.get("type") == "taskList":
                 lines.append(_indent(_md_block(item), "  ", 2))
                 continue
-            state = (item.get("attrs") or {}).get("state")
+            state = _attrs(item).get("state")
             box = "[x]" if state == "DONE" else "[ ]"
             lines.append(_indent(_md_inline(item.get("content") or []), f"- {box} ", 2))
         return "\n".join(lines)
@@ -486,7 +653,13 @@ def _md_block(node: Mapping[str, Any]) -> str:
         title = str(attrs.get("title") or "")
         body = _md_blocks(content)
         return f"**{title}**\n\n{body}" if title else body
-    if kind in ("mediaSingle", "mediaGroup", "media", "extension"):
+    if kind == "media":
+        return _attachment(node)
+    if kind in ("mediaSingle", "mediaGroup"):
+        return "\n".join(
+            _attachment(child) for child in content if child.get("type") == "media"
+        )
+    if kind == "extension":
         logger.debug("ADF %s node has no Markdown form; skipped", kind)
         return ""
     logger.debug("ADF block %r is not known; read as its text", kind)
@@ -518,20 +691,21 @@ _BLOCK_TYPES = frozenset(
 
 
 def _md_item(item: Mapping[str, Any], marker: str) -> str:
-    children = [c for c in item.get("content") or [] if isinstance(c, Mapping)]
+    children = _objects(item.get("content"), "list item")
     text = "\n".join(_md_block(child) for child in children)
     return _indent(text, marker, len(marker))
 
 
 def _md_table(rows: Sequence[Any]) -> str:
     lines = []
-    for index, row in enumerate(rows):
+    for index, row in enumerate(_objects(rows, "table")):
         cells = [
-            " ".join(_md_block(block) for block in (cell.get("content") or []))
+            " ".join(
+                _md_block(block) for block in _objects(cell.get("content"), "cell")
+            )
             .replace("\n", " ")
             .replace("|", "\\|")
-            for cell in (row.get("content") or [])
-            if isinstance(cell, Mapping)
+            for cell in _objects(row.get("content"), "table row")
         ]
         lines.append("| " + " | ".join(cells) + " |")
         if index == 0:
@@ -540,12 +714,12 @@ def _md_table(rows: Sequence[Any]) -> str:
 
 
 def _md_inline(nodes: Sequence[Any]) -> str:
-    return "".join(_md_inline_node(n) for n in nodes if isinstance(n, Mapping))
+    return "".join(_md_inline_node(n) for n in _objects(nodes, "inline content"))
 
 
 def _md_inline_node(node: Mapping[str, Any]) -> str:
     kind = node.get("type")
-    attrs = node.get("attrs") or {}
+    attrs = _attrs(node)
     if kind == "text":
         return _md_marked(str(node.get("text") or ""), node.get("marks") or [])
     if kind == "hardBreak":
@@ -560,15 +734,31 @@ def _md_inline_node(node: Mapping[str, Any]) -> str:
         return str(attrs.get("text") or "")
     if kind == "date":
         return str(attrs.get("timestamp") or "")
+    if kind in ("mediaInline", "media"):
+        return _attachment(node)
     logger.debug("ADF inline %r is not known; read as its text", kind)
     return _md_inline(node.get("content") or []) or str(node.get("text") or "")
+
+
+def _md_code(text: str) -> str:
+    """``text`` as one Markdown code span, whatever backticks it holds: fenced by
+    one more backtick than its longest run, and padded with a space when it
+    starts or ends with a backtick (or with a space on both ends), which
+    CommonMark then strips — so the span reads back as exactly ``text``."""
+    runs = re.findall(r"`+", text)
+    fence = "`" * (max((len(run) for run in runs), default=0) + 1)
+    pad = ""
+    if text.startswith("`") or text.endswith("`"):
+        pad = " "
+    elif text.startswith(" ") and text.endswith(" ") and text.strip():
+        pad = " "
+    return f"{fence}{pad}{text}{pad}{fence}"
 
 
 def _md_marked(text: str, marks: Sequence[Any]) -> str:
     kinds = {str(m.get("type")): m for m in marks if isinstance(m, Mapping)}
     if "code" in kinds:
-        tick = "``" if "`" in text else "`"
-        text = f"{tick}{text}{tick}"
+        text = _md_code(text)
     if "em" in kinds:
         text = f"_{text}_"
     if "strong" in kinds:
@@ -576,7 +766,7 @@ def _md_marked(text: str, marks: Sequence[Any]) -> str:
     if "strike" in kinds:
         text = f"~~{text}~~"
     if "link" in kinds:
-        href = str((kinds["link"].get("attrs") or {}).get("href") or "")
+        href = str(_attrs(kinds["link"]).get("href") or "")
         text = f"[{text}]({href})"
     return text
 
@@ -611,6 +801,7 @@ def _wiki_block(node: Mapping[str, Any]) -> str:
         return "\n".join(_wiki_list(node, ""))
     if kind == "codeBlock":
         language = str(attrs.get("language") or "").lower()
+        language = _WIKI_LANGUAGE_ALIASES.get(language, language)
         code = "".join(str(n.get("text") or "") for n in content)
         opener = "{code:" + language + "}" if language in _WIKI_LANGUAGES else "{code}"
         return f"{opener}\n{code}\n{{code}}"
@@ -624,7 +815,7 @@ def _wiki_block(node: Mapping[str, Any]) -> str:
             cells = [c for c in row.get("content") or [] if isinstance(c, Mapping)]
             texts = [
                 " ".join(
-                    _wiki_inline(b.get("content") or [], in_cell=True)
+                    _wiki_inline(b.get("content") or [], in_cell=True, in_table=True)
                     for b in cell.get("content") or []
                 )
                 for cell in cells
@@ -669,7 +860,9 @@ def _wiki_list(node: Mapping[str, Any], prefix: str) -> List[str]:
     return lines
 
 
-def _wiki_inline(nodes: Sequence[Any], in_cell: bool = False) -> str:
+def _wiki_inline(
+    nodes: Sequence[Any], in_cell: bool = False, in_table: bool = False
+) -> str:
     out = []
     for node in nodes:
         if not isinstance(node, Mapping):
@@ -677,7 +870,9 @@ def _wiki_inline(nodes: Sequence[Any], in_cell: bool = False) -> str:
         kind = node.get("type")
         if kind == "text":
             out.append(
-                _wiki_marked(str(node.get("text") or ""), node.get("marks") or [])
+                _wiki_marked(
+                    str(node.get("text") or ""), node.get("marks") or [], in_table
+                )
             )
         elif kind == "hardBreak":
             # Inside a list item or a table cell a newline would end the row.
@@ -706,10 +901,11 @@ def _wiki_escape(text: str) -> str:
     return "".join(out)
 
 
-def _wiki_marked(text: str, marks: Sequence[Any]) -> str:
+def _wiki_marked(text: str, marks: Sequence[Any], in_table: bool = False) -> str:
     kinds = {str(m.get("type")): m for m in marks if isinstance(m, Mapping)}
     if "code" in kinds:
-        text = "{{" + text + "}}"
+        # In a table a bare `|` inside `{{…}}` would still end the cell.
+        text = "{{" + (text.replace("|", "\\|") if in_table else text) + "}}"
     else:
         text = _wiki_escape(text)
     if "em" in kinds:
@@ -732,10 +928,24 @@ _WIKI_LIST = re.compile(r"^([*#-]+)\s+(.*)$")
 _WIKI_TASK = re.compile(r"^\((/|x)\)\s+(.*)$")
 
 
-def wiki_to_markdown(text: str) -> str:
-    """Jira wiki markup as Markdown — what a gate reads on Data Center."""
+def wiki_to_markdown(text: str, markers: bool = True) -> str:
+    """Jira wiki markup as Markdown — what a gate reads on Data Center.
+
+    ``markers=False`` leaves every the-loop marker as visible text
+    (:func:`literal_markers`) — for a body the service account did not write.
+    """
+    blocks, paragraphs = _wiki_parts(text)
+    parts = [literal_markers(block) for block in blocks]
+    if markers:
+        parts = _promoted(parts, blocks, paragraphs)
+    return "\n\n".join(parts)
+
+
+def _wiki_parts(text: str) -> Tuple[List[str], List[bool]]:
+    """Wiki markup's top-level blocks as Markdown, and which are paragraphs."""
     lines = str(text or "").replace("\r\n", "\n").split("\n")
     blocks: List[str] = []
+    paragraphs: List[bool] = []
     i = 0
     while i < len(lines):
         line = lines[i]
@@ -751,8 +961,7 @@ def wiki_to_markdown(text: str) -> str:
                 body.append(lines[i])
                 i += 1
             i += 1
-            language = (code.group(2) or "").split("|")[0].strip()
-            language = "" if "=" in language else language
+            language = _wiki_code_language(code.group(2) or "")
             blocks.append(f"```{language}\n" + "\n".join(body) + "\n```")
             continue
         if stripped == "{quote}":
@@ -761,7 +970,7 @@ def wiki_to_markdown(text: str) -> str:
                 body.append(lines[i])
                 i += 1
             i += 1
-            inner = wiki_to_markdown("\n".join(body))
+            inner = "\n\n".join(_wiki_parts("\n".join(body))[0])
             blocks.append(
                 "\n".join(f"> {ln}" if ln else ">" for ln in inner.split("\n"))
             )
@@ -798,12 +1007,25 @@ def wiki_to_markdown(text: str) -> str:
         if not paragraph:  # a block opener the loop above did not take
             paragraph.append(stripped)
             i += 1
-        md = _wiki_inline_md("\n".join(paragraph))
-        sentinel = _SENTINEL_LINE.match(md.strip())
-        if sentinel and sentinel.group(1) not in _LITERAL_SENTINELS:
-            md = f"<!-- the-loop:{sentinel.group(1)} -->"
-        blocks.append(md)
-    return "\n\n".join(blocks)
+        paragraphs.extend([False] * (len(blocks) - len(paragraphs)))
+        blocks.append(_wiki_inline_md("\n".join(paragraph)))
+        paragraphs.append(True)
+    paragraphs.extend([False] * (len(blocks) - len(paragraphs)))
+    return blocks, paragraphs
+
+
+def _wiki_code_language(params: str) -> str:
+    """The language of a ``{code:…}`` macro: its bare first parameter
+    (``{code:python}``), or its ``language=`` one (``{code:title=F|language=go}``)."""
+    for index, part in enumerate(params.split("|")):
+        key, eq, value = part.partition("=")
+        if not eq:
+            if index == 0:
+                return part.strip()
+            continue
+        if key.strip().lower() == "language":
+            return value.strip()
+    return ""
 
 
 def _wiki_block_start(line: str) -> bool:
@@ -819,28 +1041,39 @@ def _wiki_block_start(line: str) -> bool:
 
 
 def _wiki_list_md(rows: Sequence[str]) -> str:
+    """Wiki list rows as a Markdown list. A nested item is indented to its
+    parent's **text** — two spaces under ``- ``, three under ``1. ``, four under
+    ``10. `` — which is what CommonMark needs to read it as nested."""
     out = []
     counters: Dict[int, int] = {}
+    # widths[d]: how far the text of the last item at depth d is indented.
+    widths: Dict[int, int] = {0: 0}
     for row in rows:
         match = _WIKI_LIST.match(row)
         if not match:
             continue
         markers, text = match.group(1), match.group(2)
         depth = len(markers)
-        pad = "  " * (depth - 1)
         for deeper in [d for d in counters if d > depth]:
             del counters[deeper]
+        for deeper in [d for d in widths if d >= depth]:
+            del widths[deeper]
+        indent = widths.get(depth - 1, max(widths.values()))
+        pad = " " * indent
         if markers[-1] == "#":
             counters[depth] = counters.get(depth, 0) + 1
-            out.append(f"{pad}{counters[depth]}. {_wiki_inline_md(text)}")
-            continue
-        counters.pop(depth, None)
-        task = _WIKI_TASK.match(text)
-        if task:
-            box = "[x]" if task.group(1) == "/" else "[ ]"
-            out.append(f"{pad}- {box} {_wiki_inline_md(task.group(2))}")
+            marker = f"{counters[depth]}. "
+            body = _wiki_inline_md(text)
         else:
-            out.append(f"{pad}- {_wiki_inline_md(text)}")
+            counters.pop(depth, None)
+            task = _WIKI_TASK.match(text)
+            if task:
+                box = "[x]" if task.group(1) == "/" else "[ ]"
+                marker, body = "- ", f"{box} {_wiki_inline_md(task.group(2))}"
+            else:
+                marker, body = "- ", _wiki_inline_md(text)
+        widths[depth] = indent + len(marker)
+        out.append(f"{pad}{marker}{body}")
     return "\n".join(out)
 
 
@@ -855,6 +1088,13 @@ def _split_cells(row: str, separator: str) -> List[str]:
         if body[i] == "\\" and i + 1 < len(body):
             current += body[i : i + 2]
             i += 2
+            continue
+        # A `|` inside `{{code}}` or a `[text|link]` is not a cell boundary.
+        closer = "}}" if body.startswith("{{", i) else "]" if body[i] == "[" else ""
+        end = body.find(closer, i + 1) if closer else -1
+        if end != -1:
+            current += body[i : end + len(closer)]
+            i = end + len(closer)
             continue
         if body.startswith(separator, i):
             cells.append(current)
@@ -901,7 +1141,7 @@ def _wiki_inline_md(text: str) -> str:
     # A forced line break (`\\`) before single-character escapes.
     out = out.replace(" \\\\ ", "\n").replace("\\\\", "\n")
     out = _WIKI_ESCAPED.sub(lambda m: hold(m.group(1)), out)
-    out = _WIKI_CODE.sub(lambda m: hold(f"`{m.group(1)}`"), out)
+    out = _WIKI_CODE.sub(lambda m: hold(_md_code(_restore(m.group(1), held))), out)
     out = _WIKI_MENTION.sub(lambda m: hold(f"@{m.group(1)}"), out)
     out = _WIKI_LINK.sub(
         lambda m: hold(f"[{_restore(m.group(1), held)}]({m.group(2)})"), out

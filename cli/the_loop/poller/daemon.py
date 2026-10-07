@@ -414,6 +414,9 @@ def _run_locked(
         Reloader,
     )
 
+    from ..webhook.router import jira_linkage
+    from .github import GitHubPollProvider
+
     dispatcher, routing = _build_dispatcher(
         cli_config.load_routing_config(_config_path())
     )
@@ -425,6 +428,11 @@ def _run_locked(
         data = cli_config.load_cli_config(_config_path(), strict=False)
         cfg = PollConfig.from_mapping(data.get("polling") or {})
         providers = _build_providers(data, default_labels=routing.auto_execute_labels)
+        # A polled PR naming a registered Jira key routes to it (issue-475, §C9).
+        linkage = jira_linkage(data, dispatcher.registry)
+        for provider in providers:
+            if isinstance(provider, GitHubPollProvider):
+                provider.jira_linkage = linkage
         return PollPlan(
             providers=providers, interval_seconds=cfg.interval_seconds, ci=cfg.ci
         )

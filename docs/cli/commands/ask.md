@@ -37,7 +37,7 @@ the answer.
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| `--work-item` | required | The ref the question goes to. |
+| `--work-item` | required | The ref the question goes to: `github:…`, or `jira:<site>/<KEY>-<n>`, where the Jira ledger records it on the ticket with the visible self-marker. |
 | `--question` | — | The question text (markdown). |
 | `--question-file` | — | Read the question from a file; `-` reads stdin. Exactly one of the two. |
 

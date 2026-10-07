@@ -265,7 +265,16 @@ def _announce(
             invocation=f"the-loop {verb}",
             listen=listen if (verb == ADD_CHANNEL and listen != DEFAULT_LISTEN) else "",
         )
-        ok, error = post_issue_comment(work_item, body, api=config.github)
+        if work_item.provider == "jira":
+            # The declaration recorded on the Jira ticket (issue-475). Not a
+            # relay: `command_comment` is already self-marked (it was applied
+            # locally), so `post_on_ticket` stamps it the-loop's own and both
+            # ingresses ignore it — `relay=True` does not change that.
+            from .tickets import post_on_ticket
+
+            ok, error, _ = post_on_ticket(work_item, body, cli_conf, relay=True)
+        else:
+            ok, error = post_issue_comment(work_item, body, api=config.github)
         if ok:
             messages.append(
                 {

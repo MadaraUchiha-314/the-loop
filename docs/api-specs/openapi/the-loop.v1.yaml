@@ -2486,10 +2486,18 @@ components:
       - body
       title: WorkItemCommentBody
     TicketCreateBody:
+      description: Exactly one of `repository` (a GitHub issue) and `project` (a Jira ticket, issue-475).
       properties:
         repository:
           type: string
           title: Repository
+          default: ''
+          description: '[HOST/]OWNER/REPO — opens a GitHub issue.'
+        project:
+          type: string
+          title: Project
+          default: ''
+          description: A Jira project key under integrations.jira.projects — opens a Jira ticket (issue-475).
         title:
           type: string
           title: Title
@@ -2510,7 +2518,6 @@ components:
           description: Which instance this operation is for (issue-374); empty means this one.
       type: object
       required:
-      - repository
       - title
       title: TicketCreateBody
     PullRequestCreateBody:

@@ -54,6 +54,7 @@ from ..standing import NAME_RE as STANDING_NAME_RE
 from . import once
 from .base import Event
 from .github import GitHubLedger
+from .jira import ledger_for_ref
 from ..repos import parse_repo_path, repository_keys
 from .slack import SlackChannelConfig, slack_state_path
 from .state import ChannelState, ChannelStores, canonical
@@ -660,7 +661,9 @@ def _work_item_verb(invocation, config, cli_config, member, post_comment, result
     )
     from .bus import publish
 
-    ledger = GitHubLedger(cli_config, post_comment=post_comment)
+    ledger = ledger_for_ref(
+        ref.ref, cli_config, lambda: GitHubLedger(cli_config, post_comment=post_comment)
+    )
     record = publish(event, cli_config, channels=[], ledger=ledger).record
     if record and record.ok:
         link = f" — {record.url}" if record.url else ""

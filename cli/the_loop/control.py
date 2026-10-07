@@ -68,8 +68,12 @@ Spec: docs/specs/issue-106/design.md §1.
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
+import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -97,6 +101,8 @@ __all__ = [
     "ControlRecord",
     "ControlResult",
     "ControlStore",
+    "CONTROL_DELIVERIES_FILE",
+    "ControlDeliveries",
     "command_comment",
     "parse_command",
 ]
@@ -779,4 +785,123 @@ class ControlStore:
         if self.get(work_item) is None:
             return False
         self.store.write_section(work_item, CONTROL, None)
+        return True
+
+
+#: The file's name under ``<state.root>/local/``.
+CONTROL_DELIVERIES_FILE = "control-deliveries.json"
+
+
+class ControlDeliveries:
+    """The control comments this machine already executed, by delivery id
+    (issue-475, R6.4) — ``<state.root>/local/control-deliveries.json``.
+
+    A Jira comment reaches the dispatcher twice when both ingresses run: once by
+    the webhook doorbell, once by the poller, two processes with two in-memory
+    dedupers. A delivery is deduplicated at the session (``recent_deliveries``),
+    but a control command is executed BEFORE that — so it needs its own
+    persisted, cross-process answer to "already executed?". :meth:`claim` is that
+    answer, check and record in one step under a ``flock`` on ``<file>.lock``.
+
+    Bounded: the newest :attr:`limit` ids are kept, enough to span the window in
+    which both ingresses can see one comment. Best-effort like every local
+    file: an unreadable file reads as empty, and a write that fails is logged
+    and the claim granted — a lost record can only cost a repeat, never a drop.
+    """
+
+    limit = 256
+
+    def __init__(self, path: Union[str, Path]):
+        self.path = Path(path)
+
+    @classmethod
+    def beside(cls, portable_dir: Union[str, Path]) -> "ControlDeliveries":
+        """The file for the state root holding ``portable_dir``
+        (:attr:`the_loop.state.StateLayout.control_deliveries`)."""
+        return cls(Path(portable_dir).parent / "local" / CONTROL_DELIVERIES_FILE)
+
+    @contextmanager
+    def _locked(self):
+        from . import runlock
+
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if not runlock.HAVE_FLOCK:
+            yield
+            return
+        fd = os.open(
+            str(self.path) + ".lock", os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600
+        )
+        try:
+            runlock.fcntl.flock(fd, runlock.fcntl.LOCK_EX)
+            yield
+        finally:
+            try:
+                runlock.fcntl.flock(fd, runlock.fcntl.LOCK_UN)
+            finally:
+                os.close(fd)
+
+    def _read(self) -> List[str]:
+        try:
+            with open(self.path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except FileNotFoundError:
+            return []
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("could not read %s: %s", self.path, exc)
+            return []
+        ids = (data or {}).get("deliveries") if isinstance(data, dict) else None
+        return (
+            [str(i) for i in ids if isinstance(i, str)] if isinstance(ids, list) else []
+        )
+
+    def _write(self, ids: List[str]) -> None:
+        handle = tempfile.NamedTemporaryFile(
+            "w", dir=str(self.path.parent), delete=False, encoding="utf-8"
+        )
+        with handle:
+            json.dump({"deliveries": ids}, handle, indent=2)
+            handle.write("\n")
+        os.replace(handle.name, self.path)
+
+    def release(self, delivery_id: str) -> bool:
+        """Forget ``delivery_id``'s claim, so its re-forward executes again.
+
+        For a delivery the dispatcher hands back for a retry (``deduper.discard``)
+        after its command failed — a spawn whose workspace prep raised. Left
+        held, the retry would settle ``already-processed`` and the command would
+        never run (self-review R2-2). ``False`` when nothing was held; a failed
+        write is logged, as :meth:`claim`'s is.
+        """
+        try:
+            with self._locked():
+                ids = self._read()
+                if delivery_id not in ids:
+                    return False
+                self._write([i for i in ids if i != delivery_id])
+        except OSError as exc:
+            logger.warning(
+                "could not release control delivery %s in %s: %s",
+                delivery_id,
+                self.path,
+                exc,
+            )
+            return False
+        return True
+
+    def claim(self, delivery_id: str) -> bool:
+        """Record ``delivery_id``; ``False`` when it was already recorded."""
+        try:
+            with self._locked():
+                ids = self._read()
+                if delivery_id in ids:
+                    return False
+                ids.append(delivery_id)
+                self._write(ids[-self.limit :])
+        except OSError as exc:
+            logger.warning(
+                "could not record control delivery %s in %s: %s",
+                delivery_id,
+                self.path,
+                exc,
+            )
         return True

@@ -104,17 +104,17 @@ provide, it is the one activity that may not run (see *Open question for the gat
 
 ## Verification activities
 
-- [ ] T1 — `cd cli && uv run python -m pytest -q tests/test_jira_refs.py tests/test_routing.py tests/test_graph_refs.py tests/test_graphlink.py tests/test_core_graphs.py`
-- [ ] T2 — `cd cli && uv run python -m pytest -q tests/test_jira_api.py tests/test_jira_labels.py tests/test_jira_format.py`
-- [ ] T3 — `cd cli && uv run python -m pytest -q tests/test_integration_contract.py tests/test_jira_integration_provider.py`
-- [ ] T4 — `cd cli && uv run python -m pytest -q tests/test_jira_channels.py tests/test_channels.py tests/test_graph_integrations.py`
-- [ ] T5 — `cd cli && uv run python -m pytest -q tests/test_jira_poller.py tests/test_jira_webhook.py tests/test_jira_authz.py`
-- [ ] T6 — `cd cli && uv run python -m pytest -q tests/test_jira_integration.py` and `uv run the-loop scenarios --glob 'cli/tests/test_*_integration.py' --format markdown`
-- [ ] T7 — `cd cli && uv run python -m pytest -q -k "jira and (reject or absent or unlisted or self_comment or alone or quoted or invalid_project or does_not_link or unknown_site or no_secret or untrusted)"`, with every name listed in T7 of the trace above passing
-- [ ] T8 — `cd cli && uv run python -m pytest -q tests/test_migrations.py tests/test_config_schema_parity.py tests/test_jira_config.py`
-- [ ] T9 — `uv run pre-commit run --all-files --show-diff-on-failure`
-- [ ] T10 — generate and commit the four rendered bodies (`evidence/jira-bodies.md`)
-- [ ] T11 — run the manual procedure against the sandbox:
+- [x] T1 — `cd cli && uv run python -m pytest -q tests/test_jira_refs.py tests/test_routing.py tests/test_graph_refs.py tests/test_graphlink.py tests/test_core_graphs.py`
+- [x] T2 — `cd cli && uv run python -m pytest -q tests/test_jira_api.py tests/test_jira_labels.py tests/test_jira_format.py`
+- [x] T3 — `cd cli && uv run python -m pytest -q tests/test_integration_contract.py tests/test_jira_integration_provider.py`
+- [x] T4 — `cd cli && uv run python -m pytest -q tests/test_jira_channels.py tests/test_channels.py tests/test_graph_integrations.py`
+- [x] T5 — `cd cli && uv run python -m pytest -q tests/test_jira_poller.py tests/test_jira_webhook.py tests/test_jira_authz.py`
+- [x] T6 — `cd cli && uv run python -m pytest -q tests/test_jira_integration.py` and `uv run the-loop scenarios --glob 'cli/tests/test_*_integration.py' --format markdown`
+- [x] T7 — `cd cli && uv run python -m pytest -q -k "jira and (reject or absent or unlisted or self_comment or alone or quoted or invalid_project or does_not_link or unknown_site or no_secret or untrusted)"`, with every name listed in T7 of the trace above passing
+- [x] T8 — `cd cli && uv run python -m pytest -q tests/test_migrations.py tests/test_config_schema_parity.py tests/test_jira_config.py`
+- [x] T9 — `uv run pre-commit run --all-files --show-diff-on-failure`
+- [x] T10 — generate and commit the four rendered bodies (`evidence/jira-bodies.md`)
+- [x] T11 — run the manual procedure against the sandbox:
   1. Register `jira:<sandbox>/LOOPTEST-1` with `the-loop sessions register`.
   2. Post with `the-loop comment` and check the ADF rendering.
   3. Set and remove a label through `set-phase-label`.
@@ -125,15 +125,43 @@ provide, it is the one activity that may not run (see *Open question for the gat
 
   Record each step's outcome.
 
+  **Replanned at verification (2026-10-07), with the operator on #475:**
+  - Project `KAN` instead of `LOOPTEST`, which the service account could not see ("Just
+    use KAN for now").
+  - Step 6 (webhook) dropped: polling alone delivers everything, the webhook is off unless
+    its secret is set, and the operator chose not to expose a tunnel ("do we really need
+    webhook if we are polling ?"). Webhook signing stays proven by unit test only.
+  - Steps 1–5 and 7 driven through the-loop's own `JiraClient`, `JiraProvider` and
+    `JiraPollProvider` from a script (`evidence/jira/t11_run.py`), not through the daemon:
+    the daemon's config has no Jira block, and registering a session would have spawned
+    one. A box was ticked by editing the stored ADF through the API, and rendering is
+    evidenced by Jira's own rendered HTML rather than screenshots, because no browser
+    session was available.
+
 ## Verification results
 
-*Not yet executed.*
+Run on 2026-10-06 at `b5c1154`, the top of the stack. Every command was prefixed with
+`env -u THE_LOOP_CLI_CONFIG -u THE_LOOP_WORK_ITEM -u THE_LOOP_GH_TOKEN`, because
+those variables leak in from a daemon-spawned session and make 21 tests fail, on `main`
+too. The full record is [`evidence/verification.md`](evidence/verification.md).
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1 | refs and spec-id test files | pass: 394 passed | [unit.md](evidence/unit.md#t1) |
+| T2 | client, labels and format test files | pass: 78 passed | [unit.md](evidence/unit.md#t2) |
+| T3 | contract suite and Jira provider | pass: 32 passed | [unit.md](evidence/unit.md#t3) |
+| T4 | ledger, channel and hooks test files | pass: 173 passed | [unit.md](evidence/unit.md#t4) |
+| T5 | poller, webhook and authz test files | pass: 115 passed | [unit.md](evidence/unit.md#t5) |
+| T6 | `test_jira_integration.py` + `the-loop scenarios` | pass: 11 passed, 11 Jira scenarios listed (`--root` given absolute) | [integration.md](evidence/integration.md) |
+| T7 | `-k "jira and (…)"` + the twelve named abuse-case tests | pass: 67 passed; all twelve names exist and pass | [unit.md](evidence/unit.md#t7) |
+| T8 | migration, schema-parity and Jira config test files | pass: 108 passed | [unit.md](evidence/unit.md#t8) |
+| T9 | `uv run pre-commit run --all-files --show-diff-on-failure` | pass: all six hooks; full suite 5950 passed | [regression.md](evidence/regression.md) |
+| T10 | four rendered bodies, golden-file tests | pass: eight blocks equal the fixtures; 4 golden tests passed | [jira-bodies.md](evidence/jira-bodies.md) |
+| T11 | `evidence/jira/t11_run.py` against the Jira Cloud sandbox, project `KAN` (replanned, above) | pass: create, ADF comment (taskList stored), author == `myself`, self checks, Jira-safe labels set/removed, poller found the armed ticket via `/search/jql`, a tick read back as `- [x]` (exactly one line changed), transition to Done, closure seen, ticket deleted; a table/link/code probe rendered correctly. Webhook signing not run live (operator's choice) | [manual-jira.md](evidence/manual-jira.md) |
 
-**Not executed:** —
+**Not executed:** T11 step 6 only (a live signed webhook). It was dropped with the
+operator, because polling covers delivery. Webhook signing is proven by unit test against
+Atlassian's documented format.
 
 ## Open question for the gate
 

@@ -741,10 +741,17 @@ def ask_session(
         _subscribers = []
     _bus_is_silent = not _subscribers
 
-    ledger = GitHubLedger(
+    # The work item's own tracker records it (issue-475): Jira for a Jira ref.
+    from ..channels.jira import ledger_for_ref
+
+    ledger = ledger_for_ref(
+        work_item.ref,
         dict(config or {}),
-        post_comment=lambda item, body, api=None: post_issue_comment_with_url(
-            item, body, api=control.github
+        lambda: GitHubLedger(
+            dict(config or {}),
+            post_comment=lambda item, body, api=None: post_issue_comment_with_url(
+                item, body, api=control.github
+            ),
         ),
     )
     # The operator's lifecycle hooks see the question before anyone else does
@@ -788,7 +795,13 @@ def ask_session(
         channel_results = published.posts
     except Exception as exc:  # noqa: BLE001 — a channel bug never fails the ask
         logger.warning("channel broadcast failed: %s", exc)
-        if not ok:
+        if not ok and work_item.provider == "jira":
+            from .tickets import post_on_ticket
+
+            ok, error, url = post_on_ticket(
+                work_item, mark_self_authored(question), config
+            )
+        elif not ok:
             ok, error, url = post_issue_comment_with_url(
                 work_item, mark_self_authored(question), api=control.github
             )
@@ -1031,11 +1044,18 @@ def reply_session(
         }
     )
     if comment:
-        posted, error = post_issue_comment(
-            work_item,
-            _reply_report(text, actor),
-            api=_control_config(config).github,
-        )
+        if work_item.provider == "jira":
+            from .tickets import post_on_ticket
+
+            posted, error, _ = post_on_ticket(
+                work_item, _reply_report(text, actor), config
+            )
+        else:
+            posted, error = post_issue_comment(
+                work_item,
+                _reply_report(text, actor),
+                api=_control_config(config).github,
+            )
         if posted:
             messages.append(
                 {"stream": "out", "text": f"recorded the reply on {work_item.ref}"}
@@ -1547,11 +1567,17 @@ def _announce(
 ) -> None:
     """Record the action on the ticket (best-effort — never fails the action)."""
     config = _control_config(cli_conf)
-    ok, error = post_issue_comment(
-        work_item,
-        command_comment(verb, config, actor=actor, address=_instance(cli_conf).name),
-        api=config.github,
-    )
+    body = command_comment(verb, config, actor=actor, address=_instance(cli_conf).name)
+    if work_item.provider == "jira":
+        # The record on the Jira ticket (issue-475). Not a relay:
+        # `command_comment` is already self-marked (the action was applied
+        # locally), so `post_on_ticket` stamps it the-loop's own and both
+        # ingresses ignore it — `relay=True` does not change that.
+        from .tickets import post_on_ticket
+
+        ok, error, _ = post_on_ticket(work_item, body, cli_conf, relay=True)
+    else:
+        ok, error = post_issue_comment(work_item, body, api=config.github)
     if ok:
         messages.append(
             {

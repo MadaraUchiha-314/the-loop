@@ -42,7 +42,11 @@ of the loop; the cleanup set is intentionally **extensible** (more may be added 
    - **Close the ticket(s)** for this work item (GitHub issue / Jira) **if still open**,
      with `the-loop ticket close <ref>` (issue-447; `--reason not_planned` for work
      that was dropped), after a `the-loop comment` that references the merged PR(s)
-     and evidence. A ticket a merge's `Closes #N` already closed is expected — say so
+     and evidence. On a `jira:` ref it transitions the ticket into _Done_; when the
+     ticket offers no such transition, or several, nothing moves and the error lists
+     them — escalate with `the-loop ask` naming them, or have the operator set
+     `integrations.jira.closeTransition`. The Jira MCP tools only when the CLI is not
+     installed. A ticket a merge's `Closes #N` already closed is expected — say so
      in the summary and move on; do not reopen it. Closing
      the ticket is also what ends the work item's harness session — one of its PRs
      merging does not (see `reference/automation.md`).

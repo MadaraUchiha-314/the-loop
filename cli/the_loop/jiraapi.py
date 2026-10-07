@@ -89,6 +89,18 @@ GATEWAY = "https://api.atlassian.com/ex/jira"
 #: Page size for a search, and the cap on what one search returns.
 PAGE_SIZE = 100
 SEARCH_LIMIT = 200
+#: The most comments one listing reads (critic C2). A ticket past it keeps its
+#: NEWEST ones — what a poller's cursor and a gate's "latest" need — with a warning.
+COMMENTS_LIMIT = 5000
+
+
+def _number_or(value: Any, default: int) -> int:
+    """``value`` as an int, or ``default`` when it is not one."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
 
 #: The SDK's loggers. ``jira.resilientsession`` is a child, and a logger's
 #: filters do not see a child's records, so each gets its own filter.
@@ -539,11 +551,15 @@ class JiraClient:
         return to_jira(markdown, self.config.rest_version)
 
     @classmethod
-    def _markdown(cls, body: Any) -> str:
-        """A body Jira returned, as Markdown: ADF (a mapping) or wiki (a string)."""
+    def _markdown(cls, body: Any, markers: bool = True) -> str:
+        """A body Jira returned, as Markdown: ADF (a mapping) or wiki (a string).
+
+        ``markers=False`` keeps its the-loop markers visible text — for a body
+        the service account did not write (:func:`~the_loop.jiraformat.from_jira`).
+        """
         from .jiraformat import from_jira
 
-        return from_jira(body)
+        return from_jira(body, markers=markers)
 
     # -- reading SDK documents -----------------------------------------------------
 
@@ -562,14 +578,16 @@ class JiraClient:
             url=self.config.browse_url(key),
         )
 
-    def _comment_of(self, key: str, raw: Mapping[str, Any]) -> JiraComment:
+    def _comment_of(
+        self, key: str, raw: Mapping[str, Any], markers: bool = True
+    ) -> JiraComment:
         author = raw.get("author") or {}
         author_id = str(author.get("accountId") or author.get("key") or "")
         comment_id = str(raw.get("id") or "")
         return JiraComment(
             id=comment_id,
             author_id=author_id,
-            body_md=self._markdown(raw.get("body")),
+            body_md=self._markdown(raw.get("body"), markers=markers),
             created=str(raw.get("created") or ""),
             url=self.config.comment_url(key, comment_id),
         )
@@ -623,20 +641,106 @@ class JiraClient:
         A comment is the-loop's own when its body carries a self-marker **or**
         its author is this client's account (:meth:`myself`) — two independent
         tests, either one enough (design §C6, trade-off 6). ``myself`` is asked
-        only when some comment is unmarked, and an answer that cannot be had
-        leaves the marker as the only test.
+        only when some comment is unmarked or carries a gate marker, and an
+        answer that cannot be had leaves the marker as the only test.
+
+        A visible gate marker (``[the-loop:phase-selection]``, …) becomes the
+        hidden one a gate matches ONLY on a comment by the service account —
+        never on the strength of a self-marker, which anyone can type. Anyone
+        else's reads as literal text, so a Jira user cannot plant a checklist
+        an authorized ``execute`` then freezes (self-review R2-4). Unreadable
+        ``myself``: no comment's markers are converted (fail closed).
+
+        Every page is read (``startAt``/``maxResults`` on Cloud's v3 and Data
+        Center's v2 ``issue/{key}/comment`` alike), oldest first. A page that
+        fails raises — never a truncated list, so a poller keeps its cursor. Past
+        :data:`COMMENTS_LIMIT` the newest are kept, with a warning (critic C2).
         """
         key = self._key(key)
-        found = self._call("list comments", lambda j: j.comments(key))
-        read = [self._comment_of(key, getattr(c, "raw", {}) or {}) for c in found or []]
-        unmarked = [c for c in read if not is_self_authored(c.body_md)]
-        me = self._self_id() if unmarked else ""
+        return self._read_comments(key, self._comment_pages(key))
+
+    def _comment_pages(self, key: str) -> List[Mapping[str, Any]]:
+        path = f"issue/{key}/comment"
+        raws: List[Mapping[str, Any]] = []
+        start = 0
+        skipped = False
+        while True:
+            page = (
+                self._call(
+                    "list comments",
+                    lambda j, s=start: j._get_json(
+                        path, params={"startAt": s, "maxResults": PAGE_SIZE}
+                    ),
+                )
+                or {}
+            )
+            found = [c for c in page.get("comments") or [] if isinstance(c, Mapping)]
+            total = _number_or(page.get("total"), -1)
+            if not skipped and total > COMMENTS_LIMIT:
+                skipped = True
+                logger.warning(
+                    "Jira %s has %d comments; reading only the newest %d",
+                    key,
+                    total,
+                    COMMENTS_LIMIT,
+                )
+                start = total - COMMENTS_LIMIT
+                continue
+            raws.extend(found)
+            start += len(found)
+            if not found or (total >= 0 and start >= total):
+                break
+            if len(raws) >= COMMENTS_LIMIT:
+                logger.warning(
+                    "Jira %s: stopped listing comments at %d", key, COMMENTS_LIMIT
+                )
+                break
+        return raws[-COMMENTS_LIMIT:]
+
+    def comment(self, key: str, comment_id: str) -> Optional[JiraComment]:
+        """One comment by id (``issue/{key}/comment/{id}``), read as
+        :meth:`comments` reads each; ``None`` when Jira has no such comment.
+
+        The webhook doorbell's read: the delivered comment, wherever it sits in
+        the thread, never a scan of the first page (critic C2).
+        """
+        key = self._key(key)
+        if not str(comment_id).isdigit():
+            raise JiraApiError(f"unusable Jira comment id {comment_id!r}")
+        try:
+            raw = self._call(
+                "read comment",
+                lambda j: j._get_json(f"issue/{key}/comment/{comment_id}"),
+            )
+        except JiraApiError as exc:
+            if exc.status == 404:
+                return None
+            raise
+        if not isinstance(raw, Mapping):
+            return None
+        [found] = self._read_comments(key, [raw])
+        return found
+
+    def _read_comments(
+        self, key: str, raws: Sequence[Mapping[str, Any]]
+    ) -> List[JiraComment]:
+        """``raws`` as comments, each with ``is_self`` decided and its gate
+        markers promoted only on the service account's (self-review R2-4)."""
+        read = [self._comment_of(key, raw, markers=False) for raw in raws]
+        marked = [self._markdown(raw.get("body")) for raw in raws]
+        unmarked = [c for c in read if not is_self_authored(c.body_md, "jira")]
+        gated = any(md != c.body_md for md, c in zip(marked, read))
+        me = self._self_id() if unmarked or gated else ""
         return [
             replace(
                 c,
-                is_self=is_self_authored(c.body_md) or bool(me and c.author_id == me),
+                body_md=md if me and c.author_id == me else c.body_md,
+                is_self=(
+                    is_self_authored(c.body_md, "jira")
+                    or bool(me and c.author_id == me)
+                ),
             )
-            for c in read
+            for md, c in zip(marked, read)
         ]
 
     def _self_id(self) -> str:

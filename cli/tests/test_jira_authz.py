@@ -326,6 +326,36 @@ def test_github_routing_is_unchanged_for_a_github_event():
     assert _router().route("issue_comment", stranger, "gh-3") is None
 
 
+def test_the_visible_jira_marker_is_a_self_marker_on_jira_only():
+    """`[the-loop:agent-comment]` is the-loop's own mark on JIRA. On GitHub it is
+    text a person may quote — only the HTML marker makes a GitHub body the-loop's."""
+    quoting = f"the bot signs its Jira comments `{JIRA_SELF_MARKER}`, see?"
+    assert is_self_authored(quoting) is False
+    assert is_self_authored(quoting, provider="github") is False
+    assert is_self_authored(quoting, provider="jira") is True
+    assert is_self_authored(mark_self_authored_on_jira("x"), provider="jira") is True
+
+
+def test_a_github_comment_quoting_the_jira_marker_is_routed():
+    payload = {
+        "action": "created",
+        "repository": {
+            "full_name": "acme/web",
+            "html_url": "https://github.com/acme/web",
+        },
+        "issue": {"number": 7, "labels": []},
+        "comment": {
+            "id": 1,
+            "body": f"why does the Jira comment end in {JIRA_SELF_MARKER}?",
+            "user": {"login": "octocat"},
+        },
+    }
+    routed = _router().route("issue_comment", payload, "gh-4")
+    assert routed is not None and routed.work_items == [GH_REF]
+    marked = _jira_payload(ADA, body=mark_self_authored_on_jira("done"))
+    assert _router().route("issue_comment", marked, "jira-x", [REF]) is None
+
+
 # -- the dispatcher's named-actor re-check ---------------------------------------------
 
 
