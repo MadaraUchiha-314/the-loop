@@ -1,3 +1,13 @@
+## v19.28.0 (2026-10-07)
+
+### Feat
+
+- **issue-475**: Jira PR linkage, ticket verbs, /init onboarding and skill text (#480)
+- **issue-475**: Jira ingress — JQL poller, webhook doorbell, Jira allow-list (#479)
+- **issue-475**: Jira ledger, Jira channel, ADF/wiki format and Jira-safe labels (#478)
+- **issue-475**: Jira control-plane integration (client, provider, config 0.12.0) (#477)
+- **issue-475**: Jira as a first-class work-item source and update channel (#476)
+
 ## v19.27.0 (2026-10-06)
 
 ### Feat
