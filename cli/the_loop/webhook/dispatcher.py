@@ -1192,6 +1192,13 @@ class Dispatcher:
             # condition, and a redelivery could only reach the same answer.
             return
 
+        # A Jira event names no GitHub repository (issue-475): its work lives in
+        # the repository its project maps to, so that is the repository every
+        # step below — the workspace a spawn cuts, the checkout a close removes,
+        # the prompt's origin line — reads off the payload. Filled here, once,
+        # so the poller and the doorbell both get it.
+        routed = self._with_origin_repository(routed)
+
         # Execution control (issue-106): a declared keyword from an authorized
         # user is an instruction to *the-loop*, so it is executed here and never
         # forwarded to the harness. Both guards that make this safe already ran
@@ -1563,6 +1570,29 @@ class Dispatcher:
         self._settle(routed, scope.outcome)
 
     # -- linkage verification (issue-269) ----------------------------------------
+
+    def _with_origin_repository(self, routed: RoutedEvent) -> RoutedEvent:
+        """``routed`` with its work item's origin repository on the payload, when
+        it is a Jira event that names none (issue-475). Anything else — a GitHub
+        event, a Jira event that already names one — is returned unchanged, so
+        GitHub's path is byte-identical. A project whose mapping is gone leaves
+        the event as it was, with a warning: the workspace then falls back to
+        ``spawnWorkdir`` exactly as before."""
+        payload = routed.payload or {}
+        if event_provider(routed) != "jira" or payload.get("repository"):
+            return routed
+        from ..sessions.refs import UnknownJiraProject
+
+        try:
+            repository = _repo_payload(routed.work_items[0], self.cli_config)
+        except UnknownJiraProject as exc:
+            logger.warning(
+                "%s maps to no repository (%s); its event names none",
+                routed.work_items[0].ref,
+                exc,
+            )
+            return routed
+        return dataclasses.replace(routed, payload={**payload, **repository})
 
     def _verify_linkage(self, routed: RoutedEvent) -> RoutedEvent:
         """``routed`` without the work items a branch name invented.

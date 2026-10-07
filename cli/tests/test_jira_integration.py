@@ -38,6 +38,7 @@ from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
 from the_loop.webhook.jira import JiraDoorbell, read_doorbell
 from the_loop.webhook.router import Router
 from the_loop.workitem import WorkItemStore
+from the_loop.workspace import Workspace
 
 SITE = "acme.atlassian.net"
 LABEL = "the-loop: auto-execute"
@@ -131,7 +132,9 @@ def jira_integration(monkeypatch):
 class _Process:
     """One ingress process: its own dispatcher over the shared registry."""
 
-    def __init__(self, tmp_path, registry_dir, client, require_start=False):
+    def __init__(
+        self, tmp_path, registry_dir, client, require_start=False, workspace=None
+    ):
         self.registry = SessionRegistry(registry_dir)
         self.tmux = FakeTmux()
         config = RoutingConfig.from_mapping(
@@ -150,6 +153,7 @@ class _Process:
             config=config,
             tmux_runner=self.tmux,
             cli_config=_cli_config(),
+            workspace=workspace,
         )
         self.provider = JiraPollProvider(
             projects=["PROJ"], labels=[LABEL], site=SITE, client=client
@@ -470,6 +474,62 @@ def test_jira_label_alone_does_not_start(tmp_path):
         proc.dispatcher.stop()
     assert proc.dispatcher.control_store.start_requested(REF.ref) is True
     assert proc.tmux.spawns[0][0] == REF.ref
+
+
+class _RecordingWorkspace(Workspace):
+    """A real workspace layout without the git: `prepare` hands back the
+    worktree path it would have made, `cleanup` records what it would remove."""
+
+    def __init__(self, root):
+        super().__init__(root)
+        self.prepared = []
+        self.cleaned = []
+
+    def prepare(self, target, slug, *, branch=None, require_branch=False, timeout=None):
+        self.prepared.append(target)
+        checkout = self.worktree_dir(target, slug)
+        checkout.mkdir(parents=True, exist_ok=True)
+        return checkout
+
+    def cleanup(self, target, slug, *, timeout=None):
+        self.cleaned.append((target, slug))
+        return True
+
+
+def test_a_jira_work_item_runs_in_and_releases_its_origin_repositorys_worktree(
+    tmp_path,
+):
+    """
+    Feature: Jira as a work-item source
+    Scenario: a Jira work item's session runs in its origin repository's worktree
+      Given routing.workspace.root configured, and PROJ mapped to acme/web
+      When an authorized user starts the armed Jira ticket and its session spawns
+      Then the session's cwd is a worktree of acme/web under the workspace root
+      And when the ticket is Done, the closure removes that worktree
+
+    Requirement: docs/specs/issue-475/requirements.md#R5.4
+    """
+    client = _client()
+    workspace = _RecordingWorkspace(tmp_path / "ws")
+    proc = _Process(tmp_path, tmp_path / "sessions", client, workspace=workspace)
+    poller = proc.poller(tmp_path)
+    try:
+        client.comment_table[KEY].append(_comment("50001", ADA, "the-loop start"))
+        poller.poll_once()
+        assert _wait(lambda: len(proc.tmux.spawns) == 1)
+        client.issues[KEY] = replace(client.issues[KEY], status_category="done")
+        poller.poll_once()
+        assert _wait(lambda: len(workspace.cleaned) == 1)
+    finally:
+        proc.dispatcher.stop()
+    [(ref, _, cwd, _)] = proc.tmux.spawns
+    assert ref == REF.ref
+    [target] = workspace.prepared
+    assert (target.host, target.owner, target.repo) == ("github.com", "acme", "web")
+    assert cwd == str(workspace.worktree_dir(target, REF.slug))
+    assert cwd.startswith(str(tmp_path / "ws" / ".worktrees" / "github.com" / "acme"))
+    [(cleaned, slug)] = workspace.cleaned
+    assert (cleaned.owner, cleaned.repo, slug) == ("acme", "web", REF.slug)
 
 
 def test_jira_comment_is_framed_untrusted(tmp_path):
