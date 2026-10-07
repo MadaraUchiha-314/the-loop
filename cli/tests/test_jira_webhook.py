@@ -418,3 +418,58 @@ def test_a_jira_failure_is_reported_not_raised():
     recorder = _Recorder()
     assert _ring(_doorbell(client, recorder)) == "error"
     assert recorder.dispatched == []
+
+
+# -- hot reload ---------------------------------------------------------------------------
+
+
+def test_a_hot_reload_rebuilds_the_doorbell(tmp_path, monkeypatch):
+    """The doorbell is built from the config like the router is, so a reload that
+    changes the arming labels (or the source projects) reaches it too — on the
+    next delivery, whichever route it arrives by."""
+    import yaml
+
+    from the_loop import cli_config
+    from the_loop.jiraapi import JiraClient
+    from the_loop.webhook import daemon as webhook_daemon
+
+    relabeled = "the-loop: go"
+    issue = JiraIssue(
+        key=KEY,
+        summary="t",
+        labels=["the-loop:go"],
+        status_category="indeterminate",
+        url=f"https://{SITE}/browse/{KEY}",
+    )
+    client = _client(issue, comments=[_comment("10001", ADA, "hi")])
+    monkeypatch.setattr(JiraClient, "shared", classmethod(lambda cls, *a, **k: client))
+    cfg = tmp_path / "config.yaml"
+
+    def write(label: str) -> None:
+        document = cloud_config()
+        document["routing"] = {
+            "registryDir": str(tmp_path / "sessions"),
+            "autoExecuteLabels": [label],
+            "authorizedUsers": [{"name": "Ada", "github": "ada", "jira": ADA}],
+        }
+        cfg.write_text(yaml.safe_dump(document))
+
+    write(LABEL)
+    monkeypatch.setattr(webhook_daemon, "_config_path", lambda: cfg)
+    _, dispatcher, _, on_jira = webhook_daemon._build_ingress(
+        cli_config.load_routing_config(cfg), {}
+    )
+    bell = read_doorbell(
+        {
+            "webhookEvent": "comment_created",
+            "issue": {"key": KEY},
+            "comment": {"id": "10001"},
+        }
+    )
+    try:
+        assert on_jira is not None
+        assert on_jira(bell, "w-1") == "ignored:unarmed"
+        write(relabeled)
+        assert on_jira(bell, "w-2") != "ignored:unarmed"
+    finally:
+        dispatcher.stop()
