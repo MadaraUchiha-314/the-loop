@@ -183,8 +183,9 @@ SCHEMES: Dict[str, RefScheme] = {"github": GitHubScheme(), "jira": JiraScheme()}
 
 **A pure function returns the GitHub repository a work item's spec chain and PRs live in.**
 For a GitHub ref that is the ref's own `host/owner/repo`. For a Jira ref it is
-`integrations.jira.projects.<KEY>.repository`. A project with no mapping, or a site that
-is not the configured one, raises `UnknownJiraProject`. That error is the fail-closed
+`integrations.jira.projects.<KEY>.repository`. A project that is not configured, a
+project configured without a `repository` (a mirror-only project, C7), or a site that is
+not the configured one raises `UnknownJiraProject`. That error is the fail-closed
 path for abuse cases 7 and 8.
 
 These shared paths switch from `ref.owner/ref.repo` to it:
@@ -377,12 +378,31 @@ with C6 and posts it through `JiraClient.add_comment`, carrying the Jira self-ma
 
 **`JiraChannel` is a subscriber channel addressed by the room grammar (R4.2).** It is
 loaded by `_load_jira` in `CHANNEL_PROVIDERS` when `channels.jira.enabled`, and it
-honours `subscribe`, `publish` and `verbosity` like Slack. `workchannels.CHANNEL_TYPES`
+honours `subscribe` and `verbosity` like Slack. It has no `publish` list, because it takes
+no input (see below). `workchannels.CHANNEL_TYPES`
 gains a row: `"jira": (re.compile(r"^[A-Z][A-Z0-9_]{1,9}-[1-9][0-9]{0,9}$"), "a Jira
 issue key, e.g. PROJ-123")`. The key cannot contain `/` or `@`, so it fits the existing
-target regex. `JiraChannel.post` comments on the declared room ticket, and the room
-must be in a configured project. It is not `Conversational`: it mirrors and opens no
-thread.
+target regex. `JiraChannel.post` comments on the declared room ticket. The room must be
+in a project listed under `integrations.jira.projects`, with or without a `repository`.
+That list is the allow-list of where the-loop may write.
+
+**Mirror-only setup (PR #476 review).** A GitHub-ticketed work item can mirror its
+progress into a Jira ticket, the way it mirrors into Slack, with no Jira ingress,
+ledger or work-item support configured. It needs only three things:
+
+- the credential part of `integrations.jira` (site, deployment, `api`);
+- the room's project listed under `projects`, **without** a `repository`;
+- `channels.jira.enabled: true` with a `subscribe` list, for example `[work-item.started,
+  phase.started, phase.completed, session.awaiting_input, work-item.closed]`.
+
+An authorized user then declares the room on the work item with `the-loop add-channel
+jira@PROJ-123`. It differs from Slack in two deliberate ways:
+
+- **No central fallback.** A work item with no declared `jira@` room is not mirrored,
+  because Jira has no counterpart to `channels.slack.channel`.
+- **Output only.** `JiraChannel` is not `Conversational`. It mirrors, opens no thread,
+  and nothing written on the mirror ticket reaches the session. Jira as an *input* is
+  the separate path in which the work item itself is a Jira ticket (C8).
 
 **Phase label (R4.3).** `set-phase-label` is unchanged. Through C4 it now runs against
 Jira for a Jira ref, removing stale `loop:*` labels and setting the one current label.
@@ -415,8 +435,8 @@ sequenceDiagram
 **`JiraPollProvider` (`poller/jira.py`, `name = "jira"`) implements `PollProvider`.**
 
 - **Scopes are project keys.** They come from `polling.sources[].projects`, each of which
-  must also appear under `integrations.jira.projects`. The schema's `provider` enum
-  gains `jira`.
+  must also appear under `integrations.jira.projects` **with** a `repository`. Polling a
+  mirror-only project is a config error. The schema's `provider` enum gains `jira`.
 - **`from_source(source, *, default_labels, config)`.** The GitHub-typed `api` keyword
   becomes optional, and a `config` keyword carries the full CLI config. The GitHub
   provider ignores `config`, and `poller/daemon.py:_build_providers` passes both.
@@ -552,20 +572,20 @@ integrations:
       tokenEnv: [JIRA_API_TOKEN]      # required
     projects:                         # required, ≥1; key grammar ^[A-Z][A-Z0-9_]{1,9}$
       PROJ: {repository: acme/web}    # origin repository (owner/repo, on integrations.github.host)
+      OPS: {}                         # no repository: mirror-only — a jira@ room, never a work-item source
     closeTransition: ""               # optional transition name for ticket close
     webhook:
       secretEnv: THE_LOOP_JIRA_WEBHOOK_SECRET   # optional; route served only when it resolves
 polling:
   sources:
     - provider: jira
-      projects: [PROJ]                # each must be under integrations.jira.projects
+      projects: [PROJ]                # each must be under integrations.jira.projects, with a repository
 channels:
   ledger: github                      # github | jira — the tracker work-item.create opens in
   jira:
     enabled: false
-    subscribe: [...]                  # as channels.slack
-    publish: [...]
-    verbosity: normal
+    subscribe: [...]                  # as channels.slack.subscribe
+    verbosity: normal                 # no `publish`: the Jira channel takes no input
 routing:
   authorizedUsers:
     - {name: Ada, github: ada, jira: "5b10ac8d82e05b22cc7d4ef5"}
