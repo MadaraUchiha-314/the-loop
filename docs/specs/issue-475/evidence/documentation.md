@@ -7,8 +7,8 @@ workItem: "github:MadaraUchiha-314/the-loop#475"
 # Documentation: Jira as a first-class work-item source and update channel (issue-475)
 
 Filled in one PR at a time. This record covers **PR 1 — identity** (tasks 1.1–1.5),
-**PR 2 — control-plane integration** (tasks 2.1–2.7) and **PR 3 — Jira as ledger and
-channel** (tasks 3.1–3.7).
+**PR 2 — control-plane integration** (tasks 2.1–2.7), **PR 3 — Jira as ledger and
+channel** (tasks 3.1–3.7) and **PR 4 — ingress** (tasks 4.1–4.5).
 
 ## Capability docs
 
@@ -128,4 +128,80 @@ channel** (tasks 3.1–3.7).
     `core/github_ops.py`, `channels/commands.py` and `channels/inbound.py` construct a
     `GitHubLedger` directly). Making the verbs dispatch by tracker is PR 5 (task 5.2),
     and the CLI capability doc changes with it.
+  - The skill, the commands and `/init` change in PR 5.
+
+## PR 4 — ingress
+
+### Capability docs
+
+- **[`docs/capabilities/webhook-triggers.md`](../../../capabilities/webhook-triggers.md)**
+  gains a *Jira* section under *Current behaviour*, with a diagram and EARS criteria for:
+  - the `jira` poll source: one quoted JQL query per project, every arming label in
+    its Jira-safe form, mirror-only projects refused at the pre-flight;
+  - comments against the poll ledger's cursor, a 429/5xx degrading one project and
+    keeping the cursor, closure on the `done` status category;
+  - the `/jira-webhook` doorbell: served only with a secret, 401 before parsing, three
+    fields read and the issue and comment re-fetched, the event table;
+  - one delivery id for both ingresses (`jira-comment-<site>-<id>`);
+  - the allow-list by provider (`authorizedUsers[].jira`, no author is unauthorized,
+    `jira:<id>` at the human gates, collaborator grants not applying);
+  - whose comment it is, including the **relay addendum** below;
+  - arming is a label, starting is a person; the unchanged untrusted frame;
+  - the webhook setup as numbered steps (admin-registered, secret by variable name,
+    events `comment_created` and `jira:issue_updated`).
+
+  The summary line names Jira comments, and the *Design* line and *History* table gain
+  issue-475 rows.
+- **[`docs/capabilities/channels.md`](../../../capabilities/channels.md)**: the *Jira*
+  section gains the relay criterion, and *History* a PR 4 row.
+
+### Design addendum (recorded here and in both capability docs)
+
+PR 3's `JiraLedger` marked every body it posted, relays included, and the Jira ledger
+writes as the service account. A Slack-relayed gate answer or control command on a Jira
+work item would therefore have been dropped by the Jira ingress as the-loop's own. On
+GitHub a relay is posted unmarked under the operator's credentials and read back as the
+operator's authorized words. PR 4 mirrors that trust model:
+
+- `JiraLedger` posts a relay (`gate.feedback`, `control.command`) with the visible relay
+  marker `[the-loop:relay]` instead of the self-marker, keywords kept
+  (`channels/jira.jira_ledger_body`, `authz.mark_relayed_on_jira`).
+- Both Jira ingresses accept a service-account comment that carries the relay marker and
+  not the self-marker as authorized (`authz.jira_comment_origin`, `RELAY_KEY` on the
+  event), and a human gate reads it as `jira-relay:operator`. Every other
+  service-account comment is the-loop's own. On anyone else's comment the marker grants
+  nothing (`test_relay_marker_from_other_user_grants_nothing`).
+- `jiraformat` keeps `[the-loop:relay]` as literal text on read, as it keeps the
+  self-marker.
+
+### Documentation
+
+- **[`docs/config/cli/routing-options.md`](../../../config/cli/routing-options.md)**:
+  `authorizedUsers[].jira`, with the two rules that differ from GitHub.
+- **[`docs/config/cli/polling-options.md`](../../../config/cli/polling-options.md)**:
+  `sources[].provider` takes `github | jira`, and a new `sources[].projects` heading has
+  an example, the JQL and the rate-limit behaviour.
+- **[`docs/config/cli/integrations-options.md`](../../../config/cli/integrations-options.md)**:
+  `jira.webhook.secretEnv`.
+- Each config page changed in the same commit as its schema key, in both schema copies,
+  as the docs-parity test requires.
+- **Docstrings:** `poller/jira.py` and `webhook/jira.py` are new and carry their
+  contracts. `authz` (relay marker, `is_authorized_on`, `jira_comment_origin`,
+  `gate_authorized_users`), `webhook/router.py` (`PROVIDER_KEY`, `RELAY_KEY`,
+  `event_provider`, `route(work_items=…)`), `webhook/server.py` (the Jira route),
+  `poller/base.py` (`comment_origin`, `from_source(config=…)`), `graphlink.comments_from`,
+  `channels/jira.py`, `jiraformat` and `migrations._github_sources` are updated.
+- **Not changed yet, and why:**
+  - The delivered prompt's header still reads `# GitHub webhook event for <ref>` with an
+    empty `Repository:` line for a Jira event. The template is provider-blind, and
+    making it provider-aware belongs with the verbs in PR 5.
+  - `JiraProvider`'s `list-comments` still marks every service-account comment,
+    relays included, as the-loop's own. No gate reads answers from `list-comments` (they
+    arrive on the event), so it changes nothing today. Revisit it if a gate ever does.
+  - The CLI graph path's own allow-list (`graph.bootstrap` with no
+    `authorized_users`) still reads the GitHub logins only. The daemon passes the Jira
+    gate list. The CLI's `the-loop graph` on a Jira ref is PR 5's.
+  - `authorizedUsers[].jira` holds one id per person, not a list. One id per channel is
+    how every other channel's id works (`identity.Principal`), and a second Jira account
+    for the same person is a second entry.
   - The skill, the commands and `/init` change in PR 5.

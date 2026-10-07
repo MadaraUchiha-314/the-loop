@@ -161,7 +161,7 @@ enabled-but-sourceless poller as *misconfigured* without spawning one.
 
 Which poll provider handles this source. A `github` source polls every declared
 [repository](/config/cli/repositories-options). A `jira` source polls the Jira projects
-it lists in [`projects`](#sources-projects), on
+it lists in `projects` (below), on
 [`integrations.jira.site`](/config/cli/integrations-options#jira-site).
 
 ### `sources[].labels`

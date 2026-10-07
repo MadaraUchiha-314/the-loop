@@ -235,7 +235,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 4.3
   - _Requirements:_ R5.3, R5.5, R6.3, R6.4
   - _Test:_ T6, T7 (abuse cases 5, 10)
-- [ ] 4.5 **Docs for PR 4.** Polling and the Jira webhook in
+- [x] 4.5 **Docs for PR 4.** Polling and the Jira webhook in
   `docs/capabilities/webhook-triggers.md`, `docs/config/` for `polling.sources[]` Jira
   and `routing.authorizedUsers[].jira`, Jira webhook setup steps (admin-registered,
   secret), and `evidence/documentation.md` rows.

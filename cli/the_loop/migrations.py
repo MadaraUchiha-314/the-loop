@@ -199,9 +199,9 @@ def _jira_stub_keys(config: Mapping[str, Any]) -> List[str]:
 def _github_sources(config: Mapping[str, Any]) -> List[Dict[str, Any]]:
     """Every ``provider: github`` entry of ``polling.sources``.
 
-    Only github's: ``repos`` under another provider is that provider's key, and
-    ``jira`` is reserved. Migrating or refusing one would be this module guessing at
-    a schema it does not own.
+    Only github's: ``repos`` under another provider is that provider's key, and a
+    ``jira`` source has keys of its own (``projects``, issue-475). Migrating or
+    refusing one would be this module guessing at a schema it does not own.
     """
     polling = _dig(config, ("polling",)) or {}
     sources = polling.get("sources") if isinstance(polling, Mapping) else None
