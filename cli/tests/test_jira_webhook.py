@@ -347,6 +347,32 @@ def test_a_ticket_outside_the_polled_projects_is_ignored_unread(key):
     assert client.calls == [], "nothing is fetched for a key it does not own"
 
 
+@pytest.mark.parametrize(
+    "moved_to, outcome",
+    [("PROJ-99", "ignored:moved"), ("OPS-3", "ignored:project")],
+)
+@pytest.mark.parametrize("event", ["comment_created", "jira:issue_updated"])
+def test_a_moved_ticket_is_refused_not_followed(event, moved_to, outcome, caplog):
+    """`get_issue` follows Jira's redirect for a moved ticket: the issue fetched for
+    `PROJ-7` may be another one, or one in a project the-loop does not poll. The
+    doorbell acts on the key it was rung for or not at all."""
+    moved = JiraIssue(
+        key=moved_to,
+        summary="moved",
+        labels=[JLABEL],
+        status_category="done",
+        url=f"https://{SITE}/browse/{moved_to}",
+    )
+    client = _client(moved, comments=[_comment("10001", ADA, "hi")])
+    recorder = _Recorder()
+    recorder.started = True
+    with caplog.at_level("WARNING", logger="the-loop.gh-webhook"):
+        assert _ring(_doorbell(client, recorder), event=event) == outcome
+    assert recorder.routed == [] and recorder.dispatched == []
+    assert "comments" not in client.calls_to()
+    assert any(moved_to in r.getMessage() for r in caplog.records)
+
+
 def test_issue_updated_to_done_is_a_closure():
     issue = JiraIssue(key=KEY, summary="t", labels=[JLABEL], status_category="done")
     client = _client(issue)

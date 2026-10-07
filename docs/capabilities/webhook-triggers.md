@@ -1033,7 +1033,9 @@ flowchart LR
   | anything else | ignored with a 202 |
 
   A key that is not a key, or a ticket outside the source projects, is ignored before
-  anything is fetched.
+  anything is fetched. WHEN Jira answers the fetch with another key (the ticket was moved,
+  and Jira followed the redirect) THEN the doorbell SHALL ignore the delivery with a
+  warning, whether the new key is in a source project or not.
 - **Once, by either ingress** (R6.4). Both ingresses give a comment the delivery id
   `jira-comment-<site>-<id>`. WHEN the webhook and the poller both see one comment THEN
   the session SHALL receive it once: the id is in the session's persisted
