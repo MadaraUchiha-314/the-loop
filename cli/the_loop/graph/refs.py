@@ -25,6 +25,7 @@ from __future__ import annotations
 import re
 
 from ..sessions import WorkItemRef, is_github_host, is_github_name
+from ..sessions.refs import JIRA_SPEC_ID_RE
 
 __all__ = ["derive_ref", "ref_for"]
 
@@ -35,7 +36,9 @@ __all__ = ["derive_ref", "ref_for"]
 _ISSUE_ID_RE = re.compile(r"^issue-(\d+)$")
 
 
-def derive_ref(work_item_id: str, origin_repo: str, host: str = "") -> str:
+def derive_ref(
+    work_item_id: str, origin_repo: str, host: str = "", jira_site: str = ""
+) -> str:
     """``issue-194`` + ``octo/repo`` → ``github:octo/repo#194``; ``""`` if it cannot.
 
     ``origin_repo`` is ``<owner>/<repo>`` as :func:`the_loop.ghhost.origin_repo`
@@ -48,14 +51,21 @@ def derive_ref(work_item_id: str, origin_repo: str, host: str = "") -> str:
     slug contract above stays exactly one shape. Empty means github.com, which
     :class:`WorkItemRef` leaves unwritten.
 
+    ``jira-<key>-<n>`` (issue-475) inverts to ``jira:<jira_site>/<KEY>-<n>``:
+    the site is the one ``integrations.jira.site`` configures, because a spec id
+    carries no site. No site, or one that is not a bare host, derives nothing.
+
     Total: every failure path returns ``""``. A caller gets a usable ref or
     nothing, never a partial one and never an exception — this runs on the way
     out to an integration, and a translation helper that raises would turn a
     best-effort comment into a wedged work item.
     """
+    jira = JIRA_SPEC_ID_RE.match(work_item_id.strip())
+    if jira:
+        return _jira_ref_for(jira.group("key").upper(), jira.group("number"), jira_site)
     match = _ISSUE_ID_RE.match(work_item_id.strip())
     if not match:
-        return ""  # not a GitHub-shaped id: another provider's, or a draft
+        return ""  # not a known id shape: another provider's, or a draft
     return ref_for(origin_repo, int(match.group(1)), host=host)
 
 
@@ -86,3 +96,18 @@ def ref_for(repo_slug: str, number: int, host: str = "") -> str:
     return WorkItemRef(
         provider="github", owner=owner, repo=repo, number=number, host=host
     ).ref
+
+
+def _jira_ref_for(key: str, number: str, site: str) -> str:
+    """``PROJ`` + ``7`` on ``site`` → ``jira:<site>/PROJ-7``; ``""`` if it cannot.
+
+    Built through the Jira scheme's own parser, so a site that is not a bare host
+    (or anything else the grammar refuses) yields ``""`` rather than a ref.
+    """
+    site = (site or "").strip()
+    if not site:
+        return ""
+    try:
+        return WorkItemRef.parse(f"jira:{site}/{key}-{number}").ref
+    except ValueError:
+        return ""

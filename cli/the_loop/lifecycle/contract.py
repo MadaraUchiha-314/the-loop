@@ -89,22 +89,27 @@ class WorkItem:
     point knows of the item's shape. Travels as one JSON object inside the context.
     """
 
-    #: ``<provider>:[<host>/]<owner>/<repo>#<number>`` — the-loop's name for the item.
+    #: ``<provider>:[<host>/]<owner>/<repo>#<number>``, or ``jira:<site>/<KEY>-<n>``
+    #: (issue-475) — the-loop's name for the item.
     ref: str = ""
-    #: The tracker: ``github`` today (``jira`` is reserved for the Jira follow-up).
+    #: The tracker: ``github`` or ``jira``.
     provider: str = ""
-    #: The tracker's host — ``github.com``, or a GitHub Enterprise host.
+    #: The tracker's host — ``github.com``, a GitHub Enterprise host, or a Jira site.
     host: str = ""
     owner: str = ""
     repo: str = ""
     #: ``owner/repo``, host-qualified when the host is not the provider's default.
+    #: For a Jira ticket it is the tracker path, ``<site>/<KEY>`` — not the GitHub
+    #: repository its code lives in, which only configuration knows
+    #: (``sessions.refs.origin_repository``); nothing derives a PR layout from it.
     repository: str = ""
     number: int = 0
     #: ``issue`` | ``pull-request``; ``""`` when the point does not know.
     kind: str = ""
     #: The browser link, derived from the ref; ``""`` when none can be derived.
     url: str = ""
-    #: The-loop's id for it — ``issue-<number>``, the spec folder under ``docs/specs/``.
+    #: The-loop's id for it — ``issue-<number>`` (``jira-<key>-<number>`` for a Jira
+    #: ticket), the spec folder under ``docs/specs/``.
     id: str = ""
 
     @classmethod
@@ -134,7 +139,7 @@ class WorkItem:
             number=parsed.number,
             kind=kind,
             url=url,
-            id=id or f"issue-{parsed.number}",
+            id=id or parsed.spec_id or parsed.ref,
         )
 
     def to_params(self) -> Dict[str, Any]:

@@ -183,6 +183,7 @@ def _graph_reader(cli_config: Optional[Mapping]):
         routing.control,
         ControlStore(routing.portable_dir, legacy=routing.legacy),
         routing.authorized_users,
+        cli_config=config,
     )
     return routing, registry, link
 

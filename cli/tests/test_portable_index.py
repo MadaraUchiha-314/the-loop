@@ -90,7 +90,7 @@ def test_a_work_item_on_another_host_links_to_that_host(tmp_path):
 @pytest.mark.parametrize(
     "ref",
     [
-        "jira:octo/repo#15",  # no URL layout is known for a reserved provider
+        "gitlab:octo/repo#15",  # no URL layout is known for a provider with no scheme
         "github:oc to/repo#15",  # whitespace in the owner
         "github:octo/re po#15",  # ...and in the repo
     ],

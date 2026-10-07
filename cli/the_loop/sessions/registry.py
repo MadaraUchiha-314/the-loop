@@ -38,6 +38,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from .. import eventlog
+from .refs import (  # noqa: F401 — re-exported: callers import these from here
+    DEFAULT_GITHUB_HOST,
+    is_github_host,
+    is_github_name,
+    scheme_for,
+)
 
 logger = logging.getLogger("the-loop.sessions")
 
@@ -48,55 +54,6 @@ _RECENT_DELIVERIES_CAP = 50
 #: a map of endpoints keyed by the ref each serves. A record without this key is
 #: the pre-issue-368 shape — read as it was, rewritten as this on its next save.
 RECORD_VERSION = 2
-
-_REF_RE = re.compile(r"^(?P<provider>[a-z][a-z0-9-]*):(?P<path>[^#]+)#(?P<number>\d+)$")
-
-# GitHub's own owner/repo name shape, used to validate the names a browser URL is
-# built from (issue-130). A name that is not this shape gets no URL at all: a
-# link to the wrong repository is worse than no link.
-_GITHUB_NAME_RE = re.compile(r"[A-Za-z0-9._-]+")
-
-
-def is_github_name(value: str) -> bool:
-    """Whether ``value`` is a shape GitHub accepts as an owner or repository name.
-
-    Public because a second caller needs the same answer (issue-194): deriving a
-    ref from the harness config's ``ticketing.github`` validates owner and repo
-    before building anything, and "what GitHub accepts" must have **one**
-    definition — two copies of this expression is how one of them ends up
-    accepting a `/` and pointing a comment at the wrong repository.
-    """
-    return bool(_GITHUB_NAME_RE.fullmatch(value))
-
-
-# A host in a ref (issue-130 review). Deliberately narrow — no scheme, no
-# credentials, no path — because this value is interpolated into a URL. It must
-# also be *recognisable* as a host, because it is what distinguishes a
-# three-segment path (`host/owner/repo`) from a malformed two-segment one: a
-# dotted name, or a name with an explicit port. `github:octo/repo/sub#15` is
-# therefore rejected rather than quietly read as a work item on a host called
-# "octo" — a silent second identity for something that was probably a typo.
-_HOST_RE = re.compile(
-    r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::\d+)?"  # dotted, optional port
-    r"|[A-Za-z0-9-]+:\d+"  # or a bare name with an explicit port
-)
-
-
-def is_github_host(value: str) -> bool:
-    """Whether ``value`` is the shape of a GitHub host — the one grammar for a host.
-
-    Public since issue-311: the host resolver (``ghhost``), ``ref_for``, a poll
-    source's ``[HOST/]OWNER/REPO`` and a kickoff slug all refuse through this one
-    expression **before** a value is interpolated into a URL or a ``--hostname``
-    argument. Two copies of it is how one of them comes to accept a scheme.
-    """
-    return bool(_HOST_RE.fullmatch(value or ""))
-
-
-#: The host a ``github:`` ref means when it does not say (github.com). A ref
-#: names its host only when it is somewhere else, so every ref written before
-#: issue-130 keeps its exact form — and its file name.
-DEFAULT_GITHUB_HOST = "github.com"
 
 _SCHEME_HOST_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://(?:[^@/]+@)?([^/:]+(?::\d+)?)")
 
@@ -171,14 +128,12 @@ def _utcnow() -> str:
 class WorkItemRef:
     """A provider-qualified work-item reference, e.g. ``github:owner/repo#15``.
 
-    The path is ``[<host>/]<owner>/<repo>``: a work item on GitHub Enterprise
-    names its host (``github:ghe.corp.example/owner/repo#15``), and one on
-    github.com does not (issue-130 review). Keeping the default host *unwritten*
-    is what makes this backwards compatible in the only two places that matter —
-    every ref string already on disk still parses to the same work item, and
-    :attr:`slug` still resolves to the same file name.
-
-    The ``jira:`` prefix is reserved for the Jira follow-up (out of scope here).
+    The fields are the same for every provider; how a ref parses, renders, slugs,
+    links and names its spec folder is its provider's
+    :class:`~the_loop.sessions.refs.RefScheme` (issue-475). A ``github:`` ref is
+    ``github:[<host>/]<owner>/<repo>#<n>``, exactly as before; a ``jira:`` ref is
+    ``jira:<site>/<KEY>-<n>`` — the site in :attr:`host`, the project key in
+    :attr:`owner`, and :attr:`repo` empty.
     """
 
     provider: str
@@ -192,23 +147,27 @@ class WorkItemRef:
         # alike) whether or not the caller spelled the default host out. They
         # key the session registry and the poll ledger, so an unnormalised
         # duplicate would be a second identity for one work item.
-        if self.provider == "github" and not self.host:
-            object.__setattr__(self, "host", DEFAULT_GITHUB_HOST)
+        default = scheme_for(self.provider).default_host()
+        if default and not self.host:
+            object.__setattr__(self, "host", default)
 
     @property
     def default_host(self) -> bool:
         """Whether this ref's host is the provider's default (so it is unwritten)."""
-        return self.provider != "github" or self.host == DEFAULT_GITHUB_HOST
+        default = scheme_for(self.provider).default_host()
+        return not default or self.host == default
 
     @property
     def path(self) -> str:
-        """``[<host>/]<owner>/<repo>`` — the host only when it is not the default."""
-        prefix = "" if self.default_host else f"{self.host}/"
-        return f"{prefix}{self.owner}/{self.repo}"
+        """``[<host>/]<owner>/<repo>`` — the host only when it is not the default.
+
+        A Jira ref's path is ``<site>/<KEY>``.
+        """
+        return scheme_for(self.provider).path(self)
 
     @property
     def ref(self) -> str:
-        return f"{self.provider}:{self.path}#{self.number}"
+        return scheme_for(self.provider).render(self)
 
     @property
     def url(self) -> str:
@@ -216,67 +175,31 @@ class WorkItemRef:
 
         The ref is the machine's name for a work item; this is the human's link to
         it (issue-130). Both are kept: a URL carries no provider prefix and cannot
-        be parsed back into a ref without knowing each provider's layout.
-
-        Derived, never guessed. Only ``github`` refs resolve — the host is the
-        ref's own (github.com unless it says otherwise), and GitHub redirects
-        ``/issues/<n>`` to ``/pull/<n>`` when the number is a pull request, so one
-        form serves both. A host, owner or repo that is not the shape GitHub
-        accepts yields ``""``, and the field is simply absent wherever it would
-        have been written: a link to the wrong place is worse than no link.
+        be parsed back into a ref without knowing each provider's layout. Derived,
+        never guessed — a provider with no URL layout yields ``""``.
         """
-        if self.provider != "github":
-            return ""
-        if not (
-            _HOST_RE.fullmatch(self.host)
-            and is_github_name(self.owner)
-            and is_github_name(self.repo)
-        ):
-            return ""
-        return f"https://{self.host}/{self.owner}/{self.repo}/issues/{self.number}"
+        return scheme_for(self.provider).url(self)
 
     @property
     def slug(self) -> str:
         """Filesystem-safe form used as the registry file name.
 
-        Built from :attr:`path`, so a github.com work item's file name is exactly
-        what it was before refs learned about hosts, and two work items with the
-        same owner/repo/number on different hosts get different files.
+        Always ends in ``-<number>``, which is what the registry's file filter
+        relies on (``_REGISTRY_FILE_RE``).
         """
-        raw = f"{self.provider}-{self.path.replace('/', '-')}-{self.number}"
-        return re.sub(r"[^A-Za-z0-9._-]+", "-", raw)
+        return scheme_for(self.provider).slug(self)
+
+    @property
+    def spec_id(self) -> Optional[str]:
+        """The spec-directory id: ``issue-<n>`` on GitHub, ``jira-<key>-<n>`` on
+        Jira (issue-475, R2), ``None`` for a provider with no convention."""
+        return scheme_for(self.provider).spec_id(self)
 
     @classmethod
     def parse(cls, ref: str) -> "WorkItemRef":
-        match = _REF_RE.match(ref.strip())
-        if not match:
-            raise ValueError(
-                f"invalid work-item ref {ref!r}; expected "
-                "<provider>:[<host>/]<owner>/<repo>#<number> "
-                "(e.g. github:octo/repo#15, github:ghe.corp.example/octo/repo#15)"
-            )
-        parts = match.group("path").split("/")
-        if len(parts) == 2:
-            host, (owner, repo) = "", parts
-        elif len(parts) == 3:
-            host, owner, repo = parts
-        else:
-            raise ValueError(
-                f"invalid work-item ref {ref!r}; expected <owner>/<repo>, "
-                "optionally preceded by a host, before '#'"
-            )
-        if not owner or not repo or (host and not _HOST_RE.fullmatch(host)):
-            raise ValueError(
-                f"invalid work-item ref {ref!r}; expected <owner>/<repo>, "
-                "optionally preceded by a host, before '#'"
-            )
-        return cls(
-            provider=match.group("provider"),
-            owner=owner,
-            repo=repo,
-            number=int(match.group("number")),
-            host=host,
-        )
+        """``ref`` as a work item, through its provider prefix's scheme."""
+        provider = ref.strip().partition(":")[0]
+        return scheme_for(provider).parse(ref)
 
 
 @dataclass

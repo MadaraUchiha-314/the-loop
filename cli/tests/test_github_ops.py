@@ -113,7 +113,7 @@ def test_a_malformed_ref_is_refused(tmp_path):
     with pytest.raises(ValueError):
         github_ops.comment("octo/repo#5", "hi", _config(tmp_path))
     with pytest.raises(ValueError, match="not a GitHub"):
-        github_ops.comment("jira:octo/repo#5", "hi", _config(tmp_path))
+        github_ops.comment("jira:acme.atlassian.net/PROJ-5", "hi", _config(tmp_path))
 
 
 def test_a_comment_without_a_token_names_the_variables(tmp_path):

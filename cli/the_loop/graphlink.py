@@ -45,12 +45,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from . import eventlog
 from .ghhost import repo_slug as _repo_slug
 from .control import START, ControlConfig, ControlStore
 from .sessions import WorkItemRef
+from .sessions.refs import UnknownJiraProject, origin_ref, origin_repository
 
 logger = logging.getLogger("the-loop.graph")
 
@@ -60,6 +61,8 @@ __all__ = [
     "GraphLinkConfig",
     "comments_from",
     "render_graph_context",
+    "SpecFolderConflict",
+    "spec_folder_for",
     "spec_id_for",
 ]
 
@@ -135,24 +138,62 @@ class GraphLinkConfig:
 
 
 def spec_id_for(ref: WorkItemRef) -> Optional[str]:
-    """``github:owner/repo#113`` → ``"issue-113"``; ``None`` if not GitHub.
+    """``github:owner/repo#113`` → ``"issue-113"``; ``jira:<site>/PROJ-7`` →
+    ``"jira-proj-7"``; ``None`` for a provider with no convention.
 
     The ingress and the graph name the same work item differently — a
     provider-qualified ref versus a spec-directory id — and this is the whole of
-    the translation between them.
+    the translation between them. It is :attr:`WorkItemRef.spec_id`, the one
+    derivation every caller shares (issue-475, R2.4).
 
     ``ref.number`` is an ``int`` parsed by :meth:`WorkItemRef.parse`, so the
     result cannot contain a path separator however the ref arrived on the wire
-    (issue-113 A5). Other providers return ``None`` rather than a guess: the
-    ``issue-<n>`` convention is GitHub's, and a wrong directory name would
+    (issue-113 A5); a Jira key is ``[A-Z][A-Z0-9_]`` by its grammar. Other
+    providers return ``None`` rather than a guess: a wrong directory name would
     silently start the wrong work item's graph.
     """
-    if ref.provider != "github":
+    return ref.spec_id
+
+
+class SpecFolderConflict(ValueError):
+    """A work item already has a spec folder under an id other than the one its
+    ref now derives (issue-475, R2.3) — a Jira ticket whose key moved."""
+
+
+def spec_folder_for(
+    spec_root: Path, ref: WorkItemRef, moved_from: Sequence[WorkItemRef] = ()
+) -> Optional[Path]:
+    """The spec folder ``ref`` derives under ``spec_root``, or ``None`` when its
+    provider has no convention.
+
+    ``moved_from`` names the refs this work item was known by before (a Jira key
+    that moved projects). When one of them already has a folder, opening a second
+    one under the new id would split the work item's state in two, so it is
+    refused with :class:`SpecFolderConflict` naming both paths. Nothing is
+    created either way.
+    """
+    item_id = ref.spec_id
+    if item_id is None:
         return None
-    return f"issue-{int(ref.number)}"
+    target = Path(spec_root) / item_id
+    for previous in moved_from:
+        previous_id = previous.spec_id
+        if previous_id is None or previous_id == item_id:
+            continue
+        existing = Path(spec_root) / previous_id
+        if existing.is_dir():
+            raise SpecFolderConflict(
+                f"{ref.ref} was {previous.ref}, whose spec folder is {existing}; "
+                f"refusing to open a second one at {target}"
+            )
+    return target
 
 
-def _pr_repo(work_item: WorkItemRef, pr: WorkItemRef) -> str:
+def _pr_repo(
+    work_item: WorkItemRef,
+    pr: WorkItemRef,
+    cli_config: Optional[Mapping[str, Any]] = None,
+) -> str:
     """The repository qualifier for ``pr``'s inner loop — ``""`` in the origin repo.
 
     A work item may be delivered by pull requests in several repositories
@@ -161,8 +202,30 @@ def _pr_repo(work_item: WorkItemRef, pr: WorkItemRef) -> str:
     same repository as the ticket ⇒ the shipped ``pr-loops/pr-<n>/`` path;
     another repository ⇒ ``pr-loops/<owner>__<repo>/pr-<n>/``, still under the
     ONE spec directory in the origin repository's checkout.
+
+    "The same repository" is the work item's **origin** (issue-475): a GitHub
+    issue's own, a Jira ticket's mapped one — so a Jira item's pull request in
+    that repository keeps the shipped layout too. A Jira item this deployment
+    cannot place has no origin, and every pull request is qualified.
     """
-    return "" if pr.path == work_item.path else pr.path
+    try:
+        origin = origin_ref(work_item, cli_config).path
+    except UnknownJiraProject:
+        return pr.path
+    return "" if pr.path == origin else pr.path
+
+
+def _layout_origin(
+    work_item: WorkItemRef, cli_config: Optional[Mapping[str, Any]]
+) -> str:
+    """The origin a Jira item's recorded PR layout is derived against; ``""`` —
+    "read it off the state" — for every other item, or one that cannot be placed."""
+    if work_item.repo:
+        return ""
+    try:
+        return origin_repository(work_item, cli_config)
+    except UnknownJiraProject:
+        return ""
 
 
 def _is_contained(root: Path, spec_dir: str) -> bool:
@@ -507,8 +570,13 @@ class GraphLink:
         control_store: Optional[ControlStore] = None,
         authorized_users: Optional[Sequence[str]] = None,
         assignment_sink: Optional[Any] = None,
+        cli_config: Optional[Mapping[str, Any]] = None,
     ):
         self.config = config
+        # The CLI config, read for one thing (issue-475): which repository a
+        # Jira work item's code lives in (`integrations.jira.projects`). A
+        # GitHub work item's repository is its ref's own, so None changes nothing.
+        self.cli_config: Mapping[str, Any] = cli_config or {}
         self.control = control or ControlConfig()
         self.control_store = control_store
         self.authorized_users = list(authorized_users or [])
@@ -581,7 +649,7 @@ class GraphLink:
         state = WorkItemState.load(state_dir, item)
         entry = state.link_pr(
             work_item.ref,
-            repository=f"{work_item.owner}/{work_item.repo}",
+            repository=origin_repository(work_item, self.cli_config),
             number=work_item.number,
             url=work_item.url,
             linked_by="session",
@@ -825,7 +893,7 @@ class GraphLink:
             cwd,
             call,
             pr_number=pr.number,
-            pr_repo=_pr_repo(work_item, pr),
+            pr_repo=_pr_repo(work_item, pr, self.cli_config),
         )
 
     def on_pr_event(
@@ -845,7 +913,7 @@ class GraphLink:
             cwd,
             lambda rt, item: rt.advance(item, ref=pr.ref, event=event),
             pr_number=pr.number,
-            pr_repo=_pr_repo(work_item, pr),
+            pr_repo=_pr_repo(work_item, pr, self.cli_config),
         )
 
     def pr_context(
@@ -858,7 +926,7 @@ class GraphLink:
             cwd,
             lambda rt, item: self._context_from(rt, item),
             pr_number=pr.number,
-            pr_repo=_pr_repo(work_item, pr),
+            pr_repo=_pr_repo(work_item, pr, self.cli_config),
         )
 
     def on_pr_linked(
@@ -895,10 +963,14 @@ class GraphLink:
             state = WorkItemState.load(state_dir, item)
             entry = state.link_pr(
                 pr.ref,
-                repository=f"{pr.owner}/{pr.repo}",
+                repository=origin_repository(pr, self.cli_config),
                 number=pr.number,
                 url=pr.url,
                 linked_by="session",
+                # A Jira item's state names it by id, so its origin repository —
+                # which decides the PR's layout — is passed (issue-475). A GitHub
+                # item's is read off the state as before.
+                origin=_layout_origin(work_item, self.cli_config),
             )
             if entry is None:
                 return
@@ -978,7 +1050,7 @@ class GraphLink:
             cwd,
             call,
             pr_number=pr.number,
-            pr_repo=_pr_repo(work_item, pr),
+            pr_repo=_pr_repo(work_item, pr, self.cli_config),
         )
 
     # -- internals --------------------------------------------------------------
@@ -1069,7 +1141,7 @@ class GraphLink:
             # runtime factory (tests, embedders) built for two arguments still
             # serves every outer-path caller. A contribution item (issue-185)
             # is the one exception: its resolved loop name rides along.
-            origin = f"{work_item.owner}/{work_item.repo}"
+            origin = origin_repository(work_item, self.cli_config)
             if pr_number is None:
                 runtime = (
                     self._build_runtime(
@@ -1406,10 +1478,17 @@ class GraphLink:
         checkout, has no origin, or cannot be interrogated is not a match — it
         is exactly the case where we cannot tell whose work item this is.
         """
+        try:
+            # A Jira work item's repository is the one its project maps to
+            # (issue-475); one this deployment cannot place belongs nowhere.
+            origin = origin_repository(work_item, self.cli_config)
+        except UnknownJiraProject as exc:
+            logger.debug("%s", exc)
+            return False
         url = self._origin_url(root)
         if not url:
             return False
-        return _repo_slug(url) == f"{work_item.owner}/{work_item.repo}".lower()
+        return _repo_slug(url) == origin.lower()
 
     @staticmethod
     def _origin_url(root: Path) -> str:

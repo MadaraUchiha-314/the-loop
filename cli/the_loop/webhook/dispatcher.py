@@ -105,6 +105,7 @@ from ..lifecycle import (
     WorkItemStart,
 )
 from ..sessions import Session, SessionRegistry, WorkItemRef
+from ..sessions.refs import origin_ref
 from ..state import LegacyLayout, StateLayout, layout_from_config, legacy_layout
 from ..workchannels import (
     DEFAULT_LISTEN,
@@ -672,7 +673,9 @@ def _same_repository(one: WorkItemRef, other: WorkItemRef) -> bool:
     return one.provider == other.provider and one.path == other.path
 
 
-def _repo_payload(item: WorkItemRef) -> dict:
+def _repo_payload(
+    item: WorkItemRef, cli_config: Optional[Mapping[str, Any]] = None
+) -> dict:
     """The minimal payload naming a work item's repository.
 
     Enough for :func:`the_loop.workspace.repo_target_from_payload`, so an act
@@ -686,11 +689,15 @@ def _repo_payload(item: WorkItemRef) -> dict:
     checkout entirely. The ref knows its own host, so the URL is *derived* from
     it — and :attr:`WorkItemRef.url` yields ``""`` for anything it cannot derive
     honestly, which falls back to the configured default exactly as before.
+
+    A Jira work item's repository is the one its project maps to (issue-475,
+    :func:`~the_loop.sessions.refs.origin_ref`); a GitHub one's is its own.
     """
+    origin = origin_ref(item, cli_config)
     return {
         "repository": {
-            "full_name": f"{item.owner}/{item.repo}",
-            "html_url": item.url,
+            "full_name": f"{origin.owner}/{origin.repo}",
+            "html_url": origin.url,
         }
     }
 
@@ -887,6 +894,7 @@ class Dispatcher:
             self.control_store,
             self.config.authorized_users,
             assignment_sink=self._deliver_assignment,
+            cli_config=self.cli_config,
         )
         self._event_template = self._load_template(
             self.config.prompt_template, DEFAULT_PROMPT_TEMPLATE
@@ -988,6 +996,7 @@ class Dispatcher:
             self.control_store,
             config.authorized_users,
             assignment_sink=self._deliver_assignment,
+            cli_config=self.cli_config,
         )
         self._event_template = self._load_template(
             config.prompt_template, DEFAULT_PROMPT_TEMPLATE
@@ -2018,13 +2027,9 @@ class Dispatcher:
             return False
         target = record
         if pr_number is not None:
-            pr_ref = WorkItemRef(
-                provider=work_item.provider,
-                owner=work_item.owner,
-                repo=work_item.repo,
-                number=pr_number,
-                host=work_item.host,
-            )
+            # The PR is in the work item's origin repository: its own on
+            # GitHub, the mapped one for a Jira item (issue-475).
+            pr_ref = origin_ref(work_item, self.cli_config, number=pr_number)
             endpoint = record.endpoint_for(pr_ref)
             if endpoint is None or not endpoint.is_live:
                 return False
@@ -3036,7 +3041,9 @@ class Dispatcher:
         if session.tmux_target:
             self._close_tmux(session)
         payload = (
-            routed.payload if routed is not None else _repo_payload(session.work_item)
+            routed.payload
+            if routed is not None
+            else _repo_payload(session.work_item, self.cli_config)
         )
         cleaned = self._cleanup_workspace(session, payload)
         if reason:
@@ -3450,7 +3457,7 @@ class Dispatcher:
         """
         if self.workspace is None:
             return False
-        target = self._repo_target(_repo_payload(work_item))
+        target = self._repo_target(_repo_payload(work_item, self.cli_config))
         if target is None:
             return False
         try:
