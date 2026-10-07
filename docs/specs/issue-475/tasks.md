@@ -113,7 +113,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 2.4
   - _Requirements:_ R3.4, R3.5, R3.8
   - _Test:_ T2 — green
-- [ ] 2.6 **`JiraProvider` + `resolve()` branch.**
+- [x] 2.6 **`JiraProvider` + `resolve()` branch.**
   - Red first: add `JiraProvider(client=FakeJiraClient())` to `ALL_PROVIDERS`, plus
     `test_jira_integration_provider.py` for per-op shapes, the `create-label` no-op, and
     `transition` with a single or ambiguous candidate.

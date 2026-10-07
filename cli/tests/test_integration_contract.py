@@ -10,11 +10,19 @@ from __future__ import annotations
 
 import pytest
 from ghfakes import FakeGitHubClient
+from jirafakes import FakeJiraClient
 
 from the_loop.graph.integrations.base import OperationUnsupported
 from the_loop.graph.integrations.github import OPERATIONS, GitHubProvider
+from the_loop.graph.integrations.jira import OPERATIONS as JIRA_OPERATIONS
+from the_loop.graph.integrations.jira import JiraProvider
 
-ALL_PROVIDERS = [GitHubProvider(client=FakeGitHubClient())]
+#: Every provider, each over its in-memory client (decision-042 point 14). Jira
+#: joined in issue-475 (R3.3).
+ALL_PROVIDERS = [
+    GitHubProvider(client=FakeGitHubClient()),
+    JiraProvider(client=FakeJiraClient()),
+]
 
 
 @pytest.mark.parametrize(
@@ -37,3 +45,9 @@ def test_the_github_provider_declares_the_operations_the_hooks_use():
     """The set the shipped graph hooks call — identical before and after issue-442."""
     assert GitHubProvider(client=FakeGitHubClient()).operations == OPERATIONS
     assert {"add-comment", "set-labels", "remove-label", "get-labels"} <= OPERATIONS
+
+
+def test_the_jira_provider_declares_githubs_operations_plus_transition():
+    """R3.1 — every operation the GitHub provider implements, plus `transition`."""
+    assert JiraProvider(client=FakeJiraClient()).operations == JIRA_OPERATIONS
+    assert JIRA_OPERATIONS == OPERATIONS | {"transition"}

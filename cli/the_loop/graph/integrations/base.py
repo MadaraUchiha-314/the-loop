@@ -41,6 +41,10 @@ class Integration(Protocol):
 def resolve(target: str, config: Mapping[str, Any]) -> "Integration":
     """Build the configured provider for ``target``.
 
+    ``jira`` (issue-475, decision-142) builds the Jira provider when
+    ``integrations.jira`` is configured and its credential variables are set,
+    and otherwise fails closed naming what is missing.
+
     There is one GitHub transport since issue-442 — PyGithub under the token
     ``integrations.github.api.tokenEnv`` names — so ``auto`` and ``api`` build
     it, a missing token fails closed naming the variables, and the retired
@@ -76,6 +80,39 @@ def resolve(target: str, config: Mapping[str, Any]) -> "Integration":
                 "calls need a token (integrations.github.api.tokenEnv)"
             )
         return GitHubProvider(api)
+
+    if target == "jira":
+        from ...jiraapi import JiraApiConfig
+        from .jira import JiraProvider
+
+        if transport == "cli":
+            # issue-442 retired every CLI transport, and the 0.12.0 schema has no
+            # `integrations.jira.transport` (issue-475, decision-142). A hand-built
+            # mapping that still names one is refused by name, as GitHub's is.
+            raise TransportUnavailable(
+                "jira: the `cli` transport was retired (issue-442) — the daemon "
+                "reaches Jira through the pycontribs `jira` SDK with the credentials "
+                "`integrations.jira.api.emailEnv`/`tokenEnv` name; remove "
+                "`integrations.jira.transport` and `integrations.jira.cli` "
+                "(`the-loop migrate-config`)"
+            )
+        if transport not in ("auto", "api"):
+            raise TransportUnavailable(
+                f"jira: unknown transport {transport!r}; expected auto or api"
+            )
+        jira_api = JiraApiConfig.from_cli_config(config)
+        if not jira_api.configured:
+            raise TransportUnavailable(
+                "jira: integrations.jira is not configured — set its site, "
+                "deployment, api and projects to reach Jira"
+            )
+        missing = jira_api.missing_credentials()
+        if missing:
+            raise TransportUnavailable(
+                f"jira: {' and '.join(missing)} is not set — the daemon's own Jira "
+                "calls need the credentials integrations.jira.api names"
+            )
+        return JiraProvider(jira_api)
 
     if target == "slack":
         # Slack converged on the channels layer (issue-245, owner's call on
