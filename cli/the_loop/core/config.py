@@ -205,6 +205,11 @@ def _reject_invalid(merged: Mapping[str, Any]) -> None:
         assert_current(merged)
     except ConfigTooOld as exc:
         raise ValueError(str(exc)) from exc
+    # A label with no Jira-safe form (issue-475, R4.4) — `JiraLabelError` is a
+    # ValueError, the refusal this function already raises.
+    from ..jiralabels import check_config_labels
+
+    check_config_labels(merged)
     # Raises for `allowOrigins: ["*"]` with credentials — the pairing `api/serve.py`
     # refuses to boot on. One function, so the write-time rule and the boot-time rule
     # cannot drift apart; saving a config the service could not restart on is not a

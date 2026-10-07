@@ -40,6 +40,7 @@ dependencies = [
     "slack-sdk>=3",     # the `sdk` Slack notification transport
     "pygithub>=2.5",
     "jira>=3.10,<4",    # the daemon's Jira client (issue-475, decision-142)
+    "markdown-it-py>=3,<5",  # Markdown -> Jira ADF / wiki bodies (issue-475)
     "tomli>=2; python_version < '3.11'",
 ]
 

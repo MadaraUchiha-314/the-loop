@@ -1,0 +1,90 @@
+{
+  "type": "doc",
+  "version": 1,
+  "content": [
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "🤖 "
+        },
+        {
+          "type": "text",
+          "text": "the-loop",
+          "marks": [
+            {
+              "type": "em"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " — "
+        },
+        {
+          "type": "text",
+          "text": "design-approval",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " is ready for review."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Work item "
+        },
+        {
+          "type": "text",
+          "text": "jira-proj-7",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " has reached a human gate. Reply with an approval, an approval with comments, or the changes you want."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "🤖 "
+        },
+        {
+          "type": "text",
+          "text": "the-loop, autonomous comment",
+          "marks": [
+            {
+              "type": "em"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "[the-loop:agent-comment]"
+        }
+      ]
+    }
+  ]
+}

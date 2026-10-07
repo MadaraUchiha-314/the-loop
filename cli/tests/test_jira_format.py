@@ -4,7 +4,7 @@ Golden files under ``tests/fixtures/jira/`` hold what the-loop sends to Jira for
 the four bodies that matter most — the phase-selection checklist, a gate's
 request-review, an ask and the PR-briefing template — as ADF (Cloud, REST v3)
 and wiki markup (Data Center, REST v2), plus the Markdown an ADF body reads back
-as. The bodies are rendered from the real code at test time, so a change to a
+as (``.read.txt`` — not ``.md``, so markdownlint leaves the snapshot alone). The bodies are rendered from the real code at test time, so a change to a
 renderer that changes what Jira receives fails here until the golden file is
 regenerated and reviewed (``THE_LOOP_REGEN_JIRA_GOLDEN=1``).
 
@@ -144,7 +144,7 @@ def test_golden_bodies(name, monkeypatch):
     adf = markdown_to_adf(body)
     _golden(name, "adf.json", _adf_json(adf))
     _golden(name, "wiki", markdown_to_wiki(body) + "\n")
-    _golden(name, "md", adf_to_markdown(adf) + "\n")
+    _golden(name, "read.txt", adf_to_markdown(adf) + "\n")
 
 
 # -- the checklist: real checkboxes, read back by the gate (R5.5) ------------------
@@ -414,3 +414,41 @@ def test_an_empty_body_is_an_empty_document():
     assert markdown_to_adf("") == {"type": "doc", "version": 1, "content": []}
     assert adf_to_markdown({"type": "doc", "version": 1, "content": []}) == ""
     assert markdown_to_wiki("") == ""
+
+
+# -- the client converts by REST version (design §C3) ------------------------------
+
+
+def _sdk_client(config, monkeypatch):
+    from jirafakes import FakeJiraSDK
+
+    from the_loop.jiraapi import JiraApiConfig, JiraClient
+
+    monkeypatch.setenv("JIRA_EMAIL", "bot@example.com")
+    monkeypatch.setenv("JIRA_API_TOKEN", "t0ken-value")
+    monkeypatch.setenv("JIRA_PAT", "pat-value")
+    sdk = FakeJiraSDK()
+    client = JiraClient(
+        JiraApiConfig.from_cli_config(config), factory=lambda api, auth: sdk
+    )
+    return client, sdk
+
+
+def test_the_client_sends_adf_on_cloud_and_reads_it_back(monkeypatch):
+    from jirafakes import cloud_config
+
+    client, sdk = _sdk_client(cloud_config(), monkeypatch)
+    comment = client.add_comment("PROJ-1", "- [ ] `design`\n- [x] `verify`")
+    [call] = [c for c in sdk.calls if c["method"] == "add_comment"]
+    assert call["body"] == markdown_to_adf("- [ ] `design`\n- [x] `verify`")
+    assert comment.body_md == "- [ ] `design`\n- [x] `verify`"
+
+
+def test_the_client_sends_wiki_on_data_center_and_reads_it_back(monkeypatch):
+    from jirafakes import DATA_CENTER
+
+    client, sdk = _sdk_client({"integrations": {"jira": DATA_CENTER}}, monkeypatch)
+    comment = client.add_comment("PROJ-1", "**bold** and `code`")
+    [call] = [c for c in sdk.calls if c["method"] == "add_comment"]
+    assert call["body"] == "*bold* and {{code}}"
+    assert comment.body_md == "**bold** and `code`"

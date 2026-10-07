@@ -142,7 +142,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 2.7
   - _Requirements:_ R4.4, R4.5, R5.5
   - _Test:_ T2 — red
-- [ ] 3.2 **`jiralabels.py` + `jiraformat.py`.** Add `markdown-it-py` to dependencies.
+- [x] 3.2 **`jiralabels.py` + `jiraformat.py`.** Add `markdown-it-py` to dependencies.
   Label validation is wired into config load. `JiraClient` converts bodies by REST
   version.
   - _Depends on:_ 3.1

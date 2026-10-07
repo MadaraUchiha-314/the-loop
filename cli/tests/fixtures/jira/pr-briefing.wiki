@@ -1,0 +1,36 @@
+h1. <PR title> — reviewer briefing
+
+h2. TL;DR
+
+One or two sentences: what this PR does and why.
+
+h2. Where to focus (in this order)
+
+Prioritized so a reviewer of AI-authored work knows what to scrutinize first.
+
+# *<highest-priority area>* — {{<path>}} — why it matters / what to check.
+# *<next>* — {{<path>}} — …
+# *<lower-risk / skim>* — …
+
+h2. What changed (map)
+
+{code}
+%% A diagram of the change — components touched, or commit-by-commit evolution.
+flowchart TD
+  A[area] --> B[area]
+{code}
+
+h2. Key decisions & why (education)
+
+The low-level calls the harness made, so the reviewer learns the design, not just the diff.
+
+* *<decision>* — why; trade-off; link to {{docs/decisions/decision-<nnn>.md}}.
+
+h2. Evidence
+
+Tests / checks / screenshots proving the acceptance criteria are met (e.g. CI green,
+{{pre-commit}} output, live smoke test).
+
+h2. Open questions for the reviewer
+
+Anything the reviewer must decide or is explicitly being asked to confirm.
