@@ -897,6 +897,8 @@ class Dispatcher:
             self.config.authorized_users,
             assignment_sink=self._deliver_assignment,
             cli_config=self.cli_config,
+            # The Jira ids a human gate reads on a Jira work item (issue-475).
+            principals=self.config.principals,
         )
         self._event_template = self._load_template(
             self.config.prompt_template, DEFAULT_PROMPT_TEMPLATE
@@ -999,6 +1001,8 @@ class Dispatcher:
             config.authorized_users,
             assignment_sink=self._deliver_assignment,
             cli_config=self.cli_config,
+            # The Jira ids a human gate reads on a Jira work item (issue-475).
+            principals=config.principals,
         )
         self._event_template = self._load_template(
             config.prompt_template, DEFAULT_PROMPT_TEMPLATE

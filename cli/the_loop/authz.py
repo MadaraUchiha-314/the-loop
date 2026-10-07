@@ -102,6 +102,15 @@ _GITHUB_STAMP = f"{SELF_COMMENT_ATTRIBUTION}\n{SELF_COMMENT_MARKER}"
 JIRA_RELAY_MARKER = "[the-loop:relay]"
 JIRA_RELAY_ATTRIBUTION = f"🗣️ relayed by the-loop · {JIRA_RELAY_MARKER}"
 
+#: How a human gate (``classify-feedback``, the phase-selection reply) names a
+#: Jira comment's author: ``jira:<accountId>`` — a namespace no GitHub login can
+#: enter (a login has no ``:``), so a GitHub account named like a Jira id never
+#: passes a gate as that person, and the reverse (issue-475).
+JIRA_GATE_PREFIX = "jira:"
+#: The author a gate sees for a Jira relay: the operator's words, as an unmarked
+#: relay is on GitHub. Outside both namespaces above, so nothing else can claim it.
+JIRA_RELAY_GATE_AUTHOR = "jira-relay:operator"
+
 #: What :func:`jira_comment_origin` answers.
 ORIGIN_SELF = "self"
 ORIGIN_RELAY = "relay"
@@ -208,6 +217,28 @@ def is_authorized_on(
     if not actor:
         return False
     return actor in set(ids_for(principals, provider))
+
+
+def gate_authorized_users(
+    github_logins: Sequence[str],
+    principals: Sequence["Principal"],
+    jira: bool = False,
+) -> List[str]:
+    """The identities a human gate accepts: the GitHub logins, as always, then —
+    with Jira configured or Jira ids listed — every listed Jira id as
+    ``jira:<id>`` and :data:`JIRA_RELAY_GATE_AUTHOR` (issue-475).
+
+    A GitHub-only deployment gets exactly ``github_logins``.
+    """
+    from .identity import ids_for
+
+    out = list(github_logins)
+    jira_ids = ids_for(principals, "jira")
+    if not (jira or jira_ids):
+        return out
+    out += [f"{JIRA_GATE_PREFIX}{native}" for native in jira_ids]
+    out.append(JIRA_RELAY_GATE_AUTHOR)
+    return out
 
 
 def resolve_authorized_users(configured: Sequence) -> List[str]:

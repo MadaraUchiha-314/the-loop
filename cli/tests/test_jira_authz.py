@@ -385,3 +385,56 @@ def test_a_control_command_on_jira_needs_a_named_jira_actor(
     finally:
         dispatcher.stop()
     assert (records[0] is not None) is recorded
+
+
+# -- the human gates: a Jira author in the gate's Jira namespace (task 4.4) --------------
+
+
+def test_a_github_only_gate_list_is_unchanged():
+    from the_loop.authz import gate_authorized_users
+
+    principals = parse_authorized_users(["octocat", {"github": "ada", "slack": "U1"}])
+    assert gate_authorized_users(["octocat", "ada"], principals) == ["octocat", "ada"]
+
+
+def test_a_jira_deployments_gate_list_names_jira_ids_in_their_namespace():
+    from the_loop.authz import JIRA_RELAY_GATE_AUTHOR, gate_authorized_users
+
+    allowed = gate_authorized_users(["octocat", "ada"], PRINCIPALS, jira=True)
+    assert allowed == [
+        "octocat",
+        "ada",
+        f"jira:{ADA}",
+        f"jira:{DC_KEY}",
+        JIRA_RELAY_GATE_AUTHOR,
+    ]
+    assert ADA not in allowed, "a bare Jira id is a GitHub login's namespace"
+
+
+def test_comments_from_names_a_jira_author_in_the_jira_namespace():
+    from the_loop.authz import JIRA_RELAY_GATE_AUTHOR
+    from the_loop.graphlink import comments_from
+
+    human = RoutedEvent(
+        "issue_comment", "created", "d", [REF], _jira_payload(ADA, "ok")
+    )
+    assert comments_from(human) == [{"author": f"jira:{ADA}", "body": "ok"}]
+    relay = RoutedEvent(
+        "issue_comment", "created", "d", [REF], _jira_payload(BOT, "ok", relayed=True)
+    )
+    assert comments_from(relay) == [{"author": JIRA_RELAY_GATE_AUTHOR, "body": "ok"}]
+
+
+def test_a_github_account_named_like_a_jira_id_never_passes_as_that_person():
+    """A GitHub login equal to a listed accountId reaches a gate as itself."""
+    from the_loop.authz import gate_authorized_users
+    from the_loop.graphlink import comments_from
+
+    payload = {
+        "action": "created",
+        "comment": {"id": 1, "body": "approved", "user": {"login": ADA}},
+    }
+    routed = RoutedEvent("issue_comment", "created", "d", [GH_REF], payload)
+    [comment] = comments_from(routed)
+    allowed = gate_authorized_users(["octocat"], PRINCIPALS, jira=True)
+    assert comment["author"] == ADA and comment["author"] not in allowed

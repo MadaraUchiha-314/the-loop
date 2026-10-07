@@ -224,7 +224,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 4.2
   - _Requirements:_ R6.1–R6.3
   - _Test:_ T5, T7 (abuse cases 1, 2) — red → green
-- [ ] 4.4 **Integration scenarios for ingress.** Add `test_jira_integration.py`, with
+- [x] 4.4 **Integration scenarios for ingress.** Add `test_jira_integration.py`, with
   Gherkin docstrings and `Requirement:` links:
   - _an authorized Jira comment resumes the work item's session_
   - _the same Jira comment by webhook and by poll is delivered once_
