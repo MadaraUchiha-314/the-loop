@@ -1322,7 +1322,7 @@ def _announce_force(runtime: "Runtime", item: WorkItem, record: Dict[str, Any]) 
     mean "the operator is told the audit trail exists when it does not".
     """
     from ..authz import mark_self_authored
-    from .integrations import IntegrationError, resolve
+    from .integrations import IntegrationError, integration_for
 
     warnings = "".join(f"\n- ⚠️ {w}" for w in record.get("warnings") or [])
     body = mark_self_authored(
@@ -1333,7 +1333,9 @@ def _announce_force(runtime: "Runtime", item: WorkItem, record: Dict[str, Any]) 
         "so `the-loop check --recompute` will still report it as unmet."
     )
     try:
-        resolve("github", runtime.config).call("add-comment", ref=item.ref, body=body)
+        integration_for(item.ref, runtime.config).call(
+            "add-comment", ref=item.ref, body=body
+        )
     except (IntegrationError, Exception) as exc:  # noqa: BLE001
         logger.warning("could not post the force audit comment: %s", exc)
         return str(exc)
@@ -1366,7 +1368,7 @@ def _announce_skips(
     ``""`` otherwise (issue-194).
     """
     from ..authz import mark_self_authored
-    from .integrations import IntegrationError, resolve
+    from .integrations import IntegrationError, integration_for
 
     body = mark_self_authored(
         "🤖 _the-loop_ — **declared skips**\n\n"
@@ -1379,7 +1381,9 @@ def _announce_skips(
         "them."
     )
     try:
-        resolve("github", runtime.config).call("add-comment", ref=item.ref, body=body)
+        integration_for(item.ref, runtime.config).call(
+            "add-comment", ref=item.ref, body=body
+        )
     except (IntegrationError, Exception) as exc:  # noqa: BLE001
         logger.warning("could not post the skip audit comment: %s", exc)
         return str(exc)

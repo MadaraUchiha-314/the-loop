@@ -806,9 +806,9 @@ def _selection_checklist(work_item: str, cli_config: Optional[Mapping]) -> str:
     if not work_item or parse_standing_ref(work_item):
         return ""
     try:
-        from ..graph.integrations import resolve
+        from ..graph.integrations import integration_for
 
-        data = resolve("github", dict(cli_config or {})).call(
+        data = integration_for(work_item, dict(cli_config or {})).call(
             "list-comments", ref=work_item
         )
     except Exception as exc:  # noqa: BLE001 — unreadable is "", refused below

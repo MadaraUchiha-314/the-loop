@@ -28,6 +28,7 @@ from ...jiraapi import (
     JiraComment,
     JiraTransition,
 )
+from ...jiralabels import JiraLabelError, jira_label
 from ...sessions import WorkItemRef
 from .base import IntegrationError, OperationUnsupported
 from .github import OPERATIONS as GITHUB_OPERATIONS
@@ -107,12 +108,14 @@ class JiraProvider:
             comment = self._run(lambda: jira.add_comment(key, body))
             return {"result": {"html_url": comment.url}}
         if op == "set-labels":
-            # Adds, leaving every other label in place — GitHub's semantics.
-            labels = [str(label) for label in params["labels"]]
+            # Adds, leaving every other label in place — GitHub's semantics —
+            # in the Jira-safe form (design §C5).
+            labels = [_label(str(label)) for label in params["labels"]]
             self._run(lambda: jira.add_labels(key, labels))
             return {"result": "ok"}
         if op == "remove-label":
-            removed = self._run(lambda: jira.remove_label(key, str(params["label"])))
+            label = _label(str(params["label"]))
+            removed = self._run(lambda: jira.remove_label(key, label))
             return {"result": "ok" if removed else "absent"}
         if op == "get-labels":
             return {"labels": self._run(lambda: jira.labels(key))}
@@ -171,6 +174,13 @@ class JiraProvider:
             extra={"work_item": key, "provider": "jira", "transition": chosen.name},
         )
         return {"result": "ok", "transition": chosen.name}
+
+
+def _label(name: str) -> str:
+    try:
+        return jira_label(name)
+    except JiraLabelError as exc:
+        raise IntegrationError(f"jira: {exc}") from None
 
 
 def _as_read(comment: JiraComment) -> str:

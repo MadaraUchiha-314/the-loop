@@ -34,8 +34,8 @@ __all__ = [
 ]
 
 
-def _integration(ctx: HookContext, target: str):
-    """The provider, resolved at call time.
+def _integration(ctx: HookContext):
+    """The work item's provider — by its ref (issue-475) — resolved at call time.
 
     Imported inside the function for the reason ``selection.py`` spells out: a
     module-level ``from ..integrations import resolve`` binds the name *here*, so
@@ -44,9 +44,9 @@ def _integration(ctx: HookContext, target: str):
     module — which is how a test of ``set-phase-label`` reached the real GitHub
     API instead of its fake (issue-194).
     """
-    from ..integrations import resolve
+    from ..integrations import integration_for
 
-    return resolve(target, ctx.config)
+    return integration_for(ctx.work_item.ref, ctx.config)
 
 
 @hook("set-phase-label")
@@ -61,7 +61,7 @@ def set_phase_label(ctx: HookContext) -> HookResult:
     if not phase:
         return HookResult.skipped(name, "node declares no phase label")
     label = f"{PHASE_LABEL_PREFIX}{phase}"
-    github = _integration(ctx, "github")
+    github = _integration(ctx)
     # issue-393 B10: the phase label is documented as THE position marker, and
     # every dashboard query assumes one `loop:*` label per item — but the add was
     # add-only, so the labels piled up and a board showed the item in every
@@ -165,9 +165,7 @@ def request_review(ctx: HookContext) -> HookResult:
         "approval, an approval with comments, or the changes you want."
     )
     try:
-        _integration(ctx, "github").call(
-            "add-comment", ref=ctx.work_item.ref, body=body
-        )
+        _integration(ctx).call("add-comment", ref=ctx.work_item.ref, body=body)
     except IntegrationError as exc:
         logger.warning("could not request review: %s", exc)
         return HookResult.ok(name, posted=False, error=str(exc))
@@ -218,12 +216,8 @@ def publish_artifact(ctx: HookContext) -> HookResult:
     # hooks' rule): the test seam and any embedder patch
     # ``graph.integrations.resolve``, and a module-level binding would slip
     # past them.
-    from ..integrations import resolve
-
     try:
-        resolve("github", ctx.config).call(
-            "add-comment", ref=ctx.work_item.ref, body=body
-        )
+        _integration(ctx).call("add-comment", ref=ctx.work_item.ref, body=body)
     except IntegrationError as exc:
         logger.warning("could not publish %s: %s", artifact, exc)
         return HookResult.ok(name, posted=False, error=str(exc))

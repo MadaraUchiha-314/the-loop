@@ -75,10 +75,11 @@ _CRITERION_LINE = re.compile(r"^\s*[-*]\s*(?:\[[ xX]\]\s*)?(?P<text>\S.*?)\s*$")
 
 
 def _resolve(ctx: HookContext):
-    """The github integration, resolved at call time (the patchable seam)."""
-    from ..integrations import resolve
+    """The work item's integration — by its ref (issue-475) — resolved at call
+    time (the patchable seam)."""
+    from ..integrations import integration_for
 
-    return resolve("github", ctx.config)
+    return integration_for(ctx.work_item.ref, ctx.config)
 
 
 def parse_goal(body: str) -> Optional[Dict[str, Any]]:

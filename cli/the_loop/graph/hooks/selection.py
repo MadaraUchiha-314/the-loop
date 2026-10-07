@@ -532,15 +532,15 @@ def _asks_surface(ctx: HookContext) -> bool:
 
 
 def _resolve(ctx: HookContext):
-    """The github integration, resolved at call time.
+    """The work item's integration — by its ref (issue-475) — resolved at call time.
 
     Imported inside the function on purpose: a module-level ``from ..
     integrations import resolve`` binds the name here, so the seam every other
     caller (and every test) patches would silently not apply to this module.
     """
-    from ..integrations import resolve
+    from ..integrations import integration_for
 
-    return resolve("github", ctx.config)
+    return integration_for(ctx.work_item.ref, ctx.config)
 
 
 def _phase_rows(ctx: HookContext) -> Tuple[List[str], List[str], List[str]]:

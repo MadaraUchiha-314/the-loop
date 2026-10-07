@@ -156,7 +156,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 3.2
   - _Requirements:_ R4.6
   - _Test:_ T7 (abuse case 4) — red → green
-- [ ] 3.4 **Hooks resolve the integration from the ref.**
+- [x] 3.4 **Hooks resolve the integration from the ref.**
   - Red first: `test_set_phase_label_on_jira_keeps_one_loop_label`, plus a selection
     hook reading a Jira checklist through `list-comments`.
   - Then add `integration_for(ref, config)` and replace the six `resolve("github", …)`
