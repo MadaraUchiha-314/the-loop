@@ -1024,6 +1024,10 @@ flowchart LR
   parsing the body. A verified delivery SHALL be read for `webhookEvent`, `issue.key`
   and `comment.id` only. The issue and the comment SHALL be fetched again with the
   daemon's credential, so a forged-but-signed body injects neither text nor identity.
+  The comment is fetched by its id (`issue/{key}/comment/{id}`), wherever it sits in the
+  thread; a full listing (the poller, the gates) reads every page of
+  `issue/{key}/comment` and raises rather than return a truncated list, keeping the
+  newest 5,000 of a longer thread with a warning (critic C2).
   `X-Atlassian-Webhook-Identifier` is logged and never used as a key. The doorbell's
   source projects and arming labels hot-reload with the routing policy, on the next
   delivery by either route.

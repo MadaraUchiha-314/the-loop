@@ -26,7 +26,7 @@ import pytest
 from jirafakes import FakeJiraClient, cloud_config
 
 from the_loop.authz import mark_relayed_on_jira, mark_self_authored_on_jira
-from the_loop.jiraapi import JiraComment, JiraIssue
+from the_loop.jiraapi import JiraClient, JiraComment, JiraIssue
 from the_loop.poller.jira import JiraPollProvider
 from the_loop.sessions import WorkItemRef
 from the_loop.webhook import serve
@@ -249,7 +249,7 @@ def _comment(cid: str, author: str, body: str) -> JiraComment:
     )
 
 
-def _doorbell(client: FakeJiraClient, recorder: _Recorder) -> JiraDoorbell:
+def _doorbell(client: JiraClient, recorder: _Recorder) -> JiraDoorbell:
     provider = JiraPollProvider(
         projects=["PROJ"], labels=[LABEL], site=SITE, client=client
     )
@@ -284,7 +284,8 @@ def test_doorbell_refetches_comment_and_issue():
     }
     outcome = _doorbell(client, recorder).ring(read_doorbell(forged))
     assert outcome == "routed"
-    assert {"get_issue", "comments"} <= set(client.calls_to())
+    assert {"get_issue", "comment"} <= set(client.calls_to())
+    assert "comments" not in client.calls_to()  # fetched by id, never scanned
     [routed] = recorder.routed
     assert routed.payload["comment"]["body"] == "the real words"
     assert routed.payload["comment"]["user"]["login"] == ADA
@@ -473,3 +474,59 @@ def test_a_hot_reload_rebuilds_the_doorbell(tmp_path, monkeypatch):
         assert on_jira(bell, "w-2") != "ignored:unarmed"
     finally:
         dispatcher.stop()
+
+
+def test_the_doorbell_fetches_a_comment_beyond_the_first_page(monkeypatch):
+    """
+    Scenario: the delivered comment is the 120th on the ticket (critic C2)
+      Given a ticket whose comments span three pages of 50
+      When a doorbell rings for the 120th
+      Then the doorbell reads that comment by id and routes it
+    """
+    from jirafakes import FakeJiraSDK
+
+    from the_loop.jiraapi import JiraApiConfig
+
+    monkeypatch.setenv("JIRA_EMAIL", "bot@example.com")
+    monkeypatch.setenv("JIRA_API_TOKEN", "t0ken-value")
+    docs = [
+        {
+            "id": str(20000 + n),
+            "author": {"accountId": ADA},
+            "body": {
+                "type": "doc",
+                "version": 1,
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [{"type": "text", "text": f"c{n}"}],
+                    }
+                ],
+            },
+        }
+        for n in range(150)
+    ]
+    sdk = FakeJiraSDK(
+        me={"accountId": BOT},
+        issues={
+            KEY: {
+                "key": KEY,
+                "fields": {
+                    "summary": "The real title",
+                    "labels": [JLABEL],
+                    "status": {"statusCategory": {"key": "indeterminate"}},
+                },
+            }
+        },
+        comment_docs={KEY: docs},
+        comment_page_cap=50,
+    )
+    client = JiraClient(
+        JiraApiConfig.from_cli_config(cloud_config()), factory=lambda api, auth: sdk
+    )
+    recorder = _Recorder()
+    assert _ring(_doorbell(client, recorder), comment="20119") == "routed"
+    [routed] = recorder.routed
+    assert routed.payload["comment"]["body"] == "c119"
+    paths = [c["path"] for c in sdk.calls if c["method"] == "_get_json"]
+    assert paths == [f"issue/{KEY}/comment/20119"]

@@ -280,6 +280,19 @@ class JiraPollProvider(PollProvider):
         me = self._service_account()
         return [self._comment(c, me) for c in found]
 
+    def comment(self, item: WorkItem, comment_id: str) -> Optional[Comment]:
+        """One comment by id — the webhook doorbell's read (critic C2): the
+        delivered comment wherever it sits in the thread, ``None`` when Jira
+        has no such comment."""
+        key = self._key(item)
+        found = _read(
+            f"comment {comment_id} of {item.ref}",
+            lambda: self.client.comment(key, comment_id),
+        )
+        if found is None:
+            return None
+        return self._comment(found, self._service_account())
+
     def _service_account(self) -> str:
         """The service account's id (``myself``); ``""`` when unreadable — then
         nothing is a relay, and the marker is the only self test. Read from the

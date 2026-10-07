@@ -244,9 +244,8 @@ class JiraDoorbell:
         if not armed or issue.status_category == "done":
             logger.debug("ignoring a comment on %s: the ticket is not armed", key)
             return "ignored:unarmed"
-        comment = next(
-            (c for c in self.provider.list_comments(item) if c.id == comment_id), None
-        )
+        # By id, wherever it sits in the thread — never a scan of a page.
+        comment = self.provider.comment(item, comment_id)
         if comment is None:
             return "ignored:no-such-comment"
         if self.provider.comment_origin(comment) == ORIGIN_SELF:

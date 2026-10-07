@@ -590,3 +590,94 @@ def test_a_jira_user_cannot_plant_a_phase_selection_checklist(
     [own, *theirs] = client.comments("PROJ-1")
     assert SELECTION_MARKER in own.body_md
     assert all(SELECTION_MARKER not in c.body_md for c in theirs)
+
+
+# -- every page of a ticket's comments (critic C2) ------------------------------------
+
+
+def _numbered(count: int) -> List[Dict[str, Any]]:
+    return [
+        {
+            "id": str(100 + n),
+            "author": {"accountId": STRANGER},
+            "body": {
+                "type": "doc",
+                "version": 1,
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [{"type": "text", "text": f"c{n}"}],
+                    }
+                ],
+            },
+        }
+        for n in range(count)
+    ]
+
+
+def test_comments_read_every_page_in_order(cloud_env):
+    """
+    Scenario: a ticket's comments span three pages
+      Given 5 comments and a server that answers at most 2 per page
+      When the client lists the comments
+      Then it reads all three pages, by startAt, and returns all 5 in order
+    """
+    sdk = FakeJiraSDK(comment_docs={"PROJ-1": _numbered(5)}, comment_page_cap=2)
+    read = _client(cloud_config(), sdk).comments("PROJ-1")
+    assert [c.id for c in read] == ["100", "101", "102", "103", "104"]
+    assert [c.body_md for c in read] == ["c0", "c1", "c2", "c3", "c4"]
+    pages = [c for c in sdk.calls if c["method"] == "_get_json"]
+    assert [c["path"] for c in pages] == ["issue/PROJ-1/comment"] * 3
+    assert [int(c["startAt"]) for c in pages] == [0, 2, 4]
+
+
+def test_a_comment_page_that_fails_mid_way_raises(cloud_env):
+    """A truncated list must never pass for the whole thread: the poller keeps
+    its cursor when the read raises."""
+    from jira.exceptions import JIRAError
+
+    pages: List[str] = []
+
+    def second_page_fails(method: str) -> None:
+        if method == "_get_json":
+            pages.append(method)
+            if len(pages) == 2:
+                raise JIRAError("Service Unavailable", status_code=503)
+
+    sdk = FakeJiraSDK(
+        comment_docs={"PROJ-1": _numbered(5)},
+        comment_page_cap=2,
+        on_call=second_page_fails,
+    )
+    with pytest.raises(JiraApiError) as err:
+        _client(cloud_config(), sdk).comments("PROJ-1")
+    assert err.value.status == 503
+
+
+def test_comments_past_the_cap_keep_the_newest_and_warn(cloud_env, monkeypatch, caplog):
+    import the_loop.jiraapi as jiraapi
+
+    monkeypatch.setattr(jiraapi, "COMMENTS_LIMIT", 3)
+    sdk = FakeJiraSDK(comment_docs={"PROJ-1": _numbered(7)}, comment_page_cap=2)
+    with caplog.at_level(logging.WARNING, logger="the-loop.jiraapi"):
+        read = _client(cloud_config(), sdk).comments("PROJ-1")
+    assert [c.id for c in read] == ["104", "105", "106"]
+    assert any("PROJ-1" in r.getMessage() for r in caplog.records)
+
+
+def test_one_comment_is_read_by_id(cloud_env):
+    """The doorbell's read: ``issue/{key}/comment/{id}``, not a scan of pages;
+    a gate marker is promoted on the service account's comment only."""
+    docs = _numbered(120)
+    docs[110]["author"] = {"accountId": BOT}
+    docs[110]["body"] = _PLANTED_ADF
+    sdk = FakeJiraSDK(comment_docs={"PROJ-1": docs}, comment_page_cap=50)
+    client = _client(cloud_config(), sdk)
+    found = client.comment("PROJ-1", "210")
+    assert found is not None and found.id == "210" and found.is_self
+    assert "<!-- the-loop:phase-selection -->" in found.body_md
+    stranger = client.comment("PROJ-1", "105")
+    assert stranger is not None and not stranger.is_self
+    assert client.comment("PROJ-1", "999") is None  # 404: no such comment
+    paths = [c["path"] for c in sdk.calls if c["method"] == "_get_json"]
+    assert "issue/PROJ-1/comment" not in paths
