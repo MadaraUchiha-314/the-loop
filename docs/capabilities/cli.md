@@ -251,7 +251,12 @@ self-learning/ML capabilities.
   verb given a Jira ref SHALL refuse it rather than coerce it. A Jira item's pull request
   in that mapped repository SHALL get the shipped `pr-loops/pr-<n>/` layout, exactly as a
   GitHub issue's pull request in its own repository does; one in any other repository
-  SHALL get the qualified `pr-loops/<owner>__<repo>/pr-<n>/`.
+  SHALL get the qualified `pr-loops/<owner>__<repo>/pr-<n>/`. The dispatcher SHALL make
+  the same comparison against the mapped repository: under `sessionPerPr:
+  cross-repository` such a pull request is delivered into the Jira item's own session,
+  under `always` its session requires the head branch, and its claim command carries no
+  `--pr-repo`; an unplaceable Jira item treats every pull request as cross-repository,
+  with a warning (critic C3).
 - The ticket verbs SHALL act on a work item's **own** tracker (issue-475, R8.2):
   `core/tickets.tracker_for(ref)` SHALL return the GitHub verbs (`core/github_ops`,
   unchanged) for a `github:` ref and the Jira verbs for a `jira:` ref, and the CLI, the

@@ -2965,3 +2965,118 @@ def test_router_flags_labeled_only_when_every_label_is_present():
     assert route([LABEL, MINE], "d-both") is True
     assert route([LABEL], "d-one") is False
     assert route([MINE], "d-other") is False
+
+
+# -- a Jira work item's pull requests compare against its mapped repository (C3) --------
+
+JIRA_REF = "jira:acme.atlassian.net/PROJ-7"
+
+
+def _jira_dispatcher(tmp_path, mode="cross-repository", mapped="octo/repo"):
+    """A dispatcher whose deployment maps Jira project PROJ to ``mapped``, with a
+    live session for PROJ-7 and both pull requests already linked and live."""
+    from the_loop.webhook.dispatcher import TmuxConfig
+
+    registry, dispatcher = make_dispatcher(
+        tmp_path,
+        FakeTmux(),
+        tmux_config=TmuxConfig(session_per_pr=mode),
+        portable_dir=str(tmp_path / "portable"),
+    )
+    projects = {"PROJ": {"repository": mapped}} if mapped else {"OPS": {}}
+    dispatcher.cli_config = {
+        "integrations": {
+            "jira": {
+                "site": "acme.atlassian.net",
+                "deployment": "cloud",
+                "projects": projects,
+            }
+        }
+    }
+    registry.register(make_session(ref=JIRA_REF))
+    for routed in (routed_pr_closed(merged=False), routed_cross_repo_pr()):
+        pr = pr_work_item(routed.event, routed.payload)
+        assert pr is not None
+        endpoint = registry.link_pull_request(JIRA_REF, pr)
+        assert endpoint is not None
+        endpoint.tmux_target = f"loop-{pr.slug}"
+        endpoint.harness_session_id = f"pr-{pr.slug}"
+        registry.save_endpoint(JIRA_REF, endpoint)
+    record = registry.find_by_work_item(JIRA_REF)
+    assert record is not None
+    return dispatcher, record
+
+
+def test_a_jira_items_pull_request_in_its_mapped_repository_is_same_repository(
+    tmp_path,
+):
+    """
+    Feature: a Jira work item's origin is its mapped repository (critic C3)
+      Scenario: `cross-repository` routing for a Jira work item's pull requests
+        Given PROJ mapped to octo/repo and a live session for PROJ-7
+        When a pull request in octo/repo is synchronized
+        Then it is delivered into PROJ-7's own session — no separate session
+        And a pull request in octo/other gets its own session, as cross-repository
+    """
+    dispatcher, record = _jira_dispatcher(tmp_path)
+    try:
+        same = routed_pr_closed(delivery="j-1", merged=False)
+        same.action = "synchronize"
+        assert dispatcher._endpoint_for(record, same).work_item.ref == JIRA_REF
+        cross = routed_cross_repo_pr(delivery="j-2")
+        assert (
+            dispatcher._endpoint_for(record, cross).work_item.ref
+            == "github:octo/other#16"
+        )
+    finally:
+        dispatcher.stop()
+
+
+def test_a_jira_item_with_no_mapped_repository_treats_every_pr_as_cross_repository(
+    tmp_path, caplog
+):
+    dispatcher, record = _jira_dispatcher(tmp_path / "unmapped", mapped="")
+    try:
+        same = routed_pr_closed(delivery="j-3", merged=False)
+        same.action = "synchronize"
+        with caplog.at_level(logging.WARNING):
+            routed_to = dispatcher._endpoint_for(record, same).work_item.ref
+        assert routed_to == PR_REF
+        assert "PROJ" in caplog.text
+    finally:
+        dispatcher.stop()
+
+
+@pytest.mark.parametrize(
+    "routed, required", [("same", True), ("cross", False)], ids=["same", "cross"]
+)
+def test_a_jira_items_same_repository_pr_session_requires_its_head_branch(
+    tmp_path, routed, required
+):
+    """`always` on a Jira item: the head-branch guard of `_endpoint_cwd` (issue-258)
+    applies to a pull request in the mapped repository, and only there (C3)."""
+    dispatcher, record = _jira_dispatcher(tmp_path, mode="always")
+    asked = []
+
+    def prepare(work_item, routed_event, *, require_branch=False):
+        asked.append(require_branch)
+        return str(tmp_path / "pr-checkout")
+
+    from the_loop.workspace import Workspace
+
+    dispatcher.workspace = Workspace(tmp_path / "ws")  # a workspace is configured
+    dispatcher._prepare_workspace = prepare  # type: ignore[assignment]
+    event = (
+        routed_pr_closed(delivery="j-4", merged=False)
+        if routed == "same"
+        else routed_cross_repo_pr(delivery="j-5")
+    )
+    pr = pr_work_item(event.event, event.payload)
+    assert pr is not None
+    endpoint = record.endpoint_for(pr)
+    assert endpoint is not None
+    try:
+        dispatcher._endpoint_cwd(record, endpoint, event)
+    finally:
+        dispatcher.stop()
+    assert asked == [required]

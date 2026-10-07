@@ -61,6 +61,7 @@ from ..control import parse_command as parse_control_command
 from ..graphlink import (
     GraphLink,
     GraphLinkConfig,
+    _pr_repo,
     render_graph_context,
     spec_id_for,
     GraphContext,
@@ -1723,6 +1724,22 @@ class Dispatcher:
 
     # -- durable PR → session bindings (issue-172) -------------------------------
 
+    def _in_origin_repository(self, pr: WorkItemRef, work_item: WorkItemRef) -> bool:
+        """Whether ``pr`` is in ``work_item``'s **origin** repository — a GitHub
+        item's own, a Jira ticket's mapped one (critic C3; ``origin_ref``).
+
+        A Jira item this deployment cannot place has no origin: every pull
+        request is then cross-repository, with a warning.
+        """
+        try:
+            origin = origin_ref(work_item, self.cli_config)
+        except UnknownJiraProject as exc:
+            logger.warning(
+                "%s; treating %s as a cross-repository pull request", exc, pr.ref
+            )
+            return False
+        return _same_repository(pr, origin)
+
     def _endpoint_for(self, record: Session, routed: RoutedEvent) -> Session:
         """The endpoint of ``record`` that should receive ``routed``.
 
@@ -1773,7 +1790,10 @@ class Dispatcher:
         tmux = self._tmux_for(record.work_item)
         if not tmux.splits_pull_requests:
             return record
-        if _same_repository(pr, record.work_item) and not tmux.splits_same_repository:
+        if (
+            self._in_origin_repository(pr, record.work_item)
+            and not tmux.splits_same_repository
+        ):
             return record
         endpoint = record.endpoint_for(pr)
         return endpoint if endpoint is not None and endpoint.is_live else record
@@ -3887,8 +3907,8 @@ class Dispatcher:
                 # repository rather than the ticket's own (issue-183).
                 pr_number=endpoint.work_item.number if inner else None,
                 pr_repo=(
-                    endpoint.work_item.path
-                    if inner and endpoint.work_item.path != session.work_item.path
+                    _pr_repo(session.work_item, endpoint.work_item, self.cli_config)
+                    if inner
                     else ""
                 ),
             ),
@@ -4315,7 +4335,9 @@ class Dispatcher:
             prepared = self._prepare_workspace(
                 endpoint.work_item,
                 routed,
-                require_branch=_same_repository(endpoint.work_item, record.work_item),
+                require_branch=self._in_origin_repository(
+                    endpoint.work_item, record.work_item
+                ),
             )
         except WorkspaceError as exc:
             logger.warning(
