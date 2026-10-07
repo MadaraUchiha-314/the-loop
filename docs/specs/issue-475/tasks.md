@@ -47,7 +47,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 1.1
   - _Requirements:_ R1.1–R1.4
   - _Test:_ T1 — `test_jira_refs.py` green; `test_routing.py`, `test_graph_refs.py`, `test_graphlink.py`, `test_core_graphs.py` green **unmodified**
-- [ ] 1.3 **One spec-id derivation.**
+- [x] 1.3 **One spec-id derivation.**
   - `graphlink.spec_id_for` and `lifecycle/contract.py:137` both call `ref.spec_id`.
   - `graph/refs.derive_ref` inverts `jira-<key>-<n>`, taking the site from config.
   - Registering a ref whose Jira key moved refuses a second spec folder and reports

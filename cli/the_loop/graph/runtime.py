@@ -22,6 +22,7 @@ from ..lifecycle import WorkItem as LifecycleWorkItem
 from .chain import ChainOutcome, run_chain
 from .contract import BLOCK, PASS, SKIP, WAIT, HookContext, WorkItem
 from .model import Graph, GraphConfigError, artifact_names, load_graph
+from ..sessions.refs import jira_site
 from .refs import derive_ref
 from .state import STATE_FILENAME, WorkItemState, StateLockBusy, state_lock, utc_now
 
@@ -255,6 +256,7 @@ class Runtime:
                 work_item_id,
                 str(self.config.get("originRepo") or ""),
                 host=str(self.config.get("githubHost") or ""),
+                jira_site=jira_site(self.config),
             )
         if not ref and resolved:
             logger.debug("derived ref %s for %s", resolved, work_item_id)

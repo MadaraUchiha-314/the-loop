@@ -44,7 +44,8 @@ def resolve_repo(repo: str) -> Path:
 
 
 def work_item_id(work_item: str) -> str:
-    """``github:octo/repo#396`` → ``issue-396``; anything else unchanged (issue-396).
+    """``github:octo/repo#396`` → ``issue-396``, ``jira:<site>/PROJ-7`` →
+    ``jira-proj-7`` (issue-475); anything else unchanged (issue-396).
 
     The graph names a work item by its spec-directory id and the ingress by a
     provider-qualified ref, and the daemon translates one into the other with
@@ -54,13 +55,14 @@ def work_item_id(work_item: str) -> str:
     directory that never exists — and reported the graph's start node in silence.
 
     Applied first in every verb here, so the API and the MCP tool accept a ref
-    too. Total and narrow: only a parsable GitHub ref is translated, through the
-    same parser and the same convention the daemon uses (``issue-<int>``), so no
+    too. Total and narrow: only a parsable GitHub or Jira ref is translated, through
+    the same parser and the same convention the daemon uses (``issue-<int>``,
+    ``jira-<key>-<int>``), so no
     argument can name a path shape it could not name before; a bare id, another
     provider's ref or anything unparsable comes back exactly as it went in.
     """
     text = work_item.strip()
-    if ":" not in text or "#" not in text:
+    if ":" not in text:
         return text
     from ..graphlink import spec_id_for
     from ..sessions import WorkItemRef

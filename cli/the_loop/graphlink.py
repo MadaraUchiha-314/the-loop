@@ -60,6 +60,8 @@ __all__ = [
     "GraphLinkConfig",
     "comments_from",
     "render_graph_context",
+    "SpecFolderConflict",
+    "spec_folder_for",
     "spec_id_for",
 ]
 
@@ -135,21 +137,55 @@ class GraphLinkConfig:
 
 
 def spec_id_for(ref: WorkItemRef) -> Optional[str]:
-    """``github:owner/repo#113`` → ``"issue-113"``; ``None`` if not GitHub.
+    """``github:owner/repo#113`` → ``"issue-113"``; ``jira:<site>/PROJ-7`` →
+    ``"jira-proj-7"``; ``None`` for a provider with no convention.
 
     The ingress and the graph name the same work item differently — a
     provider-qualified ref versus a spec-directory id — and this is the whole of
-    the translation between them.
+    the translation between them. It is :attr:`WorkItemRef.spec_id`, the one
+    derivation every caller shares (issue-475, R2.4).
 
     ``ref.number`` is an ``int`` parsed by :meth:`WorkItemRef.parse`, so the
     result cannot contain a path separator however the ref arrived on the wire
-    (issue-113 A5). Other providers return ``None`` rather than a guess: the
-    ``issue-<n>`` convention is GitHub's, and a wrong directory name would
+    (issue-113 A5); a Jira key is ``[A-Z][A-Z0-9_]`` by its grammar. Other
+    providers return ``None`` rather than a guess: a wrong directory name would
     silently start the wrong work item's graph.
     """
-    if ref.provider != "github":
+    return ref.spec_id
+
+
+class SpecFolderConflict(ValueError):
+    """A work item already has a spec folder under an id other than the one its
+    ref now derives (issue-475, R2.3) — a Jira ticket whose key moved."""
+
+
+def spec_folder_for(
+    spec_root: Path, ref: WorkItemRef, moved_from: Sequence[WorkItemRef] = ()
+) -> Optional[Path]:
+    """The spec folder ``ref`` derives under ``spec_root``, or ``None`` when its
+    provider has no convention.
+
+    ``moved_from`` names the refs this work item was known by before (a Jira key
+    that moved projects). When one of them already has a folder, opening a second
+    one under the new id would split the work item's state in two, so it is
+    refused with :class:`SpecFolderConflict` naming both paths. Nothing is
+    created either way.
+    """
+    item_id = ref.spec_id
+    if item_id is None:
         return None
-    return f"issue-{int(ref.number)}"
+    target = Path(spec_root) / item_id
+    for previous in moved_from:
+        previous_id = previous.spec_id
+        if previous_id is None or previous_id == item_id:
+            continue
+        existing = Path(spec_root) / previous_id
+        if existing.is_dir():
+            raise SpecFolderConflict(
+                f"{ref.ref} was {previous.ref}, whose spec folder is {existing}; "
+                f"refusing to open a second one at {target}"
+            )
+    return target
 
 
 def _pr_repo(work_item: WorkItemRef, pr: WorkItemRef) -> str:

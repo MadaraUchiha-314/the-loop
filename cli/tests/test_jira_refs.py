@@ -278,3 +278,41 @@ def test_a_github_only_verb_refuses_a_jira_ref(tmp_path):
 
     with pytest.raises(ValueError, match="is a Jira work item"):
         github_ops.comment(REF, "hi", {"state": {"root": str(tmp_path)}})
+
+
+# -- a moved Jira key (R2.3) ------------------------------------------------------------
+
+
+def test_moved_jira_key_refuses_second_spec_folder(tmp_path):
+    """A ticket moved from OLD-4 to NEW-9 keeps the folder it has: the new key's
+    id would be a second identity for one work item, so it is refused with both
+    paths named."""
+    from the_loop.graphlink import SpecFolderConflict, spec_folder_for
+
+    old = WorkItemRef.parse(f"jira:{SITE}/OLD-4")
+    new = WorkItemRef.parse(f"jira:{SITE}/NEW-9")
+    (tmp_path / "jira-old-4").mkdir()
+    with pytest.raises(SpecFolderConflict) as raised:
+        spec_folder_for(tmp_path, new, moved_from=[old])
+    message = str(raised.value)
+    assert str(tmp_path / "jira-old-4") in message
+    assert str(tmp_path / "jira-new-9") in message
+    assert not (tmp_path / "jira-new-9").exists()
+
+
+def test_spec_folder_for_an_unmoved_or_fresh_ref(tmp_path):
+    from the_loop.graphlink import spec_folder_for
+
+    new = WorkItemRef.parse(f"jira:{SITE}/NEW-9")
+    old = WorkItemRef.parse(f"jira:{SITE}/OLD-4")
+    assert spec_folder_for(tmp_path, new) == tmp_path / "jira-new-9"
+    # the old key never had a folder here: nothing to conflict with
+    assert spec_folder_for(tmp_path, new, moved_from=[old]) == tmp_path / "jira-new-9"
+    gh = WorkItemRef.parse("github:octo/repo#3")
+    assert spec_folder_for(tmp_path, gh) == tmp_path / "issue-3"
+
+
+def test_spec_folder_for_a_provider_without_a_convention_is_none(tmp_path):
+    from the_loop.graphlink import spec_folder_for
+
+    assert spec_folder_for(tmp_path, WorkItemRef.parse("gitlab:o/r#1")) is None

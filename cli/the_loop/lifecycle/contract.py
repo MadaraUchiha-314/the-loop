@@ -134,7 +134,7 @@ class WorkItem:
             number=parsed.number,
             kind=kind,
             url=url,
-            id=id or f"issue-{parsed.number}",
+            id=id or parsed.spec_id or parsed.ref,
         )
 
     def to_params(self) -> Dict[str, Any]:
