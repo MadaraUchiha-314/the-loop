@@ -114,10 +114,14 @@ def _pr_briefing() -> str:
 
 
 def _bodies(monkeypatch) -> Dict[str, str]:
+    """Each body as it is posted: the-loop's comments carry the Jira self-marker
+    (the provider and the ledger apply it); the briefing is a document."""
+    from the_loop.authz import mark_self_authored_on_jira as marked
+
     return {
-        "checklist": _checklist(),
-        "request-review": _request_review(monkeypatch),
-        "ask": _ask(),
+        "checklist": marked(_checklist()),
+        "request-review": marked(_request_review(monkeypatch)),
+        "ask": marked(_ask()),
         "pr-briefing": _pr_briefing(),
     }
 

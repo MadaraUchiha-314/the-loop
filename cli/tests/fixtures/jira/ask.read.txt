@@ -5,6 +5,4 @@
 
 Reply on this ticket; the default is `postgres` if nobody answers.
 
-🤖 _the-loop, autonomous comment_
-
-[the-loop:agent-comment]
+🤖 the-loop, autonomous comment · [the-loop:agent-comment]

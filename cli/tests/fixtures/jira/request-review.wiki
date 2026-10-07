@@ -2,6 +2,4 @@
 
 Work item {{jira-proj-7}} has reached a human gate. Reply with an approval, an approval with comments, or the changes you want.
 
-🤖 _the-loop, autonomous comment_
-
-\[the-loop:agent-comment\]
+🤖 the-loop, autonomous comment · \[the-loop:agent-comment\]

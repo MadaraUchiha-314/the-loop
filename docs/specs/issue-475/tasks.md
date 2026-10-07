@@ -148,7 +148,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 3.1
   - _Requirements:_ R4.4, R4.5
   - _Test:_ T2 — green; T10 bodies generated
-- [ ] 3.3 **Self-marker for Jira.**
+- [x] 3.3 **Self-marker for Jira.**
   - Red first: `test_jira_self_comment_never_resumes`, with the marker variant and the
     `author_id == myself` variant.
   - Then add `authz.JIRA_SELF_MARKER`, make `is_self_authored` match either marker, set

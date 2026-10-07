@@ -47,7 +47,7 @@ import logging
 import os
 import re
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import (
     Any,
     Callable,
@@ -60,6 +60,8 @@ from typing import (
     Set,
     Tuple,
 )
+
+from .authz import is_self_authored
 
 logger = logging.getLogger("the-loop.jiraapi")
 
@@ -360,7 +362,8 @@ class JiraComment:
     body_md: str
     created: str = ""
     url: str = ""
-    #: Whether the-loop wrote it. The Jira self-marker sets this (issue-475 PR 3).
+    #: Whether the-loop wrote it: a self-marker in the body, or the author is the
+    #: service account (:meth:`JiraClient.comments`).
     is_self: bool = False
 
 
@@ -584,15 +587,41 @@ class JiraClient:
         return bool(self._call("remove label", run))
 
     def comments(self, key: str) -> List[JiraComment]:
+        """The issue's comments, each with ``is_self`` decided (R4.6).
+
+        A comment is the-loop's own when its body carries a self-marker **or**
+        its author is this client's account (:meth:`myself`) — two independent
+        tests, either one enough (design §C6, trade-off 6). ``myself`` is asked
+        only when some comment is unmarked, and an answer that cannot be had
+        leaves the marker as the only test.
+        """
         key = self._key(key)
         found = self._call("list comments", lambda j: j.comments(key))
-        return [self._comment_of(key, getattr(c, "raw", {}) or {}) for c in found or []]
+        read = [self._comment_of(key, getattr(c, "raw", {}) or {}) for c in found or []]
+        unmarked = [c for c in read if not is_self_authored(c.body_md)]
+        me = self._self_id() if unmarked else ""
+        return [
+            replace(
+                c,
+                is_self=is_self_authored(c.body_md) or bool(me and c.author_id == me),
+            )
+            for c in read
+        ]
+
+    def _self_id(self) -> str:
+        try:
+            return self.myself()
+        except JiraApiError as exc:
+            logger.debug("could not read the Jira account's own id: %s", exc)
+            return ""
 
     def add_comment(self, key: str, markdown: str) -> JiraComment:
         key = self._key(key)
         body = self._body(markdown)
         made = self._call("add comment", lambda j: j.add_comment(key, body))
-        return self._comment_of(key, getattr(made, "raw", {}) or {})
+        return replace(
+            self._comment_of(key, getattr(made, "raw", {}) or {}), is_self=True
+        )
 
     def transitions(self, key: str) -> List[JiraTransition]:
         key = self._key(key)

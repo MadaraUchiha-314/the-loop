@@ -146,6 +146,4 @@ Reply {{the-loop execute}}. The boxes as they stand at that moment are frozen as
 
 \[the-loop:phase-selection\]
 
-🤖 _the-loop, autonomous comment_
-
-\[the-loop:agent-comment\]
+🤖 the-loop, autonomous comment · \[the-loop:agent-comment\]

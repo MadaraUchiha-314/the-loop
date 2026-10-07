@@ -10,9 +10,9 @@ configured site, for a project listed under ``integrations.jira.projects``.
 Anything else is refused with the client untouched, so a ref naming another
 site never carries this deployment's credential there (abuse case 8).
 
-Two things land in PR 3 and are not here yet: the Jira-safe label mapping
-(``jira_label``) and the visible self-marker on the comments this provider
-writes. Labels and bodies pass through as given until then.
+Every comment it writes carries the visible Jira self-marker
+(:func:`~the_loop.authz.mark_self_authored_on_jira`), and a comment the
+service account wrote reads back marked even if its text lost the marker.
 """
 
 from __future__ import annotations
@@ -20,7 +20,14 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Dict, FrozenSet, List, Optional, TypeVar
 
-from ...jiraapi import JiraApiConfig, JiraApiError, JiraClient, JiraTransition
+from ...authz import is_self_authored, mark_self_authored_on_jira
+from ...jiraapi import (
+    JiraApiConfig,
+    JiraApiError,
+    JiraClient,
+    JiraComment,
+    JiraTransition,
+)
 from ...sessions import WorkItemRef
 from .base import IntegrationError, OperationUnsupported
 from .github import OPERATIONS as GITHUB_OPERATIONS
@@ -95,7 +102,9 @@ class JiraProvider:
         key = self._key(str(params.get("ref", "")))
         jira = self.client
         if op == "add-comment":
-            comment = self._run(lambda: jira.add_comment(key, str(params["body"])))
+            # R4.6: the visible Jira self-marker replaces GitHub's hidden one.
+            body = mark_self_authored_on_jira(str(params["body"]))
+            comment = self._run(lambda: jira.add_comment(key, body))
             return {"result": {"html_url": comment.url}}
         if op == "set-labels":
             # Adds, leaving every other label in place — GitHub's semantics.
@@ -116,7 +125,7 @@ class JiraProvider:
             "comments": [
                 {
                     "id": c.id,
-                    "body": c.body_md,
+                    "body": _as_read(c),
                     "author": {"login": c.author_id},
                     "user": {"login": c.author_id},
                     "created_at": c.created,
@@ -162,6 +171,19 @@ class JiraProvider:
             extra={"work_item": key, "provider": "jira", "transition": chosen.name},
         )
         return {"result": "ok", "transition": chosen.name}
+
+
+def _as_read(comment: JiraComment) -> str:
+    """A comment's body as every gate reads it.
+
+    A comment the service account wrote is the-loop's own even when its text
+    lost the marker (an edit in Jira, abuse case 4), so it is handed on carrying
+    the marker: every reader that drops a self-authored comment by its body —
+    the feedback gates, the goal and review hooks — then drops this one too.
+    """
+    if comment.is_self and not is_self_authored(comment.body_md):
+        return mark_self_authored_on_jira(comment.body_md)
+    return comment.body_md
 
 
 def _listing(transitions: List[JiraTransition]) -> str:

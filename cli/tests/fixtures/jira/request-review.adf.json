@@ -64,25 +64,7 @@
       "content": [
         {
           "type": "text",
-          "text": "🤖 "
-        },
-        {
-          "type": "text",
-          "text": "the-loop, autonomous comment",
-          "marks": [
-            {
-              "type": "em"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "paragraph",
-      "content": [
-        {
-          "type": "text",
-          "text": "[the-loop:agent-comment]"
+          "text": "🤖 the-loop, autonomous comment · [the-loop:agent-comment]"
         }
       ]
     }
