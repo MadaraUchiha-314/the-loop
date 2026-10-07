@@ -6,8 +6,9 @@ workItem: "github:MadaraUchiha-314/the-loop#475"
 
 # Documentation: Jira as a first-class work-item source and update channel (issue-475)
 
-Filled in one PR at a time. This record covers **PR 1 — identity** (tasks 1.1–1.5)
-and **PR 2 — control-plane integration** (tasks 2.1–2.7).
+Filled in one PR at a time. This record covers **PR 1 — identity** (tasks 1.1–1.5),
+**PR 2 — control-plane integration** (tasks 2.1–2.7) and **PR 3 — Jira as ledger and
+channel** (tasks 3.1–3.7).
 
 ## Capability docs
 
@@ -78,3 +79,53 @@ and **PR 2 — control-plane integration** (tasks 2.1–2.7).
   - The Markdown → ADF/wiki conversion and the Jira self-marker are PR 3's. Until then
     `JiraClient._body`/`_markdown` send a minimal ADF document (v3) or the text as
     given (v2).
+
+## PR 3 — Jira as ledger and channel
+
+### Capability docs
+
+- **[`docs/capabilities/channels.md`](../../../capabilities/channels.md)** gains a
+  *Jira* section under *Current behaviour*, with a diagram and EARS criteria for:
+  - the provider-routed ledger (`RoutedLedger`): each event on its own work item's
+    tracker, `work-item.create` on `channels.ledger`, nothing recorded back onto its
+    source;
+  - the shared body selection (`channels/bodies.py`) and the Jira ledger's marked,
+    converted comments and `create_issue`, mirror-only projects refused;
+  - the Markdown ⇄ ADF / wiki conversion, the task-item checklist and the restored
+    sentinel markers;
+  - the visible Jira self-marker backed by the `myself` author check;
+  - hooks resolving the integration from the ref;
+  - the Jira-safe label mapping table and the load-time refusal;
+  - the output-only Jira channel, with the mirror-only setup as numbered steps.
+
+  The ledger bullet now names `jira` as a value, the summary line names the Jira ticket
+  as a ledger, and the *Design* list and *History* table gain issue-475 rows.
+
+### Documentation
+
+- **[`docs/config/cli/channels-options.md`](../../../config/cli/channels-options.md)**:
+  `ledger` takes `github | jira` and says it decides only where `work-item.create`
+  opens a ticket; a new *Jira* section with an example and one heading per key
+  (`jira.enabled`, `jira.subscribe`, `jira.verbosity`). It changed in the same commits
+  as the schema, as the docs-parity test requires.
+- **[`docs/cli/commands/add-channel.md`](../../../cli/commands/add-channel.md)**: a
+  `jira` row in the type table (an issue key, output only, the configured-project
+  rule).
+- **[`evidence/jira-bodies.md`](jira-bodies.md)** (T10): the checklist, request-review,
+  ask and PR-briefing bodies as ADF and wiki markup, generated from the golden files
+  T2 checks on every run.
+- **Docstrings:** `jiraformat`, `jiralabels`, `channels/bodies.py` and
+  `channels/jira.py` are new and carry their contracts; `jiraapi` (bodies through
+  `jiraformat`, `is_self`), `authz` (the Jira marker), `channels/base.py`
+  (`RoutedLedger`, `LEDGERS`, `ledger_name`), `channels/bus.py` (routed name,
+  `addresses`), `workchannels` (the `jira` type) and `graph/integrations`
+  (`integration_for`, the Jira provider's marker and labels) are updated.
+- **Not changed yet, and why:**
+  - `the-loop channels status` prints the Slack block only; a Jira block can follow
+    when the channel has more than three keys to show.
+  - The `ask`, `comment` and `add-channel` verbs still write their confirmation through
+    GitHub-only paths (`core/sessions.py`, `core/workchannels.py`,
+    `core/github_ops.py`, `channels/commands.py` and `channels/inbound.py` construct a
+    `GitHubLedger` directly). Making the verbs dispatch by tracker is PR 5 (task 5.2),
+    and the CLI capability doc changes with it.
+  - The skill, the commands and `/init` change in PR 5.

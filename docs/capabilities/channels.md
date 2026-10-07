@@ -2,8 +2,8 @@
 
 > Every channel — GitHub, the Slack bot, the CLI, the next one — is a peer on **one event
 > bus**: it subscribes to the events it wants, may publish the ones it is granted, renders
-> each natively; and one channel, the **ledger** (GitHub), records everything that started
-> elsewhere before anything acts on it.
+> each natively; and one channel, the **ledger** (GitHub — and, for a Jira work item, its
+> Jira ticket), records everything that started elsewhere before anything acts on it.
 
 ## What it is
 
@@ -71,8 +71,10 @@ flowchart LR
   paged and that the question is queued, and its `session.awaiting_input` event SHALL
   carry `channels_posted`. The exit code is unchanged: the **record on the ticket**
   decides it, so a channel outage never fails an ask.
-- **The ledger.** `channels.ledger` names the channel of record — `github`, the only value
-  shipped; an unknown value is refused at load. A record is a comment carrying a
+- **The ledger.** `channels.ledger` names the channel of record — `github` or, since
+  issue-475, `jira`; an unknown value is refused at load. Each event is recorded on the
+  tracker of **its own work item** (see [Jira](#jira)), so the key decides only where
+  `work-item.create` opens a ticket. A record is a comment carrying a
   machine-readable **envelope** (`<!-- the-loop:event {…} -->`: type, source, the actor's
   ids on every channel, timestamp). Four shapes: the ask's record is the question itself
   (marked); a `work-item.reply` record is the marked, quoted, scrubbed, keyword-defanged
@@ -842,8 +844,110 @@ flowchart LR
   — issue-413 — `channel.split_suspected` (warning) / `channel.split_cleared`.
   Payloads carry ids, event types and counts, never text.
 
+### Jira
+
+Jira is a ledger and a subscriber channel since
+[issue-475](https://github.com/MadaraUchiha-314/the-loop/issues/475), both over the
+one Jira client (`jiraapi.JiraClient`, decision-142). Nothing here runs without
+`integrations.jira`: a GitHub-only deployment gets the GitHub ledger itself, exactly as
+before.
+
+```mermaid
+flowchart LR
+  E["event"] --> R{"RoutedLedger<br/>provider of the work item"}
+  R -->|"github:… (a PR too)"| GL["GitHubLedger<br/>comment on the issue / PR"]
+  R -->|"jira:…"| JL["JiraLedger<br/>comment on the ticket"]
+  R -->|"work-item.create"| D["channels.ledger<br/>github | jira"]
+  E --> JC["JiraChannel<br/>declared jira@ room only"]
+  JL --> F["jiraformat<br/>ADF (v3) / wiki (v2)"]
+  JC --> F
+```
+
+- **The ledger routes by the ref.** WHEN `integrations.jira` is configured THEN
+  `load_ledger` SHALL return a `RoutedLedger` that records each event on the ledger of
+  its work item's provider — a Jira work item's events on its Jira ticket, a pull
+  request's on GitHub — and `work-item.create` on the configured `channels.ledger`. An
+  event whose work item belongs to no configured tracker SHALL be a failed record. The
+  bus SHALL NOT record an event back onto the tracker it came from.
+- **The same bodies on both trackers.** The body selection (the ask, a relay, a mirror,
+  the stamped default, a new ticket) lives in `channels/bodies.py`; the GitHub ledger
+  posts it as before, byte for byte. WHEN the Jira ledger records an event THEN it SHALL
+  post the same body with the **visible** Jira self-marker, converted for the
+  deployment's REST version, on the ticket `issue_key_for` placed on the configured site
+  and a configured project; nothing is sent for any other ref. WHEN `channels.ledger` is
+  `jira` and a `work-item.create` names a project with a `repository` THEN the ledger
+  SHALL open a ticket there with Jira-safe labels and return its `jira:` ref; a
+  mirror-only project is refused.
+- **Bodies are converted, both ways.** `jiraformat` parses the-loop's Markdown with
+  `markdown-it-py` into ADF (Cloud, REST v3) and writes wiki markup (Data Center, v2)
+  from that ADF: headings, emphasis, code, links, lists, tables, code blocks, quotes and
+  rules. A `- [ ]` / `- [x]` row becomes an ADF **task item** a person ticks in Jira,
+  and a ticked one reads back as `- [x]`, so the phase-selection gate reads a Jira
+  checklist unchanged; on wiki a row is `* (/)` (ticked) or `* (x)` (not). `<details>`,
+  HTML comments and envelopes are dropped, a `<summary>` kept bold. A bare the-loop
+  marker (`<!-- the-loop:phase-selection -->`, `goal-request`, `review-brief-request`)
+  becomes a visible `[the-loop:<name>]` and is restored on read, so a gate finds its own
+  comment on Jira as on GitHub. An ADF node the converter does not know is read as its
+  text, with a debug log.
+- **The Jira self-marker** (R4.6). Jira has no hidden text, so every comment the-loop
+  posts there ends with `🤖 the-loop, autonomous comment · [the-loop:agent-comment]`.
+  WHEN a Jira comment carries that marker **or** its author is the service account
+  (`myself`) THEN it SHALL be the-loop's own, and no gate or ingress SHALL read it as a
+  person's words. Either test alone is enough.
+- **Hooks follow the ref.** `set-phase-label`, the review request, the phase-selection,
+  goal and review gates, the runtime's audit comments and the Slack pipeline's
+  checklist read resolve their integration from the work item's ref
+  (`integration_for`), so a Jira work item keeps exactly one `loop:<phase>` label on
+  its ticket and never reaches GitHub's API.
+- **Labels are made Jira-safe** at the Jira boundary only; config, state and GitHub keep
+  the configured spelling. WHEN a label the-loop writes to Jira has no safe form THEN
+  the config load SHALL fail, naming it.
+
+  | Configured | On Jira | Rule |
+  |---|---|---|
+  | `the-loop: auto-execute` | `the-loop:auto-execute` | `:` then whitespace → `:` |
+  | `the-loop: rr` | `the-loop:rr` | `:` then whitespace → `:` |
+  | `needs  triage` | `needs-triage` | any other whitespace run → `-` |
+  | `loop:design` | `loop:design` | already safe |
+  | empty, or over 255 characters | — | refused at load |
+
+- **The Jira channel is an output-only mirror.** WHEN `channels.jira.enabled` is true and
+  an event the channel subscribes to concerns a work item with a declared `jira@<KEY>-<n>`
+  room THEN the channel SHALL post it, rendered at `channels.jira.verbosity`, with the
+  Jira self-marker. A work item with **no** declared room SHALL NOT be mirrored — there
+  is no central fallback, and the bus counts that as neither a post nor a failure. The
+  channel SHALL NOT open a conversation, hold a `publish` grant or read anything: a
+  comment on the mirror ticket never reaches a session. A room in a project not listed
+  under `integrations.jira.projects` SHALL be refused at declaration and at post.
+
+**Mirror-only setup** — a GitHub-ticketed work item mirroring its progress into a Jira
+ticket, with no Jira work items, ingress or ledger:
+
+1. Configure the credential part of `integrations.jira` (`site`, `deployment`, `api`) —
+   see [integrations options](/config/cli/integrations-options).
+2. List the room's project under `integrations.jira.projects` **without** a
+   `repository` (`OPS: {}`). That makes it mirror-only: a room, never a work item.
+3. Enable the channel with a subscribe list:
+
+   ```yaml
+   channels:
+     jira:
+       enabled: true
+       subscribe: [work-item.started, phase.started, phase.completed,
+                   session.awaiting_input, work-item.closed]
+   ```
+
+4. An authorized user declares the room on the work item:
+   `the-loop add-channel jira@OPS-12`.
+
 ## Design
 
+- [`docs/specs/issue-475/design.md`](../specs/issue-475/design.md) §C4–§C7 — the
+  provider-routed hooks (`integration_for`); `jiralabels.jira_label`; `jiraformat`
+  (Markdown → ADF / wiki and back, task items, the sentinel markers); the visible
+  self-marker and the `myself` check; `channels/bodies.py`, `RoutedLedger`,
+  `JiraLedger`; `JiraChannel`, the `jira@` room and the mirror-only setup.
+  [`decision-142`](../decisions/decision-142.md) — the SDK, one site, the project map.
 - [`docs/specs/issue-389/design.md`](../specs/issue-389/design.md) — the `app_mention`
   branch and §1's input table in `handle_socket_event`; the room's `listen` field;
   `channels/verbs.py` (`parse_verb`, `compose_keyword`, `help_text`); the two marked
@@ -919,6 +1023,7 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-475 | **Jira as ledger and channel** (2026-10-06, PR 3 of 5): with `integrations.jira` configured the ledger records each event on its own work item's tracker (`RoutedLedger`: a Jira work item's on its ticket, a pull request's on GitHub, `work-item.create` where `channels.ledger` says, which now takes `jira`); the GitHub ledger's bodies moved to `channels/bodies.py` unchanged and the Jira ledger posts the same ones. Bodies are converted to ADF or wiki markup (`jiraformat`, over `markdown-it-py`), the phase checklist becoming Jira task items ticked in place; every Jira comment ends with a visible self-marker, backed by the service-account check. Hooks resolve their integration from the ref. Labels written to Jira are made Jira-safe, and a label with no safe form fails the config load. A `jira@<KEY>-<n>` room is an output-only mirror (`channels.jira`: `enabled`, `subscribe`, `verbosity`, no `publish`), with a mirror-only project setup. Without `integrations.jira` nothing changes | [spec](../specs/issue-475/), [decision-142](../decisions/decision-142.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-464 | **The Slack app from one click, named by its operator** (2026-10-06): `channels manifest` gains `--name` (the app's name and the bot's derived handle), `--format json`, `--link` (Slack's prefilled `new_app=1&manifest_json=` create URL) and `--write [PATH]`, which keeps `slack-app-manifest.json` beside the CLI config, rebuilds it under the kept name and reports the scope and event delta. `/the-loop:init` asks the name and walks the link; `/the-loop:upgrade-the-loop` regenerates the file. The shipped scopes and events are unchanged | [spec](../specs/issue-464/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/464) |
 | issue-447 | `comment.agent` gained a second publisher: `the-loop comment` publishes it from the CLI with `record: true`, so the ledger writes the marked, enveloped comment and the room hears it once, before the ingress (which drops enveloped comments) could | [spec](../specs/issue-447/), [decision-140](../decisions/decision-140.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/447) |
 | issue-422 | **The subscription probe caches the directory where the docs say it does** (2026-09-22): resolving a channel configured by name, `probe_subscription` built its `SlackDirectory` without the CLI config, so `channels status --probe`, `doctor slack` and the listener's connect-time probe wrote `slack-directory.json` under `./.the-loop/local/` of whatever directory they ran in. It now takes the caller's `cli_config` and caches under `<state.root>/local/`. Found by the test suite's new guard against writes into a checked-in `.the-loop/`. No token, scope or config key changes | [spec](../specs/issue-422/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/422) |

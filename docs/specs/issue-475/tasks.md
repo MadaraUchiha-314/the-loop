@@ -185,7 +185,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 3.5
   - _Requirements:_ R4.2
   - _Test:_ T4 — red → green
-- [ ] 3.7 **Docs for PR 3.**
+- [x] 3.7 **Docs for PR 3.**
   - `docs/capabilities/channels.md`: the Jira ledger, the Jira channel, the mirror-only
     setup and the label mapping table.
   - `docs/config/` for `channels.jira` and `channels.ledger`.

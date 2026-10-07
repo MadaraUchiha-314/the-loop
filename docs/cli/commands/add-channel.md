@@ -56,9 +56,10 @@ printed is always the first form.
 | Type | Target | Notes |
 |------|--------|-------|
 | `slack` | the channel's **name** (`#tmp-issue-375`, or bare) or its conversation id (`C…` public, `G…` private, `D…` a DM) | A name is resolved to an id **when you declare it**, and the id is what is stored — so a later rename changes nothing. Resolving needs the app's `channels:read` / `groups:read` scopes and the bot to be able to see the channel; a name that resolves to neither is refused rather than stored. An id needs no scope and no lookup. |
+| `jira` | a Jira issue key, e.g. `OPS-12` | An **output-only mirror** ([issue-475](https://github.com/MadaraUchiha-314/the-loop/issues/475)): the events `channels.jira.subscribe` names are posted on that issue, and nothing written there reaches the session. Refused unless `integrations.jira` is configured and the key's project is listed under `integrations.jira.projects` — a project without a `repository` is a mirror-only room. See [Channels — Jira](/capabilities/channels#jira). |
 
 A type the-loop has no adapter for is refused at declaration time rather than stored
-and silently ignored. Adding one later — Jira, WhatsApp — is a row in the type table
+and silently ignored. Adding one later — WhatsApp, say — is a row in the type table
 plus an adapter, not a new grammar.
 
 ## Flags
