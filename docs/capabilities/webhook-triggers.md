@@ -1045,7 +1045,8 @@ flowchart LR
   check, so WHEN a Jira comment carries one THEN its id SHALL first be checked and
   recorded in `<state.root>/local/control-deliveries.json` (bounded, under a `flock`
   both processes take), and a comment already recorded there SHALL NOT be executed
-  again.
+  again. WHEN the dispatcher releases that delivery for a retry (a failed spawn) THEN
+  its record SHALL be released with it, so the retry executes.
 - **Who may act on a Jira ticket** (R7). A Jira comment is authorized on the
   [`routing.authorizedUsers[].jira`](/config/cli/routing-options#authorizedusers-jira) ids:
   the Cloud `accountId` or the Data Center user `key`, matched exactly. WHEN a Jira

@@ -1613,6 +1613,16 @@ class Dispatcher:
         self._settle(routed, "already-processed", acknowledge=False)
         return False
 
+    def _release_delivery(self, delivery_id: str) -> None:
+        """Hand ``delivery_id`` back for a retry: out of the deduper, so the
+        redelivery or the poller's re-forward is processed again — and, for a Jira
+        comment, out of :class:`ControlDeliveries` too, or the retry of a control
+        command whose first attempt failed would settle ``already-processed``
+        (self-review R2-2). A GitHub delivery takes the deduper path alone."""
+        self.deduper.discard(delivery_id)
+        if delivery_id.startswith(JIRA_COMMENT_DELIVERY_PREFIX):
+            ControlDeliveries.beside(self.config.portable_dir).release(delivery_id)
+
     def _with_origin_repository(self, routed: RoutedEvent) -> RoutedEvent:
         """``routed`` with its work item's origin repository on the payload, when
         it is a Jira event that names none (issue-475). Anything else — a GitHub
@@ -3689,7 +3699,7 @@ class Dispatcher:
             # budget is spent and it logs a terminal failure — every comment on
             # every labelled work item nobody has started yet.
             if routed.delivery_id and refusal == "spawn-policy" and not control_command:
-                self.deduper.discard(routed.delivery_id)
+                self._release_delivery(routed.delivery_id)
             elif not control_command and refusal in SETTLED_SUPPRESSED:
                 # ...and a kept id now SAYS it was kept on purpose (issue-270),
                 # so the poll path resolves the comment instead of counting an
@@ -3757,7 +3767,7 @@ class Dispatcher:
                         will_retry=bool(routed.delivery_id),
                     )
                     if routed.delivery_id:
-                        self.deduper.discard(routed.delivery_id)
+                        self._release_delivery(routed.delivery_id)
                     self.reactor.react(routed, STATE_ERROR)
                 else:
                     self.reactor.react(routed, STATE_COMPLETED if ok else STATE_ERROR)
@@ -3975,7 +3985,7 @@ class Dispatcher:
             will_retry=bool(routed.delivery_id),
         )
         if routed.delivery_id:
-            self.deduper.discard(routed.delivery_id)
+            self._release_delivery(routed.delivery_id)
         return False
 
     def _open_conversations(self, work_item: WorkItemRef) -> None:
@@ -4033,7 +4043,7 @@ class Dispatcher:
                 will_retry=bool(routed.delivery_id),
             )
             if routed.delivery_id:
-                self.deduper.discard(routed.delivery_id)
+                self._release_delivery(routed.delivery_id)
             return False
         # R8 (issue-358): the graph is entered HERE, before any session exists.
         # When the pointer parks on the graph's own start node and that node is a
@@ -4135,7 +4145,7 @@ class Dispatcher:
                 will_retry=bool(routed.delivery_id),
             )
             if routed.delivery_id:
-                self.deduper.discard(routed.delivery_id)
+                self._release_delivery(routed.delivery_id)
             return False
         # From the checkout, like the adapter was (issue-377): the record must
         # say what the argv says — and the lifecycle hooks are told the same.
@@ -4184,7 +4194,7 @@ class Dispatcher:
                 will_retry=bool(routed.delivery_id),
             )
             if routed.delivery_id:
-                self.deduper.discard(routed.delivery_id)
+                self._release_delivery(routed.delivery_id)
             return False
         if not result.ok:
             logger.error("tmux spawn for %s failed: %s", work_item.ref, result.error)
@@ -4197,7 +4207,7 @@ class Dispatcher:
                 will_retry=bool(routed.delivery_id),
             )
             if routed.delivery_id:
-                self.deduper.discard(routed.delivery_id)
+                self._release_delivery(routed.delivery_id)
             return False
         session_id = adapter.resolve_session_id(cwd, session_id) or session_id
         session = Session(
@@ -4506,7 +4516,7 @@ class Dispatcher:
                 will_retry=bool(routed.delivery_id),
             )
             if routed.delivery_id:
-                self.deduper.discard(routed.delivery_id)
+                self._release_delivery(routed.delivery_id)
             return False
         self.registry.touch(
             record.work_item,
@@ -4581,7 +4591,7 @@ class Dispatcher:
                 will_retry=bool(routed.delivery_id),
             )
             if routed.delivery_id:
-                self.deduper.discard(routed.delivery_id)
+                self._release_delivery(routed.delivery_id)
             return False
         # Before EITHER respawn path starts a harness process — the resume
         # attempt below included — give it the same pre-flight a first spawn
@@ -4642,7 +4652,7 @@ class Dispatcher:
                     will_retry=bool(routed.delivery_id),
                 )
                 if routed.delivery_id:
-                    self.deduper.discard(routed.delivery_id)
+                    self._release_delivery(routed.delivery_id)
                 return False
         respawned = Session(
             work_item=work_item,
@@ -4774,7 +4784,7 @@ class Dispatcher:
             will_retry=bool(routed.delivery_id),
         )
         if routed.delivery_id:
-            self.deduper.discard(routed.delivery_id)
+            self._release_delivery(routed.delivery_id)
         return False
 
     def _skip_occupied(

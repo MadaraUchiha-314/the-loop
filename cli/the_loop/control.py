@@ -863,6 +863,31 @@ class ControlDeliveries:
             handle.write("\n")
         os.replace(handle.name, self.path)
 
+    def release(self, delivery_id: str) -> bool:
+        """Forget ``delivery_id``'s claim, so its re-forward executes again.
+
+        For a delivery the dispatcher hands back for a retry (``deduper.discard``)
+        after its command failed — a spawn whose workspace prep raised. Left
+        held, the retry would settle ``already-processed`` and the command would
+        never run (self-review R2-2). ``False`` when nothing was held; a failed
+        write is logged, as :meth:`claim`'s is.
+        """
+        try:
+            with self._locked():
+                ids = self._read()
+                if delivery_id not in ids:
+                    return False
+                self._write([i for i in ids if i != delivery_id])
+        except OSError as exc:
+            logger.warning(
+                "could not release control delivery %s in %s: %s",
+                delivery_id,
+                self.path,
+                exc,
+            )
+            return False
+        return True
+
     def claim(self, delivery_id: str) -> bool:
         """Record ``delivery_id``; ``False`` when it was already recorded."""
         try:

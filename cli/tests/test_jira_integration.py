@@ -38,7 +38,7 @@ from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
 from the_loop.webhook.jira import JiraDoorbell, read_doorbell
 from the_loop.webhook.router import Router
 from the_loop.workitem import WorkItemStore
-from the_loop.workspace import Workspace
+from the_loop.workspace import Workspace, WorkspaceError
 
 SITE = "acme.atlassian.net"
 LABEL = "the-loop: auto-execute"
@@ -572,6 +572,51 @@ def test_a_jira_work_item_runs_in_and_releases_its_origin_repositorys_worktree(
     assert cwd.startswith(str(tmp_path / "ws" / ".worktrees" / "github.com" / "acme"))
     [(cleaned, slug)] = workspace.cleaned
     assert (cleaned.owner, cleaned.repo, slug) == ("acme", "web", REF.slug)
+
+
+class _FlakyWorkspace(_RecordingWorkspace):
+    """A workspace whose first `prepare` fails, as a git clone can."""
+
+    def prepare(self, target, slug, *, branch=None, require_branch=False, timeout=None):
+        if not self.prepared:
+            self.prepared.append(None)
+            raise WorkspaceError("clone failed: the network went away")
+        return super().prepare(
+            target, slug, branch=branch, require_branch=require_branch, timeout=timeout
+        )
+
+
+def test_a_jira_start_whose_spawn_failed_is_attempted_again(tmp_path):
+    """
+    Feature: Jira as a work-item source
+    Scenario: a Jira `the-loop start` whose spawn failed is retried
+      Given an armed Jira ticket with no session
+      When an authorized `the-loop start` is polled and the workspace prep fails
+      And the dispatcher releases the delivery so the poller re-forwards it
+      Then the re-forwarded start is executed again — not settled
+        already-processed by the claim its failed first attempt left
+      And the session spawns (self-review R2-2)
+
+    Requirement: docs/specs/issue-475/requirements.md#R6.4
+    """
+    client = _client()
+    workspace = _FlakyWorkspace(tmp_path / "ws")
+    proc = _Process(tmp_path, tmp_path / "sessions", client, workspace=workspace)
+    poller = proc.poller(tmp_path)
+    try:
+        client.comment_table[KEY].append(_comment("70001", ADA, "the-loop start"))
+        poller.poll_once()
+        assert _wait(lambda: len(workspace.prepared) == 1)
+        time.sleep(0.1)
+        assert proc.tmux.spawns == []
+        for _ in range(3):
+            poller.poll_once()
+            if _wait(lambda: len(proc.tmux.spawns) == 1, timeout=1.0):
+                break
+    finally:
+        proc.dispatcher.stop()
+    assert len(workspace.prepared) == 2, "the re-forwarded start was not attempted"
+    assert [spawn[0] for spawn in proc.tmux.spawns] == [REF.ref]
 
 
 def test_a_session_whose_project_mapping_was_removed_still_closes(tmp_path, caplog):
