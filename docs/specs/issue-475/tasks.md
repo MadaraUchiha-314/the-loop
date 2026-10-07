@@ -82,7 +82,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 1.5
   - _Requirements:_ R3.8, R9.1
   - _Test:_ T9 — markdownlint
-- [ ] 2.2 **Red tests for config, schema and migration 0.12.0.** These are
+- [x] 2.2 **Red tests for config, schema and migration 0.12.0.** These are
   `test_jira_config.py` and new cases in `test_migrations.py`:
   - the stub migrates, idempotently;
   - an old stub is refused with the migration hint;
