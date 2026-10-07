@@ -558,3 +558,121 @@ def test_a_pr_naming_a_registered_jira_key_routes_to_the_jira_work_item(tmp_path
     assert ref == REF.ref and "zz-looks-good-to-me" in prompt
     bound = proc.registry.record_owning(WorkItemRef.parse("github:acme/web#48"))
     assert bound is not None and bound.work_item == REF
+
+
+def _service(tmp_path, monkeypatch, client):
+    """The control-plane app over a config with Jira, its client the fake."""
+    from fastapi.testclient import TestClient
+
+    from the_loop.api.app import create_app
+    from the_loop.jiraapi import JiraClient
+
+    monkeypatch.setattr(JiraClient, "shared", classmethod(lambda cls, *a, **k: client))
+    monkeypatch.setattr("the_loop.channels.bus.load_channels", lambda *a, **k: [])
+    config = {**_cli_config(), "state": {"root": str(tmp_path / ".the-loop")}}
+    from the_loop.state import layout_from_config
+
+    registry = SessionRegistry(layout_from_config(config).local_dir)
+    registry.register(
+        Session(work_item=REF, harness="claude", harness_session_id="s7", cwd="/w")
+    )
+    return TestClient(create_app(config)), registry
+
+
+def test_finish_tasks_transitions_the_jira_ticket_to_done(tmp_path, monkeypatch):
+    """
+    Feature: Jira as a work-item source
+    Scenario: finish-tasks transitions the Jira ticket to Done
+      Given a registered Jira work item whose ticket offers one transition into Done
+      When finish-tasks closes the ticket through the control plane
+      Then Jira is asked for exactly that transition
+      And when the ticket offers two, nothing is transitioned and both are named
+
+    Requirement: docs/specs/issue-475/requirements.md#R3.7
+    """
+    from the_loop.jiraapi import JiraTransition
+
+    client = _client()
+    api, _ = _service(tmp_path, monkeypatch, client)
+    client.transition_table[KEY] = [
+        JiraTransition(id="31", name="Done", to_status="Done", to_category="done"),
+        JiraTransition(id="11", name="Start", to_status="Doing", to_category="new"),
+    ]
+    closed = api.post("/api/v1/work-items/tickets/close", json={"ref": REF.ref})
+    assert closed.status_code == 200 and closed.json()["exitCode"] == 0
+    assert client.transitioned == [{"key": KEY, "transition_id": "31"}]
+
+    client.transitioned.clear()
+    client.transition_table[KEY].append(
+        JiraTransition(id="41", name="Closed", to_status="Closed", to_category="done")
+    )
+    again = api.post("/api/v1/work-items/tickets/close", json={"ref": REF.ref}).json()
+    assert again["exitCode"] == 1 and client.transitioned == []
+    assert "'Done'" in again["messages"][0]["text"]
+    assert "'Closed'" in again["messages"][0]["text"]
+
+
+def test_the_loop_comment_on_a_jira_ref_is_recorded_on_the_jira_ticket(
+    tmp_path, monkeypatch
+):
+    """
+    Feature: Jira as a work-item source
+    Scenario: the-loop comment on a Jira ref is recorded on the Jira ticket
+      Given a registered Jira work item and a running control plane
+      When the agent runs `the-loop comment` on its Jira ref
+      Then the comment lands on the Jira ticket with the visible self-marker
+      And when the poller reads it back it is the-loop's own and is not delivered
+
+    Requirement: docs/specs/issue-475/requirements.md#R8.2
+    """
+    from the_loop.authz import JIRA_SELF_MARKER
+
+    client = _client()
+    api, _ = _service(tmp_path, monkeypatch, client)
+    proc = _Process(tmp_path, tmp_path / "sessions", client)
+    proc.register(tmp_path)
+    poller = proc.poller(tmp_path)
+    try:
+        poller.poll_once()
+        posted = api.post(
+            "/api/v1/work-items/comments",
+            json={"ref": REF.ref, "body": "zz-the-completion-summary"},
+        )
+        assert posted.status_code == 200 and posted.json()["exitCode"] == 0
+        [comment] = client.comment_table[KEY]
+        assert "zz-the-completion-summary" in comment.body_md
+        assert JIRA_SELF_MARKER in comment.body_md
+        poller.poll_once()
+        time.sleep(0.1)
+    finally:
+        proc.dispatcher.stop()
+    assert proc.tmux.delivers == []
+
+
+def test_a_delivered_jira_event_says_it_came_from_jira(tmp_path):
+    """
+    Feature: Jira as a work-item source
+    Scenario: the delivered prompt names Jira and the origin repository
+      Given an armed Jira ticket with a live session, its project mapped to acme/web
+      When an authorized comment is delivered
+      Then the prompt is headed as a Jira event for the Jira ref
+      And its repository line is the origin repository
+
+    Requirement: docs/specs/issue-475/requirements.md#R5.3
+    """
+    client = _client()
+    proc = _Process(tmp_path, tmp_path / "sessions", client)
+    proc.register(tmp_path)
+    poller = proc.poller(tmp_path)
+    try:
+        poller.poll_once()
+        client.comment_table[KEY].append(_comment("50001", ADA, "zz-hello"))
+        poller.poll_once()
+        assert _wait(lambda: len(proc.tmux.delivers) == 1)
+    finally:
+        proc.dispatcher.stop()
+    [(_, prompt)] = proc.tmux.delivers
+    assert prompt.startswith(f"# Jira event for {REF.ref}")
+    assert "- Repository: acme/web" in prompt
+    assert "UNTRUSTED data from Jira" in prompt
+    assert "GitHub webhook event" not in prompt

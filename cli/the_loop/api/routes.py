@@ -256,7 +256,9 @@ class WorkItemCommentBody(BaseModel):
 
 
 class TicketCreateBody(BaseModel):
-    repository: str
+    # Exactly one of the two (issue-475): a GitHub issue, or a Jira ticket.
+    repository: str = ""
+    project: str = ""
     title: str
     body: str = ""
     labels: List[str] = []
@@ -765,6 +767,7 @@ def build_router(
             body.body,
             labels=body.labels,
             instance=body.instance,
+            project=body.project,
         )
 
     @router.post(f"{API_PREFIX}/work-items/tickets/close", operation_id="closeTicket")

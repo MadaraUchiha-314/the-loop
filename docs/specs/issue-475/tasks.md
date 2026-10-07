@@ -254,7 +254,7 @@ Two decisions from the gate are carried here:
   - _Depends on:_ 4.5
   - _Requirements:_ R8.1
   - _Test:_ T6, T7 (abuse case 7) — red → green
-- [ ] 5.2 **Ticket verbs dispatch by tracker.**
+- [x] 5.2 **Ticket verbs dispatch by tracker.**
   - Red first: tests for `ticket show/create --project/close`, `comment` and `ask` on a
     Jira ref, plus the scenarios _finish-tasks transitions the Jira ticket to Done_ and
     _the-loop comment on a Jira ref is recorded on the Jira ticket_.

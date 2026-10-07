@@ -29,7 +29,7 @@ from .base import Command, register
 from .sessions_cmd import _cli_config, _render
 from .. import eventlog
 from ..client.routing import harness_routed, service_error
-from ..core import github_ops
+from ..core import github_ops, tickets
 from ..ghapi import CLOSE_REASONS, MERGE_METHODS
 from ..ghhost import current_branch
 
@@ -88,7 +88,8 @@ class CommentCommand(Command):
         parser.add_argument(
             "--work-item",
             required=True,
-            help="Work-item ref, e.g. github:OWNER/REPO#15 (a PR's conversation too).",
+            help="Work-item ref, e.g. github:OWNER/REPO#15 (a PR's conversation too) "
+            "or jira:SITE/KEY-7.",
         )
         _add_body(parser)
 
@@ -101,7 +102,7 @@ class CommentCommand(Command):
                 lambda c: c.post(
                     "/work-items/comments", {"ref": args.work_item, "body": body}
                 ),
-                lambda: github_ops.comment(args.work_item, body, _cli_config()),
+                lambda: tickets.comment(args.work_item, body, _cli_config()),
             )
 
         return _run(call)
@@ -117,15 +118,25 @@ class TicketCommand(Command):
         show = actions.add_parser(
             "show", help="The ticket's body, comments and attachment links, as JSON"
         )
-        show.add_argument("ref", help="Work-item ref, e.g. github:OWNER/REPO#15")
+        show.add_argument(
+            "ref", help="Work-item ref, e.g. github:OWNER/REPO#15 or jira:SITE/KEY-7"
+        )
         show.set_defaults(_action=self._show)
 
-        create = actions.add_parser("create", help="Open a ticket (a GitHub issue)")
-        create.add_argument(
+        create = actions.add_parser(
+            "create", help="Open a ticket (a GitHub issue, or a Jira ticket)"
+        )
+        where = create.add_mutually_exclusive_group(required=True)
+        where.add_argument(
             "--repository",
-            required=True,
             metavar="[HOST/]OWNER/REPO",
-            help="Where to open it.",
+            help="Open a GitHub issue in this repository.",
+        )
+        where.add_argument(
+            "--project",
+            metavar="KEY",
+            help="Open a Jira ticket in this project (one under "
+            "integrations.jira.projects).",
         )
         create.add_argument("--title", required=True)
         _add_body(create)
@@ -141,7 +152,11 @@ class TicketCommand(Command):
             "close",
             help="Close a registered work item's ticket (finish-tasks' cleanup)",
         )
-        close.add_argument("ref", help="Work-item ref, e.g. github:OWNER/REPO#15")
+        close.add_argument(
+            "ref",
+            help="Work-item ref, e.g. github:OWNER/REPO#15, or jira:SITE/KEY-7 "
+            "(transitioned into Done)",
+        )
         close.add_argument("--reason", choices=CLOSE_REASONS, default="completed")
         close.add_argument(
             "--work-item",
@@ -158,7 +173,7 @@ class TicketCommand(Command):
         return _run(
             lambda: harness_routed(
                 lambda c: c.get("/work-items/ticket", params={"ref": args.ref}),
-                lambda: github_ops.show_ticket(args.ref, _cli_config()),
+                lambda: tickets.show_ticket(args.ref, _cli_config()),
             ),
             as_json=True,
         )
@@ -174,7 +189,7 @@ class TicketCommand(Command):
                         "workItem": args.work_item,
                     },
                 ),
-                lambda: github_ops.close_ticket(
+                lambda: tickets.close_ticket(
                     args.ref, args.reason, args.work_item, _cli_config()
                 ),
             )
@@ -187,14 +202,20 @@ class TicketCommand(Command):
                 lambda c: c.post(
                     "/work-items/tickets",
                     {
-                        "repository": args.repository,
+                        "repository": args.repository or "",
+                        "project": args.project or "",
                         "title": args.title,
                         "body": body,
                         "labels": list(args.label),
                     },
                 ),
-                lambda: github_ops.create_ticket(
-                    args.repository, args.title, body, args.label, _cli_config()
+                lambda: tickets.create_ticket(
+                    args.repository or "",
+                    args.title,
+                    body,
+                    args.label,
+                    _cli_config(),
+                    project=args.project or "",
                 ),
             )
 
@@ -230,7 +251,10 @@ class PrCommand(Command):
             help="Open the pull request and link it to the work item in one act",
         )
         create.add_argument(
-            "--work-item", required=True, help="Work-item ref the PR delivers."
+            "--work-item",
+            required=True,
+            help="Work-item ref the PR delivers; a jira: ref opens it in its "
+            "project's repository.",
         )
         create.add_argument("--title", required=True)
         _add_body(create)
@@ -343,7 +367,7 @@ class PrCommand(Command):
                         "draft": bool(args.draft),
                     },
                 ),
-                lambda: github_ops.create_pull_request(
+                lambda: tickets.create_pull_request(
                     args.work_item,
                     args.title,
                     body,

@@ -34,6 +34,7 @@ from ..core import config as core_config
 from ..core import daemons as core_daemons
 from ..core import events as core_events
 from ..core import github_ops as core_github
+from ..core import tickets as core_tickets
 from ..core import graphs as core_graphs
 from ..core import instance as core_instance
 from ..core import instances as core_instances
@@ -428,11 +429,11 @@ class CoreFacade:
         self, ref: str, body: str, instance: str = ""
     ) -> Dict[str, Any]:
         self._self(instance)
-        return core_github.comment(ref, body, config=self.config)
+        return core_tickets.comment(ref, body, config=self.config)
 
     def get_ticket(self, ref: str, instance: str = "") -> Dict[str, Any]:
         self._self(instance)
-        return core_github.show_ticket(ref, config=self.config)
+        return core_tickets.show_ticket(ref, config=self.config)
 
     def create_ticket(
         self,
@@ -441,10 +442,16 @@ class CoreFacade:
         body: str,
         labels: Optional[Sequence[str]] = None,
         instance: str = "",
+        project: str = "",
     ) -> Dict[str, Any]:
         self._self(instance)
-        return core_github.create_ticket(
-            repository, title, body, list(labels or []), config=self.config
+        return core_tickets.create_ticket(
+            repository,
+            title,
+            body,
+            list(labels or []),
+            config=self.config,
+            project=project,
         )
 
     def create_pull_request(
@@ -459,7 +466,7 @@ class CoreFacade:
         instance: str = "",
     ) -> Dict[str, Any]:
         self._self(instance)
-        return core_github.create_pull_request(
+        return core_tickets.create_pull_request(
             ref,
             title,
             body,
@@ -513,7 +520,7 @@ class CoreFacade:
         instance: str = "",
     ) -> Dict[str, Any]:
         self._self(instance)
-        return core_github.close_ticket(ref, reason, work_item, config=self.config)
+        return core_tickets.close_ticket(ref, reason, work_item, config=self.config)
 
     def resolve_review_thread(
         self, ref: str, thread: str, work_item: str = "", instance: str = ""

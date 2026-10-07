@@ -267,11 +267,20 @@ def build_runtime(
         config["verdictCache"] = layout_from_config(cli_cfg).verdict_cache
     if authorized_users is None and cli_cfg:
         # The `github` projection of the person entries (issue-309): the
-        # gates read logins, whatever else an entry declares.
-        from ..authz import resolve_authorized_users
+        # gates read logins, whatever else an entry declares — plus, on a
+        # deployment with Jira, the Jira ids as `jira:<id>` and the relay
+        # author (issue-475), exactly what the daemon's runtimes get
+        # (`graphlink.GraphLink.gate_authorized`). A GitHub-only deployment
+        # gets the logins alone, as before.
+        from ..authz import gate_authorized_users, resolve_authorized_users
+        from ..identity import parse_authorized_users
+        from ..sessions.refs import jira_site
 
-        config["authorizedUsers"] = resolve_authorized_users(
-            routing.get("authorizedUsers") or []
+        entries = list(routing.get("authorizedUsers") or [])
+        config["authorizedUsers"] = gate_authorized_users(
+            resolve_authorized_users(entries),
+            parse_authorized_users(entries),
+            jira=bool(jira_site(cli_cfg)),
         )
     # The operator's own graph hooks (issue-248, issue-352): declared once in
     # the CLI config, parsed once here, applied to every runtime this function

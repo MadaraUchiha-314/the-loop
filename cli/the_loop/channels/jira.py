@@ -57,6 +57,7 @@ __all__ = [
     "JiraChannelConfig",
     "JiraLedger",
     "jira_ledger_body",
+    "ledger_for_ref",
     "load_jira_channel",
     "origin_projects",
 ]
@@ -177,6 +178,23 @@ class JiraLedger:
             url=issue.url,
             ref=f"jira:{self.api.site}/{issue.key}" if issue.key else "",
         )
+
+
+def ledger_for_ref(
+    work_item: str, cli_config: Optional[Mapping[str, Any]], github: Callable[[], Any]
+) -> Any:
+    """The ledger an event on ``work_item`` is recorded on: the Jira ledger for a
+    Jira ref (issue-475, §C9), else ``github()`` — the caller's GitHub ledger,
+    built only when it is the one used. A malformed ref is GitHub's to refuse."""
+    from ..sessions import WorkItemRef
+
+    try:
+        provider = WorkItemRef.parse(work_item).provider
+    except ValueError:
+        provider = ""
+    if provider == "jira":
+        return JiraLedger(cli_config)
+    return github()
 
 
 # ---------------------------------------------------------------- the channel

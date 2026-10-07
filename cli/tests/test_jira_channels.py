@@ -138,7 +138,10 @@ def test_jira_self_comment_never_resumes(variant, cloud_env):
     assert mine.is_self is True and theirs.is_self is False
 
     listed = JiraProvider(client=client).call("list-comments", ref=REF)["comments"]
-    readable = _authorized_comments(_gate_ctx(listed, authorized=[ADA, BOT]))
+    # Authors read in the gate's Jira namespace (PR 5), as the daemon names them.
+    readable = _authorized_comments(
+        _gate_ctx(listed, authorized=[f"jira:{ADA}", f"jira:{BOT}"])
+    )
     assert [c["body"] for c in readable] == ["Approved, ship it."]
 
 

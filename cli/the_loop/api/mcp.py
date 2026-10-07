@@ -229,16 +229,24 @@ def build_server(cli_config: Optional[dict] = None, *, facade: Any = None) -> MC
         return facade.get_ticket(ref, instance=instance)
 
     def create_ticket(
-        repository: str,
         title: str,
+        repository: str = "",
         body: str = "",
         labels: Optional[List[str]] = None,
         instance: str = "",
+        project: str = "",
     ) -> Dict[str, Any]:
-        """Open a ticket (a GitHub issue) in `repository` ([HOST/]OWNER/REPO),
-        with optional labels such as loop:requirements-definition."""
+        """Open a ticket: a GitHub issue in `repository` ([HOST/]OWNER/REPO), or
+        a Jira ticket in `project` (a key under integrations.jira.projects) —
+        exactly one of the two — with optional labels such as
+        loop:requirements-definition."""
         return facade.create_ticket(
-            repository, title, body, labels=labels or [], instance=instance
+            repository,
+            title,
+            body,
+            labels=labels or [],
+            instance=instance,
+            project=project,
         )
 
     def create_pull_request(

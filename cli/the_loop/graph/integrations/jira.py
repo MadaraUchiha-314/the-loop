@@ -18,9 +18,17 @@ service account wrote reads back marked even if its text lost the marker.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, FrozenSet, List, Optional, TypeVar
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Tuple, TypeVar
 
-from ...authz import is_self_authored, mark_self_authored_on_jira
+from ...authz import (
+    JIRA_GATE_PREFIX,
+    JIRA_RELAY_GATE_AUTHOR,
+    JIRA_RELAY_MARKER,
+    ORIGIN_RELAY,
+    is_self_authored,
+    jira_comment_origin,
+    mark_self_authored_on_jira,
+)
 from ...jiraapi import (
     JiraApiConfig,
     JiraApiError,
@@ -108,21 +116,47 @@ class JiraProvider:
         if op == "transition":
             return self._transition(key, str(params.get("to", "")))
         comments = self._run(lambda: jira.comments(key))
-        return {
-            "comments": [
+        listed = []
+        for c in comments:
+            author, body = self._as_read(c)
+            listed.append(
                 {
                     "id": c.id,
-                    "body": _as_read(c),
-                    "author": {"login": c.author_id},
-                    "user": {"login": c.author_id},
+                    "body": body,
+                    "author": {"login": author},
+                    "user": {"login": author},
                     "created_at": c.created,
                     "createdAt": c.created,
                     "html_url": c.url,
                     "url": c.url,
                 }
-                for c in comments
-            ]
-        }
+            )
+        return {"comments": listed}
+
+    def _as_read(self, comment: JiraComment) -> Tuple[str, str]:
+        """``(author, body)`` as a gate reads a comment — PR 4's ingress rule.
+
+        The author is in the gate's Jira namespace, ``jira:<accountId>``, which
+        no GitHub login can spell (a Data Center user key such as ``ada`` must
+        never pass a gate as the GitHub login ``ada``). A **relay** — the service
+        account's comment carrying the relay marker
+        (:func:`~the_loop.authz.jira_comment_origin`) — is the operator's words:
+        :data:`~the_loop.authz.JIRA_RELAY_GATE_AUTHOR`, body unmarked. Every
+        other comment the service account wrote is the-loop's own (:func:`_as_read`).
+        """
+        if (
+            comment.is_self
+            and JIRA_RELAY_MARKER in comment.body_md
+            and not is_self_authored(comment.body_md)
+        ):
+            try:
+                me = self.client.myself()
+            except JiraApiError:
+                me = ""  # unreadable: nothing is a relay (fail closed)
+            origin = jira_comment_origin(comment.body_md, comment.author_id, me)
+            if origin == ORIGIN_RELAY:
+                return JIRA_RELAY_GATE_AUTHOR, comment.body_md
+        return f"{JIRA_GATE_PREFIX}{comment.author_id}", _as_read(comment)
 
     def _transition(self, key: str, to: str) -> Dict[str, Any]:
         """Close ``key``: the configured transition, else the one into *Done*.

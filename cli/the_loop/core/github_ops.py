@@ -520,6 +520,36 @@ def create_ticket(
 # ------------------------------------------------------------------ pull requests
 
 
+def _pull_request_owner(
+    ref: str, repository: str, config: Optional[Mapping[str, Any]]
+) -> Tuple[WorkItemRef, WorkItemRef]:
+    """``(work item, repository default)`` for ``pr create``.
+
+    A GitHub work item is its own default. A Jira work item's pull request is
+    opened in its **origin repository** (issue-475, design §C9) — the one
+    ``integrations.jira.projects.<KEY>.repository`` names — and a
+    ``--repository`` naming any other is refused: a Jira project maps to one
+    repository, in config, never by the caller (design trade-off 4).
+    """
+    work = WorkItemRef.parse(ref)  # ValueError on a malformed ref
+    if work.provider != "jira":
+        item = _trusted(_github_ref(ref), config)
+        return item, item
+    from ..sessions.refs import UnknownJiraProject, origin_ref
+
+    try:
+        origin = _trusted(origin_ref(work, dict(config or {}), 1), config)
+    except UnknownJiraProject as exc:
+        raise ValueError(str(exc)) from None
+    named = (repository or "").strip()
+    if named and _repository(named, origin).path.lower() != origin.path.lower():
+        raise ValueError(
+            f"{work.ref} is a Jira work item; pr create opens its pull request in "
+            f"its origin repository ({origin.path}), not {named}"
+        )
+    return work, origin
+
+
 def create_pull_request(
     ref: str,
     title: str,
@@ -543,13 +573,13 @@ def create_pull_request(
     fails after the PR opened is a note, not a failure: the pull request exists,
     and saying otherwise would invite a second one (R1.5).
     """
-    item = _trusted(_github_ref(ref), config)
+    item, origin = _pull_request_owner(ref, repository, config)
     title = _text(title, "title")
     if not is_branch_name(str(head or "").rpartition(":")[2]):
         raise ValueError(f"unusable head branch {head!r}")
     if base and not is_branch_name(base):
         raise ValueError(f"unusable base branch {base!r}")
-    target = _trusted(_repository(repository, item), config)
+    target = _trusted(_repository(repository, origin), config)
     data: Dict[str, Any] = {"workItem": item.ref, "linked": False}
     if _registry(config, registry_dir).find_by_work_item(item) is None:
         return _failed(
