@@ -133,7 +133,7 @@ Two decisions from the gate are carried here:
 
 ### PR 3 — Jira as ledger and channel
 
-- [ ] 3.1 **Red tests for labels and format.**
+- [x] 3.1 **Red tests for labels and format.**
   - `test_jira_labels.py` covers the mapping table and the no-safe-form failure.
   - `test_jira_format.py` uses golden files under `cli/tests/fixtures/jira/`:
     Markdown→ADF, Markdown→wiki and ADF→Markdown for the checklist, request-review, ask
