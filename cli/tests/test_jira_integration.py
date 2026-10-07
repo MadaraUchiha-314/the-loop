@@ -574,6 +574,38 @@ def test_a_jira_work_item_runs_in_and_releases_its_origin_repositorys_worktree(
     assert (cleaned.owner, cleaned.repo, slug) == ("acme", "web", REF.slug)
 
 
+def test_a_session_whose_project_mapping_was_removed_still_closes(tmp_path, caplog):
+    """
+    Feature: Jira as a work-item source
+    Scenario: a live Jira session outlives its project's mapping
+      Given a live session for PROJ-7, with routing.workspace.root configured
+      When PROJ's repository mapping is removed from the config
+      Then stopping, cleaning up and assigning to it degrade, with a warning,
+      to "no repository" — and none of them raises
+
+    Requirement: docs/specs/issue-475/requirements.md#R5.4
+    """
+    client = _client()
+    workspace = _RecordingWorkspace(tmp_path / "ws")
+    proc = _Process(tmp_path, tmp_path / "sessions", client, workspace=workspace)
+    proc.register(tmp_path)
+    dispatcher = proc.dispatcher
+    dispatcher.cli_config = copy.deepcopy(dispatcher.cli_config)
+    del dispatcher.cli_config["integrations"]["jira"]["projects"]["PROJ"]
+    try:
+        with caplog.at_level("WARNING", logger="the-loop.gh-webhook"):
+            session = proc.registry.find_by_work_item(REF)
+            assert session is not None
+            assert dispatcher.close_session(session, reason="stopped") is False
+            outcome = dispatcher.cleanup_work_item(REF, reason="cleanup requested")
+            assert outcome.ok
+            assert dispatcher._deliver_assignment(REF, 12, "next") is False
+    finally:
+        dispatcher.stop()
+    assert workspace.cleaned == []
+    assert any("PROJ" in r.getMessage() for r in caplog.records)
+
+
 def test_jira_comment_is_framed_untrusted(tmp_path):
     """
     Feature: Jira as a work-item source

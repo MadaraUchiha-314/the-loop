@@ -106,7 +106,7 @@ from ..lifecycle import (
     WorkItemStart,
 )
 from ..sessions import Session, SessionRegistry, WorkItemRef
-from ..sessions.refs import origin_ref
+from ..sessions.refs import UnknownJiraProject, origin_ref
 from ..state import LegacyLayout, StateLayout, layout_from_config, legacy_layout
 from ..workchannels import (
     DEFAULT_LISTEN,
@@ -695,9 +695,17 @@ def _repo_payload(
     honestly, which falls back to the configured default exactly as before.
 
     A Jira work item's repository is the one its project maps to (issue-475,
-    :func:`~the_loop.sessions.refs.origin_ref`); a GitHub one's is its own.
+    :func:`~the_loop.sessions.refs.origin_ref`); a GitHub one's is its own. A
+    Jira work item whose project no longer maps to one — the mapping was removed
+    while its session was live — names **no** repository (``{}``), with a
+    warning: the close and cleanup paths that ask then skip the checkout rather
+    than fail.
     """
-    origin = origin_ref(item, cli_config)
+    try:
+        origin = origin_ref(item, cli_config)
+    except UnknownJiraProject as exc:
+        logger.warning("%s; it names no repository to act on", exc)
+        return {}
     return {
         "repository": {
             "full_name": f"{origin.owner}/{origin.repo}",
@@ -1615,16 +1623,8 @@ class Dispatcher:
         payload = routed.payload or {}
         if event_provider(routed) != "jira" or payload.get("repository"):
             return routed
-        from ..sessions.refs import UnknownJiraProject
-
-        try:
-            repository = _repo_payload(routed.work_items[0], self.cli_config)
-        except UnknownJiraProject as exc:
-            logger.warning(
-                "%s maps to no repository (%s); its event names none",
-                routed.work_items[0].ref,
-                exc,
-            )
+        repository = _repo_payload(routed.work_items[0], self.cli_config)
+        if not repository:
             return routed
         return dataclasses.replace(routed, payload={**payload, **repository})
 
@@ -2110,7 +2110,11 @@ class Dispatcher:
         if pr_number is not None:
             # The PR is in the work item's origin repository: its own on
             # GitHub, the mapped one for a Jira item (issue-475).
-            pr_ref = origin_ref(work_item, self.cli_config, number=pr_number)
+            try:
+                pr_ref = origin_ref(work_item, self.cli_config, number=pr_number)
+            except UnknownJiraProject as exc:
+                logger.warning("not delivering the assignment: %s", exc)
+                return False
             endpoint = record.endpoint_for(pr_ref)
             if endpoint is None or not endpoint.is_live:
                 return False
@@ -5131,7 +5135,7 @@ class Dispatcher:
         # repository, so the line carries the work item's origin repository.
         on_jira = event_provider(routed) == "jira"
         if on_jira and not repository:
-            from ..sessions.refs import UnknownJiraProject, origin_repository
+            from ..sessions.refs import origin_repository
 
             try:
                 repository = origin_repository(work_item, self.cli_config)
