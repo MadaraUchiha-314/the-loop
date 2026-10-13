@@ -28,13 +28,13 @@ Executes [`testing-plan.md`](../testing-plan.md). All tokens used are dummy valu
 
 ## Repository checks
 
-```text
-$ uv run ruff check cli hooks          → All checks passed!
-$ uv run ruff format --check cli hooks → 448 files left unchanged
-$ uv run pyright cli                   → 0 errors, 0 warnings, 0 informations
-$ npx markdownlint-cli2 "**/*.md"      → Summary: 0 error(s)
-$ cd cli && uv run python -m pytest -q → 6068 passed, 1 skipped
-```
+| Command | Outcome |
+|---------|---------|
+| `uv run ruff check cli hooks` | All checks passed! |
+| `uv run ruff format --check cli hooks` | 448 files left unchanged |
+| `uv run pyright cli` | 0 errors, 0 warnings, 0 informations |
+| `npx markdownlint-cli2 "**/*.md"` | Summary: 0 error(s) |
+| `cd cli && uv run python -m pytest -q` | 6068 passed, 1 skipped |
 
 ## Known flake, not this PR's
 
