@@ -19,16 +19,26 @@ Three rules govern everything here:
   a platform with neither ``/proc`` nor a usable ``ps`` — all of them are ``None``, which
   callers report as *unverified* rather than as drift.
 
-Spec: docs/specs/issue-410/design.md.
+Since issue-482 the file is **not** what a session is handed. ``env.file`` holds the
+daemon's credentials, and the-loop never sends a secret to an agent session: a pane gets
+the-loop's own identifiers plus the names the operator lists in ``env.sessionPassthrough``
+(never a credential), and every other declared or credential name is removed from it.
+:class:`SessionEnvironment` is that boundary, and :func:`compare` checks a running pane
+against it.
+
+Spec: docs/specs/issue-410/design.md, docs/specs/issue-482/design.md.
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
+import os
+import re
 import subprocess
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Mapping, Optional, Tuple
+from typing import Any, Dict, FrozenSet, Mapping, Optional, Tuple, Union
 
 from . import envfile
 
@@ -36,11 +46,16 @@ logger = logging.getLogger("the-loop.envstate")
 
 __all__ = [
     "FINGERPRINT_LENGTH",
+    "SessionEnvironment",
     "compare",
+    "credential_names",
     "declared",
     "environ_matches_declared",
     "fingerprint",
+    "passthrough_names",
     "process_environ",
+    "session_environment",
+    "session_environment_and_lines",
     "spawn_environment",
 ]
 
@@ -52,6 +67,42 @@ FINGERPRINT_LENGTH = 8
 #: How long ``ps`` gets to answer. It is a fallback on a platform without ``/proc``;
 #: a hung ``ps`` must degrade to "unverified", never hold up a restart.
 _PS_TIMEOUT_SECONDS = 10
+
+#: A config key that names a credential's variable (issue-482, R4.2):
+#: ``tokenEnv``, ``botTokenEnv``, ``secretEnv``… A pattern, not a list of paths, so a
+#: credential key added later is covered without touching this module.
+_CREDENTIAL_KEY_RE = re.compile(r"(token|secret)Env$", re.IGNORECASE)
+
+#: The variables a credential is read from when the config names none: GitHub's
+#: (``ghapi.DEFAULT_TOKEN_ENVS``) and the schema defaults of the Slack and webhook keys.
+_DEFAULT_CREDENTIAL_NAMES: FrozenSet[str] = frozenset(
+    {
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "THE_LOOP_GH_WEBHOOK_SECRET",
+        "THE_LOOP_SLACK_BOT_TOKEN",
+        "THE_LOOP_SLACK_APP_TOKEN",
+    }
+)
+
+#: the-loop's own identifiers a pane is always given (issue-322, issue-370, issue-393).
+#: Never removed, whatever the env file says: the runner sets them last.
+_OWN_NAMES: FrozenSet[str] = frozenset(
+    {"THE_LOOP_INSTANCE", "THE_LOOP_WORK_ITEM", "THE_LOOP_CLI_CONFIG"}
+)
+
+
+@dataclass(frozen=True)
+class SessionEnvironment:
+    """What a spawned pane is given, and what it must not hold (issue-482).
+
+    ``forward`` is the operator's non-secret passthrough, with values. ``remove`` is
+    every name ``env.file`` declares and every credential name, minus ``forward``: the
+    runner strips them from the pane whatever the tmux server holds.
+    """
+
+    forward: Dict[str, str] = field(default_factory=dict)
+    remove: Tuple[str, ...] = ()
 
 
 def fingerprint(value: str) -> str:
@@ -187,25 +238,35 @@ def _parse_nul_separated(text: str) -> Dict[str, str]:
     return found
 
 
-def compare(
-    declared_values: Mapping[str, str], actual: Mapping[str, str]
-) -> Tuple[str, ...]:
-    """The declared names ``actual`` does not match, in name order.
+Wanted = Union[SessionEnvironment, Mapping[str, str]]
 
-    A name the process does not carry at all counts as differing: an unset credential is
-    as broken as a retired one, and both are fixed by the same relaunch. Names ``actual``
-    carries that the file does not declare are not compared — the file is the statement
-    of what the-loop manages, and the rest of a process's environment is not its business.
+
+def _as_session_environment(wanted: Wanted) -> SessionEnvironment:
+    if isinstance(wanted, SessionEnvironment):
+        return wanted
+    return SessionEnvironment(forward=dict(wanted))
+
+
+def compare(wanted: Wanted, actual: Mapping[str, str]) -> Tuple[str, ...]:
+    """The names where ``actual`` is not what a session should hold, in name order.
+
+    A forwarded name the process does not carry, or carries with another value, differs:
+    an unset variable is as broken as a retired one, and both are fixed by the same
+    relaunch. A removed name differs when the process carries it **at all** (issue-482):
+    a session holding a credential is the defect, whatever its value. Anything else
+    ``actual`` carries is not the-loop's business. A plain mapping is read as
+    ``forward``.
     """
-    return tuple(
-        name
-        for name in sorted(declared_values)
-        if actual.get(name) != declared_values[name]
-    )
+    env = _as_session_environment(wanted)
+    differing = {
+        name for name, value in env.forward.items() if actual.get(name) != value
+    }
+    differing.update(name for name in env.remove if name in actual)
+    return tuple(sorted(differing))
 
 
 def environ_matches_declared(
-    declared_values: Mapping[str, str], pid: int
+    declared_values: Wanted, pid: int
 ) -> Tuple[str, Tuple[str, ...]]:
     """``("fresh"|"stale"|"unverified", differing names)`` for one process."""
     actual = process_environ(pid)
@@ -215,25 +276,128 @@ def environ_matches_declared(
     return ("stale" if differing else "fresh", differing)
 
 
-def spawn_environment(config_getter) -> Dict[str, str]:
-    """The names and values a pane spawned **now** should carry; ``{}`` when none.
+def credential_names(config: Mapping) -> FrozenSet[str]:
+    """Every variable the config reads a credential from, plus the defaults (R4.2).
 
-    Handed to :class:`~the_loop.runner.TmuxRunner` as its ``env_provider`` so that every
-    spawn re-reads the file rather than inheriting the tmux server's environment — which
-    is the copy that was frozen when the server started and is never refreshed again.
+    A walk of the whole config: a string, or each string in a list, under any key that
+    ends in ``tokenEnv``/``secretEnv`` (any case). A session must never hold one, and the
+    passthrough refuses one, so the set errs toward too many names, never too few.
+    """
+    found = set(_DEFAULT_CREDENTIAL_NAMES)
+
+    def walk(node: Any) -> None:
+        if isinstance(node, Mapping):
+            for key, value in node.items():
+                if isinstance(key, str) and _CREDENTIAL_KEY_RE.search(key):
+                    values = value if isinstance(value, (list, tuple)) else [value]
+                    # A name only: anything else could never be a variable, and
+                    # reaching `env -u` it would fail the spawn.
+                    found.update(
+                        v
+                        for v in values
+                        if isinstance(v, str) and envfile.NAME_RE.fullmatch(v)
+                    )
+                else:
+                    walk(value)
+        elif isinstance(node, (list, tuple)):
+            for item in node:
+                walk(item)
+
+    walk(config)
+    return frozenset(found)
+
+
+def passthrough_names(config: Mapping) -> Tuple[str, ...]:
+    """``env.sessionPassthrough``: the non-secret names a pane may be given (R4).
+
+    A credential name is dropped with a warning naming the variable, never its value
+    (R4.3), and so is anything that is not a variable name. Order and first occurrence
+    are kept.
+    """
+    block = config.get("env") if isinstance(config, Mapping) else None
+    listed = block.get("sessionPassthrough") if isinstance(block, Mapping) else None
+    if not isinstance(listed, (list, tuple)):
+        return ()
+    secrets = credential_names(config)
+    kept: list = []
+    for name in listed:
+        if not isinstance(name, str) or not envfile.NAME_RE.fullmatch(name):
+            logger.warning("env.sessionPassthrough: %r is not a variable name", name)
+        elif name in secrets:
+            logger.warning(
+                "env.sessionPassthrough: %s names a credential; a session is never "
+                "given one, so it is not forwarded",
+                name,
+            )
+        elif name not in kept:
+            kept.append(name)
+    return tuple(kept)
+
+
+def session_environment(
+    config: Mapping, config_path: Path
+) -> Optional[SessionEnvironment]:
+    """The boundary for a pane spawned **now**, or ``None`` when nothing is configured.
+
+    ``None`` means neither ``env.file`` nor ``env.sessionPassthrough`` is set — the
+    state ``status`` reports as "not configured" and ``sessions restart`` refuses on.
+    Otherwise ``forward`` takes each passthrough name from the file when it declares
+    it (re-read now: issue-410's rotation rule), else from this process's environment,
+    else skips it (R4.4); and ``remove`` is every other name the file declares plus
+    every credential name. An unreadable file still removes the credential names: they
+    come from the config, not the file.
+    """
+    result = session_environment_and_lines(config, config_path)
+    return None if result is None else result[0]
+
+
+def session_environment_and_lines(
+    config: Mapping, config_path: Path
+) -> Optional[Tuple[SessionEnvironment, Tuple[int, ...]]]:
+    """:func:`session_environment`, plus the env file's malformed line numbers."""
+    passthrough = passthrough_names(config)
+    result = declared(config, config_path)
+    if result is None and not passthrough:
+        return None
+    file_values, invalid_lines = result if result is not None else ({}, ())
+    forward: Dict[str, str] = {}
+    for name in passthrough:
+        if name in file_values:
+            forward[name] = file_values[name]
+        elif name in os.environ:
+            forward[name] = os.environ[name]
+    remove = (set(file_values) | credential_names(config)) - set(forward) - _OWN_NAMES
+    return (
+        SessionEnvironment(forward=forward, remove=tuple(sorted(remove))),
+        invalid_lines,
+    )
+
+
+def spawn_environment(config_getter) -> SessionEnvironment:
+    """The boundary a pane spawned **now** is given; the runner's ``env_provider``.
+
+    Every spawn re-reads the file (issue-410), so a rotated passthrough value reaches
+    the next pane. With nothing configured it still removes the credential names: a
+    tmux server the daemon started inherited the daemon's environment, and a pane must
+    not inherit a token from it (issue-482, R1.4).
 
     ``config_getter`` returns the operator's CLI config; the path is resolved the way
     every other reader resolves it. Never raises: a spawn must not fail because an env
-    file moved.
+    file moved — and the fallback still strips the default credential names.
     """
     from .cli_config import default_cli_config_path
 
+    config: Mapping = {}
     try:
         config = config_getter() or {}
-        result = declared(config, default_cli_config_path())
+        env = session_environment(config, default_cli_config_path())
     except Exception:  # noqa: BLE001 — a spawn never fails on the env file
-        logger.warning("could not read the env file for this spawn; carrying none")
-        return {}
-    if result is None:
-        return {}
-    return dict(result[0])
+        logger.warning("could not read the env file for this spawn; forwarding none")
+        env = None
+    if env is not None:
+        return env
+    try:
+        names = credential_names(config)
+    except Exception:  # noqa: BLE001 — a malformed config still strips the defaults
+        names = _DEFAULT_CREDENTIAL_NAMES
+    return SessionEnvironment(remove=tuple(sorted(names - _OWN_NAMES)))

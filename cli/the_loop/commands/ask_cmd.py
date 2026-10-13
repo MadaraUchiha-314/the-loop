@@ -13,12 +13,14 @@ wait becomes a first-class ``session.awaiting_input`` event — which is what
 lights the dashboard's question card and the ``attention`` surface, and what
 ``POST /api/v1/sessions/reply`` answers.
 
-Deliberately **in-process**, not routed through the control-plane service (the
-same exception class as ``sessions attach``/``reset``): this is the escalation
-path, the one verb that must keep working when no service is running, when the
-daemon is half-configured, or in a cloud session that has no daemon at all.
-The core function stays in :mod:`the_loop.core.sessions`, so a route or MCP
-tool later is a binding, not a port.
+**Routing** (issue-482): through the control-plane service when one answers —
+its process holds the credentials, and a session the daemon spawned holds none —
+via :func:`~the_loop.client.routing.harness_routed`. A daemon-spawned session with
+no service fails with a message saying so; anywhere else (a cloud checkout with
+no daemon, a person at a terminal) the verb still runs in-process, with a note,
+because this is the escalation path and must keep working when nothing else is
+running. Never an auto-started service. The core function stays in
+:mod:`the_loop.core.sessions`; ``POST /api/v1/sessions/ask`` is its binding.
 
 Spec: docs/specs/issue-208/design.md.
 """
@@ -32,6 +34,7 @@ from pathlib import Path
 from .base import Command, register
 from .sessions_cmd import _cli_config, _render
 from .. import eventlog
+from ..client.routing import harness_routed, service_error
 from ..core import sessions as core_sessions
 
 
@@ -90,15 +93,34 @@ class AskCommand(Command):
                 return 2
         else:
             question = args.question
+        actor = core_sessions._local_actor()
         try:
-            result = core_sessions.ask_session(
-                args.work_item,
-                question,
-                config=_cli_config(),
-                summary=args.summary,
-                default_answer=args.default_answer,
+            result = harness_routed(
+                lambda c: c.post(
+                    "/sessions/ask",
+                    {
+                        "ref": args.work_item,
+                        "question": question,
+                        "summary": args.summary,
+                        "default": args.default_answer,
+                        "actor": actor,
+                    },
+                ),
+                lambda: core_sessions.ask_session(
+                    args.work_item,
+                    question,
+                    config=_cli_config(),
+                    summary=args.summary,
+                    default_answer=args.default_answer,
+                    actor=actor,
+                ),
             )
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 2
+        except Exception as exc:  # noqa: BLE001 — mapped, or re-raised below
+            mapped = service_error(exc)
+            if mapped is None:
+                if not isinstance(exc, ValueError):
+                    raise
+                mapped = (f"error: {exc}", 2)
+            print(mapped[0], file=sys.stderr)
+            return mapped[1]
         return _render(result)

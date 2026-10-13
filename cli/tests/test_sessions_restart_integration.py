@@ -70,7 +70,9 @@ class ScriptedRunner:
         # respawn argv, so a restart built on a runner without one relaunches
         # every session straight back onto the retired credential.
         self.respawned.append(target)
-        self.handed.append(dict(self.env_provider() if self.env_provider else {}))
+        provided = self.env_provider() if self.env_provider else {}
+        # issue-482: the provider is a boundary; what a pane is *given* is `forward`.
+        self.handed.append(dict(getattr(provided, "forward", provided)))
         self.argvs.append(adapter.interactive_resume_argv(prompt, session_id))
         return self.respawn_result
 
@@ -87,7 +89,12 @@ def deployment(tmp_path, monkeypatch):
     registry_dir = tmp_path / "sessions"
     env_file = tmp_path / "the-loop.env"
     env_file.write_text(f"SLACK_BOT_TOKEN={NEW_TOKEN}\n", encoding="utf-8")
-    config = {"env": {"file": str(env_file)}, "routing": {}}
+    # issue-482: a pane is given only what the passthrough admits. The rotation
+    # mechanics under test are the same for any forwarded name.
+    config = {
+        "env": {"file": str(env_file), "sessionPassthrough": ["SLACK_BOT_TOKEN"]},
+        "routing": {},
+    }
     monkeypatch.setattr(
         core_sessions.cli_config,
         "default_cli_config_path",
@@ -309,13 +316,27 @@ class TestRefusals:
         assert not runner.respawned
         assert "env.file" in text_of(result)
 
-    def test_an_env_file_declaring_nothing_refuses_too(self, deployment, scripted):
+    def test_an_env_file_declaring_nothing_still_relaunches_onto_the_boundary(
+        self, deployment, scripted
+    ):
+        """issue-482 R5.2 — an empty file no longer means "nothing to roll onto": a
+        relaunch strips every credential name, which is the upgrade path for a pane an
+        earlier version handed the token."""
         add_session(deployment, 15)
         deployment["env_file"].write_text("# nothing here\n", encoding="utf-8")
-        runner = scripted(ScriptedRunner(pids={"loop-github-octo-repo-15": [115]}))
+        runner = scripted(
+            ScriptedRunner(
+                pids={"loop-github-octo-repo-15": [115]},
+                environs={115: {"GH_TOKEN": RETIRED_TOKEN}},
+            )
+        )
         result = restart(deployment, runner)
-        assert result["exitCode"] == 2
-        assert not runner.respawned
+        assert runner.respawned == ["loop-github-octo-repo-15"]
+        assert "GH_TOKEN" in result["removed"]
+        # The double's pane still holds it after the "relaunch": reported, by name.
+        assert result["sessions"][0]["outcome"] == "stale"
+        assert "GH_TOKEN (held; a session must not hold it)" in text_of(result)
+        assert RETIRED_TOKEN not in text_of(result)
 
 
 class TestOutcomes:
@@ -474,6 +495,39 @@ class TestDrift:
             portable_dir=deployment["portable_dir"],
         )
         assert (drift["running"], drift["stale"], drift["unverified"]) == (3, 2, 0)
+
+    def test_issue_482_a_pane_still_holding_a_token_is_stale(
+        self, deployment, scripted
+    ):
+        """
+        Feature: spawned sessions never receive a secret
+          Scenario: a pane an earlier version spawned still holds the GitHub token
+            Given two running sessions on the current passthrough value
+            And one of them also holds GH_TOKEN, which a session must not hold
+            When the drift is read
+            Then that one is stale, named by GH_TOKEN, and the other is fresh
+
+        Requirement: docs/specs/issue-482/requirements.md R5.1
+        """
+        for number in (15, 16):
+            add_session(deployment, number)
+        scripted(
+            ScriptedRunner(
+                pids={f"loop-github-octo-repo-{n}": [100 + n] for n in (15, 16)},
+                environs={
+                    115: {"SLACK_BOT_TOKEN": NEW_TOKEN},
+                    116: {"SLACK_BOT_TOKEN": NEW_TOKEN, "GH_TOKEN": RETIRED_TOKEN},
+                },
+            )
+        )
+        drift = core_sessions.environment_drift(
+            config=deployment["config"], registry_dir=deployment["registry_dir"]
+        )
+        verdicts = {row["ref"]: row for row in drift["sessions"]}
+        assert verdicts["github:octo/repo#15"]["verdict"] == "fresh"
+        assert verdicts["github:octo/repo#16"]["verdict"] == "stale"
+        assert verdicts["github:octo/repo#16"]["stale"] == ["GH_TOKEN"]
+        assert RETIRED_TOKEN not in json.dumps(drift)
 
     def test_a_stopped_session_is_not_running_and_not_counted(
         self, deployment, scripted

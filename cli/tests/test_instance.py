@@ -340,7 +340,7 @@ class _Probe(TmuxRunner):
     def is_available(self):
         return True
 
-    def _run(self, argv, timeout=None):
+    def _run(self, argv, timeout=None, remove=()):
         from the_loop.runner import TmuxResult
 
         self.argv.append(list(argv))

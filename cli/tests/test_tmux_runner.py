@@ -73,6 +73,8 @@ class FakeRun:
         verbs_per_call=None,
     ):
         self.calls = []
+        # The `env=` each call was given (None = inherited), in call order.
+        self.envs = []
         self.returncode = returncode
         self.per_verb = per_verb or {}
         self.stdout_per_verb = stdout_per_verb or {}
@@ -84,6 +86,7 @@ class FakeRun:
         import subprocess as real_subprocess
 
         self.calls.append(list(cmd))
+        self.envs.append(kwargs.get("env"))
         verb = cmd[1]
         if verb in self.timeout_verbs:
             raise real_subprocess.TimeoutExpired(cmd, kwargs.get("timeout") or 10)
@@ -2034,3 +2037,147 @@ class TestEnvironmentRefresh:
     def test_an_unreadable_fleet_is_empty_never_an_exception(self, monkeypatch):
         self._fake(monkeypatch, per_verb={"list-panes": 1})
         assert TmuxRunner().live_pane_pids_by_session() == {}
+
+
+class TestNoSecretReachesASession:
+    """issue-482 / issue-485: a pane is given no credential, and no argv carries one.
+
+    Spec: docs/specs/issue-482/design.md § TmuxRunner · testing plan rows T2, T3.
+    """
+
+    SECRET = "gho_dummy-secret-value"
+
+    @staticmethod
+    def _boundary():
+        from the_loop.envstate import SessionEnvironment
+
+        return SessionEnvironment(
+            forward={"HTTPS_PROXY": "http://proxy"},
+            remove=("GH_TOKEN", "JIRA_API_TOKEN"),
+        )
+
+    def _spawn(self, monkeypatch, runner):
+        fake = TestEnvironmentRefresh._fake(monkeypatch)
+        assert runner.spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=ClaudeCodeAdapter(),
+            prompt="go",
+            cwd="/work",
+            session_id="uuid-1",
+        ).ok
+        index = next(i for i, c in enumerate(fake.calls) if c[1] == "new-session")
+        return fake.calls[index], fake.envs[index]
+
+    def test_abuse_482_a1_no_credential_value_reaches_the_argv(self, monkeypatch):
+        """
+        Feature: spawned sessions never receive a secret
+          Scenario: the env file declares the GitHub token
+            Given the daemon holds GH_TOKEN, loaded from its env file
+            When it spawns a session
+            Then no argv element carries the token's value
+            And -e names only the-loop's identifiers and the passthrough
+            And the harness starts behind `env -u GH_TOKEN -u JIRA_API_TOKEN`
+
+        Requirement: docs/specs/issue-482/requirements.md R1.1, R1.3, R2.1
+        """
+        monkeypatch.setenv("GH_TOKEN", self.SECRET)
+        runner = TmuxRunner(instance="laptop", env_provider=self._boundary)
+        cmd, _ = self._spawn(monkeypatch, runner)
+        assert not any(self.SECRET in arg for arg in cmd)
+        exported = TestEnvironmentRefresh._exported(cmd)
+        assert {e.split("=", 1)[0] for e in exported} <= {
+            "HTTPS_PROXY",
+            "THE_LOOP_INSTANCE",
+            "THE_LOOP_WORK_ITEM",
+            "THE_LOOP_CLI_CONFIG",
+        }
+        assert "HTTPS_PROXY=http://proxy" in exported
+        tail = cmd[cmd.index("--") + 1 :]
+        assert tail[:5] == ["env", "-u", "GH_TOKEN", "-u", "JIRA_API_TOKEN"]
+        assert tail[5] == "claude"
+
+    def test_abuse_482_a3_the_tmux_client_runs_without_the_removed_names(
+        self, monkeypatch
+    ):
+        """A server this spawn starts inherits nothing it must not hand a pane
+        (R2.3) — and the server's argv, the spawn's, carries no value (R2.2)."""
+        monkeypatch.setenv("GH_TOKEN", self.SECRET)
+        monkeypatch.setenv("PATH", "/usr/bin")
+        runner = TmuxRunner(env_provider=self._boundary)
+        _, env = self._spawn(monkeypatch, runner)
+        assert env is not None
+        assert "GH_TOKEN" not in env
+        assert env.get("PATH") == "/usr/bin"
+
+    def test_a_respawn_is_held_to_the_same_boundary(self, monkeypatch):
+        monkeypatch.setenv("GH_TOKEN", self.SECRET)
+        fake = TestEnvironmentRefresh._fake(
+            monkeypatch,
+            per_verb={"has-session": 0},
+            stdout_per_verb={"list-panes": "0\n"},
+        )
+        result = TmuxRunner(env_provider=self._boundary).respawn_in(
+            "loop-github-octo-repo-15",
+            ClaudeCodeAdapter(),
+            "relaunched",
+            cwd="/work",
+            session_id="uuid-1",
+            work_item=REF,
+        )
+        assert result.ok, result.error
+        index = next(i for i, c in enumerate(fake.calls) if c[1] == "respawn-pane")
+        cmd = fake.calls[index]
+        assert not any(self.SECRET in arg for arg in cmd)
+        assert cmd[cmd.index("--") + 1 :][:3] == ["env", "-u", "GH_TOKEN"]
+        assert "GH_TOKEN" not in fake.envs[index]
+
+    def test_the_production_provider_forwards_nothing_from_the_env_file(
+        self, monkeypatch, tmp_path
+    ):
+        """R1.2 — the default boundary, end to end through `envstate`."""
+        from the_loop import envstate
+
+        (tmp_path / ".env").write_text(f"GH_TOKEN={self.SECRET}\nLANG=C\n")
+        (tmp_path / "cli-config.yaml").write_text("env:\n  file: .env\n")
+        monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(tmp_path / "cli-config.yaml"))
+        config = {"env": {"file": ".env"}}
+        runner = TmuxRunner(
+            env_provider=lambda: envstate.spawn_environment(lambda: config)
+        )
+        cmd, env = self._spawn(monkeypatch, runner)
+        assert not any(self.SECRET in arg for arg in cmd)
+        assert not any(
+            e.startswith(("GH_TOKEN=", "LANG="))
+            for e in TestEnvironmentRefresh._exported(cmd)
+        )
+        tail = cmd[cmd.index("--") + 1 :]
+        assert tail[0] == "env"
+        assert "GH_TOKEN" in tail and "LANG" in tail
+
+    def test_a_tmux_too_old_for_e_still_strips_the_pane(self, monkeypatch):
+        fake = TestEnvironmentRefresh._fake(
+            monkeypatch, stdout_per_verb={"-V": "tmux 3.0a"}
+        )
+        TmuxRunner(env_provider=self._boundary).spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=ClaudeCodeAdapter(),
+            prompt="go",
+            cwd="/work",
+            session_id="uuid-1",
+        )
+        cmd = next(c for c in fake.calls if c[1] == "new-session")
+        assert "-e" not in cmd
+        assert cmd[cmd.index("--") + 1] == "env"
+
+    def test_a_provider_that_raises_still_strips_the_default_credentials(
+        self, monkeypatch
+    ):
+        """Fail closed: a broken provider forwards nothing and still keeps GH_TOKEN
+        out of the pane."""
+
+        def boom():
+            raise RuntimeError("the env file is on fire")
+
+        cmd, _ = self._spawn(monkeypatch, TmuxRunner(env_provider=boom))
+        tail = cmd[cmd.index("--") + 1 :]
+        assert tail[0] == "env" and "GH_TOKEN" in tail

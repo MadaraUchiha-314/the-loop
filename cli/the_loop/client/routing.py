@@ -26,6 +26,26 @@ from typing import Any, Callable, Optional, Tuple
 #: Env var marking an invocation that must execute core in-process (tests).
 SERVICE_LOCAL_ENV = "THE_LOOP_SERVICE_LOCAL"
 
+#: The identifiers the-loop's daemon hands every session it spawns (issue-322,
+#: issue-370, issue-393) — and, since issue-482, the only ones. Any of them set
+#: means this CLI runs inside such a session.
+SPAWNED_SESSION_ENVS = (
+    "THE_LOOP_INSTANCE",
+    "THE_LOOP_WORK_ITEM",
+    "THE_LOOP_CLI_CONFIG",
+)
+
+
+def daemon_spawned() -> str:
+    """The identifier that marks this CLI as running where the daemon hosts sessions.
+
+    Empty when none is set (issue-482, R3.3). A session the daemon spawned holds no
+    credential — the service holds them — so a harness verb there never runs
+    in-process: it would only fail later on a token that is not there, or worse,
+    find one the session should never have had.
+    """
+    return next((name for name in SPAWNED_SESSION_ENVS if os.environ.get(name)), "")
+
 
 def via_service() -> bool:
     return os.environ.get(SERVICE_LOCAL_ENV) != "1"
@@ -58,6 +78,22 @@ IN_PROCESS_NOTE = (
 )
 
 
+#: What a harness verb in a daemon-spawned session says when no service answers
+#: (issue-482, R3.2). It does not run in-process: the session holds no credential.
+NO_SERVICE_IN_SESSION = (
+    "no control-plane service is answering at {url}. A session the-loop's daemon "
+    "starts holds no credentials ({marker} is set here), so this verb does not run "
+    "in-process — start the service (`the-loop start`) or ask the operator to"
+)
+
+#: The same, when the service that answers predates the verb.
+STALE_SERVICE_IN_SESSION = (
+    "the control-plane service at {url} does not serve this verb yet. A session "
+    "the-loop's daemon starts holds no credentials ({marker} is set here), so this "
+    "verb does not run in-process — restart the service (`the-loop restart`) or ask "
+    "the operator to"
+)
+
 #: What a harness verb says when the running service predates it.
 STALE_SERVICE_NOTE = (
     "note: the running control-plane service does not serve this verb yet "
@@ -81,12 +117,21 @@ def harness_routed(
     They never auto-start a service: in a cloud checkout that would only move the
     session's token into a second process. The fallback prints
     :data:`IN_PROCESS_NOTE` on stderr every time (A5).
+
+    **A session the daemon spawned never falls back** (issue-482, R3.2): it holds no
+    credential by design, so with no service — or one too old to serve the verb — it
+    raises :class:`~the_loop.client.ServiceUnavailable` with a message that names the
+    service and how to start it. The in-process fallback stays for everything else
+    (a cloud checkout with no daemon, a person at a terminal) until its own opt-in is
+    decided.
     """
     if not via_service():
         return local()
     from .. import client
+    from ..api.config import base_url
 
     resolved = client.resolved_config(config)
+    hosted = daemon_spawned()
     if client.healthy(resolved):
         try:
             return remote(client.Client(resolved))
@@ -99,8 +144,18 @@ def harness_routed(
                 "Method Not Allowed",
             ):
                 raise
+            if hosted:
+                raise client.ServiceUnavailable(
+                    STALE_SERVICE_IN_SESSION.format(
+                        url=base_url(resolved), marker=hosted
+                    )
+                ) from None
             print(STALE_SERVICE_NOTE, file=sys.stderr)
             return local()
+    if hosted:
+        raise client.ServiceUnavailable(
+            NO_SERVICE_IN_SESSION.format(url=base_url(resolved), marker=hosted)
+        )
     print(IN_PROCESS_NOTE, file=sys.stderr)
     return local()
 

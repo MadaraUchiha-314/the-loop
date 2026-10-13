@@ -213,29 +213,51 @@ class TestProcessEnviron:
 
 
 class TestSpawnEnvironment:
-    def test_is_what_the_file_declares(self, tmp_path, monkeypatch):
+    def test_a_passthrough_name_is_what_the_file_declares(self, tmp_path, monkeypatch):
         """
-        Feature: a session spawned after a rotation is not born stale
-          Scenario: the daemon spawns while the file names the new credential
-            Given a configured env file holding the new credential
+        Feature: a session spawned after a change is not born stale
+          Scenario: the daemon spawns while the file names the new passthrough value
+            Given a configured env file and a passthrough naming one of its variables
             When the spawn environment is built
-            Then it carries that credential
+            Then it forwards that value, re-read now
 
-        Requirement: R4.1
+        Requirement: R4.1; docs/specs/issue-482/requirements.md R4.4
         """
+        config, path = _config(tmp_path, f"SLACK_BOT_TOKEN={TOKEN}\n")
+        config["env"]["sessionPassthrough"] = ["SLACK_BOT_TOKEN"]
+        monkeypatch.setattr(
+            envstate, "declared", lambda c, p: ({"SLACK_BOT_TOKEN": TOKEN}, ())
+        )
+        env = envstate.spawn_environment(lambda: config)
+        assert env.forward == {"SLACK_BOT_TOKEN": TOKEN}
+        assert "SLACK_BOT_TOKEN" not in env.remove
+
+    def test_issue_482_the_file_is_not_forwarded_by_default(
+        self, tmp_path, monkeypatch
+    ):
+        """A file's names are kept out of a pane unless the passthrough admits them."""
         config, path = _config(tmp_path, f"SLACK_BOT_TOKEN={TOKEN}\n")
         monkeypatch.setattr(
             envstate, "declared", lambda c, p: ({"SLACK_BOT_TOKEN": TOKEN}, ())
         )
-        assert envstate.spawn_environment(lambda: config) == {"SLACK_BOT_TOKEN": TOKEN}
+        env = envstate.spawn_environment(lambda: config)
+        assert env.forward == {}
+        assert "SLACK_BOT_TOKEN" in env.remove
 
-    def test_no_env_file_carries_nothing(self, tmp_path, monkeypatch):
-        """R4.2 — a deployment declaring no env file spawns exactly as before."""
+    def test_no_env_file_forwards_nothing_and_still_strips_credentials(
+        self, tmp_path, monkeypatch
+    ):
+        """R4.2, revised by issue-482: no file forwards nothing, and a token the
+        daemon was started with is still kept out of the pane."""
         monkeypatch.setattr(envstate, "declared", lambda c, p: None)
-        assert envstate.spawn_environment(lambda: {}) == {}
+        env = envstate.spawn_environment(lambda: {})
+        assert env.forward == {}
+        assert "GH_TOKEN" in env.remove
 
     def test_a_spawn_never_fails_on_the_env_file(self, monkeypatch):
         def boom():
             raise RuntimeError("the config is on fire")
 
-        assert envstate.spawn_environment(boom) == {}
+        env = envstate.spawn_environment(boom)
+        assert env.forward == {}
+        assert "GH_TOKEN" in env.remove

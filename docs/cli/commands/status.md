@@ -89,9 +89,13 @@ Two properties carried over from the removed `poll status` (issue-191/205):
 - **The heartbeat is enrichment.** An absent or unreadable one loses the progress
   lines, never the liveness answer.
 
-A **`sessions`** line appears when running harness sessions hold credentials that differ
-from what [`env.file`](/config/cli/#env-file) declares now — and nothing at all when they
-do not ([issue-410](https://github.com/MadaraUchiha-314/the-loop/issues/410)):
+A **`sessions`** line appears when running harness sessions hold a forwarded value that
+differs from what the config declares now
+([`env.sessionPassthrough`](/config/cli/#env-sessionpassthrough), read from
+[`env.file`](/config/cli/#env-file)), or hold a name a session must not hold — an
+`env.file` name or a credential, such as a token an earlier version handed the pane
+([issue-482](https://github.com/MadaraUchiha-314/the-loop/issues/482)) — and nothing at
+all when they do not ([issue-410](https://github.com/MadaraUchiha-314/the-loop/issues/410)):
 
 ```console
 $ the-loop status

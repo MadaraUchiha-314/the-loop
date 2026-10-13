@@ -276,28 +276,42 @@ still carrying the key is warned about and otherwise ignored).
   independent of `harnessTrust` (either may be off without the other), shares its write
   discipline and its `workspace.trusted` / `workspace.trust_failed` events, and is a
   silent no-op for cursor-agent.
-- WHEN a session is spawned AND [`env.file`](../config/cli/index.md) names a file THEN
-  the pane SHALL be handed what that file declares **at spawn time** (issue-410), rather
-  than inheriting the tmux server's environment for those names — a copy captured when
-  that server started and never refreshed, so a session spawned an hour after a
-  credential rotation was previously still born on the retired value. Deployments that
-  declare no env file spawn exactly the argv they spawned before, and a tmux below 3.2
-  (no `new-session -e`) keeps its existing single warning.
+- A spawned session SHALL receive **no secret** (issue-482): its `-e` flags SHALL name only
+  `THE_LOOP_INSTANCE`, `THE_LOOP_WORK_ITEM`, `THE_LOOP_CLI_CONFIG` and the non-secret
+  names `env.sessionPassthrough` admits — a credential name (any `*tokenEnv`/`*secretEnv`
+  value, or a default such as `GH_TOKEN`) is refused there with a warning. Every other
+  name [`env.file`](../config/cli/index.md) declares, and every credential name, SHALL be
+  removed from the harness's environment (`env -u NAME …` before the harness, and the
+  tmux client run without them), so a pane inherits none of them from a tmux server the
+  daemon started. No credential value reaches any argv, including the argv a tmux server
+  keeps as its name when a spawn starts it (issue-485).
+- WHEN a session is spawned THEN each passthrough value SHALL be read **at spawn time**
+  (issue-410) — from `env.file` when it declares the name, else the daemon's
+  environment — rather than inherited from the tmux server's long-frozen copy. A tmux
+  below 3.2 (no `new-session -e`) keeps its existing single warning and is still
+  stripped.
+- WHEN a session-side verb (`ask`, `comment`, `ticket …`, `pr …`) runs in a session the
+  daemon spawned AND no service answers THEN it SHALL fail with a message naming the
+  service and how to start it, never run in-process (issue-482); `ask` is served at
+  `POST /api/v1/sessions/ask`.
 - WHEN an operator runs `the-loop sessions restart --all` (or names work items) THEN each
   **running** session SHALL be relaunched in place — `respawn-pane -k`, so the tmux
   session and window keep their identity and an attached client is not dropped (the
   pane's scrollback is cleared, as a fresh session's would be) — **resuming** its
-  recorded conversation in its recorded working directory, on the environment the file
-  declares now. A session
+  recorded conversation in its recorded working directory, on the session environment
+  the config declares now (issue-482: the passthrough forwarded, every other name kept
+  out — which is also how a pane an earlier version handed a token is cleared). A session
   that is not running is skipped rather than started, and one whose conversation cannot
   be resumed is left running rather than replaced with a blank one.
 - WHEN a session has been relaunched THEN its new process's environment SHALL be read
-  back and compared with the file: a session still on a retired value is **named, with
+  back and compared with the boundary: a session still on a retired value, or still
+  holding a kept-out name, is **named, with
   the variables that differ**, and the command exits non-zero. A host that will not
   report a process's environment yields `unverified`, which does not fail the run.
   No environment **value** is ever printed — a variable is identified by name and by a
   truncated SHA-256 fingerprint.
-- WHEN running sessions hold values that differ from the file THEN
+- WHEN running sessions hold a forwarded value that differs, or a name a session must not
+  hold (issue-482), THEN
   [`the-loop status`](../cli/commands/status.md) SHALL carry one line saying how many, and
   the command that fixes it — and nothing at all when they do not. It never moves the
   exit code: `status`'s contract is "every enabled *service* is running".
@@ -395,6 +409,7 @@ belongs to does not.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-482 | **A spawned session receives no secret** (2026-10-13, with [issue-485](https://github.com/MadaraUchiha-314/the-loop/issues/485)): `env.file` is the daemon's environment, not a session's. A pane gets the-loop's three identifiers plus the non-secret names `env.sessionPassthrough` lists (a credential name is refused); every other `env.file` name and every credential name is stripped with `env -u` and kept out of the tmux client's environment, so neither `ps` nor a tmux server a spawn started shows a token — before this, `-e GH_TOKEN=…` sat in the server's process name for days. Session-side verbs in a daemon-spawned session never fall back in-process, and `ask` got a service route (`POST /api/v1/sessions/ask`). `status` and `sessions restart` compare a pane against the boundary, so a pane an earlier version handed a token reads as stale until it is relaunched | [spec](../specs/issue-482/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/482) |
 | issue-451 | **A default model per harness** (2026-10-02): `harnesses[].defaultModel` is the model a work item's session is launched on when it has none of its own — `do`, `contribute`, `review`, an unticked gate. `Dispatcher._resolved_choice` falls back to `modelchoice.default_model`, so the argv, record, spawn event and hooks carry it; the gate names it on the checklist and in the confirmation; `models check` probes it | [spec](../specs/issue-451/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/451) |
 | issue-442 | The session announcement posts through the daemon's GitHub client on PyGithub under `integrations.github.api.tokenEnv` (2026-09-30), no longer through the operator's `gh`; a missing token is one warning per process | [spec](../specs/issue-442/), [decision-139](../decisions/decision-139.md) |
 | issue-426 | **A work-item session is launched without Claude Code's question menu** (2026-09-28): in `work-item` mode the spawn, resume and `sessions restart` argv gains `--disallowedTools=AskUserQuestion` right before the prompt, so a question ends the turn instead of freezing the pane; `cli` mode is unchanged | [spec](../specs/issue-426/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/426) |

@@ -952,6 +952,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions/ask:
+    post:
+      summary: Ask Session
+      operationId: askSession
+      description: Post an agent's question on its work item and record the wait
+        (issue-208) — the loop-prevention marker stamped centrally, the question
+        recorded on the work item's tracker and fanned out to every channel that
+        subscribes to `session.awaiting_input`, and the `session.awaiting_input`
+        event emitted. Served so that a session the daemon spawned, which holds no
+        credential, can ask through the service that does (issue-482). 400 on a
+        malformed ref or an empty question.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionAskBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Asksession
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/sessions/reply:
     post:
       summary: Reply Session
@@ -2436,6 +2468,42 @@ components:
       - ref
       - verb
       title: SessionControlBody
+    SessionAskBody:
+      properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
+        ref:
+          type: string
+          title: Ref
+        question:
+          type: string
+          title: Question
+        summary:
+          type: string
+          title: Summary
+          description: A 2-3 sentence summary that leads the room's message instead
+            of an excerpt (issue-393 R8).
+          default: ''
+        default:
+          type: string
+          title: Default
+          description: The affirmative answer to take if the human does not object
+            (issue-393 R12.1); offered as a one-tap reply.
+          default: ''
+        actor:
+          type: string
+          title: Actor
+          description: Who is asking — recorded on the event for the audit trail,
+            never trusted as authentication (decision-059).
+          default: ''
+      type: object
+      required:
+      - ref
+      - question
+      title: SessionAskBody
     SessionReplyBody:
       properties:
         instance:
