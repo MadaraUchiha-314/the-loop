@@ -164,7 +164,22 @@
         "file": {
           "type": "string",
           "default": "",
-          "description": "Path of a dotenv-format file: one NAME=value per line, `#` comments, an optional leading `export`, double quotes with \\n \\t \\r \\\\ \\\" unescaped, single quotes literal, an unquoted value trimmed and cut at a trailing ` #` comment; no interpolation. A relative path resolves against the directory of THIS config file (not the working directory), and `~` is expanded — so `~/.the-loop/cli-config.yaml` naming `.env` finds `~/.the-loop/.env` from anywhere. Unset or empty: nothing is loaded. A missing, unreadable or malformed file is a warning naming the path (never a value) and the process continues; a file readable by group or others is warned about and still loaded. Keep the file out of git."
+          "description": "Path of a dotenv-format file: one NAME=value per line, `#` comments, an optional leading `export`, double quotes with \\n \\t \\r \\\\ \\\" unescaped, single quotes literal, an unquoted value trimmed and cut at a trailing ` #` comment; no interpolation. A relative path resolves against the directory of THIS config file (not the working directory), and `~` is expanded — so `~/.the-loop/cli-config.yaml` naming `.env` finds `~/.the-loop/.env` from anywhere. Unset or empty: nothing is loaded. A missing, unreadable or malformed file is a warning naming the path (never a value) and the process continues; a file readable by group or others is warned about and still loaded. Keep the file out of git. Since issue-482 the file is the DAEMON's environment, not a session's: a spawned session is given none of it (see `sessionPassthrough`), and every name it declares is removed from the session's environment."
+        },
+        "sessionPassthrough": {
+          "type": "array",
+          "default": [],
+          "description": "The non-secret environment variables a spawned agent session is given (issue-482) — a proxy, a locale. the-loop never sends a secret to a session: by default a session gets only THE_LOOP_INSTANCE, THE_LOOP_WORK_ITEM and THE_LOOP_CLI_CONFIG, and every name `env.file` declares, plus every credential name, is removed from its environment. A listed name takes its value from `env.file` when the file declares it (re-read per spawn), else from the daemon's environment; a name in neither is skipped. A credential name — any variable a `*tokenEnv`/`*secretEnv` key names, or a default such as GH_TOKEN — is refused with a warning, never forwarded.",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "examples": [
+            [
+              "HTTPS_PROXY",
+              "NO_PROXY"
+            ]
+          ]
         }
       }
     },

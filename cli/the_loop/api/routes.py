@@ -162,6 +162,18 @@ class SessionControlBody(BaseModel):
     instance: str = ""
 
 
+class SessionAskBody(BaseModel):
+    ref: str
+    question: str
+    summary: str = ""
+    default: str = ""
+    # Recorded on the event for the audit trail; never trusted as authentication
+    # (decision-059: the gateway owns auth).
+    actor: str = ""
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
+
+
 class SessionReplyBody(BaseModel):
     ref: str
     text: str
@@ -696,6 +708,22 @@ def build_router(
     def control_session(body: SessionControlBody) -> Dict[str, Any]:
         return facade.control_session(
             body.ref, body.verb, comment=body.comment, instance=body.instance
+        )
+
+    @router.post(
+        f"{API_PREFIX}/sessions/ask",
+        operation_id="askSession",
+    )
+    def ask_session(body: SessionAskBody) -> Dict[str, Any]:
+        # Served so a session the daemon spawned, which holds no credential, asks
+        # through the process that does (issue-482, R3.1).
+        return facade.ask_session(
+            body.ref,
+            body.question,
+            summary=body.summary,
+            default_answer=body.default,
+            actor=body.actor,
+            instance=body.instance,
         )
 
     @router.post(

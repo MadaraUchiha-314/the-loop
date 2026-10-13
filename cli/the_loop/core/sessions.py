@@ -696,8 +696,13 @@ def ask_session(
     config: Optional[dict] = None,
     summary: str = "",
     default_answer: str = "",
+    actor: str = "",
 ) -> Dict[str, Any]:
     """Post an agent's question on its work item and record the wait.
+
+    ``actor`` is who asked, for the audit trail; empty means this process's own
+    user. The service is handed the CLI's (issue-482): a question asked through it
+    is still the session's, not the service account's.
 
     The point of the verb (issue-208): the loop-prevention marker is stamped
     **centrally** (:func:`~the_loop.authz.mark_self_authored`, idempotent)
@@ -714,7 +719,7 @@ def ask_session(
     if not question or not question.strip():
         raise ValueError("the question is empty; nothing to ask")
     control = _control_config(config)
-    actor = _local_actor()
+    actor = actor or _local_actor()
     # One event on the bus (issue-309): the ledger records it FIRST — the record
     # IS the question comment, marked and enveloped — and then every subscribed
     # channel gets it, best-effort by contract (R1.2): the result computed below
@@ -1624,9 +1629,13 @@ _RESTART_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 def _declared_environment(
     config: Optional[dict],
-) -> Optional[Tuple[Dict[str, str], Tuple[int, ...]]]:
-    """What ``env.file`` declares right now, or ``None`` when it names no file."""
-    return envstate.declared(config or {}, cli_config.default_cli_config_path())
+) -> Optional[Tuple[envstate.SessionEnvironment, Tuple[int, ...]]]:
+    """The session boundary right now (issue-482), or ``None`` when nothing is
+    configured: what a pane is given, what it must not hold, and the env file's
+    malformed line numbers."""
+    return envstate.session_environment_and_lines(
+        config or {}, cli_config.default_cli_config_path()
+    )
 
 
 def _restart_adapter(session: Session, config: Optional[dict]):
@@ -1662,7 +1671,7 @@ def _restart_adapter(session: Session, config: Optional[dict]):
 
 def _environment_row(
     session: Session,
-    declared_values: Mapping[str, str],
+    declared_values: envstate.SessionEnvironment,
     live_pids: Mapping[str, List[int]],
 ) -> Dict[str, Any]:
     """One session's environment as it stands: live pids, verdict, differing names.
@@ -1776,7 +1785,7 @@ def _restart_selection(
 
 def _restart_one(
     session: Session,
-    declared_values: Mapping[str, str],
+    declared_values: envstate.SessionEnvironment,
     config: Optional[dict],
     runner: TmuxRunner,
     dry_run: bool,
@@ -1900,7 +1909,12 @@ def restart_sessions(
     registry_dir: str = "",
     portable_dir: str = "",
 ) -> Dict[str, Any]:
-    """Relaunch running sessions on the environment ``env.file`` declares now.
+    """Relaunch running sessions on the session environment the config declares now.
+
+    Since issue-482 that is the boundary, not the env file: the passthrough names with
+    their current values, and every env-file and credential name kept out. A relaunch
+    is also how a pane spawned by an earlier version, which still holds a token, is
+    brought onto it.
 
     A session's environment is whatever tmux handed its pane when the pane was
     forked, so a credential rotation leaves the service on the new value and every
@@ -1939,29 +1953,13 @@ def restart_sessions(
                 "stream": "err",
                 "text": (
                     "error: no env file is configured, so there is no refreshed "
-                    "environment to restart onto — set `env.file` in the CLI config "
-                    "(the credentials the sessions carry are the ones it names)"
+                    "environment to restart onto — set `env.file` (or "
+                    "`env.sessionPassthrough`) in the CLI config"
                 ),
             }
         )
         return {"sessions": [], "exitCode": 2, "messages": messages}
     declared_values, invalid_lines = declared
-    if not declared_values:
-        messages.append(
-            {
-                "stream": "err",
-                "text": (
-                    "error: the configured env file declares no usable variable; "
-                    "nothing was restarted"
-                    + (
-                        f" (malformed: {', '.join(f'line {n}' for n in invalid_lines)})"
-                        if invalid_lines
-                        else ""
-                    )
-                ),
-            }
-        )
-        return {"sessions": [], "exitCode": 2, "messages": messages}
     if invalid_lines:
         messages.append(
             {
@@ -1979,13 +1977,16 @@ def restart_sessions(
     # the one parse of the file the whole run uses, so every session in a roll lands
     # on the same bytes even if the file is rewritten underneath it.
     runner = TmuxRunner(env_provider=lambda: declared_values)
+    forward = declared_values.forward
     messages.append(
         {
             "stream": "out",
             "text": (
                 f"{'checking' if dry_run else 'restarting'} {len(selected)} "
-                f"session(s) against {len(declared_values)} declared variable(s) "
-                f"[{', '.join(sorted(declared_values))}]"
+                f"session(s): forwarding {len(forward)} variable(s) "
+                f"[{', '.join(sorted(forward))}], keeping out "
+                f"{len(declared_values.remove)} "
+                f"[{', '.join(declared_values.remove)}]"
             ),
         }
     )
@@ -2018,10 +2019,11 @@ def restart_sessions(
         )
     return {
         "sessions": rows,
-        "declared": sorted(declared_values),
+        "declared": sorted(declared_values.forward),
+        "removed": list(declared_values.remove),
         "fingerprints": {
             name: envstate.fingerprint(value)
-            for name, value in sorted(declared_values.items())
+            for name, value in sorted(declared_values.forward.items())
         },
         "dryRun": dry_run,
         "exitCode": 1 if failed else 0,
@@ -2029,14 +2031,22 @@ def restart_sessions(
     }
 
 
-def _restart_line(row: Mapping[str, Any], declared_values: Mapping[str, str]) -> str:
+def _restart_line(
+    row: Mapping[str, Any], declared_values: envstate.SessionEnvironment
+) -> str:
     """One rendered row. Names a differing variable; never prints its value."""
     line = f"{row['ref']:<40} {row['outcome']}"
     if row.get("stale"):
         line += " — still differing: " + ", ".join(
-            f"{name} (wanted {envstate.fingerprint(declared_values.get(name, ''))})"
-            for name in row["stale"]
+            _wanted(name, declared_values) for name in row["stale"]
         )
     elif row.get("detail"):
         line += f" — {row['detail']}"
     return line
+
+
+def _wanted(name: str, declared_values: envstate.SessionEnvironment) -> str:
+    """How a differing name is rendered: a fingerprint, or "must be absent"."""
+    if name in declared_values.forward:
+        return f"{name} (wanted {envstate.fingerprint(declared_values.forward[name])})"
+    return f"{name} (held; a session must not hold it)"

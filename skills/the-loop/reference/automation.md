@@ -341,7 +341,10 @@ runs `gh`; these verbs close the last hop, the agent's own session.
 
 - **Whose token.** On a box where the daemon runs, each verb executes in the
   control-plane service, so the token stays in the daemon's environment and the session
-  holds none. With no service (a cloud checkout), the verb runs in-process on the token
+  holds none — the daemon hands a session no credential at all (issue-482). In a session
+  the daemon spawned, a verb with no service to answer it **fails** with a message
+  saying so; tell the ticket and wait, do not look for a token. With no daemon at all (a
+  cloud checkout), the verb runs in-process on the token
   `integrations.github.api.tokenEnv` names (default `GH_TOKEN`), prints a note on
   stderr saying so, and never starts a service. The same operations are tools on the
   service's `/mcp` endpoint for a harness that prefers MCP.

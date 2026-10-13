@@ -55,7 +55,11 @@ self-learning/ML capabilities.
   `false`. Each SHALL run through the control-plane service when one answers `/health`
   (the daemon's token; the session holds none), and otherwise in-process on
   `integrations.github.api.tokenEnv` with a note on stderr — never auto-starting a
-  service (decision-140). `ticket close`, `pr resolve-thread` (a thread of that PR
+  service (decision-140). WHEN the verb runs in a session the daemon spawned (one
+  carrying `THE_LOOP_INSTANCE`, `THE_LOOP_WORK_ITEM` or `THE_LOOP_CLI_CONFIG`) AND no
+  service answers, or the one that answers predates the verb, THEN it SHALL exit 2 with a
+  message naming the service and how to start it, and SHALL NOT run in-process: such a
+  session holds no credential (issue-482). `ticket close`, `pr resolve-thread` (a thread of that PR
   only) and `pr ready` complete the set. WHEN `pr ready` is run for an open draft THEN
   it SHALL take the PR out of draft (GitHub's `markPullRequestReadyForReview`, addressed
   by the node id GitHub returned for that PR) and exit 0; an already-ready PR SHALL be a
@@ -108,8 +112,11 @@ self-learning/ML capabilities.
   **centrally** and SHALL record the wait as a `session.awaiting_input` event —
   emitted (as a warning, `comment_posted: false`) even when the post fails, since the agent
   is waiting either way (issue-208, [decision-078](../decisions/decision-078.md)). It
-  SHALL execute in-process rather than through the service: the escalation path must
-  not depend on anything else of the-loop running. The answer arrives as a forwarded
+  SHALL route like the GitHub verbs above (issue-482): through a running service
+  (`POST /api/v1/sessions/ask`, with the CLI's own user as the actor), in-process with a
+  note where no service answers and the session is not the daemon's, and exit 2 in a
+  daemon-spawned session with no service — the one place the escalation path cannot run
+  itself, because the session holds no credential. The answer arrives as a forwarded
   ticket comment, or straight into the pane via `POST /api/v1/sessions/reply` (see
   [control-plane](control-plane.md)).
 - `the-loop add-collaborator @LOGIN [@LOGIN …] --work-item <ref>` and
@@ -545,6 +552,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-482 | Session-side verbs stop needing a token (2026-10-13): in a session the daemon spawned, `comment`, `ticket`, `pr` and `ask` go through the service or fail with a message, never in-process; `ask` gains `POST /api/v1/sessions/ask`. The daemon no longer hands a session any `env.file` value — see [interactive sessions](interactive-sessions.md) | [spec](../specs/issue-482/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/482) |
 | issue-475 | The ticket verbs act on a Jira ref (2026-10-06, PR 5 of 5): `core/tickets.tracker_for` dispatches `ticket show\|create\|close`, `comment`, `ask` and `pr create` by tracker, the GitHub functions unchanged. `ticket create --project` opens a Jira ticket, `ticket close` transitions into Done (refusing an ambiguous choice), `pr create` on a Jira ref opens in the origin repository. Announcements reach a Jira ticket as relays, and the CLI graph path accepts Jira gate authors. Before, every verb refused a Jira ref and `/the-loop:work-on` registered a Jira item against its PR | [spec](../specs/issue-475/), [ticket](../cli/commands/ticket.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-475 | Jira tickets are work-item refs (2026-10-06, PR 1 of 5): `jira:<site>/<KEY>-<n>` parses, renders, slugs and links through a per-provider `RefScheme` (`sessions/refs.py`), with the GitHub scheme moved unchanged. Spec ids come from `WorkItemRef.spec_id` (`jira-<key>-<n>` beside `issue-<n>`), `derive_ref` inverts them with the configured site, and `origin_repository` maps a Jira project to its GitHub repository at the six shared owner/repo reads. Before, the `jira:` prefix was reserved and every non-GitHub ref had no spec id | [spec](../specs/issue-475/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-462 | `the-loop pr checks <pr>` lists every check on a pull request's head with failed GitHub Actions jobs' log tails (2026-10-06): `core.github_ops.pull_request_checks` over `GitHubClient.job_log_tail`, which reads the `302` from `actions/jobs/{id}/logs` without following it and fetches the signed URL itself (https only, no credential, tail-only in memory). Read-only, like `pr status`. `startup_failure` now counts as a failing conclusion in the rollup. Before, a failed job's log was reachable only through `gh run view` | [spec](../specs/issue-462/), [pr](../cli/commands/pr.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/462) |

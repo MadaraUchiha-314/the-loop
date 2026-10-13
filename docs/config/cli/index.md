@@ -213,15 +213,21 @@ What the loader does, and does not do ([decision-108](/decisions/decision-108)):
 - **Read once, at start — for the process that reads it.** A change to the file needs a
   restart of that process; the daemons' hot reload of `cli-config.yaml` does not re-read
   it, so a reload can never change the credentials a running process holds.
-- **Harness sessions are the exception, and they have their own verb**
-  ([issue-410](https://github.com/MadaraUchiha-314/the-loop/issues/410)). A session the
-  daemon **spawns** is handed what the file declares at *that moment*, rather than
-  inheriting the tmux server's long-frozen copy — so a session started after a rotation
-  is not born on the retired value. A session **already running** is still frozen, by
-  definition: roll them with
+- **Harness sessions never see it**
+  ([issue-482](https://github.com/MadaraUchiha-314/the-loop/issues/482)). The file is the
+  daemon's environment. A session the daemon spawns is given only `THE_LOOP_INSTANCE`,
+  `THE_LOOP_WORK_ITEM` and `THE_LOOP_CLI_CONFIG`, plus the non-secret names you list in
+  [`env.sessionPassthrough`](/config/cli/#env-sessionpassthrough); every other name the file
+  declares, and every credential name, is removed from its environment. The session
+  reaches GitHub and Jira through the service, which holds the token.
+- **A passthrough value is re-read per spawn**
+  ([issue-410](https://github.com/MadaraUchiha-314/the-loop/issues/410)), so a session
+  started after you change it is not born on the old value. A session **already
+  running** is frozen, by definition: roll them with
   [`the-loop sessions restart --all`](/cli/commands/sessions#restart), which relaunches
-  each one in place on the current file and verifies that it landed.
-  [`the-loop status`](/cli/commands/status) says when any of them have drifted.
+  each one in place and verifies that it landed.
+  [`the-loop status`](/cli/commands/status) says when any of them have drifted, or still
+  hold a credential.
 - **The grammar** is the usual one: `NAME=value` per line, `#` comments, an optional
   leading `export`, double quotes with `\n \t \r \\ \"` unescaped, single quotes
   literal, an unquoted value trimmed and cut at a trailing comment (a space, then `#`). There is **no
@@ -236,6 +242,33 @@ What the loader does, and does not do ([decision-108](/decisions/decision-108)):
 `cli-config.yaml` may be tracked in git; the env file must not be. Nothing the-loop writes
 — state, event log, warnings — ever carries a loaded value.
 :::
+
+### `env.sessionPassthrough`
+
+- **Type:** `string[]` (variable names)
+- **Default:** `[]` (a session is given nothing from the environment)
+
+The **non-secret** variables a spawned agent session is given — a proxy, a locale
+([issue-482](https://github.com/MadaraUchiha-314/the-loop/issues/482)). the-loop never
+sends a secret to a session, so by default it gets nothing but its own three identifiers.
+
+```yaml
+env:
+  file: .env
+  sessionPassthrough: [HTTPS_PROXY, NO_PROXY]
+```
+
+- A listed name takes its value from `env.file` when the file declares it (re-read per
+  spawn), else from the daemon's own environment. A name in neither is skipped.
+- **A credential name is refused**, with a warning naming the variable: any name a
+  `*tokenEnv` or `*secretEnv` key holds anywhere in this config, and the defaults
+  (`GH_TOKEN`, `GITHUB_TOKEN`, `THE_LOOP_GH_WEBHOOK_SECRET`,
+  `THE_LOOP_SLACK_BOT_TOKEN`, `THE_LOOP_SLACK_APP_TOKEN`).
+- Every other name `env.file` declares, and every credential name, is **removed** from the
+  session's environment — even when the tmux server holds it, because the daemon that
+  started the server loaded the file.
+- A listed value reaches the session through `tmux -e`, so it is visible in `ps`. That is
+  why only non-secret names belong here.
 
 ## A minimal working config
 

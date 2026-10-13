@@ -175,6 +175,16 @@ publish one.
 
 ## Security considerations
 
+> **Corrected by [issue-482](../issue-482/requirements.md) (2026-10).** The trade below
+> rested on a wrong premise. The exposure did not end when the short-lived client
+> returned: when that `tmux new-session` is what starts the tmux server, the server keeps
+> the command line as its process name for its whole life, so the values stayed in `ps`
+> for days ([#485](https://github.com/MadaraUchiha-314/the-loop/issues/485)). Since
+> issue-482 no credential reaches a pane or an argv: a session is given only the-loop's
+> identifiers and the operator's non-secret `env.sessionPassthrough`, and every
+> `env.file` and credential name is removed from it. The text below is kept as the record
+> of what was decided then.
+
 **The values reach a child process through an argv.** Handing tmux `-e NAME=VALUE` puts
 the value in the argv of a short-lived `tmux` client, where another user on the same host
 can read it from `ps` for as long as that call runs. This is accepted, narrowly:

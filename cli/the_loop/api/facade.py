@@ -371,6 +371,25 @@ class CoreFacade:
             ref, verb, comment=comment, config=self.config
         )
 
+    def ask_session(
+        self,
+        ref: str,
+        question: str,
+        summary: str = "",
+        default_answer: str = "",
+        actor: str = "",
+        instance: str = "",
+    ) -> Dict[str, Any]:
+        self._self(instance)
+        return core_sessions.ask_session(
+            ref,
+            question,
+            config=self.config,
+            summary=summary,
+            default_answer=default_answer,
+            actor=actor,
+        )
+
     def reply_session(
         self,
         ref: str,

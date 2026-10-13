@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
     Dict,
     List,
@@ -32,9 +33,12 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
+    Union,
 )
 
 from .cli_config import CLI_CONFIG_ENV
+from . import envstate
+from .envstate import SessionEnvironment
 from .harness.base import UnsupportedRunnerError
 from .sessions import Session, WorkItemRef, tmux_session_name
 
@@ -287,7 +291,9 @@ class TmuxRunner:
         binary: str = "tmux",
         remain_on_exit: bool = True,
         instance: str = "",
-        env_provider: Optional[Callable[[], Mapping[str, str]]] = None,
+        env_provider: Optional[
+            Callable[[], Union[SessionEnvironment, Mapping[str, str]]]
+        ] = None,
     ):
         self.binary = binary
         self.remain_on_exit = remain_on_exit
@@ -295,13 +301,11 @@ class TmuxRunner:
         # INSTANCE_ENV_VAR when set. A config value validated by
         # ``instance.NAME_RE`` — the only thing ever interpolated into the argv.
         self.instance = instance
-        # What the operator's `env.file` declares, re-read **per spawn** (issue-410).
-        # A pane otherwise inherits the tmux *server's* environment, which was
-        # captured when that server started and is never refreshed — so a session
-        # spawned an hour after a credential rotation was still born on the retired
-        # value. `None` (the default, and every construction site that has no config
-        # to read) means "carry nothing extra", so a deployment with no env file
-        # spawns exactly the argv it spawned before.
+        # The session boundary, re-read **per spawn** (issue-410, issue-482): what a
+        # pane is given (`forward`, the operator's non-secret passthrough) and what it
+        # must not hold (`remove`, every env-file and credential name). A plain
+        # mapping is read as `forward` alone. `None` (the default, and every
+        # construction site that spawns nothing) means "carry nothing extra".
         self.env_provider = env_provider
         self._env_support: Optional[bool] = None
 
@@ -347,7 +351,12 @@ class TmuxRunner:
         """
         return tmux_session_name(f"loop-{work_item.slug}")
 
-    def _run(self, argv: List[str], timeout: Optional[float] = None) -> TmuxResult:
+    def _run(
+        self,
+        argv: List[str],
+        timeout: Optional[float] = None,
+        remove: Sequence[str] = (),
+    ) -> TmuxResult:
         if not self.is_available():
             return TmuxResult(
                 ok=False,
@@ -359,7 +368,17 @@ class TmuxRunner:
         cmd = [self.binary] + argv
         logger.debug("running %s", " ".join(cmd[:6]) + " …")
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            extra: Dict[str, Any] = {}
+            if remove:
+                dropped = set(remove)
+                extra["env"] = {
+                    name: value
+                    for name, value in os.environ.items()
+                    if name not in dropped
+                }
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=timeout, **extra
+            )
         except subprocess.TimeoutExpired:
             return TmuxResult(
                 ok=False, error=f"tmux {argv[0]} timed out after {timeout}s"
@@ -442,13 +461,17 @@ class TmuxRunner:
             )
         except UnsupportedRunnerError as exc:
             return TmuxResult(ok=False, error=str(exc))
+        env = self.spawn_environment()
         argv = ["new-session", "-d", "-s", target, "-c", cwd]
-        argv += self._env_flags(self._session_environment(work_item), timeout)
-        argv += ["--", adapter.binary] + harness_argv
+        argv += self._env_flags(self._session_environment(work_item, env), timeout)
+        argv += ["--"] + self._harness_command(adapter, harness_argv, env)
         blocked = self._clear_target(target, timeout)
         if blocked is not None:
             return blocked
-        result = self._run(argv, timeout)
+        # The tmux client runs without the names the pane must not hold: when this
+        # call starts the server, the server's own environment — which every later
+        # pane inherits — carries none of them either (issue-482, R2.3).
+        result = self._run(argv, timeout, remove=env.remove)
         if not result.ok and _DUPLICATE_SESSION_RE.search(result.error):
             # tmux is the authority on the collision, and it disagrees with the
             # pre-flight probe — which can time out on a busy server and read as
@@ -464,68 +487,100 @@ class TmuxRunner:
             blocked = self._clear_target(target, timeout, present=True)
             if blocked is not None:
                 return blocked
-            result = self._run(argv, timeout)
+            result = self._run(argv, timeout, remove=env.remove)
         if result.ok and self.remain_on_exit:
             self._set_remain_on_exit(target, timeout)
         return result
 
-    def declared_environment(self) -> Dict[str, str]:
-        """What ``env_provider`` declares for a pane spawned now; ``{}`` when none.
+    def spawn_environment(self) -> SessionEnvironment:
+        """The boundary for a pane spawned now; an empty one when there is no provider.
 
-        Never raises and never logs a value: a provider that fails is a warning
-        naming nothing, and the spawn proceeds carrying whatever the tmux server
-        already holds — degraded to today's behaviour rather than refused.
+        Never raises and never logs a value. A provider that fails is a warning naming
+        nothing, and the spawn proceeds with nothing forwarded and the **default**
+        credential names still removed — fail closed (issue-482). The production
+        provider (``envstate.spawn_environment``) never fails, so that degraded case
+        is a test or an embedder's.
         """
         if self.env_provider is None:
-            return {}
+            return SessionEnvironment()
         try:
-            declared = self.env_provider() or {}
+            provided = self.env_provider()
         except Exception:  # noqa: BLE001 — a spawn never fails on the env file
             logger.warning(
-                "could not read the declared environment for this spawn; the pane "
-                "will inherit the tmux server's"
+                "could not read the session environment for this spawn; forwarding "
+                "nothing and removing the default credential names"
             )
-            return {}
-        return {
-            name: value for name, value in declared.items() if isinstance(value, str)
-        }
+            return envstate.spawn_environment(dict)
+        if isinstance(provided, SessionEnvironment):
+            return provided
+        return SessionEnvironment(
+            forward={
+                name: value
+                for name, value in (provided or {}).items()
+                if isinstance(value, str)
+            }
+        )
 
-    def _session_environment(self, work_item: str) -> List[Tuple[str, str]]:
+    def declared_environment(self) -> Dict[str, str]:
+        """What a pane spawned now is given from the operator's environment."""
+        return dict(self.spawn_environment().forward)
+
+    def _session_environment(
+        self, work_item: str, env: Optional[SessionEnvironment] = None
+    ) -> List[Tuple[str, str]]:
         """The ``NAME``/``value`` pairs one spawned pane should carry, in order.
 
-        The operator's declared environment first, the-loop's own three names
-        **last** — so an env file that happens to declare ``THE_LOOP_INSTANCE``
-        cannot redefine the identity the runner was constructed with.
+        The operator's passthrough first, the-loop's own three names **last** — so a
+        passthrough that happens to name ``THE_LOOP_INSTANCE`` cannot redefine the
+        identity the runner was constructed with. Nothing else: since issue-482 the
+        env file's credentials never reach a pane, and never reach an argv.
         """
+        if env is None:
+            env = self.spawn_environment()
         own = [
             (INSTANCE_ENV_VAR, self.instance),
             (WORK_ITEM_ENV_VAR, work_item),
             (CLI_CONFIG_ENV, _cli_config_export()),
         ]
         # the-loop's own three are dropped when empty — an unnamed instance and a
-        # standing session with no work item have nothing to export. A **declared**
-        # name is kept whatever its value: `NAME=` in an env file is an operator
-        # blanking a credential, and skipping it would leave the pane inheriting
-        # the very value they just retired.
-        return list(self.declared_environment().items()) + [
+        # standing session with no work item have nothing to export. A **forwarded**
+        # name is kept whatever its value: `NAME=` is an operator blanking it, and
+        # skipping it would leave the pane inheriting the very value they retired.
+        return list(env.forward.items()) + [
             (name, value) for name, value in own if value
         ]
 
     def _env_flags(
         self, pairs: Sequence[Tuple[str, str]], timeout: Optional[float]
     ) -> List[str]:
-        """``-e NAME=value`` for each non-empty pair, or nothing on a tmux < 3.2.
+        """``-e NAME=value`` for each pair, or nothing on a tmux < 3.2.
 
-        The values reach tmux through an argv, where another user on this host can
-        read them from ``ps`` for as long as the call runs. That is the accepted
-        trade (docs/specs/issue-410/requirements.md § Security): the status quo
-        leaves the same values in the tmux *server's* environment indefinitely,
-        and nothing here ever writes them to the **global** environment — only
-        the-loop's own pane receives them.
+        An argv is public to the host: ``ps`` shows it to every local process, and when
+        this ``new-session`` is what starts the tmux server, the server keeps it as its
+        process name for its whole life (issue-485). So the pairs are only the-loop's
+        own identifiers and the operator's **non-secret** passthrough — never a
+        credential (issue-482, R2).
         """
         if not pairs or not self._supports_env(timeout):
             return []
         return [flag for name, value in pairs for flag in ("-e", f"{name}={value}")]
+
+    @staticmethod
+    def _harness_command(
+        adapter: "HarnessAdapter", harness_argv: List[str], env: SessionEnvironment
+    ) -> List[str]:
+        """The pane's command: the harness, behind ``env -u NAME …`` when needed.
+
+        ``env -u`` strips every name the pane must not hold from what it would
+        otherwise inherit from the tmux server — which, if the daemon started it,
+        carries the env file the daemon loaded (issue-482, R1.3/R1.4). ``env`` then
+        ``exec``s the harness, so the pane's pid is the harness's. Names only, never a
+        value; and no prefix at all when there is nothing to remove.
+        """
+        prefix: List[str] = []
+        if env.remove:
+            prefix = ["env"] + [flag for name in env.remove for flag in ("-u", name)]
+        return prefix + [adapter.binary] + list(harness_argv)
 
     def respawn_in(
         self,
@@ -584,10 +639,11 @@ class TmuxRunner:
                     "running harness and will not start a stopped one"
                 ),
             )
+        env = self.spawn_environment()
         argv = ["respawn-pane", "-k", "-t", target, "-c", cwd]
-        argv += self._env_flags(self._session_environment(work_item), timeout)
-        argv += ["--", adapter.binary] + harness_argv
-        return self._run(argv, timeout)
+        argv += self._env_flags(self._session_environment(work_item, env), timeout)
+        argv += ["--"] + self._harness_command(adapter, harness_argv, env)
+        return self._run(argv, timeout, remove=env.remove)
 
     def _clear_target(
         self, target: str, timeout: Optional[float], present: bool = False

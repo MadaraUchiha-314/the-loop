@@ -313,7 +313,9 @@ def test_harness_routed_uses_a_running_service(monkeypatch):
 
 
 @pytest.mark.routed
-def test_abuse_447_a5_the_in_process_fallback_is_never_silent(monkeypatch, capsys):
+def test_abuse_447_a5_the_in_process_fallback_is_never_silent(
+    monkeypatch, capsys, outside_a_session
+):
     from the_loop import client
 
     monkeypatch.setattr(client, "healthy", lambda *_a, **_k: False)
@@ -344,7 +346,9 @@ def test_a_routed_verb_maps_a_400_to_exit_2(monkeypatch, config, capsys):
 
 
 @pytest.mark.routed
-def test_a_service_older_than_the_verb_falls_back_loudly(monkeypatch, capsys):
+def test_a_service_older_than_the_verb_falls_back_loudly(
+    monkeypatch, capsys, outside_a_session
+):
     """Review L6 — a running service without the route is not a hard error."""
     from the_loop import client
 
@@ -369,6 +373,79 @@ def test_a_real_404_from_the_service_is_not_swallowed(monkeypatch):
 
     with pytest.raises(client.ApiError):
         routing.harness_routed(foreign, lambda: pytest.fail("no fallback"), config={})
+
+
+@pytest.fixture
+def outside_a_session(monkeypatch):
+    for name in routing.SPAWNED_SESSION_ENVS:
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.mark.routed
+@pytest.mark.parametrize("marker", routing.SPAWNED_SESSION_ENVS)
+def test_abuse_482_a5_a_daemon_session_never_falls_back_in_process(
+    monkeypatch, outside_a_session, marker
+):
+    """
+    Feature: spawned sessions never receive a secret
+      Scenario: an agent runs a GitHub verb while the service is down
+        Given a session the daemon spawned (it carries one of the-loop's identifiers)
+        And no service answers /health
+        When the agent runs a harness verb
+        Then the verb fails, naming the missing service and how to start it
+        And nothing runs in-process
+
+    Requirement: docs/specs/issue-482/requirements.md R3.2, R3.3
+    """
+    from the_loop import client
+
+    monkeypatch.setenv(marker, "set-by-the-daemon")
+    monkeypatch.setattr(client, "healthy", lambda *_a, **_k: False)
+    monkeypatch.setattr(
+        client, "_spawn_service", lambda: pytest.fail("must never auto-start")
+    )
+    with pytest.raises(client.ServiceUnavailable) as raised:
+        routing.harness_routed(
+            lambda _c: pytest.fail("no service to route to"),
+            lambda: pytest.fail("a daemon session must not run in-process"),
+            config={},
+        )
+    message = str(raised.value)
+    assert "no control-plane service is answering" in message
+    assert "the-loop start" in message
+    mapped = routing.service_error(raised.value)
+    assert mapped is not None and mapped[1] == 2
+
+
+@pytest.mark.routed
+def test_a_daemon_session_does_not_fall_back_on_a_stale_service(
+    monkeypatch, outside_a_session
+):
+    from the_loop import client
+
+    monkeypatch.setenv("THE_LOOP_WORK_ITEM", REF)
+    monkeypatch.setattr(client, "healthy", lambda *_a, **_k: True)
+
+    def old_service(_connection):
+        raise client.ApiError(404, "Not Found")
+
+    with pytest.raises(client.ServiceUnavailable, match="the-loop restart"):
+        routing.harness_routed(
+            old_service, lambda: pytest.fail("no in-process run"), config={}
+        )
+
+
+@pytest.mark.routed
+def test_a_daemon_sessions_comment_exits_2_with_the_message(
+    monkeypatch, outside_a_session, config, capsys
+):
+    """R3.2 end to end through the CLI: exit 2, the message on stderr."""
+    from the_loop import client
+
+    monkeypatch.setenv("THE_LOOP_WORK_ITEM", REF)
+    monkeypatch.setattr(client, "healthy", lambda *_a, **_k: False)
+    assert _cli(config(), "comment", "--work-item", REF, "--body", "x") == 2
+    assert "holds no credentials" in capsys.readouterr().err
 
 
 def test_discovery_ignores_an_origin_that_is_not_on_github(tmp_path):

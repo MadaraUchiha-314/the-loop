@@ -249,27 +249,30 @@ one bad ref in a list resets none of them. Nothing is posted to the ticket — t
 
 ## `restart`
 
-Relaunch running sessions on the environment [`env.file`](/config/cli/#env-file) declares
-**now**. The command [#410](https://github.com/MadaraUchiha-314/the-loop/issues/410) asked
-for: a session's environment is whatever tmux handed its pane when the pane was forked, and
-nothing re-reads it afterwards — so rotating a credential leaves the service on the new
-value and every session already running on the old one, indefinitely.
+Relaunch running sessions on the **session environment** the config declares **now**: the
+names [`env.sessionPassthrough`](/config/cli/#env-sessionpassthrough) forwards, with their
+current values, and every other name [`env.file`](/config/cli/#env-file) declares, plus
+every credential name, kept out
+([#482](https://github.com/MadaraUchiha-314/the-loop/issues/482)). The command
+[#410](https://github.com/MadaraUchiha-314/the-loop/issues/410) asked for: a session's
+environment is whatever tmux handed its pane when the pane was forked, and nothing re-reads
+it afterwards — so changing a forwarded value leaves every session already running on the
+old one, indefinitely.
 
-The reporter rotated a Slack bot token, restarted the service, and watched **144 consecutive
-agent questions fail over three days** while `the-loop status` reported a healthy
-deployment. Every one of those sessions was posting as a bot that was no longer a member of
-the channel.
+It is also the **upgrade step** for #482. A pane spawned by an earlier version was handed
+every `env.file` value, the GitHub token included, and still holds it. `restart --all`
+relaunches each one without it.
 
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `--work-item` | — | Which work item's session to relaunch. **Repeatable.** |
 | `--all` | off | Every running session this machine manages. Mutually exclusive with `--work-item`. |
 | `--dry-run` | off | Report what would be relaunched, and why the rest would not; touch no pane. |
-| `--format` | `text` | `json` prints the per-session rows and the declared variables' fingerprints. |
+| `--format` | `text` | `json` prints the per-session rows, the forwarded variables' fingerprints and the names kept out. |
 
 ```console
 $ the-loop sessions restart --all
-restarting 3 session(s) against 2 declared variable(s) [GH_TOKEN, SLACK_BOT_TOKEN]
+restarting 3 session(s): forwarding 1 variable(s) [HTTPS_PROXY], keeping out 3 [GH_TOKEN, GITHUB_TOKEN, JIRA_API_TOKEN]
 github:octo/repo#15                      restarted
 github:octo/repo#16                      restarted
 github:octo/repo#17                      skipped — not running — `the-loop sessions start` brings a stopped session up
@@ -279,7 +282,7 @@ Each session is **respawned in place**: `respawn-pane -k` replaces the harness i
 existing pane, so the tmux session and its window keep their identity and an attached
 operator stays attached rather than being dropped. The harness is always asked to
 **resume** the conversation the registry records, in the working directory it records — a
-credential roll costs nothing the agent knew.
+relaunch costs nothing the agent knew.
 
 The pane's **scrollback is cleared**, as it would be by a fresh session: `respawn-pane`
 does not carry history across. The conversation survives (that is what `--resume` is for)
@@ -291,48 +294,59 @@ the session so far.
 | | |
 |---|---|
 | start a stopped session | `skipped` — [`start`](#execution-control) is that verb |
-| replace an unresumable conversation with a blank one | `skipped`, and the pane is left running: losing twenty conversations is a worse outcome than a stale token |
-| run with no `env.file` configured | refuses — there is no declared environment to roll onto, and a respawn for nothing still costs you every pane |
+| replace an unresumable conversation with a blank one | `skipped`, and the pane is left running: losing twenty conversations is a worse outcome than a stale value |
+| run with neither `env.file` nor `env.sessionPassthrough` configured | refuses — there is no declared environment to roll onto, and a respawn for nothing still costs you every pane |
 | guess at a fleet-wide relaunch | a bare `restart` is a usage error, exactly as [`reset`](#reset) is |
 | re-derive the harness launch flags | out of scope and filed separately — this refreshes the *environment*, and a session comes back on the command line it went down on |
 
 ### It proves the relaunch
 
-Afterwards the new process's own environment is read back and compared with the file, name
-by name. A session that is still on a retired value is **named, with the variables that
-differ**, and the command exits non-zero — the failure mode this command exists to end is
-one that looked healthy for three days.
+Afterwards the new process's own environment is read back and compared, name by name: a
+forwarded name must hold its current value, and a kept-out name must not be there at all.
+A session that does not match is **named, with the variables that differ**, and the
+command exits non-zero.
 
 A host that will not report a process's environment yields `unverified` rather than either
 verdict, and does not fail the run on that ground alone.
 
-**No value is ever printed.** A variable is identified by name and by a truncated SHA-256
-fingerprint of what it should be — enough to say "these two processes hold different
-tokens" without saying either.
+**No value is ever printed.** A forwarded variable is identified by name and by a truncated
+SHA-256 fingerprint of what it should be; a kept-out variable by name and "held; a session
+must not hold it".
 
-::: warning The values reach tmux through an argv
-Handing tmux `-e NAME=VALUE` puts the value in the argv of a short-lived `tmux` client,
-where another user on the same host can read it from `ps` for as long as that call runs.
-This is a deliberate, narrow trade: without it the same values sit *permanently* in the
-tmux server's environment, readable by anyone who can reach its socket. Nothing is ever
-written to the tmux **global** environment — only the-loop's own panes receive them.
+::: warning What reaches tmux, and what does not
+A **forwarded** value reaches tmux through `-e NAME=VALUE`, which is an argv: `ps` shows
+it, and when that call starts the tmux server, the server keeps it as its process name for
+its whole life ([#485](https://github.com/MadaraUchiha-314/the-loop/issues/485)). That is
+why only non-secret names may be forwarded, and why a credential name is refused there.
 
-For the names an env file declares, the **file** is the source of truth on this path (and
-on the spawn path), not a name you may also have exported by hand. That is the only rule
-under which a rotation can take effect at all.
+A **kept-out** name never reaches an argv as a value. The harness is started behind
+`env -u NAME …`, so it does not inherit the name from the tmux server either — which
+matters, because a server the daemon started inherited the daemon's environment, env file
+and all. tmux itself is run with those names removed, so a server a spawn starts holds none
+of them.
+:::
+
+::: warning Upgrading from a version before #482
+Panes spawned by an earlier version keep `-e GH_TOKEN=…` (and every other `env.file`
+value) in their command line, and in the tmux server's when one of those spawns started
+it, until they are relaunched. Run `the-loop sessions restart --all`. The server's own
+command line clears only when the server exits: run `tmux kill-server` once no session
+needs keeping, and the next spawn starts a clean one. Rotate any token that was exposed.
 :::
 
 ### Spotting the drift before it bites
 
-[`the-loop status`](/cli/commands/status) carries one line when running sessions hold values
-that differ from the file, and nothing at all when they do not:
+[`the-loop status`](/cli/commands/status) carries one line when running sessions hold a
+forwarded value that differs, or a name they must not hold, and nothing at all when they do
+not:
 
 ```text
 sessions    2 of 6 running with a stale environment — `the-loop sessions restart --all`
 ```
 
-A session **spawned** after a rotation is not born stale: the daemon re-reads `env.file` per
-spawn rather than letting the pane inherit the tmux server's long-frozen copy.
+A session **spawned** after a change is not born stale: the daemon re-reads the config and
+`env.file` per spawn rather than letting the pane inherit the tmux server's long-frozen
+copy.
 
 ## Execution control
 
