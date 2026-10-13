@@ -1,3 +1,20 @@
+## v20.0.0 (2026-10-13)
+
+### BREAKING CHANGE
+
+- spawned sessions no longer receive any variable from
+env.file. List non-secret names a session needs in env.sessionPassthrough.
+`ask`, `comment`, `ticket` and `pr` in a daemon-spawned session now fail when
+no service is running instead of running in-process. Panes spawned by an
+earlier version keep the token in their argv (and in the tmux server's, when
+one of those spawns started it) until relaunched: run
+`the-loop sessions restart --all`, then `tmux kill-server` once no session
+needs keeping, and rotate any token that was exposed.
+
+### Feat
+
+- **issue-482**: spawned sessions never receive a secret (#486)
+
 ## v19.28.0 (2026-10-07)
 
 ### Feat
