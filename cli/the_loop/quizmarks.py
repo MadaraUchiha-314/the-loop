@@ -71,14 +71,21 @@ def quiz_marker(body: str) -> Optional[Mapping[str, str]]:
     return found.groupdict() if found else None
 
 
-def attestation_ticked(body: str, node: str = "") -> bool:
+def attestation_ticked(body: str, node: str = "", micro: Optional[bool] = None) -> bool:
     """Is a node's attestation line present AND ticked in ``body``?
 
     Without ``node`` any quiz's line counts — the poller and the router do not
-    know which gate is waiting, only that a quiz box changed.
+    know which gate is waiting, only that a quiz box changed. ``micro`` is the
+    page's depth when the gate knows it: then only that depth's line counts,
+    so "I have read" never answers a quiz that was there to take (R2.7).
     """
     nodes = [node] if node in ATTESTATIONS else list(ATTESTATIONS)
-    lines = [table[n] for n in nodes for table in (ATTESTATIONS, READ_ONLY)]
+    tables = (
+        (ATTESTATIONS, READ_ONLY)
+        if micro is None
+        else ((READ_ONLY,) if micro else (ATTESTATIONS,))
+    )
+    lines = [table[n] for n in nodes for table in tables]
     for match in _BOX.finditer(str(body or "")):
         if match.group("mark") in "xX" and match.group("text").strip() in lines:
             return True

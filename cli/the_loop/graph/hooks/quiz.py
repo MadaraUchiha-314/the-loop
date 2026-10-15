@@ -29,7 +29,7 @@ import hashlib
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import urlparse
 
 from ... import eventlog
@@ -406,6 +406,9 @@ def quiz_attested(ctx: HookContext) -> HookResult:
     names = [str(n) for n in ctx.params.get("digest") or []]
     current = spec_digest(ctx.work_item.spec_dir, names) if names else "-"
     round_ = str(_round(ctx))
+    record = str(ctx.params.get("record") or "")
+    # The page's depth, when the record is known: it decides which line counts.
+    micro = _record_micro(Path(ctx.work_item.spec_dir) / record) if record else None
 
     refused: List[str] = []
     read_any, found_any = False, False
@@ -435,9 +438,9 @@ def quiz_attested(ctx: HookContext) -> HookResult:
         for comment, marker in reversed(mine):
             if names and marker["digest"] != current:
                 continue
-            if not attestation_ticked(str(comment.get("body") or ""), node):
+            if not attestation_ticked(str(comment.get("body") or ""), node, micro):
                 continue
-            verdict = _attributed(ctx, ref, comment, node, round_, allowed)
+            verdict = _attributed(ctx, ref, comment, node, round_, allowed, micro)
             if verdict.get("by"):
                 return HookResult.ok(
                     name,
@@ -449,16 +452,13 @@ def quiz_attested(ctx: HookContext) -> HookResult:
                 )
             refused.append(verdict.get("refused") or "unknown")
 
-    typed = _typed_attestation(ctx, node, allowed)
+    typed = _typed_attestation(ctx, node, allowed, micro)
     if typed:
         return HookResult.ok(name, decision=node, via="reply", **typed)
-    record = str(ctx.params.get("record") or "")
     if read_any and not found_any and record:
-        path = Path(ctx.work_item.spec_dir) / record
-        location = _record_location(path)
-        micro = _record_micro(path)
+        location = _record_location(Path(ctx.work_item.spec_dir) / record)
         if location and _post(
-            ctx, node, location, int(round_), current, _WHERE[node], micro
+            ctx, node, location, int(round_), current, _WHERE[node], bool(micro)
         ):
             return HookResult.waiting(
                 name, "posted the quiz comment again — it had not landed"
@@ -481,6 +481,7 @@ def _attributed(
     node: str,
     round_: str,
     allowed: Sequence[str],
+    micro: Optional[bool] = None,
 ) -> Dict[str, str]:
     """Who made the latest edit — ``{"by", "at"}``, or ``{"refused": who}``.
 
@@ -507,7 +508,7 @@ def _attributed(
         and marker
         and marker["node"] == node
         and marker["round"] == round_
-        and attestation_ticked(body, node)
+        and attestation_ticked(body, node, micro)
     ):
         return {"refused": "unverified"}
     edits = [e for e in found.get("edits") or [] if isinstance(e, Mapping)]
@@ -534,7 +535,7 @@ def _attributed(
 
 
 def _typed_attestation(
-    ctx: HookContext, node: str, allowed: Sequence[str]
+    ctx: HookContext, node: str, allowed: Sequence[str], micro: Optional[bool] = None
 ) -> Dict[str, str]:
     """An authorized comment carrying the ticked line itself — the fallback."""
     for comment in (ctx.event or {}).get("comments") or []:
@@ -548,7 +549,7 @@ def _typed_attestation(
             or not is_authorized(author, list(allowed))
         ):
             continue
-        if attestation_ticked(body, node):
+        if attestation_ticked(body, node, micro):
             return {
                 "attestedBy": author,
                 "attestedAt": str(

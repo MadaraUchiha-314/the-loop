@@ -758,3 +758,24 @@ def test_a_gate_re_judged_the_same_way_keeps_when_it_parked(tmp_path):
     assert first["since"]
     state.park("spec-quiz", "the box was ticked by someone not authorized to answer")
     assert (state.parked or {}).get("since") != "2026-01-01T00:00:00Z"
+
+
+def test_the_read_only_line_does_not_answer_a_quiz_that_was_there(spec_dir):
+    """S10: at standard depth only the quiz line counts; at micro only the read one."""
+    _record(spec_dir, "https://claude.ai/artifact/a")  # Depth: standard
+    params = {"digest": DIGEST, "record": "evidence/spec-explainer.md"}
+    read_only = {
+        "comments": [{"author": OWNER, "body": f"- [x] {READ_ONLY['spec-quiz']}"}]
+    }
+    assert (
+        quiz.quiz_attested(_ctx(spec_dir, params=params, event=read_only)).status
+        == "wait"
+    )
+    full = {"comments": [{"author": OWNER, "body": f"- [x] {SPEC_LINE}"}]}
+    assert (
+        quiz.quiz_attested(_ctx(spec_dir, params=params, event=full)).status == "pass"
+    )
+    assert attestation_ticked(
+        f"- [x] {READ_ONLY['spec-quiz']}", "spec-quiz", micro=True
+    )
+    assert not attestation_ticked(f"- [x] {SPEC_LINE}", "spec-quiz", micro=True)
