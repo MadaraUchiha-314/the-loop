@@ -312,11 +312,14 @@ There are exactly **two** runtime concepts and **one** contract between them.
   `quiz-attested` SHALL count a quiz comment only when an authorized login wrote it
   (the-loop posts as the operator) or, on Jira, the service account did; it SHALL pass
   only when the latest edit of that comment, as GitHub's GraphQL edit history reports
-  it, was made by an authorized user, or an authorized comment carries the ticked line
+  it, was made by an authorized user — and every earlier edit too, since the history
+  never says what an edit changed — or an authorized comment carries the ticked line
   itself. An unknown editor, a failed query or a forged comment SHALL keep it waiting,
   with a refused tick emitted as `graph.quiz_refused`; a changed spec SHALL route
   `spec-quiz` back to `spec-explainer` on `stale`; a comment that never landed SHALL be
-  posted again by the exit hook. The poller and an `issue_comment.edited` webhook SHALL
+  posted again by the exit hook. `spec-explainer`'s exit (`explainer-postdates-spec`)
+  SHALL block while the spec has an uncommitted change or a commit the record's commit
+  does not descend from (R5.6: changed after the page was published). The poller and an `issue_comment.edited` webhook SHALL
   ring a waiting gate with a `quiz_attestation` doorbell that renders no prompt and
   never spawns, deduplicated per tick (an untick and re-tick rings again; an unchanged
   tick does not).

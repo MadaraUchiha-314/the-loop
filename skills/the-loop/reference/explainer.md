@@ -34,7 +34,10 @@ node has the same three steps:
 3. **Write the record.** `evidence/spec-explainer.md` or `evidence/explainer.md` comes
    from its bundled template (`templates/evidence/`). It gives the depth, the
    **Location** the page can be opened at, how it was published, and the question count.
-   Then run `the-loop graph complete <id>`.
+   Commit it, then run `the-loop graph complete <id>`. At `spec-explainer` the exit
+   checks that the record's commit comes after the spec's last change (R5.6): a spec
+   edited after the page was built blocks the node until the page is rebuilt and the
+   record committed again.
 
 The **human** nodes after them, `spec-quiz` and `code-quiz`, are not yours. Their entry
 hook posts the-loop's checkbox comment, linking your record's Location: on the ticket for

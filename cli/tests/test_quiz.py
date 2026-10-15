@@ -9,6 +9,7 @@ webhook router and the dispatcher.
 from __future__ import annotations
 
 import re
+import subprocess
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -406,6 +407,19 @@ def test_the_latest_editor_decides(spec_dir, github):
     assert quiz.quiz_attested(_ctx(spec_dir, event={"comments": []})).status == "wait"
 
 
+def test_an_authorized_edit_after_an_unauthorized_tick_does_not_pass(spec_dir, github):
+    """Critic C1: the operator fixing a typo must not adopt mallory's tick."""
+    _seed(
+        github,
+        _posted_body(spec_dir, github),
+        ticked=True,
+        editors=[OWNER, "mallory", OWNER],
+    )
+    result = quiz.quiz_attested(_ctx(spec_dir, event={"comments": []}))
+    assert result.status == "wait" and result.data["refused"] == ["mallory"]
+    assert "reply with the ticked line" in str(result.messages)
+
+
 @pytest.mark.parametrize("editors", [[], [""]])
 def test_quiz_attested_fails_closed_without_editor(spec_dir, github, editors):
     """Abuse case 2: no history, or a deleted account — never `is_authorized(None)`."""
@@ -779,3 +793,51 @@ def test_the_read_only_line_does_not_answer_a_quiz_that_was_there(spec_dir):
         f"- [x] {READ_ONLY['spec-quiz']}", "spec-quiz", micro=True
     )
     assert not attestation_ticked(f"- [x] {SPEC_LINE}", "spec-quiz", micro=True)
+
+
+# -- R5.6 at publish: the page must postdate the spec ------------------------------
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@e", *args],
+        check=True,
+        capture_output=True,
+    )
+
+
+def _publish_ctx(spec_dir: Path) -> HookContext:
+    return _ctx(
+        spec_dir,
+        node="spec-explainer",
+        params={"record": "evidence/spec-explainer.md", "spec": DIGEST},
+    )
+
+
+def test_an_explainer_published_after_the_spec_passes(spec_dir):
+    """R5.6: the record is committed after the spec it was built from."""
+    _git(spec_dir, "init", "-q")
+    _git(spec_dir, "add", "-A")
+    _git(spec_dir, "commit", "-qm", "spec")
+    _record(spec_dir, "https://claude.ai/artifact/a")
+    _git(spec_dir, "add", "-A")
+    _git(spec_dir, "commit", "-qm", "explainer")
+    assert quiz.explainer_postdates_spec(_publish_ctx(spec_dir)).status == "pass"
+
+
+def test_a_spec_changed_after_publishing_blocks_until_the_page_is_rebuilt(spec_dir):
+    """R5.6: a spec commit after the record's means the page is out of date."""
+    _git(spec_dir, "init", "-q")
+    _record(spec_dir, "https://claude.ai/artifact/a")
+    _git(spec_dir, "add", "-A")
+    _git(spec_dir, "commit", "-qm", "spec and explainer")
+    (spec_dir / "design.md").write_text("# D moved\n", encoding="utf-8")
+    dirty = quiz.explainer_postdates_spec(_publish_ctx(spec_dir))
+    assert dirty.status == "block" and "uncommitted" in str(dirty.messages)
+    _git(spec_dir, "commit", "-qam", "design moved")
+    moved = quiz.explainer_postdates_spec(_publish_ctx(spec_dir))
+    assert moved.status == "block" and "R5.6" in str(moved.messages)
+
+
+def test_outside_a_checkout_the_publish_check_stands_aside(spec_dir):
+    assert quiz.explainer_postdates_spec(_publish_ctx(spec_dir)).status == "pass"

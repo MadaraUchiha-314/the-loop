@@ -293,6 +293,11 @@ nodes:
     entry: [deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {validates: evidence/spec-explainer.md, sections: ["Spec explainer"]}}
+      # R5.6: a spec changed after the page was published means a new page.
+      - hook: explainer-postdates-spec
+        with:
+          record: evidence/spec-explainer.md
+          spec: ["requirements.md|bugfix.md", design.md, testing-plan.md]
 
   - id: spec-quiz
     actor: human

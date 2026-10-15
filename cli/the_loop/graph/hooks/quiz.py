@@ -28,6 +28,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import subprocess
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import urlparse
@@ -468,7 +469,8 @@ def quiz_attested(ctx: HookContext) -> HookResult:
     if refused:
         return HookResult.waiting(
             name,
-            "the box was ticked by someone not authorized to answer",
+            "the box was ticked or edited by someone not authorized to answer — "
+            "an authorized user can reply with the ticked line instead",
             refused=refused,
         )
     return HookResult.waiting(name, "waiting for the author to tick the quiz box")
@@ -512,9 +514,19 @@ def _attributed(
     ):
         return {"refused": "unverified"}
     edits = [e for e in found.get("edits") or [] if isinstance(e, Mapping)]
-    editor = str(edits[0].get("editor") or "") if edits else ""
-    # `is_authorized(None, …)` is True for CI events — an unknown editor must be
-    # refused HERE, before that call can wave it through.
+    editors = [str(e.get("editor") or "") for e in edits]
+    editor = editors[0] if editors else ""
+    # The history says who edited, never WHAT each edit changed: if anyone
+    # unauthorized ever edited the comment, a later authorized edit (a typo
+    # fixed, a link corrected) may have left THEIR tick in place. So every
+    # editor must be authorized — and an unknown one never is: `is_authorized
+    # (None, …)` is True for CI events, so it is refused HERE first.
+    stranger = next(
+        (who for who in editors if not who or not is_authorized(who, list(allowed))),
+        None,
+    )
+    if stranger is not None:
+        editor = stranger
     if not editor or not is_authorized(editor, list(allowed)):
         logger.warning(
             "%s: quiz box on %s ticked by %r, who may not answer this gate",
@@ -558,3 +570,88 @@ def _typed_attestation(
                 "comment": str(comment.get("url") or comment.get("html_url") or ""),
             }
     return {}
+
+
+# ------------------------------------------------------------ R5.6 at publish
+
+
+def _git(repo: Path, *args: str) -> str:
+    """One read-only git query; ``""`` when git or the repository is absent."""
+    try:
+        done = subprocess.run(
+            ["git", "-C", str(repo), *args],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return done.stdout.strip() if done.returncode == 0 else ""
+
+
+@hook("explainer-postdates-spec")
+def explainer_postdates_spec(ctx: HookContext) -> HookResult:
+    """Block while the spec changed after the explainer's record was written.
+
+    R5.6 asks for a new page when the spec moves after the page was
+    *published* — not only after the quiz was posted, which `quiz-attested`'s
+    digest covers. The record is written, and committed, when the page is
+    published; so the spec's last commit must be an ancestor of the record's,
+    and the spec must have no uncommitted change. A record not yet committed is
+    newer than every commit. Outside a git checkout there is nothing to compare
+    and the gate's digest check remains.
+    """
+    name = "explainer-postdates-spec"
+    spec_dir = Path(ctx.work_item.spec_dir)
+    record = str(ctx.params.get("record") or "")
+    files: List[str] = []
+    for entry in ctx.params.get("spec") or []:
+        for candidate in str(entry).split("|"):
+            if (spec_dir / candidate.strip()).is_file():
+                files.append(str(spec_dir / candidate.strip()))
+                break
+    if not files or not record:
+        return HookResult.ok(name)
+    repo = spec_dir
+    if _git(repo, "status", "--porcelain", "--untracked-files=no", "--", *files):
+        return HookResult.blocked(
+            name,
+            [
+                Message(
+                    "the spec has uncommitted changes — commit them, then build "
+                    "the explainer from the spec as committed",
+                    path=record,
+                )
+            ],
+        )
+    spec_commit = _git(repo, "log", "-1", "--format=%H", "--", *files)
+    record_commit = _git(repo, "log", "-1", "--format=%H", "--", str(spec_dir / record))
+    if not spec_commit or not record_commit:
+        return HookResult.ok(name)
+    ancestor = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "merge-base",
+            "--is-ancestor",
+            spec_commit,
+            record_commit,
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if ancestor.returncode == 1:
+        return HookResult.blocked(
+            name,
+            [
+                Message(
+                    "the spec changed after the explainer was published (R5.6) — "
+                    "rebuild the page from the current spec, republish it, and "
+                    "commit the record again",
+                    path=record,
+                )
+            ],
+        )
+    return HookResult.ok(name)
