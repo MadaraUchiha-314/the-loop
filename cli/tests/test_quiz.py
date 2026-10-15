@@ -584,7 +584,9 @@ def test_an_edited_own_quiz_comment_becomes_the_doorbell():
     )
     routed = _router().route("issue_comment", _edited(body), "d1")
     assert routed is not None and routed.event == QUIZ_ATTESTATION_EVENT
-    assert routed.payload == {"attestation": {"comment_id": "IC_9"}}
+    assert routed.payload == {
+        "attestation": {"comment_id": "IC_9", "node": "spec-quiz"}
+    }
 
 
 def test_other_edits_of_own_comments_are_still_dropped():

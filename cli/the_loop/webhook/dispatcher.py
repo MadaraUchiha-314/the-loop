@@ -34,7 +34,6 @@ from ..instance import (
     parse_address,
 )
 from ..authz import is_authorized, is_authorized_on, mark_self_authored
-from ..quizmarks import UNVERIFIED
 from ..comments import post_issue_comment
 from ..cleanup import CleanupOutcome, cleanup_work_item
 from ..collaborators import CollaboratorStore
@@ -3811,21 +3810,27 @@ class Dispatcher:
         nothing more. When the gate passes, the next node's entry delivers the
         assignment as for any other transition.
         """
+        node = str((routed.payload.get("attestation") or {}).get("node") or "")
         for item in routed.work_items:
             session = self.registry.find_by_work_item(item.ref)
-            if session is None or session.is_paused:
+            if session is None:
                 continue
             ctx = self.graphlink.context(session.work_item, session.cwd)
-            if ctx is None or not ctx.at_human_gate:
+            if ctx is not None and node and ctx.current_node != node:
+                # A box from a gate already walked (it stays ticked forever):
+                # nothing to ring, and the id is kept so it is not re-read.
+                continue
+            if session.is_paused or ctx is None or not ctx.at_human_gate:
+                # Not yet ringable — paused, unreadable, or the gate not yet
+                # entered. Release the id so a later cycle rings again.
+                self._release(routed)
                 continue
             report = self.graphlink.on_event(session.work_item, session.cwd, routed)
-            if report is None or any(
-                UNVERIFIED in str(m) for m in getattr(report, "messages", [])
-            ):
-                # A fault, or GitHub would not say who ticked: transient, so
-                # release the id and let the next poll cycle ring again.
-                if routed.delivery_id:
-                    self.deduper.discard(routed.delivery_id)
+            if report is None or not getattr(report, "satisfied", False):
+                # A fault, an unverifiable editor, or a refused tick. Unticking
+                # and re-ticking produces the very same body — and so the same
+                # id — so keeping it would swallow the author's real tick.
+                self._release(routed)
             eventlog.emit(
                 "dispatch.quiz_gate",
                 work_item=session.work_item.ref,
@@ -3839,6 +3844,10 @@ class Dispatcher:
             gh_event=routed.event,
             delivery_id=routed.delivery_id or None,
         )
+
+    def _release(self, routed: RoutedEvent) -> None:
+        if routed.delivery_id:
+            self.deduper.discard(routed.delivery_id)
 
     def _dispatch_one(self, key: str, routed: RoutedEvent, spawn: bool) -> bool:
         """Deliver/spawn for one dequeued event; True on success (issue-84)."""

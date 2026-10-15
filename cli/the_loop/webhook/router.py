@@ -91,19 +91,29 @@ def quiz_attestation_event(
 ) -> "RoutedEvent":
     """The doorbell for one ticked quiz comment, deduplicated by its body.
 
-    Keyed on the comment AND a hash of its body, so a box unticked and ticked
-    again rings again, while one tick seen by both the poller and a webhook
-    rings once.
+    Keyed on the comment AND a hash of its body, so one tick seen by both the
+    poller and a webhook rings once. Unticking and re-ticking yields the same
+    body, so the dispatcher releases the id whenever the gate did not pass —
+    the next cycle may ring again. ``node`` is the gate the marker names: it
+    only says WHICH gate to look at, and the gate's own hook decides.
     """
     import hashlib
 
+    from ..quizmarks import quiz_marker
+
     digest = hashlib.sha256(str(body).encode()).hexdigest()[:16]
+    marker = quiz_marker(str(body)) or {}
     return RoutedEvent(
         event=QUIZ_ATTESTATION_EVENT,
         action="ticked",
         delivery_id=f"quiz-{comment_id}-{digest}",
         work_items=list(work_items),
-        payload={"attestation": {"comment_id": str(comment_id)}},
+        payload={
+            "attestation": {
+                "comment_id": str(comment_id),
+                "node": str(marker.get("node") or ""),
+            }
+        },
         labeled=False,
     )
 

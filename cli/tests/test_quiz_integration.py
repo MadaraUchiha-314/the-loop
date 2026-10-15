@@ -104,6 +104,80 @@ def test_a_graph_fault_releases_the_doorbell_for_the_next_cycle(tmp_path):
     assert link.seq.count("advance") == 2
 
 
+class _Waiting:
+    outcome = ""
+    status = "wait"
+    satisfied = False
+    messages = ["the box was ticked by someone not authorized to answer"]
+
+
+class _Passed:
+    outcome = ""
+    status = "pass"
+    satisfied = True
+    messages: list = []
+
+
+QUIZ_CTX = _ctx(
+    current_node="spec-quiz",
+    phase="",
+    status="waiting",
+    reason="waiting for the author to tick the quiz box",
+    next_command="",
+    actor="human",
+)
+
+
+def test_a_refused_tick_does_not_swallow_the_authors_re_tick(tmp_path):
+    """
+    Requirement: docs/specs/issue-488/requirements.md#R2.6
+    Scenario: the author re-ticks after an unauthorized tick was refused
+        Given a session parked at the spec quiz, whose first tick was refused
+        When the box is unticked and ticked again, producing the same body
+        Then the gate is asked again rather than the ring being a duplicate
+    """
+    link = _SeqLink(ctx=QUIZ_CTX, report=_Waiting())
+    registry, dispatcher, _tmux = _dispatcher(tmp_path, link)
+    registry.register(_session())
+    dispatcher.handle(_doorbell(_quiz_body(True)))
+    dispatcher.handle(_doorbell(_quiz_body(True)))
+    dispatcher.stop()
+    assert link.seq.count("advance") == 2
+
+
+def test_a_passed_gate_is_rung_once(tmp_path):
+    """
+    Requirement: docs/specs/issue-488/design.md#C5
+    Scenario: a tick that passed the gate is not re-evaluated every cycle
+        Given a session parked at the spec quiz whose tick passes
+        When the poller sees the same ticked comment again
+        Then the second ring is a duplicate
+    """
+    link = _SeqLink(ctx=QUIZ_CTX, report=_Passed())
+    registry, dispatcher, _tmux = _dispatcher(tmp_path, link)
+    registry.register(_session())
+    dispatcher.handle(_doorbell(_quiz_body(True)))
+    dispatcher.handle(_doorbell(_quiz_body(True)))
+    dispatcher.stop()
+    assert link.seq.count("advance") == 1
+
+
+def test_an_old_quiz_box_does_not_ring_a_later_gate(tmp_path):
+    """
+    Requirement: docs/specs/issue-488/design.md#C5
+    Scenario: the spec quiz's ticked box stays ticked after the gate passed
+        Given a session parked at another human gate
+        When the doorbell for the spec quiz's comment rings
+        Then that gate is not re-evaluated
+    """
+    link = _SeqLink(ctx=GATE_CTX, report=_Report())
+    registry, dispatcher, _tmux = _dispatcher(tmp_path, link)
+    registry.register(_session())
+    dispatcher.handle(_doorbell(_quiz_body(True)))
+    dispatcher.stop()
+    assert "advance" not in link.seq
+
+
 def _poll(tmp_path, body: str, with_session: bool = True):
     provider = FakeProvider(
         items=[_item(15)],
@@ -131,7 +205,9 @@ def test_the_poller_rings_the_gate_when_its_own_quiz_comment_is_ticked(tmp_path)
     """
     events = [e for e in _poll(tmp_path, _quiz_body(True)).events]
     rings = [e for e in events if e.event == QUIZ_ATTESTATION_EVENT]
-    assert rings and rings[0].payload == {"attestation": {"comment_id": "IC_9"}}
+    assert rings and rings[0].payload == {
+        "attestation": {"comment_id": "IC_9", "node": "spec-quiz"}
+    }
 
 
 def test_the_poller_stays_quiet_for_an_unticked_box_or_a_human_look_alike(tmp_path):
