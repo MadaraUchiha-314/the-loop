@@ -15,6 +15,9 @@
 
 One or two sentences: what this PR does and why.
 
+**Start here:** the explainer of this change — `<Location from evidence/explainer.md>`.
+(Drop this line when the work item declared the `explainer` row away.)
+
 ## Where to focus (in this order)
 
 Prioritized so a reviewer of AI-authored work knows what to scrutinize first.

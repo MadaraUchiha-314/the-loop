@@ -615,3 +615,12 @@ def test_the_template_is_self_contained_and_its_quiz_blocks_parse():
         r'<script type="application/json" id="quiz-\w+">(.*?)</script>', html, re.S
     ):
         assert isinstance(json.loads(block)["questions"], list)
+
+
+def test_every_shipped_node_command_names_a_slash_command_file():
+    """B2: `command: explain` resolves to commands/explain.md, like every other."""
+    commands = Path(__file__).resolve().parents[2] / "commands"
+    for node in load_graph().ordered():
+        if node.command:
+            assert (commands / f"{node.command}.md").is_file(), node.command
+    assert load_graph().nodes["code-explainer"].command == "explain"

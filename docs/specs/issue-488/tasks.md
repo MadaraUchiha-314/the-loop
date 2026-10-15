@@ -84,7 +84,7 @@ overrides: {}
   - _Requirements:_ R3.3, R4.1, R6.6, NFR accessibility; abuse case 3
   - _Test:_ T5 (tabs, reveal-after-select, no network, no errors, 375 px); T8
     `test_explainer_template_renders_text_not_markup`; T9 (axe, keyboard)
-- [ ] **B2: the agent's procedure.**
+- [x] **B2: the agent's procedure.**
   - New `skills/the-loop/reference/explainer.md`: depth ladder, prose budget, section
     contract, spec-only variant, R6 quiz checklist, publishing table, redaction step,
     and "never tick an attestation box".

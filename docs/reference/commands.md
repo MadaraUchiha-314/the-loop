@@ -22,6 +22,7 @@ Run the same flow one step at a time:
 | `/the-loop:create-ticket <path>` | Create the ticket from a `requirements.md`; promote `draft-<slug>/` → `docs/specs/<id>/`. |
 | `/the-loop:create-design <id>` | Create `design.md` from the approved requirements (Phase 2). |
 | `/the-loop:create-testing-plan <id>` | Create `testing-plan.md` from requirements + design — which kinds of testing apply, the verification environment, the evidence to capture. |
+| `/the-loop:explain <id>` | At `spec-explainer` / `code-explainer` (issue-488): write and publish the explainer page — the spec explainer and spec quiz before code generation, the explainer of the change and the code quiz before review — and record where it lives. |
 | `/the-loop:create-tasks-plan <id>` | Create the `tasks.md` DAG from requirements + design + testing plan. |
 | `/the-loop:execute-tasks <id>` | Implement the task DAG; verify against the testing plan; self-check; self/critic-review; present evidence. |
 | `/the-loop:verify-work <id>` | Execute the testing plan after implementation: run the planned activities, record results, commit the evidence. |
