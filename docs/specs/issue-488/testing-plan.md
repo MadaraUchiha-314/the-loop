@@ -110,7 +110,7 @@ check the first real explainer this feature produces, its own (see Evidence plan
 
 ## Verification results
 
-_Not yet executed._
+*Not yet executed.*
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
