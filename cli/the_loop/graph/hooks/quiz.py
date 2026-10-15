@@ -274,7 +274,7 @@ def post_quiz_attestation(ctx: HookContext) -> HookResult:
     Blocks when the agent node's record names no published page — a quiz
     pointing nowhere is a gate nobody can honestly answer. Posting itself is
     best-effort, like every outbound hook: an outage leaves the gate waiting,
-    and the next entry re-posts.
+    and ``quiz-attested`` re-posts on the next event that wakes it.
     """
     name = "post-quiz-attestation"
     node = str(ctx.params.get("node") or ctx.node_id)
@@ -296,9 +296,23 @@ def post_quiz_attestation(ctx: HookContext) -> HookResult:
     names = [str(n) for n in ctx.params.get("digest") or []]
     digest = spec_digest(ctx.work_item.spec_dir, names) if names else "-"
     round_ = _round(ctx)
+    where = str(ctx.params.get("on") or _WHERE[node])
+    posted = _post(ctx, node, location, round_, digest, where)
+    return HookResult.ok(name, posted=posted, round=round_, digest=digest)
+
+
+#: Where each quiz's comment lives — the entry hook's default `on`, and where
+#: the exit hook looks.
+_WHERE = {"spec-quiz": "ticket", "code-quiz": "pull-requests"}
+
+
+def _post(
+    ctx: HookContext, node: str, location: str, round_: int, digest: str, where: str
+) -> List[str]:
+    """Post this round's comment wherever it is not already. Best-effort."""
     allowed = [str(u) for u in (ctx.config.get("authorizedUsers") or [])]
     posted: List[str] = []
-    for ref in _targets(ctx, str(ctx.params.get("on") or "ticket")):
+    for ref in _targets(ctx, where):
         try:
             already = any(
                 m["round"] == str(round_) and m["digest"] == digest
@@ -314,7 +328,7 @@ def post_quiz_attestation(ctx: HookContext) -> HookResult:
             posted.append(ref)
         except Exception as exc:  # noqa: BLE001 — best-effort, never wedge
             logger.warning("could not post the %s comment on %s: %s", node, ref, exc)
-    return HookResult.ok(name, posted=posted, round=round_, digest=digest)
+    return posted
 
 
 @hook("quiz-attested")
@@ -322,7 +336,9 @@ def quiz_attested(ctx: HookContext) -> HookResult:
     """Pass once an authorized user ticked this round's box (exit hook).
 
     Reads GitHub only when an event woke the gate — `the-loop check` passes
-    none and is told the gate waits, which is what it does.
+    none and is told the gate waits, which is what it does. When this round's
+    comment is on no thread it could read (the entry's post failed, and
+    nothing re-enters a parked human node), it posts it again from ``record``.
     """
     name = "quiz-attested"
     node = ctx.node_id
@@ -336,7 +352,8 @@ def quiz_attested(ctx: HookContext) -> HookResult:
     round_ = str(_round(ctx))
 
     refused: List[str] = []
-    for ref in _targets(ctx, "pull-requests" if node == "code-quiz" else "ticket"):
+    read_any, found_any = False, False
+    for ref in _targets(ctx, _WHERE[node]):
         try:
             mine = [
                 (c, m)
@@ -346,8 +363,10 @@ def quiz_attested(ctx: HookContext) -> HookResult:
         except Exception as exc:  # noqa: BLE001
             logger.warning("could not read %s for the %s gate: %s", ref, node, exc)
             continue
+        read_any = True
         if not mine:
             continue
+        found_any = True
         newest = mine[-1][1]
         if names and newest["digest"] != current:
             # The spec moved under the quiz: the page the author would attest
@@ -377,6 +396,13 @@ def quiz_attested(ctx: HookContext) -> HookResult:
     typed = _typed_attestation(ctx, node, allowed)
     if typed:
         return HookResult.ok(name, decision=node, via="reply", **typed)
+    record = str(ctx.params.get("record") or "")
+    if read_any and not found_any and record:
+        location = _record_location(Path(ctx.work_item.spec_dir) / record)
+        if location and _post(ctx, node, location, int(round_), current, _WHERE[node]):
+            return HookResult.waiting(
+                name, "posted the quiz comment again — it had not landed"
+            )
     if "unverified" in refused:
         return HookResult.waiting(name, UNVERIFIED, refused=refused)
     if refused:

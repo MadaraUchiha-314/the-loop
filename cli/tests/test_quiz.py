@@ -405,6 +405,16 @@ def test_a_changed_spec_routes_back_as_stale(spec_dir, github):
     assert load_graph().next_node("spec-quiz", "stale") == "spec-explainer"
 
 
+def test_a_comment_that_never_landed_is_posted_by_the_gate(spec_dir, github):
+    """The entry's post failed: the next event re-posts it, once."""
+    _record(spec_dir, "https://claude.ai/artifact/abc")
+    params = {"digest": DIGEST, "record": "evidence/spec-explainer.md"}
+    ctx = _ctx(spec_dir, params=params, event={"comments": []})
+    result = quiz.quiz_attested(ctx)
+    assert result.status == "wait" and "again" in str(result.messages)
+    assert len(github.posted) == 1 and "the-loop:quiz spec-quiz" in github.posted[0][3]
+
+
 def _look_alike(github: FakeGitHubClient, body: str, cid: str = "IC_2") -> None:
     """Mallory copies the-loop's comment — both markers are just text."""
     github.comments[("o", "r", 7)].append(

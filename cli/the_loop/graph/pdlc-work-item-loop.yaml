@@ -312,6 +312,7 @@ nodes:
       - hook: quiz-attested
         with:
           digest: ["requirements.md|bugfix.md", design.md, testing-plan.md]
+          record: evidence/spec-explainer.md   # re-posts a comment that never landed
 
   # No approval node follows this one, on purpose — and therefore no lock
   # (issue-281): `tasks.md` is derived mechanically from the two artifacts the
@@ -492,7 +493,8 @@ nodes:
     entry:
       - {hook: post-quiz-attestation, with: {node: code-quiz, record: evidence/explainer.md, on: pull-requests}}
       - {hook: notify, with: {event: decision-pending, artifact: evidence/explainer.md}}
-    exit: [quiz-attested]
+    exit:
+      - {hook: quiz-attested, with: {record: evidence/explainer.md}}
 
   - id: human-approval
     actor: human
