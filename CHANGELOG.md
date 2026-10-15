@@ -1,3 +1,9 @@
+## v20.1.0 (2026-10-15)
+
+### Feat
+
+- **issue-488**: explainer, spec quiz and code quiz (#489)
+
 ## v20.0.0 (2026-10-13)
 
 ### BREAKING CHANGE
