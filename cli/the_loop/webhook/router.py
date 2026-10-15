@@ -26,6 +26,7 @@ from typing import (
 
 from .. import eventlog
 from ..authz import is_authorized, is_authorized_on, is_self_authored
+from ..quizmarks import attestation_ticked, is_quiz_comment
 from ..sessions import DEFAULT_GITHUB_HOST, WorkItemRef, host_from_url
 from ..sessions.refs import UnknownJiraProject, jira_site, origin_ref
 
@@ -77,6 +78,36 @@ _JIRA_KEY_RE = re.compile(r"\b([A-Z][A-Z0-9_]{1,9})-([1-9][0-9]{0,9})\b")
 #: close, so the stamp it writes can say `source: poll` (issue-329). Owned here,
 #: beside the event shape both ingresses share, so neither imports the other.
 POLL_CLOSURE_DELIVERY_PREFIX = "poll-close-"
+
+#: The doorbell a ticked quiz box rings (issue-488). Internal — GitHub never
+#: sends it: the poller emits it when it sees its own quiz comment ticked, and
+#: the router rewrites an `issue_comment.edited` of that comment into it. It
+#: carries no body and no actor; the gate's hook asks GitHub who ticked.
+QUIZ_ATTESTATION_EVENT = "quiz_attestation"
+
+
+def quiz_attestation_event(
+    work_items: "List[WorkItemRef]", comment_id: str, body: str
+) -> "RoutedEvent":
+    """The doorbell for one ticked quiz comment, deduplicated by its body.
+
+    Keyed on the comment AND a hash of its body, so a box unticked and ticked
+    again rings again, while one tick seen by both the poller and a webhook
+    rings once.
+    """
+    import hashlib
+
+    digest = hashlib.sha256(str(body).encode()).hexdigest()[:16]
+    return RoutedEvent(
+        event=QUIZ_ATTESTATION_EVENT,
+        action="ticked",
+        delivery_id=f"quiz-{comment_id}-{digest}",
+        work_items=list(work_items),
+        payload={"attestation": {"comment_id": str(comment_id)}},
+        labeled=False,
+    )
+
+
 #: The delivery-id prefix of a Jira comment, the same from the poller and the
 #: webhook doorbell (issue-475, R6.4): ``jira-comment-<site>-<id>``.
 JIRA_COMMENT_DELIVERY_PREFIX = "jira-comment-"
@@ -897,6 +928,21 @@ class Router:
                 delivery_id=delivery_id,
             )
             return None
+        # A ticked quiz box (issue-488): the edit of the-loop's OWN comment is
+        # the one self-authored body that means something — rewritten into the
+        # doorbell before the self-reply guard drops it. Who ticked is never
+        # read from this payload; the gate asks GitHub's edit history.
+        if event == "issue_comment" and action == "edited":
+            body = event_body(event, payload) or ""
+            if (
+                is_self_authored(body)
+                and is_quiz_comment(body)
+                and attestation_ticked(body)
+            ):
+                comment = payload.get("comment") or {}
+                return quiz_attestation_event(
+                    work_items, str(comment.get("node_id") or comment.get("id")), body
+                )
         # Self-reply guard (issue-64): the-loop's own replies are posted under
         # the operator's own credentials, so they would otherwise pass the
         # actor check below and re-enter the loop. Checked before authorization

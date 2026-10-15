@@ -27,6 +27,7 @@ steps:
         - [ ] evidence
         - [ ] capability-docs
         - [ ] reviewer-briefing
+        - [ ] `explainer`
   - emit: {artifact: evidence/verification.md, fixture: evidence-verification.md}
   - complete: {node: implementation}
   - complete: {node: verification}
@@ -44,15 +45,19 @@ expect:
     - design-critic-review~
     - test-planning~
     - design-approval~
+    - spec-explainer~
+    - spec-quiz~
     - tasks-breakdown~
     - implementation
     - verification
     - self-review~
     - critic-review~
     - security-review~
+    - code-explainer~
     - evidence~
     - capability-docs~
     - reviewer-briefing~
+    - code-quiz~
     - human-approval
     - complete
   labels:

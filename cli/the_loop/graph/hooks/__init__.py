@@ -16,6 +16,7 @@ from . import goal  # noqa: F401
 from . import review  # noqa: F401
 from . import selection  # noqa: F401
 from . import mcp  # noqa: F401
+from . import quiz  # noqa: F401
 
 __all__ = [
     "adhoc",
@@ -26,6 +27,7 @@ __all__ = [
     "lint",
     "loops",
     "mcp",
+    "quiz",
     "review",
     "selection",
     "sideeffects",

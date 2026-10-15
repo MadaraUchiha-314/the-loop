@@ -102,6 +102,15 @@ skipSets:
     - evidence
     - capability-docs
     - reviewer-briefing
+  # The explainer and the two quizzes (issue-488). Not phase rows on the
+  # checklist: ONE ticked-by-default `explainer` setting row declares all four
+  # away at `phase-selection`, under this token, and `the-loop graph skip <id>
+  # --node explainer` does the same from a shell.
+  explainer:
+    - spec-explainer
+    - spec-quiz
+    - code-explainer
+    - code-quiz
 
 nodes:
   # The work item's own first phase (issue-177, owner's call on PR #178): before
@@ -267,6 +276,43 @@ nodes:
       - {hook: record-feedback, with: {into: testing-plan.md}}
       - {hook: lock-artifacts, with: {artifacts: [design.md, testing-plan.md]}}
 
+  # The spec explainer and the spec quiz (issue-488) — two nodes because a
+  # session never works at a HUMAN node (`render_assignment` tells it not to
+  # start the work a gate guards). The agent writes a spec-level explainer and
+  # quiz and leaves a record naming where it was published; the human node then
+  # posts the-loop's checkbox comment and waits for an AUTHORIZED user to tick
+  # it — attributed through GitHub's edit history, never the comment's author.
+  # No `phase:` on either: the label keeps reading `test-planning`, as
+  # `critic-review` keeps `needs-review`, rather than a new label every
+  # consuming repository would have to create.
+  - id: spec-explainer
+    actor: agent
+    skippable: true         # the `explainer` row (issue-488)
+    command: explain
+    stage: explainer
+    entry: [deliver-assignment]
+    exit:
+      - {hook: validate-artifacts, with: {validates: evidence/spec-explainer.md, sections: ["Spec explainer"]}}
+
+  - id: spec-quiz
+    actor: human
+    session: inherit
+    skippable: true         # the `explainer` row (issue-488)
+    entry:
+      - hook: post-quiz-attestation
+        with:
+          node: spec-quiz
+          record: evidence/spec-explainer.md
+          on: ticket
+          digest: ["requirements.md|bugfix.md", design.md, testing-plan.md]
+      - {hook: notify, with: {event: decision-pending, artifact: evidence/spec-explainer.md}}
+    # `stale` (the spec changed since the quiz was posted) routes back to
+    # `spec-explainer`, so the page the author attests to is the spec as it is.
+    exit:
+      - hook: quiz-attested
+        with:
+          digest: ["requirements.md|bugfix.md", design.md, testing-plan.md]
+
   # No approval node follows this one, on purpose — and therefore no lock
   # (issue-281): `tasks.md` is derived mechanically from the two artifacts the
   # human just approved at `design-approval`, so a human stop here would be a
@@ -390,6 +436,19 @@ nodes:
     exit:
       - {hook: validate-artifacts, with: {validates: evidence/security-review.md, sections: ["Security review (gate)"]}}
 
+  # The explainer of the CHANGE (issue-488): the reviewer's starting point,
+  # written once the review chain has settled the diff, with the code quiz the
+  # author takes at `code-quiz` below. Named `code-explainer` rather than
+  # `explainer` because a skip-set token wins over a node id of the same name.
+  - id: code-explainer
+    actor: agent
+    skippable: true         # the `explainer` row (issue-488)
+    command: explain
+    stage: explainer
+    entry: [deliver-assignment]
+    exit:
+      - {hook: validate-artifacts, with: {validates: evidence/explainer.md, sections: ["Explainer"]}}
+
   - id: evidence
     actor: agent
     skippable: true         # issue-179
@@ -421,6 +480,19 @@ nodes:
     entry: [deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {validates: evidence/pull-requests.md, sections: ["Pull requests"]}}
+
+  # The author attests to the code quiz before review is requested (issue-488):
+  # the checkbox comment goes on every delivering pull request (the ticket when
+  # there is none), and a tick on any one of them by an authorized user opens
+  # the way to `human-approval`.
+  - id: code-quiz
+    actor: human
+    session: inherit
+    skippable: true         # the `explainer` row (issue-488)
+    entry:
+      - {hook: post-quiz-attestation, with: {node: code-quiz, record: evidence/explainer.md, on: pull-requests}}
+      - {hook: notify, with: {event: decision-pending, artifact: evidence/explainer.md}}
+    exit: [quiz-attested]
 
   - id: human-approval
     actor: human
@@ -489,16 +561,20 @@ edges:
   # that did not select it, which is the default.
   - {from: design-critic-review, to: test-planning, on: skipped}
   - {from: test-planning, to: design-approval, on: skipped}
-  - {from: design-approval, to: tasks-breakdown, on: skipped}
+  - {from: design-approval, to: spec-explainer, on: skipped}
+  - {from: spec-explainer, to: spec-quiz, on: skipped}
+  - {from: spec-quiz, to: tasks-breakdown, on: skipped}
   - {from: tasks-breakdown, to: implementation, on: skipped}
   - {from: implementation, to: verification, on: skipped}
   - {from: verification, to: self-review, on: skipped}
   - {from: self-review, to: critic-review, on: skipped}
   - {from: critic-review, to: security-review, on: skipped}
-  - {from: security-review, to: evidence, on: skipped}
+  - {from: security-review, to: code-explainer, on: skipped}
+  - {from: code-explainer, to: evidence, on: skipped}
   - {from: evidence, to: capability-docs, on: skipped}
   - {from: capability-docs, to: reviewer-briefing, on: skipped}
-  - {from: reviewer-briefing, to: human-approval, on: skipped}
+  - {from: reviewer-briefing, to: code-quiz, on: skipped}
+  - {from: code-quiz, to: human-approval, on: skipped}
   - {from: human-approval, to: complete, on: skipped}
   - {from: requirements-approval, to: design, on: approved}
   - {from: requirements-approval, to: design, on: approved-with-comments}
@@ -506,8 +582,11 @@ edges:
   - {from: design, to: design-critic-review, on: pass}
   - {from: design-critic-review, to: test-planning, on: pass}
   - {from: test-planning, to: design-approval, on: pass}
-  - {from: design-approval, to: tasks-breakdown, on: approved}
-  - {from: design-approval, to: tasks-breakdown, on: approved-with-comments}
+  - {from: design-approval, to: spec-explainer, on: approved}
+  - {from: design-approval, to: spec-explainer, on: approved-with-comments}
+  - {from: spec-explainer, to: spec-quiz, on: pass}
+  - {from: spec-quiz, to: tasks-breakdown, on: pass}
+  - {from: spec-quiz, to: spec-explainer, on: stale}
   # Back to `design`, not to `test-planning`: the plan is derived from the design,
   # so a change to the design re-derives the plan on the way back through.
   - {from: design-approval, to: design, on: changes-requested}
@@ -516,10 +595,12 @@ edges:
   - {from: verification, to: self-review, on: pass}
   - {from: self-review, to: critic-review, on: pass}
   - {from: critic-review, to: security-review, on: pass}
-  - {from: security-review, to: evidence, on: pass}
+  - {from: security-review, to: code-explainer, on: pass}
+  - {from: code-explainer, to: evidence, on: pass}
   - {from: evidence, to: capability-docs, on: pass}
   - {from: capability-docs, to: reviewer-briefing, on: pass}
-  - {from: reviewer-briefing, to: human-approval, on: pass}
+  - {from: reviewer-briefing, to: code-quiz, on: pass}
+  - {from: code-quiz, to: human-approval, on: pass}
   - {from: human-approval, to: complete, on: approved}
   - {from: human-approval, to: complete, on: approved-with-comments}
   - {from: human-approval, to: implementation, on: changes-requested}

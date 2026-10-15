@@ -1,0 +1,62 @@
+# issue-488: the spec quiz gate, end to end through the shipped graph — a tick
+# by someone not authorized is refused, a spec that moves under the quiz sends
+# it back to the explainer, and the new round passes on an authorized tick.
+name: quiz-gates
+description: the spec-quiz gate refuses an unauthorized tick, goes stale on a spec change, passes on an authorized one
+tier: 3
+workItem: issue-48
+steps:
+  - comment:
+      author: owner
+      body: |
+        the-loop execute
+
+        - [ ] brainstorming
+  - emit: {artifact: requirements.md, fixture: requirements.md}
+  - complete: {node: requirements-definition}
+  - comment: {author: owner, body: "approved"}
+  - emit: {artifact: design.md, fixture: design.md}
+  - complete: {node: design}
+  - emit: {artifact: testing-plan.md, fixture: testing-plan.md}
+  - complete: {node: test-planning}
+  - comment: {author: owner, body: "approved"}
+  - emit: {artifact: evidence/spec-explainer.md, fixture: evidence-spec-explainer.md}
+  - complete: {node: spec-explainer}
+  # Abuse case 1: the box is ticked, by someone the gate must not obey.
+  - tick: {node: spec-quiz, author: mallory}
+  - expect: {currentNode: spec-quiz, parked: true}
+  # "approved" is not the attestation either (abuse case 4).
+  - comment: {author: owner, body: "approved"}
+  - expect: {currentNode: spec-quiz}
+  # The spec moves under the quiz: the page no longer describes it.
+  - emit: {artifact: design.md, fixture: design-v2.md}
+  - tick: {node: spec-quiz, author: owner}
+  - expect:
+      currentNode: spec-explainer
+      events:
+        - {event: graph.advanced, node: spec-quiz, to: spec-explainer, outcome: stale}
+  # A new page, a new round, a new comment — and an authorized tick on it.
+  - complete: {node: spec-explainer}
+  - tick: {node: spec-quiz, author: owner}
+expect:
+  finalNode: tasks-breakdown
+  completed: false
+  nodes:
+    - phase-selection
+    - brainstorming~
+    - requirements-definition
+    - requirements-approval
+    - design
+    - design-critic-review~
+    - test-planning
+    - design-approval
+    - spec-explainer
+    - spec-quiz
+    - spec-explainer
+    - spec-quiz
+    - tasks-breakdown
+  events:
+    - {event: graph.advanced, node: design-approval, to: spec-explainer, outcome: approved}
+    - {event: graph.advanced, node: spec-explainer, to: spec-quiz, outcome: pass}
+    - {event: graph.advanced, node: spec-quiz, to: spec-explainer, outcome: stale}
+    - {event: graph.advanced, node: spec-quiz, to: tasks-breakdown, outcome: pass}

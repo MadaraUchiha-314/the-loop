@@ -34,6 +34,7 @@ from ..instance import (
     parse_address,
 )
 from ..authz import is_authorized, is_authorized_on, mark_self_authored
+from ..quizmarks import UNVERIFIED
 from ..comments import post_issue_comment
 from ..cleanup import CleanupOutcome, cleanup_work_item
 from ..collaborators import CollaboratorStore
@@ -132,6 +133,7 @@ from .excerpt import event_excerpt, payload_excerpt  # noqa: F401 — re-exporte
 from .router import (
     JIRA_COMMENT_DELIVERY_PREFIX,
     POLL_CLOSURE_DELIVERY_PREFIX,
+    QUIZ_ATTESTATION_EVENT,
     Deduper,
     RoutedEvent,
     branch_derived_refs,
@@ -1209,6 +1211,13 @@ class Dispatcher:
         # the prompt's origin line — reads off the payload. Filled here, once,
         # so the poller and the doorbell both get it.
         routed = self._with_origin_repository(routed)
+
+        # A quiz box was ticked (issue-488): a doorbell for a gate that is
+        # already waiting, never input for a session and never a reason to spawn
+        # one. Handled before control parsing because it carries no body.
+        if routed.event == QUIZ_ATTESTATION_EVENT:
+            self._ring_quiz_gate(routed)
+            return
 
         # Execution control (issue-106): a declared keyword from an authorized
         # user is an instruction to *the-loop*, so it is executed here and never
@@ -3791,6 +3800,45 @@ class Dispatcher:
                     self.reactor.react(routed, STATE_ERROR)
                 else:
                     self.reactor.react(routed, STATE_COMPLETED if ok else STATE_ERROR)
+
+    def _ring_quiz_gate(self, routed: RoutedEvent) -> None:
+        """Re-evaluate a waiting quiz gate after its box was ticked (issue-488).
+
+        Delivery-only by construction: no prompt is rendered, nothing is pasted
+        into a session, nothing spawns. The gate's own hook (`quiz-attested`)
+        finds the-loop's comment on the thread and asks GitHub who ticked it —
+        the event says only "look", so a forged one can make the gate look and
+        nothing more. When the gate passes, the next node's entry delivers the
+        assignment as for any other transition.
+        """
+        for item in routed.work_items:
+            session = self.registry.find_by_work_item(item.ref)
+            if session is None or session.is_paused:
+                continue
+            ctx = self.graphlink.context(session.work_item, session.cwd)
+            if ctx is None or not ctx.at_human_gate:
+                continue
+            report = self.graphlink.on_event(session.work_item, session.cwd, routed)
+            if report is None or any(
+                UNVERIFIED in str(m) for m in getattr(report, "messages", [])
+            ):
+                # A fault, or GitHub would not say who ticked: transient, so
+                # release the id and let the next poll cycle ring again.
+                if routed.delivery_id:
+                    self.deduper.discard(routed.delivery_id)
+            eventlog.emit(
+                "dispatch.quiz_gate",
+                work_item=session.work_item.ref,
+                outcome=str(getattr(report, "outcome", "") or ""),
+                delivery_id=routed.delivery_id or None,
+            )
+            return
+        eventlog.emit(
+            "dispatch.dropped",
+            reason="no-gate",
+            gh_event=routed.event,
+            delivery_id=routed.delivery_id or None,
+        )
 
     def _dispatch_one(self, key: str, routed: RoutedEvent, spawn: bool) -> bool:
         """Deliver/spawn for one dequeued event; True on success (issue-84)."""

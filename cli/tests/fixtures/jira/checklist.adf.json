@@ -780,6 +780,150 @@
       "content": [
         {
           "type": "text",
+          "text": "🎓 Explain the change and quiz the author?"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Default:",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " yes — already ticked. Untick it to skip all three."
+        }
+      ]
+    },
+    {
+      "type": "taskList",
+      "attrs": {
+        "localId": "the-loop-tasks-5"
+      },
+      "content": [
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-20",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "explainer",
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " — a spec explainer and quiz before code generation, an explainer of the change for the reviewer, and a code quiz before review is requested."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "ℹ️ What this means",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "The author reads a plain-language explainer of the approved spec and takes a short quiz before any code is generated, then the same for the finished change before review is requested — each time by ticking one box on the-loop's comment. The reviewer starts from the explainer of the change."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Unticked, the four nodes behind it ("
+        },
+        {
+          "type": "text",
+          "text": "spec-explainer",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ", "
+        },
+        {
+          "type": "text",
+          "text": "spec-quiz",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ", "
+        },
+        {
+          "type": "text",
+          "text": "code-explainer",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ", "
+        },
+        {
+          "type": "text",
+          "text": "code-quiz",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ") are declared skipped in your name, like any phase."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 4
+      },
+      "content": [
+        {
+          "type": "text",
           "text": "🧵 How many sessions should this work item's pull requests get?"
         }
       ]
@@ -831,13 +975,13 @@
     {
       "type": "taskList",
       "attrs": {
-        "localId": "the-loop-tasks-5"
+        "localId": "the-loop-tasks-6"
       },
       "content": [
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-20",
+            "localId": "the-loop-task-21",
             "state": "TODO"
           },
           "content": [
@@ -872,7 +1016,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-21",
+            "localId": "the-loop-task-22",
             "state": "DONE"
           },
           "content": [
@@ -907,7 +1051,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-22",
+            "localId": "the-loop-task-23",
             "state": "TODO"
           },
           "content": [
@@ -1190,13 +1334,13 @@
     {
       "type": "taskList",
       "attrs": {
-        "localId": "the-loop-tasks-6"
+        "localId": "the-loop-tasks-7"
       },
       "content": [
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-23",
+            "localId": "the-loop-task-24",
             "state": "TODO"
           },
           "content": [
@@ -1214,7 +1358,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-24",
+            "localId": "the-loop-task-25",
             "state": "TODO"
           },
           "content": [
@@ -1335,13 +1479,13 @@
     {
       "type": "taskList",
       "attrs": {
-        "localId": "the-loop-tasks-7"
+        "localId": "the-loop-tasks-8"
       },
       "content": [
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-25",
+            "localId": "the-loop-task-26",
             "state": "TODO"
           },
           "content": [
@@ -1363,7 +1507,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-26",
+            "localId": "the-loop-task-27",
             "state": "TODO"
           },
           "content": [
@@ -1458,13 +1602,13 @@
     {
       "type": "taskList",
       "attrs": {
-        "localId": "the-loop-tasks-8"
+        "localId": "the-loop-tasks-9"
       },
       "content": [
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-27",
+            "localId": "the-loop-task-28",
             "state": "TODO"
           },
           "content": [
@@ -1482,7 +1626,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-28",
+            "localId": "the-loop-task-29",
             "state": "TODO"
           },
           "content": [

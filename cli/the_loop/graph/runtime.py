@@ -79,6 +79,29 @@ def _exclude_spec_root(repo: Path, spec_root: str) -> str:
 #: was offered and not asked for.
 NOT_SELECTED = "not-selected"
 
+#: The provenance of a skippable node the work item's FROZEN selection never
+#: listed (issue-488): the phase did not exist when its author answered
+#: `phase-selection`, so nobody chose it and nobody declined it. Walking it
+#: would hold an in-flight item at a gate its author was never offered.
+NOT_OFFERED = "not-offered"
+
+
+def _frozen_node_ids(state: Any) -> frozenset:
+    """The node ids the work item's `phase-selection` froze — empty when none.
+
+    Empty means "no frozen graph to compare against" (a state from before
+    issue-177, or a loop whose selection froze nothing), and then nothing is
+    inferred: only a recorded list can say a phase was never offered.
+    """
+    decision = (getattr(state, "decisions", None) or {}).get("phase-selection")
+    graph = decision.get("graph") if isinstance(decision, Mapping) else None
+    nodes = graph.get("nodes") if isinstance(graph, Mapping) else None
+    if not isinstance(nodes, list):
+        return frozenset()
+    return frozenset(
+        str(n.get("id")) for n in nodes if isinstance(n, Mapping) and n.get("id")
+    )
+
 
 def _skip_provenance(decl: Mapping[str, Any]) -> str:
     """One line a reviewer can act on: who declared this skip, and how."""
@@ -87,6 +110,11 @@ def _skip_provenance(decl: Mapping[str, Any]) -> str:
         return (
             "not selected — an opt-in phase, off unless it is ticked at "
             "`phase-selection`"
+        )
+    if via == NOT_OFFERED:
+        return (
+            "not offered — the phase did not exist when this work item's "
+            "`phase-selection` was answered"
         )
     token = str(decl.get("token") or "")
     by = str(decl.get("by") or "")
@@ -536,6 +564,16 @@ class Runtime:
         for node in self.graph.ordered():
             if node.opt_in and node.id not in out and not self.selected(state, node.id):
                 out[node.id] = {"via": NOT_SELECTED}
+        offered = _frozen_node_ids(state)
+        if offered:
+            for node in self.graph.ordered():
+                if (
+                    node.skippable
+                    and not node.required
+                    and node.id not in out
+                    and node.id not in offered
+                ):
+                    out[node.id] = {"via": NOT_OFFERED}
         return out
 
     def selected(self, state: "WorkItemState", node_id: str) -> bool:
@@ -642,6 +680,18 @@ class Runtime:
                     # questions, angles and validations, frozen the same way —
                     # the contract every review round answers to.
                     record["brief"] = dict(brief)
+                attested = str(result.data.get("attestedBy") or "")
+                if attested:
+                    # A quiz gate (issue-488): who ticked, when, where, and by
+                    # which channel. Overwritten rather than kept: a quiz walked
+                    # again is a new round, and the latest one is the answer.
+                    record.update(
+                        attestedBy=attested,
+                        attestedAt=str(result.data.get("attestedAt") or ""),
+                        comment=str(result.data.get("comment") or ""),
+                        via=str(result.data.get("via") or ""),
+                    )
+                    state.decisions[str(marker)] = record
                 state.decisions.setdefault(str(marker), record)
                 decided = True
         declared: Dict[str, Any] = {}

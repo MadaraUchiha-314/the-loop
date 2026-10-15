@@ -1094,9 +1094,14 @@ def test_the_shipped_checklist_offers_every_phase_the_item_walks(repo, fake_gith
     runtime = Runtime(repo, graph=load_graph(), config={"authorizedUsers": ["@owner"]})
     runtime.start(WORK_ITEM, ref="github:o/r#1")
     body = fake_github.posted[0]
+    grouped = set(load_graph().skip_sets.get("explainer", ()))
+    # issue-488: one ticked setting row stands for the explainer's four nodes.
+    assert "- [x] `explainer`" in body
 
     for node in load_graph().ordered():
-        if node.opt_in:
+        if node.id in grouped:
+            assert f"- [x] {node.id}" not in body, node.id
+        elif node.opt_in:
             # issue-188: offered, not planned — the opposite default, and it
             # must never be rendered as a ticked row.
             assert f"- [ ] {node.id}" in body, node.id

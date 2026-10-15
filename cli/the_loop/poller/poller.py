@@ -65,7 +65,9 @@ from ..workitem import (
     POLL,
     WorkItemStore,
 )
+from ..quizmarks import attestation_ticked, is_quiz_comment
 from ..webhook.dispatcher import Dispatcher
+from ..webhook.router import quiz_attestation_event
 from .base import (
     KIND_PULL_REQUEST,
     REPROBE_EVERY_CYCLES,
@@ -1452,6 +1454,24 @@ class Poller:
         # forward, and dropped ones (unauthorized, or issue-64 self-marked
         # replies) which are baselined so they are never re-evaluated —
         # matching the old unconditional baseline for those.
+        # A ticked quiz box (issue-488). the-loop's own comment, so the loop
+        # below baselines it on first sight and never reads it again — but its
+        # body is re-fetched every cycle anyway, so a tick is visible here for
+        # the cost of a string check. Only a work item with a live session has
+        # a gate to ring; the dispatcher dedupes by comment and body hash.
+        if has_session:
+            for comment in comments:
+                body = comment.body or ""
+                if (
+                    comment.id
+                    and is_quiz_comment(body)
+                    and attestation_ticked(body)
+                    and provider.comment_origin(comment) == ORIGIN_SELF
+                ):
+                    self.dispatcher.handle(
+                        quiz_attestation_event(refs, comment.id, body)
+                    )
+
         seen = self.state.seen_comments(ref)
         candidates = []
         for comment in comments:

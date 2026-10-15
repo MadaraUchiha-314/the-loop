@@ -67,6 +67,7 @@ STEP_KINDS = frozenset(
         "inner-loop",
         "fail-github",
         "restore-github",
+        "tick",
         "expect",
     }
 )
@@ -75,7 +76,14 @@ STEP_KINDS = frozenset(
 #: tripwire (security consideration 3): a hook reaching for an operation the
 #: e2e world does not model fails loudly instead of silently leaving the world.
 FAKE_OPS = frozenset(
-    {"add-comment", "set-labels", "get-labels", "list-comments", "post-message"}
+    {
+        "add-comment",
+        "set-labels",
+        "get-labels",
+        "list-comments",
+        "post-message",
+        "comment-edits",  # issue-488: who ticked a quiz box
+    }
 )
 
 
@@ -196,6 +204,8 @@ class FakeIntegration:
     def __init__(self) -> None:
         self.calls: List[Tuple[str, Dict[str, Any]]] = []
         self.comments: List[str] = []
+        #: Per comment index, ``[(editor, at), …]`` newest first (issue-488).
+        self.edits: Dict[int, List[Tuple[str, str]]] = {}
         self.labels: List[str] = []  # every successfully applied label, in order
         self.fail_ops: set = set()
 
@@ -217,8 +227,40 @@ class FakeIntegration:
         if op == "get-labels":
             return {"labels": self.labels[-1:] if self.labels else []}
         if op == "list-comments":
-            return {"comments": [{"body": body} for body in self.comments]}
+            return {
+                "comments": [
+                    {"id": f"c{i}", "body": body, "url": f"https://e2e/c{i}"}
+                    for i, body in enumerate(self.comments)
+                ]
+            }
+        if op == "comment-edits":
+            index = int(str(params.get("id") or "c-1")[1:])
+            return {
+                "body": self.comments[index],
+                "url": f"https://e2e/c{index}",
+                "author": "the-loop",
+                "edits": [
+                    {"editor": who, "editedAt": at}
+                    for who, at in self.edits.get(index, [])
+                ],
+            }
         return {}  # post-message (slack): accepted and dropped
+
+    def tick(self, node: str, editor: str) -> None:
+        """Tick the newest quiz box for ``node`` as ``editor`` (issue-488)."""
+        from the_loop.quizmarks import ATTESTATIONS, quiz_marker
+
+        line = ATTESTATIONS[node]
+        for index in range(len(self.comments) - 1, -1, -1):
+            marker = quiz_marker(self.comments[index])
+            if marker and marker["node"] == node:
+                self.comments[index] = self.comments[index].replace(
+                    f"- [ ] {line}", f"- [x] {line}"
+                )
+                stamp = f"2026-01-01T00:00:{len(self.edits.get(index, [])):02d}Z"
+                self.edits.setdefault(index, []).insert(0, (editor, stamp))
+                return
+        raise AssertionError(f"no quiz comment for {node!r} to tick")
 
 
 class _ReplyRunner:
@@ -391,6 +433,15 @@ class ScenarioRun:
                 f"{envelope['status']!r} (expected {expected!r}): "
                 f"{envelope['messages']}"
             )
+
+    def _step_tick(self, params: Dict[str, Any]) -> None:
+        """A person ticks the quiz box; the poller's doorbell re-evaluates the gate."""
+        self.integration.tick(
+            str(params.get("node") or ""), str(params.get("author") or OWNER)
+        )
+        self.runtime.advance(
+            self.scenario.work_item, ref=self.ref, event={"comments": []}
+        )
 
     def _step_advance(self, params: Dict[str, Any]) -> None:
         self.runtime.advance(self.scenario.work_item, ref=self.ref)

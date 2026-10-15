@@ -1,0 +1,259 @@
+<!doctype html>
+<!--
+  the-loop explainer page template (issue-488) — skills/the-loop/templates/explainer.html.
+  Self-contained: no network fetch, no external script, style or font.
+
+  How to fill it (the skill's reference/explainer.md has the rules):
+  - Replace every {{…}} placeholder; keep the depth badge honest (micro|standard|deep).
+  - Fill the TAB CONTENT sections. A page published before code-explainer holds
+    only the two spec tabs: delete the Explainer and Code quiz tabs AND panels.
+  - Fill the QUIZ JSON blocks: 0 (micro) / 3 (standard) / 5 (deep) questions;
+    "answer" is the 0-based index of the correct option; balance positions.
+  - Write tab content as escaped HTML of your own composing. Never paste ticket,
+    comment or diff text as markup — escape it (& < > " ') or put it in <pre>.
+  - Never edit the ENGINE script at the bottom.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{id}} explainer</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --surface: #ffffff; --text: #1d1d1f; --muted: #5b5b66;
+    --border: #e2e0da; --accent: #3b5bdb; --accent-soft: #e8ecfd;
+    --ok: #1e7a46; --ok-soft: #e3f4ea; --no: #b3261e; --no-soft: #fbe7e5;
+    --callout: #fff7e0; --callout-border: #e8c766; --code-bg: #f3f2ee;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #16171b; --surface: #1e2026; --text: #ececf1; --muted: #a3a3b0;
+      --border: #33353d; --accent: #8ea4ff; --accent-soft: #262c45;
+      --ok: #6fd39a; --ok-soft: #173426; --no: #ff8f86; --no-soft: #3a1e1c;
+      --callout: #2c2817; --callout-border: #7a6728; --code-bg: #24262d;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #16171b; --surface: #1e2026; --text: #ececf1; --muted: #a3a3b0;
+    --border: #33353d; --accent: #8ea4ff; --accent-soft: #262c45;
+    --ok: #6fd39a; --ok-soft: #173426; --no: #ff8f86; --no-soft: #3a1e1c;
+    --callout: #2c2817; --callout-border: #7a6728; --code-bg: #24262d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
+  header .meta { color: var(--muted); font-size: 14px; }
+  header h1 { font-size: 26px; line-height: 1.25; margin: 4px 0 8px; }
+  .badge {
+    display: inline-block; padding: 1px 8px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent); font-weight: 600; font-size: 13px;
+  }
+  [role="tablist"] {
+    display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--border);
+    margin: 20px 0 24px;
+  }
+  [role="tab"] {
+    font: inherit; font-size: 15px; background: none; border: 0; color: var(--muted);
+    padding: 8px 12px; border-bottom: 2px solid transparent; cursor: pointer;
+  }
+  [role="tab"][aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+  [role="tab"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  h2 { font-size: 20px; margin: 28px 0 8px; }
+  h3 { font-size: 17px; margin: 20px 0 6px; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
+  code { background: var(--code-bg); padding: 1px 4px; border-radius: 4px; }
+  pre { background: var(--code-bg); padding: 12px; border-radius: 8px; overflow-x: auto; }
+  .callout {
+    background: var(--callout); border-left: 4px solid var(--callout-border);
+    padding: 10px 14px; border-radius: 6px; margin: 14px 0;
+  }
+  .callout strong { display: block; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; margin: 12px 0; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .table-wrap { overflow-x: auto; }
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .compare > div { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  @media (max-width: 560px) { .compare { grid-template-columns: 1fr; } }
+  /* quiz */
+  .progress { color: var(--muted); font-size: 14px; }
+  .q { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin: 14px 0; }
+  .q legend { font-weight: 600; padding: 0; margin-bottom: 8px; }
+  .q fieldset { border: 0; margin: 0; padding: 0; }
+  .opt {
+    display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; margin: 4px 0;
+    border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+  }
+  .opt input { margin-top: 5px; }
+  .opt:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .feedback { margin-top: 10px; padding: 8px 12px; border-radius: 8px; }
+  .feedback.ok { background: var(--ok-soft); }
+  .feedback.no { background: var(--no-soft); }
+  .feedback .verdict { font-weight: 700; }
+  .feedback.ok .verdict { color: var(--ok); }
+  .feedback.no .verdict { color: var(--no); }
+  .note { color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="meta">{{id}} · {{ref}} · <span class="badge">depth: {{depth}}</span></div>
+    <h1>{{work item title}}</h1>
+    <div class="meta">Generated by the-loop from the approved spec. The checked-in spec files stay the source of truth.</div>
+  </header>
+
+  <div role="tablist" aria-label="Explainer sections">
+    <button role="tab" id="tab-spec" aria-controls="panel-spec" aria-selected="true">Spec explainer</button>
+    <button role="tab" id="tab-specquiz" aria-controls="panel-specquiz" aria-selected="false" tabindex="-1">Spec quiz</button>
+    <button role="tab" id="tab-code" aria-controls="panel-code" aria-selected="false" tabindex="-1">Explainer</button>
+    <button role="tab" id="tab-codequiz" aria-controls="panel-codequiz" aria-selected="false" tabindex="-1">Code quiz</button>
+  </div>
+
+  <!-- TAB CONTENT: Spec explainer (spec/plan form: Background = problem space,
+       Intuition = approach, walkthrough of the spec in approval order). -->
+  <section role="tabpanel" id="panel-spec" aria-labelledby="tab-spec">
+    <h2>Background</h2>
+    <p>{{the problem space, delta-only: what the reader does not already know}}</p>
+    <h2>Intuition</h2>
+    <p>{{the approach, and what becomes true if the spec is approved}}</p>
+    <div class="compare">
+      <div><strong>Before</strong><br>{{old behaviour}}</div>
+      <div><strong>After</strong><br>{{new behaviour}}</div>
+    </div>
+    <div class="callout"><strong>{{Definition | Invariant | Edge case}}</strong>{{one fact worth a callout}}</div>
+    <h2>Walkthrough of the spec</h2>
+    <p>{{the spec in approval order: requirements, then design, then the testing plan}}</p>
+  </section>
+
+  <section role="tabpanel" id="panel-specquiz" aria-labelledby="tab-specquiz" hidden>
+    <p class="progress" data-progress="quiz-spec"></p>
+    <div data-quiz="quiz-spec"></div>
+    <p class="note">When you are done, go back to the ticket and tick the box in the-loop's comment.</p>
+  </section>
+
+  <!-- TAB CONTENT: Explainer (code form: Background, Intuition, Code walkthrough
+       by execution flow with file:line excerpts, Risks & limits). Added by the
+       code-explainer node; a page published before it holds only the two spec tabs. -->
+  <section role="tabpanel" id="panel-code" aria-labelledby="tab-code" hidden>
+    <h2>Background</h2>
+    <p>{{the touched components and their prior behaviour}}</p>
+    <h2>Intuition</h2>
+    <p>{{the core idea with a toy example; old vs new}}</p>
+    <h2>Code</h2>
+    <h3>1 · {{first conceptual group, in execution order}}</h3>
+    <p>{{why this group exists and what it does}}</p>
+    <pre>{{path/to/file.py:LINE — an excerpt, escaped}}</pre>
+    <h3>Risks &amp; limits</h3>
+    <p>{{what could break, what was deliberately not done, sharp edges}}</p>
+  </section>
+
+  <section role="tabpanel" id="panel-codequiz" aria-labelledby="tab-codequiz" hidden>
+    <p class="progress" data-progress="quiz-code"></p>
+    <div data-quiz="quiz-code"></div>
+    <p class="note">When you are done, go back to the pull request and tick the box in the-loop's comment.</p>
+  </section>
+</div>
+
+<!-- QUIZ: one JSON block per quiz. "answer" is the index of the correct option.
+     Positions are fixed by the author and balanced across questions. -->
+<script type="application/json" id="quiz-spec">
+{"questions": [
+  {"q": "{{a question about behaviour, causality, a contract or a trade-off}}",
+   "options": ["{{option}}", "{{option}}", "{{option}}", "{{option}}"],
+   "answer": 0,
+   "why": "{{why the answer is right, and what the tempting wrong one misunderstands}}"}
+]}
+</script>
+<script type="application/json" id="quiz-code">
+{"questions": []}
+</script>
+
+<!-- ENGINE: do not edit per work item. Every agent-supplied string is set with
+     textContent; feedback nodes are created only after a selection, so neither
+     styling, option order nor aria labels reveal the answer beforehand. -->
+<script>
+(function () {
+  "use strict";
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
+  function select(tab) {
+    tabs.forEach(function (t) {
+      var on = t === tab;
+      t.setAttribute("aria-selected", on ? "true" : "false");
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+    });
+    tab.focus();
+  }
+  tabs.forEach(function (tab, i) {
+    tab.addEventListener("click", function () { select(tab); });
+    tab.addEventListener("keydown", function (e) {
+      var k = e.key, n = tabs.length, j = null;
+      if (k === "ArrowRight") j = (i + 1) % n;
+      else if (k === "ArrowLeft") j = (i - 1 + n) % n;
+      else if (k === "Home") j = 0;
+      else if (k === "End") j = n - 1;
+      if (j !== null) { e.preventDefault(); select(tabs[j]); }
+    });
+  });
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  document.querySelectorAll("[data-quiz]").forEach(function (host) {
+    var id = host.getAttribute("data-quiz");
+    var source = document.getElementById(id);
+    var data;
+    try { data = JSON.parse(source.textContent); } catch (err) {
+      host.appendChild(el("p", "note", "This quiz could not be loaded."));
+      return;
+    }
+    var progress = document.querySelector('[data-progress="' + id + '"]');
+    var answered = 0, total = data.questions.length;
+    function tally() {
+      if (progress) progress.textContent = answered + " of " + total + " answered";
+    }
+    if (!total) { if (progress) progress.textContent = "No quiz at this depth."; return; }
+    data.questions.forEach(function (item, qi) {
+      var box = el("div", "q");
+      var fs = el("fieldset");
+      fs.appendChild(el("legend", null, (qi + 1) + ". " + item.q));
+      var seen = false, feedback = null;
+      item.options.forEach(function (text, oi) {
+        var label = el("label", "opt");
+        var input = document.createElement("input");
+        input.type = "radio";
+        input.name = id + "-q" + qi;
+        input.value = String(oi);
+        label.appendChild(input);
+        label.appendChild(el("span", null, text));
+        input.addEventListener("change", function () {
+          if (!seen) { seen = true; answered += 1; tally(); }
+          if (feedback) feedback.remove();
+          var right = oi === item.answer;
+          feedback = el("div", "feedback " + (right ? "ok" : "no"));
+          feedback.setAttribute("role", "status");
+          feedback.appendChild(el("span", "verdict", right ? "Correct. " : "Not quite. "));
+          if (!right) {
+            feedback.appendChild(el("span", null, "The answer is: " + item.options[item.answer] + ". "));
+          }
+          feedback.appendChild(el("span", null, item.why));
+          box.appendChild(feedback);
+        });
+        fs.appendChild(label);
+      });
+      box.appendChild(fs);
+      host.appendChild(box);
+    });
+    tally();
+  });
+})();
+</script>
+</body>
+</html>

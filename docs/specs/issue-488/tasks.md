@@ -18,7 +18,7 @@ overrides: {}
 
 ## Task list
 
-- [ ] **A1: the graph.** Add `spec-explainer`, `spec-quiz`, `code-explainer` and
+- [x] **A1: the graph.** Add `spec-explainer`, `spec-quiz`, `code-explainer` and
   `code-quiz` to `pdlc-work-item-loop.yaml`, along with the skip set `explainer`, the
   re-pointed `pass`/`skipped` edges and the `stale` back-edge. Register the new hook
   names as placeholders that `A4` fills in, and add the notify event `quiz-pending` to
@@ -29,7 +29,7 @@ overrides: {}
   - _Requirements:_ R1.2, R1.6, R2.1, R3.1, R3.6
   - _Test:_ T4 (e2e walk through the four nodes, and the `explainer-off` scenario); T10
     `test_frozen_graph_without_quiz_nodes_keeps_walking`
-- [ ] **A2: the checklist row.** In `selection.py`, add `EXPLAINER_TOKEN`, exclude the
+- [x] **A2: the checklist row.** In `selection.py`, add `EXPLAINER_TOKEN`, exclude the
   skip-set members from `_phase_rows`, add the Settings section (rendered only when the
   graph defines the skip set), `_parse_explainer` (absent → on), the four declared skips
   carrying `token: explainer`, the `_frozen_graph` marks and the confirmation line. Pin
@@ -39,7 +39,7 @@ overrides: {}
   - _Requirements:_ R1.1, R1.3, R1.4, R1.5, R1.6, R1.7
   - _Test:_ T1 (row parser, skip provenance, Slack `without`); T6 (checklist and
     confirmation snapshots)
-- [ ] **A3: who edited a comment.** Add `GitHubClient.comment_edits(node_id, host)` (one
+- [x] **A3: who edited a comment.** Add `GitHubClient.comment_edits(node_id, host)` (one
   GraphQL query) returning `GhCommentEdits`, newest edit first. Add the `comment-edits`
   op in `graph/integrations/github.py`; the Jira op set answers `unsupported`.
   - _Depends on:_ none
@@ -47,7 +47,7 @@ overrides: {}
   - _Test:_ T1 `comment_edits` mapping against recorded fixtures in
     `cli/tests/fixtures/github/comment_edits/` (authorized, unauthorized, null editor,
     empty history, error)
-- [ ] **A4: the two hooks.** Write `graph/hooks/quiz.py` with `post-quiz-attestation`
+- [x] **A4: the two hooks.** Write `graph/hooks/quiz.py` with `post-quiz-attestation`
   (record read, spec digest into the marker, ticket or PR fan-out with ticket fallback,
   the view commands for a repo-path `Location`, idempotent marker scan, `block` on a
   missing record) and `quiz-attested` (stale digest → `stale`, GraphQL attribution,
@@ -61,7 +61,7 @@ overrides: {}
     `test_quiz_attested_fails_closed_without_editor`,
     `test_quiz_attested_ignores_unmarked_and_artifact_text`,
     `test_quiz_attested_ignores_forged_comment`
-- [ ] **A5: edits reach the gate.** In the poller, add tick detection before the `seen`
+- [x] **A5: edits reach the gate.** In the poller, add tick detection before the `seen`
   skip, plus `PollState.quizSeen`. In the webhook, rewrite an `issue_comment.edited`
   that carries the quiz marker and a ticked box to `quiz_attestation`, before the
   self-reply guard. In the dispatcher, make `quiz_attestation` delivery-only: it calls
@@ -70,7 +70,7 @@ overrides: {}
   - _Depends on:_ A4
   - _Requirements:_ R2.6, R3.8; design C5
   - _Test:_ T1 (poller keying, webhook rewrite, dispatcher drop)
-- [ ] **A6: the scenarios.** Write `cli/tests/test_quiz_integration.py` with Gherkin
+- [x] **A6: the scenarios.** Write `cli/tests/test_quiz_integration.py` with Gherkin
   docstrings that link the requirements.
   - _Depends on:_ A2, A5
   - _Requirements:_ R1.3, R2.5, R2.6, R3.7, R3.8, R5.6

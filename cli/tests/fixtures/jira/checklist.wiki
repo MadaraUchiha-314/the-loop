@@ -73,6 +73,18 @@ Not a phase, and off unless you tick it. The requirements, design, testing plan 
 
 On any other harness the-loop ignores this box. The markdown files stay the source of truth either way, and every gate still reads them.
 
+h4. 🎓 Explain the change and quiz the author?
+
+*Default:* yes — already ticked. Untick it to skip all three.
+
+* (/) {{explainer}} — a spec explainer and quiz before code generation, an explainer of the change for the reviewer, and a code quiz before review is requested.
+
+*ℹ️ What this means*
+
+The author reads a plain-language explainer of the approved spec and takes a short quiz before any code is generated, then the same for the finished change before review is requested — each time by ticking one box on the-loop's comment. The reviewer starts from the explainer of the change.
+
+Unticked, the four nodes behind it ({{spec-explainer}}, {{spec-quiz}}, {{code-explainer}}, {{code-quiz}}) are declared skipped in your name, like any phase.
+
 h4. 🧵 How many sessions should this work item's pull requests get?
 
 *Default:* {{cross-repository}}, already ticked. *Tick exactly one* to change it.

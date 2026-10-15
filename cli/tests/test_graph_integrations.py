@@ -90,9 +90,13 @@ def test_slack_is_a_named_refusal_pointing_at_channels():
 
 
 def test_the_operations_are_unchanged():
-    """A4 (issue-442): the move added no capability — the same seven operations."""
+    """A4 (issue-442): the move added no capability — the same seven operations.
+
+    issue-488 added the eighth, `comment-edits`: who ticked a quiz box.
+    """
     assert OPERATIONS == frozenset(
         {
+            "comment-edits",
             "add-comment",
             "set-labels",
             "create-label",

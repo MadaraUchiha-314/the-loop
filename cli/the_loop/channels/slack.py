@@ -647,11 +647,12 @@ _PLAIN_ROW = re.compile(
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,74}$")
 
 #: The checklist's rows that are NOT phases: the hook's ``SURFACE_TOKEN`` and
-#: ``CLAUDE_ARTIFACT_TOKEN`` (issue-471), and the prefixes of its
+#: ``CLAUDE_ARTIFACT_TOKEN`` (issue-471), ``EXPLAINER_TOKEN`` (issue-488), and the prefixes of its
 #: ``PR_SESSIONS_TOKENS`` / ``HARNESS_PREFIX`` / ``MODEL_PREFIX`` / ``EFFORT_PREFIX``
 #: rows. Pinned to the hook's by a test, like the marker.
 SURFACE_TOKEN = "outer-loop-on-pull-request"
 CLAUDE_ARTIFACT_TOKEN = "claude-artifact"
+EXPLAINER_TOKEN = "explainer"
 _NON_PHASE_PREFIXES = ("pr-sessions-", "harness-", "model-", "effort-")
 
 #: The control's own ids. A block id under :data:`SELECTION_BLOCK` is part of the
@@ -749,7 +750,9 @@ def selection_rows(text: str) -> Optional[SelectionRows]:
         )
         if token == SURFACE_TOKEN:
             surface = row
-        elif token == CLAUDE_ARTIFACT_TOKEN or token.startswith(_NON_PHASE_PREFIXES):
+        elif token in (CLAUDE_ARTIFACT_TOKEN, EXPLAINER_TOKEN) or token.startswith(
+            _NON_PHASE_PREFIXES
+        ):
             others.append(row)
         else:
             phases.append(row)
