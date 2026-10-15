@@ -295,6 +295,27 @@ There are exactly **two** runtime concepts and **one** contract between them.
     outer loop's graph-context block SHALL then carry one fixed line telling the session
     to publish the spec chain as one Claude artifact. It SHALL NOT route the pointer,
     declare a skip or answer a gate.
+  - The same reply SHALL resolve one more non-phase row, `explainer` (issue-488),
+    rendered **ticked** wherever the graph defines the `explainer` skip set (only
+    `pdlc-work-item-loop`). A row present and unticked SHALL declare `spec-explainer`,
+    `spec-quiz`, `code-explainer` and `code-quiz` skipped, each with `token: explainer`
+    and the replier's name; absent or unreadable SHALL mean on. The four nodes SHALL NOT
+    appear as phase rows.
+- The quiz gates (issue-488, decision-143): WHEN `spec-quiz` or `code-quiz` is entered
+  THEN `post-quiz-attestation` SHALL post one marked checkbox comment linking the
+  agent node's recorded `Location` — on the ticket, or on every open delivering pull
+  request (the ticket when there is none) — carrying the node, its round and, for the
+  spec quiz, a digest of the spec files; a record with no `Location` SHALL block. The
+  exit hook `quiz-attested` SHALL pass only when the latest edit of that comment, as
+  GitHub's GraphQL edit history reports it, was made by an authorized user, or an
+  authorized comment carries the ticked line itself; an unknown editor, a failed query
+  or a forged comment SHALL keep it waiting, and a changed spec SHALL route
+  `spec-quiz` back to `spec-explainer` on `stale`. The poller and an
+  `issue_comment.edited` webhook SHALL ring a waiting gate with a `quiz_attestation`
+  doorbell that renders no prompt and never spawns.
+- WHEN a work item's frozen selection does not list a skippable node of the live graph
+  THEN the runtime SHALL skip it as `not-offered` (issue-488): nobody chose it and nobody
+  declined it, so an in-flight item never waits at a gate it was never offered.
   - The daemon SHALL drive each inner loop from its PR's **own session** (the
     `pullRequests[]` endpoint, `routing.tmux.sessionPerPr`): the endpoint's spawn enters
     the loop at `implementation`, its events advance it, and the work item's outer loop
@@ -1052,6 +1073,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-488 | The explainer and the two quizzes (2026-10-15): four skippable nodes — `spec-explainer` → `spec-quiz` after `design-approval`, `code-explainer` after `security-review`, `code-quiz` before `human-approval` — behind one ticked `explainer` setting row and skip set; `post-quiz-attestation` / `quiz-attested` hooks; the `comment-edits` integration op over GraphQL `userContentEdits`; the poller's tick detection and the webhook's `edited` rewrite into a delivery-only `quiz_attestation` doorbell; `not-offered` skips for nodes a frozen selection never listed | [spec](../specs/issue-488/), [decision-143](../decisions/decision-143.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/488) |
 | issue-475 | Jira joins the control plane (2026-10-06, PR 2): `jiraapi.JiraClient` on the pycontribs `jira` SDK (REST v3/ADF on Cloud, v2/wiki on Data Center, credentials read from env vars at call time, errors and SDK logs scrubbed), `JiraProvider` with GitHub's operations plus `transition` in the contract suite, a `jira` branch in `resolve()`, the `integrations.jira` block at config `0.12.0` with a migration from the stub (a stub with no `site` or `projects` is dropped whole, with a note — it could never pass the schema), and `the-loop doctor jira` | [spec](../specs/issue-475/), [decision-142](../decisions/decision-142.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-472 | The `phase-selection` comment is laid out to be skimmed (2026-10-06): a titled question and a quick start first, then the phases and the non-phase settings as two groups, a heading per question opened by an emoji of its own, each setting's default stated before its rows, and every explanation collapsed under `<details>`. The rows, and so the reply parser and the Slack mirror, are unchanged; the Slack digest unfolds `<details>` and draws a `<summary>` bold. With every section offered, the visible text drops from 989 to 554 words | [spec](../specs/issue-472/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/472) |
 | issue-471 | `phase-selection` offers the spec chain as one Claude artifact (2026-10-06): a non-phase `claude-artifact` row, unticked, offered wherever the surface row is. The signed reply freezes `claudeArtifact` into `work-item-state.json`, the decision record, the frozen graph and the archive — `true` only when ticked and the work item resolves to the `claude` harness (or one the gate cannot know); a tick on another harness is *not applied* and the confirmation names it. The outer loop's graph-context block then carries one fixed line, and the skill carries the procedure. The files stay what every gate reads; an artifact comment never answers a gate. The Slack mirror keeps the row as a non-phase row | [spec](../specs/issue-471/), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/471) |

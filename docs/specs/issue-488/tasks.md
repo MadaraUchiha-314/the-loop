@@ -97,7 +97,7 @@ overrides: {}
   - _Test:_ T1 (the graph's `command:` resolves to `commands/explain.md`; manifest
     validation via `make validate`); the R6 content rules are judged in review
     (`testing-plan.md` § Scenarios)
-- [ ] **B3: the documentation.**
+- [x] **B3: the documentation.**
   - `SKILL.md`: the chain section, and one operating-principles bullet.
   - `reference/workflow.md`: a new section, "The explainer and the quizzes".
   - Capability docs `process-graph.md` and `spec-workflow.md`: behaviour plus history

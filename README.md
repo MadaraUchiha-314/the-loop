@@ -115,6 +115,12 @@ advance on shape alone. They live in `docs/specs/<id>/`, in the
 Evidence is committed under `docs/specs/<id>/evidence/` — a link to a CI run that expires
 is not evidence.
 
+**Understanding is checked, not assumed** (issue-488). Unless its author unticks the
+`explainer` row, a work item gets a plain-language **spec explainer and quiz** before any
+code is generated, and an **explainer of the change and a code quiz** before review is
+requested — the reviewer's starting point. Each quiz is answered by one tick on the-loop's
+comment, which counts only when GitHub names an authorized user as the one who ticked it.
+
 ## The CLI
 
 An extensible Python CLI (in [`cli/`](cli/), one runtime dependency) that both **drives**

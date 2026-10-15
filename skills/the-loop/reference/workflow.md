@@ -307,6 +307,38 @@ yet, so there is nothing to apply there.
    session where the tool is unavailable — ignores the choice and says so once on the
    ticket. Nothing else changes: the files were always the deliverable.
 
+## The explainer and the quizzes (issue-488)
+
+**Understanding is the new bottleneck, so the outer loop teaches and checks it.** Four
+nodes, on by default, all `skippable` and all behind ONE ticked setting row at
+`phase-selection` — `explainer` — so unticking it declares the four skipped under that
+token, with the usual provenance (`the-loop graph skip <id> --node explainer` is the same
+declaration from a shell):
+
+| Node | Actor | Sits | What happens |
+|---|---|---|---|
+| `spec-explainer` | agent | after `design-approval` | `/the-loop:explain` writes a spec-level explainer and quiz, publishes it, and records its `Location` in `evidence/spec-explainer.md` |
+| `spec-quiz` | human | before `tasks-breakdown` | the-loop posts one checkbox on the ticket; an **authorized** tick passes. A spec that changed since the quiz was posted routes back to `spec-explainer` (`stale`) |
+| `code-explainer` | agent | after `security-review` | the explainer of the change — Background, Intuition, Code by execution flow, Risks & limits — and the code quiz; `evidence/explainer.md` |
+| `code-quiz` | human | before `human-approval` | one checkbox on every delivering PR (the ticket when none); an authorized tick on any of them passes |
+
+None carries `phase:` — the label reads `test-planning` / `needs-review` while a quiz
+waits, rather than a label every consuming repository would have to create.
+
+**A tick is attributed, not trusted.** The poller re-reads every thread each cycle, so it
+sees the-loop's own quiz comment change from unticked to ticked and rings the waiting
+gate (an `issue_comment.edited` webhook does the same) — a doorbell that renders no
+prompt and spawns nothing. The gate's hook then asks GitHub's GraphQL edit history who
+made the **latest** edit; only an editor in `routing.authorizedUsers` passes, and an
+unknown editor, a failed query or a forged look-alike comment keeps it waiting
+(decision-143). An authorized comment carrying the ticked line itself is the fallback —
+Jira cannot say who edited. The quiz is self-attested: the-loop records *who said they
+took it*, never a score.
+
+**A work item frozen before these nodes existed** never walks them: a skippable node
+absent from its frozen selection is skipped as `not-offered` — nobody chose it, nobody
+declined it. The page, its depth ladder and its quiz rules: `reference/explainer.md`.
+
 ## Several repositories, one work item (issue-183)
 
 **The outer loop runs where the ticket was created; each contributing repository gets one
