@@ -1459,7 +1459,8 @@ class Poller:
         # body is re-fetched every cycle anyway, so a tick is visible here for
         # the cost of a string check. Only a work item with a live session has
         # a gate to ring; the dispatcher dedupes by comment and body hash.
-        if has_session:
+        # GitHub only: Jira cannot say who ticked, so its quiz asks for a reply.
+        if has_session and item.provider == "github":
             for comment in comments:
                 body = comment.body or ""
                 if (

@@ -20,6 +20,7 @@ from the_loop.authz import mark_self_authored
 from the_loop.ghapi import GhComment, GhCommentEdits, GitHubClient
 from the_loop.graph.contract import HookContext, WorkItem
 from the_loop.graph.hooks import quiz, selection
+from the_loop.graph.integrations.base import OperationUnsupported
 from the_loop.graph.integrations.github import GitHubProvider
 from the_loop.graph.model import load_graph
 from the_loop.graph.runtime import NOT_OFFERED, Runtime
@@ -199,6 +200,27 @@ def test_the_provider_maps_comment_edits():
     client.edits["IC_1"] = GhCommentEdits("b", "u", "the-loop", (("owner", "t"),))
     out = GitHubProvider(client=client).call("comment-edits", ref=REF, id="IC_1")
     assert out["edits"] == [{"editor": "owner", "editedAt": "t"}]
+
+
+def test_on_jira_the_comment_asks_for_the_typed_line():
+    """Jira cannot attribute a tick, so its comment never offers one."""
+    body = quiz._quiz_body(
+        "spec-quiz", "https://claude.ai/artifact/a", 1, "-", "jira:x/A-1"
+    )
+    assert "Reply with this line" in body and "- [ ]" not in body
+    assert not attestation_ticked(body, "spec-quiz")
+
+
+def test_an_unsupported_edit_history_is_refused_not_retried(spec_dir, monkeypatch):
+    class _NoEdits:
+        def call(self, op, **params):
+            raise OperationUnsupported("jira does not report who edited a comment")
+
+    monkeypatch.setattr(quiz, "_resolve", lambda ctx: _NoEdits())
+    verdict = quiz._attributed(
+        _ctx(spec_dir), REF, {"id": "1"}, "spec-quiz", "1", [OWNER]
+    )
+    assert verdict == {"refused": "unsupported"}
 
 
 def test_jira_does_not_claim_to_know_who_edited():

@@ -42,6 +42,7 @@ from ...quizmarks import (
 )
 from ...quizmarks import quiz_marker as _marker
 from ..contract import HookContext, HookResult, Message
+from ..integrations.base import OperationUnsupported
 from ..registry import hook
 
 logger = logging.getLogger("the-loop.graph.quiz")
@@ -251,16 +252,29 @@ def _quiz_body(node: str, location: str, round_: int, digest: str, ref: str) -> 
         ]
     else:
         lines += ["", f"**Open it:** {location}"]
-    lines += [
-        "",
-        f"- [ ] {ATTESTATIONS[node]}",
-        "",
-        "Ticking the box is enough — no reply needed. Only a user authorized for "
-        "this deployment of the-loop can tick it for the work item to move on; "
-        "the quiz itself is yours alone, and the-loop records only who ticked.",
-        "",
-        f"<!-- the-loop:quiz {node} round={round_} digest={digest} -->",
-    ]
+    if ref.startswith("jira:"):
+        # Jira cannot say who edited a comment, so a tick here could never be
+        # attributed: ask for the typed line instead. Inline code, so this very
+        # comment never reads as ticked.
+        lines += [
+            "",
+            f"Reply with this line to move on: `- [x] {ATTESTATIONS[node]}`",
+            "",
+            "Only a user authorized for this deployment of the-loop can answer; "
+            "the quiz itself is yours alone, and the-loop records only who "
+            "replied.",
+        ]
+    else:
+        lines += [
+            "",
+            f"- [ ] {ATTESTATIONS[node]}",
+            "",
+            "Ticking the box is enough — no reply needed. Only a user authorized "
+            "for this deployment of the-loop can tick it for the work item to "
+            "move on; the quiz itself is yours alone, and the-loop records only "
+            "who ticked.",
+        ]
+    lines += ["", f"<!-- the-loop:quiz {node} round={round_} digest={digest} -->"]
     return mark_self_authored("\n".join(lines))
 
 
@@ -430,6 +444,10 @@ def _attributed(
     """
     try:
         found = _resolve(ctx).call("comment-edits", ref=ref, id=str(comment.get("id")))
+    except OperationUnsupported:
+        # Jira: a tick can never be attributed, and retrying will not change
+        # that — refused, not "unverified" (which is a transient fault).
+        return {"refused": "unsupported"}
     except Exception as exc:  # noqa: BLE001 — unverifiable is not verified
         logger.warning("could not read who edited the %s comment: %s", node, exc)
         return {"refused": "unverified"}
