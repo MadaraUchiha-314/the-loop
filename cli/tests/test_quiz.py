@@ -356,13 +356,22 @@ def test_no_event_means_no_github_call(spec_dir, github):
     assert len(github.calls) == calls
 
 
-def test_quiz_attested_refuses_unauthorized_editor(spec_dir, github, caplog):
-    """Abuse case 1: someone not on the allow-list ticks the box."""
+def test_quiz_attested_refuses_unauthorized_editor(
+    spec_dir, github, caplog, monkeypatch
+):
+    """Abuse case 1: someone not on the allow-list ticks the box — and it is recorded."""
+    emitted: List[Any] = []
+    monkeypatch.setattr(
+        quiz.eventlog, "emit", lambda event, **fields: emitted.append((event, fields))
+    )
     _seed(github, _posted_body(spec_dir, github), ticked=True, editors=["mallory"])
     result = quiz.quiz_attested(_ctx(spec_dir, event={"comments": []}))
     assert result.status == "wait"
     assert result.data["refused"] == ["mallory"]
     assert "mallory" in caplog.text
+    refused = [f for e, f in emitted if e == "graph.quiz_refused"]
+    assert refused and refused[0]["editor"] == "mallory"
+    assert refused[0]["node"] == "spec-quiz"
 
 
 def test_the_latest_editor_decides(spec_dir, github):

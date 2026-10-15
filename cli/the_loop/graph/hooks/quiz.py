@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 from urllib.parse import urlparse
 
+from ... import eventlog
 from ...authz import is_authorized, is_self_authored, mark_self_authored
 from ...quizmarks import (
     ATTESTATIONS,
@@ -474,6 +475,14 @@ def _attributed(
             ctx.work_item.ref,
             node,
             editor or "(unknown)",
+        )
+        eventlog.emit(
+            "graph.quiz_refused",
+            level="warning",
+            work_item=ctx.work_item.ref,
+            node=node,
+            editor=editor or None,
+            comment=str(found.get("url") or comment.get("url") or "") or None,
         )
         return {"refused": editor or "unknown"}
     return {"by": editor, "at": str(edits[0].get("editedAt") or "")}

@@ -1032,6 +1032,11 @@ EVENT_TYPES: Dict[str, str] = {
         "question the ticket never received. The CLI prints the same fact as "
         "a warning line; this is where the daemon's operator finds it."
     ),
+    "graph.quiz_refused": (
+        "A quiz box was ticked by someone who may not answer the gate, or by "
+        "an editor GitHub could not name — the gate keeps waiting "
+        "(work_item, node, editor, comment). issue-488 abuse case 1."
+    ),
     "graph.completed": ("A work item reached a terminal node (work_item, node)."),
     "graph.cleaned": (
         "A work item entered the terminal `cleanup` node because the-loop was "
