@@ -102,16 +102,18 @@ def test_the_spec_quiz_gate_obeys_only_an_authorized_tick_on_the_current_spec(
     run_scenario,
 ):
     """
-    Requirement: docs/specs/issue-488/requirements.md#R2
     Scenario: a tick by an unauthorized user is refused
+        Requirement: docs/specs/issue-488/requirements.md#R2.5 (abuse cases 1, 4)
         Given the spec explainer is published and the-loop's quiz comment is posted
         When a user who is not authorized ticks the box, and the owner says "approved"
         Then the work item stays parked at spec-quiz
     Scenario: a changed spec sends the spec quiz back to the explainer
+        Requirement: docs/specs/issue-488/requirements.md#R5.6
         Given the box is ticked by the owner after design.md changed
         When the gate compares the spec with the digest its comment was posted for
         Then the pointer routes back to spec-explainer on the outcome stale
     Scenario: a tick by an authorized user advances the spec quiz
+        Requirement: docs/specs/issue-488/requirements.md#R2.6
         Given the explainer was rewritten and a new round's comment posted
         When the owner ticks the box
         Then the pointer advances to tasks-breakdown
