@@ -413,6 +413,14 @@ and in a daemon.
 - **Secrets.** No new credential. `comment-edits` uses the existing client token, which
   the service holds where a daemon runs. The query needs only read access to the
   repository, which the token already has.
+- **The session cannot tick for the author.** the-loop posts under the operator's own
+  GitHub account. A session holding that token could edit its own quiz comment, and
+  GraphQL would name the operator, an authorized user, as the editor. Since issue-482,
+  spawned sessions never receive a secret: the daemon's service holds the token, and no
+  verb edits a comment. So a session has no path to tick. The skill also states the rule
+  outright: never tick an attestation box. This is the same trust the existing gates
+  already rest on, since an unmarked "approved" posted with the operator's token would
+  pass `classify-feedback` too.
 - **Least privilege.** The new event kind cannot spawn or arm. It can only re-evaluate a
   gate that is already waiting.
 - **Fail closed.** A missing editor, a failed query, a marker mismatch or an unknown
