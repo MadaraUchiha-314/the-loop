@@ -75,7 +75,7 @@ overrides: {}
   - _Depends on:_ A2, A5
   - _Requirements:_ R1.3, R2.5, R2.6, R3.7, R3.8, R5.6
   - _Test:_ T2: the six `Scenario:` titles in `testing-plan.md`
-- [ ] **B1: the page template.** Create `skills/the-loop/templates/explainer.html` from
+- [x] **B1: the page template.** Create `skills/the-loop/templates/explainer.html` from
   the approved prototype: placeholder tab content, an empty `QUIZ` block, and the engine
   unchanged. Add the check script `docs/specs/issue-488/evidence/ui/check.mjs`
   (Playwright plus axe-core), and a fixture fill that puts a `<script>` string in one

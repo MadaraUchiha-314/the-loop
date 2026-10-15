@@ -9,6 +9,8 @@
     only the two spec tabs: delete the Explainer and Code quiz tabs AND panels.
   - Fill the QUIZ JSON blocks: 0 (micro) / 3 (standard) / 5 (deep) questions;
     "answer" is the 0-based index of the correct option; balance positions.
+    Inside a QUIZ block write every "<" as \u003c — a literal "</script>" in
+    any string ends the block early and turns the rest into live markup.
   - Write tab content as escaped HTML of your own composing. Never paste ticket,
     comment or diff text as markup — escape it (& < > " ') or put it in <pre>.
   - Never edit the ENGINE script at the bottom.
@@ -98,7 +100,7 @@
 </style>
 </head>
 <body>
-<div class="wrap">
+<main class="wrap">
   <header>
     <div class="meta">{{id}} · {{ref}} · <span class="badge">depth: {{depth}}</span></div>
     <h1>{{work item title}}</h1>
@@ -155,7 +157,7 @@
     <div data-quiz="quiz-code"></div>
     <p class="note">When you are done, go back to the pull request and tick the box in the-loop's comment.</p>
   </section>
-</div>
+</main>
 
 <!-- QUIZ: one JSON block per quiz. "answer" is the index of the correct option.
      Positions are fixed by the author and balanced across questions. -->
