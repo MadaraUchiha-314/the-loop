@@ -99,24 +99,41 @@ check the first real explainer this feature produces, its own (see Evidence plan
 
 ## Verification activities
 
-- [ ] T1, T4, T6, T8, T10: `make test`, all green, new tests named in `unit.md`
-- [ ] T2: `make test`, then `the-loop scenarios --glob 'cli/tests/test_quiz_integration.py' --format markdown` captured into `integration.md`
-- [ ] T3 parity: `test_api_contract_parity.py` green within `make test` (no new route)
-- [ ] T5: `node docs/specs/issue-488/evidence/ui/check.mjs skills/the-loop/templates/explainer.html` reports 0 feedback before select, 0 network requests, 0 page errors, no overflow at 375 px; screenshots and GIF committed
-- [ ] T9: the same script's axe pass reports 0 serious or critical violations; keyboard tab walk recorded
+- [x] T1, T4, T6, T8, T10: `make test`, all green, new tests named in `unit.md`
+- [x] T2: `make test`, then `the-loop scenarios --glob 'cli/tests/test_quiz_integration.py' --format markdown` captured into `integration.md`
+- [x] T3 parity: `test_api_contract_parity.py` green within `make test` (no new route)
+- [x] T5: `node docs/specs/issue-488/evidence/ui/check.mjs skills/the-loop/templates/explainer.html` reports 0 feedback before select, 0 network requests, 0 page errors, no overflow at 375 px; screenshots and GIF committed
+- [x] T9: the same script's axe pass reports 0 serious or critical violations; keyboard tab walk recorded
 - [ ] T11: live attribution on a sandbox issue. Post a quiz comment with `the-loop comment`, the owner ticks it, and `comment_edits` returns the owner's login as the newest editor
 - [ ] T11: `grep -nEi 'gh[pousr]_[A-Za-z0-9]{20,}|token|cookie|@[a-z0-9.-]+\.(internal|corp|local)'` over any committed explainer HTML returns nothing
-- [ ] Lint parity: `make lint` and `make typecheck` green (pre-commit = CI)
+- [x] Lint parity: `make lint` and `make typecheck` green (pre-commit = CI)
 
 ## Verification results
 
-*Not yet executed.*
+Executed at the `verification` node, 2026-10-15, on the PR #489 head.
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1, T4, T6, T8, T10 | `cd cli && env -u THE_LOOP_CLI_CONFIG uv run python -m pytest -q` | **pass.** 6116 passed. The one failure, the PR-briefing Jira golden, was this change's own new line; it was regenerated, reviewed, and 42/42 then pass | [unit.md](evidence/unit.md) |
+| T2 | `pytest tests/test_quiz_integration.py tests/test_pdlc_e2e_integration.py`, then `the-loop scenarios … --format markdown` | **pass.** 22 passed, with the issue-488 scenarios linked to their requirements | [integration.md](evidence/integration.md) |
+| T3 parity | `test_api_contract_parity.py`, inside the full run | **pass.** No route or MCP tool was added | [unit.md](evidence/unit.md) |
+| T5 | `node docs/specs/issue-488/evidence/ui/check.mjs skills/the-loop/templates/explainer.html …` | **pass,** after one fix found by the check itself: a `</script>` inside a `QUIZ` block broke the page, and the template now requires `\u003c` | [ui/check.md](evidence/ui/check.md), screenshots, [quiz-flow.gif](evidence/ui/quiz-flow.gif) |
+| T9 | axe-core inside the same run, plus the keyboard walk | **pass.** 0 violations, after wrapping the content in `<main>` | [ui/a11y.md](evidence/ui/a11y.md) |
+| Lint parity | `make lint`, `make typecheck` (with `PYRIGHT_PYTHON_FORCE_VERSION=latest`), `make format-check`, `make validate` | **pass.** 0 lint errors over 1659 markdown files, ruff clean, pyright clean, 452 files formatted, 6 configs valid | this table |
+| T11 live attribution | a sandbox quiz box on PR #489, ticked by the owner, read back through `comment_edits` | **pending.** Waiting on @MadaraUchiha-314: the tick, and how the edit history may be read | [the ask](https://github.com/MadaraUchiha-314/the-loop/pull/489#issuecomment-6199247862) |
+| T11 redaction grep | a grep over any committed explainer HTML | **pending.** This work item's own explainer is written during review | — |
 
-**Not executed:** none yet.
+**Departures from the plan:**
+
+- **T4.** No separate `explainer-off` scenario. The existing `trivial-tier` scenario now
+  unticks the row and asserts the four skips. `quiz-gates` was added for the gate
+  behaviour instead.
+- **Tests run with `THE_LOOP_CLI_CONFIG` unset.** The machine's operator config otherwise
+  fails 21 unrelated tests, which fail identically on `main`.
+- **55 UI tests (vitest) fail.** They fail identically with and without this change's one
+  UI edit (`ui/src/demo/fixture.ts`). Typecheck and lint pass.
+
+**Not executed:** T11. It waits on the owner, as above.
 
 ## Review comments
 
