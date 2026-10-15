@@ -302,17 +302,24 @@ There are exactly **two** runtime concepts and **one** contract between them.
     and the replier's name; absent or unreadable SHALL mean on. The four nodes SHALL NOT
     appear as phase rows.
 - The quiz gates (issue-488, decision-143): WHEN `spec-quiz` or `code-quiz` is entered
-  THEN `post-quiz-attestation` SHALL post one marked checkbox comment linking the
-  agent node's recorded `Location` — on the ticket, or on every open delivering pull
-  request (the ticket when there is none) — carrying the node, its round and, for the
-  spec quiz, a digest of the spec files; a record with no `Location` SHALL block. The
-  exit hook `quiz-attested` SHALL pass only when the latest edit of that comment, as
-  GitHub's GraphQL edit history reports it, was made by an authorized user, or an
-  authorized comment carries the ticked line itself; an unknown editor, a failed query
-  or a forged comment SHALL keep it waiting, and a changed spec SHALL route
-  `spec-quiz` back to `spec-explainer` on `stale`. The poller and an
-  `issue_comment.edited` webhook SHALL ring a waiting gate with a `quiz_attestation`
-  doorbell that renders no prompt and never spawns.
+  THEN `post-quiz-attestation` SHALL post one marked comment linking the agent node's
+  recorded `Location` — on the ticket, or on every open delivering pull request (the
+  ticket when there is none) — carrying the node, its round and, for the spec quiz, a
+  digest of the spec files; a record with no `Location` SHALL block. On GitHub the
+  comment holds one checkbox; on Jira, which cannot say who edited a comment, it asks
+  for the line as a reply instead. At `micro` depth (the record's `Depth`) the line
+  attests reading only, and only the line for the record's depth counts. The exit hook
+  `quiz-attested` SHALL count a quiz comment only when an authorized login wrote it
+  (the-loop posts as the operator) or, on Jira, the service account did; it SHALL pass
+  only when the latest edit of that comment, as GitHub's GraphQL edit history reports
+  it, was made by an authorized user, or an authorized comment carries the ticked line
+  itself. An unknown editor, a failed query or a forged comment SHALL keep it waiting,
+  with a refused tick emitted as `graph.quiz_refused`; a changed spec SHALL route
+  `spec-quiz` back to `spec-explainer` on `stale`; a comment that never landed SHALL be
+  posted again by the exit hook. The poller and an `issue_comment.edited` webhook SHALL
+  ring a waiting gate with a `quiz_attestation` doorbell that renders no prompt and
+  never spawns, deduplicated per tick (an untick and re-tick rings again; an unchanged
+  tick does not).
 - WHEN a work item's frozen selection does not list a skippable node of the live graph
   THEN the runtime SHALL skip it as `not-offered` (issue-488): nobody chose it and nobody
   declined it, so an in-flight item never waits at a gate it was never offered.
