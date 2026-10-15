@@ -41,6 +41,7 @@ from ...quizmarks import (
     UNVERIFIED,
     attestation_ticked,
     is_quiz_comment,
+    quiz_marker_text,
 )
 from ...quizmarks import quiz_marker as _marker
 from ..contract import HookContext, HookResult, Message
@@ -178,18 +179,24 @@ def _ours(
     login. the-loop posts under the operator's own account (decision-023), so
     its real comment passes; a look-alike from anyone else is not a quiz
     comment at all — it can neither hide the real box nor fake a stale spec.
+    On Jira the integration itself says which comments its service account
+    wrote, which is the same fact read from the source.
     """
     out = []
     for comment in comments:
         body = str(comment.get("body") or "")
         marker = _marker(body)
         author = _author(comment)
+        # Jira names the service account's own comments (`isSelf`); on GitHub
+        # the-loop's login is the operator's, which must be authorized.
+        written_by_us = comment.get("isSelf") is True or bool(
+            author and is_authorized(author, list(allowed))
+        )
         if (
             marker
             and marker["node"] == node
             and is_self_authored(body)
-            and author
-            and is_authorized(author, list(allowed))
+            and written_by_us
         ):
             out.append((comment, marker))
     return out
@@ -302,7 +309,7 @@ def _quiz_body(
             "move on; the quiz itself is yours alone, and the-loop records only "
             "who ticked.",
         ]
-    lines += ["", f"<!-- the-loop:quiz {node} round={round_} digest={digest} -->"]
+    lines += ["", quiz_marker_text(node, round_, digest)]
     return mark_self_authored("\n".join(lines))
 
 

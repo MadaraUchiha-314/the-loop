@@ -134,6 +134,9 @@ class JiraProvider:
                     "createdAt": c.created,
                     "html_url": c.url,
                     "url": c.url,
+                    # The service account wrote it: the-loop's own, judged by
+                    # who posted it rather than by a body anyone can copy.
+                    "isSelf": bool(c.is_self),
                 }
             )
         return {"comments": listed}

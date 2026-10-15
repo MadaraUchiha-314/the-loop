@@ -19,14 +19,18 @@ __all__ = [
     "attestation_ticked",
     "is_quiz_comment",
     "quiz_marker",
+    "quiz_marker_text",
 ]
 
 #: Every quiz comment carries this — the poller's cheap first test.
-QUIZ_MARKER_PREFIX = "<!-- the-loop:quiz "
+QUIZ_MARKER_PREFIX = "<!-- the-loop:quiz:"
 
+#: One colon-separated name, the only marker shape Jira's format keeps
+#: (``jiraformat``: ``the-loop:[a-z0-9:-]*``) — spaces or ``=`` would be dropped
+#: as an ordinary HTML comment on the way to Jira, and the marker lost.
 _MARKER = re.compile(
-    r"<!-- the-loop:quiz (?P<node>[a-z0-9-]+) round=(?P<round>\d+) "
-    r"digest=(?P<digest>[0-9a-f]{12}|-) -->"
+    r"<!--\s*the-loop:quiz:(?P<node>[a-z0-9-]+):r(?P<round>\d+)"
+    r":d(?P<digest>[0-9a-f]{12}|-)\s*-->"
 )
 
 #: What a quiz gate says when it could not ask GitHub who ticked — a transient
@@ -49,6 +53,11 @@ READ_ONLY: Dict[str, str] = {
 _BOX = re.compile(
     r"^[ \t]*[-*][ \t]+\[(?P<mark>[ xX])\][ \t]+(?P<text>.+?)[ \t]*$", re.M
 )
+
+
+def quiz_marker_text(node: str, round_: int, digest: str) -> str:
+    """The marker a quiz comment carries — the producer of :func:`quiz_marker`."""
+    return f"<!-- the-loop:quiz:{node}:r{round_}:d{digest} -->"
 
 
 def is_quiz_comment(body: str) -> bool:

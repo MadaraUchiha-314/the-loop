@@ -39,8 +39,7 @@ LINE = ATTESTATIONS["spec-quiz"]
 def _quiz_body(ticked: bool) -> str:
     mark = "x" if ticked else " "
     return mark_self_authored(
-        f"🎓 Spec quiz\n\n- [{mark}] {LINE}\n\n"
-        "<!-- the-loop:quiz spec-quiz round=1 digest=- -->"
+        f"🎓 Spec quiz\n\n- [{mark}] {LINE}\n\n<!-- the-loop:quiz:spec-quiz:r1:d- -->"
     )
 
 
@@ -219,7 +218,7 @@ def test_the_poller_stays_quiet_for_an_unticked_box_or_a_human_look_alike(tmp_pa
         Then no quiz doorbell is handed to the dispatcher
     """
     quiet = _poll(tmp_path / "a", _quiz_body(False)).events
-    forged = f"- [x] {LINE}\n<!-- the-loop:quiz spec-quiz round=1 digest=- -->"
+    forged = f"- [x] {LINE}\n<!-- the-loop:quiz:spec-quiz:r1:d- -->"
     look_alike = _poll(tmp_path / "b", forged).events
     assert not [e for e in quiet + look_alike if e.event == QUIZ_ATTESTATION_EVENT]
 

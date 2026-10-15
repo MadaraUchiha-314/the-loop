@@ -189,6 +189,9 @@ class GitHubProvider:
                     "createdAt": c.created_at,
                     "html_url": c.url,
                     "url": c.url,
+                    # GitHub cannot say: the-loop posts as the operator, so a
+                    # gate asks whether the author is authorized instead.
+                    "isSelf": False,
                 }
                 for c in comments
             ]

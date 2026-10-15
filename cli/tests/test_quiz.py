@@ -223,6 +223,30 @@ def test_an_unsupported_edit_history_is_refused_not_retried(spec_dir, monkeypatc
     assert verdict == {"refused": "unsupported"}
 
 
+@pytest.mark.parametrize("rest_version", ["3", "2"])
+def test_the_quiz_marker_survives_the_trip_through_jira(rest_version):
+    """Jira keeps only colon-named markers; the quiz's must be one of them."""
+    from the_loop.jiraformat import from_jira, to_jira
+
+    body = quiz._quiz_body(
+        "spec-quiz", "https://claude.ai/artifact/a", 2, "-", "jira:x/A-1"
+    )
+    read_back = from_jira(to_jira(body, rest_version))
+    assert quiz_marker(read_back) == {"node": "spec-quiz", "round": "2", "digest": "-"}
+
+
+def test_on_jira_the_service_accounts_comment_is_ours(spec_dir):
+    """`isSelf` (the service account wrote it) stands in for the authorized login."""
+    body = quiz._quiz_body(
+        "spec-quiz", "https://claude.ai/artifact/a", 1, "-", "jira:x/A-1"
+    )
+    mine = {"id": "1", "body": body, "author": {"login": "jira:svc"}, "isSelf": True}
+    other = {"id": "2", "body": body, "author": {"login": "jira:svc"}}
+    assert [c["id"] for c, _ in quiz._ours([mine, other], "spec-quiz", [OWNER])] == [
+        "1"
+    ]
+
+
 def test_jira_does_not_claim_to_know_who_edited():
     from the_loop.graph.integrations.base import OperationUnsupported
     from the_loop.graph.integrations.jira import JiraProvider
@@ -402,7 +426,7 @@ def test_quiz_attested_ignores_forged_comment(spec_dir, github):
     """Abuse case 6: a look-alike comment without the-loop's own marker."""
     forged = (
         f"- [x] {SPEC_LINE}\n\n"
-        f"<!-- the-loop:quiz spec-quiz round=1 digest={quiz.spec_digest(spec_dir, DIGEST)} -->"
+        f"<!-- the-loop:quiz:spec-quiz:r1:d{quiz.spec_digest(spec_dir, DIGEST)} -->"
     )
     _seed(github, forged, ticked=True, editors=[OWNER])
     assert quiz.quiz_attested(_ctx(spec_dir, event={"comments": []})).status == "wait"
@@ -443,7 +467,7 @@ def test_a_comment_that_never_landed_is_posted_by_the_gate(spec_dir, github):
     ctx = _ctx(spec_dir, params=params, event={"comments": []})
     result = quiz.quiz_attested(ctx)
     assert result.status == "wait" and "again" in str(result.messages)
-    assert len(github.posted) == 1 and "the-loop:quiz spec-quiz" in github.posted[0][3]
+    assert len(github.posted) == 1 and "the-loop:quiz:spec-quiz:" in github.posted[0][3]
 
 
 def test_a_micro_page_asks_the_author_to_attest_reading_only(spec_dir, github):
@@ -647,7 +671,7 @@ def _edited(body: str) -> Dict[str, Any]:
 
 def test_an_edited_own_quiz_comment_becomes_the_doorbell():
     body = mark_self_authored(
-        f"- [x] {SPEC_LINE}\n<!-- the-loop:quiz spec-quiz round=1 digest=- -->"
+        f"- [x] {SPEC_LINE}\n<!-- the-loop:quiz:spec-quiz:r1:d- -->"
     )
     routed = _router().route("issue_comment", _edited(body), "d1")
     assert routed is not None and routed.event == QUIZ_ATTESTATION_EVENT
@@ -658,7 +682,7 @@ def test_an_edited_own_quiz_comment_becomes_the_doorbell():
 
 def test_other_edits_of_own_comments_are_still_dropped():
     body = mark_self_authored(
-        f"- [ ] {SPEC_LINE}\n<!-- the-loop:quiz spec-quiz round=1 digest=- -->"
+        f"- [ ] {SPEC_LINE}\n<!-- the-loop:quiz:spec-quiz:r1:d- -->"
     )
     assert _router().route("issue_comment", _edited(body), "d2") is None
     assert (
@@ -668,7 +692,7 @@ def test_other_edits_of_own_comments_are_still_dropped():
 
 
 def test_a_human_comment_that_looks_like_a_quiz_is_not_the_doorbell():
-    body = f"- [x] {SPEC_LINE}\n<!-- the-loop:quiz spec-quiz round=1 digest=- -->"
+    body = f"- [x] {SPEC_LINE}\n<!-- the-loop:quiz:spec-quiz:r1:d- -->"
     routed = _router().route("issue_comment", _edited(body), "d4")
     assert routed is None or routed.event != QUIZ_ATTESTATION_EVENT
 
