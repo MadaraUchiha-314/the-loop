@@ -87,15 +87,17 @@ QUIZ_ATTESTATION_EVENT = "quiz_attestation"
 
 
 def quiz_attestation_event(
-    work_items: "List[WorkItemRef]", comment_id: str, body: str
+    work_items: "List[WorkItemRef]", comment_id: str, body: str, version: str = ""
 ) -> "RoutedEvent":
-    """The doorbell for one ticked quiz comment, deduplicated by its body.
+    """The doorbell for one ticked quiz comment, deduplicated per tick.
 
-    Keyed on the comment AND a hash of its body, so one tick seen by both the
-    poller and a webhook rings once. Unticking and re-ticking yields the same
-    body, so the dispatcher releases the id whenever the gate did not pass —
-    the next cycle may ring again. ``node`` is the gate the marker names: it
-    only says WHICH gate to look at, and the gate's own hook decides.
+    Keyed on the comment, a hash of its body AND ``version``: unticking and
+    re-ticking restores the very same body, so the body alone cannot tell a
+    new tick from the old one. The poller counts the unticks it saw; a webhook
+    passes the comment's ``updated_at``. The dispatcher keeps the id once the
+    gate has judged it — a refused tick is not re-judged every cycle — and
+    releases it only on a transient fault. ``node`` is the gate the marker
+    names: it only says WHICH gate to look at, and the gate's own hook decides.
     """
     import hashlib
 
@@ -106,7 +108,7 @@ def quiz_attestation_event(
     return RoutedEvent(
         event=QUIZ_ATTESTATION_EVENT,
         action="ticked",
-        delivery_id=f"quiz-{comment_id}-{digest}",
+        delivery_id=f"quiz-{comment_id}-{digest}-{version}",
         work_items=list(work_items),
         payload={
             "attestation": {
@@ -951,7 +953,10 @@ class Router:
             ):
                 comment = payload.get("comment") or {}
                 return quiz_attestation_event(
-                    work_items, str(comment.get("node_id") or comment.get("id")), body
+                    work_items,
+                    str(comment.get("node_id") or comment.get("id")),
+                    body,
+                    f"e{comment.get('updated_at') or ''}",
                 )
         # Self-reply guard (issue-64): the-loop's own replies are posted under
         # the operator's own credentials, so they would otherwise pass the

@@ -34,6 +34,7 @@ from ..instance import (
     parse_address,
 )
 from ..authz import is_authorized, is_authorized_on, mark_self_authored
+from ..quizmarks import UNVERIFIED
 from ..comments import post_issue_comment
 from ..cleanup import CleanupOutcome, cleanup_work_item
 from ..collaborators import CollaboratorStore
@@ -3822,14 +3823,17 @@ class Dispatcher:
                 continue
             if session.is_paused or ctx is None or not ctx.at_human_gate:
                 # Not yet ringable — paused, unreadable, or the gate not yet
-                # entered. Release the id so a later cycle rings again.
+                # entered. Release the id so a later cycle rings again; quietly,
+                # since this repeats each cycle until the gate is reachable.
                 self._release(routed)
-                continue
+                return
             report = self.graphlink.on_event(session.work_item, session.cwd, routed)
-            if report is None or not getattr(report, "satisfied", False):
-                # A fault, an unverifiable editor, or a refused tick. Unticking
-                # and re-ticking produces the very same body — and so the same
-                # id — so keeping it would swallow the author's real tick.
+            if report is None or any(
+                UNVERIFIED in str(m) for m in getattr(report, "messages", [])
+            ):
+                # A fault, or GitHub would not say who ticked: transient, so
+                # release the id and let the next cycle ring again. A refused
+                # tick KEEPS its id — a re-tick is a new version, and a new id.
                 self._release(routed)
             eventlog.emit(
                 "dispatch.quiz_gate",

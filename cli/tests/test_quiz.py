@@ -745,3 +745,16 @@ def test_every_shipped_node_command_names_a_slash_command_file():
         if node.command:
             assert (commands / f"{node.command}.md").is_file(), node.command
     assert load_graph().nodes["code-explainer"].command == "explain"
+
+
+def test_a_gate_re_judged_the_same_way_keeps_when_it_parked(tmp_path):
+    """S9: a wait repeated with the same reason is not a fresh park."""
+    state = WorkItemState(work_item="issue-7")
+    state.park("spec-quiz", "waiting for the author to tick the quiz box")
+    first = dict(state.parked or {})
+    state.parked = {**first, "since": "2026-01-01T00:00:00Z"}
+    state.park("spec-quiz", "waiting for the author to tick the quiz box")
+    assert (state.parked or {}).get("since") == "2026-01-01T00:00:00Z"
+    assert first["since"]
+    state.park("spec-quiz", "the box was ticked by someone not authorized to answer")
+    assert (state.parked or {}).get("since") != "2026-01-01T00:00:00Z"

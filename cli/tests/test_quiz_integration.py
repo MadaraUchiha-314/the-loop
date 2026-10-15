@@ -132,16 +132,50 @@ def test_a_refused_tick_does_not_swallow_the_authors_re_tick(tmp_path):
     Requirement: docs/specs/issue-488/requirements.md#R2.6
     Scenario: the author re-ticks after an unauthorized tick was refused
         Given a session parked at the spec quiz, whose first tick was refused
-        When the box is unticked and ticked again, producing the same body
-        Then the gate is asked again rather than the ring being a duplicate
+        When the same tick is seen again, and then the box is unticked and re-ticked
+        Then the unchanged tick is not re-judged, and the re-tick is
     """
     link = _SeqLink(ctx=QUIZ_CTX, report=_Waiting())
     registry, dispatcher, _tmux = _dispatcher(tmp_path, link)
     registry.register(_session())
-    dispatcher.handle(_doorbell(_quiz_body(True)))
-    dispatcher.handle(_doorbell(_quiz_body(True)))
+    ticked = _quiz_body(True)
+    ring = lambda version: quiz_attestation_event(  # noqa: E731
+        [WorkItemRef.parse(DRIVE_REF)], "IC_9", ticked, version
+    )
+    dispatcher.handle(ring("u0"))
+    dispatcher.handle(ring("u0"))  # the next poll cycle, nothing changed
+    dispatcher.handle(ring("u1"))  # unticked, then ticked again
     dispatcher.stop()
     assert link.seq.count("advance") == 2
+
+
+def test_the_poller_versions_a_re_tick(tmp_path):
+    """
+    Requirement: docs/specs/issue-488/requirements.md#R2.6
+    Scenario: the poller tells a re-tick from the same tick seen again
+        Given the-loop's ticked quiz comment, polled twice, then unticked, then ticked
+        When each poll cycle reads it
+        Then the two unchanged sightings share one doorbell id and the re-tick has another
+    """
+    provider = FakeProvider(
+        items=[_item(15)],
+        comments={15: [_comment("IC_9", body=_quiz_body(True), author="octocat")]},
+    )
+    registry = SessionRegistry(tmp_path / "sessions")
+    registry.register(_session())
+    dispatcher = RecordingDispatcher(registry=registry)
+    poller = make_poller(
+        provider, registry, dispatcher, PollState(WorkItemStore(tmp_path / "p"))
+    )
+    for ticked in (True, True, True, False, True):  # the first cycle baselines
+        provider._comments[15] = [
+            _comment("IC_9", body=_quiz_body(ticked), author="octocat")
+        ]
+        poller.poll_once()
+    ids = [
+        e.delivery_id for e in dispatcher.events if e.event == QUIZ_ATTESTATION_EVENT
+    ]
+    assert len(ids) == 3 and ids[0] == ids[1] != ids[2]
 
 
 def test_a_passed_gate_is_rung_once(tmp_path):

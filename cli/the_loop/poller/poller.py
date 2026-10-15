@@ -40,7 +40,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from .. import __version__, eventlog
 from ..authz import (
@@ -781,6 +781,11 @@ class Poller:
         self._control = control
         self._control_store = control_store
         self._collaborator_store = collaborator_store
+        # issue-488: per quiz comment, how many times the poller has seen its
+        # box go from ticked to unticked — the doorbell's version, so a re-tick
+        # (the very same body) rings again while an unchanged tick does not.
+        self._quiz_ticked: Set[str] = set()
+        self._quiz_untick: Dict[str, int] = {}
         self._closure_store: Optional[ControlStore] = None
         # Work items whose abandoned comments this *run* has already considered
         # re-arming (issue-146) — the check is once per item per run, and the
@@ -1458,20 +1463,30 @@ class Poller:
         # below baselines it on first sight and never reads it again — but its
         # body is re-fetched every cycle anyway, so a tick is visible here for
         # the cost of a string check. Only a work item with a live session has
-        # a gate to ring; the dispatcher dedupes by comment and body hash.
+        # a gate to ring; the dispatcher dedupes by comment, body and version,
+        # so an unchanged tick rings once rather than every cycle.
         # GitHub only: Jira cannot say who ticked, so its quiz asks for a reply.
         if has_session and item.provider == "github":
             for comment in comments:
                 body = comment.body or ""
-                if (
+                if not (
                     comment.id
                     and is_quiz_comment(body)
-                    and attestation_ticked(body)
                     and provider.comment_origin(comment) == ORIGIN_SELF
                 ):
-                    self.dispatcher.handle(
-                        quiz_attestation_event(refs, comment.id, body)
-                    )
+                    continue
+                if not attestation_ticked(body):
+                    if comment.id in self._quiz_ticked:
+                        self._quiz_ticked.discard(comment.id)
+                        self._quiz_untick[comment.id] = (
+                            self._quiz_untick.get(comment.id, 0) + 1
+                        )
+                    continue
+                self._quiz_ticked.add(comment.id)
+                version = f"u{self._quiz_untick.get(comment.id, 0)}"
+                self.dispatcher.handle(
+                    quiz_attestation_event(refs, comment.id, body, version)
+                )
 
         seen = self.state.seen_comments(ref)
         candidates = []
