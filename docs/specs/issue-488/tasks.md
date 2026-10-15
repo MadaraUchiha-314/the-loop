@@ -110,19 +110,16 @@ overrides: {}
   - _Depends on:_ A2, A4, B2
   - _Requirements:_ NFR documentation
   - _Test:_ `make lint` (markdown across the repo); `make validate`
-- [ ] **C1: verify.** Run `testing-plan.md`: T1–T11. T11 needs @MadaraUchiha-314 to tick
-  a sandbox quiz comment; ask for it on PR #489 with `the-loop ask`. Commit the evidence
-  under `evidence/`.
-  - _Depends on:_ A6, B1, B2, B3
-  - _Requirements:_ all
-  - _Test:_ every activity in `testing-plan.md` § Verification activities
-- [ ] **C2: review and ship.** Self-review rounds, critic rounds, the security review,
-  this work item's own explainer and code quiz, the documentation record, and the
-  reviewer briefing on PR #489.
-  - _Depends on:_ C1
-  - _Requirements:_ all
-  - _Test:_ the review-chain records (`evidence/self-review.md`, `critic-review.md`,
-    `security-review.md`, `explainer.md`, `documentation.md`, `final-validation.md`)
+> **Not implementation tasks.** C1 and C2 were listed here at first, but they are the
+> work of the graph's own `verification` node and review chain, and `implementation`
+> gates on every box in this list. They are kept as a note so the plan still reads end to
+> end.
+>
+> - **C1: verify.** The `verification` node runs `testing-plan.md` T1–T11. T11 needs
+>   @MadaraUchiha-314 to tick a sandbox quiz comment.
+> - **C2: review and ship.** The review chain: self-review, critic review, the security
+>   review, this work item's own explainer and code quiz, documentation, and the
+>   reviewer briefing on PR #489.
 
 ## Dependency graph (DAG)
 
@@ -135,9 +132,9 @@ flowchart LR
   B1 --> B2 --> B3
   A2 --> B3
   A4 --> B3
-  A6 --> C1
-  B1 --> C1
-  B3 --> C1 --> C2
+  A6 --> V[verification node]
+  B1 --> V
+  B3 --> V
 ```
 
 A1, A3 and B1 have no dependencies and can start in parallel.
