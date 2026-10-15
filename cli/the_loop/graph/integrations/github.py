@@ -42,6 +42,8 @@ OPERATIONS: FrozenSet[str] = frozenset(
         "get-labels",
         "list-comments",
         "get-thread",
+        # issue-488: who ticked a quiz box. Takes a comment node id, not a ref.
+        "comment-edits",
     }
 )
 
@@ -112,6 +114,17 @@ class GitHubProvider:
     def call(self, op: str, **params: Any) -> Dict[str, Any]:
         if op not in self.operations:
             raise OperationUnsupported(f"github does not implement {op!r}")
+        if op == "comment-edits":
+            host = _ref_parts(str(params["ref"]))[0]
+            found = self._run(
+                lambda: self.client.comment_edits(str(params["id"]), host=host)
+            )
+            return {
+                "body": found.body,
+                "url": found.url,
+                "author": found.author,
+                "edits": [{"editor": who, "editedAt": at} for who, at in found.edits],
+            }
         host, owner, repo, number_text = _ref_parts(str(params["ref"]))
         number = int(number_text)
         gh = self.client
@@ -176,6 +189,9 @@ class GitHubProvider:
                     "createdAt": c.created_at,
                     "html_url": c.url,
                     "url": c.url,
+                    # GitHub cannot say: the-loop posts as the operator, so a
+                    # gate asks whether the author is authorized instead.
+                    "isSelf": False,
                 }
                 for c in comments
             ]

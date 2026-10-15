@@ -74,6 +74,7 @@ logger = logging.getLogger("the-loop.ghapi")
 __all__ = [
     "DEFAULT_TOKEN_ENVS",
     "GhComment",
+    "GhCommentEdits",
     "GhItem",
     "GhItemState",
     "GitHubApiConfig",
@@ -250,6 +251,20 @@ query($owner: String!, $name: String!, $number: Int!, $first: Int!, $after: Stri
 }
 """
 
+#: Who edited one comment, newest edit first (issue-488). GitHub's REST comment
+#: object never says who changed a body; GraphQL's ``userContentEdits`` does, and
+#: a quiz gate needs exactly that — the person who ticked the attestation box.
+_COMMENT_EDITS_QUERY = """
+query($id: ID!, $first: Int!) {
+  node(id: $id) {
+    ... on IssueComment {
+      body url lastEditedAt author { login }
+      userContentEdits(first: $first) { nodes { editedAt editor { login } } }
+    }
+  }
+}
+"""
+
 #: What GitHub says about a repository whose Issues are turned off, in the REST
 #: answer (410) and in this module's own rendering of ``hasIssuesEnabled: false``.
 ISSUES_DISABLED_MESSAGE = "Issues are disabled for this repo"
@@ -282,6 +297,21 @@ class GhComment:
     state: str = ""  # reviews: APPROVED | CHANGES_REQUESTED | COMMENTED
     path: str = ""  # review threads: the file the comment is anchored to
     line: Optional[int] = None  # review threads: the line, or None if unknown
+
+
+@dataclass(frozen=True)
+class GhCommentEdits:
+    """One comment's current body and its edit history (issue-488).
+
+    ``edits`` is ``(editor login, edited at)`` newest first, the order GitHub
+    returns them in; an editor GitHub no longer resolves (a deleted account)
+    reads ``""`` — never a guess, so a gate reading it fails closed.
+    """
+
+    body: str
+    url: str
+    author: str
+    edits: Tuple[Tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1044,6 +1074,37 @@ class GitHubClient:
             if not info.get("hasNextPage") or not info.get("endCursor"):
                 return comments
             after = str(info["endCursor"])
+
+    def comment_edits(self, node_id: str, host: str = "") -> GhCommentEdits:
+        """Who edited one conversation comment, newest first (issue-488)."""
+        if not str(node_id or "").strip():
+            raise GitHubApiError("a comment node id is required", status=400)
+        data = self.graphql(
+            _COMMENT_EDITS_QUERY, {"id": str(node_id), "first": 100}, host=host
+        )
+        node = data.get("node")
+        if not isinstance(node, Mapping):
+            raise GitHubApiError(f"comment {node_id} not found", status=404)
+        history = (node.get("userContentEdits") or {}).get("nodes") or []
+        # Sorted here rather than trusting the connection's order, which GitHub
+        # does not document: the gate reads edits[0] as THE latest editor.
+        edits = tuple(
+            sorted(
+                (
+                    (_login(edit.get("editor")), _iso(edit.get("editedAt")))
+                    for edit in history
+                    if isinstance(edit, Mapping)
+                ),
+                key=lambda pair: pair[1],
+                reverse=True,
+            )
+        )
+        return GhCommentEdits(
+            body=str(node.get("body") or ""),
+            url=str(node.get("url") or ""),
+            author=_login(node.get("author")),
+            edits=edits,
+        )
 
     def list_reviews(
         self, owner: str, repo: str, number: int, host: str = ""

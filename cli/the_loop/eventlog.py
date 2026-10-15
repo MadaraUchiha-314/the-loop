@@ -136,12 +136,19 @@ EVENT_TYPES: Dict[str, str] = {
         "A routed event was enqueued on a session's FIFO queue "
         "(work_item, spawn: whether it will spawn a new session)."
     ),
+    "dispatch.quiz_gate": (
+        "A ticked quiz box re-evaluated the gate its work item waits at "
+        "(issue-488): `outcome` is the gate's verdict. Delivery-only — no prompt "
+        "is rendered or delivered, and nothing spawns."
+    ),
     "dispatch.dropped": (
         "A routed event was discarded at dispatch (reason: duplicate-delivery "
         "| already-processed | spawn-policy | awaiting-start | session-paused "
         "| collaborator-no-spawn | session-vanished | no-adapter | "
         "session-occupied | work-item-not-found | no-work-item | "
-        "ci-not-actionable | ci-autofix-exhausted). "
+        "ci-not-actionable | ci-autofix-exhausted | no-gate). "
+        "`no-gate` (issue-488) is a quiz doorbell for a work item that is not "
+        "waiting at a human gate — nothing to re-evaluate, and never a spawn. "
         "`ci-not-actionable` and `ci-autofix-exhausted` (issue-462) are the CI "
         "gate's (`routing.ci.autofix`): a CI event that needs no action (a "
         "running, passing, cancelled or aggregate one), or a failure of a check "
@@ -1024,6 +1031,11 @@ EVENT_TYPES: Dict[str, str] = {
         "best-effort; what is NOT acceptable is a work item parked on a "
         "question the ticket never received. The CLI prints the same fact as "
         "a warning line; this is where the daemon's operator finds it."
+    ),
+    "graph.quiz_refused": (
+        "A quiz box was ticked by someone who may not answer the gate, or by "
+        "an editor GitHub could not name — the gate keeps waiting "
+        "(work_item, node, editor, comment). issue-488 abuse case 1."
     ),
     "graph.completed": ("A work item reached a terminal node (work_item, node)."),
     "graph.cleaned": (

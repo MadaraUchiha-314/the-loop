@@ -113,11 +113,17 @@ def test_the_phases_and_the_settings_are_two_groups():
     assert levels["Where should the outer loop happen?"] == 4
     # every phase row sits between the two group headings; every setting row after
     settings_at = body.index("Settings — not phases")
-    for node in load_graph().ordered():
-        if node.skippable:
+    graph = load_graph()
+    grouped = set(graph.skip_sets.get(selection.EXPLAINER_TOKEN, ()))
+    for node in graph.ordered():
+        if node.skippable and node.id not in grouped:
             row = re.search(rf"^- \[[ x]\] {re.escape(node.id)}( —|$)", body, re.M)
             assert row is not None and row.start() < settings_at, node.id
     assert body.index(f"`{selection.SURFACE_TOKEN}`") > settings_at
+    # issue-488: the explainer's four nodes are ONE setting row, ticked.
+    assert body.index(f"- [x] `{selection.EXPLAINER_TOKEN}`") > settings_at
+    for node_id in grouped:
+        assert not re.search(rf"^- \[[ x]\] {re.escape(node_id)}( —|$)", body, re.M)
 
 
 def test_a_contribution_says_why_there_is_no_surface_under_the_settings():
@@ -141,7 +147,7 @@ def test_each_setting_states_its_default_before_its_rows():
     body = _body()
     sections = re.split(r"^#### ", body, flags=re.MULTILINE)[1:]
     settings = [s for s in sections if not s.startswith("➕")]
-    assert len(settings) == 7
+    assert len(settings) == 8  # issue-488 added the explainer row
     for section in settings:
         default = section.index("**Default:**")
         row = _ROW.search(section)
@@ -189,7 +195,8 @@ def test_no_fact_the_comment_stated_is_lost():
 def test_the_rows_read_back_exactly_as_the_graph_lists_them():
     body = _body()
     graph = load_graph()
-    ordered = list(graph.ordered())
+    grouped = set(graph.skip_sets.get(selection.EXPLAINER_TOKEN, ()))
+    ordered = [n for n in graph.ordered() if n.id not in grouped]
     rows = selection_rows(body)
     assert rows is not None
     assert [r.token for r in rows.phases] == [
@@ -198,6 +205,7 @@ def test_the_rows_read_back_exactly_as_the_graph_lists_them():
     assert rows.surface is not None and not rows.surface.ticked
     assert [r.token for r in rows.others] == [
         selection.CLAUDE_ARTIFACT_TOKEN,
+        selection.EXPLAINER_TOKEN,
         *selection.PR_SESSIONS_TOKENS,
         "harness-claude",
         "harness-codex",

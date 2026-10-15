@@ -86,6 +86,9 @@ full process.
                                      Unticked (the default) = on the work item.
 - [ ] claude-artifact             ← not a phase: also publish the spec chain as
                                      one Claude artifact (`claude` harness only).
+- [x] explainer                   ← the explainer and two quizzes (issue-488):
+                                     ticked (the default) = they run; unticked =
+                                     their four nodes are declared skipped.
 
 the-loop execute
 ```
@@ -136,6 +139,13 @@ on every change — while the markdown files stay what every gate reads. It appl
 when the work item runs on the `claude` harness: on any other, the confirmation says
 *not applied* and names the harness. Like the surface row, it is absent on a
 contribution, and it is frozen as `claudeArtifact` in `work-item-state.json`.
+
+**`explainer` is four nodes behind one row** (issue-488). Ticked by default, it keeps
+`spec-explainer` → `spec-quiz` (before `tasks-breakdown`) and `code-explainer` →
+`code-quiz` (before `human-approval`); unticked, it declares all four skipped under the
+token `explainer`, which `the-loop graph skip <id> --node explainer` also accepts. Each
+quiz gate waits for an authorized user to tick the-loop's checkbox comment — attributed
+through GitHub's edit history (decision-143). Offered only in `pdlc-work-item-loop`.
 
 ## `show`
 

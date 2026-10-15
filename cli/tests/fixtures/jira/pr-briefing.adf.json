@@ -36,6 +36,57 @@
       ]
     },
     {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Start here:",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " the explainer of this change — "
+        },
+        {
+          "type": "text",
+          "text": "<Location from evidence/explainer.md>",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": "."
+        },
+        {
+          "type": "hardBreak"
+        },
+        {
+          "type": "text",
+          "text": "(Drop this line when the work item declared the "
+        },
+        {
+          "type": "text",
+          "text": "explainer",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " row away.)"
+        }
+      ]
+    },
+    {
       "type": "heading",
       "attrs": {
         "level": 2

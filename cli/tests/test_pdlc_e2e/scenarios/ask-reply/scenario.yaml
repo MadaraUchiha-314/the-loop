@@ -21,6 +21,7 @@ steps:
         - [ ] test-planning
         - [ ] design-approval
         - [ ] tasks-breakdown
+        - [ ] `explainer`
   - ask: {question: "Which flag should the fixture feature use?"}
   - reply: {text: "Use --fixture.", actor: onika, sessionMissing: true}
   - reply: {text: "Use --fixture.", actor: onika}

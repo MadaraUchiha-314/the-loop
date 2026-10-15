@@ -21,6 +21,11 @@ steps:
   - emit: {artifact: testing-plan.md, fixture: testing-plan.md}
   - complete: {node: test-planning}
   - comment: {author: owner, body: "approved"}
+  # issue-488: the spec explainer, then the author ticks the spec-quiz box.
+  - emit: {artifact: evidence/spec-explainer.md, fixture: evidence-spec-explainer.md}
+  - complete: {node: spec-explainer}
+  - expect: {currentNode: spec-quiz, parked: true}
+  - tick: {node: spec-quiz, author: owner}
   - emit: {artifact: tasks.md, fixture: tasks.md}
   - complete: {node: tasks-breakdown}
   # The inner-loop seam: a started PR loop parks the outer `implementation`
@@ -41,12 +46,16 @@ steps:
   - complete: {node: critic-review}
   - emit: {artifact: evidence/security-review.md, fixture: evidence-security-review.md}
   - complete: {node: security-review}
+  - emit: {artifact: evidence/explainer.md, fixture: evidence-explainer.md}
+  - complete: {node: code-explainer}
   - emit: {artifact: evidence/final-validation.md, fixture: evidence-final-validation.md}
   - complete: {node: evidence}
   - emit: {artifact: evidence/documentation.md, fixture: evidence-documentation.md}
   - complete: {node: capability-docs}
   - emit: {artifact: evidence/pull-requests.md, fixture: evidence-pull-requests.md}
   - complete: {node: reviewer-briefing}
+  - expect: {currentNode: code-quiz, parked: true}
+  - tick: {node: code-quiz, author: owner}
   - comment: {author: owner, body: "approved"}
   - complete: {node: complete}
 expect:
@@ -74,15 +83,19 @@ expect:
     - design-critic-review~
     - test-planning
     - design-approval
+    - spec-explainer
+    - spec-quiz
     - tasks-breakdown
     - implementation
     - verification
     - self-review
     - critic-review
     - security-review
+    - code-explainer
     - evidence
     - capability-docs
     - reviewer-briefing
+    - code-quiz
     - human-approval
     - complete
   labels:
@@ -104,9 +117,11 @@ expect:
     - {event: graph.advanced, node: requirements-approval, to: design, outcome: approved}
     - {event: graph.node_skipped, node: design-critic-review, via: not-selected}
     - {event: graph.advanced, node: design, to: test-planning, outcome: pass}
-    - {event: graph.advanced, node: design-approval, to: tasks-breakdown, outcome: approved}
+    - {event: graph.advanced, node: design-approval, to: spec-explainer, outcome: approved}
+    - {event: graph.advanced, node: spec-quiz, to: tasks-breakdown, outcome: pass}
     - {event: graph.parked, node: implementation}
     - {event: graph.advanced, node: implementation, to: verification, outcome: pass}
     - {event: graph.advanced, node: verification, to: self-review, outcome: pass}
+    - {event: graph.advanced, node: code-quiz, to: human-approval, outcome: pass}
     - {event: graph.advanced, node: human-approval, to: complete, outcome: approved}
     - {event: graph.completed, node: complete}

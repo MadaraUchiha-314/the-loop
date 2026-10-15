@@ -163,6 +163,12 @@ SURFACE_TOKEN = "outer-loop-on-pull-request"
 #: prefix would announce a family that does not exist.
 CLAUDE_ARTIFACT_TOKEN = "claude-artifact"
 
+#: The checklist token that keeps (ticked, the default) or declares away
+#: (unticked) the explainer and the two quizzes (issue-488). It is also the name
+#: of the graph's skip set it expands to, so the row, `the-loop graph skip --node
+#: explainer` and the recorded provenance all say the same word.
+EXPLAINER_TOKEN = "explainer"
+
 #: The one harness that can publish a Claude artifact — the Claude Code
 #: adapter's name. A tick on a work item resolved to any other is not applied.
 CLAUDE_HARNESS = "claude"
@@ -213,7 +219,12 @@ CANDIDATE_LIMIT = 12
 #: a declared skip and never a refusal, whichever way it is ticked. The two
 #: choice groups are matched by PREFIX rather than listed, because their members
 #: come from the operator's config rather than from the graph.
-_NON_PHASE_TOKENS = {SURFACE_TOKEN, CLAUDE_ARTIFACT_TOKEN, *PR_SESSIONS_TOKENS}
+_NON_PHASE_TOKENS = {
+    SURFACE_TOKEN,
+    CLAUDE_ARTIFACT_TOKEN,
+    EXPLAINER_TOKEN,
+    *PR_SESSIONS_TOKENS,
+}
 
 
 def _is_non_phase(token: str) -> bool:
@@ -561,8 +572,14 @@ def _phase_rows(ctx: HookContext) -> Tuple[List[str], List[str], List[str]]:
     graph = ctx.graph
     if graph is None:
         return [], [], []
+    # The explainer's nodes are one SETTING row, not four phase rows (issue-488).
+    grouped = set(_explainer_nodes(ctx))
     opt_in = [n.id for n in graph.ordered() if n.opt_in]
-    skippable = [n.id for n in graph.ordered() if n.skippable and not n.opt_in]
+    skippable = [
+        n.id
+        for n in graph.ordered()
+        if n.skippable and not n.opt_in and n.id not in grouped
+    ]
     # Every non-skippable node the item will actually walk — deliberately NOT
     # filtered by `phase`: most of the review chain (`security-review`,
     # `human-approval`, …) carries no phase label, and listing only the ones
@@ -574,6 +591,18 @@ def _phase_rows(ctx: HookContext) -> Tuple[List[str], List[str], List[str]]:
         if not n.skippable and not n.terminal and n.id != ctx.node_id
     ]
     return skippable, opt_in, protected
+
+
+def _explainer_nodes(ctx: HookContext) -> Tuple[str, ...]:
+    """The nodes the `explainer` row stands for — the graph's skip set (issue-488).
+
+    Empty for a loop that has none (the inner PR loop, a contribution, an
+    ad-hoc task, a review), which is what keeps the row off their checklists.
+    """
+    graph = ctx.graph
+    sets = getattr(graph, "skip_sets", None) or {}
+    members = sets.get(EXPLAINER_TOKEN) or ()
+    return tuple(n for n in members if n in getattr(graph, "nodes", {}))
 
 
 def _describe(ctx: HookContext, node_id: str) -> str:
@@ -729,6 +758,28 @@ def _checklist_body(ctx: HookContext) -> str:
             "On any other harness the-loop ignores this box. The markdown files "
             "stay the source of truth either way, and every gate still reads them.",
         )
+        if _explainer_nodes(ctx):
+            lines += [
+                "#### 🎓 Explain the change and quiz the author?",
+                "",
+                "**Default:** yes — already ticked. Untick it to skip all three.",
+                "",
+                f"- [x] `{EXPLAINER_TOKEN}` — a spec explainer and quiz before code "
+                "generation, an explainer of the change for the reviewer, and a code "
+                "quiz before review is requested.",
+                "",
+            ]
+            lines += _collapsed(
+                "ℹ️ What this means",
+                "The author reads a plain-language explainer of the approved spec "
+                "and takes a short quiz before any code is generated, then the same "
+                "for the finished change before review is requested — each time by "
+                "ticking one box on the-loop's comment. The reviewer starts from "
+                "the explainer of the change.",
+                "Unticked, the four nodes behind it (`"
+                + "`, `".join(_explainer_nodes(ctx))
+                + "`) are declared skipped in your name, like any phase.",
+            )
     else:
         # A contribution has no outer loop to place (issue-199), so there is no
         # box here — but say where the conversation happens anyway, rather than
@@ -969,6 +1020,20 @@ def _parse_claude_artifact(body: str) -> bool:
     return False
 
 
+def _parse_explainer(body: str) -> bool:
+    """Whether one reply keeps the explainer and its quizzes (issue-488).
+
+    The inverse default of :func:`_parse_claude_artifact`: only a row that is
+    present AND unticked turns it off. Absent and unreadable mean on — Slack's
+    Execute button composes a reply without setting rows, and a truncated reply
+    must fail toward more process, as an unmentioned phase does.
+    """
+    for match in _CHECK_LINE.finditer(body):
+        if match.group("token") == EXPLAINER_TOKEN:
+            return bool(match.group("mark").strip())
+    return True
+
+
 def _claude_artifact_applies(harness: str) -> bool:
     """Whether a work item resolved to ``harness`` can publish a Claude artifact.
 
@@ -1021,6 +1086,7 @@ def _confirmation(
     dropped: Optional[List[Tuple[str, str]]] = None,
     claude_artifact_requested: bool = False,
     claude_artifact: bool = False,
+    explainer: Optional[bool] = None,
 ) -> str:
     lines = ["🤖 _the-loop_ — **phase selection recorded**", ""]
     if skips:
@@ -1089,6 +1155,20 @@ def _confirmation(
         else:
             line = "Spec artifacts: markdown files only (the default)."
         lines += ["", line]
+    # The explainer row, in both directions (issue-488, R1.5).
+    if explainer is True:
+        lines += [
+            "",
+            "Explainer and quizzes: **on** — a spec quiz before code generation, an "
+            "explainer of the change for the reviewer, and a code quiz before review.",
+        ]
+    elif explainer is False:
+        lines += [
+            "",
+            f"Explainer and quizzes: **off**, as declared by @{actor} — "
+            + ", ".join(f"`{n}`" for n in _explainer_nodes(ctx))
+            + " skipped.",
+        ]
     # A loop that was never asked the surface question confirms nothing about
     # it (issue-199): claiming a default here would report a choice the human
     # was never offered.
@@ -1252,6 +1332,11 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
         resolved_harness
     )
     actor = str(reply["author"]).lstrip("@")
+    # One row, four declared skips (issue-488) — each carrying the row's token,
+    # so `the-loop check` names the choice rather than four separate phases.
+    explainer_nodes = _explainer_nodes(ctx)
+    explainer = _parse_explainer(body) if explainer_nodes else None
+    grouped_skips = [] if explainer in (None, True) else list(explainer_nodes)
 
     confirmation_error = ""
     try:
@@ -1278,6 +1363,7 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
                 dropped=dropped,
                 claude_artifact_requested=claude_artifact_requested,
                 claude_artifact=claude_artifact,
+                explainer=explainer,
             ),
         )
     except Exception as exc:  # noqa: BLE001
@@ -1292,6 +1378,13 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
         node: {"via": "selection", "token": node, "by": f"@{actor}", "reason": ""}
         for node in skips
     }
+    for node in grouped_skips:
+        declared[node] = {
+            "via": "selection",
+            "token": EXPLAINER_TOKEN,
+            "by": f"@{actor}",
+            "reason": "",
+        }
     chosen: Dict[str, Any] = {
         node: {"via": "selection", "token": node, "by": f"@{actor}"} for node in opt_ins
     }
@@ -1312,7 +1405,7 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
             "claudeArtifact": claude_artifact,
             "frozenGraph": _frozen_graph(
                 ctx,
-                skips,
+                skips + grouped_skips,
                 surface,
                 opt_ins=opt_ins,
                 session_per_pr=session_per_pr,

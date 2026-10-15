@@ -13,6 +13,7 @@ steps:
         the-loop execute
 
         - [ ] brainstorming
+        - [ ] `explainer`
   - emit: {artifact: requirements.md, fixture: requirements.md}
   - complete: {node: requirements-definition}
   - comment: {author: owner, body: "approved"}
@@ -45,6 +46,8 @@ expect:
     - design-critic-review~
     - test-planning
     - design-approval
+    - spec-explainer~
+    - spec-quiz~
     - tasks-breakdown
   labels:
     - "loop:phase-selection"

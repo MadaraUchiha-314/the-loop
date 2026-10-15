@@ -53,6 +53,7 @@ const operatingModelItems = [
   { text: "Onboarding", link: "/operating-model/reference/onboarding" },
   { text: "Instructions", link: "/operating-model/reference/instructions" },
   { text: "Design artifacts", link: "/operating-model/reference/design-artifacts" },
+  { text: "Explainer & quizzes", link: "/operating-model/reference/explainer" },
   { text: "Reviewing", link: "/operating-model/reference/reviewing" },
   { text: "Security", link: "/operating-model/reference/security" },
   { text: "Tooling", link: "/operating-model/reference/tooling" },

@@ -18,6 +18,7 @@ from the_loop.ghapi import (
     MERGE_METHODS,
     REACTION_CONTENTS,
     GhComment,
+    GhCommentEdits,
     GhItem,
     GhItemState,
     GitHubApiConfig,
@@ -77,6 +78,8 @@ class FakeGitHubClient(GitHubClient):
     states: Dict[Tuple[str, str, int], Dict[str, Any]] = field(default_factory=dict)
     labels: Dict[Tuple[str, str, int], List[str]] = field(default_factory=dict)
     issues_disabled: set = field(default_factory=set)  # (owner, repo)
+    # issue-488: a comment's body and edit history, by comment node id
+    edits: Dict[str, GhCommentEdits] = field(default_factory=dict)
     # the pull-request verbs (issue-447)
     default_branch: str = "main"
     pulls: Dict[Tuple[str, str, int], Dict[str, Any]] = field(default_factory=dict)
@@ -188,6 +191,13 @@ class FakeGitHubClient(GitHubClient):
         return False
 
     # -- reads ----------------------------------------------------------------
+
+    def comment_edits(self, node_id, host="") -> GhCommentEdits:
+        self._enter("comment_edits", node_id=node_id, host=host)
+        found = self.edits.get(str(node_id))
+        if found is None:
+            raise not_found(f"comment {node_id} not found")
+        return found
 
     def get_issue(self, owner, repo, number, host="") -> Dict[str, Any]:
         self._enter("get_issue", owner=owner, repo=repo, number=number, host=host)

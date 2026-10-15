@@ -649,7 +649,12 @@ class WorkItemState:
         rec.exited_at = utc_now()
 
     def park(self, node_id: str, reason: str) -> None:
-        self.parked = {"node": node_id, "reason": reason, "since": utc_now()}
+        # A gate re-judged with the same answer has not parked anew: keep when
+        # it first parked, so "waiting since" stays true (issue-488 S9).
+        was = self.parked or {}
+        same = was.get("node") == node_id and was.get("reason") == reason
+        since = was.get("since") if same else None
+        self.parked = {"node": node_id, "reason": reason, "since": since or utc_now()}
 
     def note_block(self, node_id: str, message: str) -> bool:
         """Record a blocking message; True when it repeats the previous one.

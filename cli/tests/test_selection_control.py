@@ -1033,7 +1033,9 @@ def test_the_checklist_copy_neither_threatens_nor_promises_ticking_right_here():
     # and what the hook posts is what the channel reads: its rows are the control's
     rows = selection_rows(body)
     assert rows is not None
-    ordered = list(load_graph().ordered())
+    graph = load_graph()
+    grouped = set(graph.skip_sets.get(selection.EXPLAINER_TOKEN, ()))
+    ordered = [n for n in graph.ordered() if n.id not in grouped]
     assert [r.token for r in rows.phases if r.ticked] == [
         n.id for n in ordered if n.skippable and not n.opt_in
     ]

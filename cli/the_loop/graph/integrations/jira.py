@@ -90,6 +90,10 @@ class JiraProvider:
     def call(self, op: str, **params: Any) -> Dict[str, Any]:
         if op not in self.operations:
             raise OperationUnsupported(f"jira does not implement {op!r}")
+        if op == "comment-edits":
+            # issue-488: Jira's comment `updateAuthor` is not wired in; a quiz
+            # gate on a Jira ticket falls back to an authorized typed reply.
+            raise OperationUnsupported("jira does not report who edited a comment")
         if op == "create-label":
             # R3.1: Jira creates a label the first time an issue carries it.
             return {"result": "exists", "note": "jira creates labels on use"}
@@ -130,6 +134,9 @@ class JiraProvider:
                     "createdAt": c.created,
                     "html_url": c.url,
                     "url": c.url,
+                    # The service account wrote it: the-loop's own, judged by
+                    # who posted it rather than by a body anyone can copy.
+                    "isSelf": bool(c.is_self),
                 }
             )
         return {"comments": listed}

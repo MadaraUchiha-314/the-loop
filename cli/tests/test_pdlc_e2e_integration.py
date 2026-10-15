@@ -72,6 +72,12 @@ def test_a_tier_3_work_item_walks_the_full_outer_loop(run_scenario):
             requirements, design and testing plan say approved before implementation
         And the expected events land in the event log in order
         And the inner loop parks implementation until it completes
+    Scenario: review is not requested until the code quiz is ticked
+        Requirement: docs/specs/issue-488/requirements.md#R3.6, #R3.7
+        Given the explainer is selected (the default) and the review chain has passed
+        When reviewer-briefing completes
+        Then the work item parks at code-quiz, not human-approval
+        And only an authorized tick on the code-quiz comment moves it to human-approval
     """
     run_scenario("happy-path")
 
@@ -89,6 +95,30 @@ def test_a_trivial_tier_item_short_circuits_with_declared_skips(run_scenario):
             with its testing plan declared away
     """
     run_scenario("trivial-tier")
+
+
+@covers("quiz-gates")
+def test_the_spec_quiz_gate_obeys_only_an_authorized_tick_on_the_current_spec(
+    run_scenario,
+):
+    """
+    Scenario: a tick by an unauthorized user is refused
+        Requirement: docs/specs/issue-488/requirements.md#R2.5 (abuse cases 1, 4)
+        Given the spec explainer is published and the-loop's quiz comment is posted
+        When a user who is not authorized ticks the box, and the owner says "approved"
+        Then the work item stays parked at spec-quiz
+    Scenario: a changed spec sends the spec quiz back to the explainer
+        Requirement: docs/specs/issue-488/requirements.md#R5.6
+        Given the box is ticked by the owner after design.md changed
+        When the gate compares the spec with the digest its comment was posted for
+        Then the pointer routes back to spec-explainer on the outcome stale
+    Scenario: a tick by an authorized user advances the spec quiz
+        Requirement: docs/specs/issue-488/requirements.md#R2.6
+        Given the explainer was rewritten and a new round's comment posted
+        When the owner ticks the box
+        Then the pointer advances to tasks-breakdown
+    """
+    run_scenario("quiz-gates")
 
 
 @covers("ask-reply")

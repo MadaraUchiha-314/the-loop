@@ -168,7 +168,12 @@ class TestTestingIsPlannedAndVerifiedAsNodes:
         assert graph.next_node("design-critic-review", "pass") == "test-planning"
         assert graph.next_node("design-critic-review", "skipped") == "test-planning"
         assert graph.next_node("test-planning", "pass") == "design-approval"
-        assert graph.next_node("design-approval", "approved") == "tasks-breakdown"
+        # issue-488: the spec explainer and its quiz sit between the design gate
+        # and the task DAG; skipped, they route straight on.
+        assert graph.next_node("design-approval", "approved") == "spec-explainer"
+        assert graph.next_node("spec-explainer", "pass") == "spec-quiz"
+        assert graph.next_node("spec-quiz", "pass") == "tasks-breakdown"
+        assert graph.next_node("spec-quiz", "skipped") == "tasks-breakdown"
 
     def test_changes_requested_returns_to_design_so_the_plan_is_re_derived(self):
         """The plan derives from the design; a design change re-derives it."""

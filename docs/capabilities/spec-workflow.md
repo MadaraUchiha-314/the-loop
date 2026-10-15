@@ -75,6 +75,16 @@ the `/the-loop:work-on` superset command and granular per-step commands
   once from the ticket (issue-471). The files SHALL stay the source of truth, and a
   comment on the artifact SHALL NOT answer a gate. On any other harness the tick SHALL
   NOT be applied, and the confirmation SHALL say so.
+- WHEN the `explainer` row is left ticked at `phase-selection` (the default) THEN the
+  outer loop SHALL teach and check understanding twice (issue-488): after
+  `design-approval` the session SHALL write a spec explainer and spec quiz
+  (`/the-loop:explain`), and code generation SHALL wait until an authorized user ticks
+  the-loop's checkbox on the ticket; after `security-review` it SHALL write the
+  explainer of the change — the reviewer's starting point — and the code quiz, and the
+  review request SHALL wait for a tick on the pull request. The page SHALL be a tab of
+  the spec-chain artifact when `claudeArtifact` is true, its own Claude artifact
+  otherwise, and a committed self-contained HTML file on a harness with no artifact
+  tool; the files SHALL stay the gates' subject. See `skills/the-loop/reference/explainer.md`.
 - WHEN a work item starts as a fuzzy idea THEN the loop SHALL begin with a
   `brainstorm.md` root artifact (optional Phase 0) and convert it to requirements once
   its author says it has converged — the brainstorm has no approval gate and is never
@@ -168,6 +178,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-488 | The explainer and the quizzes (2026-10-15): a spec explainer + spec quiz before code generation and an explainer of the change + code quiz before review, sized by a depth ladder (micro / standard / deep, 0 / 3 / 5 questions), each gated by one attributed tick; published into the spec-chain artifact, its own artifact, or a committed HTML file with copy-paste view commands; on by default, one row to switch off | [spec](../specs/issue-488/), [process-graph](process-graph.md), [decision-143](../decisions/decision-143.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/488) |
 | issue-471 | The spec chain can also be read as one Claude artifact (2026-10-06): ticked at `phase-selection` on a `claude` work item, the session publishes one page with a tab per spec file, republishes it to the same URL on every change and links it once from the ticket. The markdown files stay the source of truth and the gates' subject; artifact comments are feedback, never a gate answer. Off by default, and not applied on any other harness | [spec](../specs/issue-471/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/471) |
 | issue-368 | The work item's spec directory carries its pull requests (2026-09-15): `work-item-state.json` gained `pullRequests[]` — ref, repository, number, URL, inner-loop directory, upstream state and who recorded it — so a reviewer reads which pull requests deliver the item from the branch, and a second machine does not re-derive them from `gh`. It lost the `session` block in the same change: a harness conversation id is a handle to one machine and never belonged in a repository | [spec](../specs/issue-368/), [decision-128](../decisions/decision-128.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/368) |
 | issue-365 (review) | The multi-repo declaration moved off artifacts (2026-09-14) and onto a verb the **agent** calls, `the-loop graph repos`, writing `work-item-state.json`. It cannot be a `phase-selection` question: that gate runs before requirements, design and tasks exist, and which repositories a change spans is not knowable until they do — so it is declared at `tasks-breakdown`, bounded by shape and by the instance's own `repositories`, with the flags as the full set so a declaration can be corrected. The state file was renamed in the same round | [spec](../specs/issue-365/), [decision-127](../decisions/decision-127.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/365) |

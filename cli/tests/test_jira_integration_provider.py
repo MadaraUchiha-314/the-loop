@@ -117,6 +117,7 @@ def test_list_comments_has_the_shape_github_returns():
         "createdAt": "2026-10-06T01:02:03.000+0000",
         "html_url": "https://acme.atlassian.net/browse/PROJ-7?focusedCommentId=7",
         "url": "https://acme.atlassian.net/browse/PROJ-7?focusedCommentId=7",
+        "isSelf": False,
     }
     github = GitHubProvider(
         client=FakeGitHubClient(
