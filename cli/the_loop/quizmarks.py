@@ -13,6 +13,7 @@ from typing import Dict, Mapping, Optional
 
 __all__ = [
     "ATTESTATIONS",
+    "READ_ONLY",
     "QUIZ_MARKER_PREFIX",
     "UNVERIFIED",
     "attestation_ticked",
@@ -38,6 +39,13 @@ ATTESTATIONS: Dict[str, str] = {
     "code-quiz": "I have read the explainer and taken the code quiz.",
 }
 
+#: The line at ``micro`` depth, where the page carries no quiz (R2.7): the box
+#: then attests reading only.
+READ_ONLY: Dict[str, str] = {
+    "spec-quiz": "I have read the spec explainer.",
+    "code-quiz": "I have read the explainer.",
+}
+
 _BOX = re.compile(
     r"^[ \t]*[-*][ \t]+\[(?P<mark>[ xX])\][ \t]+(?P<text>.+?)[ \t]*$", re.M
 )
@@ -60,9 +68,8 @@ def attestation_ticked(body: str, node: str = "") -> bool:
     Without ``node`` any quiz's line counts — the poller and the router do not
     know which gate is waiting, only that a quiz box changed.
     """
-    lines = (
-        [ATTESTATIONS[node]] if node in ATTESTATIONS else list(ATTESTATIONS.values())
-    )
+    nodes = [node] if node in ATTESTATIONS else list(ATTESTATIONS)
+    lines = [table[n] for n in nodes for table in (ATTESTATIONS, READ_ONLY)]
     for match in _BOX.finditer(str(body or "")):
         if match.group("mark") in "xX" and match.group("text").strip() in lines:
             return True

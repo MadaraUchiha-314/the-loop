@@ -25,7 +25,7 @@ from the_loop.graph.integrations.github import GitHubProvider
 from the_loop.graph.model import load_graph
 from the_loop.graph.runtime import NOT_OFFERED, Runtime
 from the_loop.graph.state import WorkItemState
-from the_loop.quizmarks import ATTESTATIONS, attestation_ticked, quiz_marker
+from the_loop.quizmarks import ATTESTATIONS, READ_ONLY, attestation_ticked, quiz_marker
 from the_loop.sessions import WorkItemRef
 from the_loop.webhook.router import QUIZ_ATTESTATION_EVENT, quiz_attestation_event
 
@@ -444,6 +444,32 @@ def test_a_comment_that_never_landed_is_posted_by_the_gate(spec_dir, github):
     result = quiz.quiz_attested(ctx)
     assert result.status == "wait" and "again" in str(result.messages)
     assert len(github.posted) == 1 and "the-loop:quiz spec-quiz" in github.posted[0][3]
+
+
+def test_a_micro_page_asks_the_author_to_attest_reading_only(spec_dir, github):
+    """R2.7: no quiz at `micro` depth, so the box claims no quiz was taken."""
+    (spec_dir / "evidence" / "spec-explainer.md").write_text(
+        RECORD.format(location="https://claude.ai/artifact/a").replace(
+            "| Depth | standard |", "| Depth | micro |"
+        ),
+        encoding="utf-8",
+    )
+    quiz.post_quiz_attestation(_ctx(spec_dir, boundary="entry"))
+    body = github.posted[-1][3]
+    assert f"- [ ] {READ_ONLY['spec-quiz']}" in body and SPEC_LINE not in body
+    ticked = body.replace("- [ ] ", "- [x] ")
+    assert attestation_ticked(ticked, "spec-quiz")
+
+
+def test_an_unfilled_depth_row_keeps_the_quiz_line(spec_dir, github):
+    (spec_dir / "evidence" / "spec-explainer.md").write_text(
+        RECORD.format(location="https://claude.ai/artifact/a").replace(
+            "| Depth | standard |", "| Depth | micro · standard · deep |"
+        ),
+        encoding="utf-8",
+    )
+    quiz.post_quiz_attestation(_ctx(spec_dir, boundary="entry"))
+    assert f"- [ ] {SPEC_LINE}" in github.posted[-1][3]
 
 
 def _look_alike(github: FakeGitHubClient, body: str, cid: str = "IC_2") -> None:

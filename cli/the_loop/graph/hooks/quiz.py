@@ -37,6 +37,7 @@ from ...authz import is_authorized, is_self_authored, mark_self_authored
 from ...quizmarks import (
     ATTESTATIONS,
     QUIZ_MARKER_PREFIX,
+    READ_ONLY,
     UNVERIFIED,
     attestation_ticked,
     is_quiz_comment,
@@ -59,6 +60,8 @@ __all__ = [
 _TITLES = {"spec-quiz": "Spec quiz", "code-quiz": "Code quiz"}
 
 _LOCATION = re.compile(r"^\|\s*Location\s*\|\s*(?P<value>[^|]+?)\s*\|\s*$", re.M)
+
+_DEPTH = re.compile(r"^\|\s*Depth\s*\|\s*`?(?P<value>[a-z]+)`?\s*\|\s*$", re.M)
 
 _GITHUB_BLOB = re.compile(
     r"^/(?P<owner>[^/]+)/(?P<repo>[^/]+)/blob/(?P<branch>[^/]+)/(?P<path>.+)$"
@@ -87,6 +90,19 @@ def spec_digest(spec_dir: Path, names: Sequence[str]) -> str:
                 seen = True
                 break
     return digest.hexdigest()[:12] if seen else "-"
+
+
+def _record_micro(path: Path) -> bool:
+    """Does the record say ``micro`` — a page with no quiz (R2.7)?
+
+    Only that exact value counts: an unfilled template row (``micro · standard
+    · deep``) is not a depth, and the quiz line is the safer default.
+    """
+    try:
+        found = _DEPTH.search(path.read_text(encoding="utf-8"))
+    except OSError:
+        return False
+    return bool(found) and found.group("value") == "micro"
 
 
 def _record_location(path: Path) -> str:
@@ -232,14 +248,25 @@ def _view_commands(location: str, ref: str) -> List[str]:
     ]
 
 
-def _quiz_body(node: str, location: str, round_: int, digest: str, ref: str) -> str:
+def _quiz_body(
+    node: str, location: str, round_: int, digest: str, ref: str, micro: bool = False
+) -> str:
     title = _TITLES.get(node, node)
-    what = (
-        "the spec explainer and take its quiz before code generation starts"
-        if node == "spec-quiz"
-        else "the explainer of this change and take the code quiz before review "
-        "is requested"
-    )
+    if micro:
+        # R2.7: a `micro` page has no quiz, so the box attests reading only.
+        what = (
+            "the spec explainer before code generation starts"
+            if node == "spec-quiz"
+            else "the explainer of this change before review is requested"
+        )
+    else:
+        what = (
+            "the spec explainer and take its quiz before code generation starts"
+            if node == "spec-quiz"
+            else "the explainer of this change and take the code quiz before "
+            "review is requested"
+        )
+    line = (READ_ONLY if micro else ATTESTATIONS)[node]
     lines = [f"🎓 **{title}** — read {what}."]
     commands = _view_commands(location, ref)
     if commands:
@@ -259,7 +286,7 @@ def _quiz_body(node: str, location: str, round_: int, digest: str, ref: str) -> 
         # comment never reads as ticked.
         lines += [
             "",
-            f"Reply with this line to move on: `- [x] {ATTESTATIONS[node]}`",
+            f"Reply with this line to move on: `- [x] {line}`",
             "",
             "Only a user authorized for this deployment of the-loop can answer; "
             "the quiz itself is yours alone, and the-loop records only who "
@@ -268,7 +295,7 @@ def _quiz_body(node: str, location: str, round_: int, digest: str, ref: str) -> 
     else:
         lines += [
             "",
-            f"- [ ] {ATTESTATIONS[node]}",
+            f"- [ ] {line}",
             "",
             "Ticking the box is enough — no reply needed. Only a user authorized "
             "for this deployment of the-loop can tick it for the work item to "
@@ -312,7 +339,8 @@ def post_quiz_attestation(ctx: HookContext) -> HookResult:
     digest = spec_digest(ctx.work_item.spec_dir, names) if names else "-"
     round_ = _round(ctx)
     where = str(ctx.params.get("on") or _WHERE[node])
-    posted = _post(ctx, node, location, round_, digest, where)
+    micro = _record_micro(Path(ctx.work_item.spec_dir) / record)
+    posted = _post(ctx, node, location, round_, digest, where, micro)
     return HookResult.ok(name, posted=posted, round=round_, digest=digest)
 
 
@@ -322,7 +350,13 @@ _WHERE = {"spec-quiz": "ticket", "code-quiz": "pull-requests"}
 
 
 def _post(
-    ctx: HookContext, node: str, location: str, round_: int, digest: str, where: str
+    ctx: HookContext,
+    node: str,
+    location: str,
+    round_: int,
+    digest: str,
+    where: str,
+    micro: bool = False,
 ) -> List[str]:
     """Post this round's comment wherever it is not already. Best-effort."""
     allowed = [str(u) for u in (ctx.config.get("authorizedUsers") or [])]
@@ -338,7 +372,7 @@ def _post(
             _resolve(ctx).call(
                 "add-comment",
                 ref=ref,
-                body=_quiz_body(node, location, round_, digest, ref),
+                body=_quiz_body(node, location, round_, digest, ref, micro),
             )
             posted.append(ref)
         except Exception as exc:  # noqa: BLE001 — best-effort, never wedge
@@ -413,8 +447,12 @@ def quiz_attested(ctx: HookContext) -> HookResult:
         return HookResult.ok(name, decision=node, via="reply", **typed)
     record = str(ctx.params.get("record") or "")
     if read_any and not found_any and record:
-        location = _record_location(Path(ctx.work_item.spec_dir) / record)
-        if location and _post(ctx, node, location, int(round_), current, _WHERE[node]):
+        path = Path(ctx.work_item.spec_dir) / record
+        location = _record_location(path)
+        micro = _record_micro(path)
+        if location and _post(
+            ctx, node, location, int(round_), current, _WHERE[node], micro
+        ):
             return HookResult.waiting(
                 name, "posted the quiz comment again — it had not landed"
             )

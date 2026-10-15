@@ -72,7 +72,8 @@ separately) and state the depth in the header's badge.
 | `standard` | behaviour changes within existing concepts | compact: a one-paragraph Background, a short tour | **3** |
 | `deep` | a new subsystem or concept, a contract or interface change, tier 4–5, a wide blast radius | all four sections in full | **5** |
 
-A `micro` page has no quiz. The checkbox then attests to reading only.
+A `micro` page has no quiz. The checkbox then attests to reading only: the gate reads the
+record's `Depth` row, so write exactly `micro` there.
 
 **The prose budget applies at every depth.**
 
