@@ -229,7 +229,13 @@ class FakeIntegration:
         if op == "list-comments":
             return {
                 "comments": [
-                    {"id": f"c{i}", "body": body, "url": f"https://e2e/c{i}"}
+                    # the-loop posts under the operator's own login (decision-023)
+                    {
+                        "id": f"c{i}",
+                        "body": body,
+                        "url": f"https://e2e/c{i}",
+                        "author": OWNER,
+                    }
                     for i, body in enumerate(self.comments)
                 ]
             }
@@ -238,7 +244,7 @@ class FakeIntegration:
             return {
                 "body": self.comments[index],
                 "url": f"https://e2e/c{index}",
-                "author": "the-loop",
+                "author": OWNER,
                 "edits": [
                     {"editor": who, "editedAt": at}
                     for who, at in self.edits.get(index, [])

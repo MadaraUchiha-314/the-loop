@@ -8,6 +8,8 @@ webhook router and the dispatcher.
 
 from __future__ import annotations
 
+import re
+
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -119,12 +121,13 @@ def _seed(
     if ticked:
         body = body.replace(f"- [ ] {line}", f"- [x] {line}")
     github.comments[("o", "r", 7)] = [
-        GhComment(id=cid, body=body, author="the-loop", created_at="t0", url="u")
+        # the-loop posts under the operator's own login (decision-023)
+        GhComment(id=cid, body=body, author=OWNER, created_at="t0", url="u")
     ]
     github.edits[cid] = GhCommentEdits(
         body=body,
         url="https://github.com/o/r/issues/7#issuecomment-1",
-        author="the-loop",
+        author=OWNER,
         edits=tuple((who, f"2026-10-15T00:00:0{i}Z") for i, who in enumerate(editors)),
     )
 
@@ -400,6 +403,31 @@ def test_a_changed_spec_routes_back_as_stale(spec_dir, github):
     result = quiz.quiz_attested(_ctx(spec_dir, event={"comments": []}))
     assert result.status == "pass" and result.outcome == "stale"
     assert load_graph().next_node("spec-quiz", "stale") == "spec-explainer"
+
+
+def _look_alike(github: FakeGitHubClient, body: str, cid: str = "IC_2") -> None:
+    """Mallory copies the-loop's comment — both markers are just text."""
+    github.comments[("o", "r", 7)].append(
+        GhComment(id=cid, body=body, author="mallory", created_at="t1", url="m")
+    )
+
+
+def test_a_look_alike_with_a_wrong_digest_cannot_send_the_quiz_back(spec_dir, github):
+    """Abuse case 6: a copied marker from an unauthorized author is no quiz comment."""
+    body = _posted_body(spec_dir, github)
+    _seed(github, body, ticked=False, editors=[OWNER])
+    forged = re.sub(r"digest=[0-9a-f]{12}", "digest=000000000000", body)
+    _look_alike(github, forged)
+    result = quiz.quiz_attested(_ctx(spec_dir, event={"comments": []}))
+    assert result.status == "wait" and result.outcome != "stale"
+
+
+def test_an_unticked_look_alike_cannot_hide_the_real_tick(spec_dir, github):
+    body = _posted_body(spec_dir, github)
+    _seed(github, body, ticked=True, editors=[OWNER])
+    _look_alike(github, body)
+    result = quiz.quiz_attested(_ctx(spec_dir, event={"comments": []}))
+    assert result.status == "pass" and result.data["attestedBy"] == OWNER
 
 
 def test_a_tick_from_an_earlier_round_does_not_answer_this_one(spec_dir, github):

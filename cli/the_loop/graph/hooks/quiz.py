@@ -145,15 +145,34 @@ def _comments(ctx: HookContext, ref: str) -> List[Mapping[str, Any]]:
     return [c for c in data.get("comments") or [] if isinstance(c, Mapping)]
 
 
+def _author(comment: Mapping[str, Any]) -> str:
+    raw = comment.get("author") or comment.get("user") or ""
+    return str(raw.get("login") or "") if isinstance(raw, Mapping) else str(raw)
+
+
 def _ours(
-    comments: Iterable[Mapping[str, Any]], node: str
+    comments: Iterable[Mapping[str, Any]], node: str, allowed: Sequence[str]
 ) -> List[Tuple[Mapping[str, Any], Mapping[str, str]]]:
-    """This node's quiz comments the-loop posted, oldest first."""
+    """This node's quiz comments the-loop posted, oldest first.
+
+    Both markers are plain text anyone who can comment could copy, so a body
+    alone proves nothing: the comment must also be AUTHORED by an authorized
+    login. the-loop posts under the operator's own account (decision-023), so
+    its real comment passes; a look-alike from anyone else is not a quiz
+    comment at all — it can neither hide the real box nor fake a stale spec.
+    """
     out = []
     for comment in comments:
         body = str(comment.get("body") or "")
         marker = _marker(body)
-        if marker and marker["node"] == node and is_self_authored(body):
+        author = _author(comment)
+        if (
+            marker
+            and marker["node"] == node
+            and is_self_authored(body)
+            and author
+            and is_authorized(author, list(allowed))
+        ):
             out.append((comment, marker))
     return out
 
@@ -277,12 +296,13 @@ def post_quiz_attestation(ctx: HookContext) -> HookResult:
     names = [str(n) for n in ctx.params.get("digest") or []]
     digest = spec_digest(ctx.work_item.spec_dir, names) if names else "-"
     round_ = _round(ctx)
+    allowed = [str(u) for u in (ctx.config.get("authorizedUsers") or [])]
     posted: List[str] = []
     for ref in _targets(ctx, str(ctx.params.get("on") or "ticket")):
         try:
             already = any(
                 m["round"] == str(round_) and m["digest"] == digest
-                for _, m in _ours(_comments(ctx, ref), node)
+                for _, m in _ours(_comments(ctx, ref), node, allowed)
             )
             if already:
                 continue
@@ -320,7 +340,7 @@ def quiz_attested(ctx: HookContext) -> HookResult:
         try:
             mine = [
                 (c, m)
-                for c, m in _ours(_comments(ctx, ref), node)
+                for c, m in _ours(_comments(ctx, ref), node, allowed)
                 if m["round"] == round_
             ]
         except Exception as exc:  # noqa: BLE001
@@ -328,26 +348,31 @@ def quiz_attested(ctx: HookContext) -> HookResult:
             continue
         if not mine:
             continue
-        comment, marker = mine[-1]
-        if names and marker["digest"] != current:
+        newest = mine[-1][1]
+        if names and newest["digest"] != current:
             # The spec moved under the quiz: the page the author would attest
             # to is no longer the spec. Back to the explainer for a new one.
             return HookResult.ok(
-                name, outcome="stale", was=marker["digest"], now=current
+                name, outcome="stale", was=newest["digest"], now=current
             )
-        if not attestation_ticked(str(comment.get("body") or ""), node):
-            continue
-        verdict = _attributed(ctx, ref, comment, node, round_, allowed)
-        if verdict.get("by"):
-            return HookResult.ok(
-                name,
-                decision=node,
-                attestedBy=verdict["by"],
-                attestedAt=verdict.get("at", ""),
-                comment=str(comment.get("url") or comment.get("html_url") or ""),
-                via="tick",
-            )
-        refused.append(verdict.get("refused") or "unknown")
+        # Every comment of this round counts (a retried post can leave two),
+        # but only one carrying the spec as it is now.
+        for comment, marker in reversed(mine):
+            if names and marker["digest"] != current:
+                continue
+            if not attestation_ticked(str(comment.get("body") or ""), node):
+                continue
+            verdict = _attributed(ctx, ref, comment, node, round_, allowed)
+            if verdict.get("by"):
+                return HookResult.ok(
+                    name,
+                    decision=node,
+                    attestedBy=verdict["by"],
+                    attestedAt=verdict.get("at", ""),
+                    comment=str(comment.get("url") or comment.get("html_url") or ""),
+                    via="tick",
+                )
+            refused.append(verdict.get("refused") or "unknown")
 
     typed = _typed_attestation(ctx, node, allowed)
     if typed:
@@ -384,8 +409,11 @@ def _attributed(
         return {"refused": "unverified"}
     body = str(found.get("body") or "")
     marker = _marker(body)
+    author = str(found.get("author") or "")
     if not (
-        is_self_authored(body)
+        author
+        and is_authorized(author, list(allowed))
+        and is_self_authored(body)
         and marker
         and marker["node"] == node
         and marker["round"] == round_
@@ -415,8 +443,7 @@ def _typed_attestation(
         if not isinstance(comment, Mapping):
             continue
         body = str(comment.get("body") or "")
-        raw = comment.get("author") or comment.get("user") or ""
-        author = str(raw.get("login") or "") if isinstance(raw, Mapping) else str(raw)
+        author = _author(comment)
         if (
             is_self_authored(body)
             or not author
