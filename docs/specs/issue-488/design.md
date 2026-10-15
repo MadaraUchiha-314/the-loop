@@ -2,8 +2,8 @@
 type: design
 phase: design
 workItem: "github:MadaraUchiha-314/the-loop#488"
-status: draft                # draft | in-review | approved — the design-approval gate locks it
-approvedBy: []
+status: approved             # draft | in-review | approved — the design-approval gate locks it
+approvedBy: ["MadaraUchiha-314"]
 overrides: {}
 ---
 
@@ -489,3 +489,9 @@ None open. The four requirements questions were answered by approval with defaul
 
 > Appended by the-loop's `record-feedback` hook when a human gate approves with
 > comments (issue-109). Append-only and attributed.
+
+### 2026-10-15 — approved
+
+**@MadaraUchiha-314** wrote:
+
+approved
