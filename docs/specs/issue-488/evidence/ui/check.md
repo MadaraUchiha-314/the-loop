@@ -63,7 +63,7 @@ all checks passed
 render, and everything after the string would have parsed as live markup. The engine
 cannot guard against this, because the browser closes the element before any script runs.
 So the template's header and `reference/explainer.md` now state the rule: inside a `QUIZ`
-block, write every `<` as `<`. The fixture follows that rule, and the hostile string
+block, write every `<` as `\u003c`. The fixture follows that rule, and the hostile string
 then renders as text and never executes.
 
 **axe-core reported two moderate findings on the first run:** `landmark-one-main` and

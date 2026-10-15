@@ -141,7 +141,7 @@ font. Copy it, then:
 - **Untrusted text stays text.** Ticket, comment and diff content is untrusted. Never
   paste it into a tab panel as markup: escape `& < > " '`, or put it inside `<pre>`
   escaped.
-- **Inside a `QUIZ` block, write every `<` as `<`.** A literal `</script>` in any
+- **Inside a `QUIZ` block, write every `<` as `\u003c`.** A literal `</script>` in any
   string ends the block early and turns the rest of the page into live markup.
 
 ## Publishing
