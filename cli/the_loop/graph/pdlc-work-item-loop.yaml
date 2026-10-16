@@ -147,9 +147,11 @@ nodes:
     #
     # `absentOutcome` (issue-494): a brainstorm nobody wrote has nothing for
     # `brainstorm-approval` to approve, so this node routes around the gate on
-    # `not-entered` rather than parking a work item at an empty approval.
+    # `not-entered` rather than parking a work item at an empty approval —
+    # unless that `gate` was already entered (changes-requested), when a
+    # missing brainstorm blocks rather than skipping the requested changes.
     exit:
-      - {hook: validate-artifacts, with: {sections: ["Problem / opportunity", "Open questions"], absentOutcome: not-entered}}
+      - {hook: validate-artifacts, with: {sections: ["Problem / opportunity", "Open questions"], absentOutcome: not-entered, gate: brainstorm-approval}}
       - lint-artifacts
 
   # The brainstorm's own gate (issue-494). issue-281 gave `brainstorm.md` no
@@ -170,7 +172,10 @@ nodes:
     exit:
       # `whenPresent`: no brainstorm, nothing to approve — the walk already
       # routes around this node on `not-entered`; this keeps `check
-      # --recompute`, which scores every node, from reporting it unmet.
+      # --recompute`, which scores every node, from reporting it unmet. Once
+      # this gate has been entered, a missing brainstorm.md BLOCKS instead:
+      # deleting the file must never stand in for an approval. Deliberately no
+      # `pass` edge for the same reason.
       - {hook: classify-feedback, with: {whenPresent: brainstorm.md}}
       - {hook: record-feedback, with: {into: brainstorm.md}}
       - {hook: lock-artifacts, with: {artifacts: [brainstorm.md]}}
@@ -589,8 +594,6 @@ edges:
   - {from: brainstorm-approval, to: requirements-definition, on: approved}
   - {from: brainstorm-approval, to: requirements-definition, on: approved-with-comments}
   - {from: brainstorm-approval, to: brainstorming, on: changes-requested}
-  # `pass` only when `whenPresent` found no brainstorm.md — nothing to approve.
-  - {from: brainstorm-approval, to: requirements-definition, on: pass}
   - {from: requirements-definition, to: requirements-approval, on: pass}
   # Declared-skip routing (issue-177): each skippable node's `on: skipped` edge
   # is its ordinary forward edge — authored here, never inferred by the runtime.

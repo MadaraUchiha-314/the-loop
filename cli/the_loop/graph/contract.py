@@ -117,6 +117,12 @@ class HookContext:
     #: executing, not re-load the shipped default: the two differ for the inner
     #: PR loop and for any graph a caller passed in.
     graph: Optional[Any] = None
+    #: Node ids this work item has actually ENTERED — its work-item state's
+    #: records, minus those it was routed around as skipped (issue-494). Lets a
+    #: gate over an optional artifact tell "never written" (nothing to approve)
+    #: from "removed after the gate opened" (fail closed): only the first may
+    #: route past a human.
+    visited: FrozenSet[str] = frozenset()
 
     @property
     def node_id(self) -> str:

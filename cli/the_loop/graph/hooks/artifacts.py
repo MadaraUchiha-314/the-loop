@@ -151,6 +151,26 @@ def validate_artifacts(ctx: HookContext) -> HookResult:
     if ctx.node.get("optional") and not any(slot.present for slot in entered):
         result = HookResult.skipped(NAME, "optional node; no artifact was produced")
         absent = str(params.get("absentOutcome") or "")
+        gate = str(params.get("gate") or "")
+        if absent and gate and gate in ctx.visited:
+            # Fail closed (self-review on PR #495): back here after its gate
+            # opened — `changes-requested` — the artifact was removed rather
+            # than revised, and routing around the gate would skip the changes.
+            names = ", ".join(n for slot in entered for n in slot.names)
+            return HookResult.blocked(
+                NAME,
+                [
+                    Message(
+                        text=(
+                            f"{names} was removed after {gate} opened; restore "
+                            f"and revise it, or have its author declare {gate} "
+                            "skipped"
+                        ),
+                        path=_rel(ctx, ctx.work_item.spec_dir),
+                    )
+                ],
+                retriable=False,
+            )
         if absent:
             result.data["outcome"] = absent
         return result

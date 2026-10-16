@@ -63,7 +63,7 @@ is how `requirements-approval` already sits under `loop:requirements-definition`
   - id: brainstorming
     ...
     exit:
-      - {hook: validate-artifacts, with: {sections: ["Problem / opportunity", "Open questions"], absentOutcome: not-entered}}
+      - {hook: validate-artifacts, with: {sections: ["Problem / opportunity", "Open questions"], absentOutcome: not-entered, gate: brainstorm-approval}}
       - lint-artifacts
 
   - id: brainstorm-approval
@@ -85,7 +85,6 @@ The edges change as follows:
 | `brainstorming` | `not-entered` | — | `requirements-definition` (new) |
 | `brainstorming` | `skipped` | `requirements-definition` | unchanged |
 | `brainstorm-approval` | `approved`, `approved-with-comments`, `skipped` | — | `requirements-definition` (new) |
-| `brainstorm-approval` | `pass` (only when `whenPresent` finds no `brainstorm.md`) | — | `requirements-definition` (new) |
 | `brainstorm-approval` | `changes-requested` | — | `brainstorming` (new) |
 
 `brainstorm-approval` joins the `spec-chain` skip set, so `--node spec-chain` still
@@ -104,12 +103,22 @@ The parameter is a hook argument, not a new node attribute, because routing on a
 a decision this one gate makes. A custom graph's optional node keeps its single `pass`
 edge and keeps working.
 
+A companion `gate: <node>` names the gate the skip routes around. When that node is in
+`visited`, which means the work item came back from `changes-requested`, a missing
+artifact blocks instead of routing (self-review finding S2).
+
 ### `classify-feedback`: the `whenPresent` parameter
+
+`HookContext` gains `visited`: the node ids the work item's state records as entered,
+leaving out the ones `_route_skips` walked past. The runtime fills it in `evaluate` for
+both `advance` and `status`. Both new parameters use it to fail closed: absence means
+"nothing to approve" only for a gate that was never entered (self-review finding S2).
 
 `{hook: classify-feedback, with: {whenPresent: brainstorm.md}}` returns a skip, with no
 outcome, while the named artifact is absent, or while its authoring node is declared
 skipped (the walk routes past the gate then, even if a stray copy is on disk; critic
-finding C1). The chain then passes and routes on `pass`.
+finding C1). Once the gate has been entered (`brainstorm-approval` in `visited`), a
+missing subject **blocks** instead. The chain then passes and routes on `pass`.
 With the artifact present, classification is unchanged. `brainstorm-approval`'s exit
 chain uses it.
 
@@ -142,11 +151,13 @@ gate.
 
 - **No reply, or an indecisive one.** `classify-feedback` returns `wait`, and the node
   parks with "feedback so far is not decisive; the gate stays open".
-- **`brainstorm.md` deleted while the gate is open.** `classify-feedback`'s
-  `whenPresent` skips, the chain passes, and the `pass` edge takes the item to
-  `requirements-definition`: there is nothing left to approve. Without that edge the
-  item would escalate on `no_edge` (found in self-review, pinned by
-  `test_a_brainstorm_removed_while_the_gate_is_open_does_not_wedge_it`).
+- **`brainstorm.md` deleted while the gate is open.** `classify-feedback` blocks with
+  "brainstorm.md was removed while its approval gate was open; restore it, or have its
+  author declare brainstorm-approval skipped". A repeat escalates to a human. The gate
+  has no `pass` edge, so deletion can never open it.
+- **`brainstorm.md` deleted after changes-requested.** Back at `brainstorming`,
+  `validate-artifacts` sees `brainstorm-approval` in `visited` and blocks instead of
+  routing on `not-entered`, so the requested changes cannot be skipped.
 - **Malformed front matter.** `lock-artifacts` blocks, as it does for every gate.
 
 ## Security design
@@ -159,6 +170,12 @@ gate.
   `validate-artifacts`. `_disarm_routing` drops any `data["outcome"]` from an `x-` hook,
   so a repository hook cannot declare it to skip the gate (second abuse case). It is
   already covered by the extensions tests, and this change adds no new path around it.
+- **Abuse case: deleting the artifact to get past the gate.** An agent session removes
+  `brainstorm.md` at the gate, or after changes-requested, to move on without a human.
+  Defeated by `visited`: once the gate is entered, absence blocks, and the gate has no
+  `pass` edge. Negative tests:
+  `test_deleting_the_brainstorm_at_its_gate_does_not_open_it` and
+  `test_deleting_the_brainstorm_after_changes_requested_does_not_skip_them`.
 - **Fail closed.** The gate has no timeout and no default verdict.
 - **Secrets, least privilege.** Not touched.
 

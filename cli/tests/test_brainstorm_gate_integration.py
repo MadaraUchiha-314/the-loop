@@ -216,15 +216,15 @@ def test_a_skipped_brainstorm_never_reaches_its_gate(repo, github):
     assert gate.status in ("pass", "skip"), gate.messages
 
 
-def test_a_brainstorm_removed_while_the_gate_is_open_does_not_wedge_it(repo, github):
+def test_deleting_the_brainstorm_at_its_gate_does_not_open_it(repo, github):
     """
     Feature: the brainstorm's approval gate
     Scenario: brainstorm.md disappears while its gate is open
       Given a work item parked at brainstorm-approval
-      When brainstorm.md is deleted and any comment arrives
-      Then there is nothing to approve and the item moves to requirements
-      And it does not escalate on a missing edge
-    Requirement: docs/specs/issue-494/bugfix.md R2.1
+      When brainstorm.md is deleted and the gate is evaluated, with or without a reply
+      Then the gate blocks and names the missing brainstorm
+      And the work item does not reach requirements without a human approval
+    Requirement: docs/specs/issue-494/bugfix.md R1.2, R1.5 (self-review S2)
     """
     _at_brainstorming(repo)
     (_spec(repo) / "brainstorm.md").write_text(BRAINSTORM)
@@ -232,9 +232,38 @@ def test_a_brainstorm_removed_while_the_gate_is_open_does_not_wedge_it(repo, git
     runtime.advance(WORK_ITEM)
     (_spec(repo) / "brainstorm.md").unlink()
 
-    report = runtime.advance(WORK_ITEM, event=_reply("any thoughts?"))
-    assert report.status == "pass", report.messages
-    assert _node(repo) == "requirements-definition"
+    # The first evaluation blocks; the identical second one escalates to a
+    # human (a repeated block). Neither opens the gate.
+    for event, status in ((None, "block"), (_reply("any thoughts?"), "escalated")):
+        report = runtime.advance(WORK_ITEM, event=event)
+        assert report.status == status, report
+        assert any("brainstorm.md" in m for m in report.messages)
+        assert _node(repo) == "brainstorm-approval"
+
+
+def test_deleting_the_brainstorm_after_changes_requested_does_not_skip_them(
+    repo, github
+):
+    """
+    Feature: the brainstorm's approval gate
+    Scenario: the brainstorm is deleted instead of revised
+      Given a work item sent back to brainstorming by changes-requested
+      When brainstorm.md is deleted and brainstorming is completed
+      Then brainstorming blocks rather than routing around the gate
+    Requirement: docs/specs/issue-494/bugfix.md R1.4, R1.5 (self-review S2)
+    """
+    _at_brainstorming(repo)
+    (_spec(repo) / "brainstorm.md").write_text(BRAINSTORM)
+    runtime = _runtime(repo)
+    runtime.advance(WORK_ITEM)
+    runtime.advance(WORK_ITEM, event=_reply("changes requested: add C"))
+    assert _node(repo) == "brainstorming"
+    (_spec(repo) / "brainstorm.md").unlink()
+
+    report = runtime.advance(WORK_ITEM)
+    assert report.status == "block", report
+    assert any("brainstorm.md" in m for m in report.messages)
+    assert _node(repo) == "brainstorming"
 
 
 def test_a_skipped_brainstorm_left_on_disk_is_not_reported_at_its_gate(repo, github):

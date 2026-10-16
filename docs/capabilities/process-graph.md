@@ -462,8 +462,15 @@ The author of a work item — never the harness — decides which phases it walk
   and SHALL then skip while that artifact is absent or its authoring node was declared
   skipped (a stray copy on disk does not reopen a gate the walk routes past), so
   `check --recompute` (which scores
-  every node rather than walking edges) does not report the gate unmet. Both are opt-in
-  per hook entry and change nothing once the artifact exists. The shipped use is
+  every node rather than walking edges) does not report the gate unmet. Both SHALL fail
+  closed once the gate has been entered — `HookContext.visited`, the nodes the work
+  item's state records as entered rather than routed around: a missing artifact then
+  **blocks** at the gate (`whenPresent`), and at the authoring node after
+  `changes-requested` (`absentOutcome` with `gate: <node>`), so deleting the file can
+  never stand in for an approval. Both are opt-in per hook entry and change nothing
+  once the artifact exists. Like every approval gate, a gate whose artifact *is*
+  present reads `wait` under `--recompute`, which passes no event, so a brainstormed
+  item's derived position is `brainstorm-approval` until a reply is delivered. The shipped use is
   `brainstorming` → `brainstorm-approval`: no `brainstorm.md` routes on `not-entered`
   straight to `requirements-definition`.
 - **A kept gate SHALL keep a subject** (issue-179). A hook entry MAY declare

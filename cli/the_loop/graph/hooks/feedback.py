@@ -101,6 +101,25 @@ def classify_feedback(ctx: HookContext) -> HookResult:
     if subject and not any(
         slot.present for slot in resolve_produces([subject], ctx.work_item.spec_dir)
     ):
+        if ctx.node_id in ctx.visited:
+            # Fail closed (self-review on PR #495): absence is "nothing to
+            # approve" only for a gate never entered. Once it opened, a missing
+            # subject was REMOVED — and passing here would let deleting the
+            # file stand in for a human's approval.
+            return HookResult.blocked(
+                name,
+                [
+                    Message(
+                        text=(
+                            f"{subject} was removed while its approval gate was "
+                            f"open; restore it, or have its author declare "
+                            f"{ctx.node_id} skipped"
+                        ),
+                        path=subject,
+                    )
+                ],
+                retriable=False,
+            )
         return HookResult.skipped(name, f"no {subject}; nothing to approve")
     comments = _authorized_comments(ctx)
     if not comments:
