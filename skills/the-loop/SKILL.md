@@ -39,16 +39,17 @@ before it. An artifact with a human gate is refined with feedback **at that gate
 the gate **locks** it (`status: approved`) — and the gate is the *only* locker
 (issue-281): when it classifies an authorized approval it writes the status and the
 approver into the front matter itself. The session never sets `status: approved` and
-never requests an approval of its own — one gate, one human reply. An artifact **without**
-a gate (`brainstorm.md`, `tasks.md`) advances on shape alone, with no human stop. Specs
+never requests an approval of its own — one gate, one human reply. The one artifact
+**without** a gate (`tasks.md`) advances on shape alone, with no human stop. Specs
 live in `docs/specs/<id>/`:
 
 0. **`brainstorm.md`** *(optional, the root artifact)* — a free-form scratchpad to explore
    a fuzzy idea before committing to requirements: problem, options, open questions,
-   working hypothesis. Created by `/the-loop:brainstorm`; converted to requirements once
-   its author says it has converged — it has no approval gate, so it is never
-   `status: approved` (issue-281). Phase: `brainstorming`. Skip it when the work is
-   already clear.
+   working hypothesis. Created by `/the-loop:brainstorm`; the `brainstorm-approval` gate
+   keeps it open across any number of comments and questions, and locks it on its
+   author's approval (issue-494) — only then is it converted to requirements. Phase:
+   `brainstorming` (the label stays there while the gate is open). Skip it when the
+   work is already clear: a brainstorm that was never written routes around its gate.
 1. **`requirements.md`** (or **`bugfix.md`** for bugs) — user stories + EARS acceptance
    criteria (`WHEN <event> THEN the system SHALL <response>`). Phase: `requirements-definition`.
    Both names clear the same gate, and **exactly one of them may be present** — two would
@@ -146,10 +147,12 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   costs the human a second approval the gate will discard. An artifact whose gate lies
   ahead is complete when its sections are; iterate it with the feedback the gate
   records into it.
-- **Gate-less artifacts advance on shape alone.** `brainstorm.md` and `tasks.md` have no
-  approval node — do not hold them for a human "approved". `tasks.md` is derived from
-  the pair the human just approved at `design-approval`; the brainstorm converges when
-  its author says so on the thread. Never write a downstream artifact against an
+- **Gate-less artifacts advance on shape alone.** `tasks.md` has no approval node — do
+  not hold it for a human "approved": it is derived from the pair the human just
+  approved at `design-approval`. `brainstorm.md` is not gate-less (issue-494): it is the
+  root artifact, nothing upstream of it was approved, and its job is to be discussed,
+  so `brainstorm-approval` holds it until its author approves. Answer questions on it
+  and refine it while that gate is open. Never write a downstream artifact against an
   upstream one whose gate has not yet approved it.
 - **What a `human-approval` approval does is the operator's choice** (issue O9).
   `routing.mergeOnApproval` in the operator's `cli-config.yaml` governs it: **`true`

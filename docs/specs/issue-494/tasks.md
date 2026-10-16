@@ -38,7 +38,7 @@ overrides: {}
   - _Depends on:_ A2
   - _Requirements:_ R2.3
   - _Test:_ T6
-- [ ] **A5: the documentation.** Update the files in the design's documentation table,
+- [x] **A5: the documentation.** Update the files in the design's documentation table,
   including the `brainstorm.md` template, and `docs/capabilities/spec-workflow.md`.
   - _Depends on:_ A2
   - _Requirements:_ R3.1, R3.2

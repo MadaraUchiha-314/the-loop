@@ -100,8 +100,8 @@ not-started → brainstorming (optional) → requirements-definition → design 
 A work item is a chain of documents, each **derived from the one before it**. An
 artifact with a human approval gate is iterated with the feedback that gate records,
 and the gate **locks** it (`status: approved`) on the human's one approval — only then
-is the next one written. Artifacts with no gate (the brainstorm, the task DAG)
-advance on shape alone. They live in `docs/specs/<id>/`, in the
+is the next one written. The one artifact with no gate (the task DAG) advances on
+shape alone. They live in `docs/specs/<id>/`, in the
 [Kiro](https://kiro.dev/docs/specs/) spirit:
 
 | Artifact | What it settles |

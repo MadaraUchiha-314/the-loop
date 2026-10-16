@@ -117,9 +117,11 @@ rendered fixtures (Jira wiki/ADF/read) and any test that pins the row list are u
 ## Data models
 
 No schema changes. `work-item-state.json` gains a `brainstorm-approval` node record the
-same way it gains any other node. A work item already frozen at `phase-selection` before
-this change walks the shipped graph, so it meets the new gate the next time it leaves
-`brainstorming`. That is intended: those items are the ones the bug affects.
+same way it gains any other node. A work item whose `phase-selection` froze a graph
+before this change was never offered the gate, so `Runtime.declared_skips` skips it as
+`not-offered` (issue-488's rule for nodes a frozen selection never listed): an in-flight
+item keeps the route it was started on, and only items armed after the change meet the
+gate.
 
 ## Error handling
 

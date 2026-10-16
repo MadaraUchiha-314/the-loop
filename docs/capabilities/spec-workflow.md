@@ -47,7 +47,8 @@ the `/the-loop:work-on` superset command and granular per-step commands
   an approval of its own — one gate, one human reply
   (the review per phase is always on and delivered by the gates; the
   `workflow.requireHumanReviewPerPhase` switch was removed in issue-352).
-  An artifact with **no** gate (`brainstorm.md`, `tasks.md`) advances on shape alone.
+  The artifact with **no** gate (`tasks.md`) advances on shape alone; `brainstorm.md`
+  is locked by `brainstorm-approval` (issue-494).
   No downstream artifact is written against an upstream one whose gate has not yet
   approved it.
 - The spec chain SHALL live in the **origin** repository — the one the ticket was created
@@ -87,8 +88,11 @@ the `/the-loop:work-on` superset command and granular per-step commands
   tool; the files SHALL stay the gates' subject. See `skills/the-loop/reference/explainer.md`.
 - WHEN a work item starts as a fuzzy idea THEN the loop SHALL begin with a
   `brainstorm.md` root artifact (optional Phase 0) and convert it to requirements once
-  its author says it has converged — the brainstorm has no approval gate and is never
-  `status: approved` (issue-281).
+  the `brainstorm-approval` gate locks it on an authorized approval (issue-494). WHILE
+  that gate is open, a comment that does not decide the review SHALL leave it waiting,
+  in the `brainstorming` phase. WHEN no `brainstorm.md` was written, or `brainstorming`
+  was declared skipped, THEN the loop SHALL route past the gate to
+  `requirements-definition`.
 - The work item's phase SHALL be tracked on the ticket via labels (`loop:<phase>`, a
   fixed vocabulary since issue-352) through the state machine
   `not-started → brainstorming (optional) → requirements-definition → design →
@@ -178,6 +182,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-494 | The brainstorm is gated (2026-10-16): a human `brainstorm-approval` node follows `brainstorming`, so the author can comment and ask questions as often as they need and the brainstorm moves to requirements only on their approval, which locks `brainstorm.md`. A brainstorm that was never written, or a declared-skipped `brainstorming`, routes past the gate. Reverses issue-281's "gate-less" rule for `brainstorm.md` only; `tasks.md` stays gate-less | [spec](../specs/issue-494/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/494) |
 | issue-488 | The explainer and the quizzes (2026-10-15): a spec explainer + spec quiz before code generation and an explainer of the change + code quiz before review, sized by a depth ladder (micro / standard / deep, 0 / 3 / 5 questions), each gated by one attributed tick; published into the spec-chain artifact, its own artifact, or a committed HTML file with copy-paste view commands; on by default, one row to switch off | [spec](../specs/issue-488/), [process-graph](process-graph.md), [decision-143](../decisions/decision-143.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/488) |
 | issue-471 | The spec chain can also be read as one Claude artifact (2026-10-06): ticked at `phase-selection` on a `claude` work item, the session publishes one page with a tab per spec file, republishes it to the same URL on every change and links it once from the ticket. The markdown files stay the source of truth and the gates' subject; artifact comments are feedback, never a gate answer. Off by default, and not applied on any other harness | [spec](../specs/issue-471/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/471) |
 | issue-368 | The work item's spec directory carries its pull requests (2026-09-15): `work-item-state.json` gained `pullRequests[]` — ref, repository, number, URL, inner-loop directory, upstream state and who recorded it — so a reviewer reads which pull requests deliver the item from the branch, and a second machine does not re-derive them from `gh`. It lost the `session` block in the same change: a harness conversation id is a handle to one machine and never belonged in a repository | [spec](../specs/issue-368/), [decision-128](../decisions/decision-128.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/368) |

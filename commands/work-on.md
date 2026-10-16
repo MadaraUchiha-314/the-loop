@@ -41,11 +41,12 @@ when the work needs a scratchpad; otherwise start at `requirements-definition`):
 `not-started → brainstorming → requirements-definition → design → test-planning → tasks-breakdown → implementation → verification → needs-review → complete`
 
 **Iterate at the gate; the gate locks.** An artifact with an approval node
-(`requirements.md`/`bugfix.md`, and `design.md` + `testing-plan.md` as a pair) is
+(`brainstorm.md`, `requirements.md`/`bugfix.md`, and `design.md` + `testing-plan.md` as
+a pair) is
 refined with the feedback that gate records, and the gate itself writes
 `status: approved` plus the approver on the human's one approval (issue-281). Never set
-`status: approved` and never post an approval request of your own. Artifacts without a
-gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
+`status: approved` and never post an approval request of your own. The artifact without
+a gate (`tasks.md`) advances on shape alone.
 
 ## The loop
 
@@ -109,10 +110,12 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
 
 3. **Phase 0 — Brainstorm (optional)** (`brainstorming`). When the work starts as a fuzzy
    idea, create `docs/specs/<id>/brainstorm.md` (the **root artifact**) from the template:
-   problem, options, open questions, working hypothesis. Iterate it with feedback until
-   its author says it has converged (no approval gate, never `status: approved` —
-   issue-281), then **derive** `requirements.md` from it. Skip this phase when the work
-   is already well-defined.
+   problem, options, open questions, working hypothesis. Run `the-loop graph complete`
+   and let the **`brainstorm-approval` gate** hold it (issue-494): answer the author's
+   questions and refine the file while it is open — an indecisive comment keeps it
+   waiting — and their approval locks it. Then **derive** `requirements.md` from it.
+   Skip this phase when the work is already well-defined: a `brainstorming` node that
+   writes no `brainstorm.md` routes past the gate.
 
 4. **Phase 1 — Requirements** (`requirements-definition`). Create
    `docs/specs/<id>/requirements.md` (or `bugfix.md` for a bug — one artifact, two

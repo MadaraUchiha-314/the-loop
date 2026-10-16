@@ -455,6 +455,15 @@ The author of a work item — never the harness — decides which phases it walk
   artifact is **absent** THEN that slot SHALL be treated as a planned absence
   (`implementation`'s `tasks.md` re-gate after `tasks-breakdown` was skipped); an
   artifact that **exists** SHALL be gated normally regardless of declarations.
+- **A gate over an optional artifact SHALL NOT hold a work item that never wrote it**
+  (issue-494). `validate-artifacts` MAY declare `absentOutcome: <outcome>`: on an
+  `optional` node that produced nothing, its skip then carries that outcome, so the node
+  routes on a separate edge. `classify-feedback` MAY declare `whenPresent: <artifact>`,
+  and SHALL then skip while that artifact is absent, so `check --recompute` (which scores
+  every node rather than walking edges) does not report the gate unmet. Both are opt-in
+  per hook entry and change nothing once the artifact exists. The shipped use is
+  `brainstorming` → `brainstorm-approval`: no `brainstorm.md` routes on `not-entered`
+  straight to `requirements-definition`.
 - **A kept gate SHALL keep a subject** (issue-179). A hook entry MAY declare
   `onlyWhenSkipped: <artifact>`, and SHALL then apply only while every named artifact is a
   *planned absence* — authoring node declared-skipped **and** absent on disk — reporting
@@ -628,8 +637,8 @@ included, however empty the log was.
   skip, leaving the artifact untouched; an absent artifact is a planned absence, and an
   ambiguous slot blocks. It SHALL never declare an `outcome`, so the classifier alone
   routes the edge. Producing nodes SHALL NOT demand `locked:` — one gate, one human
-  approval, and a node with no gate (`brainstorming`, `tasks-breakdown`) needs no human
-  sign-off at all.
+  approval, and a node with no gate (`tasks-breakdown`) needs no human sign-off at all.
+  `brainstorming` gained one, `brainstorm-approval`, in issue-494.
 - `record-feedback` SHALL append approve-with-comments feedback to the artifact's own
   `## Review comments` section, append-only and attributed. An approval never silently
   discards a reviewer's suggestions, and the feedback travels with the document it
@@ -1083,6 +1092,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-494 | The brainstorm got a gate (2026-10-16): `brainstorming` passed on shape alone and went straight to `requirements-definition`, so the author's first reply on a brainstorm was the last it received. A human `brainstorm-approval` node now follows it with `requirements-approval`'s hooks — an indecisive comment waits, an approval locks `brainstorm.md`, changes-requested returns to `brainstorming` — and joins `spec-chain` and the checklist. `validate-artifacts` gained `absentOutcome:` (an unwritten brainstorm routes on `not-entered` around the gate) and `classify-feedback` gained `whenPresent:` (so `check --recompute` does not report that gate unmet) | [spec](../specs/issue-494/), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/494) |
 | issue-488 | The explainer and the two quizzes (2026-10-15): four skippable nodes — `spec-explainer` → `spec-quiz` after `design-approval`, `code-explainer` after `security-review`, `code-quiz` before `human-approval` — behind one ticked `explainer` setting row and skip set; `post-quiz-attestation` / `quiz-attested` hooks; the `comment-edits` integration op over GraphQL `userContentEdits`; the poller's tick detection and the webhook's `edited` rewrite into a delivery-only `quiz_attestation` doorbell; `not-offered` skips for nodes a frozen selection never listed; hardened in review: a quiz comment counts only when an authorized login (or Jira's service account) wrote it, every editor in its history must be authorized, ticks are deduplicated per tick, and `explainer-postdates-spec` enforces R5.6 at publish | [spec](../specs/issue-488/), [decision-143](../decisions/decision-143.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/488) |
 | issue-475 | Jira joins the control plane (2026-10-06, PR 2): `jiraapi.JiraClient` on the pycontribs `jira` SDK (REST v3/ADF on Cloud, v2/wiki on Data Center, credentials read from env vars at call time, errors and SDK logs scrubbed), `JiraProvider` with GitHub's operations plus `transition` in the contract suite, a `jira` branch in `resolve()`, the `integrations.jira` block at config `0.12.0` with a migration from the stub (a stub with no `site` or `projects` is dropped whole, with a note — it could never pass the schema), and `the-loop doctor jira` | [spec](../specs/issue-475/), [decision-142](../decisions/decision-142.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-472 | The `phase-selection` comment is laid out to be skimmed (2026-10-06): a titled question and a quick start first, then the phases and the non-phase settings as two groups, a heading per question opened by an emoji of its own, each setting's default stated before its rows, and every explanation collapsed under `<details>`. The rows, and so the reply parser and the Slack mirror, are unchanged; the Slack digest unfolds `<details>` and draws a `<summary>` bold. With every section offered, the visible text drops from 989 to 554 words | [spec](../specs/issue-472/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/472) |

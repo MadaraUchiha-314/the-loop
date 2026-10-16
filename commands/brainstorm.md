@@ -32,9 +32,12 @@ gate-owned-lock principle, reviews).
 
 3. **Iterate with feedback until it converges.** The brainstorm is meant to *change*:
    gather feedback (interactively or via ticket comments — paper trail), refine the
-   options, and resolve the open questions. The brainstorm has **no approval gate**
-   (issue-281): never set `status: approved` or ask for a sign-off — it has converged
-   when its author says the direction is settled, on the record.
+   options, and resolve the open questions. Once the work item walks the graph, the
+   **`brainstorm-approval` gate** holds it open across any number of comments and
+   questions and locks it on its author's approval (issue-494). Never set
+   `status: approved` or post a sign-off request yourself — the gate does both. Before a
+   ticket exists there is no gate yet: the brainstorm has converged when its author says
+   the direction is settled, on the record.
 
 4. **Point to the next step:** convert the converged brainstorm into requirements with
    `/the-loop:new-requirement <title>` (it reads the sibling `brainstorm.md` and derives

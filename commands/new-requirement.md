@@ -28,7 +28,11 @@ into requirements rather than starting from a blank page.
    folder, read it and **derive** the requirements from its locked direction — its chosen
    option becomes the introduction, its working hypothesis + hand-off become the user
    stories, and its resolved constraints become acceptance criteria. Do not proceed off an
-   unlocked brainstorm (`status` not `approved`): lock it first, or say so and stop.
+   unlocked brainstorm (`status` not `approved`) — on a work item that walks the graph,
+   the `brainstorm-approval` gate is what locks it (issue-494), so wait for it rather than
+   locking it yourself. The exceptions: that gate was declared skipped for the item, or
+   the brainstorm is a pre-ticket draft with no graph yet. Then its author's on-the-record
+   convergence stands in, and you say so in `requirements.md`.
    Everything the brainstorm considered-and-rejected stays in `brainstorm.md` (the record);
    only the carried-forward direction lands in `requirements.md`.
 
