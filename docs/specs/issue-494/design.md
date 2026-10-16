@@ -26,6 +26,11 @@ a work item that has nothing to approve:
    that outcome, and `brainstorming` routes on it straight to `requirements-definition`.
 2. **Skipping the brainstorm skips its gate.** `brainstorming`'s `skipped` edge goes to
    `requirements-definition`, not to the gate.
+3. **The status report agrees.** `classify-feedback` gains an opt-in `whenPresent`, so
+   the gate skips while `brainstorm.md` is absent. `check --recompute` scores every node
+   in declaration order rather than walking edges, so without this it would report an
+   item with no brainstorm as stuck at the gate. (Added during implementation, when
+   `test_gate_pointer_integration.py` caught it.)
 
 No Python changes are needed for the gate itself. The human-gate hooks are generic, and
 `classify-feedback` already returns `wait` for any comment that does not decide the
@@ -67,7 +72,7 @@ is how `requirements-approval` already sits under `loop:requirements-definition`
     skippable: true
     entry: [set-phase-label, request-review, {hook: notify, with: {event: phase-approval-pending, artifact: brainstorm.md}}]
     exit:
-      - classify-feedback
+      - {hook: classify-feedback, with: {whenPresent: brainstorm.md}}
       - {hook: record-feedback, with: {into: brainstorm.md}}
       - {hook: lock-artifacts, with: {artifacts: [brainstorm.md]}}
 ```
@@ -80,6 +85,7 @@ The edges change as follows:
 | `brainstorming` | `not-entered` | — | `requirements-definition` (new) |
 | `brainstorming` | `skipped` | `requirements-definition` | unchanged |
 | `brainstorm-approval` | `approved`, `approved-with-comments`, `skipped` | — | `requirements-definition` (new) |
+| `brainstorm-approval` | `pass` (only when `whenPresent` finds no `brainstorm.md`) | — | `requirements-definition` (new) |
 | `brainstorm-approval` | `changes-requested` | — | `brainstorming` (new) |
 
 `brainstorm-approval` joins the `spec-chain` skip set, so `--node spec-chain` still
@@ -97,6 +103,13 @@ a node that is not `optional`, or once the artifact exists.
 The parameter is a hook argument, not a new node attribute, because routing on absence is
 a decision this one gate makes. A custom graph's optional node keeps its single `pass`
 edge and keeps working.
+
+### `classify-feedback`: the `whenPresent` parameter
+
+`{hook: classify-feedback, with: {whenPresent: brainstorm.md}}` returns a skip, with no
+outcome, while the named artifact is absent. The chain then passes and routes on `pass`.
+With the artifact present, classification is unchanged. `brainstorm-approval`'s exit
+chain uses it.
 
 ### The `phase-selection` checklist
 
@@ -127,9 +140,11 @@ gate.
 
 - **No reply, or an indecisive one.** `classify-feedback` returns `wait`, and the node
   parks with "feedback so far is not decisive; the gate stays open".
-- **`brainstorm.md` deleted while the gate is open.** `record-feedback` and
-  `lock-artifacts` skip on an absent file, so an approval still routes forward with
-  nothing to lock. This is the same as `requirements-approval` with its artifact missing.
+- **`brainstorm.md` deleted while the gate is open.** `classify-feedback`'s
+  `whenPresent` skips, the chain passes, and the `pass` edge takes the item to
+  `requirements-definition`: there is nothing left to approve. Without that edge the
+  item would escalate on `no_edge` (found in self-review, pinned by
+  `test_a_brainstorm_removed_while_the_gate_is_open_does_not_wedge_it`).
 - **Malformed front matter.** `lock-artifacts` blocks, as it does for every gate.
 
 ## Security design

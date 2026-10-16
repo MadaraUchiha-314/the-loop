@@ -214,3 +214,24 @@ def test_a_skipped_brainstorm_never_reaches_its_gate(repo, github):
     report = _runtime(repo).status(WORK_ITEM, recompute=True)
     gate = next(n for n in report.nodes if n.node == "brainstorm-approval")
     assert gate.status in ("pass", "skip"), gate.messages
+
+
+def test_a_brainstorm_removed_while_the_gate_is_open_does_not_wedge_it(repo, github):
+    """
+    Feature: the brainstorm's approval gate
+    Scenario: brainstorm.md disappears while its gate is open
+      Given a work item parked at brainstorm-approval
+      When brainstorm.md is deleted and any comment arrives
+      Then there is nothing to approve and the item moves to requirements
+      And it does not escalate on a missing edge
+    Requirement: docs/specs/issue-494/bugfix.md R2.1
+    """
+    _at_brainstorming(repo)
+    (_spec(repo) / "brainstorm.md").write_text(BRAINSTORM)
+    runtime = _runtime(repo)
+    runtime.advance(WORK_ITEM)
+    (_spec(repo) / "brainstorm.md").unlink()
+
+    report = runtime.advance(WORK_ITEM, event=_reply("any thoughts?"))
+    assert report.status == "pass", report.messages
+    assert _node(repo) == "requirements-definition"

@@ -589,6 +589,8 @@ edges:
   - {from: brainstorm-approval, to: requirements-definition, on: approved}
   - {from: brainstorm-approval, to: requirements-definition, on: approved-with-comments}
   - {from: brainstorm-approval, to: brainstorming, on: changes-requested}
+  # `pass` only when `whenPresent` found no brainstorm.md — nothing to approve.
+  - {from: brainstorm-approval, to: requirements-definition, on: pass}
   - {from: requirements-definition, to: requirements-approval, on: pass}
   # Declared-skip routing (issue-177): each skippable node's `on: skipped` edge
   # is its ordinary forward edge — authored here, never inferred by the runtime.
