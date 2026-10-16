@@ -132,11 +132,11 @@ this change walks the shipped graph, so it meets the new gate the next time it l
 
 ## Security design
 
-- **Comment → classification boundary.** It is enforced by the reused `classify-feedback`:
+- **Trust boundary: comment → classification.** It is enforced by the reused `classify-feedback`:
   only `authorizedUsers` are read, self-authored comments are dropped, and the result is
   confined to `approved | approved-with-comments | changes-requested`. Defeats the first
   abuse case (an unauthorized "approved"). Negative test: T3.
-- **Routing by repository hooks.** `not-entered` is declared only by the built-in
+- **Abuse case: routing by repository hooks.** `not-entered` is declared only by the built-in
   `validate-artifacts`. `_disarm_routing` drops any `data["outcome"]` from an `x-` hook,
   so a repository hook cannot declare it to skip the gate (second abuse case). It is
   already covered by the extensions tests, and this change adds no new path around it.
