@@ -130,6 +130,13 @@ at the end composes one answer from them.
 *Leaning: A3 for the topology below, with A2's per-harness variants of the runner as a
 follow-up. The control plane needs no `tmux`; a runner needs no uvicorn workers.*
 
+> **Decided in review (A2, [thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4296967363)):
+> a base image plus one image per harness.** The base image carries the-loop and no
+> harness, so it *is* A3's control-plane image; `the-loop:claude`, `the-loop:codex` and
+> `the-loop:cursor` layer one harness each on it, and a session pod runs the image of
+> the harness its work item froze at `phase-selection`. A2 therefore subsumes A3 rather
+> than following it.
+
 ### B — Topology: how many pods, and what each one is
 
 ```mermaid
@@ -162,6 +169,20 @@ flowchart LR
   named today. The pod runs tmux + harness + the-loop CLI and nothing else; it comes up
   on the arming event (`the-loop execute`) and goes away when the ticket closes. This is
   how CI runners, Argo workflow pods and Codespaces are shaped.
+
+  *Does one control plane owning all ingress become the bottleneck at 1, 10, 1000s of
+  users?* ([thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4298464660))
+  Only polling has that shape, and polling is the fallback. GitHub and Jira events
+  arrive by **webhook**: one URL, verified and published by a stateless receiver that
+  holds no connection per issue and scales by replicas behind the load balancer. The
+  **poller** is per *source*, not per issue (one request per repository per cycle), it
+  exists for reconciliation and for sources without a webhook, and sources shard across
+  control-plane replicas by consistent hashing under a per-tenant rate budget. **Slack**
+  Socket Mode is one long-lived connection per Slack app, so with each tenant bringing
+  their own app it is one connection per workspace, sharded the same way. The queue in
+  C3 decouples ingress replicas from session pods, so neither count constrains the
+  other. One user is one replica; ten users is still one replica; thousands of users is
+  more ingress replicas and more session pods, with no singleton anywhere.
 - **B3 — Shared session pods with a quota (X work items per pod).** A pool of runner
   pods, each hosting up to X tmux sessions; the router assigns a work item to a pod with
   capacity and remembers it. Pros: fewer pods, warm tmux servers. Cons: noisy neighbours
@@ -209,6 +230,16 @@ a queue: a pod that was down when a webhook arrived is reconciled by the control
 poller on the next cycle, which already exists (`polling.sources`). C3 is reserved for
 the day the GitHub API budget makes polling untenable.*
 
+> **Decided in review (C3, [thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4298570896)):
+> a durable queue, one subject per work item.** The author's reasoning: C1 needs
+> resiliency for a pod that is down anyway, so a durable delivery path is needed
+> regardless, and the queue is that path. C1's naming survives as the subject name
+> (`loop-<slug>`), and the session pod becomes a *consumer*: it opens an outbound
+> connection to the queue and needs no inbound surface of its own, which is a stronger
+> isolation story than the forward. The queue technology is a design choice behind one
+> interface (NATS JetStream, Redis Streams, a cloud queue); at-least-once delivery with
+> consumer acknowledgement and deduplication by delivery id is the contract.
+
 ### D — Isolation: what shares a pod, and what runs inside another container
 
 - **D1 — Per-user pod.** One runner per tenant, hosting all of that tenant's work items
@@ -234,6 +265,11 @@ option is "which pod does ref R go to", and C1's naming scheme can carry each
 
 *Leaning: D2 by default, D1 and D3 as policy values, D4 declared as a follow-up with its
 threat model written down rather than silently skipped.*
+
+> **Decided in review (D2, [thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4298549938),
+> [thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4298639603)):
+> per-work-item pod, the only placement in scope.** D1 and D3 leave the requirements;
+> D4 stays a declared follow-up.
 
 ### E — Durability: what survives a pod being killed
 
@@ -278,6 +314,12 @@ the control plane's own registry on its own volume or in the cluster's API (a
 ConfigMap/CRD per work item is the cluster-native registry). Temporal is not needed to
 reach B2; revisit if the control plane grows timers and retries of its own.*
 
+> **Decided in review ([thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4298637719)):
+> durability of the harness conversation is decoupled from this work.** A restarted
+> pod resumes from the committed spec chain in a fresh conversation and says so on the
+> work item; E2's volume-backed resume becomes a follow-up ticket. Event *delivery*
+> durability is not deferred: C3 carries it.
+
 ### F — Troubleshooting: reaching the tmux session in a pod
 
 - **F1 — `ttyd` per session pod behind the gateway.** Already built
@@ -305,9 +347,20 @@ reach B2; revisit if the control plane grows timers and retries of its own.*
   plane as its one consumer (section C). Issue-387 ("a Slack app anyone can install")
   already brainstormed the manifest side.
 
+> **Decided in review ([thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4298609618),
+> [thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4298630674)):
+> users bring every credential: the harness token (Claude, Codex or Cursor), the Slack
+> token, the GitHub token and the Jira token, through an API and a portal on the control
+> plane where they are provided, rotated and maintained when they expire.** The
+> consequence for G1: the posting identity stays the user's own GitHub token, as today
+> (decision-023), so a GitHub App is not needed for posting; it remains an option for
+> webhook ingress at scale. For G3: each tenant's own Slack app token is one Socket Mode
+> connection held by the control plane.
+
 ## Sketches & notes
 
-Target shape under A3 + B2 + C1 + D2 + E2 + F1:
+Target shape as decided in review, A2 + B2 + C3 + D2 + F1 (updated 2026-10-16; the
+original A3 + C1 + E2 sketch is in this file's history):
 
 ```mermaid
 flowchart TB
@@ -318,11 +371,12 @@ flowchart TB
     R --> REG["registry: CRD / ConfigMap per work item"]
     API["/api/v1 + UI + manager fan-in"]
   end
-  R -- "POST /api/v1/sessions/reply" --> P1
-  subgraph P1["loop-github-owner-repo-492 · StatefulSet(1) + PVC"]
-    T["tmux: loop-github-owner-repo-492"] --> H["claude --resume &lt;id&gt;"]
+  R -- "publish: subject loop-github-owner-repo-492" --> Q["durable queue (C3)"]
+  Q -- "consume (outbound from the pod)" --> P1
+  subgraph P1["loop-github-owner-repo-492 · StatefulSet(1)"]
+    T["tmux: loop-github-owner-repo-492"] --> H["claude (image of the frozen harness)"]
     TT["ttyd → /sessions/&lt;slug&gt;/terminal"]
-    V["PVC: state.root · harness home · worktree"]
+    V["volume: state.root · worktree"]
   end
   H -- "the-loop comment / ask / pr …" --> GH
 ```
@@ -336,15 +390,18 @@ sequenceDiagram
     participant K as kube API
     participant P as loop-SLUG pod
     U->>CP: "the-loop execute" (webhook)
-    CP->>K: create StatefulSet + PVC loop-SLUG (tenant Secret mounted)
+    participant Q as queue subject loop-SLUG
+    CP->>K: create StatefulSet loop-SLUG (tenant credentials projected)
     K->>P: pod starts: the-loop start → tmux → claude --session-id
+    P->>Q: subscribe (outbound)
     U->>CP: later comment / review / CI event
-    CP->>P: forward by name (sessions/reply)
-    Note over P: pod killed
-    K->>P: recreated, same name, same PVC
-    P->>P: dispatcher respawn → claude --resume ID
+    CP->>Q: publish, keyed by delivery id
+    Q->>P: deliver, pod acks
+    Note over P: pod killed, backlog stays on the subject
+    K->>P: recreated, same name
+    P->>Q: resubscribe, drain backlog, dedup by delivery id
     U->>CP: ticket closed
-    CP->>K: delete StatefulSet, PVC reaped after retention
+    CP->>K: delete StatefulSet, subject reaped after retention
 ```
 
 Notes:
@@ -363,23 +420,33 @@ Notes:
 
 ## Open questions
 
-1. **(human) Scope of this ticket.** The brainstorm reads as three milestones:
+Questions 1–4 were decided in the review of PR #493 on 2026-10-16 (the quoted blocks
+in sections A–G carry each decision and its thread):
+
+| # | Question | Decision |
+|---|---|---|
+| 1 | Scope | all three milestones in this work item, as a stack of pull requests ([thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4298617505)) |
+| 2 | Credential tenancy | users bring every credential; an API and a portal to provide and maintain them ([thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4298630674)) |
+| 3 | Durability bar | conversation durability decoupled, a follow-up; event delivery durable via the queue ([thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4298637719)) |
+| 4 | Isolation default | per-work-item pod ([thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4298639603)) |
+
+1. **(human, decided) Scope of this ticket.** The brainstorm reads as three milestones:
    **M1** an image and a chart that run *today's* instance in a cluster (A3's runner
    image, one StatefulSet + PVC per instance, `locked` scope, ttyd behind the gateway);
    **M2** the control plane with routed ingress and one pod per work item (B2 + C1 +
    D2 + E2); **M3** the multi-tenant product (GitHub App, BYO harness credentials, Slack
    OAuth install, per-tenant isolation and billing). Is this work item M1 only, M1 + M2,
    or the epic with M1 as its first PR? *(raised on the ticket)*
-2. **(human) Tenancy model for credentials.** Does each tenant bring their own GitHub
+2. **(human, decided) Tenancy model for credentials.** Does each tenant bring their own GitHub
    token and harness login (G2), or does the service hold a GitHub App and only the
    harness credential is the tenant's? This decides whether M3 is a product the author
    wants to run, and it shapes M2's Secret layout. *(raised on the ticket)*
-3. **(human) Durability bar.** Is "the harness conversation survives a pod restart" a
+3. **(human, decided) Durability bar.** Is "the harness conversation survives a pod restart" a
    requirement (forces E2's volume) or is "the loop resumes from the last committed
    artifact in a fresh conversation" acceptable (E1 only, cheaper, lossy)? And is
    Temporal a preference or a question? The brainstorm answers "question, not needed".
    *(raised on the ticket)*
-4. **(human) Isolation default.** Per-work-item pod (D2) as the default placement
+4. **(human, decided) Isolation default.** Per-work-item pod (D2) as the default placement
    policy, with per-user and pool(X) as configurable alternatives? And is a nested
    sandbox (D4) in scope or a declared follow-up? *(raised on the ticket)*
 5. **(design-phase measurement)** Does Claude Code resume cleanly when its home
@@ -397,34 +464,41 @@ Notes:
 
 ## Leaning / working hypothesis
 
-**Build it as deployment first and product second: A3 + B1 as milestone one, B2 + C1 +
-D2 + E2 + F1 as milestone two, G as milestone three.** The thesis is that the-loop's
-existing shape, a per-work-item durable state machine, a named tmux session per work
-item, an instance that is a config file with a lockable scope, a mountable API with no
-in-app auth, and a per-session `sessions/reply` surface, already *is* the session pod,
-and that the genuinely new code is (1) a router in the control plane that turns a
-work-item ref into a pod name and forwards to it, (2) a scheduler that creates and
-reaps session pods with their volumes on arm and close, and (3) the GitHub App identity.
-Temporal is not needed to get there. Slack's "one app per person" problem is solved by
-construction the moment ingress is centralised, before any product work.
+**As decided in review: A2 + B2 + C3 + D2 + F1 + G, all three milestones in this work
+item, delivered as a stack of pull requests.** The thesis stands: the-loop's existing
+shape, a per-work-item durable state machine, a named tmux session per work item, an
+instance that is a config file with a lockable scope, and a mountable API with no
+in-app auth, already *is* the session pod. The genuinely new code is (1) a base image
+plus one image per harness, (2) a control plane that owns all ingress and publishes
+each event to a durable queue subject named from the work-item ref, (3) a scheduler
+that creates a session pod per work item on arm and reaps it on close, the pod
+consuming its own subject, and (4) a credential store with an API and a portal through
+which each user brings their harness, Slack, GitHub and Jira tokens. The posting
+identity stays the user's own token. Temporal is not needed; the harness conversation's
+survival across a restart is a follow-up. Slack's "one app per person" becomes "one
+token per tenant, held by the control plane".
 
 ## Hand-off → requirements
 
-Carries forward when converged: the milestone chosen in question 1 as the scope; EARS
-criteria around the image (every binary of the environment contract present, `the-loop
-start` as entry point, config rendered from environment, no credential baked in), the
-chart (one StatefulSet + PVC per instance or per work item, `locked` scope rendered from
-the ref, ttyd behind the gateway, resource limits, network policy allowing only the
-control plane inbound), the control plane (one ingress of each kind, ref → pod-name
-forward, refusal semantics identical to today's dispatcher for an absent pod, poller
-reconciliation as the backlog), durability (pod recreation resumes the harness
-conversation; the pointer committed with the artifacts), and tenancy per question 2.
-Security considerations seeded here: tenant credentials projected per pod only, the
-session pod's single inbound surface, webhook HMAC at the control plane only, the
-web terminal behind the gateway's auth, tokens never in `state.root` on a shared volume,
-the marker and authorized-actor guard unchanged, and D4's threat model written as a
-follow-up. Stays behind: B3's pool placement mechanics, C3's queue, E3 and E4, and G3's
-OAuth install flow.
+Carries forward (converged 2026-10-16): all three milestones as the scope; EARS criteria
+around the images (a base image with every non-harness binary of the environment
+contract and one image per harness, `the-loop start` as entry point, config rendered
+from environment, no credential baked in), the chart (control plane plus one
+StatefulSet per work item, `locked` scope rendered from the ref, ttyd behind the
+gateway, resource limits, network policy with the gateway as the only inbound source),
+the control plane (one ingress of each kind, sharded across replicas; every event
+published to a durable subject named from the ref; the session pod as the subject's
+consumer; at-least-once with acknowledgement and deduplication by delivery id), the
+scheduler (pod created on an authorized arm, reaped on close with a retention period),
+scaling tiers (1 / 10 / 1000s of users with no singleton), and tenancy (every
+credential the user's own, a credential API and portal, expiry and rotation, the
+posting identity unchanged). Security considerations seeded here: tenant credentials
+projected per pod only, the session pod with no inbound surface except the gateway's
+terminal route, per-pod queue credentials scoped to one subject, webhook HMAC at the
+control plane only, the web terminal behind the gateway's auth, the credential store
+encrypted at rest and never logged, the marker and authorized-actor guard unchanged, and
+D4's threat model written as a follow-up. Stays behind: B1, B3, C1's forward, D1/D3,
+E2's volume-backed conversation resume (follow-up ticket), E3 and E4.
 
 ## Review comments
 
