@@ -6,6 +6,7 @@ are checked in so the user can review and give feedback.
 
 | # | Title | Source | Date |
 |---|-------|--------|------|
+| [009](learning-009.md) | "Nothing to approve" must not be something an agent can arrange | system-feedback | 2026-10-16 |
 | [008](learning-008.md) | A marker in a comment body is a claim, not an identity | system-feedback | 2026-10-15 |
 | [007](learning-007.md) | A mandatory behavior needs a trigger point, not just a rule | user-feedback | 2026-07-01 |
 | [006](learning-006.md) | Separate the published artifact from internal project meta | user-feedback | 2026-07-01 |

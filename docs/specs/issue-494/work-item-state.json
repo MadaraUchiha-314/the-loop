@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-494",
-  "currentNode": "reviewer-briefing",
+  "currentNode": "human-approval",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -133,8 +133,16 @@
     },
     "reviewer-briefing": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-16T23:57:51+00:00",
+      "exitedAt": "2026-10-16T23:58:23+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "human-approval": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-16T23:58:23+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -311,7 +319,11 @@
     }
   },
   "forced": [],
-  "parked": null,
+  "parked": {
+    "node": "human-approval",
+    "reason": "awaiting a human",
+    "since": "2026-10-16T23:58:23+00:00"
+  },
   "completions": {
     "requirements-definition": {
       "at": "2026-10-16T23:23:46+00:00",
@@ -347,6 +359,10 @@
     },
     "capability-docs": {
       "at": "2026-10-16T23:57:51+00:00",
+      "by": "cli"
+    },
+    "reviewer-briefing": {
+      "at": "2026-10-16T23:58:23+00:00",
       "by": "cli"
     }
   },
