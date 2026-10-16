@@ -70,7 +70,7 @@ suite's existing fakes.
 
 | Activity | Outcome | Evidence |
 |----------|---------|----------|
-| T1–T6 | pass on the branch; the 8 regression tests fail with `main`'s graph and hooks | [`evidence/verification.md`](evidence/verification.md) |
+| T1–T6 | pass on the branch; the 9 regression tests fail with `origin/main`'s graph and hooks | [`evidence/verification.md`](evidence/verification.md) |
 | T7 | lint, format, pyright, markdownlint and `validate` clean. Full suite: 6125 passed, 21 failed, and the same 21 fail on `main` in this environment (they read the host's live poller) | [`evidence/verification.md`](evidence/verification.md) |
 | T8 | the unauthorized-approval case is pinned in `test_a_written_brainstorm_waits_at_its_gate_across_comments`; the extensions tests pass | [`evidence/verification.md`](evidence/verification.md) |
 | T9 | only new wording and the issue-281 History row match | [`evidence/documentation.md`](evidence/documentation.md) |
