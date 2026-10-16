@@ -17,7 +17,7 @@ overrides: {}
 
 ## Task list
 
-- [ ] **A1: `absentOutcome` on `validate-artifacts`.** Add the parameter to the
+- [x] **A1: `absentOutcome` on `validate-artifacts`.** Add the parameter to the
   optional-node branch in `cli/the_loop/graph/hooks/artifacts.py`.
   - _Depends on:_ none
   - _Requirements:_ R2.1, R2.4
