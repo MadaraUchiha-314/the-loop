@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "workItem": "issue-490",
+  "currentNode": "work",
+  "nodes": {
+    "work": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-16T03:13:58+00:00",
+      "exitedAt": "",
+      "lastBlock": "",
+      "forced": false
+    }
+  },
+  "decisions": {},
+  "forced": [],
+  "parked": null,
+  "completions": {},
+  "skips": {},
+  "optIns": {},
+  "surface": "",
+  "sessionPerPr": "",
+  "harness": "",
+  "model": "",
+  "effort": "",
+  "claudeArtifact": false,
+  "repos": [],
+  "pullRequests": [],
+  "loop": "pdlc-adhoc-loop",
+  "phase": "implementation"
+}
