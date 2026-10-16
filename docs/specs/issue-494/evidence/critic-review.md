@@ -19,3 +19,9 @@ workItem: "github:MadaraUchiha-314/the-loop#494"
 The critic's other checks (unauthorized commenters, repository `x-` hooks declaring the
 `not-entered` outcome, the checklist, the docs) produced no findings. The one-round cap is
 reached.
+
+**Ordering note.** This round reviewed `b1d774a`. Self-review round 2 ran in parallel
+and reported S2 afterwards, fixed in `40a63cc`. The fix narrows behaviour (absence now
+blocks once the gate is entered) and adds no new route, so it was not sent back to the
+critic: `criticReviewCount: 1` is spent. The security review (`evidence/security-review.md`) covers it.
+
