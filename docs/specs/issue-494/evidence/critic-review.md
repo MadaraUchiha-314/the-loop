@@ -24,4 +24,3 @@ reached.
 and reported S2 afterwards, fixed in `40a63cc`. The fix narrows behaviour (absence now
 blocks once the gate is entered) and adds no new route, so it was not sent back to the
 critic: `criticReviewCount: 1` is spent. The security review (`evidence/security-review.md`) covers it.
-
