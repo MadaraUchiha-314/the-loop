@@ -236,7 +236,7 @@
           "content": [
             {
               "type": "text",
-              "text": "requirements-definition"
+              "text": "brainstorm-approval"
             }
           ]
         },
@@ -249,7 +249,7 @@
           "content": [
             {
               "type": "text",
-              "text": "requirements-approval"
+              "text": "requirements-definition"
             }
           ]
         },
@@ -262,7 +262,7 @@
           "content": [
             {
               "type": "text",
-              "text": "design"
+              "text": "requirements-approval"
             }
           ]
         },
@@ -275,7 +275,7 @@
           "content": [
             {
               "type": "text",
-              "text": "test-planning"
+              "text": "design"
             }
           ]
         },
@@ -288,7 +288,7 @@
           "content": [
             {
               "type": "text",
-              "text": "design-approval"
+              "text": "test-planning"
             }
           ]
         },
@@ -301,7 +301,7 @@
           "content": [
             {
               "type": "text",
-              "text": "tasks-breakdown"
+              "text": "design-approval"
             }
           ]
         },
@@ -314,7 +314,7 @@
           "content": [
             {
               "type": "text",
-              "text": "implementation"
+              "text": "tasks-breakdown"
             }
           ]
         },
@@ -327,7 +327,7 @@
           "content": [
             {
               "type": "text",
-              "text": "verification"
+              "text": "implementation"
             }
           ]
         },
@@ -340,7 +340,7 @@
           "content": [
             {
               "type": "text",
-              "text": "self-review"
+              "text": "verification"
             }
           ]
         },
@@ -353,7 +353,7 @@
           "content": [
             {
               "type": "text",
-              "text": "critic-review"
+              "text": "self-review"
             }
           ]
         },
@@ -366,7 +366,7 @@
           "content": [
             {
               "type": "text",
-              "text": "security-review"
+              "text": "critic-review"
             }
           ]
         },
@@ -379,7 +379,7 @@
           "content": [
             {
               "type": "text",
-              "text": "evidence"
+              "text": "security-review"
             }
           ]
         },
@@ -392,7 +392,7 @@
           "content": [
             {
               "type": "text",
-              "text": "capability-docs"
+              "text": "evidence"
             }
           ]
         },
@@ -405,7 +405,7 @@
           "content": [
             {
               "type": "text",
-              "text": "reviewer-briefing"
+              "text": "capability-docs"
             }
           ]
         },
@@ -413,6 +413,19 @@
           "type": "taskItem",
           "attrs": {
             "localId": "the-loop-task-16",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "reviewer-briefing"
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-17",
             "state": "DONE"
           },
           "content": [
@@ -445,7 +458,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-17",
+            "localId": "the-loop-task-18",
             "state": "TODO"
           },
           "content": [
@@ -588,7 +601,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-18",
+            "localId": "the-loop-task-19",
             "state": "TODO"
           },
           "content": [
@@ -706,7 +719,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-19",
+            "localId": "the-loop-task-20",
             "state": "TODO"
           },
           "content": [
@@ -811,7 +824,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-20",
+            "localId": "the-loop-task-21",
             "state": "DONE"
           },
           "content": [
@@ -981,7 +994,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-21",
+            "localId": "the-loop-task-22",
             "state": "TODO"
           },
           "content": [
@@ -1016,7 +1029,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-22",
+            "localId": "the-loop-task-23",
             "state": "DONE"
           },
           "content": [
@@ -1051,7 +1064,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-23",
+            "localId": "the-loop-task-24",
             "state": "TODO"
           },
           "content": [
@@ -1340,7 +1353,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-24",
+            "localId": "the-loop-task-25",
             "state": "TODO"
           },
           "content": [
@@ -1358,7 +1371,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-25",
+            "localId": "the-loop-task-26",
             "state": "TODO"
           },
           "content": [
@@ -1485,7 +1498,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-26",
+            "localId": "the-loop-task-27",
             "state": "TODO"
           },
           "content": [
@@ -1507,7 +1520,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-27",
+            "localId": "the-loop-task-28",
             "state": "TODO"
           },
           "content": [
@@ -1608,7 +1621,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-28",
+            "localId": "the-loop-task-29",
             "state": "TODO"
           },
           "content": [
@@ -1626,7 +1639,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-29",
+            "localId": "the-loop-task-30",
             "state": "TODO"
           },
           "content": [

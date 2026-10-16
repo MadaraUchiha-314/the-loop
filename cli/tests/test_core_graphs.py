@@ -151,6 +151,7 @@ def test_skip_declares_against_the_shipped_vocabulary(tmp_path):
     )
     assert set(result["declared"]) == {
         "brainstorming",
+        "brainstorm-approval",
         "requirements-definition",
         "requirements-approval",
         "design",

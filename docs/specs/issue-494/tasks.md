@@ -22,18 +22,18 @@ overrides: {}
   - _Depends on:_ none
   - _Requirements:_ R2.1, R2.4
   - _Test:_ T2
-- [ ] **A2: the graph.** Add `brainstorm-approval` to `pdlc-work-item-loop.yaml`, set
+- [x] **A2: the graph.** Add `brainstorm-approval` to `pdlc-work-item-loop.yaml`, set
   `absentOutcome: not-entered` on `brainstorming`'s exit, re-point the edges per the
   design's table, and add the node to `spec-chain`. Update the pinned tests
   (`test_graph_skips.py`, `test_core_graphs.py`) and the e2e scenario node lists.
   - _Depends on:_ A1
   - _Requirements:_ R1.1, R1.4, R1.5, R2.2, R2.3
   - _Test:_ T1, T5
-- [ ] **A3: the runtime walk.** Add the T3/T4 integration tests that walk the gate.
+- [x] **A3: the runtime walk.** Add the T3/T4 integration tests that walk the gate.
   - _Depends on:_ A2
   - _Requirements:_ R1.2, R1.3, R1.4, R1.6, R2.1, R2.2, R2.3
   - _Test:_ T3, T4
-- [ ] **A4: the checklist fixtures.** Regenerate or edit the Jira checklist fixtures and
+- [x] **A4: the checklist fixtures.** Regenerate or edit the Jira checklist fixtures and
   any selection test that pins the row list.
   - _Depends on:_ A2
   - _Requirements:_ R2.3

@@ -84,6 +84,17 @@ def classify_feedback(ctx: HookContext) -> HookResult:
     iterative multi-comment review is served without inventing an outcome.
     """
     name = "classify-feedback"
+    # ``whenPresent:`` (issue-494) — a gate whose subject may legitimately never
+    # exist. `brainstorm-approval` follows an optional node: with no
+    # brainstorm.md there is nothing to approve, and `check --recompute`, which
+    # scores every node rather than walking the edge around it, would otherwise
+    # report the item stuck at a gate it never reaches. Absence only: a present
+    # artifact is classified exactly as before.
+    subject = str(ctx.params.get("whenPresent") or "")
+    if subject and not any(
+        slot.present for slot in resolve_produces([subject], ctx.work_item.spec_dir)
+    ):
+        return HookResult.skipped(name, f"no {subject}; nothing to approve")
     comments = _authorized_comments(ctx)
     if not comments:
         return HookResult.waiting(name, "no authorized feedback yet")

@@ -17,6 +17,7 @@ Only the boxes under **Phases** change what work is done. Everything under **Set
 ### 🧩 Phases — ticked ones run
 
 - [x] brainstorming
+- [x] brainstorm-approval
 - [x] requirements-definition
 - [x] requirements-approval
 - [x] design
