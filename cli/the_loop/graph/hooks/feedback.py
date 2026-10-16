@@ -88,9 +88,16 @@ def classify_feedback(ctx: HookContext) -> HookResult:
     # exist. `brainstorm-approval` follows an optional node: with no
     # brainstorm.md there is nothing to approve, and `check --recompute`, which
     # scores every node rather than walking the edge around it, would otherwise
-    # report the item stuck at a gate it never reaches. Absence only: a present
-    # artifact is classified exactly as before.
+    # report the item stuck at a gate it never reaches. A subject whose authoring
+    # node was declared skipped counts as absent even when a stray copy is on
+    # disk: the walk routes past this gate on that node's `skipped` edge, so the
+    # report must too (critic finding on PR #495). Otherwise a present artifact
+    # is classified exactly as before.
     subject = str(ctx.params.get("whenPresent") or "")
+    if subject and subject in ctx.skipped_artifacts:
+        return HookResult.skipped(
+            name, f"{subject}'s phase was declared skipped; nothing to approve"
+        )
     if subject and not any(
         slot.present for slot in resolve_produces([subject], ctx.work_item.spec_dir)
     ):

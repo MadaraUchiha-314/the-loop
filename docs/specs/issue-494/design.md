@@ -107,7 +107,9 @@ edge and keeps working.
 ### `classify-feedback`: the `whenPresent` parameter
 
 `{hook: classify-feedback, with: {whenPresent: brainstorm.md}}` returns a skip, with no
-outcome, while the named artifact is absent. The chain then passes and routes on `pass`.
+outcome, while the named artifact is absent, or while its authoring node is declared
+skipped (the walk routes past the gate then, even if a stray copy is on disk; critic
+finding C1). The chain then passes and routes on `pass`.
 With the artifact present, classification is unchanged. `brainstorm-approval`'s exit
 chain uses it.
 

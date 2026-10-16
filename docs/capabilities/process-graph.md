@@ -459,7 +459,9 @@ The author of a work item — never the harness — decides which phases it walk
   (issue-494). `validate-artifacts` MAY declare `absentOutcome: <outcome>`: on an
   `optional` node that produced nothing, its skip then carries that outcome, so the node
   routes on a separate edge. `classify-feedback` MAY declare `whenPresent: <artifact>`,
-  and SHALL then skip while that artifact is absent, so `check --recompute` (which scores
+  and SHALL then skip while that artifact is absent or its authoring node was declared
+  skipped (a stray copy on disk does not reopen a gate the walk routes past), so
+  `check --recompute` (which scores
   every node rather than walking edges) does not report the gate unmet. Both are opt-in
   per hook entry and change nothing once the artifact exists. The shipped use is
   `brainstorming` → `brainstorm-approval`: no `brainstorm.md` routes on `not-entered`

@@ -235,3 +235,22 @@ def test_a_brainstorm_removed_while_the_gate_is_open_does_not_wedge_it(repo, git
     report = runtime.advance(WORK_ITEM, event=_reply("any thoughts?"))
     assert report.status == "pass", report.messages
     assert _node(repo) == "requirements-definition"
+
+
+def test_a_skipped_brainstorm_left_on_disk_is_not_reported_at_its_gate(repo, github):
+    """
+    Feature: the brainstorm's approval gate
+    Scenario: brainstorming declared skipped, but a brainstorm.md is on disk
+      Given a work item whose author declared brainstorming away
+      And a brainstorm.md left in its spec directory
+      Then `check --recompute` does not report brainstorm-approval as waiting,
+      because the walk routes past a gate whose authoring node was skipped
+    Requirement: docs/specs/issue-494/bugfix.md R2.2 (critic finding C1)
+    """
+    _at_brainstorming(
+        repo, skips={"brainstorming": {"by": "@owner", "reason": "clear scope"}}
+    )
+    (_spec(repo) / "brainstorm.md").write_text(BRAINSTORM)
+    report = _runtime(repo).status(WORK_ITEM, recompute=True)
+    gate = next(n for n in report.nodes if n.node == "brainstorm-approval")
+    assert gate.status in ("pass", "skip"), gate.messages
