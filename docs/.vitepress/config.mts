@@ -2,6 +2,7 @@ import { readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitepress";
+import { withMermaid } from "vitepress-plugin-mermaid";
 
 // srcDir is docs/ itself; this file sits in docs/.vitepress/.
 const docsRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -239,7 +240,7 @@ const developerSidebar = [
   },
 ];
 
-export default defineConfig({
+const config = defineConfig({
   title: "the-loop",
   description: "The loop for everything! An opinionated PDLC harness for Claude Code and Cursor.",
   // Served from https://<owner>.github.io/the-loop/ by the gh-pages deploy workflow.
@@ -280,6 +281,16 @@ export default defineConfig({
     // so nothing is lost, and future specs can't break the docs deploy with a stray
     // `<placeholder>`.
     html: false,
+
+    // The same Vue-template strictness reads `{{…}}` inside inline code as an
+    // interpolation and fails the build (docs/operating-model/reference/explainer.md
+    // documents `{{…}}` placeholders). Fenced blocks already carry `v-pre`; give inline
+    // code the same, so a code span is always literal text, as on GitHub.
+    config(md) {
+      const codeInline = md.renderer.rules.code_inline!;
+      md.renderer.rules.code_inline = (...args) =>
+        codeInline(...args).replace(/^<code/, "<code v-pre");
+    },
   },
 
   themeConfig: {
@@ -365,3 +376,8 @@ export default defineConfig({
     },
   },
 });
+
+// The docs draw their diagrams as ```mermaid fences, which GitHub renders natively but
+// VitePress alone shows as code (issue-490). `withMermaid` renders each fence in the
+// browser as an SVG that follows the site's light/dark toggle.
+export default withMermaid(config);
