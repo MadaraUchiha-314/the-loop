@@ -43,7 +43,7 @@ overrides: {}
   - _Depends on:_ A2
   - _Requirements:_ R3.1, R3.2
   - _Test:_ T9
-- [ ] **A6: verify.** Run the testing plan's activities and record the evidence.
+- [x] **A6: verify.** Run the testing plan's activities and record the evidence.
   - _Depends on:_ A3, A4, A5
   - _Requirements:_ all
   - _Test:_ T7, T8

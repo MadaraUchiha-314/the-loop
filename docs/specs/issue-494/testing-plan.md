@@ -62,10 +62,18 @@ suite's existing fakes.
 
 ## Activities
 
-- [ ] Run T1–T6 and confirm the new tests fail on `main`'s graph.
-- [ ] Run `make check` (T7).
-- [ ] Run the T9 documentation grep.
+- [x] Run T1–T6 and confirm the new tests fail on `main`'s graph.
+- [x] Run `make check` (T7).
+- [x] Run the T9 documentation grep.
 
 ## Verification results
 
-Not yet executed.
+| Activity | Outcome | Evidence |
+|----------|---------|----------|
+| T1–T6 | pass on the branch; the 8 regression tests fail with `main`'s graph and hooks | [`evidence/verification.md`](evidence/verification.md) |
+| T7 | lint, format, pyright, markdownlint and `validate` clean. Full suite: 6125 passed, 21 failed, and the same 21 fail on `main` in this environment (they read the host's live poller) | [`evidence/verification.md`](evidence/verification.md) |
+| T8 | the unauthorized-approval case is pinned in `test_a_written_brainstorm_waits_at_its_gate_across_comments`; the extensions tests pass | [`evidence/verification.md`](evidence/verification.md) |
+| T9 | only new wording and the issue-281 History row match | [`evidence/documentation.md`](evidence/documentation.md) |
+
+T5 needed no scenario edits, and T3 found the `check --recompute` defect that
+`whenPresent` fixes; both are explained in the evidence.
