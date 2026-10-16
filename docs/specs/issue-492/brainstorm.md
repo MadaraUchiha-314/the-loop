@@ -334,17 +334,17 @@ sequenceDiagram
     participant U as authorized user
     participant CP as control plane
     participant K as kube API
-    participant P as loop-<slug> pod
+    participant P as loop-SLUG pod
     U->>CP: "the-loop execute" (webhook)
-    CP->>K: create StatefulSet + PVC loop-<slug> (tenant Secret mounted)
+    CP->>K: create StatefulSet + PVC loop-SLUG (tenant Secret mounted)
     K->>P: pod starts: the-loop start → tmux → claude --session-id
     U->>CP: later comment / review / CI event
     CP->>P: forward by name (sessions/reply)
     Note over P: pod killed
     K->>P: recreated, same name, same PVC
-    P->>P: dispatcher respawn → claude --resume <id>
+    P->>P: dispatcher respawn → claude --resume ID
     U->>CP: ticket closed
-    CP->>K: delete StatefulSet; PVC reaped after retention
+    CP->>K: delete StatefulSet, PVC reaped after retention
 ```
 
 Notes:
