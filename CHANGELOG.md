@@ -1,3 +1,9 @@
+## v20.2.0 (2026-10-16)
+
+### Feat
+
+- **issue-490**: render mermaid diagrams on the docs site (#491)
+
 ## v20.1.0 (2026-10-15)
 
 ### Feat
