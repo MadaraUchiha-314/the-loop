@@ -1,3 +1,9 @@
+## v20.2.1 (2026-10-17)
+
+### Fix
+
+- **issue-494**: gate the brainstorm on its author's approval (#495)
+
 ## v20.2.0 (2026-10-16)
 
 ### Feat
