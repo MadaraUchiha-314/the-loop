@@ -18,12 +18,13 @@ The core rule (issue-281): **approvals are owned by approval nodes, and the gate
 locker.** An artifact whose gate lies ahead is complete when its sections are; the
 approval node then classifies the human's feedback, records it into the artifact, and —
 on an approval — writes `status: approved` plus the approver into the front matter
-itself (`lock-artifacts`). One gate, one human reply: `requirements-approval` locks
+itself (`lock-artifacts`). One gate, one human reply: `brainstorm-approval` locks
+`brainstorm.md` (issue-494); `requirements-approval` locks
 `requirements.md`/`bugfix.md`; `design-approval` locks `design.md` **and**
 `testing-plan.md` together. The session never sets `status: approved` and never posts
 an approval request of its own — a session-invented stop costs the human a second
-approval the gate then discards. Artifacts with **no** gate (`brainstorm.md`,
-`tasks.md`) advance on shape alone. Nothing downstream is written against an upstream
+approval the gate then discards. The artifact with **no** gate (`tasks.md`) advances
+on shape alone. Nothing downstream is written against an upstream
 artifact whose gate has not yet approved it.
 
 **One artifact sits beside the chain rather than in it: `docs/specs/<id>/context.md`**
@@ -51,15 +52,20 @@ When work starts as a **fuzzy idea** rather than a well-formed requirement, begi
 `brainstorm.md` scratchpad (`/the-loop:brainstorm`) — the **root artifact** the rest of
 the chain grows from. It is deliberately free-form: problem/opportunity, context &
 constraints, ideas & options (including rejected ones and *why*), sketches, open
-questions, and a working hypothesis. Iterate it with feedback until its author says it
-has converged — the brainstorm has **no approval gate**, so it is never
-`status: approved` (issue-281) — then **convert** it to `requirements.md`
+questions, and a working hypothesis. Iterate it with feedback while the
+**`brainstorm-approval`** gate is open (issue-494): a question, a remark or a partial
+review leaves the gate waiting and the label on `loop:brainstorming`, so its author can
+comment as often as they need; their approval locks it (`status: approved`) and a
+request for changes returns it to `brainstorming`. Then **convert** it to `requirements.md`
 (`/the-loop:new-requirement` reads the sibling brainstorm and derives requirements from
 it). Everything considered-and-dropped stays in `brainstorm.md` as the record; only the
 chosen direction carries forward.
 
 **Brainstorming is optional.** A work item whose scope is already clear starts directly at
-`requirements-definition` — nothing forces a brainstorm.
+`requirements-definition` — nothing forces a brainstorm. A `brainstorming` node that
+writes no `brainstorm.md` routes around its gate (`not-entered`), and so does a declared
+skip of `brainstorming`; declaring `brainstorm-approval` alone away keeps the brainstorm
+and drops only its stop.
 
 ## Pre-conditions for a work item
 
@@ -72,8 +78,9 @@ good place to converge on them) and confirm via a ticket comment.
 The Kiro 3-phase spec (requirements → design → tasks) plus the **testing plan** that
 sits between design and tasks (issue-163). Stored in `docs/specs/<id>/` — the loop's
 fixed convention. The human review per phase is always on and is delivered by the
-graph's approval nodes — `requirements-approval`, and `design-approval` covering design and
-testing plan together — which classify the feedback, record the approver, and lock the
+graph's approval nodes — `brainstorm-approval` for a brainstorm (issue-494),
+`requirements-approval`, and `design-approval` covering design and testing plan
+together — which classify the feedback, record the approver, and lock the
 artifact (issue-281). The paper trail is the gate's own record; never re-request an
 approval from the session.
 

@@ -142,9 +142,38 @@ def validate_artifacts(ctx: HookContext) -> HookResult:
     #
     # Judged on what the node *authored* when it declares any: an artifact it
     # merely validates says nothing about whether this node ran.
+    #
+    # ``absentOutcome:`` lets that skip route (issue-494): `brainstorming` is
+    # followed by a human gate, and a brainstorm nobody wrote has nothing to
+    # approve, so the node takes a separate edge around the gate. Opt-in per
+    # entry, so an operator's optional node with one `pass` edge is unchanged.
     entered = produced or slots
     if ctx.node.get("optional") and not any(slot.present for slot in entered):
-        return HookResult.skipped(NAME, "optional node; no artifact was produced")
+        result = HookResult.skipped(NAME, "optional node; no artifact was produced")
+        absent = str(params.get("absentOutcome") or "")
+        gate = str(params.get("gate") or "")
+        if absent and gate and gate in ctx.visited:
+            # Fail closed (self-review on PR #495): back here after its gate
+            # opened — `changes-requested` — the artifact was removed rather
+            # than revised, and routing around the gate would skip the changes.
+            names = ", ".join(n for slot in entered for n in slot.names)
+            return HookResult.blocked(
+                NAME,
+                [
+                    Message(
+                        text=(
+                            f"{names} was removed after {gate} opened; restore "
+                            f"and revise it, or have its author declare {gate} "
+                            "skipped"
+                        ),
+                        path=_rel(ctx, ctx.work_item.spec_dir),
+                    )
+                ],
+                retriable=False,
+            )
+        if absent:
+            result.data["outcome"] = absent
+        return result
 
     paths: List[Path] = []
     covered_absent = 0

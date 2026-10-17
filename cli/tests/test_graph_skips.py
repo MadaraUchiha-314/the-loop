@@ -202,6 +202,7 @@ def test_expand_skip_tokens_accepts_ids_and_sets_and_rejects_the_rest():
 
 SPEC_CHAIN = {
     "brainstorming",
+    "brainstorm-approval",
     "requirements-definition",
     "requirements-approval",
     "design",
@@ -289,8 +290,11 @@ def test_every_skippable_node_routes_forward_on_skipped():
             continue
         skipped = graph.next_node(node.id, "skipped")
         assert skipped is not None, node.id
+        # issue-494: a node that routes around its gate when it produced nothing
+        # (`not-entered`) is, skipped, a node that produced nothing.
         expected = (
-            graph.next_node(node.id, "pass")
+            graph.next_node(node.id, "not-entered")
+            or graph.next_node(node.id, "pass")
             or graph.next_node(node.id, "approved")
             or forward.get(node.id)
         )

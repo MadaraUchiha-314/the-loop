@@ -151,6 +151,33 @@ def test_partial_feedback_leaves_the_gate_waiting(repo):
     assert classify_feedback(ctx).status == "wait"
 
 
+def test_when_present_skips_a_gate_whose_subject_was_never_written(repo):
+    """
+    Feature: the-loop's process graph
+    Scenario: an approval gate over an optional artifact that does not exist
+      Given classify-feedback declares whenPresent: brainstorm.md
+      When brainstorm.md is absent
+      Then the hook skips, even with an approval in hand
+      When brainstorm.md exists
+      Then the reply is classified exactly as before
+    Requirement: docs/specs/issue-494/bugfix.md R2.1, R2.2
+    """
+    ctx = HookContext(
+        work_item=WorkItem(ref="github:o/r#1", id="issue-1", spec_dir=_spec(repo)),
+        node={"id": "brainstorm-approval"},
+        boundary="exit",
+        repo=repo,
+        config={"authorizedUsers": ["owner"]},
+        event={"comments": [{"author": "owner", "body": "approved"}]},
+    )
+    ctx.params = {"whenPresent": "brainstorm.md"}
+    absent = classify_feedback(ctx)
+    assert absent.status == "skip" and "outcome" not in absent.data
+
+    (_spec(repo) / "brainstorm.md").write_text("# B\n")
+    assert classify_feedback(ctx).outcome == "approved"
+
+
 # MD036 (no-emphasis-as-heading) rejects a paragraph whose whole content is one
 # span of emphasized text. Asserting that shape rather than shelling out to
 # markdownlint is deliberate (issue-247 R3.2): the suite runs without Node.js, and

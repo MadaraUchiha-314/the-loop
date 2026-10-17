@@ -19,6 +19,7 @@ Only the boxes under *Phases* change what work is done. Everything under *Settin
 h3. 🧩 Phases — ticked ones run
 
 * (/) brainstorming
+* (/) brainstorm-approval
 * (/) requirements-definition
 * (/) requirements-approval
 * (/) design

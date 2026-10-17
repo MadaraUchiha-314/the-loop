@@ -84,6 +84,43 @@ def classify_feedback(ctx: HookContext) -> HookResult:
     iterative multi-comment review is served without inventing an outcome.
     """
     name = "classify-feedback"
+    # ``whenPresent:`` (issue-494) — a gate whose subject may legitimately never
+    # exist. `brainstorm-approval` follows an optional node: with no
+    # brainstorm.md there is nothing to approve, and `check --recompute`, which
+    # scores every node rather than walking the edge around it, would otherwise
+    # report the item stuck at a gate it never reaches. A subject whose authoring
+    # node was declared skipped counts as absent even when a stray copy is on
+    # disk: the walk routes past this gate on that node's `skipped` edge, so the
+    # report must too (critic finding on PR #495). Otherwise a present artifact
+    # is classified exactly as before.
+    subject = str(ctx.params.get("whenPresent") or "")
+    if subject and subject in ctx.skipped_artifacts:
+        return HookResult.skipped(
+            name, f"{subject}'s phase was declared skipped; nothing to approve"
+        )
+    if subject and not any(
+        slot.present for slot in resolve_produces([subject], ctx.work_item.spec_dir)
+    ):
+        if ctx.node_id in ctx.visited:
+            # Fail closed (self-review on PR #495): absence is "nothing to
+            # approve" only for a gate never entered. Once it opened, a missing
+            # subject was REMOVED — and passing here would let deleting the
+            # file stand in for a human's approval.
+            return HookResult.blocked(
+                name,
+                [
+                    Message(
+                        text=(
+                            f"{subject} was removed while its approval gate was "
+                            f"open; restore it, or have its author declare "
+                            f"{ctx.node_id} skipped"
+                        ),
+                        path=subject,
+                    )
+                ],
+                retriable=False,
+            )
+        return HookResult.skipped(name, f"no {subject}; nothing to approve")
     comments = _authorized_comments(ctx)
     if not comments:
         return HookResult.waiting(name, "no authorized feedback yet")

@@ -304,7 +304,50 @@ def test_an_optional_node_that_produced_an_artifact_is_still_gated(tmp_path):
     assert validate_artifacts(ctx).status == BLOCK
 
 
-# -- one artifact, several accepted names (issue-124) ---------------------------
+def test_an_optional_node_with_no_artifact_routes_on_its_absent_outcome(tmp_path):
+    """issue-494: a brainstorm nobody wrote has no gate to wait at, so the skip
+    carries the outcome `brainstorming` routes around `brainstorm-approval` on.
+
+    Requirement: docs/specs/issue-494/bugfix.md R2.1
+    """
+    ctx, _ = _ctx(
+        tmp_path,
+        ["brainstorm.md"],
+        {"sections": ["Problem / opportunity"], "absentOutcome": "not-entered"},
+        node={"optional": True},
+    )
+    result = validate_artifacts(ctx)
+    assert result.status == SKIP
+    assert result.outcome == "not-entered"
+
+
+def test_absent_outcome_is_opt_in_and_says_nothing_once_the_artifact_exists(
+    tmp_path,
+):
+    """issue-494 R2.4: without the parameter the skip declares no outcome (a
+    custom graph's single `pass` edge keeps working), and with it a present
+    artifact is gated as usual."""
+    ctx, _ = _ctx(
+        tmp_path,
+        ["brainstorm.md"],
+        {"sections": ["Problem / opportunity"]},
+        node={"optional": True},
+    )
+    assert "outcome" not in validate_artifacts(ctx).data
+
+    ctx, spec = _ctx(
+        tmp_path,
+        ["brainstorm.md"],
+        {"sections": ["Problem / opportunity"], "absentOutcome": "not-entered"},
+        node={"optional": True},
+    )
+    (spec / "brainstorm.md").write_text("# B\n\n## Problem / opportunity\n\nreal\n")
+    result = validate_artifacts(ctx)
+    assert result.status == PASS
+    assert "outcome" not in result.data
+
+
+# -- one artifact, several accepted names (issue-124)---------------------------
 #
 # the-loop has documented `bugfix.md` as a bug's phase-1 artifact since long
 # before the graph existed, in the skill, the workflow reference, the manifest

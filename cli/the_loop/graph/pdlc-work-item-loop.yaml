@@ -86,6 +86,7 @@ skipSets:
   # testing-plan → tasks — so `test-planning` belongs in it (issue-179).
   spec-chain:
     - brainstorming
+    - brainstorm-approval
     - requirements-definition
     - requirements-approval
     - design
@@ -143,9 +144,41 @@ nodes:
     # discarded and re-asked — every phase cost the human two approvals, and
     # this node (which has no approval node at all) cost one it was never
     # meant to have.
+    #
+    # `absentOutcome` (issue-494): a brainstorm nobody wrote has nothing for
+    # `brainstorm-approval` to approve, so this node routes around the gate on
+    # `not-entered` rather than parking a work item at an empty approval —
+    # unless that `gate` was already entered (changes-requested), when a
+    # missing brainstorm blocks rather than skipping the requested changes.
     exit:
-      - {hook: validate-artifacts, with: {sections: ["Problem / opportunity", "Open questions"]}}
+      - {hook: validate-artifacts, with: {sections: ["Problem / opportunity", "Open questions"], absentOutcome: not-entered, gate: brainstorm-approval}}
       - lint-artifacts
+
+  # The brainstorm's own gate (issue-494). issue-281 gave `brainstorm.md` no
+  # approval node — "advances on shape alone" — which holds for `tasks.md`,
+  # derived from a pair the human just approved, and not for a brainstorm: it is
+  # the root artifact, nothing upstream was approved, and its whole job is to be
+  # discussed. Without a gate the node passed the moment the file existed, so the
+  # author's first reply on the PR was the last one the brainstorm received.
+  # Same hooks as `requirements-approval`: an indecisive comment — a question, a
+  # partial review — is `wait`, so the author can comment as often as they like
+  # and the label stays `loop:brainstorming` (this node declares no phase).
+  - id: brainstorm-approval
+    actor: human
+    session: inherit
+    skippable: true         # skipped alone, `brainstorming` routes on to
+                            # requirements as it did before issue-494
+    entry: [set-phase-label, request-review, {hook: notify, with: {event: phase-approval-pending, artifact: brainstorm.md}}]
+    exit:
+      # `whenPresent`: no brainstorm, nothing to approve — the walk already
+      # routes around this node on `not-entered`; this keeps `check
+      # --recompute`, which scores every node, from reporting it unmet. Once
+      # this gate has been entered, a missing brainstorm.md BLOCKS instead:
+      # deleting the file must never stand in for an approval. Deliberately no
+      # `pass` edge for the same reason.
+      - {hook: classify-feedback, with: {whenPresent: brainstorm.md}}
+      - {hook: record-feedback, with: {into: brainstorm.md}}
+      - {hook: lock-artifacts, with: {artifacts: [brainstorm.md]}}
 
   - id: requirements-definition
     phase: requirements-definition
@@ -553,7 +586,14 @@ nodes:
 
 edges:
   - {from: phase-selection, to: brainstorming, on: selected}
-  - {from: brainstorming, to: requirements-definition, on: pass}
+  # issue-494: a written brainstorm waits for its author's approval; one that was
+  # never written (`not-entered`) or declared away (`skipped`) has nothing to
+  # approve and goes straight on.
+  - {from: brainstorming, to: brainstorm-approval, on: pass}
+  - {from: brainstorming, to: requirements-definition, on: not-entered}
+  - {from: brainstorm-approval, to: requirements-definition, on: approved}
+  - {from: brainstorm-approval, to: requirements-definition, on: approved-with-comments}
+  - {from: brainstorm-approval, to: brainstorming, on: changes-requested}
   - {from: requirements-definition, to: requirements-approval, on: pass}
   # Declared-skip routing (issue-177): each skippable node's `on: skipped` edge
   # is its ordinary forward edge — authored here, never inferred by the runtime.
@@ -561,6 +601,7 @@ edges:
   # work item that declares everything away routes phase-selection → complete
   # with each node in between recorded `skipped` and attributed.
   - {from: brainstorming, to: requirements-definition, on: skipped}
+  - {from: brainstorm-approval, to: requirements-definition, on: skipped}
   - {from: requirements-definition, to: requirements-approval, on: skipped}
   - {from: requirements-approval, to: design, on: skipped}
   - {from: design, to: design-critic-review, on: skipped}

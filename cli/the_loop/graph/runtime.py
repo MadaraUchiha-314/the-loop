@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Tuple
 
 from .. import eventlog, lifecycle
 from ..lifecycle import PhaseChanged, WaitingForInput
@@ -84,6 +84,19 @@ NOT_SELECTED = "not-selected"
 #: `phase-selection`, so nobody chose it and nobody declined it. Walking it
 #: would hold an in-flight item at a gate its author was never offered.
 NOT_OFFERED = "not-offered"
+
+
+def _visited(state: Any) -> FrozenSet[str]:
+    """Node ids the work item has entered, as opposed to routed around (issue-494).
+
+    `_route_skips` writes a record for every node it walks past, with outcome
+    ``skipped``; those were never entered, so they are left out.
+    """
+    return frozenset(
+        node_id
+        for node_id, rec in (getattr(state, "nodes", None) or {}).items()
+        if rec.entered_at and rec.outcome != "skipped"
+    )
 
 
 def _frozen_node_ids(state: Any) -> frozenset:
@@ -795,6 +808,7 @@ class Runtime:
         skips: Optional[Mapping[str, Any]] = None,
         decisions: Optional[Mapping[str, Any]] = None,
         surface: str = "",
+        visited: FrozenSet[str] = frozenset(),
     ) -> ChainOutcome:
         """Run one node's **exit** chain. This is what ``check`` calls.
 
@@ -817,6 +831,7 @@ class Runtime:
                 skipped_artifacts=self._skipped_artifact_names(skips or {}),
                 decisions=decisions,
                 surface=surface,
+                visited=visited,
             ),
         )
 
@@ -857,6 +872,7 @@ class Runtime:
                 skips=skips,
                 decisions=state.decisions,
                 surface=self._surface(state),
+                visited=_visited(state),
             )
             messages = [m.render() for m in outcome.messages]
             if node.id in refused:
@@ -1166,6 +1182,7 @@ class Runtime:
             skips=skips,
             decisions=state.decisions,
             surface=self._surface(state),
+            visited=_visited(state),
         )
         report = NodeReport(
             node=node_id,
