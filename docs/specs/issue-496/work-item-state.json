@@ -236,8 +236,8 @@
   "forced": [],
   "parked": {
     "node": "brainstorm-approval",
-    "reason": "awaiting a human",
-    "since": "2026-10-18T01:36:26+00:00"
+    "reason": "`classify-feedback` did not pass:\n- feedback so far is not decisive; the gate stays open",
+    "since": "2026-10-18T15:35:56+00:00"
   },
   "completions": {
     "brainstorming": {

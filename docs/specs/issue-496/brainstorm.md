@@ -44,9 +44,10 @@ review** on a control plane that owns all ingress and publishes every event to a
 **durable queue with one subject per work item**, the session pod consuming its own
 subject (its `requirements.md` R3 and R4, on `feat/issue-492-saas`). The gateway is that
 control plane's *ingress half*, extracted so it runs without Kubernetes: on a VPS, a
-home server or the same laptop, serving today's tmux-hosted instances. Done right, 492's
-control plane *is* the gateway plus a scheduler, and the two work items share one queue
-contract instead of inventing two.
+home server or the same laptop, serving today's tmux-hosted instances. **Decided on the
+ticket (2026-10-18):** this work item stands alone. It takes no dependency on 492's
+artifacts and waits on none of them; multi-replica scaling of the gateway is deferred,
+not designed here. 492 may consume the contract later, which is 492's concern.
 
 ## Context & constraints
 
@@ -100,9 +101,15 @@ contract instead of inventing two.
   *ingress event*. Nothing today can promise *one owner per work item* across machines.
 - **An instance's control-plane API is loopback-bound and has no in-app auth**
   (decision-059); "a gateway terminates auth" is the stated deployment model, so the
-  word **gateway already means an auth proxy** in this repository's decisions. The
-  ticket's word is kept here; whether the shipped name is `gateway` or something that
-  does not collide (`ingress`, `relay`, `hub`) is a question below. The stream is SSE,
+  word **gateway already means an auth proxy** in this repository's decisions. **Decided
+  on the ticket (2026-10-18): the gateway's consumer API ships with no instance
+  authentication either**; auth is a later work item. The first landing therefore
+  inherits decision-059's posture wholesale: bind loopback by default, an explicit
+  exposure acknowledgement to bind wider, and the operator's network boundary (VPN,
+  tunnel, reverse proxy) as the trust boundary. The
+  **author decided on the ticket (2026-10-18) to keep the name `gateway`**; the decision
+  record this work item leaves disambiguates the two meanings (`the-loop gateway`, the
+  ingress process, versus decision-059's auth proxy). The stream is SSE,
   not WebSocket (decision-087). New dependencies are refused where the stdlib serves
   (decision-138 D10, the minimalism ladder).
 - **Ownership has a precedent on paper.** The control record a start writes carries
@@ -127,6 +134,11 @@ contract instead of inventing two.
   (issue-270). A queue must not quietly undo that rule by holding the backlog forever.
 - The queue technology sits behind one interface (492 R4.6). A laptop operator must get
   a working gateway with **no external broker**.
+- No instance authentication in the first landing (decided). What stays mandatory is
+  **provider** verification at ingress (GitHub HMAC, Slack signatures): that is how the
+  gateway knows an event is real, not who is reading it. The lease token is kept as a
+  **fencing** token for correctness (a stale owner must not consume), not as a
+  credential.
 
 ## Ideas & options
 
@@ -136,10 +148,10 @@ contract instead of inventing two.
   Rejected: two ingress stacks to keep in parity, and 492 would have to rewrite onto it.
 - **A2 — 492's control plane minus the scheduler and the credential store**, shipped as
   `the-loop gateway` in the same package, runnable on one box. The queue contract (one
-  subject per work item, delivery-id keyed, consumer acks) is defined **here**, and 492's
-  M2 consumes it. *Leaning.* The cost is coordination: 496 lands first and 492's design
-  must derive from this contract, which is the right order, since the SaaS needs an
-  ingress before it needs a scheduler.
+  subject per work item, delivery-id keyed, consumer acks) is defined **here**. *Decided
+  (ticket, 2026-10-18), with one amendment from the author:* 496 does **not** coordinate
+  with 492. It is designed on its own merits, cross-references 492 only as prior art,
+  and whether 492 later consumes this contract is 492's decision to make.
 
 ### B — The hand-off mechanism: is a queue right?
 
@@ -273,15 +285,15 @@ allow-list) and writes the ledger record. Two placements:
   reloaded by the same five-second hash supervisor. Contents: listen address and
   exposure guard, the ingress blocks (moved from `webhooks.*`, `polling.*`,
   `channels.slack.read.*` with their token *variable names*), the queue backend, lease
-  timings, the instance registry (names and their bearer-token variable names). Pros: a
-  gateway is a different process on a possibly different box; a cli-config carries
-  dozens of keys it does not need. Cons: a fourth file. *Leaning G1.*
+  timings, and an optional allow-list of instance names. Pros: a gateway is a different
+  process on a possibly different box; a cli-config carries dozens of keys it does not
+  need. Cons: a fourth file. *Decided G1 (ticket, 2026-10-18).*
 - **G2 — A `gateway:` role inside `cli-config.yaml`** (as `instance.role: manager` was
   done). Pros: one file, one loader. Cons: a gateway is not an instance (it spawns
   nothing, owns no sessions), so `role` would be a lie, and every instance key would be
   present and meaningless.
-- Either way the **client half is one block on the instance**: `gateway: {url,
-  tokenEnv, instance: <name>}`, and an instance with a `gateway` block **must be named**
+- The **client half is one block on the instance**: `gateway: {url, instance: <name>}`
+  (no token: auth is deferred), and an instance with a `gateway` block **must be named**
   (the lease is in its name), which the unnamed default violates today, so `start`
   refuses an unnamed instance with a gateway configured, as decision-138 D11 refuses an
   unnamed manager.
@@ -293,13 +305,13 @@ allow-list) and writes the ledger record. Two placements:
 
 ### H — Horizontal scale of the gateway itself
 
-The author wants the gateway horizontally scalable. In the first landing it is **one
+The ticket asked for a horizontally scalable gateway; the author **decided on the
+ticket (2026-10-18) that multi-replica is handled later**. The first landing is **one
 process** (one Socket Mode connection per app, one poller per source, one store), and
 that is the right size for every deployment this ticket names: Slack's constraint *is*
-one connection, and GitHub webhooks for one operator are a trickle. Scaling the gateway
-is the cluster's problem under 492 (stateless receiver replicas behind a load balancer
-over a shared broker; Socket Mode connections and poll sources sharded across replicas,
-492 R3.2–3.4). What 496 must not do is close that door: the queue interface, the
+one connection, and GitHub webhooks for one operator are a trickle. A later work item
+adds stateless receiver replicas over a shared backend, with Socket Mode connections and
+poll sources sharded across them. What 496 must not do is close that door: the queue interface, the
 delivery-id dedup and the lease table all have to be *the store's*, never a process's
 memory, so a second replica over a shared backend is a configuration change.
 
@@ -347,7 +359,8 @@ sequenceDiagram
   headers: <allow-listed>, payload: <verbatim>, attempt}` — the payload is **untrusted
   data** end to end, carried, never interpreted by the gateway beyond resolving the ref.
 - *Consumer API*: `GET /api/v1/gateway/subjects/{subject}/events` (SSE, `Last-Event-ID`
-  as the cursor, bearer token, lease token required for a work-item subject),
+  as the cursor, no authentication in the first landing, the lease's fencing token
+  required for a work-item subject),
   `POST …/ack {offset}`, `POST /api/v1/gateway/leases`, `PUT …/leases/{ref}` (renew),
   `DELETE …/leases/{ref}`, `POST …/bindings {ref, slack: {channel, threadTs}}` (F2),
   `GET /api/v1/gateway/health|subjects|leases|instances`. Authored first in
@@ -360,39 +373,51 @@ sequenceDiagram
   (consumed, never redelivered), keeping issue-270's rule; only a failed delivery stays
   unacked for redelivery, bounded by `polling.maxRetries`'s sibling on the subject.
 
-**What verification needs from the author (the ticket asks):**
+**What verification needs from the author.** Decided on the ticket (2026-10-18): the
+e2e proof is **Slack only**; the author provides the Slack app and the bot token. The
+other rows are proved without the author's infrastructure.
 
 | To prove | Needed | Who provides |
 |---|---|---|
-| Slack Socket Mode from the gateway (highest priority) | one Slack app with Socket Mode, bot + app-level tokens in the gateway box's env, a test channel the bot is in; **two** instances (two named cli-configs, two state roots, two service ports) with Slack disabled locally, **on two machines, two users or two containers** until the runner takes a per-instance tmux socket (see Context) | author: the app and tokens, by variable name; the second box or container |
-| GitHub webhook through the gateway | the gateway reachable from GitHub: a public URL or a tunnel (`cloudflared`, `smee.io`, `ngrok`) and a webhook on `the-loop-testing` with its secret | author: the tunnel choice and the webhook; the-loop can fall back to the gateway's **poller** on `the-loop-testing` if no tunnel is wanted |
-| Jira webhook | a Jira Cloud site, a project mapped in `integrations.jira.projects`, API token, and the same tunnel | author, **or** declare Jira as poll-only for the e2e proof and prove the webhook route with signed synthetic deliveries in integration tests |
+| Slack Socket Mode from the gateway (highest priority, **the e2e proof**) | one Slack app with Socket Mode on, its **bot token** (`xoxb-`) and its **app-level token** (`xapp-`, scope `connections:write`: Socket Mode cannot open without it), in the gateway box's env; a test channel the bot is in; **two** named instances (two cli-configs, two state roots, two service ports) with Slack disabled locally, on two machines, two users or two containers, or on one box once the runner takes a per-instance tmux socket (Q10) | author: the app and its two tokens, by variable name; the-loop: the second instance (a container on the gateway box, or Q10) |
+| GitHub webhook through the gateway | signed synthetic deliveries (`X-Hub-Signature-256` over recorded GitHub payloads) in integration tests; live GitHub traffic on `the-loop-testing` reaches the gateway through its **poller**, no tunnel | the-loop |
+| Jira webhook | signed synthetic deliveries in integration tests; Jira is **poll-only** for the proof | the-loop |
 | one owner per work item | the two instances above, an issue on `the-loop-testing` armed with `the-loop start`: one spawns, the other records `addressed-elsewhere`; then the owner is stopped and the other claims | nothing beyond the above |
 | durability | kill the owner mid-thread, post two Slack replies, restart it, see both delivered in order | nothing beyond the above |
 
 ## Open questions
 
-Raised on the ticket; the first three are the ones requirements cannot be written
-without.
+Raised on the ticket. Questions 1–3 were answered by the author on 2026-10-18
+([comment](https://github.com/MadaraUchiha-314/the-loop/issues/496#issuecomment-6251750213));
+questions 4 and 9 followed the same day
+([4](https://github.com/MadaraUchiha-314/the-loop/issues/496#issuecomment-6251761927),
+[9](https://github.com/MadaraUchiha-314/the-loop/issues/496#issuecomment-6251765172)).
+No human question is open; the rest are design-phase.
 
-1. **(human)** Relationship to issue-492: do you accept that the gateway defines the queue
-   contract 492's control plane will consume (A2), so 492's design derives from this work
-   item's `design.md` rather than the reverse? And the first landing is **one** gateway
-   process with a broker-free built-in store (B4 as B3's default backend), with
-   multi-replica scaling left to 492?
-2. **(human)** Separate `gateway-config.yaml` (G1) over a role in `cli-config.yaml` (G2),
-   and the consequence that an instance pointing at a gateway must be **named**?
-3. **(human)** Authentication between instance and gateway. The gateway is the first
-   component of the-loop that is deliberately reachable from the internet on *both* sides
-   (providers inbound, laptops outbound). Decision-059 keeps auth out of the service; the
-   gateway's consumer API cannot. Proposed: a per-instance bearer token by variable name
-   in the first landing (`gateway.instances[].tokenEnv`), TLS termination the operator's
-   (reverse proxy or the tunnel), with subject-scoped lease tokens as the fencing layer
-   — the shape 492 R9.5 asks for later. Acceptable, or is mTLS / an OIDC-issued token
-   wanted from the start?
-4. **(human)** For verification, which of the rows above can you provide, and is a
-   tunnel acceptable for the GitHub and Jira webhook rows? Is Jira **poll-only** for the
-   e2e proof acceptable, with the webhook route proved by signed synthetic deliveries?
+1. **(decided)** Relationship to issue-492. *Asked:* does the gateway define the queue
+   contract 492 consumes, with one gateway process and a broker-free store first and
+   multi-replica left to 492? *Answer:* "Don't worry about issue-492. Yea, multi-replica
+   can be handled later." Recorded as: 496 stands alone, no coordination with 492; one
+   process with the built-in store; multi-replica deferred to a later work item.
+2. **(decided)** Separate `gateway-config.yaml` (G1) over a role in `cli-config.yaml`
+   (G2). *Answer:* "I prefer a separate gateway config." The consequence carried into
+   requirements is that an instance pointing at a gateway must be **named**; say so on
+   the ticket if that is unwanted.
+3. **(decided)** Authentication between instance and gateway. *Asked:* per-instance
+   bearer token now, or mTLS / OIDC from day one? *Answer:* "Don't worry about auth. No
+   need to build auth right now, we will build it later." Recorded as: no instance
+   authentication in the first landing; the consumer API inherits decision-059's
+   loopback-default-plus-exposure-acknowledgement posture; provider signature
+   verification at ingress and the lease fencing token stay, since they are
+   correctness, not authentication. The Security considerations section of
+   `requirements.md` writes this down as an accepted, time-boxed gap with a follow-up
+   work item.
+4. **(decided)** Verification. *Asked:* which rows can you provide; tunnel acceptable;
+   Jira poll-only? *Answer:* "Let's just verify the slack mechanism. I'll provide the
+   slack app and the bot token." Recorded as: the e2e proof is Slack Socket Mode only;
+   GitHub and Jira webhook routes are proved by signed synthetic deliveries and the
+   pollers, no tunnel. Note for the hand-over: Socket Mode needs the **app-level token**
+   as well as the bot token (table above).
 5. **(design-phase)** Lease timings: lease length, renew cadence and what a renewed-late
    lease does to a session that is still alive (sleeping laptop). Measured against
    `routing.tmux` respawn behaviour, not guessed.
@@ -406,29 +431,32 @@ without.
    service process as a hosted role for the one-laptop operator (so a single
    `the-loop start` brings up both), or is always its own process. The ticket says
    separate verbs; the question is only whether a co-located mode is also offered.
-9. **(human, small)** The name. `gateway` already means "the auth proxy in front of the
-   service" in decision-059 and the SDK docs. Keep `gateway` and reword decision-059's
-   successors, or ship the verb under a name that does not collide?
+9. **(decided)** The name. *Answer:* "Would like to keep it gateway." Recorded as: the
+   verb, the config file and the schema are `gateway`; the decision record names both
+   meanings so decision-059's "a gateway terminates auth" is read as the auth proxy and
+   `the-loop gateway` as the ingress process.
 10. **(design-phase)** A per-instance tmux socket (`tmux -L <instance>`) so two instances
     can share one machine without typing into each other's panes. Not strictly this
     work item's, but the e2e proof needs either it or two machines; decide which.
 
 ## Leaning / working hypothesis
 
-**Build A2 + B3-over-B4 + C + D1 (with D3 as the visible trail) + E (all five
-transports, Socket Mode first) + F2 + G1, in three milestones.** (1) *The contract and
-the store*: the queue interface with its built-in SQLite backend, subjects, leases with
+**Build A2 (standalone) + B3-over-B4 + C + D1 (with D3 as the visible trail) + E (all
+five transports, Socket Mode first) + F2 + G1, with no instance auth and one gateway
+process, in three milestones.** (1) *The contract and the store*: the queue interface
+with its built-in SQLite backend, subjects, leases with
 fencing tokens, the consumer API in OpenAPI, the `gateway` client block on an instance
 that turns its own ingresses off and subscribes to its managed set and to `unassigned`,
 the lease claim inserted into `Dispatcher.handle` beside the scope decision. (2) *The
 transports move*: the Slack Socket Mode listener runs in the gateway and enqueues raw
-envelopes on the resolved subject (the e2e proof against `the-loop-testing` with two
-instances and one Slack app is this milestone's gate); then the GitHub and Jira webhook
-routes and the pollers. (3) *Operability*: `gateway-config.yaml` hot reload, `the-loop
+envelopes on the resolved subject (the Slack-only e2e proof against `the-loop-testing`
+with two instances and one Slack app is this milestone's gate); then the GitHub and Jira
+webhook routes and the pollers, proved by signed synthetic deliveries. (3) *Operability*: `gateway-config.yaml` hot reload, `the-loop
 gateway leases|subjects|release`, backlog depth on the dashboard, the Slack HTTP Events
 route if Q7 says now. The gateway never authorizes a human, never posts to a ledger and
 never holds a posting token; everything the dispatcher judges today it judges tomorrow,
-on the owner.
+on the owner. Deferred to later work items by the author's decision: instance ↔ gateway
+authentication, and a multi-replica gateway.
 
 ## Hand-off → requirements
 
@@ -441,13 +469,16 @@ behaviour of an instance with a `gateway` block, and the named-instance precondi
 the dedup window at ingress and the consumer's cache; the acked-on-purposeful-drop rule
 (issue-270 preserved); hot reload of `gateway-config.yaml`; the lifecycle verbs; the
 observability verbs and events (`gateway.*`, `lease.*`, `subject.*`); and the e2e proof
-on `the-loop-testing` with one Slack app and two instances. Security considerations
+on `the-loop-testing` with one Slack app and two instances, Slack only. Security considerations
 seeded here: the gateway as an internet-facing surface on both sides (HMAC and Slack
-signature verification unchanged and mandatory; instance bearer tokens; fencing tokens);
-the payload as untrusted data the gateway carries but never interprets; no posting
-token and no authorization decision in the gateway; a stale owner that must not consume;
-a `release --reason` that is audited. Stays behind: B1, B2, D2 as the mechanism, D4, F1,
-G2, consistent hashing, and multi-replica gateways (492's).
+signature verification unchanged and mandatory; fencing tokens); **no instance
+authentication, by decision**, so the consumer API binds loopback by default and needs
+an explicit exposure acknowledgement to bind wider, with the operator's network boundary
+as the trust boundary and a named follow-up work item for auth; the payload as untrusted
+data the gateway carries but never interprets; no posting token and no authorization
+decision in the gateway; a stale owner that must not consume; a `release --reason` that
+is audited. Stays behind: B1, B2, D2 as the mechanism, D4, F1, G2, consistent hashing,
+instance auth, and multi-replica gateways (later work items).
 
 ## Review comments
 
