@@ -110,9 +110,11 @@ The scenario table for the reviewer briefing is rendered, not pasted:
   check_run), signed at test time as `test_webhook_routing_integration.py` does; a
   `ui/src/demo/fixture.ts` entry for the five card states.
 - **Credentials, by reference only:**
-  - `THE_LOOP_E2E_SLACK_APP_TOKEN` — the author's Slack app-level token
-    (`connections:write`), set in the gateway process's environment for T4.
-  - `THE_LOOP_E2E_SLACK_BOT_TOKEN` — the author's bot token, same place.
+  - `THE_LOOP_SLACK_APP_TOKEN` — the author's Slack app-level token (`connections:write`).
+    It sits in `~/.the-loop/the-loop.env` on the verification machine (the author's
+    ticket comment of 2026-10-18); the e2e `gateway-config.yaml` names that file under
+    `env.file`, so the gateway process reads it at start and nothing is exported by hand.
+  - `THE_LOOP_SLACK_BOT_TOKEN` — the author's bot token, same file, same route.
   - `GITHUB_TOKEN` — a token with read access to `the-loop-testing` for the gateway's
     poller, and the instance's own token for posting, as today.
   - No Jira credential: Jira is poll-only and off for the proof (R12.6).

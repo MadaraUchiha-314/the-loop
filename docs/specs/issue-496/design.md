@@ -143,14 +143,17 @@ sequenceDiagram
   `cli_config.default_cli_config_path`).
 - `load_gateway_config(path, *, strict=True) -> GatewayConfig`: YAML → `configschema.validate(data,
   load_schema("gateway-config"))`; a non-empty error list raises `ConfigError` naming
-  each path (R8.1). `load_env_file()` first, as `daemon_entry` does.
+  each path (R8.1). The gateway config's own `env.file` is loaded first, through
+  `envfile.load`, the way `cli_config.load_env_file` does it for the instance: a relative
+  path resolves against the config file's directory, a set variable is never overwritten,
+  a missing file is a warning naming the path.
 - `GatewayConfig` (frozen dataclass): `state_root`, `listen: Listen(host, port=8790,
   exposed=False)`, `store: Store(path, retention_days=7, max_attempts=3,
   dedup_window=10_000)`, `github: Optional[GitHubIngress(webhook: {path, secret_env},
   poll: {sources[], interval_seconds})]`, `jira: Optional[JiraIngress(webhook: {secret_env},
   poll: {...}, projects)]`, `slack: Optional[SlackIngress(socket: {app_token_env,
   bot_token_env, split_check_beats}, http: {signing_secret_env}, rooms[])]`, `repositories`,
-  `instances: Optional[list[str]]` (allow-list), `event_log`.
+  `instances: Optional[list[str]]` (allow-list), `event_log`, `env_file: Optional[Path]`.
 - Secrets are **names only**; the schema's `*Env` keys carry `"pattern":
   "^[A-Z][A-Z0-9_]*$"` so a pasted token fails validation (abuse case 7).
 
@@ -324,6 +327,8 @@ scaffolds it on request):
 
 ```yaml
 version: "1"
+env:
+  file: ~/.the-loop/the-loop.env       # dotenv the gateway loads first, as cli-config's env.file (issue-318); values never live here
 state:
   root: ~/.the-loop/gateway            # pidfile, logs, gateway.db
 listen:
@@ -341,7 +346,7 @@ jira:
   webhook: { enabled: false, secretEnv: THE_LOOP_JIRA_WEBHOOK_SECRET }
   poll:    { enabled: false, ... }
 slack:
-  socket:  { enabled: true, appTokenEnv: SLACK_APP_TOKEN, botTokenEnv: SLACK_BOT_TOKEN, splitCheckBeats: 3 }
+  socket:  { enabled: true, appTokenEnv: THE_LOOP_SLACK_APP_TOKEN, botTokenEnv: THE_LOOP_SLACK_BOT_TOKEN, splitCheckBeats: 3 }
   http:    { enabled: false, signingSecretEnv: SLACK_SIGNING_SECRET }
   rooms:   []                          # channel → work item declarations, as channels.slack.rooms
 instances: []                          # optional allow-list of instance names
