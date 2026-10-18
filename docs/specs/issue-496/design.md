@@ -106,18 +106,18 @@ sequenceDiagram
   participant GW as gateway adapter
   participant ST as store (SQLite)
   participant S as stream (SSE)
-  participant CL as instance: gateway client
-  participant D as instance: Router → Dispatcher
+  participant CL as instance · gateway client
+  participant D as instance · Router → Dispatcher
   SL->>GW: envelope (events_api, message in thread T)
-  GW->>ST: resolve T → ref via bindings; dedup_key = slack event_id
-  ST-->>GW: appended id=ev-42 on subject loop-<slug>
-  GW-->>SL: SocketModeResponse(envelope_id)  [< 3 s, after the write]
-  S-->>CL: event: ev-42 {subject, provider: slack, kind: message, payload}
-  CL->>D: slack.dispatch_envelope(payload, cfg)  (today's classify → ledger write)
-  D-->>CL: outcome (recorded / dropped: reason)
-  CL->>S: POST /ack {id: ev-42, outcome}
-  S->>ST: committed offset(loop-<slug>) = 42; deliveries.outcome = …
-  Note over CL: cursor ev-42 persisted in <root>/local/gateway-cursor.json
+  GW->>ST: resolve T → ref via bindings, dedup_key = slack event_id
+  ST-->>GW: appended id ev-42 on subject loop-slug
+  GW-->>SL: SocketModeResponse(envelope_id), under 3 s, after the write
+  S-->>CL: event ev-42 (subject, provider slack, kind message, payload)
+  CL->>D: slack.dispatch_envelope(payload, cfg), today's classify → ledger write
+  D-->>CL: outcome (recorded, or dropped with a reason)
+  CL->>S: POST /ack (id ev-42, outcome)
+  S->>ST: committed offset(loop-slug) = 42, deliveries.outcome recorded
+  Note over CL: cursor ev-42 persisted in root/local/gateway-cursor.json
 ```
 
 **Where today's code goes.** The design moves modules, it does not rewrite them:

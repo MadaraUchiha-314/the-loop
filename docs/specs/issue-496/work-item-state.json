@@ -284,8 +284,8 @@
   "forced": [],
   "parked": {
     "node": "design-approval",
-    "reason": "awaiting a human",
-    "since": "2026-10-18T21:51:48+00:00"
+    "reason": "`classify-feedback` did not pass:\n- feedback so far is not decisive; the gate stays open",
+    "since": "2026-10-18T22:08:21+00:00"
   },
   "completions": {
     "brainstorming": {
