@@ -76,7 +76,11 @@ flowchart LR
 alone from issue-492 and multi-replica scaling is a later work item (R1, R11); the
 gateway has its own config file (R8); no instance authentication in the first landing
 (Security considerations); the e2e proof is Slack only, with the author's app and tokens
-(R12); the name is `gateway` (R13).
+(R12); the name is `gateway` (R13). **Review remarks on this file (2026-10-18,
+[comment](https://github.com/MadaraUchiha-314/the-loop/issues/496#issuecomment-6252706097)):**
+every provider's events reach the owner raw, not only Slack's (R5); every provider offers
+each of its transports side by side, not only Slack (R7); and a gateway and an instance may
+share one machine over a loopback URL (R14).
 
 ## Requirements
 
@@ -210,31 +214,44 @@ work items can be taken over.
 9. WHEN a manager instance (issue-374) answers `by_ref` THEN the system SHALL read the
    gateway's lease table so the manager's answer and the gateway's `409` agree.
 
-### Requirement 5 — Slack events reach the owner raw; the owner classifies
+### Requirement 5 — every event reaches the owner raw; the owner judges
 
-**User story:** As an operator, I want every judgement about a Slack message (who is
-allowed, what a keyword means, what to post on the ledger) to stay on my instance, so that
-the gateway holds no allow-list and no grant and the existing Slack pipeline is reused
-intact.
+**User story:** As an operator, I want every judgement about an inbound event (who is
+allowed, what a keyword means, what to post on the ledger, how a pull request links to a
+work item) to stay on my instance, whichever provider it came from, so that the gateway
+holds no allow-list, no grant and no posting token and the existing dispatch pipeline is
+reused intact.
 
 #### Acceptance criteria (EARS)
 
-1. WHEN a Slack envelope arrives at the gateway THEN the system SHALL resolve only
-   **which work item** it concerns (the thread binding, a room's declared work item), and
-   SHALL enqueue the envelope unclassified on that subject, or on `unassigned` when the
-   message could start one.
-2. WHEN an owner instance receives a Slack envelope from its subject THEN the system SHALL
-   classify it exactly as today's listener does (`work-item.reply`, `gate.feedback`,
-   `control.command`, `context.added`, …), apply the allow-list and grants, and record it on
-   the ledger as a marked comment, unchanged.
-3. WHEN an owner instance binds a Slack thread to a work item THEN the system SHALL publish
-   the binding `{ref, channel, threadTs}` to the gateway, and the gateway SHALL keep only
-   that mapping, never message bodies.
-4. WHEN a Slack interaction requires a response inside Slack's three-second window (a
+1. WHEN an event arrives at the gateway from any provider (GitHub, Jira, Slack) THEN the
+   system SHALL resolve only **which work item** it concerns and SHALL enqueue the
+   provider's payload unclassified on that subject, or on `unassigned` when the event
+   could start one.
+2. WHEN the gateway resolves the work item THEN it SHALL use only: the reference the
+   payload names directly (a GitHub issue or pull-request number, a Jira issue key, a
+   Slack thread), the bindings owners have published (R5.4), and the rooms and projects
+   declared in `gateway-config.yaml`. It SHALL NOT run the dispatcher, the control
+   grammar, the authorized-actor guard or the self-marker check.
+3. WHEN an owner instance receives an event from its subject THEN the system SHALL run
+   today's pipeline unchanged for that provider: the router's linkage and the dispatcher's
+   control parse, scope, authorization, record, match and deliver for GitHub and Jira; the
+   listener's classification (`work-item.reply`, `gate.feedback`, `control.command`,
+   `context.added`, …), allow-list, grants and ledger write for Slack.
+4. WHEN an owner instance learns that a secondary object belongs to its work item (it
+   binds a Slack thread, opens or links a pull request, maps a Jira key) THEN the system
+   SHALL publish the binding `{ref, provider, key}` to the gateway, and the gateway SHALL
+   keep only that mapping, never message or payload bodies, so later events on that object
+   land on the right subject.
+5. WHEN a GitHub event names a pull request the gateway has no binding for THEN the gateway
+   SHALL enqueue it on `unassigned`, and the instance that recognises the linkage (today's
+   router inference) SHALL claim the work item and publish the binding.
+6. WHEN a Slack interaction requires a response inside Slack's three-second window (a
    button, a slash command, a shortcut) THEN the gateway SHALL ack the envelope itself
    after storing it; any visible reply is the owner's, posted through the channel as today.
-5. WHEN a Slack envelope concerns a thread bound to no work item and no declared room THEN
-   the gateway SHALL drop it and record `gateway.dropped` with reason `unbound`.
+7. WHEN an event concerns an object bound to no work item that cannot start one (a Slack
+   thread outside any declared room, a Jira project not mapped, a repository not declared)
+   THEN the gateway SHALL drop it and record `gateway.dropped` with reason `unbound`.
 
 ### Requirement 6 — the contracts are specified before they are implemented
 
@@ -264,23 +281,36 @@ another product can implement against them without reading the gateway's code.
    root) as its first and default implementation, and no broker SHALL be required to run
    a gateway.
 
-### Requirement 7 — the Slack HTTP Events route is offered beside Socket Mode
+### Requirement 7 — every provider offers each of its transports, side by side
 
-**User story:** As an operator with a public URL, I want to point a Slack app's Request URL
-at the gateway, so that I can run Slack over HTTP where Socket Mode is unwanted.
+**User story:** As an operator, I want to choose, per provider, a webhook, a poll or a
+socket, or more than one at once, so that a gateway with a public URL and a gateway behind
+NAT are both one configuration away.
+
+| Provider | Transports offered | Default | Dedup key across them |
+|---|---|---|---|
+| Slack | Socket Mode; HTTP routes (`/slack/events`, `/slack/interactions`, `/slack/commands`) | Socket Mode (no public URL needed) | Slack event id |
+| GitHub | webhook (`/gh-webhook`); poller per repository | poller (no public URL needed) | delivery id, with the poller's `poll-*` ids mapped to the webhook's `X-GitHub-Delivery` by object id |
+| Jira | webhook (`/jira-webhook`); poller per project | poller | `jira-comment-<site>-<id>`, already shared by both today |
 
 #### Acceptance criteria (EARS)
 
-1. WHEN `gateway-config.yaml` enables the Slack HTTP routes THEN the system SHALL serve
-   `POST /slack/events`, `/slack/interactions` and `/slack/commands`, verify
-   `X-Slack-Signature` against the signing secret with the timestamp replay window, and
-   answer the `url_verification` challenge.
-2. WHEN both Socket Mode and the HTTP routes are enabled for one app THEN the system SHALL
-   dedup across them by Slack's event id, so a message delivered by both is stored once.
-3. IF the design phase finds the HTTP routes cannot land in the first milestone THEN the
-   system SHALL ship Socket Mode alone, with the routes reserved in the OpenAPI document
-   and the omission recorded in `design.md`; Socket Mode remains the default because it
-   needs no public URL.
+1. WHEN `gateway-config.yaml` enables any subset of a provider's transports THEN the
+   system SHALL run exactly that subset, and each transport SHALL be enableable without
+   the other.
+2. WHEN `gateway-config.yaml` enables the Slack HTTP routes THEN the system SHALL verify
+   `X-Slack-Signature` against the signing secret within the timestamp replay window and
+   SHALL answer the `url_verification` challenge.
+3. WHEN two transports of one provider deliver the same event THEN the system SHALL store
+   it once, keyed per the table above, so a webhook and a poller on one repository, or a
+   socket and an HTTP route on one app, never double-deliver.
+4. WHEN a provider's webhook transport is enabled and its poller too THEN the poller SHALL
+   remain the reconciliation path: an event the webhook missed is picked up by the poll
+   and stored once.
+5. IF the design phase finds a transport cannot land in the first milestone THEN the
+   system SHALL ship the others, reserve the route in the OpenAPI document and record the
+   omission in `design.md`; the defaults in the table need no public URL and SHALL land
+   first.
 
 ### Requirement 8 — a separate, validated, hot-reloaded `gateway-config.yaml`
 
@@ -419,6 +449,34 @@ record rather than the code.
    app* with *run one gateway per app* where a gateway is configured, and the app
    manifest guidance SHALL name the app-level token Socket Mode needs.
 
+### Requirement 14 — a gateway and an instance may share one machine
+
+**User story:** As a single-laptop operator, I want to run the gateway on the same machine
+as my instance, so that I get one Slack connection and the lease model without a second
+box, through the same configuration I would use for a remote gateway.
+
+#### Acceptance criteria (EARS)
+
+1. WHEN an instance's `gateway.url` is a loopback address (`http://127.0.0.1:<port>`)
+   THEN the system SHALL behave exactly as with a remote URL: the same client block, the
+   same subscriptions, leases and acks, no special case in the instance.
+2. WHEN a gateway and an instance run on one machine THEN they SHALL be separate processes
+   with separate state roots, pidfiles and logfiles, and the gateway's default listen port
+   SHALL differ from the service's default so both start with no configuration beyond the
+   `gateway` block.
+3. WHEN the gateway listens on loopback THEN the exposure acknowledgement SHALL NOT be
+   required, matching the service's rule, and the no-auth gap of the Security
+   considerations is bounded by the machine.
+4. WHEN an instance with a `gateway` block starts and the gateway is unreachable THEN the
+   instance SHALL start, record `gateway.unreachable`, retry with back-off, and SHALL NOT
+   fall back to running its own ingresses; `the-loop status` SHALL show the gateway as
+   down.
+5. WHEN `the-loop start` and `the-loop gateway start` run on one machine in either order
+   THEN both SHALL succeed, and the instance SHALL subscribe once the gateway is up.
+6. WHEN the gateway runs beside an instance THEN it SHALL spawn no tmux session and hold
+   no harness credentials, so the tmux-name collision that stops two *instances* sharing a
+   machine does not apply to a gateway and an instance.
+
 ## Non-functional requirements
 
 - **Latency.** A Slack envelope is stored and acked within three seconds (R2.5); a stored
@@ -536,11 +594,10 @@ The remaining questions are design-phase and are answered in `design.md`, not he
 
 1. Lease length, renew cadence and the behaviour of a lease renewed late by a laptop that
    slept, measured against the runner's respawn behaviour.
-2. Whether the owner publishes thread bindings (R5.3, the leaning) or the gateway opens the
+2. Whether the owner publishes bindings (R5.4, the leaning) or the gateway opens the
    thread itself.
-3. Whether the Slack HTTP routes land in the first milestone (R7.3 allows either).
-4. Whether a co-located mode exists, where one `the-loop start` on a single laptop brings up
-   both an instance and a gateway in one process tree.
+3. Which transports land in the first milestone (R7.5 allows a subset; the defaults land
+   first). Co-location is no longer a question: it is R14, on the author's review remark.
 
 ## Review comments
 
