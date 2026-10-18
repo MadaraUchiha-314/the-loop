@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-496",
-  "currentNode": "brainstorm-approval",
+  "currentNode": "requirements-definition",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -21,8 +21,16 @@
     },
     "brainstorm-approval": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "approved",
       "enteredAt": "2026-10-18T01:36:26+00:00",
+      "exitedAt": "2026-10-18T15:46:45+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "requirements-definition": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-18T15:46:45+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -234,11 +242,7 @@
     }
   },
   "forced": [],
-  "parked": {
-    "node": "brainstorm-approval",
-    "reason": "`classify-feedback` did not pass:\n- feedback so far is not decisive; the gate stays open",
-    "since": "2026-10-18T15:35:56+00:00"
-  },
+  "parked": null,
   "completions": {
     "brainstorming": {
       "at": "2026-10-18T01:36:26+00:00",
@@ -256,5 +260,5 @@
   "repos": [],
   "pullRequests": [],
   "loop": "pdlc-work-item-loop",
-  "phase": "brainstorming"
+  "phase": "requirements-definition"
 }

@@ -2,8 +2,8 @@
 type: brainstorm
 phase: brainstorming
 workItem: issue-496
-status: draft                # the brainstorm-approval gate locks it on the author's approval (issue-494)
-approvedBy: []
+status: approved             # the brainstorm-approval gate locks it on the author's approval (issue-494)
+approvedBy: ["MadaraUchiha-314"]
 collaborators: [architect, product-manager, engineer]
 overrides: {}
 ---
@@ -486,3 +486,9 @@ instance auth, and multi-replica gateways (later work items).
 > comments (issue-109). Append-only and attributed: an approval never silently
 > discards a reviewer's suggestions, and the feedback travels with the document
 > it concerns rather than living in a side-channel tracker.
+
+### 2026-10-18 — approved
+
+**@MadaraUchiha-314** wrote:
+
+approved
