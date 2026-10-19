@@ -319,3 +319,33 @@ def test_a_delivery_whose_dispatch_is_in_flight_is_not_fetched_again(gw, tmp_pat
         fourth["commit"] == [{"seq": 1, "outcome": "spawned"}] and fourth["cursor"] == 0
     )
     assert not gw.events("subject.redelivered")
+
+
+def test_a_commit_the_gateway_refuses_as_undelivered_is_dropped_not_resent(
+    gw, tmp_path
+):
+    """
+    Feature: the gateway client consumes one queue
+      Scenario: a commit the gateway refuses as undelivered is dropped, not resent
+        Given a client holding a pending commit for a seq the gateway has no row for
+        When the fetch is refused commit-undelivered
+        Then the client records the refusal, drops that batch, and its next fetch
+             carries no commit and succeeds
+
+    Requirement: docs/specs/issue-496/requirements.md#requirement-3 (R3.4)
+                 (self-review R3)
+    """
+    client, transport = _client(gw, tmp_path, dispatch=lambda d: "delivered")
+    with client._lock:
+        client._pending.append({"seq": 999, "outcome": "delivered"})
+    assert client.step() is False and client.state == "refused"
+    assert gw.events("gateway.refused")[-1]["reason"] == "commit-undelivered"
+    fetch_bodies = [
+        b for m, p, b in transport.calls if p.endswith("/fetch") and b is not None
+    ]
+    assert fetch_bodies[-1]["commit"] == [{"seq": 999, "outcome": "delivered"}]
+    client.step()
+    fetch_bodies = [
+        b for m, p, b in transport.calls if p.endswith("/fetch") and b is not None
+    ]
+    assert fetch_bodies[-1]["commit"] == [] and client.state == "connected"

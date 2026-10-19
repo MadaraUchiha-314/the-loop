@@ -425,6 +425,23 @@ class GatewayClient:
         )
         if status == 409:
             self._refused(answer)
+            if (
+                isinstance(answer, Mapping)
+                and answer.get("error") == "commit-undelivered"
+                and commits
+            ):
+                # the gateway has no row for one of these seqs (a recreated store, a
+                # backlog that expired while this instance was away): carrying the same
+                # batch again would be refused forever (self-review R3). Drop it, say
+                # so, and let the next fetch go without a commit.
+                with self._lock:
+                    self._pending = self._pending[len(commits) :]
+                logger.warning(
+                    "gateway: dropped %d commit(s) the gateway refused as undelivered"
+                    " (seqs %s)",
+                    len(commits),
+                    [c["seq"] for c in commits],
+                )
             return None
         if status != 200 or not isinstance(answer, Mapping):
             raise urllib.error.URLError(f"POST /fetch answered {status}")
