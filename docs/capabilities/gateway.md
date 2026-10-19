@@ -180,7 +180,9 @@ The word *gateway*, unqualified, is this process; decision-059's is the
   `gateway.unreachable` once, retries with back-off (1 s → 60 s), records
   `gateway.connected` on recovery, and **never** falls back to its own ingresses. A
   `409` is logged with the holder and retried on the same schedule. A loopback URL is
-  treated exactly as a remote one.
+  treated exactly as a remote one. A peer id never leaves the gateway: a 409 and
+  `gateway instances` carry a fingerprint of the holder's id (eight hex characters of
+  its SHA-256), because the id admits a fetch under the name.
 - `GET /api/v1/gateway` on the instance API serves the client's document; the
   dashboard's instance pane renders it as the Gateway card (the state in words beside a
   decorative dot: `connected · long-poll`, `connecting · attempt n`, `refused · duplicate

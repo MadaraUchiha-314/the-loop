@@ -77,6 +77,17 @@ class StoreError(RuntimeError):
     """A store call that cannot be honoured — the message names why."""
 
 
+def peer_fingerprint(peer: str) -> str:
+    """What the network may learn about a peer id: eight hex characters of its SHA-256
+    (security review SEC-1). The id itself admits a fetch under the instance's name,
+    so a 409 or an instances view that carried it would hand a stray or hostile peer
+    the queue it was refused; the fingerprint lets an operator match the holder to
+    their own instance's ``GET /api/v1/gateway`` without the id leaving the host."""
+    import hashlib
+
+    return hashlib.sha256(peer.encode("utf-8")).hexdigest()[:8] if peer else ""
+
+
 @dataclass(frozen=True)
 class Refused:
     """A registration-shaped request the store will not apply (409 at the API)."""
@@ -719,7 +730,7 @@ class SqliteStore:
         if holder and holder != peer and float(lease_until) > now_s:
             return Refused(
                 "duplicate-instance",
-                holder=str(holder),
+                holder=peer_fingerprint(str(holder)),
                 since=str(first_seen),
                 detail=f"{instance} is being polled by another peer",
             )

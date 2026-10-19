@@ -86,7 +86,8 @@ paths:
     post:
       summary: Fetch
       description: 'The consumer loop''s whole step: refresh the instance name''s lease for this peer
-        (409 duplicate-instance when another peer holds it), commit the previous batch (409 commit-undelivered
+        (409 duplicate-instance when another peer holds it; the body's `holder` is the holder's peer
+        fingerprint, never its id), commit the previous batch (409 commit-undelivered
         when a seq was never fetched by this queue; nothing is then fetched), read this queue''s next
         deliveries after max(cursor, committed) with attempts incremented (a delivery past store.maxAttempts
         is dead-lettered instead), and when the queue is empty and `wait` > 0 hold the request until a
@@ -292,8 +293,9 @@ paths:
                 additionalProperties: true
                 type: object
                 title: Response Gatewayinstances
-      description: Every instance with its peer, committed offset, first seen, last fetch, lease, registered
-        actors, backlog and claims.
+      description: Every instance with its peer fingerprint (eight hex characters of the peer id's SHA-256 —
+        the id itself never leaves the gateway, since it admits a fetch under the name), committed offset,
+        first seen, last fetch, lease, registered actors, backlog and claims.
 components:
   schemas:
     ActorsBody:

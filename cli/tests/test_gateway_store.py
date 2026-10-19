@@ -11,6 +11,7 @@ import time
 
 import pytest
 
+from the_loop.gateway.store import peer_fingerprint
 from the_loop.gateway import store as store_mod
 from the_loop.gateway.envelope import Envelope
 from the_loop.gateway.store import Refused, SqliteStore
@@ -251,7 +252,7 @@ def test_the_lease_refuses_a_second_peer_under_a_live_name_and_admits_the_same_p
     assert not isinstance(first, Refused) and first.expires_in > 0
     second = store.touch("laptop-a", "p2", lease_s=30)
     assert isinstance(second, Refused) and second.reason == "duplicate-instance"
-    assert second.holder == "p1"
+    assert second.holder == peer_fingerprint("p1")  # never the id (SEC-1)
     assert not isinstance(store.touch("laptop-a", "p1", lease_s=30), Refused)
 
 

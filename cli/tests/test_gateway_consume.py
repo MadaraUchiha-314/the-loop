@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import pytest
 
+from the_loop.gateway.store import peer_fingerprint
+
 from gateway_support import GatewayHarness
 
 
@@ -93,7 +95,9 @@ def test_a_second_peer_under_a_live_name_is_409_naming_the_holder(gw):
     refused = gw.fetch("laptop-a", peer="p2", lease=30)
     assert refused.status_code == 409
     body = refused.json()
-    assert body["error"] == "duplicate-instance" and body["holder"] == "p1"
+    assert body["error"] == "duplicate-instance" and body["holder"] == peer_fingerprint(
+        "p1"
+    )
     assert gw.fetch("laptop-a", peer="p1").status_code == 200
     record = gw.events("gateway.refused")[0]
     assert record["reason"] == "duplicate-instance" and record["peer"] == "p2"
@@ -163,10 +167,9 @@ def test_a_second_peer_under_a_live_name_cannot_replace_the_registration(gw):
     )
     refused = gw.register("laptop-a", {"github": ["hubot"]}, peer="p2")
     assert refused.status_code == 409
-    assert (
-        refused.json()["error"] == "duplicate-instance"
-        and refused.json()["holder"] == "p1"
-    )
+    assert refused.json()["error"] == "duplicate-instance" and refused.json()[
+        "holder"
+    ] == peer_fingerprint("p1")
     assert gw.store.actors_of("laptop-a") == {"github": ("octocat",)}
     assert gw.store.instance_for_actor("github", "hubot") is None
     assert gw.events("gateway.refused")[-1]["reason"] == "duplicate-instance"
@@ -222,7 +225,11 @@ def test_the_views_report_health_subjects_queues_and_instances(gw):
         }
     ]
     (row,) = gw.client.get("/api/v1/gateway/instances").json()["instances"]
-    assert row["instance"] == "a" and row["peer"] == "p1" and row["leaseLive"] is True
+    assert (
+        row["instance"] == "a"
+        and row["peerFingerprint"] == peer_fingerprint("p1")
+        and row["leaseLive"] is True
+    )
     assert row["actors"] == {"slack": ["U1"]} and row["backlog"] == 1
 
 
@@ -322,7 +329,9 @@ def test_a_stale_peer_under_a_live_name_can_neither_commit_nor_touch_its_claims(
             "commit": [{"seq": delivery["seq"], "outcome": "delivered"}],
         },
     )
-    assert stale_commit.status_code == 409 and stale_commit.json()["holder"] == "p1"
+    assert stale_commit.status_code == 409 and stale_commit.json()[
+        "holder"
+    ] == peer_fingerprint("p1")
     assert gw.store.committed("laptop-a") == 0
     stale_release = gw.client.request(
         "DELETE",
@@ -402,9 +411,9 @@ def test_a_long_poll_whose_lease_lapsed_mid_wait_reads_nothing_of_the_new_holder
     thread.join(timeout=5)
     assert not thread.is_alive()
     response = outcome["response"]
-    assert response.status_code == 409 and response.json()["holder"] == "p2", (
-        response.json()
-    )
+    assert response.status_code == 409 and response.json()[
+        "holder"
+    ] == peer_fingerprint("p2"), response.json()
     (delivery,) = gw.fetch("laptop-a", peer="p2").json()["deliveries"]
     assert delivery["event"]["deliveryId"] == "d-1"
 

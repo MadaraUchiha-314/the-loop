@@ -11,6 +11,7 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 import pytest
 
 from gateway_support import GatewayHarness
+from the_loop.gateway.store import peer_fingerprint
 from the_loop.gateway import client as client_mod
 from the_loop.gateway.client import GatewayClient
 from the_loop.gateway.envelope import Delivery
@@ -200,12 +201,14 @@ def test_a_second_peer_under_the_name_is_refused_and_retried_on_the_backoff_sche
     )
     assert second.peer != first.peer
     assert second.step() is False
-    assert second.state == "refused" and second.refused_by == first.peer
+    assert second.state == "refused" and second.refused_by == peer_fingerprint(
+        first.peer
+    )
     assert second.last_error == "duplicate-instance"
     refusals = [
         r for r in gw.events("gateway.refused") if r["reason"] == "duplicate-instance"
     ]
-    assert refusals and refusals[-1]["holder"] == first.peer
+    assert refusals and refusals[-1]["holder"] == peer_fingerprint(first.peer)
     waits = [second._backoff() for _ in range(8)]
     assert waits[0] == 1.0 and waits[-1] == 60.0 and waits == sorted(waits)
     assert first.step() is True  # the holder keeps polling

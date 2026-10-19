@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 from .. import eventlog
 from .config import GatewayConfig
 from .envelope import subject_for_slug, ROLES
-from .store import Refused, Store
+from .store import Refused, Store, peer_fingerprint
 
 __all__ = ["GatewayState", "build_consume_router", "API_PREFIX"]
 
@@ -467,7 +467,7 @@ def build_consume_router(state: GatewayState, **router_kwargs: Any) -> APIRouter
             "instances": [
                 {
                     "instance": i.instance,
-                    "peer": i.peer,
+                    "peerFingerprint": peer_fingerprint(i.peer),
                     "committed": i.committed,
                     "firstSeen": i.first_seen,
                     "lastFetchAt": i.last_fetch_at,
