@@ -281,7 +281,8 @@ def test_the_same_instance_resuming_after_a_stop_receives_what_was_routed_to_it_
         assert held.held
         # held under the PR's own subject: the binding routes it onto the ticket's
         # claimant (critic C3, R5.7) — no claim on the PR's subject is needed
-        assert gw.bind(TICKET, "github", "o/r#78").json()["routed"] == 1
+        published = gw.bind(TICKET, "github", "o/r#78", instance="laptop-b", peer="pb")
+        assert published.json()["routed"] == 1
         assert _queue(gw, "laptop-a") == ["held-1"]
     finally:
         a.stop()

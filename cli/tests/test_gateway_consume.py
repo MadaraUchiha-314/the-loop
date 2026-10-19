@@ -441,6 +441,41 @@ def test_a_binding_routes_what_was_held_on_the_pull_requests_own_subject(gw):
     answer = gw.bind("github:o/r#14", "github", "o/r#77")
     assert answer.status_code == 200 and answer.json()["routed"] == 1
     assert gw.events("subject.routed")[-1]["by"] == "binding"
+    bound = gw.events("gateway.bound")[-1]
+    assert bound["instance"] == "laptop-a" and bound["key"] == "o/r#77"
+    assert bound["ref"] == "github:o/r#14" and bound["routed"] == 1
     (delivery,) = gw.fetch("laptop-a", peer="p1").json()["deliveries"]
     assert delivery["event"]["deliveryId"] == "d-1"
     assert gw.bind("github:o/r#14", "github", "o/r@abc123").status_code == 200
+
+
+def test_a_binding_is_published_by_a_known_live_peer_or_refused(tmp_path):
+    """
+    Feature: the consumer API (security review SEC-2)
+      Scenario: a binding is published by a known, live peer or refused
+        Given an allow-list of laptop-a, and laptop-a polled as peer p1
+        When an unknown instance, then a stale peer under laptop-a, then p1 itself
+             publish a binding
+        Then the first two are 409 (unknown-instance, duplicate-instance) and store
+             nothing, the third is 200 and recorded as gateway.bound with the instance
+
+    Requirement: docs/specs/issue-496/requirements.md#security-considerations
+                 (abuse case 8), R5.7
+    """
+    gw = GatewayHarness(tmp_path, instances=["laptop-a"])
+    try:
+        gw.fetch("laptop-a", peer="p1", lease=60)
+        stranger = gw.bind("github:o/r#14", "github", "o/r#77", instance="laptop-z")
+        assert stranger.status_code == 409
+        assert stranger.json()["error"] == "unknown-instance"
+        stale = gw.bind("github:o/r#14", "github", "o/r#77", peer="p2")
+        assert stale.status_code == 409
+        assert stale.json()["error"] == "duplicate-instance"
+        assert gw.store.resolve("github", "o/r#77") is None
+        assert not gw.events("gateway.bound")
+        own = gw.bind("github:o/r#14", "github", "o/r#77", peer="p1")
+        assert own.status_code == 200
+        assert gw.store.resolve("github", "o/r#77") == "github:o/r#14"
+        assert gw.events("gateway.bound")[-1]["instance"] == "laptop-a"
+    finally:
+        gw.close()

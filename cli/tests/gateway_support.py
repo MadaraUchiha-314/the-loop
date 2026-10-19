@@ -112,10 +112,24 @@ class GatewayHarness:
             json={"instance": instance, "peer": peer, "actors": actors},
         )
 
-    def bind(self, ref: str, provider: str, key: str):
+    def bind(
+        self,
+        ref: str,
+        provider: str,
+        key: str,
+        *,
+        instance: str = "laptop-a",
+        peer: str = "p1",
+    ):
         return self.client.post(
             "/api/v1/gateway/bindings",
-            json={"ref": ref, "provider": provider, "key": key},
+            json={
+                "instance": instance,
+                "peer": peer,
+                "ref": ref,
+                "provider": provider,
+                "key": key,
+            },
         )
 
     def append(

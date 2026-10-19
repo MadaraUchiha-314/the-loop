@@ -86,7 +86,7 @@ paths:
     post:
       summary: Fetch
       description: 'The consumer loop''s whole step: refresh the instance name''s lease for this peer
-        (409 duplicate-instance when another peer holds it; the body's `holder` is the holder's peer
+        (409 duplicate-instance when another peer holds it; the body''s `holder` is the holder''s peer
         fingerprint, never its id), commit the previous batch (409 commit-undelivered
         when a seq was never fetched by this queue; nothing is then fetched), read this queue''s next
         deliveries after max(cursor, committed) with attempts incremented (a delivery past store.maxAttempts
@@ -321,6 +321,15 @@ components:
       title: ActorsBody
     BindingBody:
       properties:
+        instance:
+          type: string
+          title: Instance
+          description: 'The publishing instance''s name: allow-listed like a claim.'
+        peer:
+          type: string
+          title: Peer
+          default: ''
+          description: Its persisted peer id; a different peer under a live name is 409 duplicate-instance.
         ref:
           type: string
           title: Ref
@@ -336,6 +345,7 @@ components:
             for a Slack thread.'
       type: object
       required:
+      - instance
       - ref
       - provider
       - key

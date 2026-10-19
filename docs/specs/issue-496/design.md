@@ -587,9 +587,10 @@ same JSONL file, read by `the-loop events` and the dashboard stream.
     (`gateway/serve.py`, same check as `api/serve.py:41-48`), and
     `docs/capabilities/gateway.md` states in its first paragraph that an exposed gateway
     is readable, claimable and committable by any peer on that network. The optional
-    `instances` allow-list refuses an unknown `instance` name on fetch, claim and
-    registration, which is a guard against misconfiguration, not an authentication. Every
-    claim and registration is recorded with its instance and time and listed by
+    `instances` allow-list refuses an unknown `instance` name on fetch, commit, claim,
+    registration and binding, which is a guard against misconfiguration, not an
+    authentication. Every claim, registration and binding is recorded with its instance
+    and time (`gateway.claimed`, `gateway.registered`, `gateway.bound`) and listed by
     `gateway subjects` and `gateway instances`, so a misdirected work item is visible
     (abuse case 8).
   - *Authorization of humans:* unchanged and **absent from the gateway**: the authorized-

@@ -175,7 +175,9 @@ The word *gateway*, unqualified, is this process; decision-059's is the
   dispatcher). `the-loop stop` flushes with `POST /commit`.
 - A registered session publishes a claim — `driver` for a ticket, `reviewer` for a pull
   request whose control command is `review` — and releases it when it closes; a linked
-  pull request and a bound Slack thread publish bindings.
+  pull request and a bound Slack thread publish bindings. A binding names its instance
+  and peer like a claim: allow-listed, refused for a stale peer under a live name, and
+  recorded as `gateway.bound`, so a binding that redirects a subject is never anonymous.
 - When the gateway is unreachable the instance keeps running, records
   `gateway.unreachable` once, retries with back-off (1 s → 60 s), records
   `gateway.connected` on recovery, and **never** falls back to its own ingresses. A
@@ -194,7 +196,7 @@ The word *gateway*, unqualified, is this process; decision-059's is the
 
 - Two event families on the existing JSONL log: `gateway.*` (`started`, `stopped`,
   `received`, `dropped`, `refused`, `reloaded`, `claimed`, `released`, `registered`,
-  `unreachable`, `connected`) and `subject.*` (`appended`, `routed`, `committed`,
+  `unreachable`, `connected`, `bound`) and `subject.*` (`appended`, `routed`, `committed`,
   `redelivered`, `dead-lettered`, `expired`). The payload never reaches a log line; a
   length-capped summary does.
 - `the-loop gateway subjects` lists every subject with its claimants, events, held,

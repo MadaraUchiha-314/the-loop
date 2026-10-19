@@ -303,7 +303,13 @@ class GatewayClient:
             status, _ = self._call(
                 "POST",
                 "/api/v1/gateway/bindings",
-                {"ref": ref, "provider": provider, "key": key},
+                {
+                    "instance": self.instance,
+                    "peer": self.peer,
+                    "ref": ref,
+                    "provider": provider,
+                    "key": key,
+                },
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("gateway: binding %s → %s not published (%s)", key, ref, exc)

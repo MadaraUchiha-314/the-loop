@@ -1282,6 +1282,12 @@ EVENT_TYPES: Dict[str, str] = {
         "how many held events the claim routed onto its queue)."
     ),
     "gateway.released": "An instance released its claim (subject, instance).",
+    "gateway.bound": (
+        "An instance published a binding — an object (a pull request, a Slack thread) "
+        "belongs to a work item (instance, provider, key, ref, routed: how many held "
+        "events it routed). Recorded so a binding that redirects a subject is never "
+        "anonymous (issue-496, security review SEC-2)."
+    ),
     "gateway.registered": (
         "An instance registered the actors it works for (instance, actors: counts per "
         "provider)."

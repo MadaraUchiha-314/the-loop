@@ -143,6 +143,13 @@ class ActorsBody(BaseModel):
 
 
 class BindingBody(BaseModel):
+    instance: str = Field(
+        ..., description="The publishing instance's name: allow-listed like a claim."
+    )
+    peer: str = Field(
+        "",
+        description="Its persisted peer id; a different peer under a live name is 409.",
+    )
     ref: str = Field(
         ..., description="The work item (`github:owner/repo#N`, `jira:site/KEY-N`)."
     )
@@ -388,9 +395,18 @@ def build_consume_router(state: GatewayState, **router_kwargs: Any) -> APIRouter
     @router.post(f"{API_PREFIX}/bindings", operation_id="gatewayBind")
     def bind(body: BindingBody) -> Any:
         """Publish that an object belongs to a work item (R5.7); held events whose key
-        now resolves are routed."""
+        now resolves are routed. The publisher is checked like a claimant (security
+        review SEC-2): allow-listed by name, refused as a stale peer under a live name,
+        and recorded as `gateway.bound`, so a binding that redirects a subject is
+        visible and never anonymous."""
         from .adapters.common import slug_of
 
+        denied = _check_allowed(state, body.instance)
+        if denied is not None:
+            return denied
+        conflict = store.peer_conflict(body.instance, body.peer)
+        if conflict is not None:
+            return _refused(state, conflict, instance=body.instance, peer=body.peer)
         try:
             slug = slug_of(body.ref)
         except Exception as exc:  # noqa: BLE001 — a ref the schemes cannot parse
@@ -405,6 +421,14 @@ def build_consume_router(state: GatewayState, **router_kwargs: Any) -> APIRouter
                 own_subject = ""
         routed = store.bind(
             body.provider, body.key, body.ref, slug, own_subject=own_subject
+        )
+        eventlog.emit(
+            "gateway.bound",
+            instance=body.instance,
+            provider=body.provider,
+            key=body.key,
+            ref=body.ref,
+            routed=len(routed),
         )
         for event_id in routed:
             eventlog.emit(
