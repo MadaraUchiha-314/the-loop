@@ -346,3 +346,37 @@ def test_the_dedup_key_tells_distinct_label_assignee_and_closure_events_apart():
     again = dedup_key("github", "issues", closed("2026-10-19T11:00:00Z"), "d-7")
     assert first != again
     assert first == dedup_key("github", "issues", closed("2026-10-19T10:00:00Z"), "d-8")
+
+
+def test_a_comment_edit_is_its_own_event_while_its_creation_shares_one_key():
+    """
+    Feature: one event, one row
+      Scenario: a comment edit is its own event while its creation shares one key
+        Given a comment's `created` delivery by webhook and by poll, then its `edited`
+              delivery (an attestation box ticked) and a later edit
+        When their dedup keys are computed
+        Then the two creations are one key, each edit is its own, and so is a deletion
+              (critic C2)
+    """
+    from the_loop.gateway.adapters.common import dedup_key
+
+    def comment(action: str, updated: str) -> dict:
+        return {
+            "action": action,
+            "issue": {"number": 14},
+            "comment": {"id": 6257, "updated_at": updated},
+            "repository": {"full_name": "o/r"},
+        }
+
+    created = dedup_key("github", "issue_comment", comment("created", "t0"), "w-1")
+    polled = dedup_key(
+        "github", "issue_comment", comment("", "t0"), "poll-comment-6257"
+    )
+    assert created == polled == "gh-comment-6257"
+    first_edit = dedup_key("github", "issue_comment", comment("edited", "t1"), "w-2")
+    second_edit = dedup_key("github", "issue_comment", comment("edited", "t2"), "w-3")
+    deleted = dedup_key("github", "issue_comment", comment("deleted", "t3"), "w-4")
+    assert len({created, first_edit, second_edit, deleted}) == 4
+    assert first_edit == dedup_key(
+        "github", "issue_comment", comment("edited", "t1"), "w-5"
+    )

@@ -351,14 +351,24 @@ def dedup_key(provider: str, kind: str, payload: Any, delivery_id: str) -> str:
         return f"{provider}:{delivery_id}"
     if provider == "github":
         repo = _github_repo(body)
+        action = _text(body.get("action"))
         if kind in ("issue_comment", "pull_request_review_comment"):
-            comment_id = _int(_mapping(body.get("comment")).get("id"))
+            comment = _mapping(body.get("comment"))
+            comment_id = _int(comment.get("id"))
             if comment_id is not None:
-                return f"gh-comment-{comment_id}"
+                if action in ("", "created"):
+                    # the one key a webhook and a poll of the same comment share
+                    return f"gh-comment-{comment_id}"
+                # an edit (the attestation tick) or a deletion is its own event
+                # (critic C2); keyed on the action and the edit time
+                return f"gh-comment-{comment_id}-{action}-{_text(comment.get('updated_at'))}"
         if kind == "pull_request_review":
-            review_id = _int(_mapping(body.get("review")).get("id"))
+            review = _mapping(body.get("review"))
+            review_id = _int(review.get("id"))
             if review_id is not None:
-                return f"gh-review-{review_id}"
+                if action in ("", "submitted"):
+                    return f"gh-review-{review_id}"
+                return f"gh-review-{review_id}-{action}-{_text(review.get('submitted_at'))}"
         if kind in ("issues", "pull_request"):
             obj = _mapping(body.get("issue" if kind == "issues" else "pull_request"))
             number = _int(obj.get("number"))
