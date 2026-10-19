@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-496",
-  "currentNode": "code-quiz",
+  "currentNode": "human-approval",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -173,8 +173,16 @@
     },
     "code-quiz": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-19T20:04:07+00:00",
+      "exitedAt": "2026-10-19T20:25:07+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "human-approval": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-19T20:25:07+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -390,6 +398,13 @@
       "attestedAt": "2026-10-19T04:30:41Z",
       "comment": "https://github.com/MadaraUchiha-314/the-loop/issues/496#issuecomment-6257757577",
       "via": "tick"
+    },
+    "code-quiz": {
+      "at": "2026-10-19T20:25:07+00:00",
+      "attestedBy": "MadaraUchiha-314",
+      "attestedAt": "2026-10-19T20:24:38Z",
+      "comment": "https://github.com/MadaraUchiha-314/the-loop/pull/499#issuecomment-6276154060",
+      "via": "tick"
     }
   },
   "forced": [
@@ -405,9 +420,9 @@
     }
   ],
   "parked": {
-    "node": "code-quiz",
-    "reason": "awaiting a human",
-    "since": "2026-10-19T20:04:07+00:00"
+    "node": "human-approval",
+    "reason": "`classify-feedback` did not pass:\n- feedback so far is not decisive; the gate stays open",
+    "since": "2026-10-19T22:41:19+00:00"
   },
   "completions": {
     "brainstorming": {
