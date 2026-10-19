@@ -133,7 +133,9 @@ The word *gateway*, unqualified, is this process; decision-059's is the
   blocks say, and `the-loop status`, `the-loop start` and health read `off · gateway
   configured`. Without the block, exactly as before.
 - The client registers first (`PUT /actors`, then every live session's claim
-  re-asserted), polls its queue with the server's `committed` as cursor, dispatches
+  re-asserted), polls its queue with the server's `committed` as cursor (or the
+  highest delivery whose dispatch is still in flight, so nothing is fetched twice
+  while a resume is spawning), dispatches
   each delivery through today's pipeline by provider — the router and dispatcher for
   GitHub, the Jira doorbell, `slack.dispatch_envelope` for Slack — under
   `gateway_event_id` on every `dispatch.*` record, and sends the outcomes with its next

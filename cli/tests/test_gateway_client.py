@@ -273,3 +273,49 @@ def test_run_loops_until_stopped_and_flushes(gw, tmp_path):
 def test_a_config_without_a_gateway_block_is_refused():
     with pytest.raises(ValueError):
         GatewayClient({"instance": {"name": "x"}}, threading.Event())
+
+
+def test_a_delivery_whose_dispatch_is_in_flight_is_not_fetched_again(gw, tmp_path):
+    """
+    Feature: the gateway client consumes one queue
+      Scenario: a delivery whose dispatch is in flight is not fetched again
+        Given a dispatch that answers Deferred while a resume is spawning
+        When the client polls again before it settles
+        Then the cursor runs past the held delivery, it is dispatched once, nothing is
+             redelivered, and once the dispatch settles the outcome is committed
+
+    Requirement: docs/specs/issue-496/requirements.md#requirement-3 (R3.4), R12.4
+    """
+    from the_loop.gateway.client_dispatch import Deferred
+
+    seen: List[str] = []
+    settled: Dict[str, Optional[str]] = {"outcome": None}
+
+    def dispatch(delivery: Delivery):
+        seen.append(delivery.event.delivery_id)
+        return Deferred(delivery.event.delivery_id, lambda: settled["outcome"], 0.0)
+
+    client, transport = _client(gw, tmp_path, dispatch=dispatch)
+    gw.append(1, consumers=["laptop-a"])
+    client.step()
+    client.step()
+    client.step()
+    assert seen == ["d-1"] and client.deferred == 1
+    fetch_bodies = [
+        b for m, p, b in transport.calls if p.endswith("/fetch") and b is not None
+    ]
+    assert [b["cursor"] for b in fetch_bodies] == [0, 1, 1]
+    assert not gw.events("subject.redelivered")
+    assert gw.store.queue("laptop-a").backlog == 1
+    settled["outcome"] = "spawned"
+    client.step()
+    assert client.deferred == 0 and gw.store.queue("laptop-a").backlog == 0
+    assert gw.store.committed("laptop-a") == 1
+    fourth = [
+        b for m, p, b in transport.calls if p.endswith("/fetch") and b is not None
+    ][3]
+    # settled: it rides as a commit, and the cursor is back on the server's committed
+    assert (
+        fourth["commit"] == [{"seq": 1, "outcome": "spawned"}] and fourth["cursor"] == 0
+    )
+    assert not gw.events("subject.redelivered")

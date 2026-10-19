@@ -355,8 +355,14 @@ class GatewayClient:
 
         registry.publisher = on_registry
         if channel_state is not None:
-            channel_state.publisher = lambda provider, key, work_item: (
-                self.publish_binding(work_item, provider, key)
+            # the publisher is a ClassVar read through the class (channels.state)
+            target = (
+                channel_state
+                if isinstance(channel_state, type)
+                else type(channel_state)
+            )
+            target.publisher = lambda provider, key, work_item: self.publish_binding(
+                work_item, provider, key
             )
         if pipeline is not None:
             pipeline.publish_binding = self.publish_binding
@@ -398,10 +404,14 @@ class GatewayClient:
         self.resolve_deferred()
         with self._lock:
             commits = list(self._pending)
+            # a dispatch still in flight is not fetched again: the cursor runs past
+            # what this process holds, and falls back to `committed` once it settles
+            # (a `failed` outcome then comes back with its attempt counted)
+            cursor = max([self.committed] + [seq for seq, _ in self._deferred])
         body = {
             "instance": self.instance,
             "peer": self.peer,
-            "cursor": self.committed,
+            "cursor": cursor,
             "max": MAX_BATCH,
             "wait": self.block.long_poll_s,
             "lease": self.block.lease_s,

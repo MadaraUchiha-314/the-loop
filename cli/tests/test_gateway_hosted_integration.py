@@ -17,9 +17,11 @@ from fastapi.testclient import TestClient
 from gateway_support import write_gateway_config
 from the_loop.api import ingress as ingress_mod
 from the_loop.api.app import create_app
+from the_loop.channels.state import ChannelState
 from the_loop.commands import gateway_cmd
 from the_loop.core import lifecycle
 from the_loop.gateway import client as gateway_client
+from the_loop.gateway.store import SqliteStore
 
 
 def _instance_config(
@@ -166,7 +168,8 @@ def test_a_gateway_and_an_instance_share_one_machine_on_loopback(tmp_path, monke
         Then the only hosted ingress is the gateway client, it connects (the gateway's
              instances view lists laptop-a with a live lease), GET /api/v1/gateway says
              connected, the Daemons rows say off · gateway configured, and the two
-             processes have separate state roots and pidfiles; stopping the gateway
+             processes have separate state roots and pidfiles, a Slack thread the
+             service binds is a binding on the gateway; stopping the gateway
              turns the client unreachable without any fallback to local ingresses
 
     Requirement: docs/specs/issue-496/requirements.md#requirement-14 (R14.1, R14.2,
@@ -215,6 +218,17 @@ def test_a_gateway_and_an_instance_share_one_machine_on_loopback(tmp_path, monke
             (row,) = [r for r in listed["instances"] if r["instance"] == "laptop-a"]
             assert row["leaseLive"] is True and row["actors"] == {"github": ["octocat"]}
             assert gateway_client.current() is not None
+            # a Slack thread the service binds is published to the gateway (R5.7):
+            # the publisher sits on ChannelState as a class attribute, read as one
+            ChannelState().bind("1792.1", "github:o/r#14", "C1", origin="start")
+            store = SqliteStore(gateway_config.store.path)
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                if store.resolve("slack", "C1:1792.1") == "github:o/r#14":
+                    break
+                time.sleep(0.1)
+            assert store.resolve("slack", "C1:1792.1") == "github:o/r#14"
+            store.close()
             # separate roots, separate pidfiles
             assert gateway_config.pidfile.is_file()
             assert (

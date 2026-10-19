@@ -675,7 +675,9 @@ class ChannelState:
         if thread:
             self.threads.pop(thread, None)  # re-binding moves it to newest
             self.threads[thread] = {"workItem": work_item, "channel": channel_id}
-            publisher = getattr(self, "publisher", None)
+            # Read through the class, never the instance: a plain function stored on
+            # the ClassVar would bind as a method and arrive with one argument too many.
+            publisher = ChannelState.publisher
             if publisher is not None and work_item:
                 # issue-496 (R5.7): a gateway learns the thread belongs to the work item
                 try:
