@@ -23,7 +23,7 @@ overrides: {}
 
 ### A — the store and routing core (pure seams, unit-tested)
 
-- [ ] **A1: the gateway config and its schema.** Add `.the-loop/gateway-config.schema.json`
+- [x] **A1: the gateway config and its schema.** Add `.the-loop/gateway-config.schema.json`
   with a byte-identical packaged copy under `cli/the_loop/schemas/`, covering every
   block of `design.md` §Data models (`env.file`, `state.root`, `listen`, `store`,
   `consume`, `repositories`, `github`, `jira`, `slack`, `instances`, `observability`),

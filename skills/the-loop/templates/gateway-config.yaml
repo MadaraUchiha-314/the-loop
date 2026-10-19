@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/MadaraUchiha-314/the-loop/main/.the-loop/gateway-config.schema.json
+# the-loop GATEWAY configuration (gateway-config.yaml) — issue-496.
+# One process that owns every inbound transport (GitHub and Jira webhooks, Slack
+# Socket Mode and HTTP routes, the pollers), stores each event on a per-work-item
+# subject BEFORE acknowledging the provider, and fans it out on write to the queue of
+# every instance that consumes that subject. Instances poll their queue through the
+# `gateway` block of their own cli-config.yaml; the gateway never reaches an instance.
+#
+# Separate from cli-config.yaml on purpose: a gateway on another box carries none of
+# an instance's keys. Every secret below is an environment-variable NAME (`*Env`),
+# read from the process environment; `env.file` names the dotenv file with the values.
+# Resolved, in priority order: --config, $THE_LOOP_GATEWAY_CONFIG,
+# ./.the-loop/gateway-config.yaml, ~/.the-loop/gateway-config.yaml.
+# `the-loop gateway start` validates this file and refuses to start on a violation.
+
+version: "1"
+
+env:
+  file: ""                      # e.g. ~/.the-loop/the-loop.env — values never live here
+
+state:
+  root: ~/.the-loop/gateway     # pidfile, logs/, gateway.db — separate from any instance
+
+listen:
+  host: 127.0.0.1               # a non-loopback host needs `exposed: true`
+  port: 8790                    # ≠ service 4114, receiver 8787: all three start on one laptop
+  exposed: false                # no instance authentication in this release; the network is the boundary
+
+store:
+  retentionDays: 7              # committed deliveries kept this long; pending ones expire after it
+  maxAttempts: 3                # redeliveries before dead-letter (polling.maxRetries' sibling)
+
+consume:
+  maxBatch: 256                 # the most deliveries one fetch returns
+  maxWaitSeconds: 30            # the longest a long-poll is held open
+  leaseSeconds: { min: 10, max: 300 }   # a second peer under a live instance name is refused (409)
+
+repositories: []                # owner/repo whose issues and PRs may be work items
+
+github:
+  webhook:
+    enabled: false
+    path: /gh-webhook
+    secretEnv: THE_LOOP_GH_WEBHOOK_SECRET
+  poll:
+    enabled: true               # the default transport: no public URL needed
+    intervalSeconds: 60
+    tokenEnv: GITHUB_TOKEN      # read access only; posting stays on the instance
+    sources: []                 # - { repository: owner/repo, labels: ["the-loop: auto-execute"] }
+
+jira:
+  webhook:
+    enabled: false
+    secretEnv: THE_LOOP_JIRA_WEBHOOK_SECRET
+  poll:
+    enabled: false
+    intervalSeconds: 60
+    site: ""
+    emailEnv: THE_LOOP_JIRA_EMAIL
+    tokenEnv: THE_LOOP_JIRA_TOKEN
+  projects: []
+
+slack:
+  socket:
+    enabled: true               # exactly one Socket Mode connection per app, for the life of the process
+    appTokenEnv: THE_LOOP_SLACK_APP_TOKEN
+    botTokenEnv: THE_LOOP_SLACK_BOT_TOKEN
+    splitCheckBeats: 3
+  http:
+    enabled: false
+    signingSecretEnv: SLACK_SIGNING_SECRET
+  rooms: []                     # - { channel: C0123ABCD, workItem: "github:owner/repo#14" }
+
+instances: []                   # optional allow-list of instance names (a misconfiguration guard, not auth)
+
+observability:
+  eventLog:
+    enabled: true
+    path: ""                    # unset → <state.root>/logs/events.jsonl
