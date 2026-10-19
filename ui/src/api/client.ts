@@ -24,6 +24,7 @@ import type {
   RestartSchedule,
   CoreResult,
   DaemonStatus,
+  GatewayDocument,
   DaemonVerb,
   EventRecord,
   GraphDefinition,
@@ -132,6 +133,8 @@ export interface TheLoopApi {
   readonly baseUrl: string;
   readonly isDemo: boolean;
   health(signal?: AbortSignal, instance?: string): Promise<Health>;
+  /** The instance's view of its gateway (issue-496): configured or not, and the client's state. */
+  gateway(signal?: AbortSignal, instance?: string): Promise<GatewayDocument>;
   /** This instance's identity and managed set (issue-322); a member's with `instance`. */
   instance(signal?: AbortSignal, instance?: string): Promise<InstanceDocument>;
   /** The fleet (issue-374, R3.1): one row on a worker, own row + members on a manager. */
@@ -297,6 +300,10 @@ export class HttpApi implements TheLoopApi {
 
   health(signal?: AbortSignal, instance = ""): Promise<Health> {
     return this.request<Health>("/health", { params: { instance } }, signal);
+  }
+
+  gateway(signal?: AbortSignal, instance = ""): Promise<GatewayDocument> {
+    return this.request<GatewayDocument>("/gateway", { params: { instance } }, signal);
   }
 
   instance(signal?: AbortSignal, instance = ""): Promise<InstanceDocument> {

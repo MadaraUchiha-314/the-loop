@@ -13,17 +13,18 @@ import type {
   AttentionItem,
   ConfigDocument,
   ConfigSaveResult,
-  RestartSchedule,
   CoreResult,
   DaemonStatus,
   DaemonVerb,
   EventRecord,
+  GatewayDocument,
   GraphDefinition,
   GraphStatus,
   Health,
   InstanceDocument,
   InstancesDocument,
   JsonSchema,
+  RestartSchedule,
   SessionEndpoint,
   SessionRecord,
   SessionVerb,
@@ -40,6 +41,7 @@ import {
   DEMO_CONFIG_SCHEMA,
   DEMO_DAEMONS,
   DEMO_EVENTS,
+  DEMO_GATEWAY,
   DEMO_INNER_GRAPHS,
   DEMO_OUTER_GRAPHS,
   DEMO_SESSIONS,
@@ -148,6 +150,11 @@ export class DemoApi implements TheLoopApi {
   health(signal?: AbortSignal, instance = ""): Promise<Health> {
     if (instance && instance !== DEMO_INSTANCE) return notSelf(instance);
     return delay({ status: "ok", version: "demo", role: "worker" }, signal);
+  }
+
+  gateway(signal?: AbortSignal, instance = ""): Promise<GatewayDocument> {
+    if (instance && instance !== DEMO_INSTANCE) return notSelf(instance);
+    return delay(DEMO_GATEWAY.connected, signal);
   }
 
   instance(signal?: AbortSignal, instance = ""): Promise<InstanceDocument> {

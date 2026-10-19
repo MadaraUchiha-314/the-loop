@@ -10,7 +10,7 @@
  * write, then answer the new document).
  */
 
-import type { DaemonStatus, Health, InstanceDocument, InstanceRow, InstancesDocument } from "../api/types.ts";
+import type { DaemonStatus, GatewayDocument, Health, InstanceDocument, InstanceRow, InstancesDocument } from "../api/types.ts";
 import { ApiError } from "../api/client.ts";
 import { DemoApi } from "../demo/client.ts";
 
@@ -115,6 +115,14 @@ export class ManagerApi extends DemoApi {
   override health(_signal?: AbortSignal, instance = ""): Promise<Health> {
     if (instance) this.targeted.push(["health", instance]);
     return Promise.resolve({ status: "ok", version: "19.14.1", role: instance && instance !== this.document.name ? "worker" : "manager" });
+  }
+
+  /** What `gateway` answers per instance; unset answers `not configured`. */
+  gatewayDocuments: Record<string, GatewayDocument> = {};
+
+  override gateway(_signal?: AbortSignal, instance = ""): Promise<GatewayDocument> {
+    if (instance) this.targeted.push(["gateway", instance]);
+    return Promise.resolve(structuredClone(this.gatewayDocuments[instance || this.document.name] ?? { configured: false, state: "off" }));
   }
 
   override daemons(): Promise<DaemonStatus[]> {

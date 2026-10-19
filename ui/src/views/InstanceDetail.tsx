@@ -16,11 +16,12 @@ import { useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import { relativeTime } from "../api/model.ts";
-import type { DaemonStatus, DaemonVerb } from "../api/types.ts";
+import type { DaemonStatus, DaemonVerb, GatewayDocument } from "../api/types.ts";
 import { ConfigSection } from "../components/ConfigEditor.tsx";
 import type { Chrome } from "../components/HeaderBar.tsx";
 import { HeaderBar } from "../components/HeaderBar.tsx";
 import { Card, ControlButton, Empty, Kicker, KV, Notice, Report } from "../components/primitives.tsx";
+import type { DotStatus } from "../components/StatusDot.tsx";
 import { StatusDot } from "../components/StatusDot.tsx";
 import { useApi } from "../state/ApiContext.tsx";
 import { hrefFor, navigate } from "../state/route.ts";
@@ -48,6 +49,9 @@ export function InstanceDetail({ chrome, name, onChanged }: InstanceDetailProps)
   // member that has not answered to its name is one the manager refuses (R6.1).
   const identity = useAsync((signal) => (live ? api.instance(signal, name) : Promise.resolve(null)), [api, name, live]);
   const health = useAsync((signal) => (live ? api.health(signal, name) : Promise.resolve(null)), [api, name, live]);
+  // The instance's view of its gateway (issue-496, R10.3): one more read, same rule.
+  const gateway = useAsync((signal) => (live ? api.gateway(signal, name) : Promise.resolve(null)), [api, name, live]);
+  const gatewayConfigured = gateway.data?.configured === true;
   const daemons = useAsync(
     async (signal) =>
       live
@@ -203,27 +207,34 @@ export function InstanceDetail({ chrome, name, onChanged }: InstanceDetailProps)
                 <p className="text-xs text-muted-foreground">No daemon reported.</p>
               ) : (
                 <div className="divide-y divide-border">
-                  {(daemons.data ?? []).map((daemon) => (
-                    <div className="flex items-center gap-2 py-1.5 text-sm" key={daemon.daemon}>
-                      <StatusDot status={daemon.running ? "done" : "pending"} />
-                      <span className="font-mono text-[0.8rem]">{daemon.daemon}</span>
-                      <span className="text-[0.7rem] text-muted-foreground">
-                        {daemon.running
-                          ? daemon.lastCycleAt
-                            ? `running · last cycle ${relativeTime(daemon.lastCycleAt)}`
-                            : "running"
-                          : "stopped"}
-                      </span>
-                      <span className="ml-auto">
-                        <ControlButton
-                          disabled={busy !== ""}
-                          onClick={() => void controlDaemon(daemon, daemon.running ? "stop" : "start")}
-                        >
-                          {daemon.running ? "stop" : "start"}
-                        </ControlButton>
-                      </span>
-                    </div>
-                  ))}
+                  {(daemons.data ?? []).map((daemon) => {
+                    const offForGateway = gatewayConfigured && !daemon.running && LOCAL_INGRESSES.has(daemon.daemon);
+                    return (
+                      <div className="flex items-center gap-2 py-1.5 text-sm" key={daemon.daemon}>
+                        <StatusDot status={daemon.running ? "done" : offForGateway ? "skipped" : "pending"} />
+                        <span className="font-mono text-[0.8rem]">{daemon.daemon}</span>
+                        <span className="text-[0.7rem] text-muted-foreground">
+                          {daemon.running
+                            ? daemon.lastCycleAt
+                              ? `running · last cycle ${relativeTime(daemon.lastCycleAt)}`
+                              : "running"
+                            : offForGateway
+                              ? "off · gateway configured"
+                              : "stopped"}
+                        </span>
+                        <span className="ml-auto">
+                          {offForGateway ? null : (
+                            <ControlButton
+                              disabled={busy !== ""}
+                              onClick={() => void controlDaemon(daemon, daemon.running ? "stop" : "start")}
+                            >
+                              {daemon.running ? "stop" : "start"}
+                            </ControlButton>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -290,6 +301,8 @@ export function InstanceDetail({ chrome, name, onChanged }: InstanceDetailProps)
             ) : null}
           </Card>
 
+          <GatewayCard live={live} loading={gateway.loading && !gateway.data} error={gateway.error} doc={gateway.data ?? null} />
+
           {manager && !own ? (
             <Card>
               <Kicker>Danger</Kicker>
@@ -322,5 +335,152 @@ export function InstanceDetail({ chrome, name, onChanged }: InstanceDetailProps)
         </div>
       </div>
     </>
+  );
+}
+
+/** The instance's own ingresses — the three a `gateway` block switches off (R3.8). */
+const LOCAL_INGRESSES = new Set(["poller", "gh-webhook", "slack-listener"]);
+
+/** The state word carries the meaning; the dot only colours it (prototype: design/gateway-card.html). */
+export function gatewayWords(doc: GatewayDocument): { words: string; dot: DotStatus } {
+  if (!doc.configured) return { words: "not configured", dot: "skipped" };
+  switch (doc.state) {
+    case "connected":
+      return { words: `connected · ${(doc.mode?.longPollSeconds ?? 0) > 0 ? "long-poll" : "polling"}`, dot: "active" };
+    case "connecting":
+      return { words: `connecting · attempt ${doc.attempt ?? 1}`, dot: "pending" };
+    case "refused":
+      return { words: "refused · duplicate instance (409)", dot: "blocked" };
+    case "unreachable":
+      return { words: "unreachable · retrying", dot: "blocked" };
+    default:
+      return { words: doc.state, dot: "pending" };
+  }
+}
+
+function gatewayHealthWords(doc: GatewayDocument): { words: string; dot: DotStatus } {
+  const health = doc.health;
+  if (!health) return { words: doc.state === "connected" ? "reading…" : "unknown", dot: "pending" };
+  const socket = health.slack?.socket;
+  const running = Object.entries(health.ingresses ?? {}).filter(([, state]) => state === "running").length;
+  const parts = [health.ok ? "ok" : "store failing"];
+  if (socket && socket !== "off") parts.push(`slack socket ${socket}`);
+  parts.push(`${running} ingress${running === 1 ? "" : "es"} running`);
+  return { words: parts.join(" · "), dot: health.ok ? "done" : "blocked" };
+}
+
+function GatewayCard({ live, loading, error, doc }: { live: boolean; loading: boolean; error: Error | null; doc: GatewayDocument | null }) {
+  const words = doc ? gatewayWords(doc) : null;
+  return (
+    <Card data-card="gateway">
+      <Kicker>Gateway</Kicker>
+      {!live ? (
+        <p className="text-xs text-muted-foreground">Unknown — the instance has not answered.</p>
+      ) : loading ? (
+        <p className="text-xs text-muted-foreground">Reading…</p>
+      ) : error ? (
+        <Report tone="fail" role="alert">
+          {error.message}
+        </Report>
+      ) : doc && words ? (
+        <div className="space-y-2">
+          {doc.state === "refused" ? (
+            <Notice tone="blocked" role="alert">
+              <p>
+                <strong>Refused by the gateway:</strong> another process is already polling as{" "}
+                <code className="ref-chip">{doc.instance}</code>
+                {doc.refusedBy ? (
+                  <>
+                    {" "}
+                    (peer <span className="font-mono">{doc.refusedBy.slice(0, 8)}</span>)
+                  </>
+                ) : null}
+                ; two instances cannot share one name. This one keeps retrying and starts no ingress of its own — stop the other, or
+                give this instance its own <code className="ref-chip">instance.name</code>.
+              </p>
+            </Notice>
+          ) : null}
+          {doc.state === "unreachable" ? (
+            <Notice tone="blocked" role="alert">
+              <p>
+                <strong>Gateway unreachable</strong>
+                {doc.url ? (
+                  <>
+                    {" "}
+                    at <span className="font-mono">{doc.url}</span>
+                  </>
+                ) : null}
+                : retrying with back-off, not falling back to a local receiver, poller or listener. Events wait on the gateway's queue
+                for this instance and arrive in order once it answers.
+              </p>
+            </Notice>
+          ) : null}
+          <div className="space-y-1.5">
+            {doc.configured ? <KV k="url" v={doc.url ?? ""} /> : null}
+            <KV k="connection">
+              <span className="inline-flex items-center gap-1.5">
+                <StatusDot status={words.dot} />
+                {words.words}
+              </span>
+            </KV>
+            {doc.configured ? <KV k="polling as" v={doc.instance ?? ""} /> : null}
+            {doc.configured && doc.state === "connected" ? (
+              <KV k="since">
+                {doc.since ? relativeTime(doc.since) : "—"} · committed <span className="font-mono">seq {doc.committed ?? 0}</span> · every{" "}
+                {doc.mode?.pollIntervalSeconds ?? 5} s{(doc.mode?.longPollSeconds ?? 0) > 0 ? `, long-poll ${doc.mode?.longPollSeconds} s` : ""}
+              </KV>
+            ) : null}
+            {doc.configured ? (
+              <KV k="gateway health">
+                <span className="inline-flex items-center gap-1.5">
+                  <StatusDot status={gatewayHealthWords(doc).dot} />
+                  {gatewayHealthWords(doc).words}
+                </span>
+              </KV>
+            ) : null}
+          </div>
+          {!doc.configured ? (
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              No gateway configured. This instance runs its own webhook receiver, poller and Slack listener.
+            </p>
+          ) : doc.state === "connected" ? (
+            (doc.claims ?? []).length === 0 ? (
+              <p className="text-xs text-muted-foreground">Queue empty — nothing has been routed to this instance since it started polling.</p>
+            ) : (
+              <>
+                <table className="w-full text-xs" aria-label="This instance's queue, by subject">
+                  <thead className="text-muted-foreground">
+                    <tr>
+                      <th className="py-1 text-left font-normal">subject</th>
+                      <th className="py-1 text-left font-normal">role</th>
+                      <th className="py-1 text-right font-normal">backlog</th>
+                      <th className="py-1 text-right font-normal">oldest uncommitted</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {(doc.claims ?? []).map((claim, index) => (
+                      <tr key={`${claim.subject}:${claim.role}`}>
+                        <td className="py-1">
+                          <code className="ref-chip">{claim.subject}</code>
+                        </td>
+                        <td className="py-1">{claim.role}</td>
+                        <td className="py-1 text-right font-mono">{index === 0 ? (doc.queue?.backlog ?? 0) : "—"}</td>
+                        <td className="py-1 text-right font-mono">
+                          {index === 0 && doc.queue?.oldestPendingAt ? relativeTime(doc.queue.oldestPendingAt) : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Backlog is what the gateway has routed to this instance's queue and this instance has not yet committed; the
+                  queue is one per instance, so it is shown against the first subject.
+                </p>
+              </>
+            )
+          ) : null}
+        </div>
+      ) : null}
+    </Card>
   );
 }

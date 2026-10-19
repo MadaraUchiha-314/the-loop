@@ -271,7 +271,7 @@ overrides: {}
 
 ### D — the dashboard card
 
-- [ ] **D1: the Gateway card on `InstanceDetail`.** Implement the locked prototype
+- [x] **D1: the Gateway card on `InstanceDetail`.** Implement the locked prototype
   (`design/gateway-card.html`): URL, state in words beside an `aria-hidden` `StatusDot`
   (`connected · polling`, `connecting · attempt n`, `refused · duplicate instance (409)`,
   `unreachable · retrying`, `not configured`), the name it polls as, since and committed
