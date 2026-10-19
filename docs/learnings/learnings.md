@@ -6,6 +6,7 @@ are checked in so the user can review and give feedback.
 
 | # | Title | Source | Date |
 |---|-------|--------|------|
+| [015](learning-015.md) | A hook stored on a class is a bound method when read through the instance | system-feedback | 2026-10-19 |
 | [014](learning-014.md) | An option a procedure writes after the verb must live on every verb's parser | system-feedback | 2026-10-19 |
 | [013](learning-013.md) | Node 22+ ships an experimental `localStorage` that shadows jsdom's in vitest | system-feedback | 2026-10-19 |
 | [012](learning-012.md) | A process that must clean up after uvicorn has to own SIGTERM itself | system-feedback | 2026-10-19 |
