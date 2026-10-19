@@ -78,6 +78,14 @@ class Pipeline:
 
     def dispatch(self, delivery: Delivery) -> Outcome:
         env = delivery.event
+        # the daemon's hot reload: the routing policy follows the config file, as the
+        # receiver's on_event does before every route
+        reload = getattr(self, "reload_if_changed", None)
+        if callable(reload):
+            try:
+                reload()
+            except Exception:  # noqa: BLE001 — a bad edit keeps the previous policy
+                logger.exception("gateway: config reload before dispatch failed")
         eventlog.correlate(env.delivery_id, gateway_event_id=env.id)
         if env.provider == "github":
             return self._github(delivery)
