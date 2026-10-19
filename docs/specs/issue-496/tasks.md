@@ -106,7 +106,7 @@ overrides: {}
 
 ### B — the gateway process
 
-- [ ] **B1: the consume API.** Write `gateway/consume.py` as a FastAPI router:
+- [x] **B1: the consume API.** Write `gateway/consume.py` as a FastAPI router:
   `POST /api/v1/gateway/fetch` in the design's five steps (touch → 409
   `duplicate-instance` or `unknown-instance`; commit → 409 `commit-undelivered`; fetch
   with `max` clamped to `maxBatch`; long-poll on a per-instance `threading.Condition`
