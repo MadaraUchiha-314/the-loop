@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-496",
-  "currentNode": "design",
+  "currentNode": "design-approval",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -47,7 +47,7 @@
       "attempts": 2,
       "outcome": "pass",
       "enteredAt": "2026-10-18T21:37:59+00:00",
-      "exitedAt": "2026-10-18T21:49:08+00:00",
+      "exitedAt": "2026-10-19T01:18:48+00:00",
       "lastBlock": "",
       "forced": false
     },
@@ -55,20 +55,20 @@
       "attempts": 0,
       "outcome": "skipped",
       "enteredAt": "2026-10-18T21:49:08+00:00",
-      "exitedAt": "2026-10-18T21:49:08+00:00",
+      "exitedAt": "2026-10-19T01:18:48+00:00",
       "lastBlock": "",
       "forced": false
     },
     "test-planning": {
-      "attempts": 1,
+      "attempts": 2,
       "outcome": "pass",
       "enteredAt": "2026-10-18T21:49:08+00:00",
-      "exitedAt": "2026-10-18T21:51:48+00:00",
+      "exitedAt": "2026-10-19T01:18:55+00:00",
       "lastBlock": "",
       "forced": false
     },
     "design-approval": {
-      "attempts": 1,
+      "attempts": 2,
       "outcome": "",
       "enteredAt": "2026-10-18T21:51:48+00:00",
       "exitedAt": "",
@@ -293,7 +293,11 @@
       ]
     }
   ],
-  "parked": null,
+  "parked": {
+    "node": "design-approval",
+    "reason": "awaiting a human",
+    "since": "2026-10-19T01:18:55+00:00"
+  },
   "completions": {
     "brainstorming": {
       "at": "2026-10-18T01:36:26+00:00",
@@ -304,11 +308,11 @@
       "by": "cli"
     },
     "design": {
-      "at": "2026-10-18T21:49:08+00:00",
+      "at": "2026-10-19T01:18:48+00:00",
       "by": "cli"
     },
     "test-planning": {
-      "at": "2026-10-18T21:51:48+00:00",
+      "at": "2026-10-19T01:18:55+00:00",
       "by": "cli"
     }
   },
@@ -323,5 +327,5 @@
   "repos": [],
   "pullRequests": [],
   "loop": "pdlc-work-item-loop",
-  "phase": "design"
+  "phase": "test-planning"
 }
