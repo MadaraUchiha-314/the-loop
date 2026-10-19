@@ -96,8 +96,12 @@ class Envelope:
     received_at: str = field(default_factory=utcnow)
     attempt: int = 1
     id: Optional[int] = None  # assigned by the store on append
-    #: Who caused the event, for actor routing (R5.5): ``(provider, login)`` or none.
+    #: Who caused the event, for actor routing (R5.5): the provider's login or id.
     actor: Optional[str] = None
+    #: The cross-transport dedup key (R7.3), computed by the adapter; empty means
+    #: ``<provider>:<deliveryId>``. Not serialized: it is the store's index, not the
+    #: consumer's business.
+    dedup_key: str = ""
 
     def to_json(self) -> Dict[str, Any]:
         return {

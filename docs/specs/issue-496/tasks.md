@@ -58,7 +58,7 @@ overrides: {}
   - _Test:_ T1 `tests/test_gateway_envelope.py` (round-trip; `headers` is the allow-list
     only; an unknown event type is refused by the catalogue test already pinned in
     `test_eventlog.py`)
-- [ ] **A4: `SqliteStore` — append, fetch, commit.** Write `gateway/store.py` with the
+- [x] **A4: `SqliteStore` — append, fetch, commit.** Write `gateway/store.py` with the
   `Store` protocol and `SqliteStore(path)`: the schema of the erDiagram (`schema_version`
   row included), WAL, one connection per thread, one transaction per public method.
   `append(env, consumers)` is `INSERT OR IGNORE` on `dedup_key` plus one `deliveries` row
