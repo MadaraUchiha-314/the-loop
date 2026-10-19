@@ -1,3 +1,9 @@
+## v20.3.0 (2026-10-19)
+
+### Feat
+
+- **issue-496**: the-loop gateway — one ingress, many instances (#499)
+
 ## v20.2.1 (2026-10-17)
 
 ### Fix
