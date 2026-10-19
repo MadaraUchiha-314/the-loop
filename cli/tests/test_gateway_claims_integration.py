@@ -176,7 +176,7 @@ def test_a_pull_request_event_with_no_binding_is_routed_by_actor_and_the_instanc
         )
         a.client.step()
         assert wait_until(lambda: gw.store.resolve("github", "o/r#77") == TICKET)
-        again = dict(opened, action="synchronize")
+        again: dict = dict(opened, action="synchronize")
         again["pull_request"] = dict(
             opened["pull_request"], updated_at="2026-10-18T16:00:00Z"
         )
