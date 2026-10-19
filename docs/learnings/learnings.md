@@ -6,6 +6,9 @@ are checked in so the user can review and give feedback.
 
 | # | Title | Source | Date |
 |---|-------|--------|------|
+| [014](learning-014.md) | An option a procedure writes after the verb must live on every verb's parser | system-feedback | 2026-10-19 |
+| [013](learning-013.md) | Node 22+ ships an experimental `localStorage` that shadows jsdom's in vitest | system-feedback | 2026-10-19 |
+| [012](learning-012.md) | A process that must clean up after uvicorn has to own SIGTERM itself | system-feedback | 2026-10-19 |
 | [011](learning-011.md) | A keyword mentioned in prose is not a command | user-feedback | 2026-10-19 |
 | [010](learning-010.md) | An approval gate's vocabulary must cover the ways people say yes | user-feedback | 2026-10-18 |
 | [009](learning-009.md) | "Nothing to approve" must not be something an agent can arrange | system-feedback | 2026-10-16 |
