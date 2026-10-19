@@ -166,6 +166,12 @@ def main(argv: Optional[list] = None) -> int:
         enabled=config.event_log_enabled,
     )
     app = create_app(config)
+    try:
+        config.listen_file.write_text(
+            f"{config.listen.host}:{config.listen.port}\n", encoding="utf-8"
+        )
+    except OSError as exc:  # the verbs then fall back to the file's values
+        logger.warning("gateway: cannot record the listen address (%s)", exc)
     from .ingresses import enabled_ingresses
 
     eventlog.emit(
@@ -190,6 +196,10 @@ def main(argv: Optional[list] = None) -> int:
         code = int(exc.code or 0) if isinstance(exc.code, int) else 0
     finally:
         eventlog.emit("gateway.stopped", reason="shutdown")
+        try:
+            config.listen_file.unlink()
+        except OSError:
+            pass
         lock.release()
     return code
 

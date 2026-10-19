@@ -224,6 +224,12 @@ class GatewayConfig:
         return self.state_root / "logs" / "gateway.out"
 
     @property
+    def listen_file(self) -> Path:
+        """Where the running process records the address it bound (R8.6): the file
+        may already say another port while the process still listens on this one."""
+        return self.state_root / "gateway.listen"
+
+    @property
     def base_url(self) -> str:
         return f"http://{self.listen.host}:{self.listen.port}"
 
