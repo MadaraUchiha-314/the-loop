@@ -335,9 +335,20 @@ command reconciles them.
    - Under `--dry-run`, write nothing: name the command this step would run, and put a
      missing name under **needs-user**.
 
-6. **Update manifest.** Bump `theLoopVersion`/`manifestVersion` to match the plugin.
+6. **Say when a gateway is the fix, never write one** (issue-496). The gateway is
+   opt-in and migrates nothing: a CLI config without a `gateway` block behaves as before,
+   so there is no key to move. But two shapes in `.the-loop/cli-config.yaml` are what a
+   gateway exists for — `channels.slack.read.mode: poll` (the poll reader an operator
+   used because two listeners cannot share one app), and a second instance polling the
+   same repositories — and both are a topology decision the operator makes, not this
+   command. Report either under **needs-user** with the move, step by step, at
+   `docs/guide/gateway.md`; note that behind a gateway a Slack reply is input only when
+   it mentions the bot, so the manifest step above (the `app_mentions:read` scope) is the
+   one part of the move this command does carry. Never add a `gateway` block yourself.
 
-7. **Report.** Summarize grouped as **created / skipped (up to date) / drifted
+7. **Update manifest.** Bump `theLoopVersion`/`manifestVersion` to match the plugin.
+
+8. **Report.** Summarize grouped as **created / skipped (up to date) / drifted
    (suggested) / removed (deprecated) / migrated / needs-user**. Make no silent
    breaking changes.
 

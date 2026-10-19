@@ -377,6 +377,7 @@ reads `off · gateway configured` for the listener). The gateway reads the same 
 tokens from its own `gateway-config.yaml` — `slack.socket.appTokenEnv` (the app-level
 token, `connections:write`) and `slack.socket.botTokenEnv` — so the manifest and the
 tokens above are minted once, for the gateway, and never for an instance behind it.
+The move, step by step: [Moving to a gateway](gateway.md).
 
 With `read.mode: poll` the daemons read thread replies on a background thread instead and
 `listen` is not needed — but no button press and no slash command can arrive that way,

@@ -93,7 +93,12 @@ The word *gateway*, unqualified, is this process; decision-059's is the
   as input, does not run under a gateway.
 - The gateway's poller reuses the instance poller's providers (GitHub, Jira) and
   produces the same delivery ids and webhook-shaped payloads (`poll-comment-<id>`,
-  `poll-presence-<ref>-<uuid>`, `poll-close-…`); its ledger lives in the store. A
+  `poll-presence-<ref>-<uuid>`, `poll-close-…`); its ledger lives in the store. At its
+  first sight of an item the existing thread is baselined, not stored — the presence
+  alone is offered and the spawned session reads the thread itself, as the instance
+  poller does — so a new gateway never replays a history as deliveries; the instance
+  poller's exception for an unprocessed control command is not reproduced (the gateway
+  runs no control grammar), so a start posted before the first listing is posted again. A
   comment seen by webhook and by poll stores one row (the cross-transport dedup key: a
   comment by its id and a review by its id — an edit or a deletion of either is its
   own event, keyed on the action and its time — an issue or PR action by object, `updated_at`
@@ -207,6 +212,7 @@ The word *gateway*, unqualified, is this process; decision-059's is the
 [decision-146](../decisions/decision-146.md) (no instance auth) ·
 [the contract](../api-specs/openapi/the-loop-gateway.v1.yaml) ·
 [`gateway` command](../cli/commands/gateway.md) ·
+[moving to a gateway](../guide/gateway.md) ·
 [gateway options](../config/cli/gateway-options.md) (the instance's block) ·
 [instances](instances.md) · [channels](channels.md) · [webhook-triggers](webhook-triggers.md)
 · [control-plane](control-plane.md) · [observability](observability.md)
