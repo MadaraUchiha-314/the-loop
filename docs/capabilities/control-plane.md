@@ -507,9 +507,9 @@ package — there are no install extras (owner decision, PR #162).
 
 ## History
 
-| issue-496 | The gateway (2026-10-19): the `gateway-client` hosted ingress, `GET /api/v1/gateway` on the instance API and in `the-loop.v1.yaml`, the gateway's own contract `the-loop-gateway.v1.yaml` | [spec](../specs/issue-496/), [gateway](gateway.md) |
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-496 | The gateway (2026-10-19): the `gateway-client` hosted ingress, `GET /api/v1/gateway` on the instance API and in `the-loop.v1.yaml`, the gateway's own contract `the-loop-gateway.v1.yaml` | [spec](../specs/issue-496/), [gateway](gateway.md) |
 | issue-462 | `GET /pull-requests/checks` (`listPullRequestChecks`) and the MCP tool `pull_request_checks` list a pull request's checks with failed jobs' log tails, over `core.github_ops.pull_request_checks`; read-only, so a manager runs it on the member it targets, like `pr status` | [spec](../specs/issue-462/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/462) |
 | issue-465 | `POST /pull-requests/ready` (`markPullRequestReady`) and the MCP tool `mark_pull_request_ready` take a registered work item's draft pull request out of draft, over `core.github_ops.mark_ready`; a manager runs it on the member that manages the work item | [spec](../specs/issue-465/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/465) |
 | issue-447 | Seven routes and seven MCP tools for the harness's GitHub acts — comment, ticket read and create, pull request open, status, threads and merge — plus `discover` on `sessions/link-pr`, all over `core.github_ops` with the executing process's token and merge policy; `harness_routed` sends the CLI verbs to a running service and otherwise runs them in-process, loudly | [spec](../specs/issue-447/), [decision-140](../decisions/decision-140.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/447) |
