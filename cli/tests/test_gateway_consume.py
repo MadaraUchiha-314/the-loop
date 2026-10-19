@@ -407,3 +407,31 @@ def test_a_long_poll_whose_lease_lapsed_mid_wait_reads_nothing_of_the_new_holder
     )
     (delivery,) = gw.fetch("laptop-a", peer="p2").json()["deliveries"]
     assert delivery["event"]["deliveryId"] == "d-1"
+
+
+def test_a_binding_routes_what_was_held_on_the_pull_requests_own_subject(gw):
+    """
+    Feature: many instances, one queue each (R5.7)
+      Scenario: a binding routes what was held on the pull request's own subject
+        Given a PR event held on loop-github-o-r-77 (no claim, no actor) and laptop-a
+              driving the ticket o/r#14
+        When the binding o/r#77 → o/r#14 is published
+        Then the held event is routed onto laptop-a's queue, subject.routed says by
+             binding, and a sha key (no subject of its own) still binds without error
+             (critic C3)
+    """
+    gw.append(
+        1,
+        subject="loop-github-o-r-77",
+        work_item="github:o/r#77",
+        consumers=[],
+        actor="",
+    )
+    gw.store.claim("loop-github-o-r-14", "laptop-a", "driver")
+    assert gw.fetch("laptop-a", peer="p1", lease=60).json()["deliveries"] == []
+    answer = gw.bind("github:o/r#14", "github", "o/r#77")
+    assert answer.status_code == 200 and answer.json()["routed"] == 1
+    assert gw.events("subject.routed")[-1]["by"] == "binding"
+    (delivery,) = gw.fetch("laptop-a", peer="p1").json()["deliveries"]
+    assert delivery["event"]["deliveryId"] == "d-1"
+    assert gw.bind("github:o/r#14", "github", "o/r@abc123").status_code == 200

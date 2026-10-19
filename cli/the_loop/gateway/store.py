@@ -204,7 +204,9 @@ class Store(Protocol):
     ) -> Optional[Refused]: ...
     def instance_for_actor(self, provider: str, actor: str) -> Optional[str]: ...
     def route_held_by_actors(self, instance: str) -> List[Tuple[int, str]]: ...
-    def bind(self, provider: str, key: str, ref: str, slug: str) -> List[int]: ...
+    def bind(
+        self, provider: str, key: str, ref: str, slug: str, own_subject: str = ""
+    ) -> List[int]: ...
     def resolve(self, provider: str, key: str) -> Optional[str]: ...
     def resolve_slug(self, provider: str, key: str) -> Optional[Tuple[str, str]]: ...
     def claims_of(self, instance: str) -> List[Claim]: ...
@@ -909,11 +911,14 @@ class SqliteStore:
 
     # -- bindings (R5.7, R5.8) ---------------------------------------------------------------------
 
-    def bind(self, provider: str, key: str, ref: str, slug: str) -> List[int]:
+    def bind(
+        self, provider: str, key: str, ref: str, slug: str, own_subject: str = ""
+    ) -> List[int]:
         """Record that ``(provider, key)`` belongs to work item ``ref`` (subject
-        ``loop-<slug>``) and route the events held under that key: onto the subject's
-        claimants, else the event's actor's instance, else they stay held under their
-        new subject. Returns the ids routed."""
+        ``loop-<slug>``) and route the events held under that key — and, when the
+        bound object has a subject of its own (``own_subject``, a pull request's), the
+        events held there (critic C3, R5.7) — onto the subject's claimants, else the
+        event's actor's instance, else they stay held. Returns the ids routed."""
         now = utcnow()
         subject = subject_for_slug(slug)
         routed: List[int] = []
@@ -938,11 +943,21 @@ class SqliteStore:
                 " AND held_key = ? ORDER BY id",
                 (provider, key),
             )
-            for event_id, actor in cur.fetchall():
+            held = [(int(r[0]), r[1], True) for r in cur.fetchall()]
+            if own_subject and own_subject != subject:
                 cur.execute(
-                    "UPDATE events SET subject = ?, work_item = ? WHERE id = ?",
-                    (subject, ref, int(event_id)),
+                    "SELECT id, actor FROM events WHERE routed = 0 AND provider = ?"
+                    " AND subject = ? ORDER BY id",
+                    (provider, own_subject),
                 )
+                held.extend((int(r[0]), r[1], False) for r in cur.fetchall())
+            for event_id, actor, re_subject in held:
+                if re_subject:
+                    # held under a key with no subject of its own: it takes the work item's
+                    cur.execute(
+                        "UPDATE events SET subject = ?, work_item = ? WHERE id = ?",
+                        (subject, ref, int(event_id)),
+                    )
                 consumers = list(dict.fromkeys(claimants))
                 if not consumers and actor:
                     cur.execute(

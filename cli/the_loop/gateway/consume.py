@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 
 from .. import eventlog
 from .config import GatewayConfig
-from .envelope import ROLES
+from .envelope import subject_for_slug, ROLES
 from .store import Refused, Store
 
 __all__ = ["GatewayState", "build_consume_router", "API_PREFIX"]
@@ -395,7 +395,17 @@ def build_consume_router(state: GatewayState, **router_kwargs: Any) -> APIRouter
             slug = slug_of(body.ref)
         except Exception as exc:  # noqa: BLE001 — a ref the schemes cannot parse
             raise HTTPException(status_code=400, detail=f"ref: {exc}") from exc
-        routed = store.bind(body.provider, body.key, body.ref, slug)
+        own_subject = ""
+        if body.provider == "github":
+            # a pull request has a subject of its own; what was held there before the
+            # binding is routed now (critic C3, R5.7). A sha key has none.
+            try:
+                own_subject = subject_for_slug(slug_of(f"github:{body.key}"))
+            except Exception:  # noqa: BLE001
+                own_subject = ""
+        routed = store.bind(
+            body.provider, body.key, body.ref, slug, own_subject=own_subject
+        )
         for event_id in routed:
             eventlog.emit(
                 "subject.routed",
