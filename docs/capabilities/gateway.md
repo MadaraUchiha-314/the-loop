@@ -62,7 +62,9 @@ The word *gateway*, unqualified, is this process; decision-059's is the
   status` says `restart required` while the file differs from the running values.
 - A missing secret variable leaves that ingress off (`ingress.hosted_failed:
   missing-secret`, health `failed:missing-secret`) and the rest serves. A non-loopback
-  bind without `listen.exposed: true` exits 2. The default port is 8790, beside the
+  bind without `listen.exposed: true` exits 2, and so does a `store.path` or event-log
+  path that resolves outside `state.root` — the gateway writes under its root only.
+  The default port is 8790, beside the
   service's 4114 and the stdlib receiver's 8787, so all three start on one laptop with no
   configuration.
 - The gateway spawns nothing, holds no harness credential and no posting token; its
@@ -92,9 +94,12 @@ The word *gateway*, unqualified, is this process; decision-059's is the
 - The gateway's poller reuses the instance poller's providers (GitHub, Jira) and
   produces the same delivery ids and webhook-shaped payloads (`poll-comment-<id>`,
   `poll-presence-<ref>-<uuid>`, `poll-close-…`); its ledger lives in the store. A
-  comment seen by webhook and by poll stores one row (the cross-transport dedup key),
-  so the poller is the reconciliation path. Presence is offered while an instance has
-  not judged the item started, never twice at once; the instance's commit outcome
+  comment seen by webhook and by poll stores one row (the cross-transport dedup key: a
+  comment by its id, a review by its id, an issue or PR action by object, `updated_at`
+  and the label, assignee or requested reviewer it names, a closure by `closed_at`, CI
+  by ref, name and conclusion), so the poller is the reconciliation path. Presence is
+  offered while an instance has not judged the item started, never twice at once — a
+  presence held with no consumer counts as offered; the instance's commit outcome
   (`spawned`, `dropped:awaiting-start`, …) updates the ledger across the process
   boundary.
 
@@ -113,17 +118,21 @@ The word *gateway*, unqualified, is this process; decision-059's is the
 - Consumers are decided **on write**, in order: the claimants of the subject and of each
   linked subject (a PR's ticket), else the one instance that registered the event's
   actor, else none — the event is held on `unassigned` (`subject.routed: unassigned`)
-  and routed when a claim, binding or registration later covers it. One delivery row
-  per consumer, in the same transaction as the event.
+  and routed when a claim, a binding or an actor registration later covers it
+  (`PUT /actors` answers `routed`). One delivery row per consumer, in the same
+  transaction as the event.
 - **One queue per instance.** `POST /api/v1/gateway/fetch` identifies the instance by
   `instance.name` (`default` when unset) and a persisted `peer` id; refreshes the
-  name's lease (a second peer under a live name is `409 duplicate-instance`, at
-  `PUT /actors` as at fetch, so it replaces nothing of the holder's); commits
-  the previous batch (a seq this queue never fetched is `409 commit-undelivered`,
-  nothing applied); reads the next deliveries after `max(cursor, committed)` with
+  name's lease (a second peer under a live name is `409 duplicate-instance` — at
+  `PUT /actors`, `POST /commit` and the claim routes as at fetch, so it replaces,
+  commits and releases nothing of the holder's); commits the previous batch (a seq
+  this queue never fetched is `409 commit-undelivered`, nothing applied, and the
+  client drops that batch rather than resend it); reads the next deliveries after
+  `max(cursor, committed)` with
   `attempts` incremented; and holds an empty fetch open for `wait` seconds (clamped to
-  `consume.maxWaitSeconds`) until something is appended. `POST /commit` is the step
-  alone, for a stop. No streaming route exists.
+  `consume.maxWaitSeconds`) until something is appended — an append that lands between
+  the empty read and the wait is not a lost wake-up. `POST /commit` is the step alone,
+  for a stop. No streaming route exists.
 - At-least-once: a delivery not committed comes back with `attempt + 1`; past
   `store.maxAttempts` it is committed as dead-lettered and kept for inspection. The
   instance's dedup layers drop a true duplicate. An optional `instances` allow-list
