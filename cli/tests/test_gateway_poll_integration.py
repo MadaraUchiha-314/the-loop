@@ -80,30 +80,66 @@ def test_the_gateway_poller_produces_the_same_delivery_ids_the_instance_poller_p
     Feature: the gateway polls the providers the instance used to poll
       Scenario: the gateway poller produces the same delivery ids the instance poller produces
         Given o/r#14 is labelled and carries one comment, and laptop-a registered octocat
-        When the gateway polls once
-        Then laptop-a's queue holds a presence event `poll-presence-<ref>-<uuid>` and a
-             comment event `poll-comment-6257`, webhook-shaped, by the provider's own
-             builders — and the comment is not offered again on the next cycle
+        When the gateway polls once, and again after a new comment
+        Then laptop-a's queue holds a presence event `poll-presence-<ref>-<uuid>` and
+             then a comment event `poll-comment-6258`, webhook-shaped, by the provider's
+             own builders — and the comment is not offered again on the next cycle
 
     Requirement: docs/specs/issue-496/requirements.md#requirement-1 (R1.5), R7.1
     """
     gw.fetch("laptop-a", peer="p1", lease=60)
     gw.register("laptop-a", {"github": ["octocat"]}, peer="p1")
     cycle = gw.poll.poll_once()
-    assert cycle.items == 1 and cycle.stored == 2 and not cycle.errors
+    assert cycle.items == 1 and cycle.stored == 1 and not cycle.errors
+    gw.api.comments[("o", "r", 14)].append(_comment("6258", "status?"))
+    again = gw.poll.poll_once()
+    assert again.stored == 1 and again.duplicates == 0
     deliveries = gw.fetch("laptop-a", peer="p1").json()["deliveries"]
     ids = [d["event"]["deliveryId"] for d in deliveries]
     assert re.fullmatch(r"poll-presence-github:o/r#14-[0-9a-f-]{36}", ids[0]), ids
-    assert ids[1] == "poll-comment-6257"
+    assert ids[1] == "poll-comment-6258"
     presence, comment = (d["event"] for d in deliveries)
     assert presence["kind"] == "issues" and presence["payload"]["action"] == "labeled"
     assert presence["source"] == "poll" and presence["subject"] == "loop-github-o-r-14"
     assert comment["kind"] == "issue_comment"
-    assert comment["payload"]["comment"]["id"] == "6257"
-    assert comment["payload"]["comment"]["body"] == "the-loop start"
-    # second cycle: the comment is seen; presence is pending, so not offered twice
+    assert comment["payload"]["comment"]["id"] == "6258"
+    assert comment["payload"]["comment"]["body"] == "status?"
+    # third cycle: the comment is seen; presence is pending, so not offered twice
+    third = gw.poll.poll_once()
+    assert third.stored == 0 and third.duplicates == 0
+
+
+def test_a_new_gateway_baselines_an_items_existing_thread_at_first_sight(gw):
+    """
+    Feature: the gateway polls the providers the instance used to poll
+      Scenario: a new gateway baselines an item's existing thread at first sight
+        Given o/r#14 has been armed for a while and carries three comments, and laptop-a
+              drives it
+        When a gateway with an empty store polls it for the first time
+        Then the three comments are marked seen and not stored (the presence alone is
+             offered), the cycle reports them as baselined, and the next comment is
+             stored once — matching the instance poller's first-sight baseline, so a
+             migration never replays a thread's history as prompts
+
+    Requirement: docs/specs/issue-496/requirements.md#requirement-1 (R1.5), R7.1
+                 (found answering the author's migration question on the PR)
+    """
+    gw.api.comments[("o", "r", 14)] = [
+        _comment("1", "the-loop start"),
+        _comment("2", "status?"),
+        _comment("3", "ship it"),
+    ]
+    gw.store.claim("loop-github-o-r-14", "laptop-a", "driver")
+    cycle = gw.poll.poll_once()
+    assert cycle.stored == 1 and cycle.baselined == 3 and cycle.duplicates == 0
+    assert all(gw.store.poll_seen("github:o/r#14", cid) for cid in ("1", "2", "3"))
+    (presence,) = gw.fetch("laptop-a").json()["deliveries"]
+    assert presence["event"]["deliveryId"].startswith("poll-presence-")
+    gw.api.comments[("o", "r", 14)].append(_comment("4", "and now?"))
     again = gw.poll.poll_once()
-    assert again.stored == 0 and again.duplicates == 0
+    assert again.stored == 1 and again.baselined == 0
+    ids = [d["event"]["deliveryId"] for d in gw.fetch("laptop-a").json()["deliveries"]]
+    assert ids[-1] == "poll-comment-4" and "poll-comment-1" not in ids
 
 
 def test_a_webhook_and_a_poll_of_the_same_comment_store_one_row(gw):
@@ -165,20 +201,12 @@ def test_the_commit_outcome_drives_the_presence_ledger(gw):
     gw.fetch("laptop-a", peer="p1", lease=60)
     gw.register("laptop-a", {"github": ["octocat"]}, peer="p1")
     gw.poll.poll_once()
-    deliveries = gw.fetch("laptop-a", peer="p1").json()["deliveries"]
-    presence = next(
-        d for d in deliveries if d["event"]["deliveryId"].startswith("poll-presence-")
-    )
-    comment = next(
-        d for d in deliveries if d["event"]["deliveryId"].startswith("poll-comment-")
-    )
+    (presence,) = gw.fetch("laptop-a", peer="p1").json()["deliveries"]
+    assert presence["event"]["deliveryId"].startswith("poll-presence-")
     gw.fetch(
         "laptop-a",
         peer="p1",
-        commit=[
-            {"seq": presence["seq"], "outcome": "dropped:awaiting-start"},
-            {"seq": comment["seq"], "outcome": "delivered"},
-        ],
+        commit=[{"seq": presence["seq"], "outcome": "dropped:awaiting-start"}],
     )
     assert gw.store.poll_state("github:o/r#14") == "awaiting-start"
     assert gw.poll.poll_once().stored == 1  # presence offered again
@@ -225,20 +253,20 @@ def test_a_held_presence_is_offered_once_until_someone_consumes_it(gw):
       Scenario: a held presence is offered once until someone consumes it
         Given an armed item whose author no instance registered and no claim on it
         When the poller runs three cycles
-        Then one presence (and the one comment) is held, not one per cycle; a later
-             claim routes exactly one presence onto the claimant's queue
+        Then one presence is held (the existing comment is baselined), not one per
+             cycle; a later claim routes exactly one presence onto the claimant's queue
 
     Requirement: docs/specs/issue-496/requirements.md#requirement-1 (R1.5), R2.2
                  (self-review R1)
     """
-    assert gw.poll.poll_once().stored == 2  # the presence and the comment, both held
+    assert gw.poll.poll_once().stored == 1  # the presence, held
     assert gw.poll.poll_once().stored == 0
     assert gw.poll.poll_once().stored == 0
     (row,) = [s for s in gw.store.subjects() if s.subject == "loop-github-o-r-14"]
-    assert row.held == 2 and row.events == 2
+    assert row.held == 1 and row.events == 1
     gw.store.claim("loop-github-o-r-14", "laptop-a", "driver")
     deliveries = gw.fetch("laptop-a", peer="p1").json()["deliveries"]
     presences = [
         d for d in deliveries if d["event"]["deliveryId"].startswith("poll-presence-")
     ]
-    assert len(presences) == 1 and len(deliveries) == 2
+    assert len(presences) == 1 and len(deliveries) == 1

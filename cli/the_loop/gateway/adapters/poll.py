@@ -55,6 +55,7 @@ class PollCycle:
     stored: int = 0
     duplicates: int = 0
     dropped: int = 0
+    baselined: int = 0
     errors: List[str] = field(default_factory=list)
 
 
@@ -163,9 +164,31 @@ class PollAdapter:
         self, item: WorkItem, refs: Sequence[Any], cycle: PollCycle, ci_due: bool
     ) -> None:
         ref = item.ref
+        first_sight = not self.store.poll_known(ref)
         state = self.store.poll_state(ref)
         if state == UNKNOWN:
             self.store.set_poll_state(ref, UNKNOWN)
+        comments = self.provider.list_comments(item)
+        if first_sight:
+            # First sight: the existing thread is baselined, not stored — the session
+            # the presence spawns reads it itself, which is what a webhook sees ("only
+            # events going forward") and what the instance poller does
+            # (``PollState.baseline_comments``). Without this a new gateway would turn
+            # the whole history of every armed item into deliveries. The instance
+            # poller's one exception — an unprocessed control command (issue-119) — is
+            # not reproduced: judging it needs the control grammar, the authorized
+            # users and the control ledger, which the gateway does not run by design,
+            # so a start posted before the gateway first listed the item is posted again.
+            for comment in comments:
+                if comment.id:
+                    self.store.poll_mark_seen(ref, comment.id)
+                    cycle.baselined += 1
+            logger.info(
+                "gateway: first sight of %s — %d existing comment(s) baselined",
+                ref,
+                len([c for c in comments if c.id]),
+            )
+            comments = []
         # presence: offered while nobody has judged the item started, and never twice at once
         if state in (UNKNOWN, AWAITING_START) and not self.store.has_pending_presence(
             ref
@@ -174,7 +197,7 @@ class PollAdapter:
                 self.provider.presence_event(item, list(refs)), cycle, actor=item.author
             )
         # comments: each new one once; "seen" means stored durably
-        for comment in self.provider.list_comments(item):
+        for comment in comments:
             if self.store.poll_seen(ref, comment.id):
                 continue
             outcome = self._accept(
