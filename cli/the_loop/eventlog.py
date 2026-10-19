@@ -1250,6 +1250,68 @@ EVENT_TYPES: Dict[str, str] = {
         "excluded from candidacy, and the level makes that belt-and-braces. "
         "After selfDiagnosis.maxRetries failures the fingerprint is abandoned."
     ),
+    # -- the gateway (issue-496; source: gateway, or the instance's client) -------------
+    "gateway.started": (
+        "The gateway process came up (listen, store, ingresses: the enabled set)."
+    ),
+    "gateway.stopped": "The gateway process stopped (reason).",
+    "gateway.received": (
+        "An ingress accepted a provider delivery (provider, source, kind, delivery_id, "
+        "subject, event_id). Length-capped summary only; the payload is never logged."
+    ),
+    "gateway.dropped": (
+        "An ingress refused or discarded a delivery before storing it (provider, "
+        "reason: bad-signature | replay-window | invalid-payload | unbound | "
+        "undeclared-repository | duplicate, delivery_id). Nothing was stored."
+    ),
+    "gateway.refused": (
+        "The consumer API refused a request (instance, reason: duplicate-instance | "
+        "duplicate-actor | commit-undelivered | unknown-instance, holder, peer). On the "
+        "client side the same event records the 409 it received, with `holder`."
+    ),
+    "gateway.reloaded": (
+        "gateway-config.yaml was re-read and the enabled ingress set applied (detail)."
+    ),
+    "gateway.claimed": (
+        "An instance published a claim on a subject (subject, instance, role, routed: "
+        "how many held events the claim routed onto its queue)."
+    ),
+    "gateway.released": "An instance released its claim (subject, instance).",
+    "gateway.registered": (
+        "An instance registered the actors it works for (instance, actors: counts per "
+        "provider)."
+    ),
+    "gateway.unreachable": (
+        "The instance's gateway client could not reach the gateway (url, error). Once per "
+        "outage; the instance keeps running and never falls back to its own ingresses."
+    ),
+    "gateway.connected": (
+        "The instance's gateway client reached the gateway (url, instance, peer), at start "
+        "or after an outage."
+    ),
+    "subject.appended": (
+        "An event was stored on a subject (event_id, subject, provider, kind, "
+        "delivery_id). Written BEFORE the provider is acknowledged."
+    ),
+    "subject.routed": (
+        "The stored event's consumers were resolved (event_id, subject, to: the instance "
+        "list, or `unassigned` when none; by: claim | actor | hold)."
+    ),
+    "subject.committed": (
+        "An instance committed a delivery (instance, seq, event_id, outcome)."
+    ),
+    "subject.redelivered": (
+        "A fetch returned a delivery again (instance, seq, event_id, attempt): the "
+        "previous attempt was never committed."
+    ),
+    "subject.dead-lettered": (
+        "A delivery exceeded store.maxAttempts and was committed as dead-lettered "
+        "(instance, seq, event_id, attempts). Kept for inspection."
+    ),
+    "subject.expired": (
+        "Retention dropped an uncommitted delivery or a held event (subject, event_id, "
+        "instance, age_s)."
+    ),
 }
 
 
@@ -1292,6 +1354,9 @@ class EventLog:
             "level": level if level in LEVELS else "info",
             "pid": os.getpid(),
         }
+        extra = getattr(_context, "fields", None)
+        if extra:
+            record.update({k: v for k, v in extra.items() if v is not None})
         record.update({k: v for k, v in fields.items() if v is not None})
         line = json.dumps(record, separators=(",", ":"), default=str) + "\n"
         try:
@@ -1303,6 +1368,36 @@ class EventLog:
             if not self._warned:  # warn once — never break ingress over o11y
                 self._warned = True
                 logger.warning("cannot write event log %s: %s", self.path, exc)
+
+
+# -- per-thread context fields (issue-496, R10.2) --------------------------------
+
+_context = threading.local()
+
+
+class context:
+    """Fields every record emitted on this thread carries while the block is open.
+
+    The gateway client wraps each delivery's dispatch in
+    ``with eventlog.context(gateway_event_id=…):`` so the instance's ``dispatch.*``
+    records name the gateway event beside the delivery id without every emit site
+    learning a new argument. A field passed to :meth:`EventLog.emit` explicitly wins
+    over the context's. Nested blocks merge, innermost winning.
+    """
+
+    def __init__(self, **fields) -> None:
+        self._fields = fields
+        self._previous: Optional[Dict] = None
+
+    def __enter__(self) -> "context":
+        self._previous = getattr(_context, "fields", None)
+        merged = dict(self._previous or {})
+        merged.update(self._fields)
+        _context.fields = merged
+        return self
+
+    def __exit__(self, *exc) -> None:
+        _context.fields = self._previous
 
 
 # -- module-level emitter (a no-op until a CLI entry point configures it) -------

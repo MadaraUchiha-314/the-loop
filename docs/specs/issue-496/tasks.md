@@ -48,7 +48,7 @@ overrides: {}
   - _Requirements:_ R4.2, R8.7 (instance half), non-functional _Compatibility_
   - _Test:_ T1 `tests/test_gateway_config.py` (a block with only `url` validates and
     carries the defaults; a block without `url` fails); T10 `make validate`
-- [ ] **A3: the envelope and the event families.** Define `Envelope` (the ten fields of
+- [x] **A3: the envelope and the event families.** Define `Envelope` (the ten fields of
   R6.2) and `Delivery` as dataclasses in `gateway/envelope.py` with `to_json` /
   `from_json`; add the `gateway.*` and `subject.*` families to `eventlog.EVENT_TYPES`
   with the reason vocabularies of `design.md` §Data models; add `gateway_event_id` to the
