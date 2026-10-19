@@ -249,6 +249,13 @@ def build_consume_router(state: GatewayState, **router_kwargs: Any) -> APIRouter
                 if remaining <= 0:
                     break
                 store.wait(body.instance, remaining)
+                # the name may have changed hands while this fetch slept (critic C1):
+                # a peer whose lease lapsed mid-wait reads nothing of the new holder's
+                conflict = store.peer_conflict(body.instance, body.peer)
+                if conflict is not None:
+                    return _refused(
+                        state, conflict, instance=body.instance, peer=body.peer
+                    )
                 result = store.fetch(body.instance, body.cursor, limit)
                 if result.deliveries or state.stopping.is_set():
                     break

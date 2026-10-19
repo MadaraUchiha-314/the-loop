@@ -375,3 +375,35 @@ def test_a_stale_peer_under_a_live_name_can_neither_commit_nor_touch_its_claims(
         ).json()["released"]
         == 1
     )
+
+
+def test_a_long_poll_whose_lease_lapsed_mid_wait_reads_nothing_of_the_new_holders(gw):
+    """
+    Feature: one start, one instance (R4.3)
+      Scenario: a long-poll whose lease lapsed mid-wait reads nothing of the new holder's
+        Given peer p1 long-polling laptop-a's empty queue on a one-second lease
+        When its lease lapses, peer p2 takes the name, and an event is appended
+        Then p1's woken fetch is 409 duplicate-instance naming p2, and p2's next fetch
+             carries the delivery (critic C1)
+    """
+    import threading
+    import time
+
+    outcome: dict = {}
+
+    def poll():
+        outcome["response"] = gw.fetch("laptop-a", peer="p1", lease=1, wait=5)
+
+    thread = threading.Thread(target=poll)
+    thread.start()
+    time.sleep(1.3)  # p1's one-second lease has lapsed
+    assert gw.fetch("laptop-a", peer="p2", lease=60).status_code == 200
+    gw.append(1, consumers=["laptop-a"])
+    thread.join(timeout=5)
+    assert not thread.is_alive()
+    response = outcome["response"]
+    assert response.status_code == 409 and response.json()["holder"] == "p2", (
+        response.json()
+    )
+    (delivery,) = gw.fetch("laptop-a", peer="p2").json()["deliveries"]
+    assert delivery["event"]["deliveryId"] == "d-1"
