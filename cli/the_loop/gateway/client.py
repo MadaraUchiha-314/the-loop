@@ -47,7 +47,14 @@ from .. import eventlog
 from ..state import layout_from_config
 from .envelope import Delivery
 
-__all__ = ["GatewayClient", "PEER_FILE", "Transport", "urllib_transport"]
+__all__ = [
+    "GatewayClient",
+    "PEER_FILE",
+    "Transport",
+    "current",
+    "set_current",
+    "urllib_transport",
+]
 
 logger = logging.getLogger("the-loop.gateway.client")
 
@@ -83,6 +90,19 @@ def urllib_transport(base_url: str) -> Transport:
             return exc.code, parsed
 
     return request
+
+
+_CURRENT: Optional["GatewayClient"] = None
+
+
+def set_current(client: Optional["GatewayClient"]) -> None:
+    """The client hosted in this process, for `GET /api/v1/gateway` (R10.3)."""
+    global _CURRENT
+    _CURRENT = client
+
+
+def current() -> Optional["GatewayClient"]:
+    return _CURRENT
 
 
 class GatewayClient:

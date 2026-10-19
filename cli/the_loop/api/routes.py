@@ -479,6 +479,12 @@ def build_router(
     def health(instance: str = Query("")) -> Dict[str, Any]:
         return facade.health(instance=instance)
 
+    @router.get(f"{API_PREFIX}/gateway", operation_id="gateway")
+    def gateway(instance: str = Query("")) -> Dict[str, Any]:
+        # The dashboard's Gateway card (issue-496, R10.3): whether this instance
+        # consumes from a gateway and how that is going.
+        return facade.gateway(instance=instance)
+
     @router.get(f"{API_PREFIX}/instance", operation_id="getInstance")
     def get_instance(instance: str = Query("")) -> Dict[str, Any]:
         # Which instance answered, and what it manages (issue-322): the seam a

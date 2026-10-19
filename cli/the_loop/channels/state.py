@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import (
     Any,
     Callable,
+    ClassVar,
     Dict,
     Iterator,
     List,
@@ -360,7 +361,7 @@ class ChannelStores:
 class ChannelState:
     #: Set by the gateway client (issue-496): ``(provider, key, work_item)`` for every
     #: thread bound to a work item. ``None`` publishes nothing.
-    publisher: Optional[Callable[[str, str, str], None]] = None
+    publisher: ClassVar[Optional[Callable[[str, str, str], None]]] = None
     """The bindings (thread → work item), the conversations (work item → thread),
     the cursors (thread → last-seen ts) and the pending questions (message ts →
     the kickoff the-loop is waiting on an answer for)."""

@@ -160,6 +160,13 @@ class CoreFacade:
         self._self(instance)
         return core_instance.describe_instance(self.config)
 
+    def gateway(self, instance: str = "") -> Dict[str, Any]:
+        """The instance's view of its gateway (issue-496, R10.3): configured or not, the
+        client's state, name, peer, offsets, claims, and the gateway's health and this
+        queue's row when it answers."""
+        self._self(instance)
+        return core_lifecycle.gateway_document(self.config, probe=False)
+
     def list_instances(self) -> Dict[str, Any]:
         return core_instances.list_instances(self.config)
 

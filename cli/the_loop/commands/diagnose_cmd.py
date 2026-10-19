@@ -25,6 +25,8 @@ the doctor is the same verdict, asked before a gate hook asks it.
 
 from __future__ import annotations
 
+from typing import List, Optional
+
 import argparse
 import sys
 
@@ -274,7 +276,20 @@ def _doctor_slack(config: dict, *, beats: int, window: float, heartbeat: bool) -
         findings += line.strip().startswith(_FINDING)
     print("channels:")
     findings += _print_channels(check_declared_channels(config))
+    gateway = _gateway_lines(config)
+    if gateway is not None:
+        print("gateway:")
+        for line in gateway:
+            print(line)
+            findings += line.strip().startswith(_FINDING)
     print("consumers:")
+    if gateway is not None:
+        print(
+            f"  {_UNKNOWN} this instance reads Slack through the gateway — the "
+            "gateway's Socket Mode connection is the app's one listener; a local "
+            "listener is not expected and the heartbeat probe is not run here"
+        )
+        return 1 if findings else 0
     if not heartbeat:
         print(
             f"  {_UNKNOWN} skipped (--no-heartbeat) — whether a second Socket Mode "
@@ -287,6 +302,43 @@ def _doctor_slack(config: dict, *, beats: int, window: float, heartbeat: bool) -
         print(f"  {tag} {consumer_verdict_text(result)}")
         findings += verdict == "split-suspected"
     return 1 if findings else 0
+
+
+def _gateway_lines(config: dict) -> Optional[List[str]]:
+    """The gateway section (issue-496, R9.3): ``None`` without a `gateway` block; else
+    whether the gateway answers, its Socket Mode state, and this instance's client
+    state. Ids and states only."""
+    from ..core import lifecycle as core_lifecycle
+
+    if not core_lifecycle.gateway_configured(config):
+        return None
+    doc = core_lifecycle.gateway_document(config)
+    lines: List[str] = []
+    state = str(doc.get("state") or "unknown")
+    health = doc.get("health") or {}
+    if state == "connected":
+        lines.append(
+            f"  {_OK} gateway reachable at {doc.get('url')} — client {core_lifecycle.gateway_line(doc)}"
+        )
+    elif state == "unknown":
+        lines.append(
+            f"  {_UNKNOWN} the service is not running here, so the client's state is "
+            f"unknown — `the-loop start`, then `the-loop status`"
+        )
+    else:
+        lines.append(f"  {_FINDING} gateway client {core_lifecycle.gateway_line(doc)}")
+    socket = (
+        (health.get("slack") or {}).get("socket") if isinstance(health, dict) else None
+    )
+    if socket == "up":
+        lines.append(
+            f"  {_OK} the gateway's Socket Mode connection is up — the app's one listener"
+        )
+    elif socket in ("down", "off"):
+        lines.append(
+            f"  {_FINDING} the gateway's Socket Mode connection is {socket} — no Slack event reaches any instance"
+        )
+    return lines
 
 
 def _print_channels(report: dict) -> int:

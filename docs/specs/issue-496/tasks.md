@@ -245,7 +245,7 @@ overrides: {}
     instance publishes the binding`, `Scenario: the same instance resuming after a stop
     receives what was routed to it meanwhile`, `Scenario: a stopped instance finds its
     backlog in order`
-- [ ] **C4: the hosted set, status and the instance API.** Add `_start_gateway_client` to
+- [x] **C4: the hosted set, status and the instance API.** Add `_start_gateway_client` to
   `api/ingress._STARTERS`; `core/lifecycle.enabled_services` returns `{gateway-client}`
   alone when the config has a `gateway` block, so no receiver, poller or listener starts
   regardless of their blocks; `the-loop status` reads `off · gateway configured` for the

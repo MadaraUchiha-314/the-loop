@@ -41,6 +41,7 @@ def write_gateway_config(tmp_path: Path, **over: Any) -> gwconfig.GatewayConfig:
     }
     body.update(over)
     path = tmp_path / "gateway-config.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(body), encoding="utf-8")
     return gwconfig.load_gateway_config(path)
 
