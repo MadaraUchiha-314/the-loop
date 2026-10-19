@@ -2,8 +2,7 @@
 type: requirements
 phase: requirements-definition
 workItem: issue-496
-status: approved             # draft | in-review | approved — the requirements-approval gate locks it
-approvedBy: ["MadaraUchiha-314"]
+status: draft                # draft | in-review | approved — the requirements-approval gate locks it
 collaborators: [architect, engineer, security, product-manager]
 overrides: {}
 riskTier: 4                  # a new internet-facing ingress process, a fourth config schema, and no instance auth by decision
@@ -40,19 +39,24 @@ machines: two `open` instances both take the same `the-loop start`.
 **What we do about it.** A **gateway**: one long-running process, `the-loop gateway`,
 that holds every inbound surface (the GitHub, Jira and Slack webhooks, the one Slack
 Socket Mode connection, the pollers) and deposits each event, durably and exactly as it
-arrived, on a **subject** named after the work item it is about. Instances connect
-**outbound** to the gateway, subscribe to the subjects of the work items they manage,
-and acknowledge what they have handled. **One instance per gateway** is the first
-landing's assumption, by the author's decision: the gateway serves a single subscriber
-and refuses a second, and ownership across instances (a lease) is a later work item. The
-dispatcher's judgement (authorization, the control grammar, scope) stays on the instance;
-the gateway transports and resolves, it never decides. Configuration lives in a separate,
-hot-reloaded `gateway-config.yaml`.
+arrived, on a **subject** named after the work item it is about, and **fans it out on
+write** to the **queue of each instance that consumes that subject**. Which instances
+those are is resolved at ingest from two registrations the instances publish: **claims**
+on a subject (`driver` on a ticket, `reviewer` on a pull request) and the **actors** an
+instance works for (its users' GitHub logins, Slack ids, Jira accounts), which route an
+event nobody has claimed yet, such as a fresh `the-loop start`. Instances **poll**
+outbound for their own queue and **commit** what they have handled; the gateway holds no
+connection for them between polls. Many instances per gateway are normal; no lease or
+election is built now, by the author's decision. The dispatcher's judgement
+(authorization, the control grammar, scope) stays on the instance; the gateway transports
+and routes, it never decides. Configuration lives in a separate, hot-reloaded
+`gateway-config.yaml`.
 
-**What it costs.** A fourth config file and schema; a second process to run; and, by the
-author's decision, a first landing with **no authentication** between an instance and the
-gateway and **no multi-instance ownership**, so the gateway's consumer API is as exposed
-as its network boundary and two instances still cannot share one gateway. The gateway is
+**What it costs.** A fourth config file and schema; a second process to run; a routing
+table (claims, actors, bindings) the gateway must be told about; delivery latency of one
+poll or long-poll wake-up instead of a push; and, by the author's decision, a first
+landing with **no authentication** between an instance and the gateway, so any peer that
+can reach the consumer API can claim a subject or register an actor. The gateway is
 **additive**: an instance with no `gateway` block runs exactly as today.
 
 **What to check.** The Slack Socket Mode end-to-end proof on `the-loop-testing`: one Slack
@@ -67,9 +71,13 @@ flowchart LR
   JI["Jira<br/>webhook or poll"] --> GW
   subgraph GW["the-loop gateway · gateway-config.yaml"]
     direction TB
-    IN["ingress: verify, dedup, resolve ref"] --> ST["store: subjects · cursors"]
+    IN["ingress: verify, dedup, resolve subject"] --> RT["route: claims, then actors"]
+    RT --> ST["store: subjects · one queue per instance · offsets"]
   end
-  ST -->|"one outbound SSE subscription · acks"| A["the one instance<br/>(dispatcher judges)"]
+  ST -->|"poll own queue · commit"| A["instance A<br/>(driver of #12)"]
+  ST -->|"poll own queue · commit"| B["instance B<br/>(reviewer of PR #13)"]
+  A -->|"claims · actors · bindings"| ST
+  B -->|"claims · actors · bindings"| ST
 ```
 
 **Decided on the ticket (2026-10-18), carried in as constraints:** the work item stands
@@ -82,8 +90,15 @@ every provider's events reach the instance raw, not only Slack's (R5); every pro
 each of its transports side by side, not only Slack (R7); and a gateway and an instance may
 share one machine over a loopback URL (R14). **Second review remark (2026-10-18,
 [comment](https://github.com/MadaraUchiha-314/the-loop/issues/496#issuecomment-6252841116)):**
-no lease; one instance per gateway is assumed (R4), and everything the lease carried is out
-of scope.
+no lease; everything the lease carried is out of scope (R4). **Amended at the design gate
+(2026-10-19, [remark](https://github.com/MadaraUchiha-314/the-loop/issues/496#issuecomment-6256596524),
+[remark](https://github.com/MadaraUchiha-314/the-loop/issues/496#issuecomment-6256784391),
+[agreed](https://github.com/MadaraUchiha-314/the-loop/issues/496#issuecomment-6257022252)),
+superseding the approval of 2026-10-18:** instances **poll** the gateway instead of holding
+a stream (R3); the gateway keeps **one queue per instance** and resolves an event's
+consumers at ingest through claims and actors, so no instance reads and filters the whole
+stream (R4, R5); the consumer contract is fetch-and-commit (R6). This file returns to the
+`requirements-approval` gate for that amendment.
 
 ## Requirements
 
@@ -124,9 +139,10 @@ backlog when it returns and nothing is lost between the provider and me.
 1. WHEN an ingress accepts an event the gateway can resolve to a work item THEN the system
    SHALL append it to the subject `loop-<slug>` of that work item, where `<slug>` is the
    slug tmux uses for the same work item today.
-2. WHEN an ingress accepts an event it cannot resolve to a work item but which could arm
-   one (a `the-loop start` on a fresh issue, a Slack kickoff in a declared room) THEN the
-   system SHALL append it to the gateway's single `unassigned` subject.
+2. WHEN an ingress accepts an event whose subject has no consumer (no claim and no actor
+   registration matches, R5.2) THEN the system SHALL hold it on the gateway's single
+   `unassigned` subject, and SHALL route it onto a queue when a claim, binding or actor
+   registration later covers it, within retention.
 3. WHEN an event arrives that is about no work item (a fleet verb, an unmatched comment)
    THEN the system SHALL NOT enqueue it; the gateway answers or drops it per the control
    grammar's existing facade rules.
@@ -141,37 +157,42 @@ backlog when it returns and nothing is lost between the provider and me.
 7. WHEN an event is stored THEN the system SHALL carry the provider's payload verbatim and
    SHALL add only the envelope fields of R6; the gateway SHALL NOT interpret the payload
    beyond resolving the work-item reference.
-8. WHILE a subject has unacknowledged events THEN the system SHALL retain them until a
-   the instance acknowledges them or the subject's configured retention expires, whichever
-   is first, and SHALL record `subject.expired` for anything dropped by retention.
+8. WHILE a queue has uncommitted deliveries THEN the system SHALL retain them until the
+   instance commits them or the configured retention expires, whichever is first, and
+   SHALL record `subject.expired` for anything dropped by retention.
 
-### Requirement 3 — an instance subscribes outbound and acknowledges
+### Requirement 3 — an instance polls its own queue and commits what it handled
 
-**User story:** As an instance behind NAT, I want to open one outbound connection and
-receive every event the gateway holds, in order per work item, so that the gateway never
-needs to reach me.
+**User story:** As an instance behind NAT, I want to poll the gateway for the events meant
+for me, in order per work item, so that the gateway never needs to reach me and holds no
+connection for me between polls.
+
+> Amended on the ticket (2026-10-19): pull replaces the long-lived stream, so a gateway
+> serving many instances holds no open connection per instance.
 
 #### Acceptance criteria (EARS)
 
 1. WHEN an instance has a `gateway` block in its `cli-config.yaml` THEN the system SHALL,
-   on `the-loop start`, connect outbound to `gateway.url`, subscribe to the gateway's
-   whole stream (every subject, including `unassigned`), and keep the subscription while
-   it runs.
-2. WHEN a new subject appears on the gateway (an event about a work item not seen before)
-   THEN the system SHALL deliver it on the same stream without the instance resubscribing.
-3. WHEN an instance is subscribed THEN the system SHALL deliver events in append order
-   within each subject, from each subject's committed offset, over Server-Sent Events
-   with `Last-Event-ID` as the resume cursor (decision-087's transport, not WebSocket).
-4. WHEN an instance has dispatched an event (delivered to a session, spawned one, or
-   dropped it on purpose) THEN the system SHALL acknowledge it to the gateway, and the
-   subject's committed offset SHALL advance.
-5. WHEN an instance drops an event on purpose (`awaiting-start`, `session-paused`, a
-   scope refusal, a self-marked comment) THEN the system SHALL acknowledge it, so
-   a purposeful drop is never replayed (issue-270 preserved).
-6. WHEN an instance fails to dispatch an event (a transport error, a crash before the ack)
-   THEN the system SHALL leave it unacknowledged, and the gateway SHALL redeliver it on the
-   next subscription, up to a configured retry bound, after which it is recorded as
-   `subject.dead-lettered` and acknowledged.
+   on `the-loop start`, poll `gateway.url` outbound for **its own queue** (R4.1) every
+   `gateway.pollIntervalSeconds`, and keep polling while it runs; nothing is held open
+   between polls.
+2. WHEN a fetch is answered THEN the system SHALL return only deliveries of that
+   instance's queue, in append order within each subject, from the queue's committed
+   offset, at most `max` per fetch, each tagged with its subject.
+3. WHEN `gateway.longPollSeconds` is greater than zero THEN the gateway SHALL hold an
+   empty fetch open for at most that long and answer as soon as a delivery is appended to
+   the queue; WHEN it is zero THEN the gateway SHALL answer at once (plain polling).
+4. WHEN an instance has dispatched a delivery (delivered to a session, spawned one, or
+   dropped it on purpose) THEN the system SHALL commit it with its outcome on its next
+   fetch, or on an explicit commit before a stop, and the queue's committed offset SHALL
+   advance.
+5. WHEN an instance drops a delivery on purpose (`awaiting-start`, `session-paused`, a
+   scope refusal, a self-marked comment) THEN the system SHALL commit it, so a purposeful
+   drop is never replayed (issue-270 preserved).
+6. WHEN an instance fails to dispatch a delivery (a transport error, a crash before the
+   commit) THEN the system SHALL leave it uncommitted, and the gateway SHALL return it on
+   a later fetch with `attempt` incremented, up to a configured retry bound, after which
+   it is recorded as `subject.dead-lettered` and committed.
 7. WHEN a redelivered event reaches an instance THEN the system SHALL drop it as a
    duplicate when its delivery id is in the instance's existing dedup caches (the LRU, the
    session record's recent ids, `control-deliveries.json`), so at-least-once delivery
@@ -179,75 +200,104 @@ needs to reach me.
 8. WHEN an instance has a `gateway` block THEN the system SHALL run no ingress of its own:
    no webhook receiver, no poller, no Slack listener, regardless of what its `webhooks`,
    `polling` and `channels.slack.read` blocks say, and `the-loop status` SHALL say so.
+9. WHEN a new subject is routed to an instance (a claim it published, an actor it
+   registered) THEN its deliveries SHALL appear on the same queue; the instance never
+   subscribes per subject.
 
-### Requirement 4 — one instance per gateway, assumed and enforced
+### Requirement 4 — many instances, one queue each, no ownership protocol
 
-**User story:** As the author, I want the first landing to assume a single instance
-processes everything a gateway receives, so that no ownership protocol is built now, while
-the assumption is enforced rather than hoped, and a later work item can add ownership
-across instances without changing the contracts.
+**User story:** As the author, I want every instance to read only the events meant for
+it, so that an instance waking up does the work of its own backlog and nothing else, and
+a fleet of instances does not make the gateway's or any instance's work grow with the
+fleet, while no lease or election is built now.
 
 > Decided on the ticket (2026-10-18): the lease, its fencing tokens, its verbs and its
-> events are **not** built. The brainstorm's option D stays on record for the follow-up.
+> events are **not** built. Amended (2026-10-19): instances are many and normal; the
+> gateway keeps one queue per instance and resolves an event's consumers at ingest (R5).
 
 #### Acceptance criteria (EARS)
 
-1. WHILE one instance is subscribed THEN the gateway SHALL deliver every stored event to it
-   and to nothing else.
-2. WHEN a second instance subscribes while one subscription is live THEN the gateway SHALL
-   refuse it with `409` naming the connected instance, SHALL record `gateway.refused` with
-   reason `second-subscriber`, and the refused instance SHALL log the refusal and retry
-   with back-off; it SHALL NOT fall back to its own ingresses.
-3. WHEN the subscribed instance disconnects (a stop, a crash, a network loss) THEN the
-   gateway SHALL free the subscription so the same or another instance can connect, and
-   the unacknowledged backlog SHALL be delivered to whichever connects next, in order.
-4. WHEN an instance connects THEN it SHALL send its `instance.name` when it has one, and
-   the gateway SHALL record it in `instances` for `gateway status`, so the operator sees
-   who is connected; an unnamed instance connects as `default`.
-5. WHEN the instance starts a session THEN the announcement comment SHALL keep naming the
+1. WHEN an event is appended to a subject THEN the gateway SHALL append one delivery to
+   the queue of each consumer of that subject (R5.2) and to no other queue; no instance
+   receives, or has to filter, events of subjects it does not consume.
+2. WHEN an instance fetches, commits, claims or registers THEN it SHALL identify itself by
+   `instance.name` (an unnamed instance is `default`), and the gateway SHALL record each
+   instance with its last fetch time in `instances`, for `gateway status`.
+3. WHEN a second peer fetches under a name whose queue was fetched within the lease window
+   (configured; default three poll intervals) THEN the gateway SHALL refuse it with `409`
+   naming the instance, record `gateway.refused` with reason `duplicate-instance`, and the
+   refused peer SHALL log the refusal and retry with back-off; it SHALL NOT fall back to
+   its own ingresses.
+4. WHEN an instance stops polling (a stop, a crash, a network loss) THEN its queue SHALL
+   keep its uncommitted and newly routed deliveries up to retention, and the same name
+   resuming SHALL receive them in order.
+5. WHEN a work item has a driver on one instance and a reviewer on another (R5.3) THEN
+   each SHALL receive the deliveries of its claim on its own queue, and nothing in the
+   gateway SHALL make one wait for the other.
+6. WHEN the instance starts a session THEN the announcement comment SHALL keep naming the
    instance (decision-141), unchanged.
-6. WHEN the design phase writes the store and consumer contracts THEN they SHALL be such
-   that per-subject subscriptions and an ownership mechanism can be added later without
-   changing the event envelope or the ack semantics (R11).
+7. WHEN the design phase writes the store and consumer contracts THEN they SHALL be such
+   that one user's work can later be split across several instances (subjects are the
+   partition) and an ownership mechanism added, without changing the event envelope or the
+   commit semantics (R11).
 
-### Requirement 5 — every event reaches the instance raw; the instance judges
+### Requirement 5 — every event reaches its consumers raw; the instance judges
 
 **User story:** As an operator, I want every judgement about an inbound event (who is
 allowed, what a keyword means, what to post on the ledger, how a pull request links to a
 work item) to stay on my instance, whichever provider it came from, so that the gateway
 holds no allow-list, no grant and no posting token and the existing dispatch pipeline is
-reused intact.
+reused intact, while the gateway alone decides **which instances** an event is for.
 
 #### Acceptance criteria (EARS)
 
 1. WHEN an event arrives at the gateway from any provider (GitHub, Jira, Slack) THEN the
-   system SHALL resolve only **which work item** it concerns and SHALL enqueue the
-   provider's payload unclassified on that subject, or on `unassigned` when the event
-   could start one.
-2. WHEN the gateway resolves the work item THEN it SHALL use only: the reference the
-   payload names directly (a GitHub issue or pull-request number, a Jira issue key, a
-   Slack thread), the bindings the instance has published (R5.4), and the rooms and projects
-   declared in `gateway-config.yaml`. It SHALL NOT run the dispatcher, the control
-   grammar, the authorized-actor guard or the self-marker check.
-3. WHEN the instance receives an event from the stream THEN the system SHALL run
-   today's pipeline unchanged for that provider: the router's linkage and the dispatcher's
-   control parse, scope, authorization, record, match and deliver for GitHub and Jira; the
-   listener's classification (`work-item.reply`, `gate.feedback`, `control.command`,
+   system SHALL resolve only **which work item** it concerns (the subject) and **which
+   instances** consume it (the consumers), and SHALL enqueue the provider's payload
+   unclassified on each consumer's queue.
+2. WHEN the gateway resolves consumers THEN it SHALL use, in order: the claims published
+   on the subject (R5.3); when there are none, the actor registration matching the event's
+   actor (R5.5); when neither matches, the `unassigned` subject (R2.2). To resolve the
+   subject it SHALL use only the reference the payload names directly (a GitHub issue or
+   pull-request number, a Jira issue key, a Slack thread), the bindings instances have
+   published (R5.7), and the rooms and projects declared in `gateway-config.yaml`. It
+   SHALL NOT run the dispatcher, the control grammar, the authorized-actor guard or the
+   self-marker check.
+3. WHEN an instance spawns or resumes a session for a work item THEN it SHALL publish a
+   claim `{subject, instance, role}`: `driver` for `start`, `contribute` and `do` on the
+   ticket, `reviewer` for `review` on the pull request (issue-279's binding to the PR),
+   and SHALL release the claim when the session ends. Several instances MAY hold claims
+   with different roles on one subject, and each receives the subject's events.
+4. WHEN an event concerns a pull request THEN the gateway SHALL deliver it to the claimants
+   of the pull request's subject and of the linked work item's subject (through the
+   bindings of R5.7), matching what one dispatcher does across its sessions today, and
+   an event on the ticket SHALL go to the ticket's claimants only.
+5. WHEN an instance starts THEN it SHALL register the actors it works for
+   (`gateway.actors`: GitHub logins, Slack user ids, Jira account ids), and an event on an
+   unclaimed subject whose actor matches a registration SHALL be enqueued to that
+   instance only. WHEN a registration names an actor already registered by another live
+   instance THEN the gateway SHALL refuse it with `409` and record `gateway.refused` with
+   reason `duplicate-actor`, so one `the-loop start` can never spawn on two instances.
+6. WHEN the instance receives a delivery THEN the system SHALL run today's pipeline
+   unchanged for that provider: the router's linkage and the dispatcher's control parse,
+   scope, authorization, record, match and deliver for GitHub and Jira; the listener's
+   classification (`work-item.reply`, `gate.feedback`, `control.command`,
    `context.added`, …), allow-list, grants and ledger write for Slack.
-4. WHEN the instance learns that a secondary object belongs to its work item (it
-   binds a Slack thread, opens or links a pull request, maps a Jira key) THEN the system
-   SHALL publish the binding `{ref, provider, key}` to the gateway, and the gateway SHALL
-   keep only that mapping, never message or payload bodies, so later events on that object
-   land on the right subject.
-5. WHEN a GitHub event names a pull request the gateway has no binding for THEN the gateway
-   SHALL enqueue it on `unassigned`, and the instance, recognising the linkage with
-   today's router inference, SHALL publish the binding.
-6. WHEN a Slack interaction requires a response inside Slack's three-second window (a
+7. WHEN the instance learns that a secondary object belongs to its work item (it binds a
+   Slack thread, opens or links a pull request, maps a Jira key) THEN the system SHALL
+   publish the binding `{ref, provider, key}` to the gateway, and the gateway SHALL keep
+   only that mapping, never message or payload bodies, so later events on that object
+   land on the right subject and the deliveries held on `unassigned` for it are routed.
+8. WHEN a GitHub event names a pull request the gateway has no binding for THEN the gateway
+   SHALL route it by actor (R5.5) or hold it on `unassigned`, and the instance that
+   receives it, recognising the linkage with today's router inference, SHALL publish the
+   binding.
+9. WHEN a Slack interaction requires a response inside Slack's three-second window (a
    button, a slash command, a shortcut) THEN the gateway SHALL ack the envelope itself
    after storing it; any visible reply is the instance's, posted through the channel as today.
-7. WHEN an event concerns an object bound to no work item that cannot start one (a Slack
-   thread outside any declared room, a Jira project not mapped, a repository not declared)
-   THEN the gateway SHALL drop it and record `gateway.dropped` with reason `unbound`.
+10. WHEN an event concerns an object bound to no work item that cannot start one (a Slack
+    thread outside any declared room, a Jira project not mapped, a repository not declared)
+    THEN the gateway SHALL drop it and record `gateway.dropped` with reason `unbound`.
 
 ### Requirement 6 — the contracts are specified before they are implemented
 
@@ -264,12 +314,13 @@ another product can implement against them without reading the gateway's code.
    `provider`, `source` (`webhook | socket | poll`), `deliveryId`, `receivedAt`,
    `workItem` (ref or null), `kind` (the provider's event name), `headers` (an allow-list
    of the provider's routing headers), `payload` (verbatim), `attempt`.
-3. WHEN the consumer API is specified THEN it SHALL offer: a subject stream
-   (`GET …/events`, SSE, `Last-Event-ID`, every subject on one stream, each event tagged
-   with its subject), an ack (`POST …/ack`), binding publication (`POST …/bindings`), and
-   read-only `health`, `subjects` and `instances`. A per-subject stream
-   (`GET …/subjects/{subject}/events`) is reserved in the document for the ownership
-   follow-up and not implemented.
+3. WHEN the consumer API is specified THEN it SHALL offer: a fetch
+   (`POST …/fetch` with `instance`, `cursor`, `max`, `wait`, and the `commit` list of the
+   previous batch's outcomes, returning the next deliveries of that instance's queue, each
+   tagged with its subject), an explicit commit (`POST …/commit`, for a stop), claims
+   (`PUT`/`DELETE …/claims`), actor registration (`PUT …/actors`), binding publication
+   (`POST …/bindings`), and read-only `health`, `subjects`, `queues` and `instances`. No
+   streaming route is offered.
 4. WHEN the ingress routes are specified THEN they SHALL be the providers' own contracts
    verbatim (`POST /gh-webhook`, `POST /jira-webhook`, `POST /slack/events`,
    `/slack/interactions`, `/slack/commands` with Slack's signature headers and the
@@ -340,9 +391,11 @@ without restarting it.
    on the next `the-loop gateway restart` and SHALL say so in `gateway status`, matching
    the two start-time-only limits the instance's receiver and listener have today.
 7. WHEN an instance's `cli-config.yaml` has a `gateway` block THEN it SHALL hold `url`
-   and nothing else required; the instance's existing `instance.name`, when set, is what
-   it announces on connect (R4.4). The named-instance precondition the brainstorm derived
-   from the lease falls with the lease.
+   and nothing else required, with optional `pollIntervalSeconds` (default 5),
+   `longPollSeconds` (default 20; `0` for plain polling) and `actors` (R5.5); the
+   instance's existing `instance.name`, `default` when unset, is its queue's identity
+   (R4.2). A fleet of instances SHOULD name each; two unnamed instances collide as
+   `duplicate-instance` (R4.3).
 
 ### Requirement 9 — the lifecycle and operability verbs
 
@@ -357,8 +410,10 @@ that `start`, `stop`, `status` and `restart` mean the same thing on both.
    and `status` reporting the pid, the enabled ingresses, the Socket Mode connection state
    and the store path.
 2. WHEN `the-loop gateway subjects` runs THEN the system SHALL list every subject with its
-   backlog depth and oldest unacknowledged age, and `gateway status` SHALL name the
-   connected instance.
+   claimants and the depth and oldest age of what is uncommitted for each; WHEN
+   `the-loop gateway instances` runs THEN it SHALL list every instance with its last fetch
+   time, its registered actors and its queue's backlog; and `gateway status` SHALL name
+   the instances fetched within the lease window.
 3. WHEN `the-loop doctor` runs on a box with a gateway configured THEN it SHALL check the
    gateway is reachable and the Socket Mode connection is up, and `doctor slack`'s split
    check SHALL count the gateway's connection as the app's one listener.
@@ -371,14 +426,15 @@ dashboard as everything else, so that I can see where an event went without a ne
 #### Acceptance criteria (EARS)
 
 1. WHEN the gateway acts THEN it SHALL record events on the JSONL event log in the existing
-   shape (decision-025), under three new families: `gateway.*` (`started`, `stopped`,
-   `received`, `dropped`, `refused`, `reloaded`, `subscribed`, `unsubscribed`) and
-   `subject.*` (`appended`, `acked`, `redelivered`, `dead-lettered`, `expired`).
+   shape (decision-025), under two new families: `gateway.*` (`started`, `stopped`,
+   `received`, `dropped`, `refused`, `reloaded`, `claimed`, `released`, `registered`) and
+   `subject.*` (`appended`, `routed`, `committed`, `redelivered`, `dead-lettered`,
+   `expired`).
 2. WHEN a stored event is delivered to an instance THEN the instance's `dispatch.*` records
    SHALL carry the gateway event `id` beside the delivery id, so one delivery can be
    followed from provider to session.
 3. WHEN the dashboard renders an instance with a `gateway` block THEN it SHALL show the
-   gateway's health and the instance's subscribed subjects with their backlog depth.
+   gateway's health, the instance's queue backlog and the subjects it claims.
 
 ### Requirement 11 — the first landing leaves the door to replicas open
 
@@ -393,9 +449,9 @@ store is a configuration change.
    second process over the same store would see the same state.
 2. WHEN the store interface is designed THEN it SHALL be the only thing a replica would
    need to replace, and the design SHALL name what the two follow-ups must add, without
-   implementing either: multi-instance ownership (per-subject subscriptions and a lease,
-   brainstorm option D) and multi-replica gateways (sharding Socket Mode connections and
-   poll sources).
+   implementing either: splitting one user's subjects across several instances under a
+   lease (brainstorm option D, on top of the claims of R5.3) and multi-replica gateways
+   (sharding Socket Mode connections and poll sources).
 
 ### Requirement 12 — the Slack Socket Mode path is proved end to end
 
@@ -417,13 +473,19 @@ not asserted.
    envelope stored before it was acknowledged to Slack.
 4. WHEN the instance is stopped, two Slack replies are posted and the instance restarted
    THEN both replies SHALL be delivered in order, once.
-5. WHEN a second instance is pointed at the same gateway while the first is connected THEN
-   it SHALL be refused per R4.2 and the first SHALL keep receiving.
+5. WHEN a second instance with a different `instance.name` and its own actors is pointed
+   at the same gateway THEN it SHALL receive only the deliveries routed to it and the first
+   SHALL keep receiving its own; WHEN a second peer uses the first's name THEN it SHALL be
+   refused per R4.3.
 6. WHEN the GitHub and Jira webhook routes are verified THEN they SHALL be proved by signed
    synthetic deliveries in integration tests and by the gateway's poller on
    `the-loop-testing`; no tunnel and no live Jira site are required.
 7. WHEN verification completes THEN the evidence SHALL be committed under
    `docs/specs/issue-496/evidence/`, redacted of tokens, Slack ids and hostnames.
+8. WHEN two instances hold a `driver` claim on a ticket and a `reviewer` claim on its pull
+   request THEN a review comment on the pull request SHALL reach both queues and a comment
+   on the ticket SHALL reach the driver's only; proved in integration tests with fake
+   instances, since the live proof has one author and one app.
 
 ### Requirement 13 — records and documentation
 
@@ -434,7 +496,7 @@ record rather than the code.
 #### Acceptance criteria (EARS)
 
 1. WHEN the change lands THEN `docs/capabilities/` SHALL carry a `gateway.md` describing the
-   process, its config, its verbs, the subject model and the one-instance assumption, and
+   process, its config, its verbs, the subject, queue, claim and actor model, and
    `instances.md`,
    `channels.md`, `webhook-triggers.md` and `control-plane.md` SHALL be updated where the
    gateway changes their behaviour, in the same pull request as the code.
@@ -442,9 +504,9 @@ record rather than the code.
    ingress process and disambiguate it from decision-059's "auth-terminating gateway", so
    both readings survive.
 3. WHEN the change lands THEN decision records SHALL capture the queue contract (subjects,
-   acks, at-least-once with idempotent consumers), the one-instance assumption with the
-   ownership follow-up it defers, and the deferral of instance authentication with its
-   accepted exposure posture.
+   one queue per instance, pull with commit, at-least-once with idempotent consumers),
+   consumer resolution at ingest (claims, then actors) with the ownership follow-up it
+   defers, and the deferral of instance authentication with its accepted exposure posture.
 4. WHEN the change lands THEN `docs/guide/slack.md` SHALL replace *run one listener per
    app* with *run one gateway per app* where a gateway is configured, and the app
    manifest guidance SHALL name the app-level token Socket Mode needs.
@@ -459,7 +521,7 @@ box, through the same configuration I would use for a remote gateway.
 
 1. WHEN an instance's `gateway.url` is a loopback address (`http://127.0.0.1:<port>`)
    THEN the system SHALL behave exactly as with a remote URL: the same client block, the
-   same subscription and acks, no special case in the instance.
+   same fetch and commit, no special case in the instance.
 2. WHEN a gateway and an instance run on one machine THEN they SHALL be separate processes
    with separate state roots, pidfiles and logfiles, and the gateway's default listen port
    SHALL differ from the service's default so both start with no configuration beyond the
@@ -472,7 +534,7 @@ box, through the same configuration I would use for a remote gateway.
    fall back to running its own ingresses; `the-loop status` SHALL show the gateway as
    down.
 5. WHEN `the-loop start` and `the-loop gateway start` run on one machine in either order
-   THEN both SHALL succeed, and the instance SHALL subscribe once the gateway is up.
+   THEN both SHALL succeed, and the instance's fetches SHALL succeed once the gateway is up.
 6. WHEN the gateway runs beside an instance THEN it SHALL spawn no tmux session and hold
    no harness credentials, so the tmux-name collision that stops two *instances* sharing a
    machine does not apply to a gateway and an instance.
@@ -480,8 +542,12 @@ box, through the same configuration I would use for a remote gateway.
 ## Non-functional requirements
 
 - **Latency.** A Slack envelope is stored and acked within three seconds (R2.5); a stored
-  event reaches a subscribed instance within the SSE transport's existing latency, with no
-  polling interval added by the gateway.
+  delivery reaches its instance within one long-poll wake-up (sub-second while
+  `longPollSeconds` is greater than zero) or within `pollIntervalSeconds` under plain
+  polling, the instance's choice.
+- **Scalability.** The work of one fetch is bounded by that instance's own backlog, never
+  by the gateway's total traffic or the number of instances; the gateway holds at most one
+  open request per long-polling instance and none for a plain poller.
 - **Durability.** Nothing acknowledged to a provider is lost on a gateway crash or restart
   (R2.4, R11.1). Retention and the dead-letter bound are configured, not hard-coded.
 - **Footprint.** The gateway runs on the same Python and dependency set as the CLI, with
@@ -513,13 +579,13 @@ box, through the same configuration I would use for a remote gateway.
 - **Trust boundaries & data.**
   - *Provider → gateway:* crossed at the webhook routes and the Socket Mode connection;
     guarded by signature verification, which stays mandatory and unchanged.
-  - *Gateway → instance:* crossed when a stored envelope is streamed; the payload stays
+  - *Gateway → instance:* crossed when a stored envelope is fetched; the payload stays
     untrusted data end to end and the **instance's dispatcher** remains the only place a
     human is authorized or a keyword is interpreted. The gateway holds no allow-list, no
     grant and no posting token (R5), so compromising it yields no ability to post as the
     operator.
-  - *Instance → gateway:* crossed at subscribe, ack and binding writes; **unauthenticated in
-    the first landing**. The trust boundary is the operator's network: the gateway binds
+  - *Instance → gateway:* crossed at fetch, commit, claim, actor and binding writes;
+    **unauthenticated in the first landing**. The trust boundary is the operator's network: the gateway binds
     loopback by default and refuses a non-loopback bind unless the operator sets the
     explicit exposure acknowledgement, exactly decision-059's posture for the service.
   - *Sensitive data moved:* provider tokens and secrets (by environment-variable name in
@@ -536,26 +602,32 @@ box, through the same configuration I would use for a remote gateway.
      THEN the gateway SHALL store it unchanged and the instance SHALL treat it as
      today: untrusted data, with authorization decided by the authorized-actor guard, never
      by the payload.
-  4. WHEN a second peer subscribes while the instance is connected THEN the gateway SHALL
-     refuse it with `409` and record `gateway.refused`, so a stray or hostile subscriber
-     cannot silently drain events away from the instance; the operator sees the refusal in
-     the log and in `gateway status`.
-  5. WHEN a peer acknowledges an offset it was never delivered THEN the gateway SHALL refuse
-     the ack, so an unsubscribed peer cannot discard the instance's backlog.
+  4. WHEN a second peer fetches under a live instance's name THEN the gateway SHALL refuse
+     it with `409` and record `gateway.refused`, so a stray or hostile peer cannot silently
+     drain that instance's queue; the operator sees the refusal in the log and in
+     `gateway status`.
+  5. WHEN a peer commits a delivery id that was never fetched by its queue THEN the gateway
+     SHALL refuse the commit, so one peer cannot discard another instance's backlog.
   6. WHEN a peer floods an ingress with signed-but-duplicate deliveries THEN the dedup
      window SHALL store each once, and WHEN the store's retention is reached THEN the gateway
      SHALL expire the oldest rather than grow without bound.
   7. WHEN `gateway-config.yaml` contains a literal token value rather than a variable name
      THEN schema validation SHALL refuse to start the gateway, naming the key.
+  8. WHEN a peer publishes a claim or an actor registration THEN the gateway SHALL record
+     it with the instance name and time, refuse an actor already held by a live instance,
+     and show every claim in `gateway subjects`, so a claim that steers a work item's
+     events to an unexpected instance is visible, not silent; without authentication it
+     cannot be prevented, which is the accepted gap below.
 - **Fail closed.**
   - A non-loopback listen address without the exposure acknowledgement refuses to start.
   - A missing or unresolvable secret variable disables that ingress and says so in
     `gateway status`; it never starts an ingress that cannot verify.
   - A store that cannot be written returns non-2xx to providers and acks nothing to Slack.
-  - A second subscriber, or an ack for an undelivered offset, is refused.
+  - A duplicate instance name, a duplicate actor registration, or a commit for a delivery
+    the queue never fetched, is refused.
 - **The accepted gap and its follow-up.** Without instance authentication, any peer that can
-  reach the consumer API first can become the one subscriber, read every stored payload
-  and acknowledge it away from the real instance. The first landing accepts this on the author's decision and bounds it by the
+  reach the consumer API can register itself as an instance, claim a subject or an actor,
+  and read and commit the deliveries routed to it. The first landing accepts this on the author's decision and bounds it by the
   exposure guard and the operator's network (VPN, tunnel, reverse proxy). The design SHALL
   carry a follow-up work item for per-instance authentication (bearer token by variable
   name, then stronger), and `docs/capabilities/gateway.md` SHALL state the gap plainly so
@@ -573,16 +645,17 @@ Recorded in `brainstorm.md`'s options, not carried forward:
 - Authentication between instance and gateway (bearer tokens, mTLS, OIDC); a later work
   item (author's decision).
 - Ownership across instances: the lease, its fencing tokens, `gateway leases|release`,
-  the `lease.*` events, per-subject subscriptions and a manager reading the lease table
-  (brainstorm option D); a later work item (author's decision). Two instances cannot share
-  one gateway in the first landing.
+  the `lease.*` events and a manager reading the lease table (brainstorm option D); a
+  later work item (author's decision). Claims (R5.3) are the registration the lease would
+  later guard; they are not the lease.
 - Any coordination with issue-492; it is prior art only.
 - Classifying Slack messages in the gateway (brainstorm F1), push delivery to instances
-  (B2), fan-out to every instance as the mechanism (B1), registration without expiry as
-  the mechanism (D2), manager-assigned ownership (D4), deterministic hashing of refs to
-  instances, and a `gateway:` role inside `cli-config.yaml` (G2).
-- A per-instance tmux socket so two instances share one machine (brainstorm Q10); moot
-  while one instance per gateway is assumed.
+  (B2, and the SSE stream the first draft of this file specified), fan-out to **every**
+  instance as the mechanism (B1; fan-out here is to the subject's consumers only),
+  manager-assigned ownership (D4), deterministic hashing of refs to instances, and a
+  `gateway:` role inside `cli-config.yaml` (G2).
+- A per-instance tmux socket so two instances share one machine (brainstorm Q10); two
+  instances on one machine are not needed for this item's proof.
 - A live Jira site or a public tunnel for verification.
 
 ## Open questions
@@ -593,7 +666,7 @@ The author answered every human question raised at the brainstorm gate
 [9](https://github.com/MadaraUchiha-314/the-loop/issues/496#issuecomment-6251765172)).
 The remaining questions are design-phase and are answered in `design.md`, not here:
 
-1. Whether the instance publishes bindings (R5.4, the leaning) or the gateway opens the
+1. Whether the instance publishes bindings (R5.7, the leaning) or the gateway opens the
    thread itself.
 2. Which transports land in the first milestone (R7.5 allows a subset; the defaults land
    first). Co-location is no longer a question: it is R14, on the author's review remark.

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-496",
-  "currentNode": "design-approval",
+  "currentNode": "requirements-definition",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -28,12 +28,12 @@
       "forced": false
     },
     "requirements-definition": {
-      "attempts": 1,
+      "attempts": 2,
       "outcome": "pass",
       "enteredAt": "2026-10-18T15:46:45+00:00",
       "exitedAt": "2026-10-18T15:51:09+00:00",
       "lastBlock": "",
-      "forced": false
+      "forced": true
     },
     "requirements-approval": {
       "attempts": 1,
@@ -281,12 +281,19 @@
       "effort": "high"
     }
   },
-  "forced": [],
-  "parked": {
-    "node": "design-approval",
-    "reason": "`classify-feedback` did not pass:\n- feedback so far is not decisive; the gate stays open",
-    "since": "2026-10-18T22:08:21+00:00"
-  },
+  "forced": [
+    {
+      "from": "design-approval",
+      "to": "requirements-definition",
+      "reason": "author's design-gate decision (issue 496 comments 6256596524, 6256784391, 6257022252): pull-based consumption and per-instance queues amend R3-R6; requirements must be re-approved",
+      "actor": "MadaraUchiha-314",
+      "at": "2026-10-19T00:24:17+00:00",
+      "warnings": [
+        "design-approval \u2192 requirements-definition is not a declared edge; you are deliberately outside the model"
+      ]
+    }
+  ],
+  "parked": null,
   "completions": {
     "brainstorming": {
       "at": "2026-10-18T01:36:26+00:00",
@@ -316,5 +323,5 @@
   "repos": [],
   "pullRequests": [],
   "loop": "pdlc-work-item-loop",
-  "phase": "test-planning"
+  "phase": "requirements-definition"
 }
