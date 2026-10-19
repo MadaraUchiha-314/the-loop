@@ -261,7 +261,7 @@ overrides: {}
     `test_api_contract_parity.py` (the instance document gains `GET /api/v1/gateway`);
     T10 `Scenario: an instance without a gateway block hosts the receiver, poller and
     listener as before` (`test_hosted_reconcile.py`, `test_core_lifecycle.py`)
-- [ ] **C5: `/the-loop:init` scaffolds the gateway config.** When the operator says they
+- [x] **C5: `/the-loop:init` scaffolds the gateway config.** When the operator says they
   run a gateway, scaffold `gateway-config.yaml` from the schema the way the three
   existing files are scaffolded; update the init command's reference and its pinned
   tests.

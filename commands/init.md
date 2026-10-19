@@ -147,6 +147,21 @@ to the plugin's install directory.)
    Under `--defaults` or `--dry-run`, scaffold nothing here (the home-directory default
    applies with zero setup) and report the gaps.
 
+   **Then ask about a gateway** (issue-496), one plain question: *"Will this instance
+   read its events from a the-loop gateway — one process that owns the webhooks and the
+   Slack connection for several instances — or run its own receiver, poller and Slack
+   listener?"* With a gateway, the `ingress` group's answer is a `gateway` block
+   (`url`, and the `actors` this instance works for: the GitHub logins, Slack user ids
+   and Jira account ids of its users) and the receiver, poller and listener are left
+   off; without one, nothing changes. If the user says **they run the gateway on this
+   machine**, also establish `gateway-config.yaml` — the same schema-driven walk over
+   the plugin's `gateway-config.schema.json` (its `listen`, `store`, the `github`, `jira`
+   and `slack` transports with every secret as a variable **name**, the `repositories`
+   it may start work items in) — at the same location the CLI config took, from
+   `templates/gateway-config.yaml`, keeping its modeline first line. Never assume
+   either answer; under `--defaults` or `--dry-run`, ask nothing and report it under
+   **needs-user**.
+
 5. **Set up Slack, or skip it cleanly.** Slack is the `channels` group, and it gets its
    own step because it is the only part of onboarding that reaches outside the machine.
 
@@ -228,6 +243,9 @@ to the plugin's install directory.)
    - **The CLI config, at the path step 4 established** — from `templates/cli-config.yaml`
      with steps 3–5's answers applied, and carrying the `# onboarding profile: <id>`
      provenance comment. Never scaffolded under `--defaults` or `--dry-run`.
+   - **`gateway-config.yaml`, beside the CLI config, only when step 4 established that
+     this machine runs the gateway** — from `templates/gateway-config.yaml` with the
+     answers applied. Never scaffolded under `--defaults` or `--dry-run`.
    - `docs/architecture/architecture.md`, `docs/decisions/decisions.md`,
      `docs/specs/` (per-work-item Kiro specs + gate records), `docs/capabilities/`.
    - `docs/learnings/learnings.md` — the learnings index. The doc trees are the loop's
@@ -256,6 +274,7 @@ to the plugin's install directory.)
    - `.the-loop/harness-config.yaml` ↔ `harness-config.schema.json`
    - `.the-loop/collaborators.yaml` ↔ `collaborators.schema.json`
    - the CLI config, wherever step 4 put it ↔ `cli-config.schema.json`
+   - `gateway-config.yaml`, when step 6 wrote one ↔ `gateway-config.schema.json`
 
    The absence of a project-local schema copy never weakens or skips this step. Report
    any gaps the user must fill (e.g. empty `collaborators`).

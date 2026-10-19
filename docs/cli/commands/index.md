@@ -17,6 +17,7 @@ started for you on first use, so nothing here needs setting up first.
 | [`start`](/cli/commands/start) | Bring up every service the CLI config enables — the control-plane service (+ `/mcp`), the webhook receiver, the poller. |
 | [`stop`](/cli/commands/stop) | Stop every running the-loop service, whatever the `enabled` flags say now. |
 | [`status`](/cli/commands/status) | Per-service liveness and the poller's progress; exit 0 iff everything enabled is running. |
+| [`gateway`](/cli/commands/gateway) | Run and inspect the gateway — one ingress process for many instances: `start`, `stop`, `restart`, `status`, `subjects`, `instances` (issue-496). |
 | [`restart`](/cli/commands/restart) | `stop` then `start`, optionally upgrading the CLI in between (`--with-upgrade`). Also `POST /api/v1/restart`. |
 
 ## Daemon commands
