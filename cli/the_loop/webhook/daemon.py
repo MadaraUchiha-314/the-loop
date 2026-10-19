@@ -334,6 +334,13 @@ def _build_ingress(routing_config: dict, gh_webhook_config: dict):
         if routed is not None:
             dispatcher.handle(routed)
 
+    # The parts the gateway client feeds from its queue instead of from a server
+    # (issue-496): the same router, the same reload, the same doorbell — attached rather
+    # than returned so the three callers of this builder keep their tuple.
+    on_event.router = router  # type: ignore[attr-defined]
+    on_event.reload_if_changed = reload_if_changed  # type: ignore[attr-defined]
+    on_event.doorbells = doorbells  # type: ignore[attr-defined]
+
     on_jira: Optional[Callable[[Any, str], str]] = None
     if "bell" in doorbells:
 

@@ -216,7 +216,7 @@ overrides: {}
   - _Test:_ T1 `tests/test_gateway_client.py` against a fake consume API (interval
     after an empty plain poll and none after a long-poll; pending commits ride the next
     fetch and flush on stop; same peer across restarts; back-off bounds; a 409 retried)
-- [ ] **C2: dispatch per provider and the commit outcomes.** In the client, build one
+- [x] **C2: dispatch per provider and the commit outcomes.** In the client, build one
   `Router` and one `Dispatcher` with `webhook/daemon.py:_build_ingress`'s arguments plus
   the `JiraDoorbell` and the Slack classifier; per delivery: `github` →
   `router.route` → `dispatcher.handle` → `delivery_status` → outcome (a router `None` is

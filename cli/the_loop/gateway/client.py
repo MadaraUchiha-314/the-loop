@@ -93,7 +93,7 @@ class GatewayClient:
         cli_config: Mapping[str, Any],
         stop_event: Optional[threading.Event] = None,
         *,
-        dispatch: Optional[Callable[[Delivery], str]] = None,
+        dispatch: Optional[Callable[[Delivery], Any]] = None,
         claims: Optional[Callable[[], Sequence[Tuple[str, str]]]] = None,
         transport: Optional[Transport] = None,
         sleep: Callable[[float], None] = time.sleep,
@@ -106,7 +106,9 @@ class GatewayClient:
         self.config = dict(cli_config)
         self.instance = cli_config_mod.instance_name(cli_config)
         self.stop_event = stop_event or threading.Event()
-        self._dispatch = dispatch or (lambda delivery: "delivered")
+        self._dispatch: Callable[[Delivery], Any] = dispatch or (
+            lambda delivery: "delivered"
+        )
         self._claims = claims or (lambda: [])
         self._transport = transport or urllib_transport(block.url)
         self._sleep = sleep
@@ -123,6 +125,7 @@ class GatewayClient:
         self.attempt = 0  # consecutive failures
         self.registered = False
         self._pending: List[Dict[str, Any]] = []
+        self._deferred: List[Tuple[int, Any]] = []
         self._lock = threading.Lock()
         self.fetches = 0
 
@@ -283,6 +286,7 @@ class GatewayClient:
     def fetch_once(self) -> Optional[List[Delivery]]:
         """One fetch, with the pending commits; ``None`` when nothing was fetched (an
         error or a refusal, already recorded)."""
+        self.resolve_deferred()
         with self._lock:
             commits = list(self._pending)
         body = {
@@ -314,24 +318,59 @@ class GatewayClient:
         return [Delivery.from_json(d) for d in answer.get("deliveries") or []]
 
     def handle(self, delivery: Delivery) -> str:
-        """Dispatch one delivery and queue its outcome for the next fetch (R3.4, R10.2)."""
+        """Dispatch one delivery and queue its outcome for the next fetch (R3.4, R10.2).
+
+        A dispatch the pipeline has not settled yet (a resume still in flight) comes
+        back as a :class:`~.client_dispatch.Deferred`; it is asked again before each
+        fetch and committed once it answers, so the commit never runs ahead of the
+        dispatcher. Returns the outcome, or ``"deferred"``.
+        """
         with eventlog.context(
             gateway_event_id=delivery.event.id, delivery_id=delivery.event.delivery_id
         ):
             try:
-                outcome = self._dispatch(delivery) or "delivered"
+                result: Any = self._dispatch(delivery) or "delivered"
             except Exception as exc:  # noqa: BLE001 — a failed dispatch is redelivered
                 logger.exception("gateway: dispatching seq %s failed", delivery.seq)
-                outcome = "failed"
+                result = "failed"
                 eventlog.emit(
                     "dispatch.error",
                     level="error",
                     error=str(exc)[:200],
                     seq=delivery.seq,
                 )
+        if isinstance(result, str):
+            with self._lock:
+                self._pending.append({"seq": delivery.seq, "outcome": result})
+            return result
         with self._lock:
-            self._pending.append({"seq": delivery.seq, "outcome": outcome})
-        return outcome
+            self._deferred.append((delivery.seq, result))
+        return "deferred"
+
+    def resolve_deferred(self) -> int:
+        """Ask every deferred dispatch for its outcome; move the settled ones to the
+        pending commits. Returns how many settled."""
+        settled = 0
+        with self._lock:
+            still: List[Tuple[int, Any]] = []
+            for seq, deferred in self._deferred:
+                try:
+                    outcome = deferred.resolve()
+                except Exception as exc:  # noqa: BLE001 — never lose the queue over it
+                    logger.warning("gateway: resolving seq %s failed (%s)", seq, exc)
+                    outcome = "failed"
+                if outcome is None:
+                    still.append((seq, deferred))
+                    continue
+                self._pending.append({"seq": seq, "outcome": outcome})
+                settled += 1
+            self._deferred = still
+        return settled
+
+    @property
+    def deferred(self) -> int:
+        with self._lock:
+            return len(self._deferred)
 
     def step(self) -> bool:
         """One iteration: register if needed, fetch, dispatch. Returns whether to sleep
@@ -365,6 +404,7 @@ class GatewayClient:
 
     def flush(self) -> bool:
         """``POST /commit`` whatever is pending — a stop's last word (R3.4)."""
+        self.resolve_deferred()
         with self._lock:
             commits = list(self._pending)
         if not commits:

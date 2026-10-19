@@ -41,6 +41,7 @@ import json
 import logging
 import os
 import threading
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterator, Optional, Sequence, Union
@@ -1362,6 +1363,13 @@ class EventLog:
         if extra:
             record.update({k: v for k, v in extra.items() if v is not None})
         record.update({k: v for k, v in fields.items() if v is not None})
+        delivery_id = record.get("delivery_id")
+        if delivery_id is not None and _correlations:
+            with _correlations_lock:
+                tagged = _correlations.get(str(delivery_id))
+            if tagged:
+                for key, value in tagged.items():
+                    record.setdefault(key, value)
         line = json.dumps(record, separators=(",", ":"), default=str) + "\n"
         try:
             with self._lock:
@@ -1372,6 +1380,35 @@ class EventLog:
             if not self._warned:  # warn once — never break ingress over o11y
                 self._warned = True
                 logger.warning("cannot write event log %s: %s", self.path, exc)
+
+
+# -- delivery correlation (issue-496, R10.2) -------------------------------------
+
+#: ``delivery_id -> extra fields`` every record naming that delivery carries, whichever
+#: thread emits it. The gateway client tags a delivery with its gateway event id before
+#: handing it to the dispatcher, whose worker threads then record `dispatch.*` with
+#: `gateway_event_id` beside the delivery id. Bounded: the oldest tag goes first.
+_correlations: "OrderedDict[str, Dict]" = OrderedDict()
+_correlations_lock = threading.Lock()
+CORRELATION_CAP = 4096
+
+
+def correlate(delivery_id: str, **fields) -> None:
+    """Attach ``fields`` to every record that names ``delivery_id`` from now on."""
+    if not delivery_id:
+        return
+    with _correlations_lock:
+        _correlations[str(delivery_id)] = {
+            k: v for k, v in fields.items() if v is not None
+        }
+        _correlations.move_to_end(str(delivery_id))
+        while len(_correlations) > CORRELATION_CAP:
+            _correlations.popitem(last=False)
+
+
+def uncorrelate(delivery_id: str) -> None:
+    with _correlations_lock:
+        _correlations.pop(str(delivery_id), None)
 
 
 # -- per-thread context fields (issue-496, R10.2) --------------------------------
@@ -1465,9 +1502,11 @@ def emit(event: str, level: str = "info", **fields) -> None:
 
 
 def reset() -> None:
-    """Deconfigure the module-level log (tests)."""
+    """Deconfigure the module-level log and forget the delivery correlations (tests)."""
     global _log
     _log = None
+    with _correlations_lock:
+        _correlations.clear()
 
 
 # -- reader ---------------------------------------------------------------------
