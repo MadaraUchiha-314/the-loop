@@ -7,9 +7,8 @@ approvedBy: []
 overrides: {}
 ---
 
-<!-- Authored per the the-loop:writing skill, derived from requirements.md as amended on
-     2026-10-19 (pull consumption, one queue per instance) and the re-derived draft
-     design.md in this folder. Executable content: it names commands an
+<!-- Authored per the the-loop:writing skill, derived from the approved requirements.md
+     (amended and re-approved 2026-10-19) and the draft design.md in this folder. Executable content: it names commands an
      agent will run. Credentials by reference only. -->
 
 # Testing plan: the-loop gateway — one ingress, many instances

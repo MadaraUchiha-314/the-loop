@@ -7,10 +7,10 @@ approvedBy: []
 overrides: {}
 ---
 
-<!-- Authored per the the-loop:writing skill, derived from requirements.md in this folder
-     as amended on 2026-10-19 (pull consumption, one queue per instance; commit 48d4434),
-     re-derived while that amendment waits at requirements-approval. Every file:line below
-     was read in the tree at commit 8b5aaba; line numbers drift, names do not. -->
+<!-- Authored per the the-loop:writing skill, derived from the approved requirements.md in
+     this folder (amended 2026-10-19 for pull consumption and one queue per instance,
+     re-approved by MadaraUchiha-314 the same day). Every file:line below was read in the
+     tree at commit 8b5aaba; line numbers drift, names do not. -->
 
 # Design: the-loop gateway — one ingress, many instances
 

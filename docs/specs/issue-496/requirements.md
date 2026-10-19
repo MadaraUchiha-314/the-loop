@@ -2,7 +2,8 @@
 type: requirements
 phase: requirements-definition
 workItem: issue-496
-status: draft                # draft | in-review | approved — the requirements-approval gate locks it
+status: approved             # draft | in-review | approved — the requirements-approval gate locks it
+approvedBy: ["MadaraUchiha-314"]
 collaborators: [architect, engineer, security, product-manager]
 overrides: {}
 riskTier: 4                  # a new internet-facing ingress process, a fourth config schema, and no instance auth by decision
@@ -677,6 +678,12 @@ The remaining questions are design-phase and are answered in `design.md`, not he
 > comments (issue-109). Append-only and attributed: an approval never silently
 > discards a reviewer's suggestions, and the feedback travels with the document
 > it concerns rather than living in a side-channel tracker.
+
+### 2026-10-18 — approved
+
+**@MadaraUchiha-314** wrote:
+
+approved
 
 ### 2026-10-18 — approved
 
