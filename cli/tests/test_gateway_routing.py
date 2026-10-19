@@ -293,3 +293,56 @@ def test_issue_actions_ci_and_closure_keys():
 def test_the_slug_matches_the_sessions_convention():
     assert common.slug_of("github:o/r#14") == "github-o-r-14"
     assert Path(__file__).is_file()
+
+
+def test_the_dedup_key_tells_distinct_label_assignee_and_closure_events_apart():
+    """
+    Feature: one event, one row
+      Scenario: the dedup key tells distinct label, assignee and closure events apart
+        Given two `labeled` deliveries of one issue in the same second (two labels in
+              one UI action), two `assigned` deliveries likewise, and a close → reopen →
+              close sequence
+        When their dedup keys are computed
+        Then each distinct event has its own key, and the same delivery twice has one
+
+    Requirement: docs/specs/issue-496/requirements.md#requirement-7 (R7.3)
+                 (self-review R2)
+    """
+    from the_loop.gateway.adapters.common import dedup_key
+
+    def labeled(name: str) -> dict:
+        return {
+            "action": "labeled",
+            "issue": {"number": 14, "updated_at": "2026-10-19T10:00:00Z"},
+            "label": {"name": name},
+            "repository": {"full_name": "o/r"},
+        }
+
+    a = dedup_key("github", "issues", labeled("the-loop: approved"), "d-1")
+    b = dedup_key("github", "issues", labeled("the-loop: auto-execute"), "d-2")
+    assert a != b
+    assert a == dedup_key("github", "issues", labeled("the-loop: approved"), "d-3")
+
+    def assigned(login: str) -> dict:
+        return {
+            "action": "assigned",
+            "issue": {"number": 14, "updated_at": "2026-10-19T10:00:00Z"},
+            "assignee": {"login": login},
+            "repository": {"full_name": "o/r"},
+        }
+
+    assert dedup_key("github", "issues", assigned("octocat"), "d-4") != dedup_key(
+        "github", "issues", assigned("hubot"), "d-5"
+    )
+
+    def closed(when: str) -> dict:
+        return {
+            "action": "closed",
+            "issue": {"number": 14, "state": "closed", "closed_at": when},
+            "repository": {"full_name": "o/r"},
+        }
+
+    first = dedup_key("github", "issues", closed("2026-10-19T10:00:00Z"), "d-6")
+    again = dedup_key("github", "issues", closed("2026-10-19T11:00:00Z"), "d-7")
+    assert first != again
+    assert first == dedup_key("github", "issues", closed("2026-10-19T10:00:00Z"), "d-8")

@@ -365,9 +365,24 @@ def dedup_key(provider: str, kind: str, payload: Any, delivery_id: str) -> str:
             action = _text(body.get("action"))
             if number is not None:
                 if action == "closed":
-                    return f"gh-close-{repo}#{number}-{_text(obj.get('state')) or 'closed'}"
+                    # a closure keys on its time: close → reopen → close is two events
+                    when = _text(obj.get("closed_at")) or _text(obj.get("updated_at"))
+                    return f"gh-close-{repo}#{number}-{when or 'closed'}"
+                # the object named by the action joins the key: two labels added in one
+                # UI action share `updated_at` and are two events (self-review R2)
+                qualifier = ""
+                if action in ("labeled", "unlabeled"):
+                    qualifier = _text(_mapping(body.get("label")).get("name"))
+                elif action in ("assigned", "unassigned"):
+                    qualifier = _text(_mapping(body.get("assignee")).get("login"))
+                elif action in ("review_requested", "review_request_removed"):
+                    qualifier = _text(
+                        _mapping(body.get("requested_reviewer")).get("login")
+                    ) or _text(_mapping(body.get("requested_team")).get("slug"))
+                tail = f"{qualifier}-" if qualifier else ""
                 return (
-                    f"gh-{kind}-{action}-{repo}#{number}-{_text(obj.get('updated_at'))}"
+                    f"gh-{kind}-{action}-{repo}#{number}-{tail}"
+                    f"{_text(obj.get('updated_at'))}"
                 )
         if kind in _CI_EVENTS:
             obj = _mapping(body.get(kind))
