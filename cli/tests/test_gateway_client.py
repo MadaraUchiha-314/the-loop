@@ -107,6 +107,9 @@ def test_pending_commits_ride_the_next_fetch_with_the_servers_committed_as_curso
     ]
     assert fetch_bodies[0]["commit"] == [] and fetch_bodies[0]["cursor"] == 0
     client.step()
+    fetch_bodies = [
+        b for m, p, b in transport.calls if p.endswith("/fetch") and b is not None
+    ]
     assert [c["outcome"] for c in fetch_bodies[1]["commit"]] == ["spawned", "spawned"]
     assert (
         fetch_bodies[1]["cursor"] == 0
