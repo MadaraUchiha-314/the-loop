@@ -201,7 +201,7 @@ overrides: {}
 
 ### C — the instance side
 
-- [ ] **C1: `GatewayClient` — the polling loop.** Write `gateway/client.py`:
+- [x] **C1: `GatewayClient` — the polling loop.** Write `gateway/client.py`:
   `GatewayClient(cli_config, stop_event)` over `urllib.request`; peer id persisted in
   `<root>/local/gateway-peer.json`; on start and after every outage `PUT /actors` then
   re-assert the live sessions' claims; `POST /fetch` with `instance.name or "default"`,
