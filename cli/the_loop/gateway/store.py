@@ -220,6 +220,7 @@ class Store(Protocol):
     def instances(self) -> List[InstanceRow]: ...
     def expire(self, now: Optional[float] = None) -> ExpireResult: ...
     def wait(self, instance: str, timeout: float) -> bool: ...
+    def wake_all(self) -> None: ...
 
 
 _SCHEMA = """
@@ -328,6 +329,7 @@ class SqliteStore:
         self._local = threading.local()
         self._cond_lock = threading.Lock()
         self._conditions: Dict[str, threading.Condition] = {}
+        self._closing = False
         if str(self.path) != ":memory:":
             self.path.parent.mkdir(parents=True, exist_ok=True)
         self._memory_conn: Optional[sqlite3.Connection] = None
@@ -409,9 +411,24 @@ class SqliteStore:
         """Block until ``append``/``claim``/``bind`` routes something to ``instance`` or
         ``timeout`` elapses. Returns whether a wake-up happened. The caller re-reads
         either way: a wake-up is a hint, the queue is the truth."""
+        if self._closing:
+            return True
         cond = self._condition(instance)
         with cond:
+            if self._closing:
+                return True
             return cond.wait(timeout=max(0.0, timeout))
+
+    def wake_all(self) -> None:
+        """Release every long-poll now and let none block from here on — the first
+        thing a shutdown does, so an open fetch cannot hold the process past its
+        stop timeout (R8.5)."""
+        with self._cond_lock:
+            self._closing = True
+            conds = list(self._conditions.values())
+        for cond in conds:
+            with cond:
+                cond.notify_all()
 
     # -- append (R2.1, R2.4, R2.6, R4.1) -------------------------------------------------------
 

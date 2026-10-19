@@ -18,6 +18,7 @@ import argparse
 import logging
 import sys
 import threading
+import time
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
@@ -111,6 +112,8 @@ def create_app(
         try:
             yield
         finally:
+            state.stopping.set()
+            state.store.wake_all()
             stop_retention.set()
             if ingresses is not None:
                 ingresses.stop()
@@ -127,6 +130,7 @@ def create_app(
     app.include_router(build_slack_http_router(ingest, config))
     mount(app, state)
     app.state.gateway_ingresses = lambda: ingresses
+    app.state.gateway_state = state
     return app
 
 
@@ -189,9 +193,16 @@ def main(argv: Optional[list] = None) -> int:
     try:
         import uvicorn
 
-        uvicorn.run(
-            app, host=config.listen.host, port=config.listen.port, log_level="info"
+        server = uvicorn.Server(
+            uvicorn.Config(
+                app, host=config.listen.host, port=config.listen.port, log_level="info"
+            )
         )
+        # uvicorn's graceful stop waits for open requests, and a fetch may be holding
+        # a long-poll for `consume.maxWaitSeconds`: release them the moment uvicorn
+        # decides to exit, so a stop outlasts no long-poll (R8.5).
+        _release_long_polls_on_exit(server, app.state.gateway_state)
+        server.run()
     except SystemExit as exc:
         code = int(exc.code or 0) if isinstance(exc.code, int) else 0
     finally:
@@ -202,6 +213,16 @@ def main(argv: Optional[list] = None) -> int:
             pass
         lock.release()
     return code
+
+
+def _release_long_polls_on_exit(server: Any, state: Any) -> None:
+    def watch() -> None:
+        while not getattr(server, "should_exit", False):
+            time.sleep(0.1)
+        state.stopping.set()
+        state.store.wake_all()
+
+    threading.Thread(target=watch, name="the-loop-gateway-exit", daemon=True).start()
 
 
 def _install_exit_handlers() -> None:

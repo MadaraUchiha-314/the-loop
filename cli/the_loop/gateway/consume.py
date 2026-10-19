@@ -19,6 +19,7 @@ a name outside the allow-list (``unknown-instance``).
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -46,6 +47,8 @@ class GatewayState:
         self.config = config
         self.store = store
         self.started_at = time.time()
+        #: Set by the shutdown path: no long-poll blocks from here on (R8.5).
+        self.stopping = threading.Event()
         self.ingresses: Dict[str, str] = {}  # name -> running | off | failed:<reason>
         self.slack_socket: str = "off"  # up | down | off
         self.store_ok: bool = True
@@ -243,7 +246,7 @@ def build_consume_router(state: GatewayState, **router_kwargs: Any) -> APIRouter
                     break
                 store.wait(body.instance, remaining)
                 result = store.fetch(body.instance, body.cursor, limit)
-                if result.deliveries:
+                if result.deliveries or state.stopping.is_set():
                     break
         for dead in result.dead_lettered:
             eventlog.emit(

@@ -222,3 +222,39 @@ def test_the_views_report_health_subjects_queues_and_instances(gw):
     (row,) = gw.client.get("/api/v1/gateway/instances").json()["instances"]
     assert row["instance"] == "a" and row["peer"] == "p1" and row["leaseLive"] is True
     assert row["actors"] == {"slack": ["U1"]} and row["backlog"] == 1
+
+
+def test_a_long_poll_returns_at_once_when_the_gateway_is_stopping(gw):
+    """
+    Feature: the gateway is one process that follows its own config
+      Scenario: a long-poll returns at once when the gateway is stopping
+        Given a fetch holding a long-poll on an empty queue
+        When the shutdown path marks the state stopping and wakes the store
+        Then the fetch returns within a second with no deliveries, and a fetch after
+             that does not block at all
+
+    Requirement: docs/specs/issue-496/requirements.md#requirement-8 (R8.5)
+    """
+    import threading
+    import time
+
+    done: dict = {}
+
+    def poll():
+        started = time.monotonic()
+        response = gw.fetch("laptop-a", peer="p1", lease=60, wait=5)
+        done["elapsed"] = time.monotonic() - started
+        done["status"] = response.status_code
+        done["deliveries"] = response.json()["deliveries"]
+
+    thread = threading.Thread(target=poll)
+    thread.start()
+    time.sleep(0.3)
+    gw.state.stopping.set()
+    gw.store.wake_all()
+    thread.join(timeout=3)
+    assert not thread.is_alive() and done["status"] == 200
+    assert done["deliveries"] == [] and done["elapsed"] < 1.5
+    started = time.monotonic()
+    assert gw.fetch("laptop-a", peer="p1", lease=60, wait=5).status_code == 200
+    assert time.monotonic() - started < 0.5

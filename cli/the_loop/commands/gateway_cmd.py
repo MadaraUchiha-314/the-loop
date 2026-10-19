@@ -146,8 +146,13 @@ def start_gateway(
 
 
 def stop_gateway(
-    config: GatewayConfig, *, timeout: float = STOP_TIMEOUT_S
+    config: GatewayConfig, *, timeout: Optional[float] = None
 ) -> Dict[str, Any]:
+    """SIGTERM the process and wait for its pidfile. The gateway releases its
+    long-polls on the signal, so the wait is short; the timeout still covers one full
+    `consume.maxWaitSeconds` in case it cannot (an older process, say)."""
+    if timeout is None:
+        timeout = max(STOP_TIMEOUT_S, float(config.consume.max_wait_s) + 5.0)
     lock = RunLock(str(config.pidfile), name="gateway")
     if not lock.is_held():
         return {

@@ -445,3 +445,81 @@ def test_status_follows_the_recorded_listen_address_when_the_file_moved_on(tmp_p
     )
     config.listen_file.unlink()
     assert gateway_cmd.running_base_url(config) == "http://127.0.0.1:8791"
+
+
+def test_stop_does_not_wait_for_an_open_long_poll(tmp_path, monkeypatch):
+    """
+    Feature: the gateway is one process that follows its own config
+      Scenario: stop does not wait for an open long-poll
+        Given a real gateway whose consume.maxWaitSeconds is 30 and a client holding a
+              25 s long-poll on an empty queue
+        When the-loop gateway stop is run
+        Then the process is gone within a few seconds and the client's fetch returned
+             200 with nothing — the long-poll was released, not outlasted
+
+    Requirement: docs/specs/issue-496/requirements.md#requirement-8 (R8.5), R9.2
+    """
+    import threading
+    import urllib.request
+
+    port = _free_port()
+    config = write_gateway_config(
+        tmp_path,
+        listen={"host": "127.0.0.1", "port": port},
+        consume={
+            "maxBatch": 64,
+            "maxWaitSeconds": 30,
+            "leaseSeconds": {"min": 10, "max": 300},
+        },
+        github={"poll": {"enabled": False}},
+        slack={"socket": {"enabled": False}},
+    )
+    monkeypatch.setenv(
+        "PYTHONPATH",
+        str(Path(__file__).resolve().parents[1])
+        + os.pathsep
+        + os.environ.get("PYTHONPATH", ""),
+    )
+    report = gateway_cmd.start_gateway(config, wait=30)
+    assert report["running"], report
+    outcome: dict = {}
+
+    def poll():
+        body = json.dumps(
+            {
+                "instance": "laptop-a",
+                "peer": "p1",
+                "cursor": 0,
+                "max": 8,
+                "wait": 25,
+                "lease": 60,
+                "commit": [],
+            }
+        ).encode()
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/v1/gateway/fetch",
+            data=body,
+            headers={"content-type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=40) as response:
+                outcome["status"] = response.status
+                outcome["body"] = json.loads(response.read())
+        except Exception as exc:  # noqa: BLE001 — the assertion reads it
+            outcome["error"] = str(exc)
+
+    thread = threading.Thread(target=poll)
+    thread.start()
+    time.sleep(1.0)
+    started = time.monotonic()
+    try:
+        stopped = gateway_cmd.stop_gateway(config)
+        elapsed = time.monotonic() - started
+        assert stopped["running"] is False, stopped
+        assert elapsed < 10, elapsed
+    finally:
+        gateway_cmd.stop_gateway(config, timeout=5)
+    thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert outcome.get("status") == 200 and outcome["body"]["deliveries"] == [], outcome
