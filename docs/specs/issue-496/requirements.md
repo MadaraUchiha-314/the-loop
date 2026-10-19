@@ -685,6 +685,7 @@ The remaining questions are design-phase and are answered in `design.md`, not he
 
 approved
 
+<!-- markdownlint-disable-next-line MD024 -- the gate records each approval under its date; the second approval of the day (the amendment re-gate) repeats the heading, see issue #500 -->
 ### 2026-10-18 — approved
 
 **@MadaraUchiha-314** wrote:
