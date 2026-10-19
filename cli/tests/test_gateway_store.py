@@ -435,3 +435,25 @@ def test_retention_keeps_fresh_rows(store):
     result = store.expire()
     assert result.expired == () and result.deleted_events == 0
     assert len(store.fetch("a", 0, 10).deliveries) == 1
+
+
+def test_an_append_between_an_empty_read_and_the_wait_is_not_a_lost_wake_up(store):
+    """
+    Feature: one queue per instance
+      Scenario: an append between an empty read and the wait is not a lost wake-up
+        Given a fetch that read an empty queue and has not entered `wait` yet
+        When an event is appended for that instance before it does
+        Then `wait` returns at once, and a wait with nothing appended still times out
+
+    Requirement: docs/specs/issue-496/requirements.md#requirement-3 (R3.3)
+                 (self-review R5)
+    """
+    assert store.fetch("laptop-a", 0, 10).deliveries == []
+    store.append(ev(1), ["laptop-a"])  # lands between the read and the wait
+    started = time.monotonic()
+    assert store.wait("laptop-a", 3.0) is True
+    assert time.monotonic() - started < 0.5
+    assert len(store.fetch("laptop-a", 0, 10).deliveries) == 1
+    started = time.monotonic()
+    assert store.wait("laptop-a", 0.2) is False
+    assert time.monotonic() - started >= 0.15

@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import (
     Any,
+    Set,
     Dict,
     Iterator,
     List,
@@ -330,6 +331,7 @@ class SqliteStore:
         self._cond_lock = threading.Lock()
         self._conditions: Dict[str, threading.Condition] = {}
         self._closing = False
+        self._woken: Set[str] = set()  # a notify nobody was waiting for (R5)
         if str(self.path) != ":memory:":
             self.path.parent.mkdir(parents=True, exist_ok=True)
         self._memory_conn: Optional[sqlite3.Connection] = None
@@ -405,6 +407,9 @@ class SqliteStore:
         for instance in set(instances):
             cond = self._condition(instance)
             with cond:
+                # the flag outlives the notify: a fetch that read an empty queue just
+                # before this append must not sleep its whole `wait` (self-review R5)
+                self._woken.add(instance)
                 cond.notify_all()
 
     def wait(self, instance: str, timeout: float) -> bool:
@@ -417,7 +422,12 @@ class SqliteStore:
         with cond:
             if self._closing:
                 return True
-            return cond.wait(timeout=max(0.0, timeout))
+            if instance in self._woken:
+                self._woken.discard(instance)
+                return True
+            woke = cond.wait(timeout=max(0.0, timeout))
+            self._woken.discard(instance)
+            return woke
 
     def wake_all(self) -> None:
         """Release every long-poll now and let none block from here on — the first
