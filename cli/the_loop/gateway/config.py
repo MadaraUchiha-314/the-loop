@@ -472,6 +472,21 @@ def load_gateway_config(path: Optional[Union[str, Path]] = None) -> GatewayConfi
     )
 
     instances = data.get("instances")
+    # The gateway writes only under its state root (design §Security design): the
+    # store and the event log are resolved with realpath and must sit under it.
+    root_real = Path(os.path.realpath(state_root))
+    confined: List[str] = []
+    for key, candidate in (
+        ("store.path", store.path),
+        ("observability.eventLog.path", event_log),
+    ):
+        real = Path(os.path.realpath(candidate))
+        if root_real != real and root_real not in real.parents:
+            confined.append(
+                f"{key}: {candidate} is not under state.root ({state_root})"
+            )
+    if confined:
+        raise ConfigError(config_path, confined)
     return GatewayConfig(
         path=config_path,
         state_root=state_root,

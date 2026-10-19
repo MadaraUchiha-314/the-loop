@@ -346,3 +346,38 @@ def test_the_repositorys_own_config_still_validates_without_a_block():
     if not repo_config.is_file():
         pytest.skip("plugin tree not present (source distribution)")
     assert _cli(yaml.safe_load(repo_config.read_text())) == []
+
+
+def test_a_store_or_log_path_outside_the_state_root_is_refused(tmp_path):
+    """
+    Feature: the gateway follows its own config
+      Scenario: a store or log path outside the state root is refused
+        Given a config whose store.path points outside state.root (an absolute path
+              elsewhere, or a `../` escape)
+        When it is loaded
+        Then it is a ConfigError naming the key, and a path under the root loads
+
+    Requirement: docs/specs/issue-496/design.md §Security design (self-review R7)
+    """
+    rooted = {**MINIMAL, "state": {"root": "gw-state"}}
+    outside = tmp_path / "elsewhere" / "gateway.db"
+    path = _write(tmp_path, {**rooted, "store": {"path": str(outside)}})
+    with pytest.raises(gwconfig.ConfigError) as info:
+        gwconfig.load_gateway_config(path)
+    assert any(e.startswith("store.path") for e in info.value.errors), info.value.errors
+    path = _write(
+        tmp_path,
+        {
+            **rooted,
+            "observability": {"eventLog": {"path": "gw-state/../escape/events.jsonl"}},
+        },
+    )
+    with pytest.raises(gwconfig.ConfigError) as info:
+        gwconfig.load_gateway_config(path)
+    assert any(
+        e.startswith("observability.eventLog.path") for e in info.value.errors
+    ), info.value.errors
+    inside = gwconfig.load_gateway_config(
+        _write(tmp_path, {**rooted, "store": {"path": "gw-state/sub/gateway.db"}})
+    )
+    assert inside.store.path.is_relative_to(inside.state_root)
