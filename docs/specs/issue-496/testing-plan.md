@@ -188,28 +188,42 @@ committed.
 
 ## Verification activities
 
-- [ ] T1 — `cd cli && uv run python -m pytest -q tests/test_gateway_*.py`
-- [ ] T2 — `cd cli && uv run python -m pytest -q tests/test_gateway_*_integration.py`
-- [ ] T2 (lag) — `cd cli && uv run python -m pytest -q --dispatch-lag=0.5 tests/test_gateway_*_integration.py`
-- [ ] T3 — `cd cli && uv run python -m pytest -q tests/test_api_contract_parity.py tests/test_config_schema_parity.py`
+- [x] T1 — `cd cli && uv run python -m pytest -q tests/test_gateway_*.py`
+- [x] T2 — `cd cli && uv run python -m pytest -q tests/test_gateway_*_integration.py`
+- [x] T2 (lag) — `cd cli && uv run python -m pytest -q --dispatch-lag=0.5 tests/test_gateway_*_integration.py`
+- [x] T3 — `cd cli && uv run python -m pytest -q tests/test_api_contract_parity.py tests/test_config_schema_parity.py`
 - [ ] T4 — the five-step Slack procedure on `the-loop-testing`
-- [ ] T5 — `cd ui && npm test`, then the state screenshots
-- [ ] T8 — `cd cli && uv run python -m pytest -q tests/test_gateway_security.py tests/test_gateway_abuse_integration.py`
-- [ ] T9 — the DOM assertions in `cd ui && npm test` and the keyboard pass
-- [ ] T10 — `cd cli && uv run python -m pytest -q tests/test_hosted_reconcile.py tests/test_core_lifecycle.py tests/test_gateway_client_integration.py && cd .. && make validate`
+- [x] T5 — `cd ui && npm test`, then the state screenshots
+- [x] T8 — `cd cli && uv run python -m pytest -q tests/test_gateway_security.py tests/test_gateway_abuse_integration.py`
+- [x] T9 — the DOM assertions in `cd ui && npm test` and the keyboard pass
+- [x] T10 — `cd cli && uv run python -m pytest -q tests/test_hosted_reconcile.py tests/test_core_lifecycle.py tests/test_gateway_client_integration.py && cd .. && make validate`
 - [ ] T11 — the co-location and verbs checklist
-- [ ] T12 — `make lint format-check typecheck validate`
+- [x] T12 — `make lint format-check typecheck validate`
 - [ ] Full suite — `make test`
 
 ## Verification results
 
-*Not yet executed.*
+*Executed 2026-10-19 on `feat/issue-496-gateway` (PR #499); T4 and T11 in progress — see
+the last rows.*
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1 | `cd cli && uv run python -m pytest -q tests/test_gateway_*.py` | pass — 187 passed | [`evidence/unit.md`](evidence/unit.md) |
+| T2 | `… tests/test_gateway_*_integration.py` | pass — 49 passed (47 Gherkin scenarios) | [`evidence/integration.md`](evidence/integration.md) |
+| T2 (lag) | `… --dispatch-lag=0.5 tests/test_gateway_*_integration.py` | pass — 49 passed, after one scenario's wait was made lag-proof (1e6e57a) | [`evidence/integration.md`](evidence/integration.md) |
+| T3 | `… tests/test_api_contract_parity.py tests/test_config_schema_parity.py` | pass — 10 passed; both documents' operation lists recorded | [`evidence/contract.md`](evidence/contract.md) |
+| T5 | `cd ui && NODE_OPTIONS=--no-experimental-webstorage vitest run`, then the screenshots | pass — 330 passed; five states beside the prototype's | [`evidence/ui.md`](evidence/ui.md), `evidence/ui/*.png` |
+| T7 | the three budgets, measured in-process | pass — ack 0.03 s with 2 000 rows; 10 000 duplicates → 1 row in 0.7 s; long-poll wake 2 ms; fifty-instance fetch an index range | [`evidence/integration.md`](evidence/integration.md) |
+| T8 | the eight abuse scenarios + `tests/test_gateway_security.py` (selected by scenario name; the scenarios landed beside the components they attack rather than in one file) | pass — 60 passed | [`evidence/security.md`](evidence/security.md) |
+| T9 | the DOM assertions in the UI tests and the keyboard pass | pass | [`evidence/ui.md`](evidence/ui.md) |
+| T10 | `tests/test_hosted_reconcile.py tests/test_core_lifecycle.py tests/test_gateway_client_integration.py` and `make validate` | pass — 32 passed; four configs valid | [`evidence/migration.md`](evidence/migration.md) |
+| T12 | `make lint format-check typecheck validate` | pass, with one pre-existing finding: the approval gate's repeated same-day heading in `requirements.md` (exempted with a named comment, #500) | [`evidence/lint-and-typecheck.md`](evidence/lint-and-typecheck.md) |
+| Full suite | `cd cli && uv run python -m pytest -q` (with `THE_LOOP_CLI_CONFIG` unset) | pass — 6340 passed on 591a9bd; re-run at the end of verification | [`evidence/unit.md`](evidence/unit.md) |
+| T4 | the five-step Slack procedure on `the-loop-testing#7` | in progress — step 1 done (routed by actor, parked at the start gate); steps 2–3 need the author, asked 2026-10-19 | [`evidence/e2e-slack.md`](evidence/e2e-slack.md) |
+| T11 | the co-location and verbs checklist | in progress — bring-up gateway-first, doctor, subjects/instances, restart-required and bad-edit done (one status defect found and fixed, d3da68e); reverse order, `gateway restart` and tear-down after T4 | [`evidence/manual.md`](evidence/manual.md) |
 
-**Not executed:** —
+**Not executed:** nothing yet skipped; T4 steps 2–5 and the last T11 steps wait on the
+author's replies and on T4 finishing.
 
 ## Review comments
 
