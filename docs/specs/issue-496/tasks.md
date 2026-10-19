@@ -307,7 +307,7 @@ overrides: {}
   - _Depends on:_ none
   - _Requirements:_ R13.2, R13.3
   - _Test:_ T12 `make lint`
-- [ ] **E3: the pull request.** Open the implementation PR with `the-loop pr create
+- [x] **E3: the pull request.** Open the implementation PR with `the-loop pr create
   --work-item github:MadaraUchiha-314/the-loop#496`, record it in
   `evidence/pull-requests.md`, and run the whole static set.
   - _Depends on:_ A1–A6, B1–B6, C1–C5, D1, E1, E2
