@@ -95,7 +95,8 @@ The word *gateway*, unqualified, is this process; decision-059's is the
   produces the same delivery ids and webhook-shaped payloads (`poll-comment-<id>`,
   `poll-presence-<ref>-<uuid>`, `poll-close-…`); its ledger lives in the store. A
   comment seen by webhook and by poll stores one row (the cross-transport dedup key: a
-  comment by its id, a review by its id, an issue or PR action by object, `updated_at`
+  comment by its id and a review by its id — an edit or a deletion of either is its
+  own event, keyed on the action and its time — an issue or PR action by object, `updated_at`
   and the label, assignee or requested reviewer it names, a closure by `closed_at`, CI
   by ref, name and conclusion), so the poller is the reconciliation path. Presence is
   offered while an instance has not judged the item started, never twice at once — a
@@ -112,7 +113,9 @@ The word *gateway*, unqualified, is this process; decision-059's is the
 - The gateway resolves only the reference a payload names directly, the bindings
   instances have published and the repositories, projects and rooms declared in its
   config. A pull request with no binding is its own subject; the instance that receives
-  it recognises the linkage with today's router inference and publishes the binding. A
+  it recognises the linkage with today's router inference and publishes the binding;
+  what was held on the pull request's own subject before the binding is routed onto
+  the work item's claimants by it. A
   Slack thread nobody bound is held under its thread key. An object that can start no
   work item is dropped (`gateway.dropped: unbound`).
 - Consumers are decided **on write**, in order: the claimants of the subject and of each
@@ -131,7 +134,8 @@ The word *gateway*, unqualified, is this process; decision-059's is the
   `max(cursor, committed)` with
   `attempts` incremented; and holds an empty fetch open for `wait` seconds (clamped to
   `consume.maxWaitSeconds`) until something is appended — an append that lands between
-  the empty read and the wait is not a lost wake-up. `POST /commit` is the step alone,
+  the empty read and the wait is not a lost wake-up, and a fetch that wakes after its
+  own lease lapsed re-checks the name's holder before it reads. `POST /commit` is the step alone,
   for a stop. No streaming route exists.
 - At-least-once: a delivery not committed comes back with `attempt + 1`; past
   `store.maxAttempts` it is committed as dead-lettered and kept for inspection. The
