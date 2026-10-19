@@ -947,14 +947,23 @@ class SqliteStore:
             )
 
     def has_pending_presence(self, ref: str) -> bool:
-        """Whether a presence event for ``ref`` is still on some queue, uncommitted —
-        the poll adapter re-emits presence only once the previous one was judged."""
+        """Whether a presence event for ``ref`` is still on some queue, uncommitted, or
+        held with no consumer yet — the poll adapter re-emits presence only once the
+        previous one was judged (self-review R1: a held presence counts, else every
+        cycle would add one more until retention)."""
         with self._tx() as cur:
             cur.execute(
                 "SELECT 1 FROM deliveries d JOIN events e ON e.id = d.event_id"
                 " WHERE e.work_item = ? AND e.source = 'poll' AND d.state = ?"
                 " AND e.delivery_id LIKE 'poll-presence-%' LIMIT 1",
                 (ref, PENDING),
+            )
+            if cur.fetchone() is not None:
+                return True
+            cur.execute(
+                "SELECT 1 FROM events WHERE work_item = ? AND source = 'poll'"
+                " AND routed = 0 AND delivery_id LIKE 'poll-presence-%' LIMIT 1",
+                (ref,),
             )
             return cur.fetchone() is not None
 

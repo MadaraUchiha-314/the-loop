@@ -217,3 +217,28 @@ def test_a_vanished_item_is_closed_once_by_the_providers_closure_event(gw):
     assert closure["deliveryId"].startswith("poll-close-")
     assert gw.store.poll_state("github:o/r#14") == "closed"
     assert gw.poll.poll_once().stored == 0
+
+
+def test_a_held_presence_is_offered_once_until_someone_consumes_it(gw):
+    """
+    Feature: the gateway polls the providers the instance used to poll
+      Scenario: a held presence is offered once until someone consumes it
+        Given an armed item whose author no instance registered and no claim on it
+        When the poller runs three cycles
+        Then one presence (and the one comment) is held, not one per cycle; a later
+             claim routes exactly one presence onto the claimant's queue
+
+    Requirement: docs/specs/issue-496/requirements.md#requirement-1 (R1.5), R2.2
+                 (self-review R1)
+    """
+    assert gw.poll.poll_once().stored == 2  # the presence and the comment, both held
+    assert gw.poll.poll_once().stored == 0
+    assert gw.poll.poll_once().stored == 0
+    (row,) = [s for s in gw.store.subjects() if s.subject == "loop-github-o-r-14"]
+    assert row.held == 2 and row.events == 2
+    gw.store.claim("loop-github-o-r-14", "laptop-a", "driver")
+    deliveries = gw.fetch("laptop-a", peer="p1").json()["deliveries"]
+    presences = [
+        d for d in deliveries if d["event"]["deliveryId"].startswith("poll-presence-")
+    ]
+    assert len(presences) == 1 and len(deliveries) == 2
