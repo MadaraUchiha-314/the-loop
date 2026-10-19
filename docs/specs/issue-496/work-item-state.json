@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-496",
-  "currentNode": "design-approval",
+  "currentNode": "spec-explainer",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -69,8 +69,16 @@
     },
     "design-approval": {
       "attempts": 2,
-      "outcome": "",
+      "outcome": "approved",
       "enteredAt": "2026-10-18T21:51:48+00:00",
+      "exitedAt": "2026-10-19T01:28:08+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "spec-explainer": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-19T01:28:08+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -293,11 +301,7 @@
       ]
     }
   ],
-  "parked": {
-    "node": "design-approval",
-    "reason": "awaiting a human",
-    "since": "2026-10-19T01:18:55+00:00"
-  },
+  "parked": null,
   "completions": {
     "brainstorming": {
       "at": "2026-10-18T01:36:26+00:00",

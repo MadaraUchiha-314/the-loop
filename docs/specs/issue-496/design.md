@@ -2,8 +2,8 @@
 type: design
 phase: design
 workItem: issue-496
-status: draft                # draft | in-review | approved — the design-approval gate locks it with testing-plan.md
-approvedBy: []
+status: approved             # draft | in-review | approved — the design-approval gate locks it with testing-plan.md
+approvedBy: ["MadaraUchiha-314"]
 overrides: {}
 ---
 
@@ -739,3 +739,9 @@ needs no special mode.
 > comments (issue-109). Append-only and attributed: an approval never silently
 > discards a reviewer's suggestions, and the feedback travels with the document
 > it concerns rather than living in a side-channel tracker.
+
+### 2026-10-18 — approved
+
+**@MadaraUchiha-314** wrote:
+
+approved
