@@ -15,7 +15,8 @@ riskTier: 4                  # touches a schema file (cli-config.schema.json); n
 
 > Phase 1 of 4 (requirements → design → testing plan → tasks). Part 1 of 2: the verb,
 > the event, the label gate, the rate limit and the Slack line. Part 2 (the silent-session
-> watchdog, the issue's "nice to have") is specified at the end and ships in its own PR.
+> watchdog, the issue's "nice to have") is specified at the end and is a separate PR,
+> stacked on part 1.
 
 ## Introduction
 
@@ -123,12 +124,35 @@ config page, and shown commented-out in the shipped template.
 
 5.2 The skill SHALL tell the agent when to call the verb and that it never replaces `ask`.
 
-## Part 2 — the silent-session watchdog (separate PR)
+## Part 2 — the silent-session watchdog
 
-6.1 WHEN a session of a work item carrying the progress label has produced no event of any
-kind for `progress.silenceSeconds` THEN the daemon SHALL emit one `session.silent` event.
-6.2 The daemon SHALL NOT repeat it until the session has produced another event.
-6.3 The check SHALL run inside a daemon that already exists; it SHALL NOT add a service.
+### Requirement 6 — a stuck session says so
+
+**User story:** As the person who handed work over, I want to be told when a session has
+stopped, so a stuck loop does not look like hard work.
+
+#### Acceptance criteria (EARS)
+
+6.1 WHEN `progress.silenceSeconds` is above zero AND an active session of a work item
+carrying the progress label has produced no event of any kind for that long THEN the
+daemon SHALL emit one `session.silent` event.
+
+6.2 The daemon SHALL NOT emit it again until the session has produced another event.
+
+6.3 The watchdog SHALL count as activity any event-log record naming the work item except
+`session.silent` and the `bus.*` / `channel.*` records every publish leaves.
+
+6.4 The watchdog SHALL consider only `active` sessions, and SHALL read a work item's label
+only for a session already past the threshold.
+
+6.5 The watchdog SHALL run inside the poller and the webhook receiver and SHALL NOT add a
+service. It SHALL NOT start while `eventLog.enabled` is false, and SHALL be off when
+`progress.silenceSeconds` is `0` (the default).
+
+6.6 `session.silent` SHALL be a catalog row: subscribable, in no default subscription, not
+recorded on the ledger.
+
+6.7 One work item's failure SHALL NOT stop the scan of the others.
 
 ## Security considerations
 

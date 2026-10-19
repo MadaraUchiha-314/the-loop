@@ -505,6 +505,9 @@ def build_receiver(options: ReceiverOptions):
     selfdiagnosis.start_watcher(
         cli_config.load_cli_config(_config_path()), watchers_stop
     )
+    from ..core import silence  # issue-340: the silent-session watchdog (opt-in)
+
+    silence.start_watcher(cli_config.load_cli_config(_config_path()), watchers_stop)
     channels_watcher.start_watcher(
         cli_config.load_cli_config(_config_path()), watchers_stop
     )

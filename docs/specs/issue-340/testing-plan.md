@@ -26,6 +26,7 @@ overrides: {}
 | T6 | Contract and docs | yes | the served OpenAPI surface equals the contract (worker and manager); the command page, the config page and the event catalog are pinned to the code | `test_api_contract_parity.py`, `test_docs_parity.py`, `test_configschema.py` |
 | T7 | Regression (full suite + hooks) | yes | ruff, ruff format, pyright, all CLI tests, markdownlint | `make check` equivalents |
 | T8 | Security | yes (review) | untrusted text, flood brakes, fail-closed on an unreadable label | `evidence/security-review.md` |
+| T11 | Unit (watchdog) | yes | one `session.silent` per silence; none for recent activity, an unlabelled item, a paused session, or another item's events; bookkeeping records do not count as activity; the label is read only past the threshold; a fault on one item spares the rest; off at `0`, with the label empty, and with the event log off; the watcher runs, survives a failing scan and stops with its daemon | `cli/tests/test_silence.py` |
 | T9 | Live Slack | n/a here | needs a workspace and a bot token; the fake client pins the calls made | |
 | T10 | UI / migration / performance | n/a | no UI, no stored data; one label read and one log scan per call | |
 
@@ -42,6 +43,7 @@ overrides: {}
 | R4.4 | T5 |
 | R5.1 | T6 |
 | R5.2 | review of the doc diff |
+| R6.1–R6.7 | T11, T6 (catalog, config and docs pins) |
 | Security considerations | T1, T5, T8 |
 
 ## Verification environment

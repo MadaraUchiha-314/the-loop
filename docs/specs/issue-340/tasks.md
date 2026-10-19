@@ -26,8 +26,11 @@ overrides: {}
       *Test:* T6. *Deps:* A2.
 - [x] **B2: skill text.** `reference/collaboration.md`, `reference/automation.md`.
       *Req:* R5.2. *Deps:* A4.
+- [x] **D1: the watchdog.** `core/silence.py`, its catalog and event-log rows,
+      `progress.silenceSeconds` in both schema copies and the template, the two daemon
+      hooks. *Req:* R6 · *Test:* T11, T6. *Deps:* A3, B1.
 - [x] **C1: docs and evidence.** Command page, config page, indexes, capability docs, the
-      evidence files. *Deps:* A4, A5, B1, B2.
+      evidence files. *Deps:* A4, A5, B1, B2, D1.
 
 ## Dependency graph (DAG)
 
@@ -36,5 +39,7 @@ flowchart LR
   A1 --> A2 --> A3 --> A5 --> C1
   A2 --> A4 --> B2 --> C1
   A2 --> B1 --> C1
+  A3 --> D1 --> C1
+  B1 --> D1
   A4 --> C1
 ```

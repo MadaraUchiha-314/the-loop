@@ -23,6 +23,7 @@ progress:
   label: "the-loop: progress"
   minIntervalSeconds: 300
   maxChars: 280
+  silenceSeconds: 0
 ```
 
 ## Options
@@ -55,3 +56,24 @@ next report is the newest one. `0` disables the limit. Measured from the
 The longest report, in characters, after it is cut to its first two lines. Longer text is
 truncated with an ellipsis — this is a signal, and the full detail already goes on the
 ticket.
+
+### `silenceSeconds`
+
+- **Type:** `integer`
+- **Default:** `0` (off)
+
+The silence watchdog. When an **active** session of a work item carrying
+[`label`](#label) has produced no event of any kind for this many seconds, the daemon
+emits one `session.silent` event, so a stuck session stops looking like hard work. It is
+said **once per silence**: the next needs activity in between.
+
+"Any kind" is any [event-log](/config/cli/observability-options) record naming the work
+item, except the watchdog's own and the `bus.*` / `channel.*` bookkeeping every publish
+leaves. The label is read only for a session already past the threshold, so a healthy
+deployment makes no tracker call. A check runs about every quarter of the threshold
+(never faster than 30 seconds or slower than 5 minutes).
+
+It runs inside the poller and the webhook receiver — no new service — and reads the event
+log, so it is not started while `eventLog.enabled` is `false`. For the same reason it
+reports a stuck **session**, not a dead daemon: a poller that has stopped cannot say so.
+Subscribe a channel to `session.silent` to hear it.

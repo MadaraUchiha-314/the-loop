@@ -46,6 +46,12 @@ a `status`.
 | D8 | The text is defused in `SlackBotChannel.post`, before any rendering | Slack parses the plain-text fallback as well as the blocks, so defusing the blocks alone left a `<!channel>` live |
 | D9 | The config is a top-level `progress` block; the config version is not bumped | The block is optional and adds a key rather than moving or removing one, as `selfDiagnosis` did |
 | D10 | The feature is in no default subscription | An operator who has not asked for progress hears none, so existing deployments are unchanged |
+| D11 | The watchdog is a **scan of what is already recorded**: the registry's active sessions and the event log | It adds no instrumentation to the session path and no new store |
+| D12 | "Activity" is any record naming the work item **except** `session.silent`, `bus.*` and `channel.*` | Publishing the silence leaves bus and channel records; counted, they would end the silence they report |
+| D13 | One `session.silent` per silence: skipped while the newest `session.silent` is at least as new as the newest activity | The state is the log itself, so a restart forgets nothing and two daemons agree |
+| D14 | The label is read **only for a session already past the threshold** | A healthy deployment makes no tracker call; the cost is paid when something is wrong |
+| D15 | The watcher runs in the poller and the webhook receiver, started beside self-diagnosis, and does not start with the event log off | No new service (R6.5); the log is its clock, so without it every session would look silent |
+| D16 | It reports a stuck **session**, not a dead daemon | It runs inside the daemons; the issue's "dead poller" case needs a check from outside, which the existing `poller/heartbeat.py` file is the natural input for (open question 5) |
 
 ## Components
 
@@ -58,6 +64,9 @@ a `status`.
 - **`channels/events.py`, `eventlog.py`** — the catalog row and the event-log row.
 - **`channels/room_policy.py`** — the key for the live line.
 - **`channels/slack.py`** — the title, and the defusing at `post`.
+- **`core/silence.py`** (part 2) — `scan`, `start_watcher`, `watch_interval`; started from
+  `poller/daemon.py` and `webhook/daemon.py`. `session.silent` joins the catalog and the
+  event log; `progress.silenceSeconds` joins the config block.
 
 ## Error handling
 
@@ -90,3 +99,5 @@ a `status`.
 3. **Where does the config live?** A top-level `progress` block is easiest to read. It could
    sit under `channels` or `routing` instead.
 4. **Risk tier.** Declared 4 because a schema file changes; the owner may lower it.
+5. **A dead daemon.** The watchdog cannot report the daemon it runs in. Should a second,
+   external check read `poller/heartbeat.py`'s file, or is that out of scope here?

@@ -509,6 +509,12 @@ def _run_locked(
 
     selfdiagnosis.start_watcher(cli_config.load_cli_config(_config_path()), stop_event)
 
+    # The silent-session watchdog (issue-340, opt-in): one `session.silent` event for a
+    # progress-labelled session that has done nothing for `progress.silenceSeconds`.
+    from ..core import silence
+
+    silence.start_watcher(cli_config.load_cli_config(_config_path()), stop_event)
+
     # Channel replies (issue-245, opt-in): a background reader over the bound
     # Slack threads, bounded by this daemon's lifetime. None unless the
     # operator enabled channels.slack with read.mode: poll.

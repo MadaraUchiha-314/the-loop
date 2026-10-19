@@ -68,10 +68,12 @@ class ProgressConfig:
         label: str = DEFAULT_LABEL,
         min_interval_seconds: int = DEFAULT_MIN_INTERVAL_SECONDS,
         max_chars: int = DEFAULT_MAX_CHARS,
+        silence_seconds: int = 0,
     ):
         self.label = label
         self.min_interval_seconds = min_interval_seconds
         self.max_chars = max_chars
+        self.silence_seconds = silence_seconds
 
     @property
     def enabled(self) -> bool:
@@ -92,6 +94,7 @@ class ProgressConfig:
             max_chars=max(
                 1, _non_negative(block.get("maxChars"), DEFAULT_MAX_CHARS) or 1
             ),
+            silence_seconds=_non_negative(block.get("silenceSeconds"), 0),
         )
 
 

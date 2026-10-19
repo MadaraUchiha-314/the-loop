@@ -10,12 +10,12 @@
 | `ruff check cli hooks` | passed |
 | `ruff format --check cli hooks` | passed |
 | `pyright cli` | 0 errors, 0 warnings |
-| `pytest` (full CLI suite) | 6169 passed, 1 skipped |
+| `pytest` (full CLI suite) | 6181 passed, 1 skipped |
 | `scripts/validate_config.py` | every config valid |
 | `markdownlint-cli2@0.18.1 "**/*.md"` | 0 errors over 1686 files |
 
-The baseline before the change was 6148 passed, 1 skipped, so the change adds 21 tests and
-breaks none. One baseline run hit a flake in
+The baseline before the change was 6148 passed, 1 skipped, so the change adds 33 tests (21 for
+the verb, 12 for the watchdog) and breaks none. One baseline run hit a flake in
 `test_channels_integration.py::test_a_restarted_work_item_keeps_its_thread` under
 `pytest-xdist`; it passed alone and in every later run.
 
@@ -26,7 +26,8 @@ breaks none. One baseline run hit a flake in
 | T1, T2, T3 | `cli/tests/test_progress.py` | 19 |
 | T4 | `cli/tests/test_room_policy.py` | 1 |
 | T5 | `cli/tests/test_channels_declared_integration.py` | 1 |
-| T6 | existing parity tests, now covering the new route, command, config block and event | 0 new |
+| T11 | `cli/tests/test_silence.py` | 12 |
+| T6 | existing parity tests, now covering the new route, command, config block and events | 0 new |
 
 ## Mutation check
 
@@ -40,13 +41,25 @@ broken in turn and the targeted tests rerun; each break was caught.
 | the report is not shortened | 1 test fails |
 | Slack does not defuse the text | 1 test fails |
 | the live line is keyed by phase | 1 test fails |
+| the watchdog counts `bus.*` / `channel.*` records as activity | 1 test fails |
+| the watchdog repeats within one silence | 1 test fails |
+| the watchdog skips the label gate | 2 tests fail |
+| the watchdog includes paused sessions | 1 test fails |
+| the watchdog ignores the threshold | 1 test fails |
 
 The Slack defusing test found a real gap while it was being written: the first version
 defused only the Block Kit blocks, and `<!channel>` survived in the plain-text fallback that
 Slack also parses. The defusing moved to `SlackBotChannel.post`, before any rendering.
 
+One mutation survived its first run: stamping the bookkeeping records *before* the
+watchdog's own event let the test pass without proving the filter. The test now stamps them
+after, as a real publish does, and the mutation fails it.
+
 ## Not verified
 
+- **The watchdog in a running daemon.** `scan` and `start_watcher` are exercised against a
+  real event-log file and a stubbed registry, bus and tracker; the two daemon hooks are
+  three lines each and are not exercised by a test.
 - **A live Slack workspace.** `FakeSlackClient` pins the calls made (one post, one
   `chat.update`); it cannot show how Slack renders or notifies. Plan row T9.
 - **A real label read** against github.com or a Jira site. The read is a monkeypatched

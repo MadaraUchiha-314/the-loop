@@ -674,6 +674,7 @@ integrations:
 #   label: "the-loop: progress"   # "" turns the feature off everywhere
 #   minIntervalSeconds: 300       # least time between two reports on one work item; 0 = no limit
 #   maxChars: 280                 # a report is cut to two lines, then to this
+#   silenceSeconds: 0             # >0: one `session.silent` when a labelled, active session is quiet this long
 
 # Back-and-forth conversation channels (issue-245) — THE Slack surface: a bot
 # token with an identity, one Slack channel, one thread per work item, and

@@ -416,6 +416,13 @@ EVENT_TYPES: Dict[str, str] = {
         "limit reads, so a deployment with the event log disabled is not "
         "rate-limited."
     ),
+    "session.silent": (
+        "The silence watchdog found an active session of a progress-labelled work "
+        "item with no event of any kind for `progress.silenceSeconds` "
+        "(work_item, silent_seconds, channels_posted) — issue-340. Emitted once "
+        "per silence, at `warning`: the next needs activity in between. Runs in the "
+        "poller and the webhook receiver, so it cannot report a dead daemon."
+    ),
     "session.reply_sent": (
         "An operator's answer was delivered straight into the waiting session's "
         "tmux pane via POST /api/v1/sessions/reply (work_item, actor) — "

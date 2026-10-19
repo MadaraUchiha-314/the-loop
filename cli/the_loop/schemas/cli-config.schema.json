@@ -2128,6 +2128,12 @@
           "minimum": 1,
           "default": 280,
           "description": "The longest report, in characters, after it is cut to its first two lines. Longer text is truncated with an ellipsis - this is a signal, and the full detail already goes on the ticket."
+        },
+        "silenceSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "The silence watchdog (issue-340): when an ACTIVE session of a work item carrying `label` has produced no event of any kind for this many seconds, emit one `session.silent` event - once per silence, so the next needs activity in between. 0 (the default) turns the watchdog off. It runs inside the poller and the webhook receiver, reads the event log (so it needs `eventLog.enabled`), and cannot report a daemon that is itself dead."
         }
       }
     },

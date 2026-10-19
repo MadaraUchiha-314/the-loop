@@ -1617,6 +1617,7 @@ def _publish_list(raw: Any) -> Tuple[str, ...]:
 _TITLES: Dict[str, str] = {
     "session.awaiting_input": "Question from the agent",
     "session.progress": "Progress",
+    "session.silent": "Session silent",
     "decision-pending": "Decision needed",
     "phase-approval-pending": "Approval needed",
     "pr-review-pending": "Pull request ready for review",
