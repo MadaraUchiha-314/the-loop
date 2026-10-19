@@ -181,7 +181,11 @@ The word *gateway*, unqualified, is this process; decision-059's is the
 - When the gateway is unreachable the instance keeps running, records
   `gateway.unreachable` once, retries with back-off (1 s → 60 s), records
   `gateway.connected` on recovery, and **never** falls back to its own ingresses. A
-  `409` is logged with the holder and retried on the same schedule. A loopback URL is
+  `409` is logged with the holder and retried on the same schedule. A fetch answer
+  that is not the contract's shape (a missing field, a non-list, an unknown provider,
+  more than 64 MiB) is treated as the gateway being unreachable, never as an exception
+  that ends the hosted client: the gateway's answers are untrusted input to the
+  instance. A loopback URL is
   treated exactly as a remote one. A peer id never leaves the gateway: a 409 and
   `gateway instances` carry a fingerprint of the holder's id (eight hex characters of
   its SHA-256), because the id admits a fetch under the name.

@@ -352,3 +352,57 @@ def test_a_commit_the_gateway_refuses_as_undelivered_is_dropped_not_resent(
         b for m, p, b in transport.calls if p.endswith("/fetch") and b is not None
     ]
     assert fetch_bodies[-1]["commit"] == [] and client.state == "connected"
+
+
+def test_a_malformed_fetch_answer_is_treated_as_unreachable_not_a_crash(gw, tmp_path):
+    """
+    Feature: the instance's gateway client (security review SEC-3)
+      Scenario: a malformed fetch answer is treated as unreachable, not a crash
+        Given a gateway whose fetch answers a body the contract does not promise
+        When the client steps
+        Then no exception leaves step(): the client records the gateway unreachable,
+             keeps its state, and connects again once the answers are well-formed
+
+    Requirement: docs/specs/issue-496/requirements.md#security-considerations
+                 (gateway → instance: the payload stays untrusted end to end), R14.4
+    """
+    client, transport = _client(gw, tmp_path)
+    assert client.step() is True and client.state == "connected"
+    bad_answers = [
+        {"deliveries": [{"seq": "x"}]},  # KeyError on event
+        {"deliveries": "abc"},  # not a list
+        {"deliveries": [{"seq": 1, "event": None}]},  # TypeError
+        {"deliveries": [{"seq": 1, "event": {"subject": "s"}}]},  # missing fields
+        {
+            "deliveries": [
+                {
+                    "seq": 1,
+                    "event": {
+                        "subject": "s",
+                        "provider": "evil",
+                        "source": "webhook",
+                        "deliveryId": "d",
+                        "kind": "k",
+                    },
+                }
+            ]
+        },
+        ["not", "a", "mapping"],
+    ]
+    real = transport.__call__
+
+    class Lying:
+        def __init__(self):
+            self.answers = list(bad_answers)
+
+        def __call__(self, method, path, body, timeout):
+            if path.endswith("/fetch") and self.answers:
+                return 200, self.answers.pop(0)
+            return real(method, path, body, timeout)
+
+    client._transport = Lying()
+    for _ in bad_answers:
+        assert client.step() is False
+        assert client.state == "unreachable", client.state
+    assert gw.events("gateway.unreachable")
+    assert client.step() is True and client.state == "connected"

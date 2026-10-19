@@ -45,7 +45,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 from .. import cli_config as cli_config_mod
 from .. import eventlog
 from ..state import layout_from_config
-from .envelope import Delivery
+from .envelope import Delivery, PROVIDERS
 
 __all__ = [
     "GatewayClient",
@@ -60,6 +60,8 @@ logger = logging.getLogger("the-loop.gateway.client")
 
 PEER_FILE = "gateway-peer.json"
 MAX_BATCH = 64
+#: The most a gateway answer may weigh before the client refuses to parse it (SEC-3).
+MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 BACKOFF_MIN_S, BACKOFF_MAX_S = 1.0, 60.0
 
 #: ``(method, path, body) -> (status, json body)``; the default is urllib.
@@ -79,7 +81,12 @@ def urllib_transport(base_url: str) -> Transport:
         )
         try:
             with urllib.request.urlopen(req, timeout=timeout) as response:  # noqa: S310 — the configured gateway URL
-                raw = response.read()
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
+                if len(raw) > MAX_RESPONSE_BYTES:
+                    # the gateway's answer is untrusted input to this instance (SEC-3)
+                    raise ValueError(
+                        f"gateway answered more than {MAX_RESPONSE_BYTES} bytes"
+                    )
                 return response.status, (json.loads(raw) if raw else None)
         except urllib.error.HTTPError as exc:
             raw = exc.read()
@@ -457,13 +464,32 @@ class GatewayClient:
             return None
         if status != 200 or not isinstance(answer, Mapping):
             raise urllib.error.URLError(f"POST /fetch answered {status}")
+        # The answer is untrusted input to this instance (security review SEC-3): a
+        # shape the contract does not promise is treated as the gateway being
+        # unreachable — logged, retried on the back-off — never as an exception that
+        # ends the hosted client.
+        try:
+            committed = int(answer.get("committed") or 0)
+            raw_deliveries = answer.get("deliveries") or []
+            if not isinstance(raw_deliveries, list):
+                raise TypeError("deliveries is not a list")
+            deliveries = [Delivery.from_json(d) for d in raw_deliveries]
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise urllib.error.URLError(
+                f"POST /fetch answered a malformed body ({exc.__class__.__name__}: {exc})"
+            ) from exc
+        for delivery in deliveries:
+            if delivery.event.provider not in PROVIDERS:
+                raise urllib.error.URLError(
+                    f"POST /fetch answered an unknown provider {delivery.event.provider!r}"
+                )
         with self._lock:
             # the server applied these; anything appended meanwhile stays pending
             self._pending = self._pending[len(commits) :]
-        self.committed = int(answer.get("committed") or 0)
+        self.committed = committed
         self.fetches += 1
         self._mark_connected()
-        return [Delivery.from_json(d) for d in answer.get("deliveries") or []]
+        return deliveries
 
     def handle(self, delivery: Delivery) -> str:
         """Dispatch one delivery and queue its outcome for the next fetch (R3.4, R10.2).
