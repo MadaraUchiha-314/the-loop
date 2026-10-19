@@ -188,7 +188,8 @@ paths:
     put:
       summary: Register
       description: Replace the instance's registration of the actors it works for (GitHub logins, Slack
-        user ids, Jira account ids); an actor registered by another live instance is 409 duplicate-actor.
+        user ids, Jira account ids); an actor registered by another live instance is 409 duplicate-actor,
+        and a different peer under a name whose lease is live is 409 duplicate-instance.
       operationId: gatewayRegisterActors
       requestBody:
         content:

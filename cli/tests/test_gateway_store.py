@@ -311,7 +311,9 @@ def test_a_duplicate_actor_registration_is_refused_while_the_holder_is_live(stor
     """
     store.touch("laptop-a", "p1", lease_s=60)
     assert (
-        store.register_actors("laptop-a", {"github": ["octocat"], "slack": ["U1"]})
+        store.register_actors(
+            "laptop-a", {"github": ["octocat"], "slack": ["U1"]}, peer="p1"
+        )
         is None
     )
     refused = store.register_actors("laptop-b", {"github": ["octocat"], "jira": ["j1"]})
@@ -356,7 +358,7 @@ def test_a_binding_routes_held_events_to_the_subjects_claimants(store):
 
 def test_a_binding_with_no_claimant_routes_by_actor_else_keeps_holding(store):
     store.touch("laptop-b", "p", lease_s=60)
-    store.register_actors("laptop-b", {"slack": ["U9"]})
+    store.register_actors("laptop-b", {"slack": ["U9"]}, peer="p")
     by_actor = store.append(
         ev(1, subject="unassigned", provider="slack", actor="U9", work_item=None),
         [],

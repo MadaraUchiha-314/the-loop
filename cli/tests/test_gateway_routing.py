@@ -44,7 +44,7 @@ def test_claimants_come_first_including_the_linked_subjects(store):
     store.claim("loop-github-o-r-14", "laptop-a", "driver")
     store.claim("loop-github-o-r-77", "laptop-b", "reviewer")
     store.touch("laptop-c", "p", 60)
-    store.register_actors("laptop-c", {"github": ["octocat"]})
+    store.register_actors("laptop-c", {"github": ["octocat"]}, peer="p")
     routing = consumers_for(
         "loop-github-o-r-77", ["loop-github-o-r-14"], ("github", "octocat"), store
     )
@@ -53,7 +53,7 @@ def test_claimants_come_first_including_the_linked_subjects(store):
 
 def test_a_registered_actor_when_no_claim(store):
     store.touch("laptop-c", "p", 60)
-    store.register_actors("laptop-c", {"github": ["octocat"]})
+    store.register_actors("laptop-c", {"github": ["octocat"]}, peer="p")
     routing = consumers_for("loop-github-o-r-14", [], ("github", "octocat"), store)
     assert routing.consumers == ("laptop-c",) and routing.by == "actor"
 

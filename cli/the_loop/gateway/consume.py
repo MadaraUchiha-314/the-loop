@@ -341,7 +341,7 @@ def build_consume_router(state: GatewayState, **router_kwargs: Any) -> APIRouter
         denied = _check_allowed(state, body.instance)
         if denied is not None:
             return denied
-        refused = store.register_actors(body.instance, body.actors)
+        refused = store.register_actors(body.instance, body.actors, peer=body.peer)
         if refused is not None:
             return _refused(state, refused, instance=body.instance, peer=body.peer)
         eventlog.emit(

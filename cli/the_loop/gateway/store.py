@@ -198,7 +198,7 @@ class Store(Protocol):
     ) -> int: ...
     def claimants(self, subject: str) -> List[Claim]: ...
     def register_actors(
-        self, instance: str, actors: Mapping[str, Sequence[str]]
+        self, instance: str, actors: Mapping[str, Sequence[str]], peer: str = ""
     ) -> Optional[Refused]: ...
     def instance_for_actor(self, provider: str, actor: str) -> Optional[str]: ...
     def bind(self, provider: str, key: str, ref: str, slug: str) -> List[int]: ...
@@ -758,11 +758,14 @@ class SqliteStore:
     # -- actors (R5.5; abuse case 8) --------------------------------------------------------------
 
     def register_actors(
-        self, instance: str, actors: Mapping[str, Sequence[str]]
+        self, instance: str, actors: Mapping[str, Sequence[str]], peer: str = ""
     ) -> Optional[Refused]:
         """Replace ``instance``'s registration. An actor held by **another** instance
         whose lease is live is ``Refused("duplicate-actor")`` naming the holder, and
-        nothing is applied; an expired holder is taken over."""
+        nothing is applied; an expired holder is taken over. A **different peer** under
+        a name whose lease is live is ``Refused("duplicate-instance")`` before anything
+        is read (R4.3): the second peer's fetch would be refused, so its registration
+        must not replace the live instance's actors either."""
         now = utcnow()
         now_s = time.time()
         wanted = [
@@ -776,6 +779,18 @@ class SqliteStore:
                 "INSERT OR IGNORE INTO instances(instance, first_seen) VALUES (?, ?)",
                 (instance, now),
             )
+            cur.execute(
+                "SELECT peer, lease_until, first_seen FROM instances WHERE instance = ?",
+                (instance,),
+            )
+            holder, lease_until, first_seen = cur.fetchone()
+            if holder and holder != peer and float(lease_until) > now_s:
+                return Refused(
+                    "duplicate-instance",
+                    holder=str(holder),
+                    since=str(first_seen),
+                    detail=f"{instance} is being polled by another peer",
+                )
             for provider, actor in wanted:
                 cur.execute(
                     "SELECT instance FROM actors WHERE provider = ? AND actor = ?",

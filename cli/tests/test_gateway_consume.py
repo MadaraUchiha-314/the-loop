@@ -133,7 +133,9 @@ def test_a_duplicate_actor_registration_is_409(gw):
       Scenario: a duplicate actor registration is refused
     """
     assert gw.fetch("laptop-a", peer="p1", lease=60).status_code == 200
-    assert gw.register("laptop-a", {"github": ["octocat"]}).status_code == 200
+    assert (
+        gw.register("laptop-a", {"github": ["octocat"]}, peer="p1").status_code == 200
+    )
     refused = gw.register("laptop-b", {"github": ["octocat"], "slack": ["U1"]})
     assert refused.status_code == 409
     assert (
@@ -142,6 +144,35 @@ def test_a_duplicate_actor_registration_is_409(gw):
     )
     assert gw.events("gateway.registered")[0]["actors"] == {"github": 1}
     assert gw.events("gateway.refused")[-1]["reason"] == "duplicate-actor"
+
+
+def test_a_second_peer_under_a_live_name_cannot_replace_the_registration(gw):
+    """
+    Feature: one start, one instance (R4.3)
+      Scenario: a second peer under a live name cannot replace the registration
+        Given laptop-a polls as peer p1 with octocat registered
+        When a second peer registers under the name laptop-a with other actors
+        Then it is 409 duplicate-instance naming the holder, octocat still routes to
+             laptop-a, and the same peer may re-register at any time
+    """
+    assert gw.fetch("laptop-a", peer="p1", lease=60).status_code == 200
+    assert (
+        gw.register("laptop-a", {"github": ["octocat"]}, peer="p1").status_code == 200
+    )
+    refused = gw.register("laptop-a", {"github": ["hubot"]}, peer="p2")
+    assert refused.status_code == 409
+    assert (
+        refused.json()["error"] == "duplicate-instance"
+        and refused.json()["holder"] == "p1"
+    )
+    assert gw.store.actors_of("laptop-a") == {"github": ("octocat",)}
+    assert gw.store.instance_for_actor("github", "hubot") is None
+    assert gw.events("gateway.refused")[-1]["reason"] == "duplicate-instance"
+    assert (
+        gw.register("laptop-a", {"github": ["octocat", "hubot"]}, peer="p1").status_code
+        == 200
+    )
+    assert gw.store.actors_of("laptop-a") == {"github": ("hubot", "octocat")}
 
 
 def test_bindings_route_held_events_and_a_bad_ref_is_400(gw):

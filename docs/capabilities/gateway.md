@@ -81,7 +81,14 @@ The word *gateway*, unqualified, is this process; decision-059's is the
   redelivers. The doctor's heartbeat is consumed by the connection that heard it and
   never stored. The HTTP routes (`/slack/events`, `/slack/interactions`,
   `/slack/commands`) sit behind `slack.http.enabled`, verify the `v0` signature within
-  the 300 s replay window and answer `url_verification`.
+  the 300 s replay window and answer `url_verification`. Under a gateway Slack is read
+  over Socket Mode **only**, so the mention rule of issue-389 is what applies on every
+  instance: a plain `message` in a room or in a bound thread is `not-addressed`, and the
+  mention arrives as the `app_mention` event — the app must hold `app_mentions:read` and
+  subscribe to `app_mention` (an app installed before issue-389 needs the manifest
+  re-applied and a reinstall; `the-loop channels status --probe` lists the granted
+  scopes). The poll reader (`read.mode: poll`), which took every reply in a bound thread
+  as input, does not run under a gateway.
 - The gateway's poller reuses the instance poller's providers (GitHub, Jira) and
   produces the same delivery ids and webhook-shaped payloads (`poll-comment-<id>`,
   `poll-presence-<ref>-<uuid>`, `poll-close-…`); its ledger lives in the store. A
@@ -110,7 +117,8 @@ The word *gateway*, unqualified, is this process; decision-059's is the
   per consumer, in the same transaction as the event.
 - **One queue per instance.** `POST /api/v1/gateway/fetch` identifies the instance by
   `instance.name` (`default` when unset) and a persisted `peer` id; refreshes the
-  name's lease (a second peer under a live name is `409 duplicate-instance`); commits
+  name's lease (a second peer under a live name is `409 duplicate-instance`, at
+  `PUT /actors` as at fetch, so it replaces nothing of the holder's); commits
   the previous batch (a seq this queue never fetched is `409 commit-undelivered`,
   nothing applied); reads the next deliveries after `max(cursor, committed)` with
   `attempts` incremented; and holds an empty fetch open for `wait` seconds (clamped to

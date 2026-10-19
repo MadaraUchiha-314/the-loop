@@ -172,6 +172,80 @@ laptop-a  expired  18s ago     0        7          github:MadaraUchiha-314, slac
 laptop-b  live     5s ago      0        0          github:the-loop-nobody           -
 ```
 
-The author was asked (ticket, 14:11 UTC) for two mentioning replies in the thread while
-`laptop-a` is down. Recorded below as they happen, with the restart, the duplicate-name
-(`laptop-a` copy) and close steps.
+The author posted the two replies at 14:34:20 and 14:34:27 UTC while `laptop-a` was
+down; the gateway routed both **by claim** onto its queue (backlog 2). `laptop-a`
+restarted at 14:36:29 on the fixed code as the same peer, fetched both in one batch and
+committed seq 8 then 9 — once, in order, no `subject.redelivered`. Both were dropped by
+the instance as `not-addressed` (see the root cause below).
+
+Gateway log:
+
+```text
+14:34:20 gateway.received         provider=slack kind=events_api delivery_id=<uuid> subject=loop-github-MadaraUchiha-314-the-loop-testing-7 event_id=9 summary=events_api
+14:34:20 subject.appended         event_id=9 subject=loop-github-MadaraUchiha-314-the-loop-testing-7 provider=slack kind=events_api delivery_id=<uuid>
+14:34:20 subject.routed           event_id=9 subject=loop-github-MadaraUchiha-314-the-loop-testing-7 to=["laptop-a"] by=claim
+14:34:27 gateway.received         provider=slack kind=events_api delivery_id=<uuid> subject=loop-github-MadaraUchiha-314-the-loop-testing-7 event_id=10 summary=events_api
+14:34:27 subject.appended         event_id=10 subject=loop-github-MadaraUchiha-314-the-loop-testing-7 provider=slack kind=events_api delivery_id=<uuid>
+14:34:27 subject.routed           event_id=10 subject=loop-github-MadaraUchiha-314-the-loop-testing-7 to=["laptop-a"] by=claim
+14:36:29 gateway.registered       instance=laptop-a actors={"github": 1, "slack": 1}
+14:36:29 gateway.claimed          subject=loop-github-MadaraUchiha-314-the-loop-testing-7 instance=laptop-a role=driver routed=0
+14:36:29 subject.committed        instance=laptop-a seq=8 outcome=delivered
+14:36:29 subject.committed        instance=laptop-a seq=9 outcome=delivered
+```
+
+Instance log:
+
+```text
+14:36:29 service.started          host=127.0.0.1 port=4115
+14:36:29 gateway.connected        url=http://127.0.0.1:8790 instance=laptop-a peer=<peer-a>
+14:36:29 channel.dropped          gateway_event_id=9 delivery_id=<uuid> channel=slack reason=not-addressed work_item=github:MadaraUchiha-314/the-loop-testing#7 thread=<ts>
+14:36:29 channel.dropped          gateway_event_id=10 delivery_id=<uuid> channel=slack reason=not-addressed work_item=github:MadaraUchiha-314/the-loop-testing#7 thread=<ts>
+```
+
+## Step 5 — a second peer under the first's name
+
+A third config with `instance.name: laptop-a` (port 4117) was started while `laptop-a`
+polled: its fetch was refused `409 duplicate-instance` naming the holder, its own log
+and `GET /api/v1/gateway` read `refused · duplicate-instance`, it retried with back-off
+and consumed nothing; the holder's lease, queue and claim were untouched.
+
+```text
+14:43:31 gateway.registered       instance=laptop-a actors={"github": 1, "slack": 1}
+14:43:31 gateway.refused          instance=laptop-a peer=<peer-2> reason=duplicate-instance holder=<peer-a> detail=laptop-a is being polled by another peer
+14:43:32 gateway.refused          instance=laptop-a peer=<peer-2> reason=duplicate-instance holder=<peer-a> detail=laptop-a is being polled by another peer
+14:43:35 gateway.refused          instance=laptop-a peer=<peer-2> reason=duplicate-instance holder=<peer-a> detail=laptop-a is being polled by another peer
+14:43:39 gateway.refused          instance=laptop-a peer=<peer-2> reason=duplicate-instance holder=<peer-a> detail=laptop-a is being polled by another peer
+```
+
+```text
+14:43:31 service.started          host=127.0.0.1 port=4117
+14:43:31 gateway.connected        url=http://127.0.0.1:8790 instance=laptop-a peer=<peer-2>
+14:43:31 gateway.refused          instance=laptop-a peer=<peer-2> reason=duplicate-instance holder=<peer-a> detail=laptop-a is being polled by another peer
+14:43:32 gateway.refused          instance=laptop-a peer=<peer-2> reason=duplicate-instance holder=<peer-a> detail=laptop-a is being polled by another peer
+14:43:35 gateway.refused          instance=laptop-a peer=<peer-2> reason=duplicate-instance holder=<peer-a> detail=laptop-a is being polled by another peer
+14:43:39 gateway.refused          instance=laptop-a peer=<peer-2> reason=duplicate-instance holder=<peer-a> detail=laptop-a is being polled by another peer
+14:43:44 gateway.refused          instance=laptop-a peer=<peer-2> reason=duplicate-instance holder=<peer-a> detail=laptop-a is being polled by another peer
+14:43:57 ingress.hosted_stopped   ingress=gateway-client reason=shutdown
+```
+
+One gap in the record: the copy's `PUT /actors` was **accepted** (`gateway.registered`
+at 14:43:31) before its fetch was refused — the registration carried the same actors,
+so nothing changed here, but a misconfigured copy could have replaced the live
+instance's actors. Fixed on the branch: a different peer under a name whose lease is
+live is refused at registration too (`store.register_actors(..., peer=)`), with a
+consume test.
+
+## Why no reaction, and why the replies were `not-addressed`
+
+A reaction is added by the instance when it takes a message as input. All three of the
+author's replies reached `laptop-a` as plain `message` events with no `app_mention`
+companion, so the instance dropped them under the issue-389 rule (the mention is the
+address; the mention arrives as the `app_mention` event). Slack never sent that event:
+the bot token's granted scopes, read from Slack's `x-oauth-scopes` header on
+`auth.test`, hold `chat:write`, `channels:history`, `reactions:write`, … and **not
+`app_mentions:read`** — the app's install predates issue-389. Before this change the
+author's threads were read in poll mode (`read.mode` default `poll`), where every reply
+in a bound thread is input; under a gateway Slack is Socket Mode only. Recorded as a
+behaviour change in [migration.md](migration.md) and the capability doc; the author
+was asked (ticket, 14:46 UTC) to re-apply the manifest and reinstall, then post one
+more mentioning reply (step 6, below).
