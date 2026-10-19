@@ -224,7 +224,9 @@ def test_a_stopped_instance_finds_its_backlog_in_order(gw, tmp_path):
         reborn.attach(a.registry, control_store=a.control, pipeline=a.pipeline)
         assert reborn.peer == a.client.peer
         reborn.step()
-        assert wait_until(lambda: len(a.tmux.delivers) == 3)
+        # three deliveries through one session's FIFO; under --dispatch-lag each of the
+        # dispatcher's follow-up writes is slowed, so the budget is generous on purpose
+        assert wait_until(lambda: len(a.tmux.delivers) == 3, timeout=30)
         import re
 
         orders = []
@@ -234,8 +236,11 @@ def test_a_stopped_instance_finds_its_backlog_in_order(gw, tmp_path):
             orders.append(match.group(1))
         assert orders == ["1", "2", "3"]
         assert wait_until(lambda: not reborn.deferred or reborn.resolve_deferred() >= 0)
+        assert wait_until(
+            lambda: reborn.resolve_deferred() >= 0 and not reborn.deferred, timeout=30
+        )
         reborn.step()
-        assert wait_until(lambda: gw.store.queue("laptop-a").backlog == 0)
+        assert wait_until(lambda: gw.store.queue("laptop-a").backlog == 0, timeout=30)
         assert not gw.events("subject.redelivered")
     finally:
         a.stop()
