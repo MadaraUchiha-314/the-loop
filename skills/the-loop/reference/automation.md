@@ -330,6 +330,7 @@ runs `gh`; these verbs close the last hop, the agent's own session.
 | read the ticket at session start (body, comments, attachment links) | `the-loop ticket show <ref>` (JSON) |
 | post the paper trail — spec-gate replies, the completion summary, the reviewer briefing, a decision record | `the-loop comment --work-item <ref> --body-file <path\|->` |
 | ask a human and wait | `the-loop ask --work-item <ref> --question-file <path\|->` |
+| say where a long run is, without waiting | `the-loop progress --work-item <ref> --text "<now; next>"` |
 | open a ticket (`/the-loop:create-ticket`) | `the-loop ticket create --repository <owner/repo> --title … --body-file … [--label …]` |
 | open the pull request — and record it | `the-loop pr create --work-item <ref> --title … --body-file …` |
 | read CI and the open review threads during `needs-review` | `the-loop pr status <pr>` · `the-loop pr threads <pr>` (JSON) |

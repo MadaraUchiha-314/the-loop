@@ -99,6 +99,11 @@ class Sessions(_Namespace):
     def ask(self, ref: str, question: str) -> Dict[str, Any]:
         return core_sessions.ask_session(ref, question, config=self._config)
 
+    def progress(self, ref: str, text: str, actor: str = "") -> Dict[str, Any]:
+        return core_sessions.progress_session(
+            ref, text, config=self._config, actor=actor
+        )
+
     def register(
         self,
         ref: str,

@@ -327,6 +327,21 @@ class ManagerFacade:
             body={"ref": ref, "verb": verb, "comment": comment},
         )
 
+    def progress_session(
+        self, ref: str, text: str, actor: str = "", instance: str = ""
+    ) -> Dict[str, Any]:
+        member = self.fleet.by_ref(ref, instance)
+        if self.fleet.is_local(member):
+            return _stamp(
+                self.core.progress_session(ref, text, actor=actor), self.own_name
+            )
+        return self._proxy(
+            member,
+            "POST",
+            "/api/v1/sessions/progress",
+            body={"ref": ref, "text": text, "actor": actor},
+        )
+
     def reply_session(
         self,
         ref: str,

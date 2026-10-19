@@ -233,6 +233,21 @@ def test_a_later_progress_message_edits_the_phase_message_in_place():
     assert d.action == EDIT and d.rule == "progress-edit" and d.ts == "1700.9"
 
 
+def test_a_session_progress_report_keeps_one_live_line_of_its_own():
+    """issue-340: the agent's report edits ONE line in place, and that line is not
+    a phase's — keyed by the phase it would overwrite the runtime's own message."""
+    first = decide(_event("session.progress", text="a"), {}, is_room=True)
+    assert first.action == POST and first.rule == "progress-open"
+    assert first.remember["progressTs"] == {"session.progress": "@ts"}
+    memory = {"progressTs": {"session.progress": "1700.3", "verification": "1700.9"}}
+    later = decide(
+        _event("session.progress", text="b", detail={"phase": "verification"}),
+        memory,
+        is_room=True,
+    )
+    assert later.action == EDIT and later.ts == "1700.3"  # not the phase's 1700.9
+
+
 # -- transition-collapse (R6.1) -------------------------------------------------
 
 

@@ -174,6 +174,16 @@ class SessionAskBody(BaseModel):
     instance: str = ""
 
 
+class SessionProgressBody(BaseModel):
+    ref: str
+    text: str
+    # Recorded on the event for the audit trail; never trusted as authentication
+    # (decision-059: the gateway owns auth).
+    actor: str = ""
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
+
+
 class SessionReplyBody(BaseModel):
     ref: str
     text: str
@@ -724,6 +734,17 @@ def build_router(
             default_answer=body.default,
             actor=body.actor,
             instance=body.instance,
+        )
+
+    @router.post(
+        f"{API_PREFIX}/sessions/progress",
+        operation_id="progressSession",
+    )
+    def progress_session(body: SessionProgressBody) -> Dict[str, Any]:
+        # Served for the same reason `ask` is: a spawned session holds no credential,
+        # and the label read and the room post both need one (issue-340, issue-482).
+        return facade.progress_session(
+            body.ref, body.text, actor=body.actor, instance=body.instance
         )
 
     @router.post(

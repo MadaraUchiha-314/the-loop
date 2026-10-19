@@ -307,6 +307,7 @@ Everything else takes its default. Build up from here with the option pages belo
 | [Channels options](/config/cli/channels-options) | `channels` — the peers on the event bus (the Slack bot) and the ledger they record on |
 | [Service options](/config/cli/service-options) | `service` — the control-plane API's bind, auto-start and cross-origin allowlist |
 | [Observability options](/config/cli/observability-options) | `eventLog` — the JSONL trail the daemon writes |
+| [Progress options](/config/cli/progress-options) | `progress` — status lines from a long-running session, opt-in per work item by label |
 | [Self-diagnosis options](/config/cli/self-diagnosis-options) | `selfDiagnosis` — the-loop filing issues for its own failures (opt-in) |
 
 Every option on those pages is checked against the schema in both directions by a test in
