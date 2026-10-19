@@ -255,6 +255,9 @@ class GatewayClient:
         for subject, role in self._claims():
             self.publish_claim(subject, role, _raise=True)
         self.registered = True
+        # the gateway answered the registration: the client is connected from here,
+        # not only once a (possibly long-polling) first fetch returns
+        self._mark_connected()
         return True
 
     def publish_claim(self, subject: str, role: str, *, _raise: bool = False) -> bool:

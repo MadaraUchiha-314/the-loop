@@ -285,7 +285,11 @@ class GatewayCommand(Command):
     )
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument(
+        # `--config` and `--format` are accepted before AND after the verb
+        # (`the-loop gateway start --config …` is how the testing plan writes it): a
+        # parent parser puts the same options on every verb's subparser.
+        common = argparse.ArgumentParser(add_help=False)
+        common.add_argument(
             "--config",
             "-c",
             dest="config",
@@ -293,7 +297,9 @@ class GatewayCommand(Command):
             help="Path to gateway-config.yaml (default: $THE_LOOP_GATEWAY_CONFIG, "
             "./.the-loop/gateway-config.yaml, ~/.the-loop/gateway-config.yaml)",
         )
-        parser.add_argument("--format", choices=["text", "json"], default="text")
+        common.add_argument("--format", choices=["text", "json"], default="text")
+        for action in common._actions:  # noqa: SLF001 — the same options on the parent
+            parser._add_action(action)  # noqa: SLF001
         sub = parser.add_subparsers(dest="verb", metavar="<verb>")
         sub.required = True
         for verb, help_text in (
@@ -307,12 +313,17 @@ class GatewayCommand(Command):
                 "every instance with its lease, last fetch, actors and backlog",
             ),
         ):
-            sub.add_parser(verb, help=help_text)
+            sub.add_parser(verb, help=help_text, parents=[common])
 
     def run(self, args: argparse.Namespace) -> int:
-        load_gateway_env_file(args.config)
+        # `the-loop --config X gateway …` names the gateway config too: the global flag
+        # is read by the CLI as its own config override; here it means ours.
+        from .. import cli_config as cli_config_mod
+
+        path = args.config or cli_config_mod._override  # noqa: SLF001 — the peeked flag
+        load_gateway_env_file(path)
         try:
-            config = load_gateway_config(args.config)
+            config = load_gateway_config(path)
         except ConfigError as exc:
             print(exc, file=sys.stderr)
             return 2
