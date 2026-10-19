@@ -228,6 +228,10 @@ class StatusCommand(Command):
                 extra = f" — {row['url']}, {'healthy' if row['healthy'] else 'unresponsive'}"
                 if not row["mcp"]["enabled"]:
                     extra += ", MCP disabled"
+            if row.get("detail") and row["service"] != "service":
+                # issue-496: `off · gateway configured` on the three local ingresses, and
+                # the client's `connected · polling …` line
+                extra += f" — {row['detail']}"
             print(f"{row['service']:<11} {liveness} [{flag}]{extra}")
             if row["service"] == "poller":
                 # Progress beside liveness, the issue-191 enrichment: absent

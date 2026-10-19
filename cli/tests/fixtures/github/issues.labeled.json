@@ -1,0 +1,31 @@
+{
+  "action": "labeled",
+  "label": {
+    "name": "the-loop: auto-execute"
+  },
+  "issue": {
+    "number": 14,
+    "title": "Introducing the gateway",
+    "state": "open",
+    "updated_at": "2026-10-18T14:00:00Z",
+    "labels": [
+      {
+        "name": "the-loop: auto-execute"
+      }
+    ],
+    "user": {
+      "login": "octocat"
+    }
+  },
+  "repository": {
+    "full_name": "o/r",
+    "html_url": "https://github.com/o/r",
+    "name": "r",
+    "owner": {
+      "login": "o"
+    }
+  },
+  "sender": {
+    "login": "octocat"
+  }
+}

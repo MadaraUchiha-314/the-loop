@@ -1,0 +1,28 @@
+{
+  "action": "completed",
+  "check_run": {
+    "id": 1,
+    "name": "lint",
+    "status": "completed",
+    "conclusion": "failure",
+    "head_sha": "abc123",
+    "pull_requests": [
+      {
+        "number": 77,
+        "url": "https://api.github.com/repos/o/r/pulls/77"
+      }
+    ],
+    "html_url": "https://github.com/o/r/runs/1"
+  },
+  "repository": {
+    "full_name": "o/r",
+    "html_url": "https://github.com/o/r",
+    "name": "r",
+    "owner": {
+      "login": "o"
+    }
+  },
+  "sender": {
+    "login": "github-actions[bot]"
+  }
+}

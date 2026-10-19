@@ -1,0 +1,650 @@
+"""The instance's hosted ingress when a gateway is configured: a polling loop
+(issue-496, R3.1, R3.3–R3.7, R4.2, R4.3, R5.3, R5.5, R5.7, R14.1, R14.4).
+
+Replaces the receiver, the poller and the Slack listener on an instance whose
+``cli-config.yaml`` has a ``gateway`` block (R3.8 is :mod:`the_loop.core.lifecycle`'s).
+One loop over ``urllib.request`` — what ``manager/fleet.py`` already uses:
+
+1. **Registers first.** On start and after every outage it sends ``PUT /actors`` with
+   ``gateway.actors`` and re-asserts the claims of its live sessions (``PUT /claims`` for
+   each the registry holds), so a gateway restart or a lost registration is repaired by
+   the client, not the operator.
+2. **Polls.** ``POST /fetch`` with ``instance = instance.name or "default"``, the
+   persisted ``peer``, the ``committed`` the server last returned as the cursor,
+   ``max = 64``, ``wait = gateway.longPollSeconds`` and the ``commit`` list accumulated
+   since the previous fetch; then sleeps ``gateway.pollIntervalSeconds`` only when the
+   response was empty **and** ``wait`` was zero (a long-poll already waited).
+3. **Dispatches.** Each delivery goes to ``dispatch`` — today's pipeline, by provider
+   (:mod:`.client_dispatch`) — under ``eventlog.context(gateway_event_id=…)`` so the
+   instance's ``dispatch.*`` records name the gateway event (R10.2). The outcome
+   (``delivered`` | ``spawned`` | ``dropped:<reason>`` | ``failed``) joins the pending
+   commit list.
+4. **Backs off.** Any transport error → exponential back-off 1 s → 60 s with jitter,
+   ``gateway.unreachable`` once per outage and ``gateway.connected`` on recovery
+   (R14.4); a ``409 duplicate-instance`` is logged with the holder and retried on the
+   same schedule (R4.3). The instance never falls back to its own ingresses.
+
+``stop`` flushes the pending commits with ``POST /commit``. A crash between a dispatch
+and the next fetch leaves the batch uncommitted; the next fetch returns it with
+``attempt + 1`` and the dispatcher's dedup drops a true duplicate (R3.6, R3.7).
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import random
+import threading
+import time
+import urllib.error
+import urllib.request
+import uuid
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+
+from .. import cli_config as cli_config_mod
+from .. import eventlog
+from ..state import layout_from_config
+from .envelope import Delivery, PROVIDERS
+
+__all__ = [
+    "GatewayClient",
+    "PEER_FILE",
+    "Transport",
+    "current",
+    "set_current",
+    "urllib_transport",
+]
+
+logger = logging.getLogger("the-loop.gateway.client")
+
+PEER_FILE = "gateway-peer.json"
+MAX_BATCH = 64
+#: The most a gateway answer may weigh before the client refuses to parse it (SEC-3).
+MAX_RESPONSE_BYTES = 64 * 1024 * 1024
+BACKOFF_MIN_S, BACKOFF_MAX_S = 1.0, 60.0
+
+#: ``(method, path, body) -> (status, json body)``; the default is urllib.
+Transport = Callable[[str, str, Optional[Mapping[str, Any]], float], Tuple[int, Any]]
+
+
+def urllib_transport(base_url: str) -> Transport:
+    def request(
+        method: str, path: str, body: Optional[Mapping[str, Any]], timeout: float
+    ):
+        data = json.dumps(body).encode("utf-8") if body is not None else None
+        req = urllib.request.Request(
+            base_url.rstrip("/") + path,
+            data=data,
+            method=method,
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as response:  # noqa: S310 — the configured gateway URL
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
+                if len(raw) > MAX_RESPONSE_BYTES:
+                    # the gateway's answer is untrusted input to this instance (SEC-3)
+                    raise ValueError(
+                        f"gateway answered more than {MAX_RESPONSE_BYTES} bytes"
+                    )
+                return response.status, (json.loads(raw) if raw else None)
+        except urllib.error.HTTPError as exc:
+            raw = exc.read()
+            try:
+                parsed = json.loads(raw) if raw else None
+            except ValueError:
+                parsed = {"error": raw.decode("utf-8", "replace")[:200]}
+            return exc.code, parsed
+
+    return request
+
+
+_CURRENT: Optional["GatewayClient"] = None
+
+
+def set_current(client: Optional["GatewayClient"]) -> None:
+    """The client hosted in this process, for `GET /api/v1/gateway` (R10.3)."""
+    global _CURRENT
+    _CURRENT = client
+
+
+def current() -> Optional["GatewayClient"]:
+    return _CURRENT
+
+
+class GatewayClient:
+    """One instance's consumer loop against one gateway."""
+
+    def __init__(
+        self,
+        cli_config: Mapping[str, Any],
+        stop_event: Optional[threading.Event] = None,
+        *,
+        dispatch: Optional[Callable[[Delivery], Any]] = None,
+        claims: Optional[Callable[[], Sequence[Tuple[str, str]]]] = None,
+        transport: Optional[Transport] = None,
+        sleep: Callable[[float], None] = time.sleep,
+        rng: Callable[[], float] = random.random,
+    ) -> None:
+        block = cli_config_mod.gateway_block(cli_config)
+        if block is None:
+            raise ValueError("the config has no usable `gateway` block")
+        self.block = block
+        self.config = dict(cli_config)
+        self.instance = cli_config_mod.instance_name(cli_config)
+        self.stop_event = stop_event or threading.Event()
+        self._dispatch: Callable[[Delivery], Any] = dispatch or (
+            lambda delivery: "delivered"
+        )
+        self._claims = claims or (lambda: [])
+        self._transport = transport or urllib_transport(block.url)
+        self._sleep = sleep
+        self._rng = rng
+        self.local_dir = Path(layout_from_config(self.config).local_dir)
+        self.peer = self._load_peer()
+        self.state = "off"  # off | connecting | connected | refused | unreachable
+        self.since: Optional[str] = None
+        self.committed = 0
+        self.last_health: Optional[Dict[str, Any]] = None
+        self.last_queue: Optional[Dict[str, Any]] = None
+        self.refused_by: str = ""
+        self.last_error: str = ""
+        self.attempt = 0  # consecutive failures
+        self.registered = False
+        self._pending: List[Dict[str, Any]] = []
+        self._deferred: List[Tuple[int, Any]] = []
+        self._lock = threading.Lock()
+        self.fetches = 0
+
+    # -- the peer id survives restarts (R4.3) ----------------------------------------------
+
+    def _load_peer(self) -> str:
+        path = self.local_dir / PEER_FILE
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            peer = str(data.get("peer") or "")
+            if peer:
+                return peer
+        except (OSError, ValueError):
+            pass
+        peer = uuid.uuid4().hex
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps({"peer": peer, "instance": self.instance}), encoding="utf-8"
+            )
+        except OSError as exc:
+            logger.warning("gateway: cannot persist the peer id at %s (%s)", path, exc)
+        return peer
+
+    # -- transport -----------------------------------------------------------------------------
+
+    def _call(
+        self,
+        method: str,
+        path: str,
+        body: Optional[Mapping[str, Any]] = None,
+        *,
+        timeout: float = 10.0,
+    ) -> Tuple[int, Any]:
+        return self._transport(method, path, body, timeout)
+
+    def _mark_connected(self) -> None:
+        if self.state != "connected":
+            eventlog.emit(
+                "gateway.connected",
+                url=self.block.url,
+                instance=self.instance,
+                peer=self.peer,
+            )
+            self.since = _utcnow()
+        self.state = "connected"
+        self.attempt = 0
+        self.last_error = ""
+        self.refused_by = ""
+
+    def _backoff(self) -> float:
+        self.attempt += 1
+        base = min(BACKOFF_MAX_S, BACKOFF_MIN_S * (2 ** (self.attempt - 1)))
+        return min(BACKOFF_MAX_S, base * (0.5 + self._rng()))
+
+    def _unreachable(self, error: str) -> None:
+        if self.state != "unreachable":
+            eventlog.emit(
+                "gateway.unreachable",
+                level="warning",
+                url=self.block.url,
+                instance=self.instance,
+                error=error[:200],
+            )
+        self.state = "unreachable"
+        self.registered = False
+        self.last_error = error
+
+    def _refused(self, body: Any) -> None:
+        body = body if isinstance(body, Mapping) else {}
+        reason = str(body.get("error") or "refused")
+        holder = str(body.get("holder") or "")
+        eventlog.emit(
+            "gateway.refused",
+            level="warning",
+            instance=self.instance,
+            peer=self.peer,
+            reason=reason,
+            holder=holder or None,
+            detail=str(body.get("detail") or "") or None,
+        )
+        self.state = "refused"
+        self.refused_by = holder
+        self.last_error = reason
+        if reason == "duplicate-actor":
+            self.registered = False
+
+    # -- registrations (R5.3, R5.5) -----------------------------------------------------------------
+
+    def register(self) -> bool:
+        """``PUT /actors`` then re-assert every live claim; ``False`` on any refusal or error."""
+        actors = {
+            provider: list(names)
+            for provider, names in self.block.actors.items()
+            if names
+        }
+        status, body = self._call(
+            "PUT",
+            "/api/v1/gateway/actors",
+            {"instance": self.instance, "peer": self.peer, "actors": actors},
+        )
+        if status == 409:
+            self._refused(body)
+            return False
+        if status != 200:
+            raise urllib.error.URLError(f"PUT /actors answered {status}")
+        for subject, role in self._claims():
+            self.publish_claim(subject, role, _raise=True)
+        self.registered = True
+        # the gateway answered the registration: the client is connected from here,
+        # not only once a (possibly long-polling) first fetch returns
+        self._mark_connected()
+        return True
+
+    def publish_claim(self, subject: str, role: str, *, _raise: bool = False) -> bool:
+        try:
+            status, _ = self._call(
+                "PUT",
+                "/api/v1/gateway/claims",
+                {
+                    "instance": self.instance,
+                    "peer": self.peer,
+                    "subject": subject,
+                    "role": role,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 — a claim is re-asserted on the next reconnect
+            if _raise:
+                raise
+            logger.warning(
+                "gateway: claim %s as %s not published (%s)", subject, role, exc
+            )
+            return False
+        return status == 200
+
+    def release_claim(self, subject: str, role: str = "") -> bool:
+        try:
+            status, _ = self._call(
+                "DELETE",
+                "/api/v1/gateway/claims",
+                {
+                    "instance": self.instance,
+                    "peer": self.peer,
+                    "subject": subject,
+                    "role": role or "driver",
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("gateway: release of %s not published (%s)", subject, exc)
+            return False
+        return status == 200
+
+    def publish_binding(self, ref: str, provider: str, key: str) -> bool:
+        try:
+            status, _ = self._call(
+                "POST",
+                "/api/v1/gateway/bindings",
+                {
+                    "instance": self.instance,
+                    "peer": self.peer,
+                    "ref": ref,
+                    "provider": provider,
+                    "key": key,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("gateway: binding %s → %s not published (%s)", key, ref, exc)
+            return False
+        return status == 200
+
+    # -- what the instance publishes (R5.3, R5.7, R5.8) ---------------------------------------------------
+
+    def attach(
+        self,
+        registry: Any,
+        *,
+        control_store: Any = None,
+        channel_state: Any = None,
+        pipeline: Any = None,
+    ) -> None:
+        """Wire the instance's registry, control store, Slack state and pipeline to this
+        client: a registered session publishes a claim (``reviewer`` when the work
+        item's control command is ``review``, else ``driver``), a closed one releases
+        it, a linked pull request and a bound Slack thread publish bindings, and the
+        live sessions are what ``register`` re-asserts after an outage."""
+        self._registry = registry
+        self._control_store = control_store
+
+        def role_of(ref: str) -> str:
+            record = None
+            if control_store is not None:
+                try:
+                    record = control_store.get(ref)
+                except Exception:  # noqa: BLE001 — an unreadable record is a driver
+                    record = None
+            return (
+                "reviewer"
+                if record is not None and record.command == "review"
+                else "driver"
+            )
+
+        def on_registry(event: str, ref: str, other: str) -> None:
+            from .adapters.common import slug_of
+
+            if event == "claim":
+                self.publish_claim(f"loop-{slug_of(ref)}", role_of(ref))
+            elif event == "release":
+                self.release_claim(f"loop-{slug_of(ref)}", role_of(ref))
+            elif event == "link" and other:
+                # ref is the pull request, other the work item it delivers
+                try:
+                    from ..sessions import WorkItemRef
+
+                    pr = WorkItemRef.parse(ref)
+                    key = f"{pr.owner}/{pr.repo}#{pr.number}"
+                except Exception:  # noqa: BLE001
+                    return
+                self.publish_binding(other, "github", key)
+
+        registry.publisher = on_registry
+        if channel_state is not None:
+            # the publisher is a ClassVar read through the class (channels.state)
+            target = (
+                channel_state
+                if isinstance(channel_state, type)
+                else type(channel_state)
+            )
+            target.publisher = lambda provider, key, work_item: self.publish_binding(
+                work_item, provider, key
+            )
+        if pipeline is not None:
+            pipeline.publish_binding = self.publish_binding
+
+        def live_claims() -> List[Tuple[str, str]]:
+            from .adapters.common import slug_of
+
+            claims: List[Tuple[str, str]] = []
+            try:
+                sessions = registry.list_sessions()
+            except Exception:  # noqa: BLE001
+                return claims
+            for session in sessions:
+                if not session.is_live:
+                    continue
+                claims.append(
+                    (
+                        f"loop-{slug_of(session.work_item.ref)}",
+                        role_of(session.work_item.ref),
+                    )
+                )
+                for endpoint in getattr(session, "pull_requests", ()):
+                    if endpoint.is_live:
+                        claims.append(
+                            (
+                                f"loop-{slug_of(endpoint.work_item.ref)}",
+                                role_of(endpoint.work_item.ref),
+                            )
+                        )
+            return claims
+
+        self._claims = live_claims
+
+    # -- the loop (R3.1, R3.3, R3.4) -------------------------------------------------------------------
+
+    def fetch_once(self) -> Optional[List[Delivery]]:
+        """One fetch, with the pending commits; ``None`` when nothing was fetched (an
+        error or a refusal, already recorded)."""
+        self.resolve_deferred()
+        with self._lock:
+            commits = list(self._pending)
+            # a dispatch still in flight is not fetched again: the cursor runs past
+            # what this process holds, and falls back to `committed` once it settles
+            # (a `failed` outcome then comes back with its attempt counted)
+            cursor = max([self.committed] + [seq for seq, _ in self._deferred])
+        body = {
+            "instance": self.instance,
+            "peer": self.peer,
+            "cursor": cursor,
+            "max": MAX_BATCH,
+            "wait": self.block.long_poll_s,
+            "lease": self.block.lease_s,
+            "commit": commits,
+        }
+        status, answer = self._call(
+            "POST",
+            "/api/v1/gateway/fetch",
+            body,
+            timeout=float(self.block.long_poll_s) + 15.0,
+        )
+        if status == 409:
+            self._refused(answer)
+            if (
+                isinstance(answer, Mapping)
+                and answer.get("error") == "commit-undelivered"
+                and commits
+            ):
+                # the gateway has no row for one of these seqs (a recreated store, a
+                # backlog that expired while this instance was away): carrying the same
+                # batch again would be refused forever (self-review R3). Drop it, say
+                # so, and let the next fetch go without a commit.
+                with self._lock:
+                    self._pending = self._pending[len(commits) :]
+                logger.warning(
+                    "gateway: dropped %d commit(s) the gateway refused as undelivered"
+                    " (seqs %s)",
+                    len(commits),
+                    [c["seq"] for c in commits],
+                )
+            return None
+        if status != 200 or not isinstance(answer, Mapping):
+            raise urllib.error.URLError(f"POST /fetch answered {status}")
+        # The answer is untrusted input to this instance (security review SEC-3): a
+        # shape the contract does not promise is treated as the gateway being
+        # unreachable — logged, retried on the back-off — never as an exception that
+        # ends the hosted client.
+        try:
+            committed = int(answer.get("committed") or 0)
+            raw_deliveries = answer.get("deliveries") or []
+            if not isinstance(raw_deliveries, list):
+                raise TypeError("deliveries is not a list")
+            deliveries = [Delivery.from_json(d) for d in raw_deliveries]
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise urllib.error.URLError(
+                f"POST /fetch answered a malformed body ({exc.__class__.__name__}: {exc})"
+            ) from exc
+        for delivery in deliveries:
+            if delivery.event.provider not in PROVIDERS:
+                raise urllib.error.URLError(
+                    f"POST /fetch answered an unknown provider {delivery.event.provider!r}"
+                )
+        with self._lock:
+            # the server applied these; anything appended meanwhile stays pending
+            self._pending = self._pending[len(commits) :]
+        self.committed = committed
+        self.fetches += 1
+        self._mark_connected()
+        return deliveries
+
+    def handle(self, delivery: Delivery) -> str:
+        """Dispatch one delivery and queue its outcome for the next fetch (R3.4, R10.2).
+
+        A dispatch the pipeline has not settled yet (a resume still in flight) comes
+        back as a :class:`~.client_dispatch.Deferred`; it is asked again before each
+        fetch and committed once it answers, so the commit never runs ahead of the
+        dispatcher. Returns the outcome, or ``"deferred"``.
+        """
+        with eventlog.context(
+            gateway_event_id=delivery.event.id, delivery_id=delivery.event.delivery_id
+        ):
+            try:
+                result: Any = self._dispatch(delivery) or "delivered"
+            except Exception as exc:  # noqa: BLE001 — a failed dispatch is redelivered
+                logger.exception("gateway: dispatching seq %s failed", delivery.seq)
+                result = "failed"
+                eventlog.emit(
+                    "dispatch.error",
+                    level="error",
+                    error=str(exc)[:200],
+                    seq=delivery.seq,
+                )
+        if isinstance(result, str):
+            with self._lock:
+                self._pending.append({"seq": delivery.seq, "outcome": result})
+            return result
+        with self._lock:
+            self._deferred.append((delivery.seq, result))
+        return "deferred"
+
+    def resolve_deferred(self) -> int:
+        """Ask every deferred dispatch for its outcome; move the settled ones to the
+        pending commits. Returns how many settled."""
+        settled = 0
+        with self._lock:
+            still: List[Tuple[int, Any]] = []
+            for seq, deferred in self._deferred:
+                try:
+                    outcome = deferred.resolve()
+                except Exception as exc:  # noqa: BLE001 — never lose the queue over it
+                    logger.warning("gateway: resolving seq %s failed (%s)", seq, exc)
+                    outcome = "failed"
+                if outcome is None:
+                    still.append((seq, deferred))
+                    continue
+                self._pending.append({"seq": seq, "outcome": outcome})
+                settled += 1
+            self._deferred = still
+        return settled
+
+    @property
+    def deferred(self) -> int:
+        with self._lock:
+            return len(self._deferred)
+
+    def step(self) -> bool:
+        """One iteration: register if needed, fetch, dispatch. Returns whether to sleep
+        the poll interval (an empty plain poll)."""
+        try:
+            if not self.registered and not self.register():
+                return False
+            deliveries = self.fetch_once()
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            self._unreachable(str(exc))
+            return False
+        if deliveries is None:
+            return False
+        for delivery in deliveries:
+            if self.stop_event.is_set():
+                break
+            self.handle(delivery)
+        return not deliveries and self.block.long_poll_s == 0
+
+    def run(self) -> int:
+        self.state = "connecting"
+        while not self.stop_event.is_set():
+            idle = self.step()
+            if self.state in ("unreachable", "refused"):
+                self.stop_event.wait(self._backoff())
+            elif idle:
+                self.stop_event.wait(self.block.poll_interval_s)
+        self.flush()
+        self.state = "off"
+        return 0
+
+    def flush(self) -> bool:
+        """``POST /commit`` whatever is pending — a stop's last word (R3.4)."""
+        self.resolve_deferred()
+        with self._lock:
+            commits = list(self._pending)
+        if not commits:
+            return True
+        try:
+            status, _ = self._call(
+                "POST",
+                "/api/v1/gateway/commit",
+                {"instance": self.instance, "peer": self.peer, "commit": commits},
+            )
+        except Exception as exc:  # noqa: BLE001 — the next fetch after a restart recommits
+            logger.warning(
+                "gateway: final commit not delivered (%s); the next start recommits",
+                exc,
+            )
+            return False
+        if status == 200:
+            with self._lock:
+                self._pending = self._pending[len(commits) :]
+            return True
+        return False
+
+    # -- the instance's view of itself (R10.3) ------------------------------------------------------------
+
+    def document(self, *, probe: bool = True) -> Dict[str, Any]:
+        """The ``GET /api/v1/gateway`` body the dashboard card renders."""
+        health: Optional[Dict[str, Any]] = None
+        queue: Optional[Dict[str, Any]] = None
+        if probe and self.state == "connected":
+            try:
+                status, body = self._call("GET", "/api/v1/gateway/health", timeout=3.0)
+                health = body if status == 200 and isinstance(body, dict) else None
+                status, body = self._call("GET", "/api/v1/gateway/queues", timeout=3.0)
+                if status == 200 and isinstance(body, dict):
+                    queue = next(
+                        (
+                            q
+                            for q in body.get("queues", [])
+                            if q.get("instance") == self.instance
+                        ),
+                        None,
+                    )
+            except Exception:  # noqa: BLE001 — the card shows what it can
+                pass
+        return {
+            "configured": True,
+            "url": self.block.url,
+            "state": self.state,
+            "instance": self.instance,
+            "peer": self.peer,
+            "since": self.since,
+            "committed": self.committed,
+            "attempt": self.attempt,
+            "refusedBy": self.refused_by or None,
+            "error": self.last_error or None,
+            "mode": {
+                "pollIntervalSeconds": self.block.poll_interval_s,
+                "longPollSeconds": self.block.long_poll_s,
+            },
+            "claims": [{"subject": s, "role": r} for s, r in self._claims()],
+            "health": health,
+            "queue": queue,
+        }
+
+
+def _utcnow() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S") + "Z"

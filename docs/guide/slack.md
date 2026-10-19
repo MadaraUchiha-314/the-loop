@@ -368,6 +368,17 @@ in Slack and message events are retried briefly, then dropped. Run **one** liste
 instance — Slack load-balances envelopes across an app's open connections, so two would
 each see half of them.
 
+**Several instances, one app: run one gateway per app** (issue-496). Two instances
+cannot each hold a listener on one app — that is the split above. Instead the
+[gateway](../capabilities/gateway.md) holds the app's one Socket Mode connection,
+stores every envelope before acknowledging it, and each instance polls its own queue
+with a `gateway` block in its CLI config and no listener of its own (`the-loop status`
+reads `off · gateway configured` for the listener). The gateway reads the same two
+tokens from its own `gateway-config.yaml` — `slack.socket.appTokenEnv` (the app-level
+token, `connections:write`) and `slack.socket.botTokenEnv` — so the manifest and the
+tokens above are minted once, for the gateway, and never for an instance behind it.
+The move, step by step: [Moving to a gateway](gateway.md).
+
 With `read.mode: poll` the daemons read thread replies on a background thread instead and
 `listen` is not needed — but no button press and no slash command can arrive that way,
 because Slack delivers both only to a connection that acknowledges within seconds.

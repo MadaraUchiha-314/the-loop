@@ -33,6 +33,10 @@ DAEMONS = ("poller", "gh-webhook")
 #: point enumerate that tuple). It still holds a pidfile lock, so `status` and
 #: `stop` read it like the others and two listeners never run for one instance.
 SLACK_LISTENER = "slack-listener"
+#: The hosted gateway client (issue-496): the instance's only ingress when its config has
+#: a `gateway` block. Named like the daemons so `status`, `stop` and the hosted set read
+#: its lock the same way; never spawned standalone.
+GATEWAY_CLIENT = "gateway-client"
 
 #: How long ``stop`` waits for the daemon to actually exit.
 STOP_TIMEOUT_SECONDS = 30.0
@@ -46,6 +50,8 @@ def _pidfile(daemon: str, config: Optional[dict] = None) -> str:
         return layout.pidfile
     if daemon == SLACK_LISTENER:
         return str(Path(layout.root) / "slack-listener.pid")
+    if daemon == GATEWAY_CLIENT:
+        return str(Path(layout.local_dir) / "gateway-client.pid")
     raise ValueError(f"unknown daemon {daemon!r} (one of {DAEMONS})")
 
 
@@ -64,6 +70,8 @@ def _logfile(daemon: str, config: Optional[dict] = None) -> str:
         return str(Path(layout.root) / "logs" / "gh-webhook.out")
     if daemon == SLACK_LISTENER:
         return str(Path(layout.root) / "logs" / "slack-listener.out")
+    if daemon == GATEWAY_CLIENT:
+        return str(Path(layout.root) / "logs" / "service.out")
     raise ValueError(f"unknown daemon {daemon!r} (one of {DAEMONS})")
 
 

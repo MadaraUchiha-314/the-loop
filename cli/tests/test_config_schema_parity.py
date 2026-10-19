@@ -24,7 +24,7 @@ from the_loop import configschema
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AUTHORED = REPO_ROOT / ".the-loop"
 
-SCHEMAS = ("cli-config", "collaborators")
+SCHEMAS = ("cli-config", "collaborators", "gateway-config")
 
 pytestmark = pytest.mark.skipif(
     not AUTHORED.is_dir(), reason="plugin tree not present (source distribution)"

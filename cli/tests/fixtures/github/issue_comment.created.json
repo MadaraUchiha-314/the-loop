@@ -1,0 +1,37 @@
+{
+  "action": "created",
+  "issue": {
+    "number": 14,
+    "title": "Introducing the gateway",
+    "state": "open",
+    "html_url": "https://github.com/o/r/issues/14",
+    "labels": [
+      {
+        "name": "the-loop: auto-execute"
+      }
+    ],
+    "user": {
+      "login": "octocat"
+    }
+  },
+  "comment": {
+    "id": 6257,
+    "body": "the-loop start",
+    "user": {
+      "login": "octocat"
+    },
+    "html_url": "https://github.com/o/r/issues/14#issuecomment-6257",
+    "created_at": "2026-10-18T14:02:11Z"
+  },
+  "repository": {
+    "full_name": "o/r",
+    "html_url": "https://github.com/o/r",
+    "name": "r",
+    "owner": {
+      "login": "o"
+    }
+  },
+  "sender": {
+    "login": "octocat"
+  }
+}

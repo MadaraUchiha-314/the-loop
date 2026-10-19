@@ -23,6 +23,7 @@ PR** as the work item that changes behaviour (a ready-to-ship gate item).
 | [instances](instances.md) | Several instances of the-loop on one repository: a named, scoped CLI config, the address token, the locked instance — and a manager that serves the whole fleet through the same surface. |
 | [standing-sessions](standing-sessions.md) | Named, long-lived sessions that belong to no work item — the ones the-loop keeps for itself, addressed by name on the control plane and in Slack. |
 | [observability](observability.md) | Structured JSONL event log of the CLI's actions and the `events` query command. |
+| [gateway](gateway.md) | One ingress process for many instances: the webhooks, one Slack Socket Mode connection per app and the pollers in one process that stores every event on its work item's subject before acknowledging and fans it out to each consuming instance's queue; instances pull their own queue; no instance auth in this release. |
 | [channels](channels.md) | Every channel a peer on one event bus — subscribe, publish by grant, render natively — with GitHub as the ledger every event is recorded on. |
 | [self-diagnosis](self-diagnosis.md) | the-loop filing redacted issues for its own failures: event-log detection, an isolated diagnosis agent, never-armed issue creation (opt-in, default off). |
 | [testing-and-contracts](testing-and-contracts.md) | The testing plan and the verification node (test-type matrix, environment, committed evidence), Gherkin scenario docstrings, the queryable scenario view, contract-first APIs. |

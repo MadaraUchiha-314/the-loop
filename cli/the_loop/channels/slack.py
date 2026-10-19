@@ -3485,6 +3485,82 @@ def _split_check(watch: Any, waiter: threading.Event) -> None:
         logger.exception("slack: the split check raised; still listening")
 
 
+#: The Socket Mode envelope types the listener handles; everything else is ignored.
+ENVELOPE_TYPES = ("events_api", "interactive", "slash_commands")
+
+
+def heartbeat_of(kind: str, payload: Mapping[str, Any]) -> str:
+    """The split check's nonce when ``payload`` is the doctor's own heartbeat
+    (an ``events_api`` bot message carrying the marker), else ``""``."""
+    if kind != "events_api":
+        return ""
+    event = payload.get("event") or {}
+    if not isinstance(event, Mapping) or event.get("type") != "message":
+        return ""
+    return heartbeat_nonce(event)
+
+
+def dispatch_envelope(
+    kind: str, payload: Mapping[str, Any], cli_config: Mapping[str, Any]
+) -> str:
+    """Classify and act on one Slack envelope — the half of the listener that is not
+    the transport (issue-496).
+
+    ``kind`` is the Socket Mode envelope type (:data:`ENVELOPE_TYPES`) and ``payload``
+    its body: a slash command goes to :mod:`.commands`, an interactive payload to the
+    matching :mod:`.inbound` handler by its ``type``, an ``events_api`` ``app_mention``
+    or ``message`` to :func:`.inbound.handle_socket_event`. Called by the gateway-less
+    listener's ``handle`` after it acknowledged the envelope, and by the gateway client
+    for a delivery fetched from its queue, so there is exactly one classifier whichever
+    way the envelope arrived. Returns a short outcome for the log:
+    ``handled:<what>`` or ``ignored:<why>``.
+    """
+    from . import commands, inbound
+
+    config = dict(cli_config or {})
+    if kind == "slash_commands":
+        commands.handle_slash_command(dict(payload), config)
+        return "handled:slash-command"
+    if kind == "interactive":
+        itype = payload.get("type")
+        if itype == "block_actions":
+            inbound.handle_socket_action(dict(payload), config)
+            return "handled:block-actions"
+        if itype == "message_action":
+            inbound.handle_message_action(dict(payload), config)
+            return "handled:message-action"
+        if itype == "view_submission":
+            inbound.handle_view_submission(dict(payload), config)
+            return "handled:view-submission"
+        logger.debug(
+            "slack: ignoring an interactive payload of kind %r "
+            "(handled: block_actions, message_action, view_submission)",
+            itype,
+        )
+        return "ignored:interactive-kind"
+    if kind != "events_api":
+        return "ignored:envelope-type"
+    event = payload.get("event") or {}
+    if not isinstance(event, Mapping):
+        return "ignored:event-shape"
+    event_type = event.get("type")
+    if event_type == "app_mention":
+        inbound.handle_socket_event(dict(event), config, addressed=True)
+        return "handled:app-mention"
+    if event_type != "message":
+        logger.debug(
+            "slack: ignoring an events_api event of type %r in channel %r "
+            "(handled: app_mention, message)",
+            event_type,
+            event.get("channel") or event.get("channel_id") or "",
+        )
+        return "ignored:event-type"
+    if heartbeat_nonce(event):
+        return "ignored:heartbeat"
+    inbound.handle_socket_event(dict(event), config, addressed=False)
+    return "handled:message"
+
+
 def run_socket_listener(
     cli_config: Optional[Mapping[str, Any]],
     stop_event: Optional[threading.Event] = None,
@@ -3530,7 +3606,7 @@ def run_socket_listener(
         SocketModeResponse,
     )
 
-    from . import commands, inbound, splitwatch
+    from . import splitwatch
 
     frozen_config = dict(cli_config or {})
     web_client = build_client(bot_token)
@@ -3542,12 +3618,7 @@ def run_socket_listener(
     )
 
     def handle(client, request) -> None:
-        if request.type not in ("events_api", "interactive", "slash_commands"):
-            # issue-393 B3/R2.4: an ignored envelope is logged, never dropped in
-            # silence. When two listeners share one app Slack splits events
-            # across the connections, and half of everything lands on the
-            # instance that does not own the room — a debug line per ignored
-            # envelope is the one thread an operator can pull to see it.
+        if request.type not in ENVELOPE_TYPES:
             logger.debug(
                 "slack: ignoring a Socket Mode envelope of type %r (handled: "
                 "events_api, interactive, slash_commands)",
@@ -3559,45 +3630,11 @@ def run_socket_listener(
         )
         payload = request.payload or {}
         try:
-            if request.type == "slash_commands":
-                commands.handle_slash_command(payload, frozen_config)
-                return
-            if request.type == "interactive":
-                kind = payload.get("type")
-                if kind == "block_actions":
-                    inbound.handle_socket_action(payload, frozen_config)
-                elif kind == "message_action":
-                    # A shortcut is exactly the typed mention (issue-389 R6.2).
-                    inbound.handle_message_action(payload, frozen_config)
-                elif kind == "view_submission":
-                    # The ack above already closed the modal (R6.1).
-                    inbound.handle_view_submission(payload, frozen_config)
-                else:
-                    logger.debug(
-                        "slack: ignoring an interactive payload of kind %r "
-                        "(handled: block_actions, message_action, view_submission)",
-                        kind,
-                    )
-                return
-            event = payload.get("event") or {}
-            event_type = event.get("type")
-            if event_type == "app_mention":
-                # The mention is the address (issue-389 R1.1).
-                inbound.handle_socket_event(event, frozen_config, addressed=True)
-                return
-            if event_type != "message":
-                logger.debug(
-                    "slack: ignoring an events_api event of type %r in channel %r "
-                    "(handled: app_mention, message)",
-                    event_type,
-                    event.get("channel") or event.get("channel_id") or "",
-                )
-                return
-            nonce = heartbeat_nonce(event)
+            # The transport half (issue-496): the doctor's heartbeat is consumed by
+            # the connection that heard it and never classified.
+            nonce = heartbeat_of(request.type, payload)
             if nonce:
-                # The doctor's own heartbeat (issue-393 F2 / R2.2): the receipt
-                # is the whole point — recorded where `the-loop doctor slack`
-                # reads it back, and never handed to the pipeline as input.
+                event = payload.get("event") or {}
                 eventlog.emit(
                     "channel.heartbeat",
                     channel="slack",
@@ -3605,14 +3642,10 @@ def run_socket_listener(
                     ts=str(event.get("ts") or ""),
                     nonce=nonce,
                 )
-                # ...and, since issue-413, straight to this listener's own check,
-                # which posted it. The emit stays first and unconditional: the
-                # doctor reads the log, and a receipt it cannot see is a false
-                # `split-suspected` on the operator's screen.
                 if watch is not None:
                     watch.observe(nonce)
                 return
-            inbound.handle_socket_event(event, frozen_config, addressed=False)
+            dispatch_envelope(request.type, payload, frozen_config)
         except Exception:  # one bad message never ends the listener
             logger.exception("slack: socket event handling raised; continuing")
 

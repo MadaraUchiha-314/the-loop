@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gateway card</title>
+<!--
+  issue-496 · R10.3 — the one UI change: a "Gateway" card on the dashboard's instance
+  detail pane (ui/src/views/InstanceDetail.tsx), beside the existing Daemons card. Shows the
+  instance's view of its gateway: the URL, the polling state in words beside the dot, and
+  its own queue by subject with the instance's role, backlog depth and oldest uncommitted age. Four states
+  are prototyped; the buttons below swap them. Self-contained (no network); tokens copied
+  from ui/src/index.css so it reads as the dashboard would. Prototype, not production code.
+-->
+<style>
+  :root {
+    --background: oklch(98.4% 0.004 85);
+    --foreground: oklch(24% 0.012 265);
+    --surface: oklch(99.8% 0.002 85);
+    --primary: oklch(63% 0.15 48);
+    --muted-foreground: oklch(53% 0.014 265);
+    --accent: oklch(94% 0.02 60);
+    --accent-foreground: oklch(30% 0.03 48);
+    --border: oklch(90% 0.006 85);
+    --border-strong: oklch(84% 0.008 85);
+    --state-done: oklch(55% 0.11 155);
+    --state-active: oklch(63% 0.15 48);
+    --state-blocked: oklch(56% 0.19 25);
+    --state-skipped: oklch(68% 0.01 265);
+    --state-pending: oklch(80% 0.008 265);
+    --radius: 0.625rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --background: oklch(16.5% 0.008 265);
+      --foreground: oklch(94% 0.006 85);
+      --surface: oklch(19.6% 0.009 265);
+      --primary: oklch(75% 0.14 55);
+      --muted-foreground: oklch(68% 0.012 265);
+      --accent: oklch(28% 0.03 55);
+      --accent-foreground: oklch(85% 0.08 65);
+      --border: oklch(100% 0 0 / 0.09);
+      --border-strong: oklch(100% 0 0 / 0.16);
+      --state-done: oklch(70% 0.13 158);
+      --state-active: oklch(78% 0.14 60);
+      --state-blocked: oklch(68% 0.18 25);
+      --state-skipped: oklch(60% 0.01 265);
+      --state-pending: oklch(40% 0.008 265);
+    }
+  }
+  :root[data-theme="dark"] {
+    --background: oklch(16.5% 0.008 265);
+    --foreground: oklch(94% 0.006 85);
+    --surface: oklch(19.6% 0.009 265);
+    --primary: oklch(75% 0.14 55);
+    --muted-foreground: oklch(68% 0.012 265);
+    --accent: oklch(28% 0.03 55);
+    --accent-foreground: oklch(85% 0.08 65);
+    --border: oklch(100% 0 0 / 0.09);
+    --border-strong: oklch(100% 0 0 / 0.16);
+    --state-done: oklch(70% 0.13 158);
+    --state-active: oklch(78% 0.14 60);
+    --state-blocked: oklch(68% 0.18 25);
+    --state-skipped: oklch(60% 0.01 265);
+    --state-pending: oklch(40% 0.008 265);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--background); color: var(--foreground);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  header {
+    display: flex; align-items: flex-start; gap: 1rem; padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { margin: 0; font-size: 1.125rem; font-weight: 600; letter-spacing: -0.01em; }
+  header .meta { margin-top: .375rem; font-size: .75rem; color: var(--muted-foreground); display: flex; gap: .5rem; flex-wrap: wrap; }
+  main { padding: 1.5rem 16px; max-width: 64rem; margin: 0 auto; }
+  .grid { display: grid; gap: 1rem; }
+  @media (min-width: 900px) { .grid { grid-template-columns: 1fr 1fr; } main { padding: 1.5rem; } }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem 1.125rem; }
+  .kicker { font-size: .6875rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted-foreground); margin: 0 0 .5rem; }
+  .row { display: flex; justify-content: space-between; gap: 1rem; padding: .375rem 0; border-top: 1px solid var(--border); font-size: .8125rem; }
+  .row:first-of-type { border-top: 0; }
+  .row dt { color: var(--muted-foreground); margin: 0; }
+  .row dd { margin: 0; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+  .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor; vertical-align: middle; margin-right: .375rem; }
+  .active { color: var(--state-active); } .done { color: var(--state-done); }
+  .blocked { color: var(--state-blocked); } .pending { color: var(--state-pending); } .skipped { color: var(--state-skipped); }
+  .pulse { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .words { color: var(--foreground); }
+  table { width: 100%; border-collapse: collapse; font-size: .8125rem; margin-top: .5rem; }
+  th { text-align: left; font-weight: 500; color: var(--muted-foreground); font-size: .75rem; padding: .25rem 0; border-bottom: 1px solid var(--border); }
+  td { padding: .375rem 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 1.25rem; }
+  .chip { font-family: ui-monospace, Menlo, monospace; font-size: .75rem; background: var(--accent); color: var(--accent-foreground); border-radius: .375rem; padding: .0625rem .375rem; }
+  .notice { border: 1px solid var(--border-strong); border-radius: var(--radius); padding: .625rem .875rem; font-size: .8125rem; margin-bottom: .75rem; background: var(--surface); }
+  .notice.blocked { border-color: var(--state-blocked); color: var(--foreground); }
+  .empty { color: var(--muted-foreground); font-size: .8125rem; margin: .5rem 0 0; }
+  .controls { display: flex; gap: .5rem; flex-wrap: wrap; margin: 0 0 1rem; }
+  button { font: inherit; font-size: .75rem; padding: .25rem .625rem; border-radius: .5rem; border: 1px solid var(--border-strong); background: var(--surface); color: var(--foreground); cursor: pointer; }
+  button[aria-pressed="true"] { background: var(--accent); color: var(--accent-foreground); border-color: transparent; }
+  .hidden { display: none; }
+  footer { padding: 1rem 1.5rem; font-size: .75rem; color: var(--muted-foreground); border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<header>
+  <div style="flex:1;min-width:0">
+    <h1 class="mono">laptop-a</h1>
+    <div class="meta">
+      <span><span class="dot done"></span><span class="words">live</span></span>
+      <span>·</span><span class="mono">http://127.0.0.1:8765</span>
+      <span>·</span><span>v21.0.0</span>
+      <span>·</span><span>worker · scope open</span>
+    </div>
+  </div>
+  <div class="controls" style="margin:0">
+    <button id="theme" type="button" aria-label="Toggle theme">theme</button>
+  </div>
+</header>
+
+<main>
+  <div class="controls" role="group" aria-label="Prototype states">
+    <span style="font-size:.75rem;color:var(--muted-foreground);align-self:center">Prototype state:</span>
+    <button type="button" data-state="connected" aria-pressed="true">connected</button>
+    <button type="button" data-state="connecting" aria-pressed="false">connecting</button>
+    <button type="button" data-state="refused" aria-pressed="false">refused (duplicate instance)</button>
+    <button type="button" data-state="down" aria-pressed="false">gateway down</button>
+    <button type="button" data-state="none" aria-pressed="false">no gateway configured</button>
+  </div>
+
+  <div id="notice-refused" class="notice blocked hidden">
+    <strong>Refused by the gateway:</strong> another process is already polling as <span class="chip">laptop-a</span> (peer <span class="mono">7f3a…</span>); two instances cannot share one name.
+    This instance retries with back-off and runs no ingress of its own. Stop the other instance, or point this one at its own gateway.
+  </div>
+  <div id="notice-down" class="notice blocked hidden">
+    <strong>Gateway unreachable</strong> since 14:02 (3 min). Retrying with back-off; nothing is lost — the gateway stores events before acknowledging them, and the backlog is delivered on reconnect. This instance does <em>not</em> fall back to its own ingresses.
+  </div>
+
+  <div class="grid">
+    <section class="card" aria-labelledby="k-daemons">
+      <p class="kicker" id="k-daemons">Daemons</p>
+      <dl>
+        <div class="row"><dt>webhook receiver</dt><dd><span class="skipped"><span class="dot"></span></span><span class="words">off · gateway configured</span></dd></div>
+        <div class="row"><dt>poller</dt><dd><span class="skipped"><span class="dot"></span></span><span class="words">off · gateway configured</span></dd></div>
+        <div class="row"><dt>slack listener</dt><dd><span class="skipped"><span class="dot"></span></span><span class="words">off · gateway configured</span></dd></div>
+      </dl>
+      <p class="empty">With a <span class="chip">gateway</span> block the instance runs no ingress of its own (R3.8).</p>
+    </section>
+
+    <section class="card" aria-labelledby="k-gateway" id="gateway-card">
+      <p class="kicker" id="k-gateway">Gateway</p>
+      <dl>
+        <div class="row"><dt>url</dt><dd class="mono" id="gw-url">http://127.0.0.1:8790</dd></div>
+        <div class="row"><dt>connection</dt><dd id="gw-state"></dd></div>
+        <div class="row"><dt>polling as</dt><dd class="mono" id="gw-as">laptop-a</dd></div>
+        <div class="row"><dt>since</dt><dd id="gw-since">13:41 (24 min) · committed <span class="mono">seq 1842</span> · every 5 s, long-poll 20 s</dd></div>
+        <div class="row"><dt>gateway health</dt><dd id="gw-health"><span class="done"><span class="dot"></span></span><span class="words">ok · slack socket up · 2 pollers</span></dd></div>
+      </dl>
+
+      <div id="subjects">
+        <table aria-label="This instance's queue, by subject">
+          <thead><tr><th>subject</th><th>role</th><th class="num">backlog</th><th class="num">oldest uncommitted</th></tr></thead>
+          <tbody>
+            <tr><td><span class="chip">loop-github-madarauchiha-314-the-loop-testing-12</span></td><td>driver</td><td class="num">0</td><td class="num">—</td></tr>
+            <tr><td><span class="chip">loop-github-madarauchiha-314-the-loop-testing-14</span></td><td>driver</td><td class="num">2</td><td class="num">8 s</td></tr>
+            <tr><td><span class="chip">loop-github-madarauchiha-314-the-loop-testing-15 · PR</span></td><td>reviewer</td><td class="num">0</td><td class="num">—</td></tr>
+          </tbody>
+        </table>
+        <p class="empty">Backlog is what the gateway has routed to this instance's queue and this instance has not yet committed. A growing number while polling means the dispatcher is slow; while the gateway is unreachable it is expected.</p>
+      </div>
+      <p class="empty hidden" id="subjects-empty">Queue empty — nothing has been routed to this instance since it started polling.</p>
+      <p class="empty hidden" id="no-gateway">No gateway configured. This instance runs its own webhook receiver, poller and Slack listener (today's behaviour).</p>
+    </section>
+  </div>
+</main>
+
+<footer>
+  Prototype for issue-496 · R10.3. One new card on the instance detail pane; the Daemons card gains the words "off · gateway configured". Data comes from the instance's own API (<span class="mono">GET /api/v1/gateway</span>), which proxies the gateway's <span class="mono">health</span> and this instance's row of <span class="mono">queues</span>. The state word, not the dot, carries the meaning.
+</footer>
+
+<script>
+  (function () {
+    var states = {
+      connected:  { html: '<span class="active pulse"><span class="dot"></span></span><span class="words">connected · polling</span>', notice: null, subjects: true },
+      connecting: { html: '<span class="pending"><span class="dot"></span></span><span class="words">connecting · attempt 3, next in 8 s</span>', notice: null, subjects: false },
+      refused:    { html: '<span class="blocked"><span class="dot"></span></span><span class="words">refused · duplicate instance (409)</span>', notice: 'notice-refused', subjects: false },
+      down:       { html: '<span class="blocked"><span class="dot"></span></span><span class="words">unreachable · retrying</span>', notice: 'notice-down', subjects: false },
+      none:       { html: '<span class="skipped"><span class="dot"></span></span><span class="words">not configured</span>', notice: null, subjects: null }
+    };
+    var buttons = document.querySelectorAll('[data-state]');
+    function show(id, on) { var el = document.getElementById(id); if (el) el.classList.toggle('hidden', !on); }
+    function apply(name) {
+      var s = states[name];
+      document.getElementById('gw-state').innerHTML = s.html;
+      show('notice-refused', s.notice === 'notice-refused');
+      show('notice-down', s.notice === 'notice-down');
+      show('subjects', s.subjects === true);
+      show('subjects-empty', s.subjects === false);
+      show('no-gateway', s.subjects === null);
+      ['gw-url','gw-as','gw-since','gw-health'].forEach(function (id) {
+        var row = document.getElementById(id).parentElement; row.classList.toggle('hidden', s.subjects === null);
+      });
+      if (name === 'refused') document.getElementById('gw-as').textContent = 'laptop-a (refused; another peer holds the name)';
+      else document.getElementById('gw-as').textContent = 'laptop-a';
+      if (name === 'down' || name === 'connecting') document.getElementById('gw-health').innerHTML = '<span class="pending"><span class="dot"></span></span><span class="words">unknown · last seen 14:02</span>';
+      else document.getElementById('gw-health').innerHTML = '<span class="done"><span class="dot"></span></span><span class="words">ok · slack socket up · 2 pollers</span>';
+      buttons.forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.state === name)); });
+    }
+    buttons.forEach(function (b) { b.addEventListener('click', function () { apply(b.dataset.state); }); });
+    apply('connected');
+    document.getElementById('theme').addEventListener('click', function () {
+      var root = document.documentElement;
+      var dark = root.getAttribute('data-theme') === 'dark' || (!root.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', dark ? 'light' : 'dark');
+    });
+  })();
+</script>
+</body>
+</html>

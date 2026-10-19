@@ -43,6 +43,37 @@ paths:
                 additionalProperties: true
                 type: object
                 title: Response Health
+  /api/v1/gateway:
+    get:
+      summary: Gateway
+      operationId: gateway
+      description: |
+        This instance's view of its gateway (issue-496). `configured: false, state: off`
+        when the CLI config has no `gateway` block. Otherwise: `url`, `state`
+        (connecting | connected | refused | unreachable | off | unknown), `instance`
+        (the queue's name), `peer`, `since`, `committed`, `attempt`, `refusedBy`,
+        `error`, `mode` ({pollIntervalSeconds, longPollSeconds}), `claims`
+        ([{subject, role}]), and — while connected — the gateway's `health` and this
+        queue's row under `queue`. What the dashboard's Gateway card renders (R10.3).
+      parameters:
+      - name: instance
+        in: query
+        required: false
+        description: |
+          Which instance this operation is for (issue-374). Empty: this one.
+        schema:
+          type: string
+          default: ''
+          title: Instance
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Gateway
   /api/v1/instance:
     get:
       summary: Get Instance

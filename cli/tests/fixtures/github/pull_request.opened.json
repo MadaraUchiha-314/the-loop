@@ -1,0 +1,32 @@
+{
+  "action": "opened",
+  "pull_request": {
+    "number": 77,
+    "title": "feat(issue-14): the gateway",
+    "state": "open",
+    "body": "Closes #14",
+    "updated_at": "2026-10-18T15:00:00Z",
+    "head": {
+      "ref": "feat/issue-14-gateway",
+      "sha": "abc123"
+    },
+    "base": {
+      "ref": "main"
+    },
+    "user": {
+      "login": "octocat"
+    },
+    "html_url": "https://github.com/o/r/pull/77"
+  },
+  "repository": {
+    "full_name": "o/r",
+    "html_url": "https://github.com/o/r",
+    "name": "r",
+    "owner": {
+      "login": "o"
+    }
+  },
+  "sender": {
+    "login": "octocat"
+  }
+}

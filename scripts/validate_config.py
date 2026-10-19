@@ -50,6 +50,11 @@ SCHEMA_TARGETS = [
             ROOT / "skills" / "the-loop" / "templates" / "cli-config.yaml",
         ],
     ),
+    # The gateway's own file (issue-496): a fourth surface, one process per fleet.
+    (
+        ROOT / ".the-loop" / "gateway-config.schema.json",
+        [ROOT / "skills" / "the-loop" / "templates" / "gateway-config.yaml"],
+    ),
 ]
 
 # cli-config.schema.json reuses the collaborator shape via a relative $ref into

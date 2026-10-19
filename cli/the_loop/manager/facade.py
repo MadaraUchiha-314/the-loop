@@ -169,6 +169,13 @@ class ManagerFacade:
         doc["instances"] = rows
         return doc
 
+    def gateway(self, instance: str = "") -> Dict[str, Any]:
+        """A member's gateway document (issue-496), proxied like `instance`."""
+        member = self._target(instance)
+        if not self.fleet.is_local(member):
+            return self._proxy(member, "GET", "/api/v1/gateway", operation="gateway")
+        return self.core.gateway()
+
     def get_instance(self, instance: str = "") -> Dict[str, Any]:
         member = self._target(instance)
         if not self.fleet.is_local(member):

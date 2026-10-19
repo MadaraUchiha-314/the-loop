@@ -237,14 +237,14 @@ def test_the_schemas_use_no_keyword_the_validator_ignores():
     """
     Feature: the validator keeps up with the schema
       Scenario: a schema grows a construct the validator does not implement
-        Given the-loop's two packaged schemas
+        Given the-loop's three packaged schemas
         When every keyword they use is collected
         Then each one is declared in configschema.SUPPORTED
 
     Requirement: docs/specs/issue-222/design.md §Why not depend on jsonschema
     """
     used = set()
-    for name in ("cli-config", "collaborators"):
+    for name in ("cli-config", "collaborators", "gateway-config"):
         _keywords(_raw(name), used)
     unsupported = used - configschema.SUPPORTED
     assert not unsupported, (

@@ -53,7 +53,11 @@ def verify_signature(
         return False
     digest = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
     expected = "sha256=" + digest
-    return hmac.compare_digest(expected, signature_header)
+    # bytes on both sides: compare_digest raises TypeError on a non-ASCII str, which
+    # an unauthenticated peer can send (issue-496 security review SEC-7)
+    return hmac.compare_digest(
+        expected.encode("utf-8"), signature_header.encode("utf-8", "replace")
+    )
 
 
 def make_handler(

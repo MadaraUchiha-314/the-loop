@@ -28,12 +28,22 @@ def start_watcher(
     ``None`` unless the Slack channel is enabled with ``read.mode: poll`` —
     ``socket`` deployments run ``the-loop channels listen`` instead (a
     WebSocket's reconnect lifecycle does not belong inside a poll loop, D5),
-    and ``off`` means exactly that.
+    and ``off`` means exactly that. ``None`` too behind a gateway (issue-496): the
+    gateway holds the app's Socket Mode connection and every Slack read arrives
+    through the instance's queue, so a poll reader beside it would hand a mention
+    in twice.
     """
+    from ..cli_config import gateway_block
     from .slack import SlackChannelConfig
 
     config = SlackChannelConfig.from_mapping(cli_config)
     if not config.enabled or config.read_mode != "poll":
+        return None
+    if gateway_block(cli_config) is not None:
+        logger.info(
+            "channels: read.mode is poll but a gateway is configured — the gateway "
+            "reads Slack; no poll reader started"
+        )
         return None
     interval = (
         interval_override

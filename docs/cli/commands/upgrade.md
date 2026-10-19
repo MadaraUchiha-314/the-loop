@@ -53,6 +53,9 @@ same "move to the current version" job:
 | `the-loop upgrade` | the software (CLI, plugin) | your terminal |
 | `/the-loop:upgrade-the-loop` | a project's `.the-loop/` files and schemas | inside a session |
 
+Neither moves an instance behind a gateway: that is opt-in and a topology decision,
+written up in [Moving to a gateway](/guide/gateway).
+
 ## See also
 
 - [`install`](/cli/commands/install) — the full mechanics, scopes and security notes.

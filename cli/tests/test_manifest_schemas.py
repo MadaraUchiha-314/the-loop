@@ -57,6 +57,9 @@ SCHEMAS = (
     "collaborators.schema.json",
     "cli-config.schema.json",
 )
+#: Every schema the plugin ships today: the three above plus the gateway's (issue-496),
+#: which was never copied into a project and so has no retired copy to deprecate.
+SHIPPED = SCHEMAS + ("gateway-config.schema.json",)
 
 #: Every config file the-loop scaffolds into a project, and the schema that validates it.
 #: (The CLI's packaged copy of the harness template went with adoption in issue-352: the
@@ -65,6 +68,7 @@ SCAFFOLDED: Dict[str, str] = {
     "skills/the-loop/templates/harness-config.yaml": "harness-config.schema.json",
     "skills/the-loop/templates/collaborators.yaml": "collaborators.schema.json",
     "skills/the-loop/templates/cli-config.yaml": "cli-config.schema.json",
+    "skills/the-loop/templates/gateway-config.yaml": "gateway-config.schema.json",
 }
 
 #: The editor directive. ``yaml-language-server`` reads it from the first line only.
@@ -98,7 +102,7 @@ def test_the_manifest_declares_where_the_schemas_live() -> None:
     assert directory.is_dir(), (
         f"manifest.schemasDir points at {directory}, which is not a directory"
     )
-    missing = [name for name in SCHEMAS if not (directory / name).is_file()]
+    missing = [name for name in SHIPPED if not (directory / name).is_file()]
     assert not missing, (
         f"manifest.schemasDir ({declared}) is missing {missing}. The plugin ships the "
         "schemas; a consuming project no longer has a copy to fall back on."

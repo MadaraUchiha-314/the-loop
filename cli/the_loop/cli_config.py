@@ -29,8 +29,9 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping, Optional, Union
+from typing import Dict, Mapping, Optional, Tuple, Union
 
 import yaml
 
@@ -369,6 +370,93 @@ def load_env_file(
     except Exception:  # noqa: BLE001 — a broken env file must not break the CLI
         envfile.logger.warning("could not load the env file; continuing without it")
         return None
+
+
+# -- the instance's `gateway` block (issue-496) --------------------------------------------
+
+#: What an unnamed instance polls as (R4.2): one queue, one name, shared by every unnamed
+#: instance — which is why a fleet names each (two unnamed ones collide as
+#: `duplicate-instance`).
+DEFAULT_INSTANCE_NAME = "default"
+
+
+@dataclass(frozen=True)
+class GatewayBlock:
+    """Mirror of the top-level ``gateway`` block, defaults applied (R8.7)."""
+
+    url: str
+    poll_interval_s: int = 5
+    long_poll_s: int = 20
+    actors: Mapping[str, Tuple[str, ...]] = field(
+        default_factory=lambda: {"github": (), "slack": (), "jira": ()}
+    )
+
+    @property
+    def lease_s(self) -> int:
+        """What the client asks the gateway to hold its name for between fetches: three
+        poll intervals plus the long-poll, so one slow round trip never frees the name."""
+        return 3 * self.poll_interval_s + self.long_poll_s
+
+
+def gateway_block(config: Optional[Mapping]) -> Optional[GatewayBlock]:
+    """The ``gateway`` block typed, or ``None`` when the config has none (R3.1, R8.7).
+
+    Presence adds ``gateway-client`` to the hosted set and switches the Slack listener
+    off; the receiver and the poller follow their own blocks (R3.8 as amended on the
+    PR). The schema has already refused a block without ``url``, but a hand-written
+    file bypasses the schema, so a block with no usable URL is ``None`` with a warning
+    rather than an instance that reads from nowhere.
+    """
+    if not isinstance(config, Mapping):
+        return None
+    block = config.get("gateway")
+    if block is None:
+        return None
+    if not isinstance(block, Mapping):
+        logger.warning("gateway: not a mapping; no gateway configured")
+        return None
+    url = block.get("url")
+    if not isinstance(url, str) or not url.strip():
+        logger.warning("gateway.url is missing; no gateway configured")
+        return None
+
+    def _int(key: str, default: int, minimum: int) -> int:
+        value = block.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+            logger.warning(
+                "gateway.%s must be an integer ≥ %s; using %s", key, minimum, default
+            )
+            return default
+        return value
+
+    raw_actors = block.get("actors") or {}
+    if not isinstance(raw_actors, Mapping):
+        logger.warning("gateway.actors: not a mapping; registering no actors")
+        raw_actors = {}
+    actors: Dict[str, Tuple[str, ...]] = {}
+    for provider in ("github", "slack", "jira"):
+        names = raw_actors.get(provider) or ()
+        if not isinstance(names, (list, tuple)):
+            logger.warning("gateway.actors.%s must be a list; ignoring it", provider)
+            names = ()
+        actors[provider] = tuple(str(n) for n in names if isinstance(n, str) and n)
+    return GatewayBlock(
+        url=url.strip().rstrip("/"),
+        poll_interval_s=_int("pollIntervalSeconds", 5, 1),
+        long_poll_s=_int("longPollSeconds", 20, 0),
+        actors=actors,
+    )
+
+
+def instance_name(config: Optional[Mapping]) -> str:
+    """``instance.name``, or :data:`DEFAULT_INSTANCE_NAME` for an unnamed instance (R4.2)."""
+    if isinstance(config, Mapping):
+        block = config.get("instance")
+        if isinstance(block, Mapping):
+            name = block.get("name")
+            if isinstance(name, str) and name.strip():
+                return name.strip()
+    return DEFAULT_INSTANCE_NAME
 
 
 def load_routing_config(path: Optional[Union[str, Path]] = None) -> dict:

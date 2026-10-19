@@ -1,0 +1,435 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MadaraUchiha-314/the-loop/.the-loop/gateway-config.schema.json",
+  "title": "the-loop gateway configuration (gateway-config.yaml)",
+  "description": "The gateway's own file (issue-496): one process that owns every inbound transport (GitHub and Jira webhooks, Slack Socket Mode and HTTP routes, the pollers), stores each event on a per-work-item subject before acknowledging the provider, and fans it out on write to the queue of every instance that consumes that subject. Instances poll their queue over `cli-config.yaml`'s `gateway` block. Separate from `cli-config.yaml` on purpose: a gateway on another box carries none of an instance's keys. Every secret is NAMED here (a `*Env` key) and read from the process environment; `env.file` names the dotenv file that holds the values. Validated by `the-loop gateway start`, which refuses to start on a violation naming the path; hot-reloaded on the five-second hash cadence, except `listen` and the Slack tokens, which need `the-loop gateway restart`.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version of this file.",
+      "examples": [
+        "1"
+      ]
+    },
+    "env": {
+      "type": "object",
+      "description": "A dotenv file the gateway loads first, before any ingress reads the environment — the same rule as `cli-config.yaml`'s `env` block (issue-318): a relative path resolves against THIS file's directory, `~` expands, a variable already set is never overwritten, a missing or malformed file is a warning naming the path and never a value. Not re-read on reload.",
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string",
+          "default": "",
+          "description": "Path of the dotenv file (one NAME=value per line). Unset or empty: nothing is loaded."
+        }
+      }
+    },
+    "state": {
+      "type": "object",
+      "description": "Where the gateway's generated state lives: its pidfile, logfile, event log and store. Separate from any instance's `state.root` so a gateway and an instance can share one machine (R14).",
+      "additionalProperties": false,
+      "properties": {
+        "root": {
+          "type": "string",
+          "default": "~/.the-loop/gateway",
+          "description": "The state root. A relative value resolves against this file's directory; `~` expands."
+        }
+      }
+    },
+    "listen": {
+      "type": "object",
+      "description": "The address the gateway binds. Loopback by default; a non-loopback bind without `exposed: true` refuses to start (the service's own rule, decision-059). The instance-to-gateway boundary carries no authentication in this release: an exposed gateway is readable, claimable and committable by any peer on that network.",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Bind host."
+        },
+        "port": {
+          "type": "integer",
+          "default": 8790,
+          "description": "Bind port. Differs from the service (4114) and the stdlib receiver (8787) so all three start on one laptop with no configuration.",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "exposed": {
+          "type": "boolean",
+          "default": false,
+          "description": "Acknowledge that a non-loopback bind is reachable without authentication. Required for any host outside 127.0.0.1 / localhost / ::1."
+        }
+      }
+    },
+    "store": {
+      "type": "object",
+      "description": "The queue store: SQLite from the standard library, in the state root. No broker is required to run a gateway (R6.5).",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "default": "",
+          "description": "The database file. Unset resolves to `<state.root>/gateway.db`."
+        },
+        "retentionDays": {
+          "type": "integer",
+          "default": 7,
+          "description": "Committed deliveries older than this are deleted; pending deliveries and events held on `unassigned` older than this are expired and recorded as `subject.expired`; dead-lettered rows are kept for twice this.",
+          "minimum": 1
+        },
+        "maxAttempts": {
+          "type": "integer",
+          "default": 3,
+          "description": "Fetches of one delivery before it is dead-lettered and committed (`subject.dead-lettered`). `polling.maxRetries`' sibling.",
+          "minimum": 1
+        },
+        "dedupWindow": {
+          "type": "integer",
+          "default": 10000,
+          "description": "How many dedup keys the store keeps beyond retention, so a provider's late redelivery of an expired event is still recognised.",
+          "minimum": 0
+        }
+      }
+    },
+    "consume": {
+      "type": "object",
+      "description": "Bounds on the consumer API (`POST /api/v1/gateway/fetch`): what an instance may ask for, clamped server-side.",
+      "additionalProperties": false,
+      "properties": {
+        "maxBatch": {
+          "type": "integer",
+          "default": 256,
+          "description": "The most deliveries one fetch returns; a larger `max` is clamped.",
+          "minimum": 1
+        },
+        "maxWaitSeconds": {
+          "type": "integer",
+          "default": 30,
+          "description": "The longest a long-poll is held open; a larger `wait` is clamped. 0 disables long-polling for every instance.",
+          "minimum": 0
+        },
+        "leaseSeconds": {
+          "type": "object",
+          "description": "The window within which a second peer fetching under a live instance name is refused with 409 `duplicate-instance` (R4.3). The client asks for `3 × pollIntervalSeconds + longPollSeconds`; the gateway clamps it into this range.",
+          "additionalProperties": false,
+          "properties": {
+            "min": {
+              "type": "integer",
+              "default": 10,
+              "description": "Lower clamp.",
+              "minimum": 1
+            },
+            "max": {
+              "type": "integer",
+              "default": 300,
+              "description": "Upper clamp.",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "repositories": {
+      "type": "array",
+      "default": [],
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+      },
+      "description": "GitHub repositories (`owner/repo`) whose issues and pull requests may be work items. An event on a repository not listed here is dropped (`gateway.dropped: undeclared-repository`)."
+    },
+    "github": {
+      "type": "object",
+      "description": "GitHub's two transports, enableable independently. The poller is the default (no public URL needed) and the reconciliation path when both run (R7.4); the same comment arriving by both stores one row (R7.3).",
+      "additionalProperties": false,
+      "properties": {
+        "webhook": {
+          "type": "object",
+          "description": "`POST /gh-webhook` under GitHub's own contract: the `X-Hub-Signature-256` HMAC the instance's receiver verifies today, so a webhook re-pointed at the gateway needs no change.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Serve the webhook route."
+            },
+            "path": {
+              "type": "string",
+              "default": "/gh-webhook",
+              "description": "The route path."
+            },
+            "secretEnv": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "default": "THE_LOOP_GH_WEBHOOK_SECRET",
+              "description": "The webhook secret. The NAME of an environment variable, never a value: a pasted token fails validation here (issue-496, abuse case 7)."
+            }
+          }
+        },
+        "poll": {
+          "type": "object",
+          "description": "Poll the declared repositories through the GitHub API, producing the same delivery ids the instance poller produces (`poll-comment-<id>`, …).",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Run the gateway's own GitHub poller. Opt-in (off by default): the instances keep their own pollers behind a gateway, and the gateway is the webhook receiver and the Slack connection unless no inbound webhook is possible, in which case turn this on and the gateway polls for the fleet."
+            },
+            "intervalSeconds": {
+              "type": "integer",
+              "default": 60,
+              "description": "Seconds between polls of each source.",
+              "minimum": 1
+            },
+            "tokenEnv": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "default": "GITHUB_TOKEN",
+              "description": "A token with READ access to the declared repositories. The gateway never posts; posting stays on the instance. The NAME of an environment variable, never a value: a pasted token fails validation here (issue-496, abuse case 7)."
+            },
+            "sources": {
+              "type": "array",
+              "default": [],
+              "description": "One entry per repository to poll. Each must also be in `repositories`.",
+              "items": {
+                "type": "object",
+                "description": "A poll source.",
+                "additionalProperties": false,
+                "properties": {
+                  "repository": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+                    "description": "`owner/repo`."
+                  },
+                  "labels": {
+                    "type": "array",
+                    "default": [],
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Only items carrying every one of these labels are listed (the instance's `routing.autoExecuteLabels` is the usual set). Empty: every open item."
+                  },
+                  "monitor": {
+                    "type": "object",
+                    "description": "Which objects to list.",
+                    "additionalProperties": false,
+                    "properties": {
+                      "issues": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Issues."
+                      },
+                      "pullRequests": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Pull requests."
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "repository"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "jira": {
+      "type": "object",
+      "description": "Jira's two transports. Off by default; poll-only in the first proof (R12.6).",
+      "additionalProperties": false,
+      "properties": {
+        "webhook": {
+          "type": "object",
+          "description": "`POST /jira-webhook` under the instance doorbell's secret contract; 404 with no secret configured, as today.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Serve the webhook route."
+            },
+            "secretEnv": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "default": "THE_LOOP_JIRA_WEBHOOK_SECRET",
+              "description": "The webhook secret. The NAME of an environment variable, never a value: a pasted token fails validation here (issue-496, abuse case 7)."
+            }
+          }
+        },
+        "poll": {
+          "type": "object",
+          "description": "Poll the mapped projects through the Jira API.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Run the gateway's own Jira poller. Opt-in (off by default), as for GitHub."
+            },
+            "intervalSeconds": {
+              "type": "integer",
+              "default": 60,
+              "description": "Seconds between polls.",
+              "minimum": 1
+            },
+            "site": {
+              "type": "string",
+              "default": "",
+              "description": "The Jira site (`your-org.atlassian.net`) the poller and the key-to-ref mapping use."
+            },
+            "emailEnv": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "default": "THE_LOOP_JIRA_EMAIL",
+              "description": "The account email for basic auth (Cloud). The NAME of an environment variable, never a value: a pasted token fails validation here (issue-496, abuse case 7)."
+            },
+            "tokenEnv": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "default": "THE_LOOP_JIRA_TOKEN",
+              "description": "The API token. The NAME of an environment variable, never a value: a pasted token fails validation here (issue-496, abuse case 7)."
+            },
+            "labels": {
+              "type": "array",
+              "default": [],
+              "uniqueItems": true,
+              "items": {
+                "type": "string"
+              },
+              "description": "Only issues carrying every one of these labels are listed."
+            }
+          }
+        },
+        "projects": {
+          "type": "array",
+          "default": [],
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{1,9}$"
+          },
+          "description": "Project keys whose issues may be work items. An event on a project not listed here is dropped (`gateway.dropped: unbound`)."
+        }
+      }
+    },
+    "slack": {
+      "type": "object",
+      "description": "Slack's two transports for one app. Socket Mode is the default (no public URL) and exactly one connection is opened per app for the life of the process (R1.2); the HTTP routes verify Slack's `v0` signature within the 300 s replay window.",
+      "additionalProperties": false,
+      "properties": {
+        "socket": {
+          "type": "object",
+          "description": "Socket Mode.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Open the Socket Mode connection."
+            },
+            "appTokenEnv": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "default": "THE_LOOP_SLACK_APP_TOKEN",
+              "description": "The app-level token (`connections:write`). The NAME of an environment variable, never a value: a pasted token fails validation here (issue-496, abuse case 7)."
+            },
+            "botTokenEnv": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "default": "THE_LOOP_SLACK_BOT_TOKEN",
+              "description": "The bot token, for the heartbeat split check. The NAME of an environment variable, never a value: a pasted token fails validation here (issue-496, abuse case 7)."
+            },
+            "splitCheckBeats": {
+              "type": "integer",
+              "default": 3,
+              "description": "Heartbeats to miss before `channel.split_suspected`, as the instance's `channels.slack.read.splitCheckBeats`.",
+              "minimum": 0,
+              "maximum": 5
+            }
+          }
+        },
+        "http": {
+          "type": "object",
+          "description": "The HTTP routes `/slack/events`, `/slack/interactions`, `/slack/commands`.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Serve the routes."
+            },
+            "signingSecretEnv": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "default": "SLACK_SIGNING_SECRET",
+              "description": "The app's signing secret. The NAME of an environment variable, never a value: a pasted token fails validation here (issue-496, abuse case 7)."
+            }
+          }
+        },
+        "rooms": {
+          "type": "array",
+          "default": [],
+          "description": "Channel-to-work-item declarations: a thread in a declared channel that no binding covers resolves to this work item. A thread outside any room and any binding is dropped (`gateway.dropped: unbound`).",
+          "items": {
+            "type": "object",
+            "description": "A room.",
+            "additionalProperties": false,
+            "properties": {
+              "channel": {
+                "type": "string",
+                "description": "The Slack channel id."
+              },
+              "workItem": {
+                "type": "string",
+                "description": "The work item ref (`github:owner/repo#N`, `jira:site/KEY-N`)."
+              }
+            },
+            "required": [
+              "channel",
+              "workItem"
+            ]
+          }
+        }
+      }
+    },
+    "instances": {
+      "type": "array",
+      "default": [],
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      },
+      "description": "Optional allow-list of instance names. When set, a fetch, claim or registration under another name is refused (`gateway.refused: unknown-instance`). A guard against misconfiguration, not an authentication."
+    },
+    "observability": {
+      "type": "object",
+      "description": "The gateway's event log: the same JSONL shape as every the-loop process (decision-025), under the `gateway.*` and `subject.*` families.",
+      "additionalProperties": false,
+      "properties": {
+        "eventLog": {
+          "type": "object",
+          "description": "The log.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Write the log."
+            },
+            "path": {
+              "type": "string",
+              "default": "",
+              "description": "Unset resolves to `<state.root>/logs/events.jsonl`."
+            }
+          }
+        }
+      }
+    }
+  }
+}

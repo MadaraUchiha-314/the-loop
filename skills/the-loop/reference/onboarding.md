@@ -20,6 +20,12 @@ procedure differs between them:
 | Groups come from | `harness-config.schema.json` → `x-onboarding.groups` | `cli-config.schema.json` → `x-onboarding.groups` |
 | Walked when | always | always — see below |
 
+A third file, `gateway-config.yaml`, is walked the same way **only when the user says this
+machine runs a the-loop gateway** (issue-496): its groups come from
+`gateway-config.schema.json`, it lives beside the CLI config, and it carries no instance
+key. An instance that *reads from* a gateway needs only the `gateway` block of its CLI
+config (the `ingress` group), established in the same walk.
+
 The CLI config is walked **even when the user keeps it in their home directory**. Where
 the file lives is a storage question; what it turns on is the reason they ran init. The
 only thing the answer changes is which path gets written.

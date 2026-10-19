@@ -13,7 +13,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { App } from "../App.tsx";
 import type { TheLoopApi } from "../api/client.ts";
 import { ApiProvider } from "../state/ApiContext.tsx";
+import { DEMO_GATEWAY } from "../demo/fixture.ts";
 import { ManagerApi } from "../test/manager.ts";
+import { gatewayWords } from "./InstanceDetail.tsx";
 
 function renderApp(api?: TheLoopApi) {
   return render(
@@ -47,8 +49,9 @@ describe("the instance pane for a member that is not live", () => {
     const restart = screen.getByRole("button", { name: /restart instance/i });
     expect(restart).toBeDisabled();
     expect(restart).toHaveAttribute("title", "connection refused");
-    // Daemons and health both: neither is read from a member that has not answered.
-    expect(screen.getAllByText(/Unknown — the instance has not answered/)).toHaveLength(2);
+    // Daemons, health and the gateway card (issue-496): none is read from a member
+    // that has not answered.
+    expect(screen.getAllByText(/Unknown — the instance has not answered/)).toHaveLength(3);
     expect(screen.getByText(/Disabled: connection refused/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
     // Nothing was sent to it: the manager refuses to, and so does the pane.
@@ -139,5 +142,70 @@ describe("the instance pane on a worker (the demo fixture)", () => {
     globalThis.location.hash = "#/instances/nope";
     expect(await screen.findByText(/No instance/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Back to the instances/ })).toHaveAttribute("href", "#/instances");
+  });
+});
+
+describe("the Gateway card (issue-496, R10.3)", () => {
+  async function renderWith(doc: (typeof DEMO_GATEWAY)[keyof typeof DEMO_GATEWAY]) {
+    globalThis.location.hash = "#/instances/laptop-a";
+    const api = new ManagerApi();
+    api.gatewayDocuments["laptop-a"] = { ...doc, instance: "laptop-a" };
+    renderApp(api);
+    expect(await screen.findByRole("heading", { name: "laptop-a" })).toBeInTheDocument();
+    const card = document.querySelector('[data-card="gateway"]');
+    expect(card).not.toBeNull();
+    await waitFor(() => expect(within(card as HTMLElement).queryByText("Reading…")).toBeNull());
+    return { api, card: card as HTMLElement };
+  }
+
+  it("connected: the words carry the state, the subjects table has an accessible name, the Daemons rows read off · gateway configured", async () => {
+    const { api, card } = await renderWith(DEMO_GATEWAY.connected);
+    expect(within(card).getByText("connected · long-poll")).toBeInTheDocument();
+    expect(within(card).getByText("laptop-a")).toBeInTheDocument();
+    expect(within(card).getByRole("table", { name: "This instance's queue, by subject" })).toBeInTheDocument();
+    expect(within(card).getByText("loop-github-octo-repo-15")).toBeInTheDocument();
+    expect(within(card).getByText("reviewer")).toBeInTheDocument();
+    expect(within(card).getByText(/ok · slack socket up · 2 ingresses running/)).toBeInTheDocument();
+    // the dot is decorative: the state is readable without it
+    const dots = card.querySelectorAll('[aria-hidden="true"]');
+    expect(dots.length).toBeGreaterThan(0);
+    const daemons = document.querySelector('[data-card="daemons"]') as HTMLElement;
+    expect(within(daemons).getByText("off · gateway configured")).toBeInTheDocument();
+    expect(within(daemons).queryByRole("button", { name: "start" })).toBeNull();
+    expect(api.targeted.some(([method, instance]) => method === "gateway" && instance === "laptop-a")).toBe(true);
+  });
+
+  it("connecting: names the attempt and shows no queue", async () => {
+    const { card } = await renderWith(DEMO_GATEWAY.connecting);
+    expect(within(card).getByText("connecting · attempt 3")).toBeInTheDocument();
+    expect(within(card).queryByRole("table")).toBeNull();
+  });
+
+  it("refused: says who holds the name and what this instance does about it", async () => {
+    const { card } = await renderWith(DEMO_GATEWAY.refused);
+    expect(within(card).getByText("refused · duplicate instance (409)")).toBeInTheDocument();
+    expect(within(card).getByRole("alert").textContent).toMatch(/another process is already polling as/);
+    expect(within(card).getByRole("alert").textContent).toMatch(/c0ffee42/);
+  });
+
+  it("unreachable: says it retries and does not fall back", async () => {
+    const { card } = await renderWith(DEMO_GATEWAY.unreachable);
+    expect(within(card).getByText("unreachable · retrying")).toBeInTheDocument();
+    expect(within(card).getByRole("alert").textContent).toMatch(/not falling back/);
+  });
+
+  it("not configured: says the instance runs its own ingresses, and the Daemons rows keep their verbs", async () => {
+    const { card } = await renderWith(DEMO_GATEWAY.none);
+    expect(within(card).getByText("not configured")).toBeInTheDocument();
+    expect(within(card).getByText(/runs its own webhook receiver, poller and Slack listener/)).toBeInTheDocument();
+    const daemons = document.querySelector('[data-card="daemons"]') as HTMLElement;
+    expect(within(daemons).queryByText("off · gateway configured")).toBeNull();
+    expect(within(daemons).getByRole("button", { name: "start" })).toBeInTheDocument();
+  });
+
+  it("gatewayWords is the one vocabulary", () => {
+    expect(gatewayWords({ configured: false, state: "off" })).toEqual({ words: "not configured", dot: "skipped" });
+    expect(gatewayWords({ configured: true, state: "connected", mode: { pollIntervalSeconds: 5, longPollSeconds: 0 } }).words).toBe("connected · polling");
+    expect(gatewayWords({ configured: true, state: "unreachable" }).dot).toBe("blocked");
   });
 });

@@ -329,6 +329,7 @@ const config = defineConfig({
             { text: "Quickstart", link: "/guide/quickstart" },
             { text: "How it works", link: "/guide/how-it-works" },
             { text: "Slack integration", link: "/guide/slack" },
+            { text: "Moving to a gateway", link: "/guide/gateway" },
           ],
         },
       ],

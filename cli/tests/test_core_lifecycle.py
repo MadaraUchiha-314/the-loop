@@ -32,6 +32,7 @@ def test_defaults_enable_the_service_and_nothing_else(tmp_path):
         "gh-webhook": False,
         "poller": False,
         "slack-listener": False,
+        "gateway-client": False,
     }
 
 
@@ -46,6 +47,7 @@ def test_explicit_flags_win(tmp_path):
         "gh-webhook": True,
         "poller": True,
         "slack-listener": False,
+        "gateway-client": False,
     }
 
 

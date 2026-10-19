@@ -35,7 +35,7 @@ import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Callable, Any, Dict, List, Optional, Union
 
 from .. import eventlog
 from .refs import (  # noqa: F401 — re-exported: callers import these from here
@@ -469,11 +469,30 @@ def _as_ref(work_item: Union[str, WorkItemRef]) -> WorkItemRef:
     return WorkItemRef.parse(work_item)
 
 
+#: What a registry publisher is told (issue-496): ``("claim", ref, "")`` when a session
+#: is registered, ``("release", ref, "")`` when one closes (a PR endpoint included),
+#: ``("link", pr_ref, owner_ref)`` when a pull request is recorded as delivering a work
+#: item. The gateway client sets one; a registry with none publishes nothing.
+RegistryPublisher = Callable[[str, str, str], None]
+
+
 class SessionRegistry:
     """File-per-session store under ``root`` with atomic writes."""
 
+    #: Set by the gateway client (issue-496); ``None`` publishes nothing.
+    publisher: Optional[RegistryPublisher] = None
+
     def __init__(self, root: Union[str, Path]):
         self.root = Path(root)
+
+    def _publish(self, event: str, ref: str, other: str = "") -> None:
+        publisher = self.publisher
+        if publisher is None:
+            return
+        try:
+            publisher(event, ref, other)
+        except Exception:  # noqa: BLE001 — a registration never fails on its publisher
+            logger.exception("registry publisher failed on %s %s", event, ref)
 
     # -- storage primitives ----------------------------------------------------
 
@@ -535,6 +554,7 @@ class SessionRegistry:
             cwd=session.cwd,
             replaced=bool(existing is not None and force) or None,
         )
+        self._publish("claim", session.work_item.ref)
         return session
 
     def find_by_work_item(
@@ -640,6 +660,9 @@ class SessionRegistry:
             harness=session.harness,
             harness_session_id=session.harness_session_id,
         )
+        self._publish("release", session.work_item.ref)
+        for endpoint in session.pull_requests:
+            self._publish("release", endpoint.work_item.ref)
         return True
 
     def forget(self, work_item: Union[str, WorkItemRef]) -> bool:
@@ -753,6 +776,7 @@ class SessionRegistry:
             work_item=owner_ref.ref,
             pull_request=pr_ref.ref,
         )
+        self._publish("link", pr_ref.ref, owner_ref.ref)
         return endpoint
 
     def save_endpoint(self, owner: Union[str, WorkItemRef], endpoint: Session) -> None:
@@ -811,6 +835,7 @@ class SessionRegistry:
             pull_request=pr_ref.ref,
             harness_session_id=endpoint.harness_session_id or None,
         )
+        self._publish("release", pr_ref.ref)
         return endpoint
 
     def touch(

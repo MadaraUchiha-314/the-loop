@@ -13,15 +13,16 @@
  */
 
 import type {
-  ConfigDocument,
-  JsonSchema,
-  StandingSessionRecord,
   AttentionItem,
+  ConfigDocument,
   DaemonStatus,
   EventRecord,
+  GatewayDocument,
   GraphStatus,
+  JsonSchema,
   NodeReport,
   SessionRecord,
+  StandingSessionRecord,
   TranscriptEntry,
   WorkItemRecord,
 } from "../api/types.ts";
@@ -411,6 +412,72 @@ export const DEMO_DAEMONS: DaemonStatus[] = [
     lastCycleAt: "",
   },
 ];
+
+/**
+ * The Gateway card's five states (issue-496, R10.3), as `GET /api/v1/gateway` answers
+ * them. The demo worker is `connected`; the others are what a test renders.
+ */
+export const DEMO_GATEWAY: Record<"connected" | "connecting" | "refused" | "unreachable" | "none", GatewayDocument> = {
+  connected: {
+    configured: true,
+    url: "http://127.0.0.1:8790",
+    state: "connected",
+    instance: "demo",
+    peer: "7f3a2c91",
+    since: iso(1440),
+    committed: 1842,
+    attempt: 0,
+    mode: { pollIntervalSeconds: 5, longPollSeconds: 20 },
+    claims: [
+      { subject: "loop-github-octo-repo-12", role: "driver" },
+      { subject: "loop-github-octo-repo-14", role: "driver" },
+      { subject: "loop-github-octo-repo-15", role: "reviewer" },
+    ],
+    health: { ok: true, ingresses: { "slack-socket": "running", "github-poll": "running" }, slack: { socket: "up" }, store: { queues: { demo: 2 }, held: 0 } },
+    queue: { instance: "demo", committed: 1842, backlog: 2, oldestPendingAt: iso(0.13), dead: 0 },
+  },
+  connecting: {
+    configured: true,
+    url: "http://127.0.0.1:8790",
+    state: "connecting",
+    instance: "demo",
+    peer: "7f3a2c91",
+    attempt: 3,
+    mode: { pollIntervalSeconds: 5, longPollSeconds: 20 },
+    claims: [],
+    health: null,
+    queue: null,
+  },
+  refused: {
+    configured: true,
+    url: "http://127.0.0.1:8790",
+    state: "refused",
+    instance: "demo",
+    peer: "7f3a2c91",
+    error: "duplicate-instance",
+    refusedBy: "c0ffee42",
+    mode: { pollIntervalSeconds: 5, longPollSeconds: 20 },
+    claims: [],
+    health: null,
+    queue: null,
+  },
+  unreachable: {
+    configured: true,
+    url: "http://127.0.0.1:8790",
+    state: "unreachable",
+    instance: "demo",
+    peer: "7f3a2c91",
+    since: iso(1440),
+    committed: 1842,
+    attempt: 6,
+    error: "connection refused",
+    mode: { pollIntervalSeconds: 5, longPollSeconds: 20 },
+    claims: [{ subject: "loop-github-octo-repo-14", role: "driver" }],
+    health: null,
+    queue: null,
+  },
+  none: { configured: false, state: "off" },
+};
 
 export const DEMO_EVENTS: EventRecord[] = [
   // The event `the-loop ask` appends (issue-208): the question card lights up

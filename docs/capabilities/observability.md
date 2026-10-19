@@ -14,6 +14,15 @@ for humans, coding agents and any dashboarding built on top.
 
 ## Current behaviour
 
+> **The gateway (issue-496)** records on the same JSONL log under two new families:
+> `gateway.*` (`started`, `stopped`, `received`, `dropped`, `refused`, `reloaded`,
+> `claimed`, `released`, `registered`, `unreachable`, `connected`) and `subject.*`
+> (`appended`, `routed`, `committed`, `redelivered`, `dead-lettered`, `expired`); the
+> instance's `dispatch.*` records carry `gateway_event_id` beside the delivery id
+> (`eventlog.correlate`), so one delivery can be followed from provider to session;
+> `eventlog.context` adds per-thread fields to every record emitted within. See
+> [gateway](gateway.md).
+
 - Every accept/reject/route/dispatch/spawn/close decision SHALL be appended as one JSON
   object per line with a common envelope (`ts`, `source`, `event`, `level`, `pid`) plus
   documented per-type fields (`work_item`, `delivery_id`, `reason`, `error`,
@@ -43,6 +52,7 @@ for humans, coding agents and any dashboarding built on top.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-496 | The gateway (2026-10-19): the `gateway.*` and `subject.*` families, `config.reload-failed`, `gateway_event_id` on `dispatch.*`, `eventlog.context` and `eventlog.correlate` | [spec](../specs/issue-496/), [gateway](gateway.md) |
 | issue-409 | Three `channel.*` rows for delivery that did **not** happen — `undelivered` (`warning`: an event every asked channel refused, now queued; names the type, the work item, the channels and the queue depth), `delivered_late` (a queued event a later attempt landed, with its attempts and how long it waited) and `undelivered_dropped` (`warning`: the queue was full and its oldest entry went). `session.awaiting_input` gains `channels_posted`. Ids and counts only, the rule unchanged: the queued message text lives in the outbox, never in the log. Before this, delivering to nobody was one `debug` line with `posted: 0` | [spec](../specs/issue-409/), [channels](channels.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/409) |
 | issue-377 | `session.spawned` and `session.respawned` carry the argv the session was launched with — `harness_args`, `model`, `effort`, each omitted when empty — and `session.pr_spawned` carries `harness_args`, so "was this session launched with the flag the config declares?" is answerable from `events.jsonl` alone, which is the regression check the issue asked for | [spec](../specs/issue-377/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/377) |
 | issue-245 | Six `channel.*` event types joined the catalog — `posted`, `post_failed`, `reply_received`, `dropped` (reasons: `unmapped` \| `self-authored` \| `unauthorized-actor` \| `undeliverable`), `mirrored`, `mirror_failed` — tracing a question's fan-out to the conversation channels and a reply's round-trip back; payloads carry ids, never message text or tokens | [spec](../specs/issue-245/), [decision-094](../decisions/decision-094.md) |

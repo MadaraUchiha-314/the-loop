@@ -23,6 +23,38 @@ export interface Health {
   [key: string]: unknown;
 }
 
+/** The gateway client's connection state (issue-496). */
+export type GatewayState = "connected" | "connecting" | "refused" | "unreachable" | "off" | "unknown";
+
+/**
+ * `GET /api/v1/gateway` — this instance's view of its gateway (issue-496, R10.3):
+ * whether a `gateway` block is configured and, when it is, how the client is doing.
+ * `health` and `queue` are proxied from the gateway while the client is connected.
+ */
+export interface GatewayDocument {
+  configured: boolean;
+  state: GatewayState;
+  url?: string;
+  instance?: string;
+  peer?: string;
+  since?: string | null;
+  committed?: number;
+  attempt?: number;
+  refusedBy?: string | null;
+  error?: string | null;
+  mode?: { pollIntervalSeconds: number; longPollSeconds: number };
+  claims?: { subject: string; role: string }[];
+  health?: {
+    ok: boolean;
+    ingresses?: Record<string, string>;
+    slack?: { socket: string };
+    store?: { queues?: Record<string, number>; held?: number };
+    [key: string]: unknown;
+  } | null;
+  queue?: { instance: string; committed: number; backlog: number; oldestPendingAt: string | null; dead: number } | null;
+  [key: string]: unknown;
+}
+
 /**
  * `GET /api/v1/instance` — this instance's identity and the work items it
  * manages (issue-322), plus `role` and `sessionCount` since issue-374.

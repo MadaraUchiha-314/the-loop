@@ -41,6 +41,7 @@ import json
 import logging
 import os
 import threading
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterator, Optional, Sequence, Union
@@ -1250,6 +1251,78 @@ EVENT_TYPES: Dict[str, str] = {
         "excluded from candidacy, and the level makes that belt-and-braces. "
         "After selfDiagnosis.maxRetries failures the fingerprint is abandoned."
     ),
+    # -- the gateway (issue-496; source: gateway, or the instance's client) -------------
+    "gateway.started": (
+        "The gateway process came up (listen, store, ingresses: the enabled set)."
+    ),
+    "gateway.stopped": "The gateway process stopped (reason).",
+    "gateway.received": (
+        "An ingress accepted a provider delivery (provider, source, kind, delivery_id, "
+        "subject, event_id). Length-capped summary only; the payload is never logged."
+    ),
+    "gateway.dropped": (
+        "An ingress refused or discarded a delivery before storing it (provider, "
+        "reason: bad-signature | replay-window | invalid-payload | unbound | "
+        "undeclared-repository | duplicate, delivery_id). Nothing was stored."
+    ),
+    "gateway.refused": (
+        "The consumer API refused a request (instance, reason: duplicate-instance | "
+        "duplicate-actor | commit-undelivered | unknown-instance, holder, peer). On the "
+        "client side the same event records the 409 it received, with `holder`."
+    ),
+    "gateway.reloaded": (
+        "gateway-config.yaml was re-read and the enabled ingress set applied (detail)."
+    ),
+    "config.reload-failed": (
+        "A config edit could not be loaded and the previous configuration keeps "
+        "running (path, error). Never stops an ingress on a bad edit (issue-496 R8.5)."
+    ),
+    "gateway.claimed": (
+        "An instance published a claim on a subject (subject, instance, role, routed: "
+        "how many held events the claim routed onto its queue)."
+    ),
+    "gateway.released": "An instance released its claim (subject, instance).",
+    "gateway.bound": (
+        "An instance published a binding — an object (a pull request, a Slack thread) "
+        "belongs to a work item (instance, provider, key, ref, routed: how many held "
+        "events it routed). Recorded so a binding that redirects a subject is never "
+        "anonymous (issue-496, security review SEC-2)."
+    ),
+    "gateway.registered": (
+        "An instance registered the actors it works for (instance, actors: counts per "
+        "provider)."
+    ),
+    "gateway.unreachable": (
+        "The instance's gateway client could not reach the gateway (url, error). Once per "
+        "outage; the instance keeps running and never falls back to its own ingresses."
+    ),
+    "gateway.connected": (
+        "The instance's gateway client reached the gateway (url, instance, peer), at start "
+        "or after an outage."
+    ),
+    "subject.appended": (
+        "An event was stored on a subject (event_id, subject, provider, kind, "
+        "delivery_id). Written BEFORE the provider is acknowledged."
+    ),
+    "subject.routed": (
+        "The stored event's consumers were resolved (event_id, subject, to: the instance "
+        "list, or `unassigned` when none; by: claim | actor | hold)."
+    ),
+    "subject.committed": (
+        "An instance committed a delivery (instance, seq, event_id, outcome)."
+    ),
+    "subject.redelivered": (
+        "A fetch returned a delivery again (instance, seq, event_id, attempt): the "
+        "previous attempt was never committed."
+    ),
+    "subject.dead-lettered": (
+        "A delivery exceeded store.maxAttempts and was committed as dead-lettered "
+        "(instance, seq, event_id, attempts). Kept for inspection."
+    ),
+    "subject.expired": (
+        "Retention dropped an uncommitted delivery or a held event (subject, event_id, "
+        "instance, age_s)."
+    ),
 }
 
 
@@ -1292,7 +1365,17 @@ class EventLog:
             "level": level if level in LEVELS else "info",
             "pid": os.getpid(),
         }
+        extra = getattr(_context, "fields", None)
+        if extra:
+            record.update({k: v for k, v in extra.items() if v is not None})
         record.update({k: v for k, v in fields.items() if v is not None})
+        delivery_id = record.get("delivery_id")
+        if delivery_id is not None and _correlations:
+            with _correlations_lock:
+                tagged = _correlations.get(str(delivery_id))
+            if tagged:
+                for key, value in tagged.items():
+                    record.setdefault(key, value)
         line = json.dumps(record, separators=(",", ":"), default=str) + "\n"
         try:
             with self._lock:
@@ -1303,6 +1386,65 @@ class EventLog:
             if not self._warned:  # warn once — never break ingress over o11y
                 self._warned = True
                 logger.warning("cannot write event log %s: %s", self.path, exc)
+
+
+# -- delivery correlation (issue-496, R10.2) -------------------------------------
+
+#: ``delivery_id -> extra fields`` every record naming that delivery carries, whichever
+#: thread emits it. The gateway client tags a delivery with its gateway event id before
+#: handing it to the dispatcher, whose worker threads then record `dispatch.*` with
+#: `gateway_event_id` beside the delivery id. Bounded: the oldest tag goes first.
+_correlations: "OrderedDict[str, Dict]" = OrderedDict()
+_correlations_lock = threading.Lock()
+CORRELATION_CAP = 4096
+
+
+def correlate(delivery_id: str, **fields) -> None:
+    """Attach ``fields`` to every record that names ``delivery_id`` from now on."""
+    if not delivery_id:
+        return
+    with _correlations_lock:
+        _correlations[str(delivery_id)] = {
+            k: v for k, v in fields.items() if v is not None
+        }
+        _correlations.move_to_end(str(delivery_id))
+        while len(_correlations) > CORRELATION_CAP:
+            _correlations.popitem(last=False)
+
+
+def uncorrelate(delivery_id: str) -> None:
+    with _correlations_lock:
+        _correlations.pop(str(delivery_id), None)
+
+
+# -- per-thread context fields (issue-496, R10.2) --------------------------------
+
+_context = threading.local()
+
+
+class context:
+    """Fields every record emitted on this thread carries while the block is open.
+
+    The gateway client wraps each delivery's dispatch in
+    ``with eventlog.context(gateway_event_id=…):`` so the instance's ``dispatch.*``
+    records name the gateway event beside the delivery id without every emit site
+    learning a new argument. A field passed to :meth:`EventLog.emit` explicitly wins
+    over the context's. Nested blocks merge, innermost winning.
+    """
+
+    def __init__(self, **fields) -> None:
+        self._fields = fields
+        self._previous: Optional[Dict] = None
+
+    def __enter__(self) -> "context":
+        self._previous = getattr(_context, "fields", None)
+        merged = dict(self._previous or {})
+        merged.update(self._fields)
+        _context.fields = merged
+        return self
+
+    def __exit__(self, *exc) -> None:
+        _context.fields = self._previous
 
 
 # -- module-level emitter (a no-op until a CLI entry point configures it) -------
@@ -1366,9 +1508,11 @@ def emit(event: str, level: str = "info", **fields) -> None:
 
 
 def reset() -> None:
-    """Deconfigure the module-level log (tests)."""
+    """Deconfigure the module-level log and forget the delivery correlations (tests)."""
     global _log
     _log = None
+    with _correlations_lock:
+        _correlations.clear()
 
 
 # -- reader ---------------------------------------------------------------------

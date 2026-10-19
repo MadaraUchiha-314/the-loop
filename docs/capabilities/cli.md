@@ -11,6 +11,14 @@ self-learning/ML capabilities.
 
 ## Current behaviour
 
+> **The gateway (issue-496):** `the-loop gateway start|stop|restart|status|subjects|instances`
+> run and inspect the gateway process (`--config` names `gateway-config.yaml`); on an
+> instance with a `gateway` block, `the-loop status` prints the three local ingresses as
+> `off · gateway configured` and a `gateway-client` row with the client's line
+> (`connected · polling …`, `refused · duplicate-instance (409)`, `unreachable ·
+> retrying …`); `the-loop doctor slack` gains a gateway section. See
+> [`gateway`](../cli/commands/gateway.md) and [gateway](gateway.md).
+
 - The CLI SHALL register commands via an extensible registry (`the_loop.commands`).
 - The CLI config MAY name the **instance** it is (issue-322, `instance`): `the-loop
   status` SHALL print one line naming the instance (or `(unnamed)`), its scope mode and
@@ -552,6 +560,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-496 | The gateway (2026-10-19): the `gateway` command family; the `status`/`start` wording for an instance behind a gateway; the doctor's gateway section | [spec](../specs/issue-496/), [`gateway`](../cli/commands/gateway.md) |
 | issue-482 | Session-side verbs stop needing a token (2026-10-13): in a session the daemon spawned, `comment`, `ticket`, `pr` and `ask` go through the service or fail with a message, never in-process; `ask` gains `POST /api/v1/sessions/ask`. The daemon no longer hands a session any `env.file` value — see [interactive sessions](interactive-sessions.md) | [spec](../specs/issue-482/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/482) |
 | issue-475 | The ticket verbs act on a Jira ref (2026-10-06, PR 5 of 5): `core/tickets.tracker_for` dispatches `ticket show\|create\|close`, `comment`, `ask` and `pr create` by tracker, the GitHub functions unchanged. `ticket create --project` opens a Jira ticket, `ticket close` transitions into Done (refusing an ambiguous choice), `pr create` on a Jira ref opens in the origin repository. Announcements reach a Jira ticket as relays, and the CLI graph path accepts Jira gate authors. Before, every verb refused a Jira ref and `/the-loop:work-on` registered a Jira item against its PR | [spec](../specs/issue-475/), [ticket](../cli/commands/ticket.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-475 | Jira tickets are work-item refs (2026-10-06, PR 1 of 5): `jira:<site>/<KEY>-<n>` parses, renders, slugs and links through a per-provider `RefScheme` (`sessions/refs.py`), with the GitHub scheme moved unchanged. Spec ids come from `WorkItemRef.spec_id` (`jira-<key>-<n>` beside `issue-<n>`), `derive_ref` inverts them with the configured site, and `origin_repository` maps a Jira project to its GitHub repository at the six shared owner/repo reads. Before, the `jira:` prefix was reserved and every non-GitHub ref had no spec id | [spec](../specs/issue-475/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
