@@ -227,9 +227,11 @@ def test_a_stopped_instance_finds_its_backlog_in_order(gw, tmp_path):
         assert wait_until(lambda: len(a.tmux.delivers) == 3)
         import re
 
-        orders = [
-            re.search(r"reply (\d)", prompt).group(1) for _, prompt in a.tmux.delivers
-        ]  # type: ignore[union-attr]
+        orders = []
+        for _, prompt in a.tmux.delivers:
+            match = re.search(r"reply (\d)", prompt)
+            assert match is not None, prompt[:200]
+            orders.append(match.group(1))
         assert orders == ["1", "2", "3"]
         assert wait_until(lambda: not reborn.deferred or reborn.resolve_deferred() >= 0)
         reborn.step()
