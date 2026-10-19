@@ -25,11 +25,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .. import eventlog
 from .config import GatewayConfig
-from .envelope import subject_for_slug, ROLES
+from .envelope import subject_for_slug, ROLES, PROVIDERS
 from .store import Refused, Store, peer_fingerprint
 
 __all__ = ["GatewayState", "build_consume_router", "API_PREFIX"]
@@ -56,7 +56,7 @@ class GatewayState:
 
     def health(self) -> Dict[str, Any]:
         queues = {q.instance: q.backlog for q in self.store.queues()}
-        held = sum(row.held for row in self.store.subjects())
+        events, held = self.store.totals()
         return {
             "ok": self.store_ok,
             "uptimeSeconds": int(time.time() - self.started_at),
@@ -65,7 +65,7 @@ class GatewayState:
             "store": {
                 "ok": self.store_ok,
                 "path": str(self.config.store.path),
-                "events": sum(row.events for row in self.store.subjects()),
+                "events": events,
                 "held": held,
                 "queues": queues,
             },
@@ -80,12 +80,27 @@ class GatewayState:
 # -- bodies ---------------------------------------------------------------------------------------
 
 
+#: Bounds on what an unauthenticated peer may write (security review SEC-4, SEC-6): a
+#: name, a subject, a key, an actor, an outcome — and a 64-bit sequence, so an oversized
+#: body is a 422 at the door rather than a row, an OverflowError or a log line.
+NAME_MAX = 128
+SUBJECT_MAX = 256
+KEY_MAX = 512
+ACTORS_MAX = 256
+COMMITS_MAX = 1024
+SEQ_MAX = 2**63 - 1
+
+
 class CommitEntry(BaseModel):
     seq: int = Field(
-        ..., description="A delivery seq of this instance's queue, fetched earlier."
+        ...,
+        ge=0,
+        le=SEQ_MAX,
+        description="A delivery seq of this instance's queue, fetched earlier.",
     )
     outcome: str = Field(
         ...,
+        max_length=NAME_MAX,
         description="delivered | spawned | dropped:<reason> | failed — `failed` leaves the delivery pending.",
     )
 
@@ -93,18 +108,25 @@ class CommitEntry(BaseModel):
 class FetchBody(BaseModel):
     instance: str = Field(
         ...,
+        min_length=1,
+        max_length=NAME_MAX,
         description="The instance's name (`instance.name`, else `default`): its queue.",
     )
     peer: str = Field(
         "",
+        max_length=NAME_MAX,
         description="A random id the client persists, so a restart is the same peer.",
     )
     cursor: int = Field(
-        0, ge=0, description="The `committed` the server last returned; a hint."
+        0,
+        ge=0,
+        le=SEQ_MAX,
+        description="The `committed` the server last returned; a hint.",
     )
     max: int = Field(
         64,
         ge=1,
+        le=SEQ_MAX,
         description="At most this many deliveries; clamped to consume.maxBatch.",
     )
     wait: float = Field(
@@ -116,48 +138,78 @@ class FetchBody(BaseModel):
         0, ge=0, description="Seconds to hold the instance name for this peer; clamped."
     )
     commit: List[CommitEntry] = Field(
-        default_factory=list, description="The previous batch's outcomes."
+        default_factory=list,
+        max_length=COMMITS_MAX,
+        description="The previous batch's outcomes.",
     )
 
 
 class CommitBody(BaseModel):
-    instance: str
-    peer: str = ""
-    commit: List[CommitEntry]
+    instance: str = Field(..., min_length=1, max_length=NAME_MAX)
+    peer: str = Field("", max_length=NAME_MAX)
+    commit: List[CommitEntry] = Field(..., max_length=COMMITS_MAX)
 
 
 class ClaimBody(BaseModel):
-    instance: str
-    peer: str = ""
-    subject: str
-    role: str = Field(..., description="driver | reviewer")
+    instance: str = Field(..., min_length=1, max_length=NAME_MAX)
+    peer: str = Field("", max_length=NAME_MAX)
+    subject: str = Field(..., min_length=1, max_length=SUBJECT_MAX)
+    role: str = Field(..., max_length=NAME_MAX, description="driver | reviewer")
 
 
 class ActorsBody(BaseModel):
-    instance: str
-    peer: str = ""
+    instance: str = Field(..., min_length=1, max_length=NAME_MAX)
+    peer: str = Field("", max_length=NAME_MAX)
     actors: Dict[str, List[str]] = Field(
         default_factory=dict,
         description="Per provider (github | slack | jira): the logins or ids.",
     )
 
+    @field_validator("actors")
+    @classmethod
+    def _bounded(cls, value: Dict[str, List[str]]) -> Dict[str, List[str]]:
+        for provider, names in value.items():
+            if provider not in PROVIDERS:
+                raise ValueError(f"unknown provider {provider!r}")
+            if len(names) > ACTORS_MAX:
+                raise ValueError(f"{provider}: more than {ACTORS_MAX} actors")
+            if any(not name or len(name) > SUBJECT_MAX for name in names):
+                raise ValueError(f"{provider}: an actor name is empty or too long")
+        return value
+
 
 class BindingBody(BaseModel):
     instance: str = Field(
-        ..., description="The publishing instance's name: allow-listed like a claim."
+        ...,
+        min_length=1,
+        max_length=NAME_MAX,
+        description="The publishing instance's name: allow-listed like a claim.",
     )
     peer: str = Field(
         "",
+        max_length=NAME_MAX,
         description="Its persisted peer id; a different peer under a live name is 409.",
     )
     ref: str = Field(
-        ..., description="The work item (`github:owner/repo#N`, `jira:site/KEY-N`)."
+        ...,
+        min_length=1,
+        max_length=KEY_MAX,
+        description="The work item (`github:owner/repo#N`, `jira:site/KEY-N`).",
     )
     provider: str = Field(..., description="github | slack | jira")
     key: str = Field(
         ...,
+        min_length=1,
+        max_length=KEY_MAX,
         description="The object's key: `owner/repo#N` for a pull request, `<channel>:<thread_ts>` for a Slack thread.",
     )
+
+    @field_validator("provider")
+    @classmethod
+    def _known(cls, value: str) -> str:
+        if value not in PROVIDERS:
+            raise ValueError(f"unknown provider {value!r}")
+        return value
 
 
 # -- the router -----------------------------------------------------------------------------------

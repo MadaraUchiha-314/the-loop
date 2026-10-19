@@ -479,3 +479,29 @@ def test_a_binding_is_published_by_a_known_live_peer_or_refused(tmp_path):
         assert gw.events("gateway.bound")[-1]["instance"] == "laptop-a"
     finally:
         gw.close()
+
+
+def test_oversized_or_unknown_fields_are_refused_at_the_door(gw):
+    """
+    Feature: the consumer API (security review SEC-4, SEC-6)
+      Scenario: oversized or unknown fields are refused at the door
+        Given an unauthenticated peer
+        When it fetches under a 10 000-character name, claims a 10 000-character
+             subject, registers actors for an unknown provider or more than 256 of
+             them, binds with an unknown provider, or sends a cursor beyond 64 bits
+        Then each is a 422 and nothing is written — no row, no condition, no log line
+             carrying the name
+    """
+    long_name = "n" * 10_000
+    assert gw.fetch(long_name, peer="p").status_code == 422
+    assert gw.store.instances() == []
+    assert gw.claim("laptop-a", "x" * 10_000, "driver").status_code == 422
+    assert gw.register("laptop-a", {"unknown": ["a"]}).status_code == 422
+    assert gw.register("laptop-a", {"github": ["a"] * 300}).status_code == 422
+    assert gw.bind("github:o/r#14", "nonsense", "k").status_code == 422
+    huge = gw.client.post(
+        "/api/v1/gateway/fetch",
+        json={"instance": "laptop-a", "peer": "p", "cursor": 2**70},
+    )
+    assert huge.status_code == 422
+    assert gw.store.instances() == [] and not gw.events("gateway.refused")

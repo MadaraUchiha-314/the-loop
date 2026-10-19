@@ -55,6 +55,13 @@ def _retention_loop(
                     event_id=event_id,
                     instance=instance or None,
                 )
+            if result.pruned_instances or result.pruned_subjects:
+                logger.info(
+                    "gateway: retention pruned %d lapsed instance(s) %s and %d empty subject(s)",
+                    len(result.pruned_instances),
+                    list(result.pruned_instances),
+                    result.pruned_subjects,
+                )
         except Exception:  # noqa: BLE001 — retention never ends the process
             logger.exception("gateway: retention pass failed")
             state.store_ok = False

@@ -458,3 +458,36 @@ def test_an_append_between_an_empty_read_and_the_wait_is_not_a_lost_wake_up(stor
     started = time.monotonic()
     assert store.wait("laptop-a", 0.2) is False
     assert time.monotonic() - started >= 0.15
+
+
+def test_retention_prunes_a_lapsed_instance_with_nothing_queued_and_an_empty_subject(
+    tmp_path,
+):
+    """
+    Feature: bounded growth (requirements §Security, abuse case 6; security review SEC-4)
+      Scenario: retention prunes what an unauthenticated peer created and never used
+        Given a name that fetched once, claimed a subject and registered an actor, then
+              lapsed with nothing queued, and a live instance beside it
+        When expire runs after retention
+        Then the lapsed name, its claim and its actor are gone, its empty subject too,
+             and the live instance, its claim and its queue are untouched
+    """
+    store = SqliteStore(tmp_path / "gw.db", retention_days=1)
+    store.touch("junk-1", "pj", 1)
+    store.claim("loop-junk-subject", "junk-1", "driver")
+    store.register_actors("junk-1", {"github": ("mallory",)}, peer="pj")
+    store.touch("laptop-a", "pa", 10**6)  # a lease that outlives the pass
+    store.claim("loop-github-o-r-14", "laptop-a", "driver")
+    store.append(ev(1), ["laptop-a"])
+    assert store.totals() == (1, 0)
+    later = time.time() + 2 * 86_400
+    result = store.expire(now=later)
+    assert result.pruned_instances == ("junk-1",)
+    assert result.pruned_subjects == 1
+    names = {row.instance for row in store.instances()}
+    assert names == {"laptop-a"}
+    assert store.claimants("loop-junk-subject") == []
+    assert store.instance_for_actor("github", "mallory") is None
+    assert [c.instance for c in store.claimants("loop-github-o-r-14")] == ["laptop-a"]
+    assert {row.subject for row in store.subjects()} == {"loop-github-o-r-14"}
+    store.close()

@@ -171,6 +171,8 @@ class ExpireResult:
     dead_lettered: Tuple[Tuple[str, int, int], ...] = ()  # (instance, seq, event_id)
     deleted_events: int = 0
     deleted_deliveries: int = 0
+    pruned_instances: Tuple[str, ...] = ()  # lapsed names with nothing queued
+    pruned_subjects: int = 0
 
 
 @dataclass
@@ -232,6 +234,7 @@ class Store(Protocol):
     def set_poll_state(self, ref: str, state: str) -> None: ...
     def has_pending_presence(self, ref: str) -> bool: ...
     def poll_refs(self) -> List[str]: ...
+    def totals(self) -> Tuple[int, int]: ...
     def subjects(self) -> List[SubjectRow]: ...
     def queues(self) -> List[QueueRow]: ...
     def instances(self) -> List[InstanceRow]: ...
@@ -1079,6 +1082,15 @@ class SqliteStore:
 
     # -- the read-only views (R9.2) ------------------------------------------------------------------
 
+    def totals(self) -> Tuple[int, int]:
+        """``(events, held)`` in one query — what ``/health`` reports (security review
+        SEC-4: the per-subject view walks every subject, so a flood of junk subjects
+        would make the health check itself slow)."""
+        with self._tx() as cur:
+            cur.execute("SELECT COUNT(*), COALESCE(SUM(routed = 0), 0) FROM events")
+            events, held = cur.fetchone()
+            return int(events or 0), int(held or 0)
+
     def subjects(self) -> List[SubjectRow]:
         with self._tx() as cur:
             cur.execute("SELECT subject, first_seen FROM subjects ORDER BY first_seen")
@@ -1184,6 +1196,44 @@ class SqliteStore:
 
     # -- retention (R2.8; abuse case 6) ---------------------------------------------------------------
 
+    def _prune(self, now_s: float, cutoff: str) -> Tuple[List[str], int]:
+        """What an unauthenticated peer can create and retention never touched
+        (security review SEC-4): an instance name whose lease lapsed, that has nothing
+        queued and has not fetched since the retention cutoff goes, with its claims,
+        its actors and its in-memory condition; a subject with no event, no claim and
+        no binding left, older than the cutoff, goes too. A stopped instance keeps its
+        queue up to retention (R4.4) and re-asserts its claims and actors when it
+        registers again, so nothing a live fleet relies on is pruned."""
+        pruned: List[str] = []
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT i.instance FROM instances i"
+                " WHERE i.lease_until < ? AND COALESCE(i.last_fetch_at, i.first_seen) < ?"
+                " AND NOT EXISTS (SELECT 1 FROM deliveries d"
+                "   WHERE d.instance = i.instance AND d.state = ?)",
+                (now_s, cutoff, PENDING),
+            )
+            pruned = [str(r[0]) for r in cur.fetchall()]
+            for instance in pruned:
+                cur.execute("DELETE FROM claims WHERE instance = ?", (instance,))
+                cur.execute("DELETE FROM actors WHERE instance = ?", (instance,))
+                cur.execute("DELETE FROM deliveries WHERE instance = ?", (instance,))
+                cur.execute("DELETE FROM instances WHERE instance = ?", (instance,))
+            cur.execute(
+                "DELETE FROM subjects WHERE first_seen < ?"
+                " AND NOT EXISTS (SELECT 1 FROM events e WHERE e.subject = subjects.subject)"
+                " AND NOT EXISTS (SELECT 1 FROM claims c WHERE c.subject = subjects.subject)"
+                " AND NOT EXISTS (SELECT 1 FROM bindings b"
+                "   WHERE 'loop-' || b.slug = subjects.subject)",
+                (cutoff,),
+            )
+            pruned_subjects = int(cur.rowcount)
+        if pruned:
+            with self._cond_lock:
+                for instance in pruned:
+                    self._conditions.pop(instance, None)
+        return pruned, pruned_subjects
+
     def expire(self, now: Optional[float] = None) -> ExpireResult:
         """Apply retention: delete committed deliveries older than ``retention``, dead
         rows after twice that, expire pending deliveries and held events older than
@@ -1246,8 +1296,11 @@ class SqliteStore:
                     " (SELECT dedup_key FROM dedup_keys ORDER BY retired_at DESC LIMIT ?)",
                     (self.dedup_window,),
                 )
+        pruned_instances, pruned_subjects = self._prune(now_s, cutoff)
         return ExpireResult(
             expired=tuple(expired),
+            pruned_instances=tuple(pruned_instances),
+            pruned_subjects=pruned_subjects,
             deleted_events=len(gone),
             deleted_deliveries=deleted,
         )
