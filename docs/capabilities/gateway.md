@@ -211,6 +211,17 @@ The word *gateway*, unqualified, is this process; decision-059's is the
 
 ### What it does not do
 
+- What an unauthenticated peer may do is bounded (security review, round 1): every
+  body field has a length and the providers an enum (a 422 at the door writes nothing);
+  at most one open long-poll per name and 32 in all, the rest answer as plain polls,
+  and 256 open requests before the server answers 503; retention prunes a name whose
+  lease lapsed with nothing queued (its claims, actors and condition) and a subject with
+  nothing left; `/health` carries no path and no bind address. On the provider side a
+  declared body above 25 MiB is a 413 before it is read, a header value chosen by an
+  unauthenticated peer is clipped to 200 characters before it is logged, and a
+  non-ASCII signature is a 401. `gateway status --format json` lists each declared
+  secret name as set or unset (`secretsSet`), never a value; a Jira poller without its
+  secrets is off at start like the GitHub one.
 - No instance authentication (decision-146), no work-item lease over claims (one user's
   subjects on several instances), no multi-replica gateway; the `Store` interface is the
   seam for the last, and the allow-list check is where a bearer token attaches.

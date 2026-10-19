@@ -152,7 +152,7 @@ def test_a_start_time_only_change_says_restart_required(running_app):
         time.sleep(0.1)
     health = client.get("/api/v1/gateway/health").json()
     assert health["restartRequired"] == ["listen"]
-    assert health["listen"]["port"] == 8790  # still the running value
+    assert "listen" not in health and "path" not in health["store"]  # SEC-10c
     report = gateway_cmd.status_report(running_app["config"])
     assert report["running"] is False  # no pidfile in-process; the lines render anyway
     lines = gateway_cmd.status_lines(
@@ -196,6 +196,44 @@ def test_a_missing_secret_variable_leaves_that_ingress_off_and_says_so_in_health
         assert client.get("/api/v1/gateway/subjects").status_code == 200
     failed = _events(events_path, "ingress.hosted_failed")
     assert failed and "THE_LOOP_SLACK_APP_TOKEN" in failed[0]["reason"]
+
+
+def test_a_jira_poller_without_its_secrets_is_off_at_start_not_failing_per_request(
+    tmp_path, monkeypatch
+):
+    """
+    Feature: fail closed (security review SEC-10b)
+      Scenario: a Jira poller without its secrets is off at start, not failing per request
+        Given the Jira poller enabled but its email and token variables unset
+        When the gateway starts
+        Then jira-poll reads failed:missing-secret naming both variables, as the GitHub
+             poller does, and `gateway status` lists each declared secret name as unset
+    """
+    monkeypatch.delenv("THE_LOOP_JIRA_EMAIL", raising=False)
+    monkeypatch.delenv("THE_LOOP_JIRA_TOKEN", raising=False)
+    config = write_gateway_config(
+        tmp_path,
+        github={"poll": {"enabled": False}},
+        slack={"socket": {"enabled": False}},
+        jira={
+            "poll": {"enabled": True, "site": "acme.atlassian.net"},
+            "projects": ["ABC"],
+        },
+    )
+    events_path = tmp_path / "events.jsonl"
+    eventlog.configure("gateway", path=events_path, enabled=True)
+    with TestClient(serve_mod.create_app(config, interval=60)) as client:
+        health = client.get("/api/v1/gateway/health").json()
+        assert health["ingresses"]["jira-poll"] == "failed:missing-secret"
+    failed = _events(events_path, "ingress.hosted_failed")
+    assert failed and "THE_LOOP_JIRA_EMAIL" in failed[-1]["reason"]
+    assert "THE_LOOP_JIRA_TOKEN" in failed[-1]["reason"]
+    report = gateway_cmd.status_report(config)
+    assert report["secretsSet"]["THE_LOOP_JIRA_TOKEN"] is False
+    assert set(report["secretsSet"]) == set(config.secret_names())
+    assert not any(
+        isinstance(v, str) for v in report["secretsSet"].values()
+    )  # names and booleans only
 
 
 def test_a_non_loopback_bind_without_exposed_refuses_to_start(

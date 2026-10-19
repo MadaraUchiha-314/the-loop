@@ -216,6 +216,16 @@ class GatewayIngresses(HostedIngresses):
     def _start_jira_poll(self, config: GatewayConfig) -> _Start:
         from .adapters.poll import build_jira_providers
 
+        if config.jira is not None:
+            # fail closed at start, as the GitHub poller does (security review SEC-10b),
+            # instead of failing on every request
+            missing = [
+                name
+                for name in (config.jira.poll.email_env, config.jira.poll.token_env)
+                if not os.environ.get(name)
+            ]
+            if missing:
+                return None, "missing-secret: " + " and ".join(missing)
         return self._start_poll("jira-poll", config, build_jira_providers)
 
     # -- start / reconcile -------------------------------------------------------------------------

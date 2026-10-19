@@ -84,18 +84,16 @@ class GatewayState:
             "uptimeSeconds": int(time.time() - self.started_at),
             "ingresses": dict(self.ingresses),
             "slack": {"socket": self.slack_socket},
+            # no store path and no bind address here (security review SEC-10c): the
+            # answer goes to any peer on the network; `gateway status` reads both from
+            # the config on the gateway's own host
             "store": {
                 "ok": self.store_ok,
-                "path": str(self.config.store.path),
                 "events": events,
                 "held": held,
                 "queues": queues,
             },
             "restartRequired": list(self.restart_required),
-            "listen": {
-                "host": self.config.listen.host,
-                "port": self.config.listen.port,
-            },
         }
 
 

@@ -615,9 +615,12 @@ same JSONL file, read by `the-loop events` and the dashboard stream.
     are stored.
 - **Secrets handling.** Config carries variable **names**; the schema pattern rejects
   values. Tokens are read from the process environment at adapter start and held in the
-  adapter object only; they never reach the store, the event log (the log's redaction
-  list gains the configured names) or `gateway status`. The gateway holds **no GitHub
-  posting token**: its GitHub poll token needs `repo:read`; posting stays on the instance.
+  adapter object only; they never reach the store, the event log or `gateway status`
+  by construction — every adapter and status line carries the variable's *name*, and
+  `gateway status --format json` lists each declared name as set or unset
+  (`secretsSet`), never a value (security review SEC-10a: the earlier wording promised
+  a redaction list the log does not have). The gateway holds **no GitHub posting
+  token**: its GitHub poll token needs `repo:read`; posting stays on the instance.
 - **Least privilege.** The gateway spawns nothing, writes only under its state root, and
   needs: Slack `connections:write` (app token) and the bot's read scopes; GitHub read on
   the declared repositories; Jira read. The instance's client needs outbound HTTP to one
@@ -626,7 +629,18 @@ same JSONL file, read by `the-loop events` and the dashboard stream.
   config → process does not start; store unwritable → provider gets a failure, nothing
   acked; unknown ref that cannot start → dropped and recorded; duplicate instance name →
   409; duplicate actor → 409; commit for a delivery the queue never fetched → 409;
-  non-loopback without `exposed` → exit 2.
+  non-loopback without `exposed` → exit 2. Added by the security review (round 1,
+  2026-10-19): a body field beyond its bound or a provider outside the enum → 422 at
+  the door, nothing written (SEC-4, SEC-6); a declared body above 25 MiB → 413 before
+  it is read (SEC-9); a header an unauthenticated peer chose is clipped to 200
+  characters before it is logged (SEC-8); a non-ASCII signature is a 401, not a 500
+  (SEC-7); at most one open long-poll per name and 32 in all, the rest plain polls, and
+  256 open requests before uvicorn answers 503 (SEC-5); retention prunes a lapsed name
+  with nothing queued and an empty subject (SEC-4); `/health` carries no path and no
+  bind address (SEC-10c); a Jira poller without its secrets is off at start (SEC-10b);
+  the network sees a peer fingerprint, never a peer id (SEC-1); a binding is published
+  by a named, allow-listed, live peer and recorded (SEC-2); the instance treats a
+  malformed fetch answer as unreachable (SEC-3).
 - **Abuse-case coverage.**
 
 | Abuse case (requirements) | Mechanism | Negative test |

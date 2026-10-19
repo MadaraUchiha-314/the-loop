@@ -85,6 +85,11 @@ def status_report(config: GatewayConfig) -> Dict[str, Any]:
         "held": ((health or {}).get("store") or {}).get("held", 0),
         "instancesLive": now_live,
         "restartRequired": (health or {}).get("restartRequired", []),
+        # which declared secret NAMES resolve in this process's environment — names
+        # and booleans only, never a value (security review SEC-10a)
+        "secretsSet": {
+            name: bool(os.environ.get(name)) for name in config.secret_names()
+        },
     }
 
 

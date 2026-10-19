@@ -249,8 +249,9 @@ paths:
                 additionalProperties: true
                 type: object
                 title: Response Gatewayhealth
-      description: ok, uptime, ingress states, the Socket Mode state, the store's path/events/held/queues,
-        restartRequired, listen.
+      description: ok, uptime, ingress states, the Socket Mode state, the store's ok/events/held/queues,
+        restartRequired. No path and no bind address (the answer goes to any peer); `gateway status`
+        reads both from the config on the gateway's host.
   /api/v1/gateway/subjects:
     get:
       summary: Subjects
