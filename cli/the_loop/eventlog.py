@@ -407,6 +407,15 @@ EVENT_TYPES: Dict[str, str] = {
         "session.reply_sent; an answer given on the ticket instead is forwarded "
         "as usual but emits nothing, so the wait stays reported."
     ),
+    "session.progress": (
+        "A session reported its progress through `the-loop progress` and kept "
+        "working (work_item, text: the one-or-two-line report as sent, actor, "
+        "channels_posted: how many channels took it) — issue-340. Emitted only "
+        "for a work item carrying `progress.label`, at most once per "
+        "`progress.minIntervalSeconds`; the newest one is also the clock the rate "
+        "limit reads, so a deployment with the event log disabled is not "
+        "rate-limited."
+    ),
     "session.reply_sent": (
         "An operator's answer was delivered straight into the waiting session's "
         "tmux pane via POST /api/v1/sessions/reply (work_item, actor) — "

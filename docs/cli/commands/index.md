@@ -32,6 +32,7 @@ that item's own checkout, the same way the repo-scoped commands do.
 | [`standing`](/cli/commands/standing) | The sessions the-loop keeps for itself — no work item, addressed by name: `list`, `start`, `stop`, `restart`, and `say` to talk to one. |
 | [`instances`](/cli/commands/instances) | The fleet a manager serves: `list` on any instance; `register` / `unregister` on a manager, writing the registry through the same splice as the Settings tab. |
 | [`ask`](/cli/commands/ask) | Post an agent's question on its work item — marker stamped centrally, wait recorded as `session.awaiting_input`. |
+| [`progress`](/cli/commands/progress) | Report a long session's progress without blocking it — label-gated, rate-limited, emitted as `session.progress`. |
 | [`comment`](/cli/commands/comment) | Post the agent's comment on its work item — marked, enveloped, mirrored to subscribed channels. |
 | [`ticket`](/cli/commands/ticket) | `show` a ticket (body, comments, attachment links) as JSON, `create` one, or `close` a registered work item's. |
 | [`pr`](/cli/commands/pr) | `create` a pull request and link it in one act; `status`, `checks` (each check, with failed jobs' log tails), `threads`, `resolve-thread`, `ready` (a draft → ready for review), and `merge` (gated by `routing.mergeOnApproval`); lifecycle acts need a registered work item. |

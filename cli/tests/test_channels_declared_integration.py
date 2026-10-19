@@ -644,6 +644,44 @@ def test_an_agentic_room_edits_a_phase_in_place_on_progress(tmp_path):
     assert "critic-review" in text
 
 
+def test_a_room_keeps_one_live_progress_line_that_pings_no_one(tmp_path):
+    """issue-340: `session.progress` posts once into the work item's room and then
+    edits that message in place, so a long run shows where it is without a message
+    per report — and the session's text, which nobody reviewed, pings no one."""
+    config = cli_config(tmp_path)  # agentic
+    declare(config)
+    client = FakeSlackClient()
+    bot = channel_for(config, client)
+    assert bot.open(REF).ok
+
+    first = bot.post(
+        Event(
+            event_type="session.progress",
+            work_item=REF,
+            text="Wiring the retry <!channel> <@U0VICTIM> tests next.",
+            source="cli",
+        )
+    )
+    assert first.ok
+    bot.post(
+        Event(
+            event_type="session.progress",
+            work_item=REF,
+            text="Tests green; writing docs.",
+            source="cli",
+        )
+    )
+
+    import json
+
+    posted_here = [p for p in client.posted if "Wiring the retry" in json.dumps(p)]
+    assert len(posted_here) == 1  # the first report posted…
+    assert "<!channel>" not in json.dumps(posted_here[0])  # …defused,
+    assert "<@U0VICTIM>" not in json.dumps(posted_here[0])  # …and mentioning no one
+    assert len(client.updates) == 1  # the second edited it
+    assert "writing docs" in client.updates[0][2]
+
+
 def test_the_session_voice_wins_over_a_later_template_for_the_same_node(tmp_path):
     """issue-393 B9/R12.3: when the session speaks for a node (its question, a
     source=cli event), a later runtime template (phase.started) for that same

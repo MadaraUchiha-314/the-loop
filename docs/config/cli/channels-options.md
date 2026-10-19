@@ -235,6 +235,7 @@ from **one catalog** (printed with subscription ticks by
 | Event | Fires when |
 |-------|-----------|
 | `session.awaiting_input` | an agent asked a human a question (`the-loop ask`) and is waiting — the default subscription |
+| `session.progress` | a session reported where it is and what is next (`the-loop progress`) and kept working — one or two lines, only for a work item carrying [`progress.label`](/config/cli/progress-options#label), at most one per [`progress.minIntervalSeconds`](/config/cli/progress-options#minintervalseconds); in **no** default subscription, not recorded on the ledger, and in an agentic room it edits one live line in place ([issue-340](https://github.com/MadaraUchiha-314/the-loop/issues/340)) |
 | `decision-pending` | the graph reached a point where a human decision or opinion is genuinely required |
 | `phase-approval-pending` | a spec-chain phase (requirements, design + testing plan) is ready for its human gate — the message carries a link and an excerpt of the artifact |
 | `pr-review-pending` | a pull request delivering the work item is ready for human review |

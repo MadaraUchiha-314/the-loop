@@ -225,7 +225,11 @@ def decide(
     # progress-edit — a within-phase progress event edits that phase's one
     # message; the first one posts and is remembered, the rest edit it.
     if _is_progress(event_type):
-        phase = _phase_of(event)
+        # A session's own report (issue-340) keeps one live line of its own; keyed by
+        # the phase it would share the phase's message and overwrite the runtime's.
+        phase = (
+            "session.progress" if event_type == "session.progress" else _phase_of(event)
+        )
         existing = progress_ts.get(phase)
         if existing:
             return Decision(EDIT, rule="progress-edit", ts=existing)
