@@ -193,6 +193,7 @@ class Store(Protocol):
     def touch(
         self, instance: str, peer: str, lease_s: float
     ) -> Union[Lease, Refused]: ...
+    def peer_conflict(self, instance: str, peer: str) -> Optional[Refused]: ...
     def claim(self, subject: str, instance: str, role: str) -> List[int]: ...
     def release(
         self, subject: str, instance: str, role: Optional[str] = None
@@ -687,18 +688,9 @@ class SqliteStore:
                 "INSERT OR IGNORE INTO instances(instance, first_seen) VALUES (?, ?)",
                 (instance, now),
             )
-            cur.execute(
-                "SELECT peer, lease_until, first_seen FROM instances WHERE instance = ?",
-                (instance,),
-            )
-            holder, lease_until, first_seen = cur.fetchone()
-            if holder and holder != peer and float(lease_until) > now_s:
-                return Refused(
-                    "duplicate-instance",
-                    holder=str(holder),
-                    since=str(first_seen),
-                    detail=f"{instance} is being polled by another peer",
-                )
+            refused = self._other_peer_holds(cur, instance, peer, now_s)
+            if refused is not None:
+                return refused
             expires = now_s + max(0.0, float(lease_s))
             cur.execute(
                 "UPDATE instances SET peer = ?, lease_until = ?, last_fetch_at = ?"
@@ -706,6 +698,36 @@ class SqliteStore:
                 (peer or "", expires if peer else 0.0, now, instance),
             )
         return Lease(instance=instance, peer=peer, expires_in=max(0.0, expires - now_s))
+
+    @staticmethod
+    def _other_peer_holds(
+        cur: sqlite3.Cursor, instance: str, peer: str, now_s: float
+    ) -> Optional[Refused]:
+        """``Refused("duplicate-instance")`` when ``instance``'s name is held by a
+        different peer whose lease is live; the row must exist."""
+        cur.execute(
+            "SELECT peer, lease_until, first_seen FROM instances WHERE instance = ?",
+            (instance,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        holder, lease_until, first_seen = row
+        if holder and holder != peer and float(lease_until) > now_s:
+            return Refused(
+                "duplicate-instance",
+                holder=str(holder),
+                since=str(first_seen),
+                detail=f"{instance} is being polled by another peer",
+            )
+        return None
+
+    def peer_conflict(self, instance: str, peer: str) -> Optional[Refused]:
+        """The fetch's peer rule for the writes that are not a fetch — commit, claim,
+        release (self-review R6): a stale peer under a live name may not commit the
+        live peer's seqs or release its claims. Refreshes nothing."""
+        with self._tx() as cur:
+            return self._other_peer_holds(cur, instance, peer, time.time())
 
     def _lease_live(self, cur: sqlite3.Cursor, instance: str, now_s: float) -> bool:
         cur.execute("SELECT lease_until FROM instances WHERE instance = ?", (instance,))
@@ -807,18 +829,9 @@ class SqliteStore:
                 "INSERT OR IGNORE INTO instances(instance, first_seen) VALUES (?, ?)",
                 (instance, now),
             )
-            cur.execute(
-                "SELECT peer, lease_until, first_seen FROM instances WHERE instance = ?",
-                (instance,),
-            )
-            holder, lease_until, first_seen = cur.fetchone()
-            if holder and holder != peer and float(lease_until) > now_s:
-                return Refused(
-                    "duplicate-instance",
-                    holder=str(holder),
-                    since=str(first_seen),
-                    detail=f"{instance} is being polled by another peer",
-                )
+            refused = self._other_peer_holds(cur, instance, peer, now_s)
+            if refused is not None:
+                return refused
             for provider, actor in wanted:
                 cur.execute(
                     "SELECT instance FROM actors WHERE provider = ? AND actor = ?",

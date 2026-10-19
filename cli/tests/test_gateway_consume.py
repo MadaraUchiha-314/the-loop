@@ -286,3 +286,90 @@ def test_an_actor_registration_routes_the_events_held_for_that_actor(gw):
         == 0
     )
     assert gw.store.queue("laptop-a").backlog == 1  # hubot's stays held
+
+
+def test_a_stale_peer_under_a_live_name_can_neither_commit_nor_touch_its_claims(gw):
+    """
+    Feature: one start, one instance (abuse case 4, R4.3)
+      Scenario: a stale peer under a live name can neither commit nor touch its claims
+        Given laptop-a polls as peer p1 with a delivery fetched and a driver claim
+        When peer p2 commits that seq, releases the claim or claims another subject
+             under the name laptop-a
+        Then each is 409 duplicate-instance naming p1, nothing is applied, and p1's
+             own commit and release go through
+    """
+    gw.append(1, consumers=["laptop-a"])
+    (delivery,) = gw.fetch("laptop-a", peer="p1", lease=60).json()["deliveries"]
+    assert (
+        gw.client.put(
+            "/api/v1/gateway/claims",
+            json={
+                "instance": "laptop-a",
+                "peer": "p1",
+                "subject": "loop-github-o-r-14",
+                "role": "driver",
+            },
+        ).status_code
+        == 200
+    )
+    stale_commit = gw.client.post(
+        "/api/v1/gateway/commit",
+        json={
+            "instance": "laptop-a",
+            "peer": "p2",
+            "commit": [{"seq": delivery["seq"], "outcome": "delivered"}],
+        },
+    )
+    assert stale_commit.status_code == 409 and stale_commit.json()["holder"] == "p1"
+    assert gw.store.committed("laptop-a") == 0
+    stale_release = gw.client.request(
+        "DELETE",
+        "/api/v1/gateway/claims",
+        json={
+            "instance": "laptop-a",
+            "peer": "p2",
+            "subject": "loop-github-o-r-14",
+            "role": "driver",
+        },
+    )
+    assert stale_release.status_code == 409
+    assert {c.instance for c in gw.store.claimants("loop-github-o-r-14")} == {
+        "laptop-a"
+    }
+    stale_claim = gw.client.put(
+        "/api/v1/gateway/claims",
+        json={
+            "instance": "laptop-a",
+            "peer": "p2",
+            "subject": "loop-github-o-r-77",
+            "role": "driver",
+        },
+    )
+    assert stale_claim.status_code == 409 and not gw.store.claimants(
+        "loop-github-o-r-77"
+    )
+    assert [e["reason"] for e in gw.events("gateway.refused")] == [
+        "duplicate-instance"
+    ] * 3
+    own = gw.client.post(
+        "/api/v1/gateway/commit",
+        json={
+            "instance": "laptop-a",
+            "peer": "p1",
+            "commit": [{"seq": delivery["seq"], "outcome": "delivered"}],
+        },
+    )
+    assert own.status_code == 200 and gw.store.committed("laptop-a") == delivery["seq"]
+    assert (
+        gw.client.request(
+            "DELETE",
+            "/api/v1/gateway/claims",
+            json={
+                "instance": "laptop-a",
+                "peer": "p1",
+                "subject": "loop-github-o-r-14",
+                "role": "driver",
+            },
+        ).json()["released"]
+        == 1
+    )

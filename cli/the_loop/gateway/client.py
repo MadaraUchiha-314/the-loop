@@ -265,7 +265,12 @@ class GatewayClient:
             status, _ = self._call(
                 "PUT",
                 "/api/v1/gateway/claims",
-                {"instance": self.instance, "subject": subject, "role": role},
+                {
+                    "instance": self.instance,
+                    "peer": self.peer,
+                    "subject": subject,
+                    "role": role,
+                },
             )
         except Exception as exc:  # noqa: BLE001 — a claim is re-asserted on the next reconnect
             if _raise:
@@ -283,6 +288,7 @@ class GatewayClient:
                 "/api/v1/gateway/claims",
                 {
                     "instance": self.instance,
+                    "peer": self.peer,
                     "subject": subject,
                     "role": role or "driver",
                 },

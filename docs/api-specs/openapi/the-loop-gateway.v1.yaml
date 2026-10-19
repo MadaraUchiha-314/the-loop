@@ -115,7 +115,7 @@ paths:
   /api/v1/gateway/commit:
     post:
       summary: Commit
-      description: The commit step alone, for a stop or a quiet client. Same refusals as fetch's commit.
+      description: The commit step alone, for a stop or a quiet client. Same refusals as fetch's commit, the peer rule included (409 duplicate-instance for another peer under a live name).
       operationId: gatewayCommit
       requestBody:
         content:
@@ -343,6 +343,11 @@ components:
         instance:
           type: string
           title: Instance
+        peer:
+          type: string
+          title: Peer
+          default: ''
+          description: The claimant's persisted peer id; a different peer under a name whose lease is live is 409 duplicate-instance.
         subject:
           type: string
           title: Subject

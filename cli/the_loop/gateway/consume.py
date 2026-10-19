@@ -128,6 +128,7 @@ class CommitBody(BaseModel):
 
 class ClaimBody(BaseModel):
     instance: str
+    peer: str = ""
     subject: str
     role: str = Field(..., description="driver | reviewer")
 
@@ -201,10 +202,13 @@ def build_consume_router(state: GatewayState, **router_kwargs: Any) -> APIRouter
     store = state.store
     consume = state.config.consume
 
-    def _commit(instance: str, entries: Sequence[CommitEntry]) -> Any:
+    def _commit(instance: str, entries: Sequence[CommitEntry], peer: str = "") -> Any:
         outcomes: List[Tuple[int, str]] = [(e.seq, e.outcome) for e in entries]
         if not outcomes:
             return None
+        conflict = store.peer_conflict(instance, peer)
+        if conflict is not None:
+            return conflict
         result = store.commit(instance, outcomes)
         if isinstance(result, Refused):
             return result
@@ -232,7 +236,7 @@ def build_consume_router(state: GatewayState, **router_kwargs: Any) -> APIRouter
         lease = store.touch(body.instance, body.peer, lease_s)
         if isinstance(lease, Refused):
             return _refused(state, lease, instance=body.instance, peer=body.peer)
-        committed = _commit(body.instance, body.commit)
+        committed = _commit(body.instance, body.commit, body.peer)
         if isinstance(committed, Refused):
             return _refused(state, committed, instance=body.instance, peer=body.peer)
         limit = int(_clamp(body.max, 1, consume.max_batch))
@@ -281,7 +285,7 @@ def build_consume_router(state: GatewayState, **router_kwargs: Any) -> APIRouter
         denied = _check_allowed(state, body.instance)
         if denied is not None:
             return denied
-        result = _commit(body.instance, body.commit)
+        result = _commit(body.instance, body.commit, body.peer)
         if isinstance(result, Refused):
             return _refused(state, result, instance=body.instance, peer=body.peer)
         committed = (
@@ -300,6 +304,9 @@ def build_consume_router(state: GatewayState, **router_kwargs: Any) -> APIRouter
             raise HTTPException(
                 status_code=400, detail=f"role must be one of {list(ROLES)}"
             )
+        conflict = store.peer_conflict(body.instance, body.peer)
+        if conflict is not None:
+            return _refused(state, conflict, instance=body.instance, peer=body.peer)
         routed = store.claim(body.subject, body.instance, body.role)
         eventlog.emit(
             "gateway.claimed",
@@ -328,6 +335,9 @@ def build_consume_router(state: GatewayState, **router_kwargs: Any) -> APIRouter
         denied = _check_allowed(state, body.instance)
         if denied is not None:
             return denied
+        conflict = store.peer_conflict(body.instance, body.peer)
+        if conflict is not None:
+            return _refused(state, conflict, instance=body.instance, peer=body.peer)
         removed = store.release(body.subject, body.instance, body.role or None)
         eventlog.emit(
             "gateway.released",
