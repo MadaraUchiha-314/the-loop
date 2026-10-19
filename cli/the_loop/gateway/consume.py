@@ -209,6 +209,11 @@ def build_consume_router(state: GatewayState, **router_kwargs: Any) -> APIRouter
             eventlog.emit(
                 "subject.committed", instance=instance, seq=seq, outcome=outcome
             )
+            if outcome != "delivered":
+                # the poll ledger learns what became of a presence it offered (R3.4)
+                from .adapters.poll import apply_commit_outcome
+
+                apply_commit_outcome(store, store.event_of_seq(seq), outcome)
         return result
 
     @router.post(f"{API_PREFIX}/fetch", operation_id="gatewayFetch")

@@ -207,11 +207,14 @@ class Store(Protocol):
     def claims_of(self, instance: str) -> List[Claim]: ...
     def actors_of(self, instance: str) -> Dict[str, Tuple[str, ...]]: ...
     def committed(self, instance: str) -> int: ...
+    def event_of_seq(self, seq: int) -> Optional[Envelope]: ...
     def queue(self, instance: str) -> QueueRow: ...
     def poll_seen(self, ref: str, delivery_id: str) -> bool: ...
     def poll_mark_seen(self, ref: str, delivery_id: str) -> None: ...
     def poll_state(self, ref: str) -> str: ...
     def set_poll_state(self, ref: str, state: str) -> None: ...
+    def has_pending_presence(self, ref: str) -> bool: ...
+    def poll_refs(self) -> List[str]: ...
     def subjects(self) -> List[SubjectRow]: ...
     def queues(self) -> List[QueueRow]: ...
     def instances(self) -> List[InstanceRow]: ...
@@ -911,6 +914,27 @@ class SqliteStore:
                 (ref, delivery_id, utcnow()),
             )
 
+    def has_pending_presence(self, ref: str) -> bool:
+        """Whether a presence event for ``ref`` is still on some queue, uncommitted —
+        the poll adapter re-emits presence only once the previous one was judged."""
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT 1 FROM deliveries d JOIN events e ON e.id = d.event_id"
+                " WHERE e.work_item = ? AND e.source = 'poll' AND d.state = ?"
+                " AND e.delivery_id LIKE 'poll-presence-%' LIMIT 1",
+                (ref, PENDING),
+            )
+            return cur.fetchone() is not None
+
+    def poll_refs(self) -> List[str]:
+        """Every ref the poll ledger knows that is not closed — what a listing is
+        reconciled against."""
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT ref FROM poll_ledger WHERE presence_state != 'closed' ORDER BY ref"
+            )
+            return [str(r[0]) for r in cur.fetchall()]
+
     def poll_state(self, ref: str) -> str:
         with self._tx() as cur:
             cur.execute("SELECT presence_state FROM poll_ledger WHERE ref = ?", (ref,))
@@ -1109,6 +1133,12 @@ class SqliteStore:
             )
             row = cur.fetchone()
             return int(row[0]) if row else 0
+
+    def event_of_seq(self, seq: int) -> Optional[Envelope]:
+        with self._tx() as cur:
+            cur.execute("SELECT event_id FROM deliveries WHERE seq = ?", (int(seq),))
+            row = cur.fetchone()
+        return self.event(int(row[0])) if row else None
 
     def event(self, event_id: int) -> Optional[Envelope]:
         with self._tx() as cur:

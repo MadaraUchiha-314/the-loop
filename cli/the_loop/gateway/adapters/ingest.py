@@ -58,9 +58,12 @@ class Ingest:
         headers: Mapping[str, str],
         body: bytes,
         payload: Optional[Any] = None,
+        actor: Optional[str] = None,
     ) -> Outcome:
         """Store one delivery. ``payload`` is the parsed body when the adapter already
-        has it (Socket Mode hands objects); otherwise ``body`` is parsed here."""
+        has it (Socket Mode hands objects); otherwise ``body`` is parsed here. ``actor``
+        overrides what the payload names — the poll adapter knows the item's author
+        when the provider's synthesized payload carries no ``sender``."""
         if payload is None:
             try:
                 payload = json.loads(body.decode("utf-8")) if body else {}
@@ -79,7 +82,7 @@ class Ingest:
             return self._dropped(
                 provider, kind, delivery_id, exc.reason, detail=str(exc)
             )
-        actor = actor_of(provider, kind, payload)
+        actor = actor or actor_of(provider, kind, payload)
         routing = consumers_for(
             resolved.subject,
             resolved.linked,

@@ -310,6 +310,8 @@ def actor_of(provider: str, kind: str, payload: Any) -> Optional[str]:
             ("comment", "user", "login"),
             ("review", "user", "login"),
             ("sender", "login"),
+            ("issue", "user", "login"),
+            ("pull_request", "user", "login"),
         ):
             node: Any = payload
             for step in path:
@@ -343,6 +345,10 @@ def dedup_key(provider: str, kind: str, payload: Any, delivery_id: str) -> str:
     Socket Mode envelope. Anything else: the provider's delivery id.
     """
     body = payload if isinstance(payload, Mapping) else {}
+    if delivery_id.startswith("poll-presence-"):
+        # a presence offer is re-made on purpose (a fresh uuid each cycle) until an
+        # instance judges it; it never collides with a webhook's one-off `labeled`
+        return f"{provider}:{delivery_id}"
     if provider == "github":
         repo = _github_repo(body)
         if kind in ("issue_comment", "pull_request_review_comment"):

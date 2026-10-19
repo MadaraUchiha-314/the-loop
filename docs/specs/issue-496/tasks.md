@@ -138,7 +138,7 @@ overrides: {}
     unbound`; T8 `Scenario: a webhook with a wrong signature is refused and stores
     nothing`, `Scenario: an injected start keyword from an unauthorized actor is dropped
     on the instance` (the gateway half: stored verbatim, unclassified)
-- [ ] **B3: the poll adapter.** Write `gateway/adapters/poll.py` over `PollProvider`
+- [x] **B3: the poll adapter.** Write `gateway/adapters/poll.py` over `PollProvider`
   (`poller/github.py`, `poller/jira.py` as the source layer): one thread per source every
   `intervalSeconds`, the same `poll-comment-<id>` / `poll-presence-<ref>-<uuid>` delivery
   ids as `poller/poller.py`, the ledger in `store.poll_ledger` (`seen` once `append`
