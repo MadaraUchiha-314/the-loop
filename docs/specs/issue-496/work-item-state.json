@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-496",
-  "currentNode": "security-review",
+  "currentNode": "evidence",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -133,8 +133,24 @@
     },
     "security-review": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-19T16:47:48+00:00",
+      "exitedAt": "2026-10-19T19:56:09+00:00",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-496/evidence/security-review.md)",
+      "forced": false
+    },
+    "code-explainer": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-19T19:56:09+00:00",
+      "exitedAt": "2026-10-19T20:00:56+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "evidence": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-19T20:00:56+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -404,6 +420,10 @@
     },
     "critic-review": {
       "at": "2026-10-19T16:47:48+00:00",
+      "by": "cli"
+    },
+    "code-explainer": {
+      "at": "2026-10-19T20:00:56+00:00",
       "by": "cli"
     }
   },
