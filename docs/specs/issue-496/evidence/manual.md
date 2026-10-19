@@ -115,8 +115,56 @@ says `listen: 127.0.0.1:8790 (the file says 127.0.0.1:8791 — restart to apply)
 Appending `nonsense: true` to the file recorded `config.reload-failed` and left every
 ingress running; restoring the file recorded `config.reloaded` again.
 
-## Remaining steps
+## Reverse start order (R14.5)
 
-The reverse start order (instance first, then the gateway), `the-loop gateway restart`
-applying the port change, and the tear-down are recorded below once the live Slack
-proof (T4) has finished, so as not to interrupt it.
+With `laptop-a` and `laptop-b` running, `the-loop gateway stop --config …` (15:04:05 UTC).
+Within the poll interval `laptop-a` recorded `gateway.unreachable` once, `GET
+/api/v1/gateway` read `unreachable` with the connection error, and `the-loop status`
+kept the receiver, poller and listener `off · gateway configured` — no fallback.
+`the-loop gateway start` (15:04:22): both instances re-registered within their back-off,
+`laptop-a` re-asserted its claim, status back to `connected`.
+
+```text
+15:04:09 gateway.unreachable      url=http://127.0.0.1:8790 instance=laptop-a error=<urlopen error [Errno 111] Connection refused>
+15:04:35 gateway.connected        url=http://127.0.0.1:8790 instance=laptop-a peer=<peer-a>
+15:04:23 gateway.started          listen=127.0.0.1:8790 store=<scratch>/e2e/gateway/state/gateway.db ingresses=["slack-socket", "github-poll"]
+15:04:34 gateway.registered       instance=laptop-b actors={"github": 1}
+15:04:35 gateway.registered       instance=laptop-a actors={"github": 1, "slack": 1}
+15:04:35 gateway.claimed          subject=loop-github-MadaraUchiha-314-the-loop-testing-7 instance=laptop-a role=driver routed=0
+```
+
+## `gateway restart` applying a port change (R8.6, R9.2)
+
+`listen.port` 8790 → 8791 in the file; `gateway status` said `restart required: listen`.
+The first attempt (15:05) exposed a defect: the stop verb gave up after 15 s ("did not
+stop within 15s"), because uvicorn's graceful shutdown was waiting for two 20 s
+long-polls, and the old process then exited on its own — nothing listened until the
+next restart. Fixed in 2def361 (the gateway releases its long-polls the moment uvicorn
+decides to exit; the stop timeout covers `consume.maxWaitSeconds`; a real-process test).
+Re-run after the fix (15:12): the old-code process stopped in 13 s, the new process came
+up on 8791, `laptop-a` (configured for 8790) went `unreachable`; the port reverted and a
+second restart — now stopping the fixed process — took 4 s, after which `laptop-a`
+reconnected.
+
+```text
+15:12:07 gateway.unreachable      url=http://127.0.0.1:8790 instance=laptop-a error=<urlopen error [Errno 111] Connection refused>
+15:12:31 gateway.connected        url=http://127.0.0.1:8790 instance=laptop-a peer=<peer-a>
+15:12:14 gateway.stopped          reason=shutdown
+15:12:15 gateway.started          listen=127.0.0.1:8791 store=<scratch>/e2e/gateway/state/gateway.db ingresses=["slack-socket", "github-poll"]
+15:12:28 gateway.stopped          reason=shutdown
+15:12:29 gateway.started          listen=127.0.0.1:8790 store=<scratch>/e2e/gateway/state/gateway.db ingresses=["slack-socket", "github-poll"]
+```
+
+## Tear-down
+
+`the-loop --config … stop` for `laptop-a` and `laptop-b` (each flushed its commits; the
+gateway's `instances` view showed backlog 0 for both), then `the-loop gateway stop`
+(3 s; `gateway.stopped` recorded, the listen file removed, `gateway status` reads
+`gateway: stopped`). No `gateway.serve` or `api.serve` process from the proof remained.
+The three scratch state roots and the two workspaces were deleted; the redacted log
+excerpts above and in `e2e-slack.md` are the record.
+
+## Result
+
+T11 passes. Two defects found by the checklist are fixed on the branch: `gateway status`
+probing the edited port (d3da68e) and the stop that outlasted a long-poll (2def361).

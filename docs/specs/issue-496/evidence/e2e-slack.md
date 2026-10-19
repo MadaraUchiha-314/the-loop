@@ -249,3 +249,89 @@ in a bound thread is input; under a gateway Slack is Socket Mode only. Recorded 
 behaviour change in [migration.md](migration.md) and the capability doc; the author
 was asked (ticket, 14:46 UTC) to re-apply the manifest and reinstall, then post one
 more mentioning reply (step 6, below).
+
+## Step 6 — the mention, once the app holds `app_mentions:read`
+
+The author re-applied the manifest and reinstalled the app (`x-oauth-scopes` now lists
+`app_mentions:read`), then mentioned the bot in the thread at 15:02:05 UTC. Slack sent
+both events: the plain `message` (routed by claim, dropped by the instance as
+`not-addressed` — the duplicate copy under issue-389) and the `app_mention` (routed by
+claim, delivered: `channel.reply_received`, the `received` reaction, the mirror to #7,
+`session.reply_sent`, the `completed` reaction). The mirror comment came back through
+the gateway and was dropped `self-authored`. The author's one decision — keep the
+issue-389 rule under the gateway — stands by default; the scope requirement is in the
+capability doc and the migration record.
+
+Gateway log:
+
+```text
+15:02:05 gateway.received         provider=slack kind=events_api delivery_id=<uuid> subject=loop-github-MadaraUchiha-314-the-loop-testing-7 event_id=11 summary=events_api
+15:02:05 subject.appended         event_id=11 subject=loop-github-MadaraUchiha-314-the-loop-testing-7 provider=slack kind=events_api delivery_id=<uuid>
+15:02:05 subject.routed           event_id=11 subject=loop-github-MadaraUchiha-314-the-loop-testing-7 to=["laptop-a"] by=claim
+15:02:06 subject.committed        instance=laptop-a seq=10 outcome=delivered
+15:02:06 gateway.received         provider=slack kind=events_api delivery_id=<uuid> subject=loop-github-MadaraUchiha-314-the-loop-testing-7 event_id=12 summary=events_api
+15:02:06 subject.appended         event_id=12 subject=loop-github-MadaraUchiha-314-the-loop-testing-7 provider=slack kind=events_api delivery_id=<uuid>
+15:02:06 subject.routed           event_id=12 subject=loop-github-MadaraUchiha-314-the-loop-testing-7 to=["laptop-a"] by=claim
+15:02:08 subject.committed        instance=laptop-a seq=11 outcome=delivered
+15:02:29 gateway.received         provider=github kind=issue_comment delivery_id=poll-comment-IC_kwDOU4NUDc8AAAABdb4X7w subject=loop-github-MadaraUchiha-314-the-loop-testing-7 event_id=13 summary=issu
+15:02:29 subject.appended         event_id=13 subject=loop-github-MadaraUchiha-314-the-loop-testing-7 provider=github kind=issue_comment delivery_id=poll-comment-IC_kwDOU4NUDc8AAAABdb4X7w
+15:02:29 subject.routed           event_id=13 subject=loop-github-MadaraUchiha-314-the-loop-testing-7 to=["laptop-a"] by=claim
+15:02:29 subject.committed        instance=laptop-a seq=12 outcome=dropped:not-routed
+```
+
+Instance log:
+
+```text
+15:02:06 channel.dropped          gateway_event_id=11 delivery_id=<uuid> channel=slack reason=not-addressed work_item=github:MadaraUchiha-314/the-loop-testing#7 thread=<ts>
+15:02:06 channel.reply_received   gateway_event_id=12 delivery_id=<uuid> channel=slack work_item=github:MadaraUchiha-314/the-loop-testing#7 actor=U0C… kind=work-item.reply gate=none
+15:02:06 channel.reaction_added   gateway_event_id=12 delivery_id=<uuid> channel=slack work_item=github:MadaraUchiha-314/the-loop-testing#7 state=received content=eyes thread=<ts>
+15:02:07 channel.mirrored         gateway_event_id=12 delivery_id=<uuid> channel=slack work_item=github:MadaraUchiha-314/the-loop-testing#7 actor=U0C… kind=work-item.reply
+15:02:07 session.reply_sent       gateway_event_id=12 delivery_id=<uuid> work_item=github:MadaraUchiha-314/the-loop-testing#7 actor=slack:U0C…
+15:02:08 channel.reaction_added   gateway_event_id=12 delivery_id=<uuid> channel=slack work_item=github:MadaraUchiha-314/the-loop-testing#7 state=completed content=white_check_mark thread=<ts>
+15:02:29 routing.dropped          gateway_event_id=13 delivery_id=poll-comment-IC_kwDOU4NUDc8AAAABdb4X7w reason=self-authored gh_event=issue_comment action=created work_items=["github:MadaraUchiha-314
+```
+
+## Close — the-loop-testing#7
+
+`the-loop ticket close … --reason not_planned` from `laptop-a`'s config (15:09:02). The
+gateway's poller offered the closure; `laptop-a` ended the work item, terminated the
+harness, cleaned the worktree and released its claim (`gateway.released`); the subject
+is left with no claimant and the queue empty.
+
+```text
+15:09:07 gateway.received         provider=github kind=issues delivery_id=poll-close-github:MadaraUchiha-314/the-loop-testing#7-closed subject=loop-github-MadaraUchiha-314-the-loop-testing-7 event_id=
+15:09:07 subject.appended         event_id=15 subject=loop-github-MadaraUchiha-314-the-loop-testing-7 provider=github kind=issues delivery_id=poll-close-github:MadaraUchiha-314/the-loop-testing#7-clos
+15:09:07 subject.routed           event_id=15 subject=loop-github-MadaraUchiha-314-the-loop-testing-7 to=["laptop-a"] by=claim
+15:09:07 gateway.released         subject=loop-github-MadaraUchiha-314-the-loop-testing-7 instance=laptop-a role=driver
+15:11:07 subject.committed        instance=laptop-a seq=13 outcome=delivered
+```
+
+```text
+15:09:02 work_item.ticket_closed  work_item=github:MadaraUchiha-314/the-loop-testing#7 reason=not_planned
+15:09:07 routing.routed           gateway_event_id=15 delivery_id=poll-close-github:MadaraUchiha-314/the-loop-testing#7-closed gh_event=issues action=closed actor=MadaraUchiha-314 work_items=["github:
+15:09:07 session.closed           gateway_event_id=15 delivery_id=poll-close-github:MadaraUchiha-314/the-loop-testing#7-closed work_item=github:MadaraUchiha-314/the-loop-testing#7 harness=claude harne
+15:09:07 session.harness_terminated gateway_event_id=15 delivery_id=poll-close-github:MadaraUchiha-314/the-loop-testing#7-closed work_item=github:MadaraUchiha-314/the-loop-testing#7 harness=claude tmu
+15:09:07 session.retained         gateway_event_id=15 delivery_id=poll-close-github:MadaraUchiha-314/the-loop-testing#7-closed work_item=github:MadaraUchiha-314/the-loop-testing#7 tmux_target=loop-git
+15:09:07 workspace.cleaned        gateway_event_id=15 delivery_id=poll-close-github:MadaraUchiha-314/the-loop-testing#7-closed work_item=github:MadaraUchiha-314/the-loop-testing#7 strategy=worktree
+15:09:07 work_item.ended          gateway_event_id=15 delivery_id=poll-close-github:MadaraUchiha-314/the-loop-testing#7-closed work_item=github:MadaraUchiha-314/the-loop-testing#7 state=closed kind=is
+15:09:07 session.autoclosed       gateway_event_id=15 delivery_id=poll-close-github:MadaraUchiha-314/the-loop-testing#7-closed work_item=github:MadaraUchiha-314/the-loop-testing#7 reason=issue-closed 
+15:09:07 session.harness_terminated gateway_event_id=15 delivery_id=poll-close-github:MadaraUchiha-314/the-loop-testing#7-closed work_item=github:MadaraUchiha-314/the-loop-testing#7 harness=claude tmu
+15:09:07 session.retained         gateway_event_id=15 delivery_id=poll-close-github:MadaraUchiha-314/the-loop-testing#7-closed work_item=github:MadaraUchiha-314/the-loop-testing#7 tmux_target=loop-git
+15:09:07 session.cleaned          gateway_event_id=15 delivery_id=poll-close-github:MadaraUchiha-314/the-loop-testing#7-closed work_item=github:MadaraUchiha-314/the-loop-testing#7 actor=MadaraUchiha-3
+```
+
+One observation, not fixed here: the close delivery (seq 13) was committed `delivered`
+only after the client's 120 s in-flight grace, because the dispatcher's
+`delivery_status` finds no session once the work item's record is cleaned and keeps
+answering `inflight`. The commit is right, the lag is cosmetic; a follow-up can let a
+work item's end settle the delivery at once.
+
+## Result
+
+T4 passes: every step of the five-step procedure ran against the author's Slack app,
+with the records above. Four defects surfaced and are fixed on the branch with tests
+(the unpublished thread binding, the re-fetched in-flight delivery, the second peer's
+accepted registration, the stop that outlasted a long-poll) and one operator finding is
+documented (the `app_mentions:read` scope under Socket Mode). The scratch state roots
+were deleted after the run; the redacted logs are what this record carries.
+

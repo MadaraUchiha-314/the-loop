@@ -6,6 +6,7 @@ are checked in so the user can review and give feedback.
 
 | # | Title | Source | Date |
 |---|-------|--------|------|
+| [016](learning-016.md) | A graceful stop must release its own long-polls | system-feedback | 2026-10-19 |
 | [015](learning-015.md) | A hook stored on a class is a bound method when read through the instance | system-feedback | 2026-10-19 |
 | [014](learning-014.md) | An option a procedure writes after the verb must live on every verb's parser | system-feedback | 2026-10-19 |
 | [013](learning-013.md) | Node 22+ ships an experimental `localStorage` that shadows jsdom's in vitest | system-feedback | 2026-10-19 |

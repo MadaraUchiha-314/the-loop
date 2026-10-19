@@ -192,19 +192,18 @@ committed.
 - [x] T2 — `cd cli && uv run python -m pytest -q tests/test_gateway_*_integration.py`
 - [x] T2 (lag) — `cd cli && uv run python -m pytest -q --dispatch-lag=0.5 tests/test_gateway_*_integration.py`
 - [x] T3 — `cd cli && uv run python -m pytest -q tests/test_api_contract_parity.py tests/test_config_schema_parity.py`
-- [ ] T4 — the five-step Slack procedure on `the-loop-testing`
+- [x] T4 — the five-step Slack procedure on `the-loop-testing`
 - [x] T5 — `cd ui && npm test`, then the state screenshots
 - [x] T8 — `cd cli && uv run python -m pytest -q tests/test_gateway_security.py tests/test_gateway_abuse_integration.py`
 - [x] T9 — the DOM assertions in `cd ui && npm test` and the keyboard pass
 - [x] T10 — `cd cli && uv run python -m pytest -q tests/test_hosted_reconcile.py tests/test_core_lifecycle.py tests/test_gateway_client_integration.py && cd .. && make validate`
-- [ ] T11 — the co-location and verbs checklist
+- [x] T11 — the co-location and verbs checklist
 - [x] T12 — `make lint format-check typecheck validate`
-- [ ] Full suite — `make test`
+- [x] Full suite — `make test`
 
 ## Verification results
 
-*Executed 2026-10-19 on `feat/issue-496-gateway` (PR #499); T4 and T11 in progress — see
-the last rows.*
+*Executed 2026-10-19 on `feat/issue-496-gateway` (PR #499).*
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
@@ -218,12 +217,11 @@ the last rows.*
 | T9 | the DOM assertions in the UI tests and the keyboard pass | pass | [`evidence/ui.md`](evidence/ui.md) |
 | T10 | `tests/test_hosted_reconcile.py tests/test_core_lifecycle.py tests/test_gateway_client_integration.py` and `make validate` | pass — 32 passed; four configs valid | [`evidence/migration.md`](evidence/migration.md) |
 | T12 | `make lint format-check typecheck validate` | pass, with one pre-existing finding: the approval gate's repeated same-day heading in `requirements.md` (exempted with a named comment, #500) | [`evidence/lint-and-typecheck.md`](evidence/lint-and-typecheck.md) |
-| Full suite | `cd cli && uv run python -m pytest -q` (with `THE_LOOP_CLI_CONFIG` unset) | pass — 6340 passed on 591a9bd; re-run at the end of verification | [`evidence/unit.md`](evidence/unit.md) |
-| T4 | the five-step Slack procedure on `the-loop-testing#7` | in progress — step 1 done (routed by actor, parked at the start gate); steps 2–3 need the author, asked 2026-10-19 | [`evidence/e2e-slack.md`](evidence/e2e-slack.md) |
-| T11 | the co-location and verbs checklist | in progress — bring-up gateway-first, doctor, subjects/instances, restart-required and bad-edit done (one status defect found and fixed, d3da68e); reverse order, `gateway restart` and tear-down after T4 | [`evidence/manual.md`](evidence/manual.md) |
+| Full suite | `cd cli && uv run python -m pytest -q` (with `THE_LOOP_CLI_CONFIG` unset) | pass — 6345 passed on 2def361, the final head of verification (6340 on 591a9bd before the live-proof fixes). A first run on the same head had one failure, `test_session_secrets_integration::test_issue_485_…` reading an empty pane environment while the live proof was being torn down on the same tmux host; it passes alone and in the clean re-run | [`evidence/unit.md`](evidence/unit.md) |
+| T4 | the five-step Slack procedure on `the-loop-testing#7` | pass — all five steps plus the mention re-run and the close, against the author's Slack app; four defects found and fixed (8071ad7, ddaac03, 2def361), one operator finding documented (`app_mentions:read`) | [`evidence/e2e-slack.md`](evidence/e2e-slack.md) |
+| T11 | the co-location and verbs checklist | pass — every step; two defects found and fixed (d3da68e, 2def361) | [`evidence/manual.md`](evidence/manual.md) |
 
-**Not executed:** nothing yet skipped; T4 steps 2–5 and the last T11 steps wait on the
-author's replies and on T4 finishing.
+**Not executed:** nothing — every activity ran.
 
 ## Review comments
 
