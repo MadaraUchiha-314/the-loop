@@ -984,6 +984,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions/progress:
+    post:
+      summary: Progress Session
+      operationId: progressSession
+      description: Report a session's progress on its work item without blocking it
+        (issue-340) — one or two short lines, emitted as `session.progress` to every
+        channel that subscribes to it. Only a work item carrying the configured
+        `progress.label` emits anything, and at most one report per
+        `progress.minIntervalSeconds`; anything else is a 200 whose `status` says why
+        nothing was sent (`disabled`, `not-opted-in`, `rate-limited`,
+        `label-unreadable`). Served so that a session the daemon spawned, which holds
+        no credential, can report through the service that does (issue-482). 400 on
+        a malformed ref or an empty report.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionProgressBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Progresssession
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/sessions/reply:
     post:
       summary: Reply Session
@@ -2504,6 +2538,31 @@ components:
       - ref
       - question
       title: SessionAskBody
+    SessionProgressBody:
+      properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
+        ref:
+          type: string
+          title: Ref
+        text:
+          type: string
+          title: Text
+          description: One or two lines - what is happening now, and what is next.
+        actor:
+          type: string
+          title: Actor
+          description: Who is reporting — recorded on the event for the audit trail,
+            never trusted as authentication (decision-059).
+          default: ''
+      type: object
+      required:
+      - ref
+      - text
+      title: SessionProgressBody
     SessionReplyBody:
       properties:
         instance:

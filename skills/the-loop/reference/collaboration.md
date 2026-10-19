@@ -67,6 +67,15 @@ the-loop ask --work-item <ref> \
   --default "Defaults are fine — proceed"
 ```
 
+**Say where you are on a long run, without stopping.** `the-loop ask` blocks; when a step
+will take a while, `the-loop progress --work-item <ref> --text "<what is happening now>.
+<what is next>."` returns at once and the session keeps working (issue-340). Call it
+unconditionally, at natural boundaries — a task finished, a long test run started — never
+in a loop: only a work item carrying the operator's progress label emits anything, at
+most one report per interval, and anything else is a one-line note and exit 0. Two short
+lines; the detail belongs on the ticket. It is a signal, not a record, and it is never a
+substitute for `ask` when you need an answer.
+
 At an approval gate the graph posts its own request with an artifact excerpt; your own
 account still reaches the room if you post it — a `the-loop ask --summary` (or a marked
 comment that states, in 2-3 sentences, what the artifact decided and what you are least

@@ -82,6 +82,23 @@ EVENTS: Dict[str, EventSpec] = {
         origin="cli",
         recorded=True,  # its record IS the question comment
     ),
+    "session.progress": EventSpec(
+        "A session reported where it is and what is next (`the-loop progress`) "
+        "and kept working — one or two lines, only for a work item carrying the "
+        "progress label (`progress.label`), at most one per "
+        "`progress.minIntervalSeconds`. A signal, not a record: never written on "
+        "the ticket, and in an agentic room it edits one live line in place "
+        "(issue-340). Not on by default — subscribe a channel to hear it.",
+        origin="cli",
+    ),
+    "session.silent": EventSpec(
+        "A session of a work item carrying the progress label produced no event "
+        "of any kind for `progress.silenceSeconds` — said once per silence, so "
+        "a stuck session stops looking like hard work (issue-340). Off unless "
+        "`progress.silenceSeconds` is above zero; not recorded on the ledger. "
+        "Not on by default — subscribe a channel to hear it.",
+        origin="loop",
+    ),
     "decision-pending": EventSpec(
         "The graph reached a point where a human decision or opinion is "
         "genuinely required."

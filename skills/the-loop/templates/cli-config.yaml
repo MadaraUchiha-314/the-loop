@@ -665,6 +665,17 @@ integrations:
   # the incoming webhook converged into `channels.slack` below, and
   # `the-loop migrate-config` retires an old section.
 
+# Progress reports from a long-running session (issue-340). `the-loop progress` lets an
+# agent say where it is WITHOUT waiting for an answer, as a `session.progress` event.
+# Opt-in per work item BY LABEL — add the label to a ticket and its reports start, remove
+# it and they stop, no edit here and no restart. A channel must also subscribe to
+# `session.progress`; it is in no default subscription. Everything below is the default.
+# progress:
+#   label: "the-loop: progress"   # "" turns the feature off everywhere
+#   minIntervalSeconds: 300       # least time between two reports on one work item; 0 = no limit
+#   maxChars: 280                 # a report is cut to two lines, then to this
+#   silenceSeconds: 0             # >0: one `session.silent` when a labelled, active session is quiet this long
+
 # Back-and-forth conversation channels (issue-245) — THE Slack surface: a bot
 # token with an identity, one Slack channel, one thread per work item, and
 # replies read BACK. Opt-in, default off. When enabled, `the-loop ask` fans

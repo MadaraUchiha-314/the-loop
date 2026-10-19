@@ -129,6 +129,7 @@
         "keys": [
           "service",
           "eventLog",
+          "progress",
           "integrations",
           "standingSessions",
           "selfDiagnosis"
@@ -2102,6 +2103,37 @@
               "description": "Answer Chromium's private-network preflight (`Access-Control-Allow-Private-Network`) for an ALREADY-allowed origin — what lets a public HTTPS page reach a loopback service. Never widens the origin allowlist."
             }
           }
+        }
+      }
+    },
+    "progress": {
+      "type": "object",
+      "description": "Progress reports from a long-running session (issue-340): `the-loop progress` lets an agent say where it is and what is next WITHOUT waiting for an answer, as a `session.progress` event. Opt-in per work item by LABEL, not by config: only a work item that carries `label` emits anything, so adding or removing the label on the ticket starts or stops the reports on the next one, with no edit and no restart. Reaches a room only when a channel subscribes to `session.progress` (it is not in any default subscription). Rate-limited per work item and cut to one or two short lines; a signal, not a record, so it is never written on the ticket. With the feature unconfigured, or the label absent from a work item, behaviour is identical to before.",
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "default": "the-loop: progress",
+          "description": "The label that opts a work item in. Read from the work item's own tracker at the moment of each report (on Jira, in its Jira-safe form: spaces become hyphens). An empty string turns the feature off everywhere: the verb reports `disabled` and emits nothing.",
+          "examples": ["the-loop: progress"]
+        },
+        "minIntervalSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 300,
+          "description": "The least time between two reports on one work item. A report sooner than that is coalesced away - not sent - and the verb says how many seconds remain, so the agent's next report is the newest one. 0 disables the limit. Measured from the event log, so it cannot be enforced while `eventLog.enabled` is false."
+        },
+        "maxChars": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 280,
+          "description": "The longest report, in characters, after it is cut to its first two lines. Longer text is truncated with an ellipsis - this is a signal, and the full detail already goes on the ticket."
+        },
+        "silenceSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "The silence watchdog (issue-340): when an ACTIVE session of a work item carrying `label` has produced no event of any kind for this many seconds, emit one `session.silent` event - once per silence, so the next needs activity in between. 0 (the default) turns the watchdog off. It runs inside the poller and the webhook receiver, reads the event log (so it needs `eventLog.enabled`), and cannot report a daemon that is itself dead."
         }
       }
     },

@@ -38,6 +38,7 @@ EMOJI: Dict[str, str] = {
     "phase.started": "🔨",
     "phase.progress": "🔨",
     "session.progress": "🔨",
+    "session.silent": "⏳",
     "phase.completed": "✅",
     "pr-review-pending": "👀",
     "work-item-complete": "🎉",

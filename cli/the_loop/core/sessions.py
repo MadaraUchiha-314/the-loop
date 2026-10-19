@@ -923,6 +923,23 @@ def ask_session(
     }
 
 
+def progress_session(
+    ref: str,
+    text: str,
+    config: Optional[dict] = None,
+    actor: str = "",
+) -> Dict[str, Any]:
+    """Report a session's progress without blocking it (issue-340).
+
+    The implementation lives in :mod:`the_loop.core.progress`; this is the name every
+    other session verb has, so the SDK namespace and the API facade reach it the way
+    they reach ``ask_session``.
+    """
+    from . import progress
+
+    return progress.progress_session(ref, text, config=config, actor=actor)
+
+
 def reply_session(
     ref: str,
     text: str,

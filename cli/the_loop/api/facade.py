@@ -390,6 +390,14 @@ class CoreFacade:
             actor=actor,
         )
 
+    def progress_session(
+        self, ref: str, text: str, actor: str = "", instance: str = ""
+    ) -> Dict[str, Any]:
+        self._self(instance)
+        return core_sessions.progress_session(
+            ref, text, config=self.config, actor=actor
+        )
+
     def reply_session(
         self,
         ref: str,

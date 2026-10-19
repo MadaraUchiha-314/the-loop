@@ -1616,6 +1616,8 @@ def _publish_list(raw: Any) -> Tuple[str, ...]:
 
 _TITLES: Dict[str, str] = {
     "session.awaiting_input": "Question from the agent",
+    "session.progress": "Progress",
+    "session.silent": "Session silent",
     "decision-pending": "Decision needed",
     "phase-approval-pending": "Approval needed",
     "pr-review-pending": "Pull request ready for review",
@@ -2437,6 +2439,11 @@ class SlackBotChannel:
         """
         if not self.home_for(event.work_item):
             raise self._no_channel(event.work_item)
+        if event.event_type == "session.progress":
+            # The session wrote this line (issue-340): untrusted-adjacent. Defused
+            # here, before any rendering, because the plain-text fallback Slack
+            # also parses carries it as well as the blocks.
+            event = replace(event, text=sanitize_summary(event.text))
         client = self._client()
         bound: Optional[Tuple[str, str]] = None
         if event.work_item:
