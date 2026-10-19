@@ -38,10 +38,20 @@ STOP_TIMEOUT_S = 15.0
 START_TIMEOUT_S = 20.0
 
 
+def running_base_url(config: GatewayConfig) -> str:
+    """The address the running process bound, when it recorded one — the file's
+    `listen` may already say otherwise while the change waits for a restart (R8.6)."""
+    try:
+        recorded = config.listen_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        recorded = ""
+    return f"http://{recorded}" if recorded else config.base_url
+
+
 def _get(
     config: GatewayConfig, path: str, timeout: float = 3.0
 ) -> Optional[Dict[str, Any]]:
-    url = f"{config.base_url}/api/v1/gateway/{path}"
+    url = f"{running_base_url(config)}/api/v1/gateway/{path}"
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310 — loopback by default
             return json.loads(response.read().decode("utf-8"))
@@ -65,7 +75,8 @@ def status_report(config: GatewayConfig) -> Dict[str, Any]:
         "pidfile": str(config.pidfile),
         "logfile": str(config.logfile),
         "configPath": str(config.path),
-        "listen": f"{config.listen.host}:{config.listen.port}",
+        "listen": running_base_url(config).replace("http://", ""),
+        "listenInFile": f"{config.listen.host}:{config.listen.port}",
         "store": str(config.store.path),
         "reachable": health is not None,
         "ingresses": (health or {}).get("ingresses", {}),
@@ -255,7 +266,12 @@ def status_lines(report: Dict[str, Any]) -> List[str]:
         f"gateway: {'running' if report['running'] else 'stopped'}"
         + (f" (pid {report['pid']})" if report["running"] else ""),
         f"  listen:  {report['listen']}"
-        + ("" if report["reachable"] or not report["running"] else "  (not answering)"),
+        + ("" if report["reachable"] or not report["running"] else "  (not answering)")
+        + (
+            f"  (the file says {report['listenInFile']} — restart to apply)"
+            if report.get("listenInFile") and report["listenInFile"] != report["listen"]
+            else ""
+        ),
         f"  store:   {report['store']}",
         f"  config:  {report['configPath']}",
         f"  pidfile: {report['pidfile']}",
