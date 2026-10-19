@@ -266,3 +266,83 @@ def test_the_packaged_schema_resolves_and_is_an_object_schema():
     assert schema["type"] == "object"
     assert schema["additionalProperties"] is False
     assert "consume" in schema["properties"]
+
+
+# -- the instance's `gateway` block (R4.2, R8.7) ---------------------------------------------
+
+
+def _cli(body: dict) -> list:
+    return configschema.validate(body, configschema.load_schema("cli-config"))
+
+
+def test_a_block_with_only_url_validates_and_carries_the_defaults():
+    from the_loop import cli_config
+
+    assert _cli({"gateway": {"url": "http://127.0.0.1:8790"}}) == []
+    block = cli_config.gateway_block({"gateway": {"url": "http://127.0.0.1:8790/"}})
+    assert block is not None
+    assert block.url == "http://127.0.0.1:8790"
+    assert block.poll_interval_s == 5
+    assert block.long_poll_s == 20
+    assert block.actors == {"github": (), "slack": (), "jira": ()}
+    assert block.lease_s == 3 * 5 + 20
+
+
+def test_a_block_without_url_fails_validation_and_types_to_none(caplog):
+    from the_loop import cli_config
+
+    errors = _cli({"gateway": {"pollIntervalSeconds": 5}})
+    assert any(error.startswith("gateway") and "url" in error for error in errors)
+    with caplog.at_level("WARNING"):
+        assert cli_config.gateway_block({"gateway": {"pollIntervalSeconds": 5}}) is None
+    assert "gateway.url" in caplog.text
+
+
+def test_the_block_types_actors_and_the_polling_mode():
+    from the_loop import cli_config
+
+    body = {
+        "gateway": {
+            "url": "http://gw.internal:8790",
+            "pollIntervalSeconds": 2,
+            "longPollSeconds": 0,
+            "actors": {"github": ["octocat"], "slack": ["U0123"]},
+        }
+    }
+    assert _cli(body) == []
+    block = cli_config.gateway_block(body)
+    assert block is not None
+    assert block.poll_interval_s == 2 and block.long_poll_s == 0
+    assert block.actors == {"github": ("octocat",), "slack": ("U0123",), "jira": ()}
+
+
+def test_an_unknown_gateway_key_and_a_bad_url_are_refused():
+    assert any(
+        "gateway" in e for e in _cli({"gateway": {"url": "http://x", "stream": 1}})
+    )
+    assert any(
+        "gateway.url" in e for e in _cli({"gateway": {"url": "gw.internal:8790"}})
+    )
+
+
+def test_no_block_means_no_gateway():
+    from the_loop import cli_config
+
+    assert cli_config.gateway_block({}) is None
+    assert cli_config.gateway_block(None) is None
+    assert cli_config.gateway_block({"gateway": None}) is None
+
+
+def test_instance_name_defaults_to_default():
+    from the_loop import cli_config
+
+    assert cli_config.instance_name({}) == "default"
+    assert cli_config.instance_name({"instance": {"name": ""}}) == "default"
+    assert cli_config.instance_name({"instance": {"name": "laptop-a"}}) == "laptop-a"
+
+
+def test_the_repositorys_own_config_still_validates_without_a_block():
+    repo_config = Path(__file__).resolve().parents[2] / ".the-loop" / "cli-config.yaml"
+    if not repo_config.is_file():
+        pytest.skip("plugin tree not present (source distribution)")
+    assert _cli(yaml.safe_load(repo_config.read_text())) == []

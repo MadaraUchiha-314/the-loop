@@ -81,11 +81,12 @@
         "id": "ingress",
         "title": "What is watched, and how events arrive",
         "ask": "confirm",
-        "explain": "`repositories` is WHAT the-loop watches. The other two are HOW an event gets to it, and exactly one of them is normally on: the webhook receiver (`webhooks.ghWebhook`) is push, low-latency, and needs an inbound route plus a shared secret; the poller (`polling`) is pull, needs nothing reachable, and is what a laptop or anything behind NAT uses. The posture group's first answer has already proposed one of them. Both are OFF by default, which is why a the-loop that was never onboarded watches nothing — if you decline both, routing stays off and init says so rather than scaffolding half a daemon.",
+        "explain": "`repositories` is WHAT the-loop watches. The others are HOW an event gets to it, and exactly one of them is normally on. A `gateway` block (issue-496) replaces both of the following: the instance runs no ingress of its own and polls the gateway for its queue — the shape for several instances behind one Slack app. Otherwise: the webhook receiver (`webhooks.ghWebhook`) is push, low-latency, and needs an inbound route plus a shared secret; the poller (`polling`) is pull, needs nothing reachable, and is what a laptop or anything behind NAT uses. The posture group's first answer has already proposed one of them. Both are OFF by default, which is why a the-loop that was never onboarded watches nothing — if you decline both, routing stays off and init says so rather than scaffolding half a daemon.",
         "keys": [
           "repositories",
           "webhooks",
-          "polling"
+          "polling",
+          "gateway"
         ]
       },
       {
@@ -408,6 +409,67 @@
           "ultra"
         ]
       ]
+    },
+    "gateway": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "url"
+      ],
+      "description": "Consume events from a the-loop GATEWAY instead of running ingresses of this instance's own (issue-496). When this block is present the instance hosts no webhook receiver, no poller and no Slack listener, whatever `webhooks`, `polling` and `channels.slack.read` say — `the-loop status` reads `off · gateway configured` for the three — and instead polls `url` for ITS OWN queue: the gateway resolves, at ingest, which instances consume each event (the claims this instance publishes for the sessions it runs, else the `actors` it registers) and appends a delivery to each consumer's queue only. The instance's `instance.name` (`default` when unset) is its queue's identity; a second peer fetching under a live name is refused (409 `duplicate-instance`), so a fleet SHOULD name each instance. Nothing is held open between polls; when the gateway is unreachable the instance keeps running, retries with back-off and never falls back to its own ingresses. Hot-reloaded except `url`, which needs a restart. Absent: exactly today's behaviour.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^https?://",
+          "description": "The gateway's base URL, e.g. `http://127.0.0.1:8790`. A loopback URL is treated exactly as a remote one (R14.1)."
+        },
+        "pollIntervalSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 5,
+          "description": "Seconds to sleep after an EMPTY plain poll. Ignored while `longPollSeconds` is greater than zero, because a long-poll already waited."
+        },
+        "longPollSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 20,
+          "description": "How long the gateway may hold an empty fetch open and answer as soon as a delivery is appended to this queue — sub-second latency with no request between events. `0` is plain polling: the gateway answers at once. The gateway clamps it to its own `consume.maxWaitSeconds`."
+        },
+        "actors": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Who this instance works for, by provider. An event on a subject no claim covers is routed to the one instance that registered its actor — how the FIRST event about a work item (`the-loop start` by this user) reaches this instance and no other. An actor already registered by another live instance is refused (409 `duplicate-actor`). The instance registers these on start and after every outage.",
+          "properties": {
+            "github": {
+              "type": "array",
+              "default": [],
+              "uniqueItems": true,
+              "items": {
+                "type": "string"
+              },
+              "description": "GitHub logins."
+            },
+            "slack": {
+              "type": "array",
+              "default": [],
+              "uniqueItems": true,
+              "items": {
+                "type": "string"
+              },
+              "description": "Slack user ids (`U…`)."
+            },
+            "jira": {
+              "type": "array",
+              "default": [],
+              "uniqueItems": true,
+              "items": {
+                "type": "string"
+              },
+              "description": "Jira account ids."
+            }
+          }
+        }
+      }
     },
     "webhooks": {
       "type": "object",

@@ -39,7 +39,7 @@ overrides: {}
     naming the path; a lowercase `*Env` value fails naming the key; `env.file` loaded
     and never overwriting); T3 `test_config_schema_parity.py::test_gateway_config_schema_parity`;
     T8 `Scenario: a config with a pasted token fails validation naming the key`
-- [ ] **A2: the instance `gateway` block.** Extend `cli-config.schema.json` (and its
+- [x] **A2: the instance `gateway` block.** Extend `cli-config.schema.json` (and its
   packaged copy) with the optional `gateway` block: `url` required, `pollIntervalSeconds`
   (default 5), `longPollSeconds` (default 20), `actors: {github, slack, jira}`. Parse it
   in `cli_config.py` into a `GatewayBlock`; `instance.name` falls back to `default`. The
