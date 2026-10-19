@@ -150,7 +150,7 @@ overrides: {}
   - _Test:_ T2 `Scenario: the gateway poller produces the same delivery ids the
     instance poller produces` (against `ghstub`), `Scenario: a webhook and a poll of the
     same comment store one row`
-- [ ] **B4: the Slack adapters and the extracted classifier.** Extract the classification
+- [x] **B4: the Slack adapters and the extracted classifier.** Extract the classification
   half of `run_socket_listener`'s `handle` into `slack.dispatch_envelope(request_payload,
   cfg)` in `channels/slack.py`, called unchanged by the gateway-less listener (pinned by
   the existing Slack tests). Write `gateway/adapters/slack_socket.py` (one
