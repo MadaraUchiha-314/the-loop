@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 
 from ...webhook.server import verify_signature
 from ..config import GatewayConfig
-from .ingest import Ingest
+from .ingest import Ingest, clip, refuse_oversized
 
 __all__ = ["JIRA_PATH", "build_jira_router", "jira_secret"]
 
@@ -46,8 +46,11 @@ def build_jira_router(ingest: Ingest, config: GatewayConfig) -> APIRouter:
         )
         if not secret:
             return JSONResponse(status_code=404, content={"status": "not found"})
+        too_large = refuse_oversized(request)
+        if too_large is not None:
+            return too_large
         body = await request.body()
-        ident = request.headers.get("X-Atlassian-Webhook-Identifier") or "-"
+        ident = clip(request.headers.get("X-Atlassian-Webhook-Identifier") or "-")
         if (
             verify_signature(secret, body, request.headers.get("X-Hub-Signature"))
             is not True

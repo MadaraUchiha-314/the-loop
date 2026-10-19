@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 
 from ...webhook.server import verify_signature
 from ..config import GatewayConfig
-from .ingest import Ingest
+from .ingest import Ingest, clip, refuse_oversized
 
 __all__ = ["build_github_router", "github_secret"]
 
@@ -47,9 +47,13 @@ def build_github_router(ingest: Ingest, config: GatewayConfig) -> APIRouter:
         if not secret:
             # the route exists in the schema but is not served without its secret
             return JSONResponse(status_code=404, content={"status": "not found"})
+        too_large = refuse_oversized(request)
+        if too_large is not None:
+            return too_large
         body = await request.body()
-        delivery = request.headers.get("X-GitHub-Delivery", "-")
-        event = request.headers.get("X-GitHub-Event", "unknown")
+        # unauthenticated header values: capped before they reach a log line (SEC-8)
+        delivery = clip(request.headers.get("X-GitHub-Delivery", "-"))
+        event = clip(request.headers.get("X-GitHub-Event", "unknown"))
         if (
             verify_signature(secret, body, request.headers.get("X-Hub-Signature-256"))
             is not True

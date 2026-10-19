@@ -286,3 +286,47 @@ def test_the_routes_are_not_served_without_their_secret(tmp_path, monkeypatch):
         assert gw.client.post("/jira-webhook", content=b"{}").status_code == 404
     finally:
         gw.close()
+
+
+def test_an_oversized_declared_body_is_413_before_it_is_read(gw):
+    """
+    Feature: the gateway's trust boundaries (security review SEC-9)
+      Scenario: an oversized declared body is refused before it is read
+        Given the GitHub and Jira routes
+        When a request declares a Content-Length above 25 MiB
+        Then each answers 413 at once, stores nothing and records nothing
+    """
+    for path, headers in (
+        ("/gh-webhook", {"X-GitHub-Event": "issues", "X-GitHub-Delivery": "big"}),
+        ("/jira-webhook", {}),
+    ):
+        response = gw.client.post(
+            path,
+            content=b"{}",
+            headers={**headers, "Content-Length": str(30 * 1024 * 1024)},
+        )
+        assert response.status_code == 413, (path, response.status_code)
+    assert gw.store.totals() == (0, 0) and not gw.events("gateway.dropped")
+
+
+def test_an_unauthenticated_header_reaches_the_log_clipped(gw):
+    """
+    Feature: the gateway's trust boundaries (security review SEC-8)
+      Scenario: an unauthenticated header value reaches the log clipped
+        Given a GitHub delivery with a wrong signature and a 5 000-character event name
+        When it is refused
+        Then the gateway.dropped record carries at most 200 characters of the name
+    """
+    response = gw.client.post(
+        "/gh-webhook",
+        content=b"{}",
+        headers={
+            "X-GitHub-Event": "e" * 5000,
+            "X-GitHub-Delivery": "d" * 5000,
+            "X-Hub-Signature-256": "sha256=" + "0" * 64,
+        },
+    )
+    assert response.status_code == 401
+    dropped = gw.events("gateway.dropped")[-1]
+    assert dropped["reason"] == "bad-signature"
+    assert len(dropped["kind"]) <= 201 and len(dropped["delivery_id"]) <= 201

@@ -23,7 +23,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from ..config import GatewayConfig
-from .ingest import Ingest
+from .ingest import Ingest, refuse_oversized
 
 __all__ = ["REPLAY_WINDOW_S", "build_slack_http_router", "verify_slack_signature"]
 
@@ -71,6 +71,9 @@ def build_slack_http_router(ingest: Ingest, config: GatewayConfig) -> APIRouter:
         )
         if not secret:
             return JSONResponse(status_code=404, content={"status": "not found"})
+        too_large = refuse_oversized(request)
+        if too_large is not None:
+            return too_large
         body = await request.body()
         reason = verify_slack_signature(
             secret,

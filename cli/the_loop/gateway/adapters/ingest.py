@@ -45,6 +45,34 @@ class Outcome:
         return self.status in ("stored", "duplicate")
 
 
+#: The most a webhook body may weigh (security review SEC-9): GitHub caps its own
+#: payloads at 25 MB, and the body is buffered before the signature can be checked.
+MAX_BODY_BYTES = 25 * 1024 * 1024
+#: The most of an unauthenticated header value that reaches a log line (SEC-8).
+HEADER_MAX = 200
+
+
+def clip(value: str, limit: int = HEADER_MAX) -> str:
+    """``value`` cut to ``limit`` characters — for a header an unauthenticated peer
+    chose, before it is recorded anywhere."""
+    return value if len(value) <= limit else value[:limit] + "…"
+
+
+def refuse_oversized(request: Any) -> Any:
+    """A 413 when the declared ``Content-Length`` is above :data:`MAX_BODY_BYTES`, else
+    ``None``; decided from the header, before any of the body is read."""
+    from fastapi.responses import JSONResponse
+
+    declared = request.headers.get("content-length")
+    try:
+        length = int(declared) if declared is not None else 0
+    except ValueError:
+        length = 0
+    if length > MAX_BODY_BYTES:
+        return JSONResponse(status_code=413, content={"status": "too large"})
+    return None
+
+
 class Ingest:
     def __init__(self, state: GatewayState) -> None:
         self.state = state
