@@ -39,6 +39,8 @@ __all__ = ["RETENTION_INTERVAL_S", "create_app", "main"]
 logger = logging.getLogger("the-loop.gateway")
 
 RETENTION_INTERVAL_S = 3600.0
+#: Open requests uvicorn serves at once before answering 503 (SEC-5).
+LIMIT_CONCURRENCY = 256
 
 
 def _retention_loop(
@@ -202,7 +204,13 @@ def main(argv: Optional[list] = None) -> int:
 
         server = uvicorn.Server(
             uvicorn.Config(
-                app, host=config.listen.host, port=config.listen.port, log_level="info"
+                app,
+                host=config.listen.host,
+                port=config.listen.port,
+                log_level="info",
+                # beyond this many open requests uvicorn answers 503 at once rather
+                # than queueing them on the worker pool (security review SEC-5)
+                limit_concurrency=LIMIT_CONCURRENCY,
             )
         )
         # uvicorn's graceful stop waits for open requests, and a fetch may be holding

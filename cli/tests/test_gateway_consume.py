@@ -3,6 +3,8 @@ R5.5, R5.7, R6.3, R9.2; abuse cases 4, 5, 8)."""
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from the_loop.gateway.store import peer_fingerprint
@@ -505,3 +507,46 @@ def test_oversized_or_unknown_fields_are_refused_at_the_door(gw):
     )
     assert huge.status_code == 422
     assert gw.store.instances() == [] and not gw.events("gateway.refused")
+
+
+def test_long_polls_are_capped_per_name_and_in_all(gw):
+    """
+    Feature: the consumer API (security review SEC-5)
+      Scenario: long-polls are capped per name and in all
+        Given a gateway that holds at most two long-polls open
+        When three names long-poll at once, and a fourth fetch arrives under a name
+             already waiting
+        Then the first two wait, the third and the fourth answer at once as plain polls,
+             and the slots are free again once the waiters return
+    """
+    import threading
+
+    gw.state.max_long_polls = 2
+    done = []
+
+    def poll(name):
+        started = time.monotonic()
+        gw.fetch(name, peer="p-" + name, wait=1.5)
+        done.append((name, time.monotonic() - started))
+
+    waiters = [threading.Thread(target=poll, args=(n,)) for n in ("a", "b")]
+    for t in waiters:
+        t.start()
+    deadline = time.monotonic() + 2
+    while len(gw.state._long_polls) < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert gw.state._long_polls == {"a", "b"}
+    started = time.monotonic()
+    assert gw.fetch("c", peer="p-c", wait=1.5).status_code == 200  # no slot: at once
+    assert time.monotonic() - started < 1.0
+    started = time.monotonic()
+    same = gw.client.post(
+        "/api/v1/gateway/fetch",
+        json={"instance": "a", "peer": "p-a", "wait": 1.5},
+    )
+    assert same.status_code in (200, 409)  # a's slot is taken: never a second wait
+    assert time.monotonic() - started < 1.0
+    for t in waiters:
+        t.join(timeout=5)
+    assert {n for n, _ in done} == {"a", "b"} and all(d >= 1.0 for _, d in done)
+    assert gw.state._long_polls == set()

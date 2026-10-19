@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Set
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
@@ -53,6 +53,28 @@ class GatewayState:
         self.slack_socket: str = "off"  # up | down | off
         self.store_ok: bool = True
         self.restart_required: List[str] = []
+        #: Open long-polls, by instance name (security review SEC-5): a fetch is a sync
+        #: route, so each open long-poll holds one of the server's worker threads for up
+        #: to consume.maxWaitSeconds. One per name — a second under a live name is a 409
+        #: anyway — and at most ``max_long_polls`` in all; beyond either, the fetch is a
+        #: plain poll that answers at once, so anonymous names cannot starve the rest.
+        self.max_long_polls = MAX_OPEN_LONG_POLLS
+        self._long_polls: Set[str] = set()
+        self._long_polls_lock = threading.Lock()
+
+    def long_poll_slot(self, instance: str) -> bool:
+        with self._long_polls_lock:
+            if (
+                instance in self._long_polls
+                or len(self._long_polls) >= self.max_long_polls
+            ):
+                return False
+            self._long_polls.add(instance)
+            return True
+
+    def release_long_poll(self, instance: str) -> None:
+        with self._long_polls_lock:
+            self._long_polls.discard(instance)
 
     def health(self) -> Dict[str, Any]:
         queues = {q.instance: q.backlog for q in self.store.queues()}
@@ -89,6 +111,8 @@ KEY_MAX = 512
 ACTORS_MAX = 256
 COMMITS_MAX = 1024
 SEQ_MAX = 2**63 - 1
+#: The most long-polls held open at once (SEC-5); the rest answer as plain polls.
+MAX_OPEN_LONG_POLLS = 32
 
 
 class CommitEntry(BaseModel):
@@ -301,23 +325,27 @@ def build_consume_router(state: GatewayState, **router_kwargs: Any) -> APIRouter
         limit = int(_clamp(body.max, 1, consume.max_batch))
         wait = _clamp(body.wait, 0, consume.max_wait_s)
         result = store.fetch(body.instance, body.cursor, limit)
-        if not result.deliveries and wait > 0:
-            deadline = time.monotonic() + wait
-            while True:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    break
-                store.wait(body.instance, remaining)
-                # the name may have changed hands while this fetch slept (critic C1):
-                # a peer whose lease lapsed mid-wait reads nothing of the new holder's
-                conflict = store.peer_conflict(body.instance, body.peer)
-                if conflict is not None:
-                    return _refused(
-                        state, conflict, instance=body.instance, peer=body.peer
-                    )
-                result = store.fetch(body.instance, body.cursor, limit)
-                if result.deliveries or state.stopping.is_set():
-                    break
+        if not result.deliveries and wait > 0 and state.long_poll_slot(body.instance):
+            try:
+                deadline = time.monotonic() + wait
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    store.wait(body.instance, remaining)
+                    # the name may have changed hands while this fetch slept (critic
+                    # C1): a peer whose lease lapsed mid-wait reads nothing of the new
+                    # holder's
+                    conflict = store.peer_conflict(body.instance, body.peer)
+                    if conflict is not None:
+                        return _refused(
+                            state, conflict, instance=body.instance, peer=body.peer
+                        )
+                    result = store.fetch(body.instance, body.cursor, limit)
+                    if result.deliveries or state.stopping.is_set():
+                        break
+            finally:
+                state.release_long_poll(body.instance)
         for dead in result.dead_lettered:
             eventlog.emit(
                 "subject.dead-lettered",
