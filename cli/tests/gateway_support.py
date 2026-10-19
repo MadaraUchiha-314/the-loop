@@ -39,6 +39,13 @@ def write_gateway_config(tmp_path: Path, **over: Any) -> gwconfig.GatewayConfig:
 class GatewayHarness:
     """A consume API over a real store, driven through FastAPI's TestClient."""
 
+    # set by the suites that need them (the poll and Slack adapters)
+    ingest: Any = None
+    api: Any = None
+    poll: Any = None
+    watch: Any = None
+    socket: Any = None
+
     def __init__(self, tmp_path: Path, **config_over: Any) -> None:
         self.config = write_gateway_config(tmp_path, **config_over)
         self.store = SqliteStore(
@@ -103,7 +110,7 @@ class GatewayHarness:
     def append(
         self, n: int = 1, *, subject: str = "loop-github-o-r-14", consumers=(), **over
     ):
-        base = dict(
+        base: Dict[str, Any] = dict(
             subject=subject,
             provider="github",
             source="webhook",

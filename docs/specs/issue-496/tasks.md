@@ -189,7 +189,7 @@ overrides: {}
     ingress off and says so in health`, `tests/test_gateway_security.py` (import graph:
     `gateway/*` imports neither `webhook/dispatcher.py` nor `authz.py`; no f-string next
     to `execute(`)
-- [ ] **B6: the gateway OpenAPI document.** Write
+- [x] **B6: the gateway OpenAPI document.** Write
   `docs/api-specs/openapi/the-loop-gateway.v1.yaml` for every route of R6.3 and R6.4,
   with the envelope as a JSON Schema component; extend `test_api_contract_parity.py` to
   compare it with `gateway.create_app(...).openapi()`; validate every row T2 stores

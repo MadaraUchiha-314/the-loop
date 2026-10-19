@@ -1,0 +1,557 @@
+openapi: 3.1.0
+info:
+  title: the-loop gateway
+  version: '1'
+  description: 'the-loop''s gateway (issue-496): one ingress process for many instances. Two surfaces
+    in one document. The PROVIDER routes are the providers'' own contracts, verbatim, so a webhook is
+    re-pointed at the gateway without change: POST /gh-webhook (X-Hub-Signature-256), POST /jira-webhook
+    (X-Hub-Signature), POST /slack/events|interactions|commands (X-Slack-Signature over v0:<ts>:<body>,
+    300 s replay window, url_verification answered). Each stores the delivery on its work item''s subject
+    and fans it out to every consuming instance''s queue BEFORE acknowledging. The CONSUMER API under
+    /api/v1/gateway is pull: an instance POSTs /fetch for ITS OWN queue, with the previous batch''s outcomes
+    in `commit`, and may hold the request open (`wait`) until a delivery is appended; /claims, /actors
+    and /bindings are the registrations the gateway routes on; health, subjects, queues and instances
+    are read-only. No streaming route is offered. The instance-to-gateway boundary carries no authentication
+    in this release: the gateway binds loopback unless `listen.exposed: true`. This file is the authored
+    contract: cli/tests/test_api_contract_parity.py asserts the served schema matches it, and that every
+    stored envelope validates against components.schemas.Envelope.'
+paths:
+  /gh-webhook:
+    post:
+      summary: Gh Webhook
+      operationId: githubWebhook
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                title: Response Githubwebhook
+      description: GitHub's webhook contract. Verified with X-Hub-Signature-256 before the body is parsed
+        (401 bad-signature, nothing stored); 202 once the event is stored and fanned out; 500 when the
+        store fails, so GitHub retries; 404 while the route's secret variable is unset.
+  /jira-webhook:
+    post:
+      summary: Jira Webhook
+      operationId: jiraWebhook
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                title: Response Jirawebhook
+      description: 'The Jira doorbell''s contract: X-Hub-Signature (sha256 HMAC) before parse; X-Atlassian-Webhook-Identifier
+        kept as the delivery id; 202 after the write; 404 without a secret.'
+  /slack/events:
+    post:
+      summary: Events
+      operationId: slackEvents
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                title: Response Slackevents
+      description: 'Slack Events API over HTTP, behind slack.http.enabled: X-Slack-Signature over v0:<timestamp>:<body>,
+        timestamps outside 300 s refused (401 replay-window); url_verification answered with the challenge;
+        200 after the write.'
+  /slack/interactions:
+    post:
+      summary: Interactions
+      operationId: slackInteractions
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                title: Response Slackinteractions
+      description: Slack interactivity (a form post with a `payload` JSON field), same verification; 200
+        after the write. The instance answers the user; the gateway only meets the three-second ack.
+  /slack/commands:
+    post:
+      summary: Commands
+      operationId: slackCommands
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                title: Response Slackcommands
+      description: Slack slash commands (a form post), same verification; 200 after the write.
+  /api/v1/gateway/fetch:
+    post:
+      summary: Fetch
+      description: 'The consumer loop''s whole step: refresh the instance name''s lease for this peer
+        (409 duplicate-instance when another peer holds it), commit the previous batch (409 commit-undelivered
+        when a seq was never fetched by this queue; nothing is then fetched), read this queue''s next
+        deliveries after max(cursor, committed) with attempts incremented (a delivery past store.maxAttempts
+        is dead-lettered instead), and when the queue is empty and `wait` > 0 hold the request until a
+        delivery is appended or `wait` elapses. Response: deliveries [{seq, attempt, subject, event: Envelope}],
+        cursor, committed, lease.expiresIn.'
+      operationId: gatewayFetch
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FetchBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                title: Response Gatewayfetch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/gateway/commit:
+    post:
+      summary: Commit
+      description: The commit step alone, for a stop or a quiet client. Same refusals as fetch's commit.
+      operationId: gatewayCommit
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommitBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                title: Response Gatewaycommit
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/gateway/claims:
+    put:
+      summary: Claim
+      description: Publish that an instance consumes a subject as driver or reviewer; the events held
+        on `unassigned` for that subject are routed onto the claimant's queue in the same transaction.
+      operationId: gatewayClaim
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClaimBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                title: Response Gatewayclaim
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      summary: Release
+      operationId: gatewayRelease
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClaimBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                title: Response Gatewayrelease
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      description: Release a claim.
+  /api/v1/gateway/actors:
+    put:
+      summary: Register
+      description: Replace the instance's registration of the actors it works for (GitHub logins, Slack
+        user ids, Jira account ids); an actor registered by another live instance is 409 duplicate-actor.
+      operationId: gatewayRegisterActors
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActorsBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                title: Response Gatewayregisteractors
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/gateway/bindings:
+    post:
+      summary: Bind
+      description: Publish that an object (a pull request `owner/repo#N`, a Slack thread `<channel>:<thread_ts>`)
+        belongs to a work item; held events whose key now resolves are routed.
+      operationId: gatewayBind
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BindingBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                title: Response Gatewaybind
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/gateway/health:
+    get:
+      summary: Health
+      operationId: gatewayHealth
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Gatewayhealth
+      description: ok, uptime, ingress states, the Socket Mode state, the store's path/events/held/queues,
+        restartRequired, listen.
+  /api/v1/gateway/subjects:
+    get:
+      summary: Subjects
+      operationId: gatewaySubjects
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Gatewaysubjects
+      description: Every subject with its claimants (instance, role, since), events, held, pending, oldest
+        pending and dead counts.
+  /api/v1/gateway/queues:
+    get:
+      summary: Queues
+      operationId: gatewayQueues
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Gatewayqueues
+      description: 'Per instance: committed offset, backlog, oldest pending, dead.'
+  /api/v1/gateway/instances:
+    get:
+      summary: Instances
+      operationId: gatewayInstances
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Gatewayinstances
+      description: Every instance with its peer, committed offset, first seen, last fetch, lease, registered
+        actors, backlog and claims.
+components:
+  schemas:
+    ActorsBody:
+      properties:
+        instance:
+          type: string
+          title: Instance
+        peer:
+          type: string
+          title: Peer
+          default: ''
+        actors:
+          additionalProperties:
+            items:
+              type: string
+            type: array
+          type: object
+          title: Actors
+          description: 'Per provider (github | slack | jira): the logins or ids.'
+      type: object
+      required:
+      - instance
+      title: ActorsBody
+    BindingBody:
+      properties:
+        ref:
+          type: string
+          title: Ref
+          description: The work item (`github:owner/repo#N`, `jira:site/KEY-N`).
+        provider:
+          type: string
+          title: Provider
+          description: github | slack | jira
+        key:
+          type: string
+          title: Key
+          description: 'The object''s key: `owner/repo#N` for a pull request, `<channel>:<thread_ts>`
+            for a Slack thread.'
+      type: object
+      required:
+      - ref
+      - provider
+      - key
+      title: BindingBody
+    ClaimBody:
+      properties:
+        instance:
+          type: string
+          title: Instance
+        subject:
+          type: string
+          title: Subject
+        role:
+          type: string
+          title: Role
+          description: driver | reviewer
+      type: object
+      required:
+      - instance
+      - subject
+      - role
+      title: ClaimBody
+    CommitBody:
+      properties:
+        instance:
+          type: string
+          title: Instance
+        peer:
+          type: string
+          title: Peer
+          default: ''
+        commit:
+          items:
+            $ref: '#/components/schemas/CommitEntry'
+          type: array
+          title: Commit
+      type: object
+      required:
+      - instance
+      - commit
+      title: CommitBody
+    CommitEntry:
+      properties:
+        seq:
+          type: integer
+          title: Seq
+          description: A delivery seq of this instance's queue, fetched earlier.
+        outcome:
+          type: string
+          title: Outcome
+          description: delivered | spawned | dropped:<reason> | failed — `failed` leaves the delivery
+            pending.
+      type: object
+      required:
+      - seq
+      - outcome
+      title: CommitEntry
+    FetchBody:
+      properties:
+        instance:
+          type: string
+          title: Instance
+          description: 'The instance''s name (`instance.name`, else `default`): its queue.'
+        peer:
+          type: string
+          title: Peer
+          description: A random id the client persists, so a restart is the same peer.
+          default: ''
+        cursor:
+          type: integer
+          minimum: 0.0
+          title: Cursor
+          description: The `committed` the server last returned; a hint.
+          default: 0
+        max:
+          type: integer
+          minimum: 1.0
+          title: Max
+          description: At most this many deliveries; clamped to consume.maxBatch.
+          default: 64
+        wait:
+          type: number
+          minimum: 0.0
+          title: Wait
+          description: Hold an empty fetch open for up to this many seconds; clamped.
+          default: 0
+        lease:
+          type: number
+          minimum: 0.0
+          title: Lease
+          description: Seconds to hold the instance name for this peer; clamped.
+          default: 0
+        commit:
+          items:
+            $ref: '#/components/schemas/CommitEntry'
+          type: array
+          title: Commit
+          description: The previous batch's outcomes.
+      type: object
+      required:
+      - instance
+      title: FetchBody
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    Envelope:
+      title: Envelope
+      type: object
+      description: 'One stored event (R6.2): exactly these fields. `payload` is the provider''s body,
+        verbatim; the gateway adds only the routing fields.'
+      required:
+      - id
+      - subject
+      - provider
+      - source
+      - deliveryId
+      - receivedAt
+      - kind
+      - headers
+      - payload
+      - attempt
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+          description: The gateway's append order; the `gateway_event_id` an instance's dispatch.* records
+            carry.
+        subject:
+          type: string
+          description: '`loop-<slug>` of the work item (the tmux slug), or `unassigned` while held.'
+        provider:
+          type: string
+          enum:
+          - github
+          - jira
+          - slack
+        source:
+          type: string
+          enum:
+          - webhook
+          - socket
+          - poll
+        deliveryId:
+          type: string
+          description: The provider's own delivery id (X-GitHub-Delivery, the Socket Mode envelope id,
+            the poller's poll-* id).
+        receivedAt:
+          type: string
+          description: UTC, millisecond precision, `Z`.
+        workItem:
+          type:
+          - string
+          - 'null'
+          description: '`github:owner/repo#N` or `jira:site/KEY-N`; null while held under a key no binding
+            resolves yet.'
+        kind:
+          type: string
+          description: 'The provider''s event name: X-GitHub-Event, Jira''s webhookEvent, the Slack envelope
+            type (events_api | interactive | slash_commands).'
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: An allow-list of the provider's routing headers, lower-cased.
+        payload:
+          description: The provider's body, verbatim.
+        attempt:
+          type: integer
+          minimum: 1
+          description: How many times this delivery has been fetched by the receiving queue.
+    Delivery:
+      title: Delivery
+      type: object
+      description: One row of an instance's queue, as fetch returns it.
+      required:
+      - seq
+      - attempt
+      - subject
+      - event
+      properties:
+        seq:
+          type: integer
+          description: The queue's cursor space; committed with the next fetch.
+        attempt:
+          type: integer
+          minimum: 1
+        subject:
+          type: string
+        event:
+          $ref: '#/components/schemas/Envelope'

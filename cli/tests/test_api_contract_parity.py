@@ -110,3 +110,85 @@ def test_the_router_carries_exactly_the_apps_operations(tmp_path):
         for op in methods.values()
     }
     assert from_router == from_app
+
+
+# -- the gateway's document (issue-496, R6.1–R6.4) ----------------------------------------------
+
+GATEWAY_CONTRACT = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "docs"
+    / "api-specs"
+    / "openapi"
+    / "the-loop-gateway.v1.yaml"
+)
+
+
+def _gateway_app(tmp_path):
+    from gateway_support import write_gateway_config
+    from the_loop.gateway.serve import create_app
+    from the_loop.gateway.store import SqliteStore
+
+    config = write_gateway_config(tmp_path)
+    return create_app(config, store=SqliteStore(":memory:"), host_ingresses=False)
+
+
+def test_gateway_served_schema_matches_the_authored_contract(tmp_path):
+    """
+    Feature: contract-first gateway API
+      Scenario: the gateway's served schema drifts from the authored contract
+        Given the checked-in docs/api-specs/openapi/the-loop-gateway.v1.yaml
+        When the gateway app's generated OpenAPI schema is compared to it
+        Then every path, method and operationId matches exactly — the provider routes
+             (/gh-webhook, /jira-webhook, /slack/*) and the consumer API alike, and no
+             streaming route exists
+
+    Requirement: docs/specs/issue-496/requirements.md#requirement-6 (R6.1, R6.3, R6.4)
+    """
+    contract = yaml.safe_load(GATEWAY_CONTRACT.read_text())
+    served = _gateway_app(tmp_path).openapi()
+    assert _surface(served) == _surface(contract)
+    assert not any("stream" in path for path, _, _ in _surface(served))
+
+
+def test_stored_envelopes_match_the_contracts_envelope_schema(tmp_path):
+    """
+    Feature: contract-first gateway API
+      Scenario: every stored envelope validates against components.schemas.Envelope
+        Given envelopes from a webhook, a poll and a socket stored through the API
+        When each delivery's `event` a fetch returns is validated against the schema
+        Then all validate, with exactly the ten fields of R6.2
+
+    Requirement: docs/specs/issue-496/requirements.md#requirement-6 (R6.2)
+    """
+    jsonschema = pytest.importorskip("jsonschema")
+    from gateway_support import GatewayHarness
+
+    contract = yaml.safe_load(GATEWAY_CONTRACT.read_text())
+    schema = dict(contract["components"]["schemas"]["Envelope"])
+    schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
+    gw = GatewayHarness(tmp_path)
+    try:
+        gw.append(1, consumers=["a"])
+        gw.append(
+            2,
+            consumers=["a"],
+            provider="slack",
+            source="socket",
+            kind="events_api",
+            payload={"event": {"type": "message"}},
+            headers={"x-slack-request-timestamp": "1"},
+        )
+        gw.append(
+            3,
+            consumers=["a"],
+            source="poll",
+            kind="issues",
+            payload=b'{"action": "labeled"}',
+        )
+        deliveries = gw.fetch("a").json()["deliveries"]
+        assert len(deliveries) == 3
+        for delivery in deliveries:
+            jsonschema.validate(delivery["event"], schema)
+            assert set(delivery["event"]) == set(schema["required"]) | {"workItem"}
+    finally:
+        gw.close()

@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from typing import Any, Dict
+
 import json
 
 from the_loop import eventlog
@@ -11,7 +13,7 @@ from the_loop.gateway import envelope as env
 
 
 def _envelope(**over) -> env.Envelope:
-    base = dict(
+    base: Dict[str, Any] = dict(
         subject="loop-github-o-r-14",
         provider="slack",
         source="socket",

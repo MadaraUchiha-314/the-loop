@@ -364,6 +364,7 @@ def test_the_gateway_verbs_start_report_and_stop_a_real_process(tmp_path, monkey
         stopped = gateway_cmd.stop_gateway(config)
     assert stopped["running"] is False
     assert not SqliteStore(config.store.path).event(999)
+    assert config.event_log is not None
     events = _events(config.event_log)
     names = [e["event"] for e in events]
     assert "gateway.started" in names and "gateway.stopped" in names

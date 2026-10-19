@@ -4,6 +4,8 @@ R4.1, R4.3, R4.4, R5.3, R5.5, R5.7, R9.2, R11.1; abuse cases 4, 5, 6, 8).
 
 from __future__ import annotations
 
+from typing import Any, Dict, Iterator
+
 import threading
 import time
 
@@ -15,7 +17,7 @@ from the_loop.gateway.store import Refused, SqliteStore
 
 
 @pytest.fixture()
-def store(tmp_path) -> SqliteStore:
+def store(tmp_path) -> Iterator[SqliteStore]:
     s = SqliteStore(tmp_path / "gateway.db", retention_days=7, max_attempts=3)
     yield s
     s.close()
@@ -24,7 +26,7 @@ def store(tmp_path) -> SqliteStore:
 def ev(
     n: int = 1, *, subject="loop-github-o-r-14", provider="github", **over
 ) -> Envelope:
-    base = dict(
+    base: Dict[str, Any] = dict(
         subject=subject,
         provider=provider,
         source="webhook",
