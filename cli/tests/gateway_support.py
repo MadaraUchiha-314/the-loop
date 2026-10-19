@@ -99,10 +99,11 @@ class GatewayHarness:
             },
         )
 
-    def claim(self, instance: str, subject: str, role: str = "driver"):
+    def claim(self, instance: str, subject: str, role: str = "driver", peer: str = "p"):
+        # the same default peer as `fetch`: the claim is the holder's
         return self.client.put(
             "/api/v1/gateway/claims",
-            json={"instance": instance, "subject": subject, "role": role},
+            json={"instance": instance, "peer": peer, "subject": subject, "role": role},
         )
 
     def register(self, instance: str, actors: Dict[str, List[str]], peer: str = "p"):

@@ -53,6 +53,7 @@ def test_explicit_commit_for_a_stop(gw):
         "/api/v1/gateway/commit",
         json={
             "instance": "a",
+            "peer": "p",
             "commit": [{"seq": seq, "outcome": "dropped:session-paused"}],
         },
     )
@@ -119,6 +120,7 @@ def test_claims_route_held_events_and_are_recorded(gw):
         "/api/v1/gateway/claims",
         json={
             "instance": "laptop-a",
+            "peer": "p",
             "subject": "loop-github-o-r-14",
             "role": "driver",
         },
