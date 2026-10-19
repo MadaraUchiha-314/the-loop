@@ -90,7 +90,7 @@ overrides: {}
     depth and oldest age; retention order committed → pending → held; dead-letter at
     `maxAttempts`); T8 `Scenario: retention expires committed rows`, `Scenario: every
     claim is listed with its instance and time`
-- [ ] **A6: `consumers_for`, `resolve_ref`, `dedup_key`.** Write `gateway/routing.py`
+- [x] **A6: `consumers_for`, `resolve_ref`, `dedup_key`.** Write `gateway/routing.py`
   (`consumers_for(subject, linked, actor, store)`: claimants of the subject and of each
   linked subject, then the actor's instance, then `[]`) and `gateway/adapters/common.py`
   (`resolve_ref` per provider with declared repositories, mapped projects, rooms and
