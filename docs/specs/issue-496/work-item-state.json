@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-496",
-  "currentNode": "capability-docs",
+  "currentNode": "code-quiz",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -157,10 +157,26 @@
     },
     "capability-docs": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-19T20:02:01+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-10-19T20:02:51+00:00",
       "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-496/evidence/documentation.md)",
+      "forced": false
+    },
+    "reviewer-briefing": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-19T20:02:51+00:00",
+      "exitedAt": "2026-10-19T20:04:07+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "code-quiz": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-19T20:04:07+00:00",
+      "exitedAt": "",
+      "lastBlock": "",
       "forced": false
     }
   },
@@ -388,7 +404,11 @@
       ]
     }
   ],
-  "parked": null,
+  "parked": {
+    "node": "code-quiz",
+    "reason": "awaiting a human",
+    "since": "2026-10-19T20:04:07+00:00"
+  },
   "completions": {
     "brainstorming": {
       "at": "2026-10-18T01:36:26+00:00",
@@ -439,7 +459,11 @@
       "by": "cli"
     },
     "capability-docs": {
-      "at": "2026-10-19T20:02:20+00:00",
+      "at": "2026-10-19T20:02:51+00:00",
+      "by": "cli"
+    },
+    "reviewer-briefing": {
+      "at": "2026-10-19T20:04:07+00:00",
       "by": "cli"
     }
   },
