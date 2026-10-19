@@ -121,3 +121,23 @@ def test_the_exposure_guard_is_the_services_rule():
     source = (GATEWAY / "serve.py").read_text(encoding="utf-8")
     assert "from ..api.config import is_loopback" in source
     assert "listen.exposed" in source
+
+
+def test_a_non_ascii_signature_header_is_a_refusal_not_an_exception():
+    """
+    Feature: the gateway's trust boundaries (security review SEC-7)
+      Scenario: a non-ASCII signature header is a refusal, not an exception
+        Given the GitHub and Slack signature checks
+        When the signature header carries a character outside ASCII (h11 decodes
+             headers as latin-1, so any peer can send one)
+        Then each answers "refused" — never a TypeError that becomes a 500
+    """
+    from the_loop.gateway.adapters.slack_http import verify_slack_signature
+    from the_loop.webhook.server import verify_signature
+
+    assert verify_signature("s", b"{}", "sha256=\u00e9") is False
+    assert verify_signature("s", b"{}", "sha256=" + "\u00ff" * 64) is False
+    assert (
+        verify_slack_signature("s", "1700000000", b"{}", "v0=\u00e9", now=1700000000.0)
+        == "bad-signature"
+    )

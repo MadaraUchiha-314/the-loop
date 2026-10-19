@@ -51,7 +51,11 @@ def verify_slack_signature(
         return "bad-signature"
     base = b"v0:" + str(ts).encode() + b":" + body
     expected = "v0=" + hmac.new(secret.encode(), base, hashlib.sha256).hexdigest()
-    return "" if hmac.compare_digest(expected, signature) else "bad-signature"
+    # bytes on both sides (security review SEC-7): a non-ASCII header is a refusal
+    same = hmac.compare_digest(
+        expected.encode("utf-8"), signature.encode("utf-8", "replace")
+    )
+    return "" if same else "bad-signature"
 
 
 def build_slack_http_router(ingest: Ingest, config: GatewayConfig) -> APIRouter:
