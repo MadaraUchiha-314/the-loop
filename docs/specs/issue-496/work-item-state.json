@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-496",
-  "currentNode": "verification",
+  "currentNode": "self-review",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -109,10 +109,18 @@
     },
     "verification": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-19T08:18:17+00:00",
+      "exitedAt": "2026-10-19T15:22:24+00:00",
+      "lastBlock": "`validate-artifacts` did not pass:\n- 3 task(s) still unticked (docs/specs/issue-496/testing-plan.md)",
+      "forced": false
+    },
+    "self-review": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-19T15:22:24+00:00",
       "exitedAt": "",
-      "lastBlock": "`validate-artifacts` did not pass:\n- 12 task(s) still unticked (docs/specs/issue-496/testing-plan.md)",
+      "lastBlock": "",
       "forced": false
     }
   },
@@ -369,6 +377,10 @@
     "implementation": {
       "at": "2026-10-19T08:18:17+00:00",
       "by": "cli"
+    },
+    "verification": {
+      "at": "2026-10-19T15:22:24+00:00",
+      "by": "cli"
     }
   },
   "skips": {},
@@ -393,5 +405,5 @@
     }
   ],
   "loop": "pdlc-work-item-loop",
-  "phase": "verification"
+  "phase": "needs-review"
 }
