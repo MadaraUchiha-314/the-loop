@@ -7,12 +7,21 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
+import threading
+
 import yaml
+from conftest import FakeTmux, StubInteractiveAdapter
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from the_loop import eventlog
+from the_loop.control import ControlConfig, ControlStore
 from the_loop.gateway import config as gwconfig
+from the_loop.gateway.client import GatewayClient
+from the_loop.gateway.client_dispatch import Pipeline
+from the_loop.sessions import Session, SessionRegistry, WorkItemRef
+from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
+from the_loop.webhook.router import Router
 from the_loop.gateway.consume import GatewayState, mount
 from the_loop.gateway.envelope import Envelope
 from the_loop.gateway.store import SqliteStore
@@ -132,3 +141,97 @@ class GatewayHarness:
             if line
         ]
         return [r for r in rows if name is None or r["event"] == name]
+
+
+class Instance:
+    """One instance: its registry, dispatcher, router, pipeline and gateway client."""
+
+    def __init__(
+        self, gw: GatewayHarness, root: Path, name: str, actors=("octocat",), **routing
+    ):
+        self.root = root
+        self.tmux = FakeTmux()
+        self.registry = SessionRegistry(root / "sessions")
+        config = RoutingConfig(
+            dispatch_timeout_seconds=30,
+            spawn_workdir=str(root),
+            portable_dir=str(root / "portable"),
+            **{
+                "control": ControlConfig(require_start_command=False),
+                "auto_execute_labels": ["the-loop: auto-execute"],
+                "authorized_users": ["octocat"],
+                **routing,
+            },
+        )
+        self.dispatcher = Dispatcher(
+            registry=self.registry,
+            adapters={"claude": StubInteractiveAdapter()},
+            config=config,
+            tmux_runner=self.tmux,
+        )
+        self.router = Router(
+            events=[
+                "issues",
+                "issue_comment",
+                "pull_request",
+                "pull_request_review_comment",
+            ],
+            deduper=self.dispatcher.deduper,
+            auto_execute_labels=config.auto_execute_labels,
+            authorized_users=["octocat"],
+            collaborators=self.dispatcher.collaborator_store,
+            repositories=None,
+        )
+        self.cli_config: Dict[str, Any] = {
+            "state": {"root": str(root / ".the-loop")},
+            "instance": {"name": name},
+            "gateway": {
+                "url": "http://127.0.0.1:8790",
+                "pollIntervalSeconds": 1,
+                "longPollSeconds": 0,
+                "actors": {"github": list(actors)},
+            },
+        }
+        self.pipeline = Pipeline(
+            router=self.router, dispatcher=self.dispatcher, cli_config=self.cli_config
+        )
+        self.control = ControlStore(root / "portable")
+        self.client = GatewayClient(
+            self.cli_config,
+            threading.Event(),
+            dispatch=self.pipeline.dispatch,
+            claims=self.claims,
+            transport=lambda m, p, b, t: self._call(gw, m, p, b),
+            sleep=lambda s: None,
+            rng=lambda: 0.5,
+        )
+        self.client.attach(
+            self.registry, control_store=self.control, pipeline=self.pipeline
+        )
+
+    @staticmethod
+    def _call(gw, method, path, body):
+        response = gw.client.request(method, path, json=body)
+        return response.status_code, (response.json() if response.content else None)
+
+    def claims(self) -> List[Any]:
+        return [
+            (f"loop-{s.work_item.slug}", "driver")
+            for s in self.registry.list_sessions()
+            if s.is_live
+        ]
+
+    def register_session(self, ref: str = "github:o/r#14") -> None:
+        item = WorkItemRef.parse(ref)
+        self.registry.register(
+            Session(
+                work_item=item,
+                harness="claude",
+                harness_session_id="sess-1",
+                cwd=str(self.root),
+                tmux_target=f"loop-{item.slug}",
+            )
+        )
+
+    def stop(self) -> None:
+        self.dispatcher.stop()

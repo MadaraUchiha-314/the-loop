@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Mapping, Optional, Union
+from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Union
 
 from .. import eventlog
 from .envelope import Delivery
@@ -68,6 +68,8 @@ class Pipeline:
         self.cli_config = dict(cli_config)
         self.doorbell = doorbell
         self._slack_dispatch = slack_dispatch
+        #: ``(ref, provider, key) -> bool``; set by the client (R5.8).
+        self.publish_binding: Optional[Callable[[str, str, str], bool]] = None
 
     def reload(self, cli_config: Mapping[str, Any]) -> None:
         self.cli_config = dict(cli_config)
@@ -96,6 +98,7 @@ class Pipeline:
             # unauthorized-actor | no-work-item | …); the queue only needs to move on
             return "dropped:not-routed"
         refs = list(routed.work_items)
+        self._publish_linkage(payload, refs)
         had_record = {
             ref.ref for ref in refs if self.dispatcher.registry.record_owning(ref)
         }
@@ -124,6 +127,39 @@ class Pipeline:
         if first is not None:
             return first
         return Deferred(env.delivery_id, resolve, started)
+
+    def _publish_linkage(self, payload: Mapping[str, Any], refs: Sequence[Any]) -> None:
+        """A pull-request event the router tied to a ticket: tell the gateway, so the
+        PR's later events reach the ticket's claimants without re-inferring (R5.8)."""
+        if self.publish_binding is None:
+            return
+        pr = payload.get("pull_request")
+        if not isinstance(pr, Mapping):
+            issue = payload.get("issue")
+            pr = (
+                issue
+                if isinstance(issue, Mapping) and "pull_request" in issue
+                else None
+            )
+        if not isinstance(pr, Mapping):
+            return
+        number = pr.get("number")
+        repo = (
+            (payload.get("repository") or {}).get("full_name")
+            if isinstance(payload.get("repository"), Mapping)
+            else None
+        )
+        if not isinstance(number, int) or not isinstance(repo, str):
+            return
+        pr_ref = f"github:{repo}#{number}"
+        for ref in refs:
+            if (
+                getattr(ref, "ref", "")
+                and ref.ref != pr_ref
+                and ref.provider == "github"
+            ):
+                self.publish_binding(ref.ref, "github", f"{repo}#{number}")
+                return
 
     # -- Jira ------------------------------------------------------------------------------------------
 

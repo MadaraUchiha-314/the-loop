@@ -45,6 +45,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import (
     Any,
+    Callable,
     Dict,
     Iterator,
     List,
@@ -357,6 +358,9 @@ class ChannelStores:
 
 @dataclass
 class ChannelState:
+    #: Set by the gateway client (issue-496): ``(provider, key, work_item)`` for every
+    #: thread bound to a work item. ``None`` publishes nothing.
+    publisher: Optional[Callable[[str, str, str], None]] = None
     """The bindings (thread → work item), the conversations (work item → thread),
     the cursors (thread → last-seen ts) and the pending questions (message ts →
     the kickoff the-loop is waiting on an answer for)."""
@@ -670,6 +674,13 @@ class ChannelState:
         if thread:
             self.threads.pop(thread, None)  # re-binding moves it to newest
             self.threads[thread] = {"workItem": work_item, "channel": channel_id}
+            publisher = getattr(self, "publisher", None)
+            if publisher is not None and work_item:
+                # issue-496 (R5.7): a gateway learns the thread belongs to the work item
+                try:
+                    publisher("slack", f"{channel_id}:{thread}", work_item)
+                except Exception:  # noqa: BLE001 — a binding never fails on its publisher
+                    logger.exception("channel binding publisher failed for %s", thread)
         if work_item:
             self.conversations[work_item] = _record(
                 thread, channel_id, origin=origin, permalink=permalink, mode=mode

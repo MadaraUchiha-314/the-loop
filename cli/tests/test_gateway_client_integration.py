@@ -11,18 +11,12 @@ import json
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterator, List
+from typing import Any, Iterator, List
 
 import pytest
-from conftest import FakeTmux, StubInteractiveAdapter
 
-from gateway_support import GatewayHarness
-from the_loop.control import ControlConfig
+from gateway_support import GatewayHarness, Instance
 from the_loop.gateway.client import GatewayClient
-from the_loop.gateway.client_dispatch import Pipeline
-from the_loop.sessions import Session, SessionRegistry, WorkItemRef
-from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
-from the_loop.webhook.router import Router
 
 FIXTURES = Path(__file__).parent / "fixtures" / "github"
 AUTO_LABEL = "the-loop: auto-execute"
@@ -36,94 +30,6 @@ def wait_until(predicate, timeout=5.0, interval=0.02):
             return True
         time.sleep(interval)
     return predicate()
-
-
-class Instance:
-    """One instance: its registry, dispatcher, router, pipeline and gateway client."""
-
-    def __init__(self, gw: GatewayHarness, root: Path, name: str, **routing):
-        self.root = root
-        self.tmux = FakeTmux()
-        self.registry = SessionRegistry(root / "sessions")
-        config = RoutingConfig(
-            dispatch_timeout_seconds=30,
-            spawn_workdir=str(root),
-            portable_dir=str(root / "portable"),
-            **{
-                "control": ControlConfig(require_start_command=False),
-                "auto_execute_labels": [AUTO_LABEL],
-                "authorized_users": ["octocat"],
-                **routing,
-            },
-        )
-        self.dispatcher = Dispatcher(
-            registry=self.registry,
-            adapters={"claude": StubInteractiveAdapter()},
-            config=config,
-            tmux_runner=self.tmux,
-        )
-        self.router = Router(
-            events=[
-                "issues",
-                "issue_comment",
-                "pull_request",
-                "pull_request_review_comment",
-            ],
-            deduper=self.dispatcher.deduper,
-            auto_execute_labels=config.auto_execute_labels,
-            authorized_users=["octocat"],
-            collaborators=self.dispatcher.collaborator_store,
-            repositories=None,
-        )
-        self.cli_config: Dict[str, Any] = {
-            "state": {"root": str(root / ".the-loop")},
-            "instance": {"name": name},
-            "gateway": {
-                "url": "http://127.0.0.1:8790",
-                "pollIntervalSeconds": 1,
-                "longPollSeconds": 0,
-                "actors": {"github": ["octocat"]},
-            },
-        }
-        self.pipeline = Pipeline(
-            router=self.router, dispatcher=self.dispatcher, cli_config=self.cli_config
-        )
-        self.client = GatewayClient(
-            self.cli_config,
-            threading.Event(),
-            dispatch=self.pipeline.dispatch,
-            claims=self.claims,
-            transport=lambda m, p, b, t: self._call(gw, m, p, b),
-            sleep=lambda s: None,
-            rng=lambda: 0.5,
-        )
-
-    @staticmethod
-    def _call(gw, method, path, body):
-        response = gw.client.request(method, path, json=body)
-        return response.status_code, (response.json() if response.content else None)
-
-    def claims(self) -> List[Any]:
-        return [
-            (f"loop-{s.work_item.slug}", "driver")
-            for s in self.registry.list_sessions()
-            if s.is_live
-        ]
-
-    def register_session(self, ref: str = REF) -> None:
-        item = WorkItemRef.parse(ref)
-        self.registry.register(
-            Session(
-                work_item=item,
-                harness="claude",
-                harness_session_id="sess-1",
-                cwd=str(self.root),
-                tmux_target=f"loop-{item.slug}",
-            )
-        )
-
-    def stop(self) -> None:
-        self.dispatcher.stop()
 
 
 @pytest.fixture()

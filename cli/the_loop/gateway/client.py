@@ -281,6 +281,92 @@ class GatewayClient:
             return False
         return status == 200
 
+    # -- what the instance publishes (R5.3, R5.7, R5.8) ---------------------------------------------------
+
+    def attach(
+        self,
+        registry: Any,
+        *,
+        control_store: Any = None,
+        channel_state: Any = None,
+        pipeline: Any = None,
+    ) -> None:
+        """Wire the instance's registry, control store, Slack state and pipeline to this
+        client: a registered session publishes a claim (``reviewer`` when the work
+        item's control command is ``review``, else ``driver``), a closed one releases
+        it, a linked pull request and a bound Slack thread publish bindings, and the
+        live sessions are what ``register`` re-asserts after an outage."""
+        self._registry = registry
+        self._control_store = control_store
+
+        def role_of(ref: str) -> str:
+            record = None
+            if control_store is not None:
+                try:
+                    record = control_store.get(ref)
+                except Exception:  # noqa: BLE001 — an unreadable record is a driver
+                    record = None
+            return (
+                "reviewer"
+                if record is not None and record.command == "review"
+                else "driver"
+            )
+
+        def on_registry(event: str, ref: str, other: str) -> None:
+            from .adapters.common import slug_of
+
+            if event == "claim":
+                self.publish_claim(f"loop-{slug_of(ref)}", role_of(ref))
+            elif event == "release":
+                self.release_claim(f"loop-{slug_of(ref)}", role_of(ref))
+            elif event == "link" and other:
+                # ref is the pull request, other the work item it delivers
+                try:
+                    from ..sessions import WorkItemRef
+
+                    pr = WorkItemRef.parse(ref)
+                    key = f"{pr.owner}/{pr.repo}#{pr.number}"
+                except Exception:  # noqa: BLE001
+                    return
+                self.publish_binding(other, "github", key)
+
+        registry.publisher = on_registry
+        if channel_state is not None:
+            channel_state.publisher = lambda provider, key, work_item: (
+                self.publish_binding(work_item, provider, key)
+            )
+        if pipeline is not None:
+            pipeline.publish_binding = self.publish_binding
+
+        def live_claims() -> List[Tuple[str, str]]:
+            from .adapters.common import slug_of
+
+            claims: List[Tuple[str, str]] = []
+            try:
+                sessions = registry.list_sessions()
+            except Exception:  # noqa: BLE001
+                return claims
+            for session in sessions:
+                if not session.is_live:
+                    continue
+                claims.append(
+                    (
+                        f"loop-{slug_of(session.work_item.ref)}",
+                        role_of(session.work_item.ref),
+                    )
+                )
+                for endpoint in getattr(session, "pull_requests", ()):
+                    if endpoint.is_live:
+                        claims.append(
+                            (
+                                f"loop-{slug_of(endpoint.work_item.ref)}",
+                                role_of(endpoint.work_item.ref),
+                            )
+                        )
+            return claims
+
+        self._claims = live_claims
+
     # -- the loop (R3.1, R3.3, R3.4) -------------------------------------------------------------------
 
     def fetch_once(self) -> Optional[List[Delivery]]:

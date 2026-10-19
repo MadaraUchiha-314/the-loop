@@ -231,7 +231,7 @@ overrides: {}
     `Scenario: a Jira comment through the gateway rings the instance's doorbell
     unchanged`; T8 `Scenario: an injected start keyword from an unauthorized actor is
     dropped on the instance`
-- [ ] **C3: claims and bindings published by the instance.** Give `SessionRegistry` an
+- [x] **C3: claims and bindings published by the instance.** Give `SessionRegistry` an
   optional `publisher` callback: `register` / `record_owning` → `PUT /claims` with
   `driver`, or `reviewer` when the control record's command is `review` (bound to the PR
   as issue-279 does); `close` → `DELETE /claims`. Give `ChannelState.bind` the same shape
