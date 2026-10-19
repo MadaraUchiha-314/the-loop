@@ -399,3 +399,46 @@ def test_dispatch_envelope_routes_each_shape_to_todays_handler(monkeypatch):
         ("event", "app_mention", True),
         ("event", "message", False),
     ]
+
+
+def test_the_slack_verification_token_is_not_stored(gw):
+    """
+    Feature: one Slack app serves every instance through the gateway
+      Scenario: the Slack verification token is not stored
+        Given an events_api body carrying Slack's top-level verification `token`
+        When it arrives by the HTTP route (signed) and by the socket adapter
+        Then the stored payloads carry the event without the token, and the delivery an
+             instance fetches has no `token` key
+
+    Requirement: docs/specs/issue-496/requirements.md §Security considerations
+                 (self-review S2)
+    """
+    gw.store.claim("loop-github-o-r-14", "laptop-a", "driver")
+    message = _message(event_id="Ev-tok")
+    message["token"] = "legacy-verification-token"
+    body = json.dumps(message).encode()
+    assert (
+        gw.client.post("/slack/events", content=body, headers=_signed(body)).status_code
+        == 200
+    )
+    from the_loop.gateway.adapters.ingest import Ingest
+
+    socket_message = _message(event_id="Ev-tok-socket")
+    socket_message["token"] = "legacy-verification-token"
+    outcome = Ingest(gw.state).accept(
+        "slack", "socket", "events_api", "env-tok", {}, b"", payload=socket_message
+    )
+    assert outcome.status == "stored"
+    deliveries = gw.fetch("laptop-a").json()["deliveries"]
+    assert len(deliveries) == 2
+    for delivery in deliveries:
+        assert "token" not in delivery["event"]["payload"]
+        assert delivery["event"]["payload"]["event"]["type"] == "message"
+    import sqlite3
+
+    rows = (
+        sqlite3.connect(str(gw.store.path))
+        .execute("SELECT payload FROM events WHERE provider = 'slack'")
+        .fetchall()
+    )
+    assert rows and all(b"legacy-verification-token" not in bytes(r[0]) for r in rows)

@@ -83,6 +83,12 @@ class Ingest:
                 provider, kind, delivery_id, exc.reason, detail=str(exc)
             )
         actor = actor or actor_of(provider, kind, payload)
+        if provider == "slack" and "token" in payload:
+            # Slack's deprecated verification token rides every envelope; the request
+            # has been authenticated by now (signature or socket), and the store must
+            # not keep a shared secret the-loop never reads (self-review S2)
+            payload = {k: v for k, v in payload.items() if k != "token"}
+            body = b""
         routing = consumers_for(
             resolved.subject,
             resolved.linked,
