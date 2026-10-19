@@ -73,7 +73,7 @@ overrides: {}
     fetch returns only that queue in seq order after `max(cursor, committed)`;
     contiguous commit; unfetched seq refused; `attempt+1` on re-fetch; the fetch query
     plan uses the index); T8 `Scenario: a commit for a delivery never fetched is refused`
-- [ ] **A5: `SqliteStore` — lease, claims, actors, bindings, views, expiry.** Add
+- [x] **A5: `SqliteStore` — lease, claims, actors, bindings, views, expiry.** Add
   `touch` (peer and `lease_until`; a different peer under a live lease is `Refused`),
   `claim` / `release` / `claimants` (a claim routes the subject's held events onto the
   claimant's queue in the same transaction), `register_actors` (replaces the instance's

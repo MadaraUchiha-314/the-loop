@@ -229,3 +229,205 @@ def test_append_wakes_a_waiter_on_that_queue_only(store):
     assert woke["a"] is True and time.monotonic() - started < 1.0
     threads[1].join()
     assert woke["b"] is False  # timed out: nothing was routed to b
+
+
+# -- the lease per name, by peer (R4.3; abuse case 4) -----------------------------------------
+
+
+def test_the_lease_refuses_a_second_peer_under_a_live_name_and_admits_the_same_peer(
+    store,
+):
+    """
+    Feature: one queue, one poller (requirements §Security, abuse case 4)
+      Scenario: a second peer under the same instance name is refused while the first polls
+        Given laptop-a polled as peer p1 within the lease window
+        When peer p2 fetches as laptop-a
+        Then it is refused with duplicate-instance naming the holder
+        And p1 restarting (same persisted peer id) is admitted at once
+    """
+    first = store.touch("laptop-a", "p1", lease_s=30)
+    assert not isinstance(first, Refused) and first.expires_in > 0
+    second = store.touch("laptop-a", "p2", lease_s=30)
+    assert isinstance(second, Refused) and second.reason == "duplicate-instance"
+    assert second.holder == "p1"
+    assert not isinstance(store.touch("laptop-a", "p1", lease_s=30), Refused)
+
+
+def test_an_expired_lease_admits_a_new_peer(store):
+    store.touch("laptop-a", "p1", lease_s=0)
+    time.sleep(0.01)
+    assert not isinstance(store.touch("laptop-a", "p2", lease_s=30), Refused)
+    (row,) = store.instances()
+    assert row.peer == "p2" and row.lease_live()
+
+
+# -- claims route held events (R2.2, R5.3) -------------------------------------------------------
+
+
+def test_a_claim_routes_the_events_held_on_that_subject(store):
+    held = store.append(ev(1), [])
+    assert held.held
+    routed = store.claim("loop-github-o-r-14", "laptop-a", "driver")
+    assert routed == [held.event_id]
+    (d,) = store.fetch("laptop-a", 0, 10).deliveries
+    assert d.event.id == held.event_id
+    # a second claim on the same subject does not re-route what was delivered
+    assert store.claim("loop-github-o-r-14", "laptop-b", "reviewer") == []
+    assert store.fetch("laptop-b", 0, 10).deliveries == []
+    claims = store.claimants("loop-github-o-r-14")
+    assert [(c.instance, c.role) for c in claims] == [
+        ("laptop-a", "driver"),
+        ("laptop-b", "reviewer"),
+    ]
+    assert store.release("loop-github-o-r-14", "laptop-a") == 1
+    assert [c.instance for c in store.claimants("loop-github-o-r-14")] == ["laptop-b"]
+
+
+def test_every_claim_is_listed_with_its_instance_and_time(store):
+    """
+    Feature: steering is visible (requirements §Security, abuse case 8)
+      Scenario: every claim is listed with its instance and time
+    """
+    store.claim("loop-x-1", "laptop-a", "driver")
+    store.claim("loop-x-1", "laptop-b", "reviewer")
+    (row,) = store.subjects()
+    listed = {(c.instance, c.role) for c in row.claimants}
+    assert listed == {("laptop-a", "driver"), ("laptop-b", "reviewer")}
+    assert all(c.since.endswith("Z") for c in row.claimants)
+
+
+# -- actors (R5.5; abuse case 8) --------------------------------------------------------------
+
+
+def test_a_duplicate_actor_registration_is_refused_while_the_holder_is_live(store):
+    """
+    Feature: one start, one instance (requirements §Security, abuse case 8)
+      Scenario: a duplicate actor registration is refused
+        Given laptop-a registered github:octocat and its lease is live
+        When laptop-b registers github:octocat
+        Then it is refused with duplicate-actor naming laptop-a, and nothing is applied
+    """
+    store.touch("laptop-a", "p1", lease_s=60)
+    assert (
+        store.register_actors("laptop-a", {"github": ["octocat"], "slack": ["U1"]})
+        is None
+    )
+    refused = store.register_actors("laptop-b", {"github": ["octocat"], "jira": ["j1"]})
+    assert isinstance(refused, Refused) and refused.reason == "duplicate-actor"
+    assert refused.holder == "laptop-a"
+    assert store.instance_for_actor("jira", "j1") is None  # nothing applied
+    assert store.instance_for_actor("github", "octocat") == "laptop-a"
+    assert store.actors_of("laptop-a") == {"github": ("octocat",), "slack": ("U1",)}
+
+
+def test_an_actor_of_an_expired_instance_is_taken_over_and_a_registration_replaces(
+    store,
+):
+    store.touch("laptop-a", "p1", lease_s=0)
+    store.register_actors("laptop-a", {"github": ["octocat"]})
+    time.sleep(0.01)
+    assert store.register_actors("laptop-b", {"github": ["octocat"]}) is None
+    assert store.instance_for_actor("github", "octocat") == "laptop-b"
+    store.register_actors("laptop-b", {"github": ["hubot"]})  # replaces the set
+    assert store.instance_for_actor("github", "octocat") is None
+    assert store.instance_for_actor("github", "hubot") == "laptop-b"
+
+
+# -- bindings route held events (R5.7, R5.8) -------------------------------------------------
+
+
+def test_a_binding_routes_held_events_to_the_subjects_claimants(store):
+    held = store.append(
+        ev(1, subject="unassigned", work_item=None, provider="github"),
+        [],
+        held_key="o/r#77",
+    )
+    store.claim("loop-github-o-r-14", "laptop-a", "driver")
+    routed = store.bind("github", "o/r#77", "github:o/r#14", "github-o-r-14")
+    assert routed == [held.event_id]
+    assert store.resolve("github", "o/r#77") == "github:o/r#14"
+    (d,) = store.fetch("laptop-a", 0, 10).deliveries
+    assert (
+        d.event.subject == "loop-github-o-r-14" and d.event.work_item == "github:o/r#14"
+    )
+
+
+def test_a_binding_with_no_claimant_routes_by_actor_else_keeps_holding(store):
+    store.touch("laptop-b", "p", lease_s=60)
+    store.register_actors("laptop-b", {"slack": ["U9"]})
+    by_actor = store.append(
+        ev(1, subject="unassigned", provider="slack", actor="U9", work_item=None),
+        [],
+        held_key="C1:1700.1",
+    )
+    nobody = store.append(
+        ev(2, subject="unassigned", provider="slack", actor="U0", work_item=None),
+        [],
+        held_key="C1:1700.1",
+    )
+    routed = store.bind("slack", "C1:1700.1", "github:o/r#14", "github-o-r-14")
+    assert routed == [by_actor.event_id]
+    (d,) = store.fetch("laptop-b", 0, 10).deliveries
+    assert d.event.id == by_actor.event_id
+    (row,) = [r for r in store.subjects() if r.subject == "loop-github-o-r-14"]
+    assert row.held == 1  # U0's event waits under its new subject
+    assert store.claim("loop-github-o-r-14", "laptop-a", "driver") == [nobody.event_id]
+
+
+# -- views (R9.2) -----------------------------------------------------------------------------
+
+
+def test_subjects_queues_and_instances_report_depth_and_oldest_age(store):
+    store.append(ev(1), ["a"])
+    store.append(ev(2), ["a"])
+    store.append(ev(3, subject="loop-other-1", work_item="github:o/r#1"), ["b"])
+    got = store.fetch("a", 0, 1)
+    store.commit("a", [(got.deliveries[0].seq, "delivered")])
+    subjects = {r.subject: r for r in store.subjects()}
+    assert subjects["loop-github-o-r-14"].pending == 1
+    assert subjects["loop-github-o-r-14"].events == 2
+    assert subjects["loop-github-o-r-14"].oldest_pending_at is not None
+    queues = {q.instance: q for q in store.queues()}
+    assert queues["a"].backlog == 1 and queues["a"].committed == got.deliveries[0].seq
+    assert queues["b"].backlog == 1 and queues["b"].committed == 0
+    instances = {i.instance: i for i in store.instances()}
+    assert instances["a"].last_fetch_at is not None and instances["a"].backlog == 1
+    assert instances["b"].last_fetch_at is None
+
+
+# -- retention (R2.8; abuse case 6) -------------------------------------------------------------
+
+
+def test_retention_expires_committed_then_pending_then_held(tmp_path):
+    """
+    Feature: bounded growth (requirements §Security, abuse case 6)
+      Scenario: retention expires committed rows
+        Given committed, pending and held rows older than retention
+        When expire runs
+        Then committed rows are deleted silently, pending and held ones are expired and
+             reported, and an event with no delivery left is deleted with its key retired
+    """
+    store = SqliteStore(tmp_path / "gw.db", retention_days=1, dedup_window=10)
+    store.append(ev(1), ["a"])  # will be committed
+    store.append(ev(2), ["a"])  # stays pending
+    store.append(ev(3), [])  # held
+    got = store.fetch("a", 0, 1)
+    store.commit("a", [(got.deliveries[0].seq, "delivered")])
+    later = time.time() + 2 * 86_400
+    result = store.expire(now=later)
+    assert result.deleted_deliveries == 2  # the committed row and the pending row
+    assert sorted(e[1] for e in result.expired) == [2, 3]
+    assert {e[2] for e in result.expired} == {"a", ""}
+    assert result.deleted_events == 3
+    assert store.fetch("a", 0, 10).deliveries == []
+    # a late redelivery of the expired event is still recognised (dedup window)
+    assert not store.append(ev(1), ["a"]).inserted
+    store.close()
+
+
+def test_retention_keeps_fresh_rows(store):
+    store.append(ev(1), ["a"])
+    store.fetch("a", 0, 10)
+    result = store.expire()
+    assert result.expired == () and result.deleted_events == 0
+    assert len(store.fetch("a", 0, 10).deliveries) == 1

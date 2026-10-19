@@ -47,6 +47,7 @@ from .envelope import (
     Delivery,
     Envelope,
     is_outcome,
+    subject_for_slug,
     utcnow,
 )
 
@@ -629,6 +630,467 @@ class SqliteStore:
             )
         return new
 
+    # -- the lease per instance name, by peer (R4.3; abuse case 4) -------------------------------
+
+    def touch(self, instance: str, peer: str, lease_s: float) -> Union[Lease, Refused]:
+        """Record a fetch by ``peer`` under ``instance`` and hold the name for ``lease_s``.
+
+        A **different** peer while the lease is live is ``Refused("duplicate-instance")``
+        naming the holder; the same peer (a restart persists its id) is admitted at once,
+        and an expired lease admits anyone. ``peer`` empty means an unidentified client,
+        which never holds the name and is admitted only while nobody does.
+        """
+        now_s = time.time()
+        now = utcnow()
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT OR IGNORE INTO instances(instance, first_seen) VALUES (?, ?)",
+                (instance, now),
+            )
+            cur.execute(
+                "SELECT peer, lease_until, first_seen FROM instances WHERE instance = ?",
+                (instance,),
+            )
+            holder, lease_until, first_seen = cur.fetchone()
+            if holder and holder != peer and float(lease_until) > now_s:
+                return Refused(
+                    "duplicate-instance",
+                    holder=str(holder),
+                    since=str(first_seen),
+                    detail=f"{instance} is being polled by another peer",
+                )
+            expires = now_s + max(0.0, float(lease_s))
+            cur.execute(
+                "UPDATE instances SET peer = ?, lease_until = ?, last_fetch_at = ?"
+                " WHERE instance = ?",
+                (peer or "", expires if peer else 0.0, now, instance),
+            )
+        return Lease(instance=instance, peer=peer, expires_in=max(0.0, expires - now_s))
+
+    def _lease_live(self, cur: sqlite3.Cursor, instance: str, now_s: float) -> bool:
+        cur.execute("SELECT lease_until FROM instances WHERE instance = ?", (instance,))
+        row = cur.fetchone()
+        return row is not None and float(row[0]) > now_s
+
+    # -- claims (R5.3, R2.2) -------------------------------------------------------------------
+
+    def claim(self, subject: str, instance: str, role: str) -> List[int]:
+        """Record that ``instance`` consumes ``subject`` as ``role`` and route the events
+        held on it (``routed = 0``) onto that queue, in the same transaction. Returns the
+        ids routed. Idempotent for an existing claim."""
+        now = utcnow()
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT OR IGNORE INTO instances(instance, first_seen) VALUES (?, ?)",
+                (instance, now),
+            )
+            cur.execute(
+                "INSERT OR IGNORE INTO subjects(subject, first_seen) VALUES (?, ?)",
+                (subject, now),
+            )
+            cur.execute(
+                "INSERT OR IGNORE INTO claims(subject, instance, role, since)"
+                " VALUES (?, ?, ?, ?)",
+                (subject, instance, role, now),
+            )
+            routed = self._route_held(cur, subject, [instance], now)
+        if routed:
+            self._notify([instance])
+        return routed
+
+    def _route_held(
+        self, cur: sqlite3.Cursor, subject: str, consumers: Sequence[str], now: str
+    ) -> List[int]:
+        cur.execute(
+            "SELECT id FROM events WHERE subject = ? AND routed = 0 ORDER BY id",
+            (subject,),
+        )
+        ids = [int(r[0]) for r in cur.fetchall()]
+        for event_id in ids:
+            self._fan_out(cur, event_id, consumers, now)
+            cur.execute("UPDATE events SET routed = 1 WHERE id = ?", (event_id,))
+        return ids
+
+    def release(self, subject: str, instance: str, role: Optional[str] = None) -> int:
+        with self._tx() as cur:
+            if role is None:
+                cur.execute(
+                    "DELETE FROM claims WHERE subject = ? AND instance = ?",
+                    (subject, instance),
+                )
+            else:
+                cur.execute(
+                    "DELETE FROM claims WHERE subject = ? AND instance = ? AND role = ?",
+                    (subject, instance, role),
+                )
+            return int(cur.rowcount)
+
+    def claimants(self, subject: str) -> List[Claim]:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT subject, instance, role, since FROM claims WHERE subject = ?"
+                " ORDER BY since, instance",
+                (subject,),
+            )
+            return [Claim(*row) for row in cur.fetchall()]
+
+    def claims_of(self, instance: str) -> List[Claim]:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT subject, instance, role, since FROM claims WHERE instance = ?"
+                " ORDER BY since",
+                (instance,),
+            )
+            return [Claim(*row) for row in cur.fetchall()]
+
+    # -- actors (R5.5; abuse case 8) --------------------------------------------------------------
+
+    def register_actors(
+        self, instance: str, actors: Mapping[str, Sequence[str]]
+    ) -> Optional[Refused]:
+        """Replace ``instance``'s registration. An actor held by **another** instance
+        whose lease is live is ``Refused("duplicate-actor")`` naming the holder, and
+        nothing is applied; an expired holder is taken over."""
+        now = utcnow()
+        now_s = time.time()
+        wanted = [
+            (provider, str(actor))
+            for provider, names in actors.items()
+            for actor in names
+            if actor
+        ]
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT OR IGNORE INTO instances(instance, first_seen) VALUES (?, ?)",
+                (instance, now),
+            )
+            for provider, actor in wanted:
+                cur.execute(
+                    "SELECT instance FROM actors WHERE provider = ? AND actor = ?",
+                    (provider, actor),
+                )
+                row = cur.fetchone()
+                if row and row[0] != instance and self._lease_live(cur, row[0], now_s):
+                    return Refused(
+                        "duplicate-actor",
+                        holder=str(row[0]),
+                        detail=f"{provider}:{actor} is registered by {row[0]}",
+                    )
+            cur.execute("DELETE FROM actors WHERE instance = ?", (instance,))
+            for provider, actor in wanted:
+                cur.execute(
+                    "INSERT OR REPLACE INTO actors(provider, actor, instance, since)"
+                    " VALUES (?, ?, ?, ?)",
+                    (provider, actor, instance, now),
+                )
+        return None
+
+    def instance_for_actor(self, provider: str, actor: str) -> Optional[str]:
+        if not actor:
+            return None
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT instance FROM actors WHERE provider = ? AND actor = ?",
+                (provider, actor),
+            )
+            row = cur.fetchone()
+            return str(row[0]) if row else None
+
+    def actors_of(self, instance: str) -> Dict[str, Tuple[str, ...]]:
+        with self._tx() as cur:
+            return self._actors_of(cur, instance)
+
+    @staticmethod
+    def _actors_of(cur: sqlite3.Cursor, instance: str) -> Dict[str, Tuple[str, ...]]:
+        cur.execute(
+            "SELECT provider, actor FROM actors WHERE instance = ? ORDER BY provider, actor",
+            (instance,),
+        )
+        out: Dict[str, List[str]] = {}
+        for provider, actor in cur.fetchall():
+            out.setdefault(str(provider), []).append(str(actor))
+        return {k: tuple(v) for k, v in out.items()}
+
+    # -- bindings (R5.7, R5.8) ---------------------------------------------------------------------
+
+    def bind(self, provider: str, key: str, ref: str, slug: str) -> List[int]:
+        """Record that ``(provider, key)`` belongs to work item ``ref`` (subject
+        ``loop-<slug>``) and route the events held under that key: onto the subject's
+        claimants, else the event's actor's instance, else they stay held under their
+        new subject. Returns the ids routed."""
+        now = utcnow()
+        subject = subject_for_slug(slug)
+        routed: List[int] = []
+        consumers_touched: List[str] = []
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT OR REPLACE INTO bindings(provider, key, ref, slug, published_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (provider, key, ref, slug, now),
+            )
+            cur.execute(
+                "INSERT OR IGNORE INTO subjects(subject, first_seen) VALUES (?, ?)",
+                (subject, now),
+            )
+            cur.execute(
+                "SELECT subject, instance, role, since FROM claims WHERE subject = ?",
+                (subject,),
+            )
+            claimants = [str(r[1]) for r in cur.fetchall()]
+            cur.execute(
+                "SELECT id, actor FROM events WHERE routed = 0 AND provider = ?"
+                " AND held_key = ? ORDER BY id",
+                (provider, key),
+            )
+            for event_id, actor in cur.fetchall():
+                cur.execute(
+                    "UPDATE events SET subject = ?, work_item = ? WHERE id = ?",
+                    (subject, ref, int(event_id)),
+                )
+                consumers = list(dict.fromkeys(claimants))
+                if not consumers and actor:
+                    cur.execute(
+                        "SELECT instance FROM actors WHERE provider = ? AND actor = ?",
+                        (provider, str(actor)),
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        consumers = [str(row[0])]
+                if consumers:
+                    self._fan_out(cur, int(event_id), consumers, now)
+                    cur.execute(
+                        "UPDATE events SET routed = 1 WHERE id = ?", (int(event_id),)
+                    )
+                    routed.append(int(event_id))
+                    consumers_touched.extend(consumers)
+        if consumers_touched:
+            self._notify(consumers_touched)
+        return routed
+
+    def resolve(self, provider: str, key: str) -> Optional[str]:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT ref FROM bindings WHERE provider = ? AND key = ?",
+                (provider, key),
+            )
+            row = cur.fetchone()
+            return str(row[0]) if row else None
+
+    def resolve_slug(self, provider: str, key: str) -> Optional[Tuple[str, str]]:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT ref, slug FROM bindings WHERE provider = ? AND key = ?",
+                (provider, key),
+            )
+            row = cur.fetchone()
+            return (str(row[0]), str(row[1])) if row else None
+
+    # -- the poll ledger, relocated (design §gateway/adapters/poll.py) ----------------------------
+
+    def poll_seen(self, ref: str, delivery_id: str) -> bool:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT 1 FROM poll_seen WHERE ref = ? AND delivery_id = ?",
+                (ref, delivery_id),
+            )
+            return cur.fetchone() is not None
+
+    def poll_mark_seen(self, ref: str, delivery_id: str) -> None:
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT OR IGNORE INTO poll_seen(ref, delivery_id, seen_at) VALUES (?, ?, ?)",
+                (ref, delivery_id, utcnow()),
+            )
+
+    def poll_state(self, ref: str) -> str:
+        with self._tx() as cur:
+            cur.execute("SELECT presence_state FROM poll_ledger WHERE ref = ?", (ref,))
+            row = cur.fetchone()
+            return str(row[0]) if row else "unknown"
+
+    def set_poll_state(self, ref: str, state: str) -> None:
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT OR REPLACE INTO poll_ledger(ref, presence_state, updated_at)"
+                " VALUES (?, ?, ?)",
+                (ref, state, utcnow()),
+            )
+
+    # -- the read-only views (R9.2) ------------------------------------------------------------------
+
+    def subjects(self) -> List[SubjectRow]:
+        with self._tx() as cur:
+            cur.execute("SELECT subject, first_seen FROM subjects ORDER BY first_seen")
+            rows = cur.fetchall()
+            out: List[SubjectRow] = []
+            for subject, first_seen in rows:
+                cur.execute(
+                    "SELECT subject, instance, role, since FROM claims WHERE subject = ?"
+                    " ORDER BY since",
+                    (subject,),
+                )
+                claims = tuple(Claim(*r) for r in cur.fetchall())
+                cur.execute(
+                    "SELECT COUNT(*), SUM(routed = 0) FROM events WHERE subject = ?",
+                    (subject,),
+                )
+                events, held = cur.fetchone()
+                cur.execute(
+                    "SELECT COUNT(*), MIN(d.created_at) FROM deliveries d"
+                    " JOIN events e ON e.id = d.event_id"
+                    " WHERE e.subject = ? AND d.state = ?",
+                    (subject, PENDING),
+                )
+                pending, oldest = cur.fetchone()
+                cur.execute(
+                    "SELECT COUNT(*) FROM deliveries d JOIN events e ON e.id = d.event_id"
+                    " WHERE e.subject = ? AND d.state = ?",
+                    (subject, DEAD),
+                )
+                (dead,) = cur.fetchone()
+                out.append(
+                    SubjectRow(
+                        subject=str(subject),
+                        first_seen=str(first_seen),
+                        claimants=claims,
+                        events=int(events or 0),
+                        held=int(held or 0),
+                        pending=int(pending or 0),
+                        oldest_pending_at=oldest,
+                        dead=int(dead or 0),
+                    )
+                )
+            return out
+
+    def queues(self) -> List[QueueRow]:
+        with self._tx() as cur:
+            cur.execute("SELECT instance, committed FROM instances ORDER BY instance")
+            rows = cur.fetchall()
+            return [self._queue_row(cur, str(i), int(c)) for i, c in rows]
+
+    @staticmethod
+    def _queue_row(cur: sqlite3.Cursor, instance: str, committed: int) -> QueueRow:
+        cur.execute(
+            "SELECT COUNT(*), MIN(created_at) FROM deliveries"
+            " WHERE instance = ? AND state = ?",
+            (instance, PENDING),
+        )
+        backlog, oldest = cur.fetchone()
+        cur.execute(
+            "SELECT COUNT(*) FROM deliveries WHERE instance = ? AND state = ?",
+            (instance, DEAD),
+        )
+        (dead,) = cur.fetchone()
+        return QueueRow(
+            instance=instance,
+            committed=committed,
+            backlog=int(backlog or 0),
+            oldest_pending_at=oldest,
+            dead=int(dead or 0),
+        )
+
+    def queue(self, instance: str) -> QueueRow:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT committed FROM instances WHERE instance = ?", (instance,)
+            )
+            row = cur.fetchone()
+            return self._queue_row(cur, instance, int(row[0]) if row else 0)
+
+    def instances(self) -> List[InstanceRow]:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT instance, peer, committed, first_seen, last_fetch_at, lease_until"
+                " FROM instances ORDER BY instance"
+            )
+            rows = cur.fetchall()
+            out: List[InstanceRow] = []
+            for instance, peer, committed, first_seen, last_fetch, lease_until in rows:
+                queue = self._queue_row(cur, str(instance), int(committed))
+                out.append(
+                    InstanceRow(
+                        instance=str(instance),
+                        peer=str(peer or ""),
+                        committed=int(committed),
+                        first_seen=str(first_seen),
+                        last_fetch_at=last_fetch,
+                        lease_until=float(lease_until or 0),
+                        actors=self._actors_of(cur, str(instance)),
+                        backlog=queue.backlog,
+                    )
+                )
+            return out
+
+    # -- retention (R2.8; abuse case 6) ---------------------------------------------------------------
+
+    def expire(self, now: Optional[float] = None) -> ExpireResult:
+        """Apply retention: delete committed deliveries older than ``retention``, dead
+        rows after twice that, expire pending deliveries and held events older than
+        ``retention`` (recorded as ``subject.expired`` by the caller), and delete an event
+        with no remaining deliveries — retiring its dedup key into a bounded table so a
+        provider's late redelivery is still recognised."""
+        now_s = time.time() if now is None else now
+        cutoff = _iso(now_s - self.retention_s)
+        dead_cutoff = _iso(now_s - 2 * self.retention_s)
+        expired: List[Tuple[str, int, str]] = []
+        with self._tx() as cur:
+            cur.execute(
+                "DELETE FROM deliveries WHERE state = ? AND committed_at < ?",
+                (COMMITTED, cutoff),
+            )
+            deleted = int(cur.rowcount)
+            cur.execute(
+                "DELETE FROM deliveries WHERE state = ? AND committed_at < ?",
+                (DEAD, dead_cutoff),
+            )
+            deleted += int(cur.rowcount)
+            cur.execute(
+                "SELECT d.seq, d.instance, e.subject, e.id FROM deliveries d"
+                " JOIN events e ON e.id = d.event_id"
+                " WHERE d.state = ? AND d.created_at < ?",
+                (PENDING, cutoff),
+            )
+            stale = cur.fetchall()
+            for seq, instance, subject, event_id in stale:
+                cur.execute("DELETE FROM deliveries WHERE seq = ?", (int(seq),))
+                expired.append((str(subject), int(event_id), str(instance)))
+                deleted += 1
+            for _seq, instance, _subject, _event_id in stale:
+                self._advance(cur, str(instance))
+            cur.execute(
+                "SELECT id, subject FROM events WHERE routed = 0 AND received_at < ?",
+                (cutoff,),
+            )
+            for event_id, subject in cur.fetchall():
+                expired.append((str(subject), int(event_id), ""))
+                cur.execute(
+                    "UPDATE events SET routed = 1 WHERE id = ?", (int(event_id),)
+                )
+            # events with no remaining deliveries go, their key retired
+            cur.execute(
+                "SELECT id, dedup_key FROM events e WHERE routed = 1"
+                " AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.event_id = e.id)"
+            )
+            gone = cur.fetchall()
+            retired_at = _iso(now_s)
+            for event_id, dedup_key in gone:
+                cur.execute("DELETE FROM events WHERE id = ?", (int(event_id),))
+                cur.execute(
+                    "INSERT OR REPLACE INTO dedup_keys(dedup_key, retired_at) VALUES (?, ?)",
+                    (str(dedup_key), retired_at),
+                )
+            if self.dedup_window >= 0:
+                cur.execute(
+                    "DELETE FROM dedup_keys WHERE dedup_key NOT IN"
+                    " (SELECT dedup_key FROM dedup_keys ORDER BY retired_at DESC LIMIT ?)",
+                    (self.dedup_window,),
+                )
+        return ExpireResult(
+            expired=tuple(expired),
+            deleted_events=len(gone),
+            deleted_deliveries=deleted,
+        )
+
     # -- views used by the API and the verbs ------------------------------------------------------
 
     def committed(self, instance: str) -> int:
@@ -672,6 +1134,17 @@ class SqliteStore:
 def _dedup_key_of(env: Envelope) -> str:
     """The adapter's cross-transport key (R7.3), else ``<provider>:<deliveryId>``."""
     return env.dedup_key or f"{env.provider}:{env.delivery_id}"
+
+
+def _iso(seconds: float) -> str:
+    from datetime import datetime, timezone
+
+    return (
+        datetime.fromtimestamp(max(0.0, seconds), timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%S.%f"
+        )[:-3]
+        + "Z"
+    )
 
 
 def _envelope_from_row(row: Sequence[Any], *, attempt: int) -> Envelope:
