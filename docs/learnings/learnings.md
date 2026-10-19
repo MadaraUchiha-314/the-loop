@@ -6,6 +6,7 @@ are checked in so the user can review and give feedback.
 
 | # | Title | Source | Date |
 |---|-------|--------|------|
+| [011](learning-011.md) | A keyword mentioned in prose is not a command | user-feedback | 2026-10-19 |
 | [010](learning-010.md) | An approval gate's vocabulary must cover the ways people say yes | user-feedback | 2026-10-18 |
 | [009](learning-009.md) | "Nothing to approve" must not be something an agent can arrange | system-feedback | 2026-10-16 |
 | [008](learning-008.md) | A marker in a comment body is a claim, not an identity | system-feedback | 2026-10-15 |
