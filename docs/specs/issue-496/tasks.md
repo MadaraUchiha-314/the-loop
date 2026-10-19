@@ -125,7 +125,7 @@ overrides: {}
     consumer waits on unassigned until a claim routes it`; T8 `Scenario: a second peer
     under the same instance name is refused while the first polls`, `Scenario: a
     duplicate actor registration is refused`
-- [ ] **B2: the GitHub and Jira webhook adapters.** Write `gateway/adapters/github.py`
+- [x] **B2: the GitHub and Jira webhook adapters.** Write `gateway/adapters/github.py`
   (`POST /gh-webhook`: `verify_signature` before parse, 401 `bad-signature`; allow-listed
   headers; `resolve_ref` → `consumers_for` → `append`; 202 after the write, 500 on a
   store failure) and `gateway/adapters/jira.py` (`POST /jira-webhook` through
