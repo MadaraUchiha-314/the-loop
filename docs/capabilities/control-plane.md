@@ -15,6 +15,14 @@ package — there are no install extras (owner decision, PR #162).
 
 ## Current behaviour
 
+> **With a gateway (issue-496):** the hosted-ingress set of a service whose config has a
+> `gateway` block is `{gateway-client}` alone (`enabled_services` turns the receiver,
+> the poller and the listener off; `ingress_health`, `the-loop status` and `start` read
+> `off · gateway configured`), and `GET /api/v1/gateway` serves the client's document
+> for the dashboard. The gateway itself is a second FastAPI process with its own
+> contract, `the-loop-gateway.v1.yaml`, parity-tested like this one. See
+> [gateway](gateway.md).
+
 - The core facade SHALL be importable and invocable with no CLI or HTTP context;
   every capability (work items, events, graphs, repo-scoped queries, sessions,
   daemons, attention) SHALL be implemented once there, delegating to the modules
@@ -499,6 +507,7 @@ package — there are no install extras (owner decision, PR #162).
 
 ## History
 
+| issue-496 | The gateway (2026-10-19): the `gateway-client` hosted ingress, `GET /api/v1/gateway` on the instance API and in `the-loop.v1.yaml`, the gateway's own contract `the-loop-gateway.v1.yaml` | [spec](../specs/issue-496/), [gateway](gateway.md) |
 | Work item | What changed | Links |
 |-----------|--------------|-------|
 | issue-462 | `GET /pull-requests/checks` (`listPullRequestChecks`) and the MCP tool `pull_request_checks` list a pull request's checks with failed jobs' log tails, over `core.github_ops.pull_request_checks`; read-only, so a manager runs it on the member it targets, like `pr status` | [spec](../specs/issue-462/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/462) |

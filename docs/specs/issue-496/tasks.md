@@ -287,7 +287,7 @@ overrides: {}
 
 ### E — the records (same pull request as the code)
 
-- [ ] **E1: capability docs.** Write `docs/capabilities/gateway.md` (the process, its
+- [x] **E1: capability docs.** Write `docs/capabilities/gateway.md` (the process, its
   config, its verbs, the subject, queue, claim and actor model; the first paragraph
   states the exposure posture of the no-auth boundary) and update `instances.md`,
   `channels.md`, `webhook-triggers.md`, `control-plane.md`, `cli.md`, `observability.md`
@@ -298,7 +298,7 @@ overrides: {}
   - _Requirements:_ R13.1, R13.4
   - _Test:_ T12 `make lint` (markdownlint) and the capability-index test if the repo
     pins one
-- [ ] **E2: decision records.** Add three decisions and index rows: the name `gateway`
+- [x] **E2: decision records.** Add three decisions and index rows: the name `gateway`
   for the ingress process beside decision-059's auth-terminating gateway; the queue
   contract (subjects, one queue per instance, store-before-ack, pull with commit,
   at-least-once with idempotent consumers) and consumer resolution at ingest (claims,

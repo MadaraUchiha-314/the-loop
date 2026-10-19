@@ -12,6 +12,13 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 ## Current behaviour
 
+> **With a gateway (issue-496):** the receiver and the poller run on the gateway under
+> the same provider contracts (`POST /gh-webhook` with `X-Hub-Signature-256`, the same
+> poll delivery ids), and an instance with a `gateway` block hosts neither; its gateway
+> client fetches the stored events and runs this same router and dispatcher on them,
+> with `gateway_event_id` on every `dispatch.*` record. The router's PR→ticket linkage
+> is published to the gateway as a binding. See [gateway](gateway.md).
+
 - The receiver (started by `the-loop start` per `webhooks.ghWebhook.enabled`, or in
   the foreground by `python -m the_loop.daemon_entry gh-webhook`) SHALL run an HTTP
   receiver (default `127.0.0.1:8787`,
@@ -1123,6 +1130,7 @@ provider, the webhook doorbell, the allow-list by provider)
 
 ## History
 
+| issue-496 | The gateway (2026-10-19): the receiver's `verify_signature` and the poller's providers are reused by the gateway's adapters; the gateway client builds the router and dispatcher once (`webhook/daemon._build_ingress`, which now exposes its router, reload and doorbells) and feeds them from its queue; outcomes commit back; the inferred PR linkage is published as a binding | [spec](../specs/issue-496/), [gateway](gateway.md) |
 | Work item | What changed | Links |
 |-----------|--------------|-------|
 | issue-475 | **A PR naming a Jira key routes to it** (2026-10-06, PR 5 of 5): `SOURCE_JIRA_KEY` links a pull request whose head branch or title names a key, only for a registered Jira work item whose project maps to the PR's repository; the body is never read. The delivered prompt names Jira and the origin repository. Before, a Jira item's PR was routed only through a PR-ref registration | [spec](../specs/issue-475/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |

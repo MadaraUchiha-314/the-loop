@@ -31,6 +31,14 @@ flowchart LR
 
 ## Current behaviour
 
+> **With a gateway (issue-496):** an instance whose CLI config has a `gateway` block
+> hosts no Slack listener; the gateway holds the app's one Socket Mode connection and
+> acknowledges each envelope after storing it, and the instance classifies it from its
+> queue through the same `slack.dispatch_envelope` the listener calls — one classifier,
+> two transports. A thread bound to a work item publishes a binding to the gateway so
+> later replies land on that work item's subject. The heartbeat split check is observed
+> by the gateway's connection. See [gateway](gateway.md).
+
 - **One catalog.** Every event type is a row of `channels/events.py` declaring whether a
   channel may subscribe to it, may publish it, and whether the ledger records it. The
   config parser warns against it, `the-loop channels status` prints it with ticks, and
@@ -1053,6 +1061,7 @@ ticket, with no Jira work items, ingress or ledger:
 
 ## History
 
+| issue-496 | The gateway (2026-10-19): with a `gateway` block the Slack listener is the gateway's one Socket Mode connection per app; the listener's classification half is `slack.dispatch_envelope`, called by the gateway-less listener and by the gateway client alike; `ChannelState.bind` publishes the thread binding; the HTTP routes (`/slack/events|interactions|commands`) exist on the gateway behind `slack.http.enabled` | [spec](../specs/issue-496/), [gateway](gateway.md) |
 | Work item | What changed | Links |
 |-----------|--------------|-------|
 | issue-475 | **Verbs record on the Jira ticket** (2026-10-06, PR 5 of 5): `comment`, `ask`, announcements, `add-channel` declarations and Slack mirrors on a Jira work item go to its Jira ticket (announcements as relays); `list-comments` reads a service-account relay as the operator's words and names authors `jira:<id>`; `channels status` prints a `jira:` block. Before, each of these posted through a GitHub-only path | [spec](../specs/issue-475/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |

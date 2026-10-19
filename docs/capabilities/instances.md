@@ -166,8 +166,13 @@ flowchart LR
 
 - Two `open` instances still take the same start; a work item declared on two instances
   is managed by both; a refused comment is not re-judged when the scope changes (claim it
-  with `the-loop sessions start` on the instance). Instances share nothing and never talk
-  to each other.
+  with `the-loop sessions start` on the instance). Instances never talk to each other.
+  What they can share since issue-496 is one **ingress**: a fleet behind one
+  [gateway](gateway.md) shares one Slack app and one webhook URL, each instance polling
+  its own queue under its `instance.name` (`default` when unset — a fleet names each,
+  because a second peer under a live name is refused), with the first event about a work
+  item routed to the instance that registered its actor (`gateway.actors`) and every
+  later one by the claim its session published.
 - An instance **managed from a ticket** is a future work item; `instance.ticket` stays
   the reserved, not-yet-added place for the binding (decision-110 D9). A manager
   registered with another manager is `mismatched` — the fleet is flat; nested managers
@@ -189,5 +194,6 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-496 | The gateway (2026-10-19): an instance with a `gateway` block runs no ingress of its own and polls the gateway for its queue under `instance.name`; a fleet shares one Slack app and one webhook URL; a session's registration publishes a claim, `gateway.actors` routes the first event, `GET /api/v1/gateway` and the Gateway card show the client | [spec](../specs/issue-496/), [gateway](gateway.md), [decision-145](../decisions/decision-145.md) |
 | issue-374 | The manager (2026-09-30): `instance.role: manager` and the registry `instance.manager.instances` in the CLI config; one router over two facades so a manager serves the identical `/api/v1` — its own rows plus every live member's on a list read, a keyed operation routed to the instance that manages it (`409` on ambiguity), an optional `instance` on every keyed operation that a worker accepts as its own name; members trusted by a name-checked probe; the `instances` family on every role with `register`/`unregister` writing the registry through the config splice; the stream fanned in with a per-member cursor; `the-loop instances`; the dashboard's Instances tab, instance pane, chip and filter | [spec](../specs/issue-374/), [decision-138](../decisions/decision-138.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/374) |
 | issue-322 | The capability, whole (2026-09-08): the `instance` block, the derived managed set, the three modes, the address token, the dispatch-seam refusal that leaves no mark, `control.instance`, the token on posted keywords and the announcement, `THE_LOOP_INSTANCE` in a spawned session, `GET /api/v1/instance` and the `status` line | [spec](../specs/issue-322/), [decision-110](../decisions/decision-110.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/322) |

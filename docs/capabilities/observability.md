@@ -14,6 +14,15 @@ for humans, coding agents and any dashboarding built on top.
 
 ## Current behaviour
 
+> **The gateway (issue-496)** records on the same JSONL log under two new families:
+> `gateway.*` (`started`, `stopped`, `received`, `dropped`, `refused`, `reloaded`,
+> `claimed`, `released`, `registered`, `unreachable`, `connected`) and `subject.*`
+> (`appended`, `routed`, `committed`, `redelivered`, `dead-lettered`, `expired`); the
+> instance's `dispatch.*` records carry `gateway_event_id` beside the delivery id
+> (`eventlog.correlate`), so one delivery can be followed from provider to session;
+> `eventlog.context` adds per-thread fields to every record emitted within. See
+> [gateway](gateway.md).
+
 - Every accept/reject/route/dispatch/spawn/close decision SHALL be appended as one JSON
   object per line with a common envelope (`ts`, `source`, `event`, `level`, `pid`) plus
   documented per-type fields (`work_item`, `delivery_id`, `reason`, `error`,
@@ -41,6 +50,7 @@ for humans, coding agents and any dashboarding built on top.
 
 ## History
 
+| issue-496 | The gateway (2026-10-19): the `gateway.*` and `subject.*` families, `config.reload-failed`, `gateway_event_id` on `dispatch.*`, `eventlog.context` and `eventlog.correlate` | [spec](../specs/issue-496/), [gateway](gateway.md) |
 | Work item | What changed | Links |
 |-----------|--------------|-------|
 | issue-409 | Three `channel.*` rows for delivery that did **not** happen — `undelivered` (`warning`: an event every asked channel refused, now queued; names the type, the work item, the channels and the queue depth), `delivered_late` (a queued event a later attempt landed, with its attempts and how long it waited) and `undelivered_dropped` (`warning`: the queue was full and its oldest entry went). `session.awaiting_input` gains `channels_posted`. Ids and counts only, the rule unchanged: the queued message text lives in the outbox, never in the log. Before this, delivering to nobody was one `debug` line with `posted: 0` | [spec](../specs/issue-409/), [channels](channels.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/409) |
