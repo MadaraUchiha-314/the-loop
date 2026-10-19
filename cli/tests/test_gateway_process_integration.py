@@ -417,3 +417,31 @@ def test_subjects_and_status_render(tmp_path):
         assert stopped[0] == "gateway: stopped"
     finally:
         gw.close()
+
+
+def test_status_follows_the_recorded_listen_address_when_the_file_moved_on(tmp_path):
+    """
+    Feature: the lifecycle verbs mean what the service's do
+      Scenario: editing listen.port while running is applied on the next restart
+        Given a gateway that recorded the address it bound
+        When the config file now names another port
+        Then status probes the recorded address, reports the running one, and says the
+             file's value waits for a restart
+
+    Requirement: docs/specs/issue-496/requirements.md#requirement-8 (R8.6)
+    """
+    config = write_gateway_config(tmp_path, listen={"host": "127.0.0.1", "port": 8791})
+    config.state_root.mkdir(parents=True, exist_ok=True)
+    config.listen_file.write_text("127.0.0.1:8790\n")
+    assert gateway_cmd.running_base_url(config) == "http://127.0.0.1:8790"
+    report = gateway_cmd.status_report(config)
+    assert report["listen"] == "127.0.0.1:8790"
+    assert report["listenInFile"] == "127.0.0.1:8791"
+    lines = gateway_cmd.status_lines(
+        {**report, "running": True, "reachable": False, "pid": 1}
+    )
+    assert any(
+        "the file says 127.0.0.1:8791 — restart to apply" in line for line in lines
+    )
+    config.listen_file.unlink()
+    assert gateway_cmd.running_base_url(config) == "http://127.0.0.1:8791"
