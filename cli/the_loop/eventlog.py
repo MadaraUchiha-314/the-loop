@@ -1272,6 +1272,10 @@ EVENT_TYPES: Dict[str, str] = {
     "gateway.reloaded": (
         "gateway-config.yaml was re-read and the enabled ingress set applied (detail)."
     ),
+    "config.reload-failed": (
+        "A config edit could not be loaded and the previous configuration keeps "
+        "running (path, error). Never stops an ingress on a bad edit (issue-496 R8.5)."
+    ),
     "gateway.claimed": (
         "An instance published a claim on a subject (subject, instance, role, routed: "
         "how many held events the claim routed onto its queue)."

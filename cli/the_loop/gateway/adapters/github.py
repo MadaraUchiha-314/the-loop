@@ -35,11 +35,15 @@ def github_secret(config: GatewayConfig) -> Optional[str]:
 def build_github_router(ingest: Ingest, config: GatewayConfig) -> APIRouter:
     router = APIRouter()
     path = config.github.webhook.path if config.github else "/gh-webhook"
-    secret_env = config.github.webhook.secret_env if config.github else ""
 
     @router.post(path, operation_id="githubWebhook", include_in_schema=True)
     async def gh_webhook(request: Request) -> Any:
-        secret = os.environ.get(secret_env) if secret_env else None
+        live = ingest.state.config.github
+        secret = (
+            os.environ.get(live.webhook.secret_env)
+            if live is not None and live.webhook.enabled
+            else None
+        )
         if not secret:
             # the route exists in the schema but is not served without its secret
             return JSONResponse(status_code=404, content={"status": "not found"})

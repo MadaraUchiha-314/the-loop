@@ -165,7 +165,7 @@ overrides: {}
     (`FakeSocketModeClient`); T7 `Scenario: a Slack envelope is acknowledged within three
     seconds with two thousand rows stored`; T8 `Scenario: a replayed Slack delivery is
     refused`; the existing `tests/test_channels_*.py` stay green through the extraction
-- [ ] **B5: the process — `serve.py`, `ingresses.py`, the `gateway` verbs.** Write
+- [x] **B5: the process — `serve.py`, `ingresses.py`, the `gateway` verbs.** Write
   `gateway/serve.py` (`main`: load config, exposure guard exit 2, event log with
   `source="gateway"`, `uvicorn.run(create_app(config))`; `create_app` mounts the ingress
   routes and the consume router, and the lifespan starts `GatewayIngresses`),

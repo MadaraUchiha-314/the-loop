@@ -34,11 +34,16 @@ def jira_secret(config: GatewayConfig) -> Optional[str]:
 
 def build_jira_router(ingest: Ingest, config: GatewayConfig) -> APIRouter:
     router = APIRouter()
-    secret_env = config.jira.webhook.secret_env if config.jira else ""
+    del config  # the live config is read from the ingest's state at request time
 
     @router.post(JIRA_PATH, operation_id="jiraWebhook")
     async def jira_webhook(request: Request) -> Any:
-        secret = os.environ.get(secret_env) if secret_env else None
+        live = ingest.state.config.jira
+        secret = (
+            os.environ.get(live.webhook.secret_env)
+            if live is not None and live.webhook.enabled
+            else None
+        )
         if not secret:
             return JSONResponse(status_code=404, content={"status": "not found"})
         body = await request.body()

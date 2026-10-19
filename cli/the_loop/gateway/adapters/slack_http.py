@@ -56,10 +56,15 @@ def verify_slack_signature(
 
 def build_slack_http_router(ingest: Ingest, config: GatewayConfig) -> APIRouter:
     router = APIRouter()
-    secret_env = config.slack.http.signing_secret_env if config.slack else ""
+    del config  # the live config is read from the ingest's state at request time
 
     async def _accept(request: Request, kind: str) -> Any:
-        secret = os.environ.get(secret_env) if secret_env else None
+        live = ingest.state.config.slack
+        secret = (
+            os.environ.get(live.http.signing_secret_env)
+            if live is not None and live.http.enabled
+            else None
+        )
         if not secret:
             return JSONResponse(status_code=404, content={"status": "not found"})
         body = await request.body()
