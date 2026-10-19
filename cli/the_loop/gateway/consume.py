@@ -347,14 +347,25 @@ def build_consume_router(state: GatewayState, **router_kwargs: Any) -> APIRouter
         refused = store.register_actors(body.instance, body.actors, peer=body.peer)
         if refused is not None:
             return _refused(state, refused, instance=body.instance, peer=body.peer)
+        routed = store.route_held_by_actors(body.instance)
+        for event_id, subject in routed:
+            eventlog.emit(
+                "subject.routed",
+                event_id=event_id,
+                subject=subject,
+                to=[body.instance],
+                by="actor",
+            )
         eventlog.emit(
             "gateway.registered",
             instance=body.instance,
             actors={k: len(v) for k, v in body.actors.items()},
+            routed=len(routed),
         )
         return {
             "instance": body.instance,
             "actors": {k: sorted(v) for k, v in body.actors.items()},
+            "routed": len(routed),
         }
 
     @router.post(f"{API_PREFIX}/bindings", operation_id="gatewayBind")

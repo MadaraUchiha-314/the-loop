@@ -258,3 +258,31 @@ def test_a_long_poll_returns_at_once_when_the_gateway_is_stopping(gw):
     started = time.monotonic()
     assert gw.fetch("laptop-a", peer="p1", lease=60, wait=5).status_code == 200
     assert time.monotonic() - started < 0.5
+
+
+def test_an_actor_registration_routes_the_events_held_for_that_actor(gw):
+    """
+    Feature: many instances, one queue each
+      Scenario: an actor registration routes the events held for that actor
+        Given a comment by octocat that arrived before any instance registered octocat
+              (held on its subject, no claim, no actor)
+        When laptop-a registers octocat
+        Then the held event is on laptop-a's queue, subject.routed says by actor, the
+             registration answers routed 1, and a second registration routes nothing
+
+    Requirement: docs/specs/issue-496/requirements.md#requirement-2 (R2.2)
+                 (self-review R4)
+    """
+    gw.append(1, consumers=[], actor="octocat")
+    gw.append(2, consumers=[], actor="hubot")
+    assert gw.fetch("laptop-a", peer="p1", lease=60).json()["deliveries"] == []
+    answer = gw.register("laptop-a", {"github": ["octocat"]}, peer="p1")
+    assert answer.status_code == 200 and answer.json()["routed"] == 1
+    assert gw.events("subject.routed")[-1]["by"] == "actor"
+    (delivery,) = gw.fetch("laptop-a", peer="p1").json()["deliveries"]
+    assert delivery["event"]["deliveryId"] == "d-1"
+    assert (
+        gw.register("laptop-a", {"github": ["octocat"]}, peer="p1").json()["routed"]
+        == 0
+    )
+    assert gw.store.queue("laptop-a").backlog == 1  # hubot's stays held

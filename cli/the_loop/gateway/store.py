@@ -202,6 +202,7 @@ class Store(Protocol):
         self, instance: str, actors: Mapping[str, Sequence[str]], peer: str = ""
     ) -> Optional[Refused]: ...
     def instance_for_actor(self, provider: str, actor: str) -> Optional[str]: ...
+    def route_held_by_actors(self, instance: str) -> List[Tuple[int, str]]: ...
     def bind(self, provider: str, key: str, ref: str, slug: str) -> List[int]: ...
     def resolve(self, provider: str, key: str) -> Optional[str]: ...
     def resolve_slug(self, provider: str, key: str) -> Optional[Tuple[str, str]]: ...
@@ -838,6 +839,34 @@ class SqliteStore:
                     (provider, actor, instance, now),
                 )
         return None
+
+    def route_held_by_actors(self, instance: str) -> List[Tuple[int, str]]:
+        """Route onto ``instance``'s queue every held event whose actor it now
+        registers (R2.2: an actor registration routes what was held for it — the
+        event that arrived before the instance registered). Returns
+        ``(event_id, subject)`` per event routed (self-review R4)."""
+        now = utcnow()
+        routed: List[Tuple[int, str]] = []
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT provider, actor FROM actors WHERE instance = ?", (instance,)
+            )
+            wanted = [(str(p), str(a)) for p, a in cur.fetchall()]
+            for provider, actor in wanted:
+                cur.execute(
+                    "SELECT id, subject FROM events WHERE routed = 0 AND provider = ?"
+                    " AND actor = ? ORDER BY id",
+                    (provider, actor),
+                )
+                for event_id, subject in cur.fetchall():
+                    self._fan_out(cur, int(event_id), [instance], now)
+                    cur.execute(
+                        "UPDATE events SET routed = 1 WHERE id = ?", (int(event_id),)
+                    )
+                    routed.append((int(event_id), str(subject)))
+        if routed:
+            self._notify([instance])
+        return routed
 
     def instance_for_actor(self, provider: str, actor: str) -> Optional[str]:
         if not actor:
