@@ -91,7 +91,7 @@ The word *gateway*, unqualified, is this process; decision-059's is the
   re-applied and a reinstall; `the-loop channels status --probe` lists the granted
   scopes). The poll reader (`read.mode: poll`), which took every reply in a bound thread
   as input, does not run under a gateway.
-- The gateway's poller reuses the instance poller's providers (GitHub, Jira) and
+- The gateway's poller (opt-in) reuses the instance poller's providers (GitHub, Jira) and
   produces the same delivery ids and webhook-shaped payloads (`poll-comment-<id>`,
   `poll-presence-<ref>-<uuid>`, `poll-close-…`); its ledger lives in the store. At its
   first sight of an item the existing thread is baselined, not stored — the presence
@@ -154,10 +154,15 @@ The word *gateway*, unqualified, is this process; decision-059's is the
 ### The instance side
 
 - A `gateway` block in `cli-config.yaml` (`url` required; `pollIntervalSeconds` 5,
-  `longPollSeconds` 20, `actors` by provider) switches the hosted set to the **gateway
-  client** alone: the receiver, the poller and the Slack listener are off whatever their
-  blocks say, and `the-loop status`, `the-loop start` and health read `off · gateway
-  configured`. Without the block, exactly as before.
+  `longPollSeconds` 20, `actors` by provider) adds the **gateway client** to the hosted
+  set and switches off one thing: the Slack listener (and the poll reader), because one
+  app has one Socket Mode connection and the gateway holds it. The webhook receiver and
+  the poller run exactly as `webhooks` and `polling` say, gateway or not; `the-loop
+  status`, `the-loop start` and health read `off · gateway configured` for the listener
+  alone. Without the block, exactly as before. The gateway's own GitHub and Jira pollers
+  are opt-in (`github.poll.enabled`, `jira.poll.enabled`, off in the template): the
+  gateway is the webhook receiver and the Slack connection unless no inbound webhook is
+  possible, in which case it polls for the fleet.
 - The client registers first (`PUT /actors`, then every live session's claim
   re-asserted), polls its queue with the server's `committed` as cursor (or the
   highest delivery whose dispatch is still in flight, so nothing is fetched twice

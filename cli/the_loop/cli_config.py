@@ -401,10 +401,11 @@ class GatewayBlock:
 def gateway_block(config: Optional[Mapping]) -> Optional[GatewayBlock]:
     """The ``gateway`` block typed, or ``None`` when the config has none (R3.1, R8.7).
 
-    Presence alone switches the instance's hosted-ingress set to ``{gateway-client}``
-    (R3.8); the schema has already refused a block without ``url``, but a hand-written
+    Presence adds ``gateway-client`` to the hosted set and switches the Slack listener
+    off; the receiver and the poller follow their own blocks (R3.8 as amended on the
+    PR). The schema has already refused a block without ``url``, but a hand-written
     file bypasses the schema, so a block with no usable URL is ``None`` with a warning
-    rather than an instance that neither polls nor hosts.
+    rather than an instance that reads from nowhere.
     """
     if not isinstance(config, Mapping):
         return None

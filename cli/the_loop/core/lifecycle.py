@@ -88,23 +88,25 @@ def gateway_configured(config: Optional[dict]) -> bool:
     return cli_config.gateway_block(config) is not None
 
 
-#: What `status` and `start` say about an ingress a gateway block switched off (R3.8).
+#: What `status` and `start` say about the Slack listener a gateway block switched off
+#: (R3.8 as amended on the PR, 2026-10-19: the listener alone).
 GATEWAY_OFF = "off · gateway configured"
 
 
 def enabled_services(config: Optional[dict] = None) -> Dict[str, bool]:
     """Which services the config asks ``start`` to compose (decision-084 D1).
 
-    With a ``gateway`` block (issue-496, R3.8) the instance runs no ingress of its
-    own — the receiver, the poller and the Slack listener are off whatever their own
-    blocks say — and hosts the gateway client instead. Without one, exactly as before.
+    With a ``gateway`` block (issue-496, R3.8 as amended on the PR) the instance hosts
+    the gateway client **and keeps its own receiver and poller exactly as their blocks
+    say**; only the Slack listener is off, because one app has one Socket Mode
+    connection and the gateway holds it. Without a block, exactly as before.
     """
     conf = service_config(config)
     gateway = gateway_configured(config)
     return {
         "service": conf["enabled"],
-        "gh-webhook": _webhook_enabled(config) and not gateway,
-        "poller": bool(_polling(config).get("enabled", False)) and not gateway,
+        "gh-webhook": _webhook_enabled(config),
+        "poller": bool(_polling(config).get("enabled", False)),
         SLACK_LISTENER: _slack_listener_enabled(config) and not gateway,
         GATEWAY_CLIENT: gateway,
     }
@@ -141,7 +143,7 @@ def ingress_health(config: Optional[dict] = None) -> List[Dict[str, Any]]:
         detail = ""
         if enabled[name] and not running:
             detail = f"{ENABLED_BY[name]} is true but nothing holds {pidfile}"
-        elif gateway and name != GATEWAY_CLIENT:
+        elif gateway and name == SLACK_LISTENER:
             detail = GATEWAY_OFF
         rows.append(
             {
@@ -360,8 +362,7 @@ def start_all(config: Optional[dict] = None) -> Dict[str, Any]:
 
     gateway = gateway_configured(config)
     if gateway:
-        for daemon in ("gh-webhook", "poller", SLACK_LISTENER):
-            rows.append(_row(daemon, False, "disabled", GATEWAY_OFF))
+        rows.append(_row(SLACK_LISTENER, False, "disabled", GATEWAY_OFF))
         if not hosting:
             rows.append(
                 _row(
@@ -608,8 +609,7 @@ def status_all(
     rows.append(listener)
     gateway_doc: Dict[str, Any] = {"configured": False, "state": "off"}
     if gateway_configured(config):
-        for row in rows[1:]:
-            row["detail"] = GATEWAY_OFF
+        listener["detail"] = GATEWAY_OFF
         client_row = core_daemons.daemon_status(GATEWAY_CLIENT, config)
         client_row["service"] = client_row.pop("daemon")
         client_row["enabled"] = True

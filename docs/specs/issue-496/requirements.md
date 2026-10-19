@@ -198,9 +198,17 @@ connection for me between polls.
    duplicate when its delivery id is in the instance's existing dedup caches (the LRU, the
    session record's recent ids, `control-deliveries.json`), so at-least-once delivery
    meets an idempotent consumer.
-8. WHEN an instance has a `gateway` block THEN the system SHALL run no ingress of its own:
-   no webhook receiver, no poller, no Slack listener, regardless of what its `webhooks`,
-   `polling` and `channels.slack.read` blocks say, and `the-loop status` SHALL say so.
+8. WHEN an instance has a `gateway` block THEN the system SHALL host the gateway client
+   beside the instance's own webhook receiver and poller, which SHALL run exactly as its
+   `webhooks` and `polling` blocks say, and SHALL run no Slack listener and no Slack poll
+   reader of its own, whatever `channels.slack.read` says, and `the-loop status` SHALL say
+   so for the listener.
+   > Amended on the PR (2026-10-19, [the author](https://github.com/MadaraUchiha-314/the-loop/pull/499#issuecomment-6274566508)): the first
+   > landing switched every ingress off; the author set as P0 that the existing GitHub
+   > and Jira pollers keep working as they are, with the gateway's own polling opt-in.
+   > The gateway exists to fan out one Slack app and one webhook URL, and a poller for
+   > every instance's work would make it a bottleneck. Slack stays the gateway's alone
+   > because one app has one Socket Mode connection.
 9. WHEN a new subject is routed to an instance (a claim it published, an actor it
    registered) THEN its deliveries SHALL appear on the same queue; the instance never
    subscribes per subject.

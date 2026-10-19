@@ -11,9 +11,9 @@ a `gateway` block behaves exactly as before, and no key was renamed or removed.
 
 - Two or more instances read **one Slack app**. Slack splits an app's envelopes across its
   open connections, so two listeners each hear half; the gateway holds the one connection.
-- Two or more instances poll **the same repositories**, each spending the API budget and
-  each able to arm the same item.
 - A GitHub webhook should reach several instances, and only one URL can be registered.
+- No inbound webhook is possible at all (an enterprise network), so one process must
+  hold the long-lived connections and poll on the fleet's behalf.
 
 One instance on one machine gains nothing from a gateway; leave it as it is.
 
@@ -25,9 +25,10 @@ One instance on one machine gains nothing from a gateway; leave it as it is.
    `templates/gateway-config.yaml` in the plugin. Every secret is an environment-variable
    **name** (`*Env`) read from `env.file`: the GitHub poll token (read access only), the
    Slack app-level token and bot token. They move to the gateway; the gateway holds no
-   posting token and spawns nothing. List the repositories (`repositories`,
-   `github.poll.sources`) and, for Slack rooms, the `slack.rooms` entries the instances
-   declared.
+   posting token and spawns nothing. List the repositories (`repositories`) and, for
+   Slack rooms, the `slack.rooms` entries the instances declared. The gateway's own
+   GitHub and Jira pollers are **off** unless you turn them on (`github.poll.enabled`,
+   `github.poll.sources`): your instances keep polling as they do today.
 2. **Start it**: `the-loop gateway start`. It validates the file, refuses to start on a
    violation naming each key, and listens on `127.0.0.1:8790` by default. A non-loopback
    `listen.host` needs `listen.exposed: true` — there is no instance authentication in
@@ -36,10 +37,10 @@ One instance on one machine gains nothing from a gateway; leave it as it is.
 3. **Point each instance at it.** Add the [`gateway` block](../config/cli/gateway-options.md)
    to the instance's `cli-config.yaml` — `url`, and `actors` for the users this instance
    works for — give the instance a distinct `instance.name` (a second peer under a live
-   name is refused with `409`), and `the-loop restart`. From then on its `webhooks`,
-   `polling` and `channels.slack.read` blocks are ignored and `the-loop status` reads
-   `off · gateway configured` for the three. Leave the blocks in place: remove the
-   `gateway` block and the instance is exactly as before.
+   name is refused with `409`), and `the-loop restart`. Its webhook receiver and its
+   poller keep running exactly as `webhooks` and `polling` say; only its Slack listener
+   (or poll reader) stops, and `the-loop status` reads `off · gateway configured` for
+   it. Remove the `gateway` block and the instance is exactly as before.
 4. **Re-point a GitHub webhook**, if you had one, at the gateway's `/gh-webhook` with the
    same secret: the contract is GitHub's verbatim.
 5. **Slack reads over Socket Mode only.** Behind a gateway there is no poll reader, so a
@@ -59,16 +60,19 @@ One instance on one machine gains nothing from a gateway; leave it as it is.
   a forged event through the gateway is judged at the instance as it always was.
 - Delivery ids are the ones the instance poller produced (`poll-comment-<id>`,
   `poll-presence-<ref>-<uuid>`), so the instance's dedup caches keep working.
-- A running work item keeps running. The gateway baselines an item's existing thread at
-  first sight, as the instance poller does: the history is never replayed as prompts.
-  The one edge: a `the-loop start` posted before the gateway first listed the item is
-  baselined too (the gateway runs no control grammar), so post it again.
+- A running work item keeps running: your instance's poller still reads its ticket.
+  If you do turn the gateway's poller on, it baselines an item's existing thread at
+  first sight, as the instance poller does, so a history is never replayed as prompts;
+  the one edge is a `the-loop start` posted before the gateway first listed the item,
+  which is baselined too (the gateway runs no control grammar), so post it again.
 - The gateway being unreachable stops nothing on the instance: it keeps running, retries
   with back-off and never falls back to its own ingresses.
 
-## Not in this release
+## Who polls
 
-Partial hosting — an instance keeping its own GitHub poller with only Slack through the
-gateway — is deliberately out: two pollers on one repository would arm the same item
-twice, which is the duplication the gateway removes. A `gateway` block switches every
-ingress of the instance off.
+Each instance keeps its own GitHub and Jira pollers behind a gateway; that is the P0 of
+the first landing, so a fleet never funnels every work item's polling through one
+process. An instance that polls a repository itself *and* receives that repository's
+webhooks through the gateway sees a comment by both paths, exactly as an instance
+running its own receiver beside its own poller does today, so pick one per repository.
+Slack is the gateway's alone: one app has one Socket Mode connection.

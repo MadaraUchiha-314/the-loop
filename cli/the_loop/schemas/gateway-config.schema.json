@@ -174,8 +174,8 @@
           "properties": {
             "enabled": {
               "type": "boolean",
-              "default": true,
-              "description": "Run the poller."
+              "default": false,
+              "description": "Run the gateway's own GitHub poller. Opt-in (off by default): the instances keep their own pollers behind a gateway, and the gateway is the webhook receiver and the Slack connection unless no inbound webhook is possible, in which case turn this on and the gateway polls for the fleet."
             },
             "intervalSeconds": {
               "type": "integer",
@@ -270,7 +270,7 @@
             "enabled": {
               "type": "boolean",
               "default": false,
-              "description": "Run the poller."
+              "description": "Run the gateway's own Jira poller. Opt-in (off by default), as for GitHub."
             },
             "intervalSeconds": {
               "type": "integer",

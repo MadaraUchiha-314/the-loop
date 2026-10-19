@@ -1,7 +1,7 @@
 """Integration scenarios for an instance that consumes from a gateway (issue-496,
 T2/T10 — R3.8, R9.3, R10.3, R14.1, R14.2, R14.4, R14.5; non-functional Compatibility).
 
-Feature: an instance with a gateway block runs no ingress of its own
+Feature: an instance with a gateway block keeps its own ingresses
 """
 
 from __future__ import annotations
@@ -45,45 +45,55 @@ def _instance_config(
     return config
 
 
-def test_an_instance_with_a_gateway_block_runs_no_ingress_of_its_own(tmp_path):
+def test_an_instance_with_a_gateway_block_keeps_its_receiver_and_poller_and_loses_only_the_listener(
+    tmp_path,
+):
     """
-    Feature: an instance with a gateway block runs no ingress of its own
-      Scenario: an instance with a gateway block runs no ingress of its own
+    Feature: an instance with a gateway block keeps its own ingresses
+      Scenario: an instance with a gateway block keeps its receiver and poller and loses
+                only the listener
         Given a config enabling the receiver, the poller and the Slack listener AND a
               gateway block
         When the hosted set is composed and status is read
-        Then the only wanted ingress is the gateway client, the three read
+        Then the receiver and the poller are wanted exactly as their blocks say, the
+             gateway client is wanted too, the Slack listener alone reads
              `off · gateway configured`, and health lists the client
 
-    Requirement: docs/specs/issue-496/requirements.md#requirement-3 (R3.8), R10.3
+    Requirement: docs/specs/issue-496/requirements.md#requirement-3 (R3.8 as amended on
+                 the PR, 2026-10-19), R10.3
     """
     config = _instance_config(tmp_path)
     enabled = lifecycle.enabled_services(config)
     assert enabled == {
         "service": True,
-        "gh-webhook": False,
-        "poller": False,
+        "gh-webhook": True,
+        "poller": True,
         "slack-listener": False,
         "gateway-client": True,
     }
-    assert [name for name, _ in ingress_mod._wanted(config)] == ["gateway-client"]
+    assert [name for name, _ in ingress_mod._wanted(config)] == [
+        "gh-webhook",
+        "poller",
+        "gateway-client",
+    ]
     rows = {row["name"]: row for row in lifecycle.ingress_health(config)}
-    assert rows["poller"]["detail"] == lifecycle.GATEWAY_OFF
-    assert (
-        rows["gh-webhook"]["enabled"] is False
-        and rows["slack-listener"]["enabled"] is False
-    )
+    assert rows["slack-listener"]["detail"] == lifecycle.GATEWAY_OFF
+    assert rows["slack-listener"]["enabled"] is False
+    assert rows["poller"]["enabled"] is True and rows["gh-webhook"]["enabled"] is True
+    assert rows["poller"]["detail"] != lifecycle.GATEWAY_OFF
     assert (
         rows["gateway-client"]["enabled"] is True
         and rows["gateway-client"]["running"] is False
     )
     report = lifecycle.status_all(config)
     services = {row["service"]: row for row in report["services"]}
-    for name in ("gh-webhook", "poller", "slack-listener"):
-        assert (
-            services[name]["detail"] == "off · gateway configured"
-            and services[name]["enabled"] is False
-        )
+    assert (
+        services["slack-listener"]["detail"] == "off · gateway configured"
+        and services["slack-listener"]["enabled"] is False
+    )
+    for name in ("gh-webhook", "poller"):
+        assert services[name]["enabled"] is True
+        assert services[name].get("detail", "") != "off · gateway configured"
     assert services["gateway-client"]["enabled"] is True
     assert (
         report["gateway"]["configured"] is True
@@ -125,7 +135,7 @@ def test_an_instance_without_a_gateway_block_hosts_the_receiver_poller_and_liste
 
 def test_the_instance_api_serves_the_gateway_document(tmp_path):
     """
-    Feature: an instance with a gateway block runs no ingress of its own
+    Feature: an instance with a gateway block keeps its own ingresses
       Scenario: GET /api/v1/gateway describes the client for the dashboard card
     Requirement: docs/specs/issue-496/requirements.md#requirement-10 (R10.3)
     """
@@ -160,14 +170,15 @@ def _free_port() -> int:
 
 def test_a_gateway_and_an_instance_share_one_machine_on_loopback(tmp_path, monkeypatch):
     """
-    Feature: an instance with a gateway block runs no ingress of its own
+    Feature: an instance with a gateway block keeps its own ingresses
       Scenario: a gateway and an instance share one machine on loopback
         Given a real gateway process on a loopback port and an instance whose gateway
               URL is that loopback address, started in that order
         When the instance's service hosts its ingresses
-        Then the only hosted ingress is the gateway client, it connects (the gateway's
+        Then the gateway client is hosted (the receiver and poller off by their own
+             blocks here), it connects (the gateway's
              instances view lists laptop-a with a live lease), GET /api/v1/gateway says
-             connected, the Daemons rows say off · gateway configured, and the two
+             connected, the listener's row says off · gateway configured, and the two
              processes have separate state roots and pidfiles, a Slack thread the
              service binds is a binding on the gateway; stopping the gateway
              turns the client unreachable without any fallback to local ingresses
@@ -191,7 +202,12 @@ def test_a_gateway_and_an_instance_share_one_machine_on_loopback(tmp_path, monke
     started = gateway_cmd.start_gateway(gateway_config, wait=30)
     assert started["running"], started
     try:
-        config = _instance_config(tmp_path / "inst", url=f"http://127.0.0.1:{port}")
+        config = _instance_config(
+            tmp_path / "inst",
+            url=f"http://127.0.0.1:{port}",
+            webhooks={"ghWebhook": {"enabled": False}},
+            polling={"enabled": False},
+        )
         config_path = tmp_path / "inst" / ".the-loop" / "cli-config.yaml"
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(json.dumps(config))
@@ -210,8 +226,8 @@ def test_a_gateway_and_an_instance_share_one_machine_on_loopback(tmp_path, monke
             rows = {row["name"]: row for row in health["ingresses"]}
             assert rows["gateway-client"]["running"] is True
             assert (
-                rows["poller"]["detail"] == lifecycle.GATEWAY_OFF
-                and not rows["poller"]["running"]
+                rows["slack-listener"]["detail"] == lifecycle.GATEWAY_OFF
+                and not rows["slack-listener"]["running"]
             )
             listed = gateway_cmd._get(gateway_config, "instances")
             assert listed is not None

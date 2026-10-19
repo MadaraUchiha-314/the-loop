@@ -108,8 +108,9 @@ flowchart LR
 **Two processes, one contract.** The gateway is a FastAPI app served by uvicorn, exactly
 as the control-plane service is (`api/serve.py`), with its own state root, pidfile and
 logfile. The instance is unchanged except that, when its config has a `gateway` block,
-its hosted-ingress set is `{gateway-client}` instead of `{gh-webhook, poller,
-slack-listener}`.
+its hosted-ingress set gains `gateway-client` and loses `slack-listener`; `gh-webhook`
+and `poller` follow their own blocks (R3.8 as amended on the PR, 2026-10-19: the first
+landing hosted `{gateway-client}` alone; the gateway's own pollers are opt-in).
 
 ```mermaid
 sequenceDiagram
@@ -305,10 +306,11 @@ consumer's fetch-and-commit does; the other routes are registrations and read-on
 ### `gateway/client.py` — the instance's hosted ingress
 
 - `GatewayClient(cli_config, stop_event)` started by `api/ingress._start_gateway_client`
-  (added to `_STARTERS`; `_wanted()` returns `{gateway-client}` alone when the config has
-  a `gateway` block, via `core/lifecycle.enabled_services`, R3.8). Status words for the
-  three disabled daemons read `off · gateway configured` in `the-loop status` and the
-  dashboard.
+  (added to `_STARTERS`; `_wanted()` adds `gateway-client` and drops `slack-listener`
+  when the config has a `gateway` block, via `core/lifecycle.enabled_services`, R3.8 as
+  amended; `channels/watcher.start_watcher` returns `None` behind a gateway, so the poll
+  reader is off too). The listener's status word reads `off · gateway configured` in
+  `the-loop status` and the dashboard.
 - Builds **one** `Router` and **one** `Dispatcher` with the same arguments
   `webhook/daemon.py:_build_ingress` uses, plus the `JiraDoorbell` and the Slack
   classifier. Hot reload of `cli-config.yaml` keeps working through `dispatcher.reload`.
@@ -660,7 +662,7 @@ dispatcher drops the duplicate`, `Scenario: a stopped instance finds its backlog
 `Scenario: an event with no consumer waits on unassigned until a claim routes it`,
 `Scenario: a long-poll returns within a second of an append`, `Scenario: a webhook and a
 poll of the same comment store one row`, `Scenario: an instance with a gateway block runs
-no ingress of its own`, `Scenario: a gateway and an instance share one machine on
+keeps its receiver and poller and loses only the listener`, `Scenario: a gateway and an instance share one machine on
 loopback`, plus the eight abuse scenarios above. **Contract** tests
 extend `test_api_contract_parity.py` to `the-loop-gateway.v1.yaml` against
 `gateway.create_app(...).openapi()` and add the instance's `GET /api/v1/gateway` to

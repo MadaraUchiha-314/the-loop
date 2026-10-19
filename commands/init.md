@@ -152,8 +152,10 @@ to the plugin's install directory.)
    Slack connection for several instances — or run its own receiver, poller and Slack
    listener?"* With a gateway, the `ingress` group's answer is a `gateway` block
    (`url`, and the `actors` this instance works for: the GitHub logins, Slack user ids
-   and Jira account ids of its users) and the receiver, poller and listener are left
-   off; without one, nothing changes. If the user says **they run the gateway on this
+   and Jira account ids of its users); the receiver and the poller are still asked for
+   and run as answered (the gateway's own pollers are opt-in), and only the Slack
+   listener is left off, since the gateway holds the app's connection; without one,
+   nothing changes. If the user says **they run the gateway on this
    machine**, also establish `gateway-config.yaml` — the same schema-driven walk over
    the plugin's `gateway-config.schema.json` (its `listen`, `store`, the `github`, `jira`
    and `slack` transports with every secret as a variable **name**, the `repositories`

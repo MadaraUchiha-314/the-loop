@@ -354,6 +354,11 @@ def test_watcher_fetches_on_interval_and_stops_with_daemon(tmp_path, monkeypatch
         watcher.start_watcher(cli_config(tmp_path, read={"mode": "socket"}), stop)
         is None
     )
+    # behind a gateway (issue-496) the gateway reads Slack: no poll reader beside it,
+    # or a mention would arrive twice
+    behind_gateway = cli_config(tmp_path, read={"mode": "poll"})
+    behind_gateway["gateway"] = {"url": "http://127.0.0.1:8790"}
+    assert watcher.start_watcher(behind_gateway, stop) is None
 
 
 def test_graph_notification_flows_through_the_channels(tmp_path, monkeypatch):

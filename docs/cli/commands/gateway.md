@@ -6,7 +6,7 @@ every inbound transport (the GitHub and Jira webhooks, one Slack Socket Mode con
 per app, the pollers), stores each event on its work item's subject before acknowledging
 the provider, and fans it out on write to the queue of every instance that consumes
 that subject. Instances with a [`gateway` block](/config/cli/gateway-options) poll
-their own queue and run no ingress of their own.
+their own queue beside their own receiver and poller; only their Slack listener is off.
 
 ```bash
 the-loop gateway start     [--config PATH] [--format text|json]

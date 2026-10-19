@@ -256,7 +256,7 @@ overrides: {}
   - _Depends on:_ C1
   - _Requirements:_ R3.8, R9.3, R10.3, R14.1, R14.4, R14.5; non-functional
     _Compatibility_
-  - _Test:_ T2 `Scenario: an instance with a gateway block runs no ingress of its own`,
+  - _Test:_ T2 `Scenario: an instance with a gateway block keeps its receiver and poller and loses only the listener`,
     `Scenario: a gateway and an instance share one machine on loopback`; T3
     `test_api_contract_parity.py` (the instance document gains `GET /api/v1/gateway`);
     T10 `Scenario: an instance without a gateway block hosts the receiver, poller and

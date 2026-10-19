@@ -123,7 +123,7 @@ class PollSource:
 
 @dataclass(frozen=True)
 class GitHubPoll:
-    enabled: bool = True
+    enabled: bool = False
     interval_seconds: int = 60
     token_env: str = "GITHUB_TOKEN"
     sources: Tuple[PollSource, ...] = ()
@@ -368,7 +368,7 @@ def _github(block: Mapping[str, Any]) -> GitHubIngress:
             secret_env=str(_get(wh, "secretEnv", "THE_LOOP_GH_WEBHOOK_SECRET")),
         ),
         poll=GitHubPoll(
-            enabled=bool(_get(poll, "enabled", True)),
+            enabled=bool(_get(poll, "enabled", False)),
             interval_seconds=int(_get(poll, "intervalSeconds", 60)),
             token_env=str(_get(poll, "tokenEnv", "GITHUB_TOKEN")),
             sources=tuple(sources),

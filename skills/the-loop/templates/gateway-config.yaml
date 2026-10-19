@@ -43,7 +43,7 @@ github:
     path: /gh-webhook
     secretEnv: THE_LOOP_GH_WEBHOOK_SECRET
   poll:
-    enabled: true               # the default transport: no public URL needed
+    enabled: false              # opt-in: instances keep their own pollers; turn on when no inbound webhook is possible
     intervalSeconds: 60
     tokenEnv: GITHUB_TOKEN      # read access only; posting stays on the instance
     sources: []                 # - { repository: owner/repo, labels: ["the-loop: auto-execute"] }

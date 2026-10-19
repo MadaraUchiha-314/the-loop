@@ -75,7 +75,7 @@ def test_the_template_is_valid_and_types_every_block(tmp_path):
     if not template.is_file():
         pytest.skip("plugin tree not present (source distribution)")
     conf = gwconfig.load_gateway_config(template)
-    assert conf.github is not None and conf.github.poll.enabled is True
+    assert conf.github is not None and conf.github.poll.enabled is False  # opt-in
     assert conf.github.webhook.enabled is False
     assert conf.slack is not None and conf.slack.socket.enabled is True
     assert conf.slack.http.enabled is False
