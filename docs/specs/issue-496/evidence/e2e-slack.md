@@ -334,4 +334,3 @@ with the records above. Four defects surfaced and are fixed on the branch with t
 accepted registration, the stop that outlasted a long-poll) and one operator finding is
 documented (the `app_mentions:read` scope under Socket Mode). The scratch state roots
 were deleted after the run; the redacted logs are what this record carries.
-
