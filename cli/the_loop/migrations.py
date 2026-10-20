@@ -295,6 +295,8 @@ def needs_migration(config: Mapping[str, Any]) -> bool:
         return True
     if _jira_stub_keys(config) or _jira_husk(config):
         return True
+    if _socket_beside_gateway(config):
+        return True
     return any(
         (section or {}).get("ghBinary") is not None
         for section in (_dig(config, path) for path in _GH_BINARY_SITES)
@@ -622,6 +624,7 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
         )
 
     _migrate_slack_channel(data, report)
+    _migrate_gateway_read_mode(data, report)
     _promote_repositories(data, report)
     _retire_repo_hooks(data, report)
     _migrate_auto_execute_labels(data, report)
@@ -1007,6 +1010,43 @@ def _migrate_slack_channel(data: Dict[str, Any], report: MigrationReport) -> Non
                 "person's GitHub entry (`- github: <login>` + `  slack: <U…>`) so "
                 "the ledger can record their approvals under their login"
             )
+
+
+def _socket_beside_gateway(config: Mapping[str, Any]) -> bool:
+    """20.3.0's gateway form (issue-503): a ``gateway`` block with a usable ``url``
+    beside ``channels.slack.read.mode: socket``. The same test as
+    ``core.lifecycle.socket_beside_gateway``, without the logging a malformed block
+    earns at runtime — a migration only reports."""
+    block = config.get("gateway")
+    if not isinstance(block, Mapping):
+        return False
+    url = block.get("url")
+    if not isinstance(url, str) or not url.strip():
+        return False
+    read = (_dig(config, _SLACK_CHANNEL_SITE) or {}).get("read")
+    return isinstance(read, Mapping) and read.get("mode") == "socket"
+
+
+def _migrate_gateway_read_mode(data: Dict[str, Any], report: MigrationReport) -> None:
+    """``read.mode: socket`` beside a ``gateway`` block → ``read.mode: gateway``
+    (issue-503, R5).
+
+    20.3.0 needed ``socket`` there to keep the buttons, and the block quietly kept the
+    listener it asks for off. ``gateway`` says what the instance does — no Socket Mode
+    connection, events from the gateway client — and a deleted block then reads
+    nothing instead of opening a second socket on the gateway's app. Never refused at
+    load: the old form keeps working until this runs.
+    """
+    if not _socket_beside_gateway(data):
+        return
+    slack = _dig(data, _SLACK_CHANNEL_SITE)
+    assert slack is not None  # _socket_beside_gateway found it
+    slack["read"]["mode"] = "gateway"
+    report.changed = True
+    report.moves.append(
+        "channels.slack.read.mode socket → gateway (a gateway consumer opens no "
+        "Socket Mode connection, issue-503)"
+    )
 
 
 def _promote_repositories(data: Dict[str, Any], report: MigrationReport) -> None:

@@ -1762,6 +1762,7 @@
                   "enum": [
                     "poll",
                     "socket",
+                    "gateway",
                     "off"
                   ],
                   "default": "poll",

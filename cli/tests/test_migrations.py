@@ -1115,3 +1115,59 @@ def test_a_stub_key_beside_a_working_block_keeps_the_block():
     report = migrate_cli_config(config)
     assert configschema.validate(report.config) == []
     assert report.config["integrations"]["jira"]["api"]["tokenEnv"] == ["JIRA_TOKEN"]
+
+
+# -- issue-503: `gateway:` + `read.mode: socket` → `read.mode: gateway` ------------
+
+
+def _gateway_config(mode="socket", gateway=True):
+    config = {
+        "version": CURRENT_CONFIG_VERSION,
+        "channels": {
+            "slack": {"enabled": True, "channel": "C123", "read": {"mode": mode}}
+        },
+    }
+    if gateway:
+        config["gateway"] = {"url": "https://gateway.example"}
+    return config
+
+
+def test_gateway_socket_is_rewritten_to_gateway_mode():
+    """issue-503 R5.1: the read mode moves, the move is reported, nothing else
+    changes — and the result is a valid config."""
+    old = _gateway_config()
+    report = migrate_cli_config(old)
+    assert report.changed
+    assert report.config["channels"]["slack"]["read"]["mode"] == "gateway"
+    assert any("read.mode socket → gateway" in move for move in report.moves)
+    expected = copy.deepcopy(old)
+    expected["channels"]["slack"]["read"]["mode"] = "gateway"
+    assert report.config == expected
+    assert configschema.validate(report.config) == []
+    assert old["channels"]["slack"]["read"]["mode"] == "socket"  # input untouched
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        _gateway_config("gateway"),  # already migrated
+        _gateway_config("socket", gateway=False),  # a socket instance, no gateway
+        _gateway_config("poll"),
+        _gateway_config("off"),
+    ],
+)
+def test_gateway_read_mode_migration_leaves_other_configs_alone(config):
+    """issue-503 R5.2: idempotent, and a no-op without the 20.3.0 form."""
+    report = migrate_cli_config(config)
+    assert not report.changed and report.config == config
+    assert not needs_migration(config)
+
+
+def test_gateway_socket_needs_migration_but_is_never_refused():
+    """issue-503 R5.3, R4.4: flagged for the upgrade command, never a refusal —
+    a 20.3.0 gateway instance keeps running until it is migrated."""
+    config = _gateway_config()
+    assert needs_migration(config)
+    assert_current(config)  # does not raise
+    twice = migrate_cli_config(migrate_cli_config(config).config)
+    assert not twice.changed

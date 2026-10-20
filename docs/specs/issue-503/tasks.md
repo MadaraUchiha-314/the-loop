@@ -46,7 +46,7 @@ code task reads what it produces. The docs task waits for the behaviour to settl
   - _Depends on:_ 1, 2
   - _Requirements:_ R3.2, R4.2, R6.1
   - _Test:_ T1, `tests/test_slack_gateway_read_mode.py` (status output cases) (red→green)
-- [ ] 4. Migrate `gateway:` + `socket` to `gateway`
+- [x] 4. Migrate `gateway:` + `socket` to `gateway`
   - Add `_migrate_gateway_read_mode`, wired into `migrate_cli_config`.
   - `needs_migration` flags the old form.
   - `assert_current` is untouched.
