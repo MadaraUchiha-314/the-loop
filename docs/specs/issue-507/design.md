@@ -190,6 +190,8 @@ failure there would fail the post, so the read and clear are wrapped and degrade
 
 ## Security design
 
+Each trust boundary that `bugfix.md` names is enforced in code and pinned by a test:
+
 | Boundary (from bugfix.md) | Enforced by |
 |---|---|
 | Only an authorized speaker's processed reply sets the thread | `_note_reply_thread` is called after the last refusal in `process_reply`, on the `work-item.reply` path only; test: an unauthorized mention leaves the memory untouched |
