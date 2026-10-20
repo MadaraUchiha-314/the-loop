@@ -578,3 +578,24 @@ def test_a_room_published_between_resolve_and_append_still_routes_the_event(
     )
     (delivery,) = gw.store.fetch("laptop-a", 0, 10).deliveries
     assert delivery.event.subject == SUBJECT and delivery.event.work_item == REF
+
+
+def test_a_refused_room_is_taken_on_a_later_reconcile_once_the_holder_lets_go(
+    gw, tmp_path, declared, caplog
+):
+    """Critic C4: a refused room is retried, and its warning is not repeated."""
+    gw.store.touch("laptop-b", "pb", lease_s=60)
+    gw.store.publish_rooms("laptop-b", {"C0123ABCD": (REF, SLUG)}, peer="pb")
+    declared.add(REF, "slack@C0123ABCD", actor="op")
+    client, transport = _gateway_client(gw, tmp_path, declared)
+    client.step()
+    assert gw.store.rooms_of("laptop-a") == []
+    assert caplog.text.count("held by instance laptop-b") == 1
+    client.publish_rooms()  # still held: retried, warned once
+    assert len(_rooms_calls(transport)) == 2
+    assert caplog.text.count("held by instance laptop-b") == 1
+    gw.store.publish_rooms("laptop-b", {}, peer="pb")  # the holder retracts
+    client.publish_rooms()
+    assert gw.store.rooms_of("laptop-a") == [("C0123ABCD", REF)]
+    client.publish_rooms()  # accepted now: no further call
+    assert len(_rooms_calls(transport)) == 3

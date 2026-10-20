@@ -162,6 +162,7 @@ class GatewayClient:
         # the rooms (issue-505): what to publish, what was last accepted, and when
         self._rooms: Optional[Callable[[], Dict[str, str]]] = None
         self._published_rooms: Optional[Dict[str, str]] = None
+        self._refused_rooms: Dict[str, str] = {}  # channel → holder, warned once
         self._rooms_at = 0.0
         self._rooms_lock = threading.Lock()
 
@@ -374,15 +375,24 @@ class GatewayClient:
                     raise urllib.error.URLError(f"PUT /rooms answered {status}")
                 logger.warning("gateway: rooms not published (answered %s)", status)
                 return False
-            self._published_rooms = desired
-            refused = body.get("refused") if isinstance(body, Mapping) else None
-            for entry in refused if isinstance(refused, list) else ():
-                entry = entry if isinstance(entry, Mapping) else {}
-                logger.warning(
-                    "gateway: room %s is held by instance %s; its messages go there",
-                    str(entry.get("channel") or "?")[:40],
-                    str(entry.get("holder") or "?")[:128],
-                )
+            body = body if isinstance(body, Mapping) else {}
+            refused: Dict[str, str] = {}
+            for entry in body.get("refused") or ():
+                if isinstance(entry, Mapping) and entry.get("channel"):
+                    refused[str(entry["channel"])[:40]] = str(entry.get("holder") or "?")
+            # what the gateway ACCEPTED: a refused room differs from the desired set,
+            # so the next reconcile asks for it again (critic C4)
+            self._published_rooms = {
+                c: r for c, r in desired.items() if c not in refused
+            }
+            for channel, holder in refused.items():
+                if self._refused_rooms.get(channel) != holder:
+                    logger.warning(
+                        "gateway: room %s is held by instance %s; its messages go there",
+                        channel,
+                        holder[:128],
+                    )
+            self._refused_rooms = refused
             return True
 
     # -- what the instance publishes (R5.3, R5.7, R5.8) ---------------------------------------------------
