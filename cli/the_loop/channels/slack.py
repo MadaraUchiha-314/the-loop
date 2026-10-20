@@ -3609,6 +3609,16 @@ def run_socket_listener(
     if not config.enabled:
         logger.error("channels.slack is not enabled — nothing to listen for")
         return 1
+    if config.gateway:
+        # issue-503 R4.3: one app has one Socket Mode connection, and the gateway
+        # holds it — whatever read.mode says, a second consumer here would split
+        # every envelope between the two.
+        logger.error(
+            "a gateway block is configured — this instance consumes Slack from the "
+            "gateway, which holds the app's Socket Mode connection; not opening a "
+            "second one (read.mode: gateway is the setting for this instance)"
+        )
+        return 1
     if config.read_mode != "socket":
         logger.error(
             "channels.slack.read.mode is %r — set it to 'socket' to listen",

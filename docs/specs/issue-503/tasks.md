@@ -27,7 +27,7 @@ code task reads what it produces. The docs task waits for the behaviour to settl
   - _Test:_ T1 + T8, `tests/test_slack_gateway_read_mode.py` (parse cases, gates,
     watcher `None`, `poll_once` not skipped, press-time picker refusal, abuse AC1, AC2
     and AC4) (red→green)
-- [ ] 2. Keep a socket from opening beside a gateway
+- [x] 2. Keep a socket from opening beside a gateway
   - `run_socket_listener` refuses before it reads any token, under `mode: gateway` and
     whenever a block is present.
   - Add `lifecycle.socket_beside_gateway(config)`.

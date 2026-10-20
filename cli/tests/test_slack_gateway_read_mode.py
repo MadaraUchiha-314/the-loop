@@ -163,3 +163,132 @@ def test_abuse_a_hand_built_gateway_config_without_the_flag_is_unreachable():
         enabled=True, channel="C1", read_mode="gateway", publish=tuple(GRANTS)
     )
     assert not (slack.push_reachable or slack.interactive or slack.command_buttons)
+
+
+# -- R1.2 / R4: no socket beside a gateway ----------------------------------------
+
+
+@pytest.mark.parametrize(
+    "mode, block, listener",
+    [
+        ("gateway", True, False),
+        ("gateway", False, False),
+        ("socket", True, False),  # R4.1: suppressed, as in 20.3.0
+        ("socket", False, True),  # R3.3: the one config that listens
+        ("poll", False, False),
+        ("off", False, False),
+    ],
+)
+def test_abuse_only_an_explicit_socket_without_a_block_enables_the_listener(
+    tmp_path, mode, block, listener
+):
+    """R1.2, R3.3, AC1."""
+    from the_loop.core import lifecycle
+
+    enabled = lifecycle.enabled_services(config(tmp_path, mode, gateway=block))
+    assert enabled["slack-listener"] is listener
+
+
+def test_socket_beside_a_block_keeps_interactivity(tmp_path):
+    """R4.1: the 20.3.0 form keeps working — no listener, buttons still on."""
+    slack = parsed(tmp_path, "socket")
+    assert slack.gateway and slack.interactive and slack.kickoff_picker
+
+
+@pytest.mark.parametrize("mode", ["gateway", "socket"])
+def test_abuse_channels_listen_refuses_beside_a_block_before_any_token(
+    tmp_path, monkeypatch, caplog, mode
+):
+    """R4.3, AC3: no socket is opened, and the token variables are never read —
+    the refusal names the gateway, not a missing token."""
+    from the_loop.channels import slack as slack_mod
+
+    read = []
+    real_get = slack_mod.os.environ.get
+
+    def spy(key, default=None):
+        if "SLACK" in str(key):
+            read.append(key)
+        return real_get(key, default)
+
+    monkeypatch.setattr(slack_mod.os.environ, "get", spy)
+    with caplog.at_level(logging.ERROR, logger="the_loop.channels.slack"):
+        assert slack_mod.run_socket_listener(config(tmp_path, mode)) == 1
+    assert read == []
+    assert "gateway" in caplog.text and "Socket Mode" in caplog.text
+
+
+def test_channels_listen_refuses_gateway_mode_without_a_block(tmp_path, caplog):
+    """R1.2: resolved to `off`, so the existing refusal answers — still no socket."""
+    from the_loop.channels import slack as slack_mod
+
+    with caplog.at_level(logging.ERROR, logger="the_loop.channels.slack"):
+        assert (
+            slack_mod.run_socket_listener(config(tmp_path, "gateway", gateway=False))
+            == 1
+        )
+
+
+# -- R6.2 / R6.3: `status` agrees ---------------------------------------------
+
+
+def test_status_row_names_the_gateway_in_gateway_mode(tmp_path):
+    """R6.2: off with the gateway named, never enabled-but-down."""
+    from the_loop.core import lifecycle
+
+    cfg = config(tmp_path, "gateway")
+    rows = {row["name"]: row for row in lifecycle.ingress_health(cfg)}
+    assert rows["slack-listener"]["enabled"] is False
+    assert rows["slack-listener"]["detail"] == lifecycle.GATEWAY_OFF
+    services = {r["service"]: r for r in lifecycle.status_all(cfg)["services"]}
+    assert services["slack-listener"]["detail"] == lifecycle.GATEWAY_OFF
+
+
+def test_status_row_names_the_missing_block(tmp_path):
+    """R6.3: gateway mode with no block — disabled, and the detail says why."""
+    from the_loop.core import lifecycle
+
+    cfg = config(tmp_path, "gateway", gateway=False)
+    assert lifecycle.listener_off_detail(cfg) == lifecycle.GATEWAY_MISSING
+    assert "no gateway block" in lifecycle.GATEWAY_MISSING
+    rows = {row["name"]: row for row in lifecycle.ingress_health(cfg)}
+    assert rows["slack-listener"]["enabled"] is False
+    assert rows["slack-listener"]["detail"] == lifecycle.GATEWAY_MISSING
+    services = {r["service"]: r for r in lifecycle.status_all(cfg)["services"]}
+    assert services["slack-listener"]["detail"] == lifecycle.GATEWAY_MISSING
+
+
+def test_the_generic_detail_is_unchanged_for_poll(tmp_path):
+    """Behaviour preserved: poll without a block keeps 20.3.0's wording."""
+    from the_loop.core import lifecycle
+
+    assert lifecycle.listener_off_detail(config(tmp_path, "poll", gateway=False)) == (
+        "channels.slack.enabled is false or read.mode is not socket"
+    )
+
+
+@pytest.mark.parametrize(
+    "mode, block, expected",
+    [("socket", True, True), ("gateway", True, False), ("socket", False, False)],
+)
+def test_socket_beside_gateway(tmp_path, mode, block, expected):
+    from the_loop.core import lifecycle
+
+    assert (
+        lifecycle.socket_beside_gateway(config(tmp_path, mode, gateway=block))
+        is expected
+    )
+
+
+@pytest.mark.parametrize("mode, warned", [("socket", True), ("gateway", False)])
+def test_the_gateway_client_warns_once_about_socket_beside_it(
+    tmp_path, monkeypatch, caplog, mode, warned
+):
+    """R4.2: the starter logs the migrate warning; `gateway` is quiet."""
+    from the_loop.api import ingress
+
+    monkeypatch.setattr(ingress, "_acquire", lambda name, path: (None, "held"))
+    with caplog.at_level(logging.WARNING, logger="the_loop.api.ingress"):
+        assert ingress._start_gateway_client(config(tmp_path, mode)) == (None, "held")
+    hit = "read.mode: gateway" in caplog.text and "migrate-config" in caplog.text
+    assert hit is warned

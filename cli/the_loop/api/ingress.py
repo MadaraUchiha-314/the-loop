@@ -321,6 +321,15 @@ def _start_gateway_client(cli_config: dict) -> _Start:
 
     if cli_config_mod.gateway_block(cli_config) is None:
         return None, ""
+    from ..core.lifecycle import socket_beside_gateway
+
+    if socket_beside_gateway(cli_config):
+        # issue-503 R4.2: said once per start of the client, not every reconcile.
+        logger.warning(
+            "channels.slack.read.mode is 'socket' beside a gateway block — the "
+            "listener stays off; set read.mode: gateway (the-loop migrate-config "
+            "does it)"
+        )
     lock, reason = _acquire(
         core_daemons.GATEWAY_CLIENT,
         core_daemons._pidfile(core_daemons.GATEWAY_CLIENT, cli_config),
