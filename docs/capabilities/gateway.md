@@ -159,7 +159,12 @@ The word *gateway*, unqualified, is this process; decision-059's is the
   app has one Socket Mode connection and the gateway holds it. The webhook receiver and
   the poller run exactly as `webhooks` and `polling` say, gateway or not; `the-loop
   status`, `the-loop start` and health read `off · gateway configured` for the listener
-  alone. Without the block, exactly as before. The gateway's own GitHub and Jira pollers
+  alone. Without the block, exactly as before. The instance's
+  `channels.slack.read.mode` beside the block is `gateway` (issue-503): no socket here,
+  every interactive feature on under its grants, and a deleted block reads nothing rather
+  than opening a second socket. 20.3.0's `socket` there keeps working, is flagged in the
+  log and in `channels status`, and `migrate-config` rewrites it. `channels listen`
+  refuses to open a socket while the block is present. The gateway's own GitHub and Jira pollers
   are opt-in (`github.poll.enabled`, `jira.poll.enabled`, off in the template): the
   gateway is the webhook receiver and the Slack connection unless no inbound webhook is
   possible, in which case it polls for the fleet.
@@ -245,4 +250,5 @@ The word *gateway*, unqualified, is this process; decision-059's is the
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-503 | The instance side gets `channels.slack.read.mode: gateway` (2026-10-20): the explicit "no Socket Mode here" setting, with interactivity keyed on reachability rather than on `socket`; fail closed without a block; `migrate-config` rewrites 20.3.0's `socket` beside a block | [spec](../specs/issue-503/), [channels](channels.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/503) |
 | issue-496 | The capability, whole (2026-10-19): the gateway process and its verbs, `gateway-config.yaml` and schema, the GitHub/Jira/Slack transports, the SQLite store with subjects and one queue per instance, consumers resolved at ingest by claim then actor, pull with commit and long-poll, at-least-once with dead-letter, the instance's `gateway` block and client, claims and bindings published by the instance, `GET /api/v1/gateway`, the Gateway card, the two event families | [spec](../specs/issue-496/), [decision-144](../decisions/decision-144.md), [decision-145](../decisions/decision-145.md), [decision-146](../decisions/decision-146.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/496) |

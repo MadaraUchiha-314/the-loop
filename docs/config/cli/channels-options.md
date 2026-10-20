@@ -26,7 +26,7 @@ channels:
   slack:
     enabled: true
     botTokenEnv: THE_LOOP_SLACK_BOT_TOKEN   # xoxb-, chat:write + channels.history
-    appTokenEnv: THE_LOOP_SLACK_APP_TOKEN   # xapp-, only for read.mode: socket
+    appTokenEnv: THE_LOOP_SLACK_APP_TOKEN   # xapp-, only for read.mode: socket (a gateway holds its own)
     channel: C0123ABCDEF                     # the channel the bot posts into
     subscribe: [session.awaiting_input, phase-approval-pending, comment.agent]
     publish: [work-item.reply, gate.feedback]
@@ -277,11 +277,11 @@ typed on a channel without the grant does not reach the agent as prose either.
 |-------|---------------------------|--------------|
 | `work-item.reply` | none of the below applies | mirrored onto the work item as the-loop's own marked comment (quoted, scrubbed, keywords defanged) and **delivered into the waiting session** — 12.1.0's behaviour, the default |
 | `gate.feedback` | the work item's graph is parked at a human gate — or the pipeline **cannot tell** (no session record, no checkout, a read fault) | recorded on the ledger as an **unmarked** comment under your own credential, with the envelope and a visible "answer from `slack:U…`" attribution (a "reply from" when the gate could not be read); the ledger's ingress then classifies it exactly as a typed approval — with the graph it actually keeps — and the artifact's `approvedBy` names the person the envelope names |
-| `control.command` | the text carries a [control keyword](/config/cli/routing-options#execution-control) — typed, or pressed as the **Execute** / **Start** button ([issue-337](https://github.com/MadaraUchiha-314/the-loop/issues/337)) | recorded the same way, keyword intact; the ledger's ingress executes it through the same named-actor control seam. With `read.mode: socket` this grant also renders the Execute button on the phase-selection checklist and the Start button on a kickoff's reply, each carrying the configured keyword as its value |
-| `work-item.create` | the message is **top-level** in the configured channel, or a [`/the-loop new`](#the-slash-command) slash command ([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378)) | an issue is created in the repository the message named, else `kickoff.repo`, with `kickoff.labels` — needs the grant, and a target inside the declared `repositories`. With `read.mode: socket` this grant also renders the **repository picker** on a message that named none the-loop knows ([issue-349](https://github.com/MadaraUchiha-314/the-loop/issues/349)) |
+| `control.command` | the text carries a [control keyword](/config/cli/routing-options#execution-control) — typed, or pressed as the **Execute** / **Start** button ([issue-337](https://github.com/MadaraUchiha-314/the-loop/issues/337)) | recorded the same way, keyword intact; the ledger's ingress executes it through the same named-actor control seam. With `read.mode: socket` or `gateway` this grant also renders the Execute button on the phase-selection checklist and the Start button on a kickoff's reply, each carrying the configured keyword as its value |
+| `work-item.create` | the message is **top-level** in the configured channel, or a [`/the-loop new`](#the-slash-command) slash command ([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378)) | an issue is created in the repository the message named, else `kickoff.repo`, with `kickoff.labels` — needs the grant, and a target inside the declared `repositories`. With `read.mode: socket` or `gateway` this grant also renders the **repository picker** on a message that named none the-loop knows ([issue-349](https://github.com/MadaraUchiha-314/the-loop/issues/349)) |
 | `instance.command` | a `/the-loop status`, `restart` or `upgrade` [slash command](#the-slash-command) | the core facade `the-loop status` / `the-loop restart [--with-upgrade]` run — answered ephemerally; **not recorded** (no ticket), the event log is the trail ([issue-334](https://github.com/MadaraUchiha-314/the-loop/issues/334)) |
 | `standing.command` | a `/the-loop standing list\|start\|stop\|restart <name>` slash command | the same core verb `the-loop standing <verb>` runs; not recorded |
-| `context.added` | `@the-loop record-context` in a thread (or the *Add as the-loop context* message shortcut), from an authorized member or one of the work item's collaborators ([issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389)) | the thread is snapshotted onto the work item as a **marked** record (quoted, scrubbed, keywords defanged, the envelope naming the person) and delivered into the session with a preset frame; the session appends it to `docs/specs/<id>/context.md`. Needs `read.mode: socket` — the mention arrives as `app_mention` |
+| `context.added` | `@the-loop record-context` in a thread (or the *Add as the-loop context* message shortcut), from an authorized member or one of the work item's collaborators ([issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389)) | the thread is snapshotted onto the work item as a **marked** record (quoted, scrubbed, keywords defanged, the envelope naming the person) and delivered into the session with a preset frame; the session appends it to `docs/specs/<id>/context.md`. Needs `read.mode: socket` or `gateway` — the mention arrives as `app_mention` |
 | `decision.recorded` | `@the-loop record-decision <text>` (or the *Record the-loop decision* shortcut and its modal), from an authorized member only | recorded the same way — marked, attributed by its envelope, **never** read as a gate answer — and delivered into the session, which writes `docs/decisions/decision-<nnn>.md` and its index row |
 
 A `/the-loop <keyword> <work-item>` slash command is `control.command` too — the same
@@ -411,9 +411,9 @@ which you get:
 | no prefix, this `repo` **not in `repositories`** | **asked** — it points at a declared repository, it does not declare one (issue-348) |
 
 A question is only asked where a press can be received and there is something to offer:
-[`read.mode: socket`](#slackreadmode) — the same rule the
+[`read.mode: socket` or `gateway`](#slackreadmode) — the same rule the
 [buttons](#slackpublish) follow, because Slack delivers an interactive payload only to
-an acknowledging Socket Mode connection — **and** at least one declared repository.
+an acknowledging Socket Mode connection, this instance's own or the gateway's — **and** at least one declared repository.
 Without either, the kickoff is refused with the text it has always used, and
 `the-loop channels status` names the reason on its `kickoff:` line. No grant beyond the
 `work-item.create` the kickoff already needs.
@@ -450,7 +450,7 @@ item for `the-loop start`, or leave it empty to file the issue and stop.
 
 ### `slack.read.mode`
 
-- **Type:** `'poll' | 'socket' | 'off'`
+- **Type:** `'poll' | 'socket' | 'gateway' | 'off'`
 - **Default:** `poll`
 
 How messages come back. `poll`: the long-running daemons fetch new thread replies (and,
@@ -460,20 +460,37 @@ with the kickoff grant, new top-level messages) on a background thread, and
 inbound HTTP endpoint — running one **catch-up read** over the bound threads the moment
 it connects (issue-334), so what was posted while no listener was connected is processed
 once from the shared cursors (`the-loop channels poll` runs the same cycle on demand in
-this mode too, as a reconciliation); and it is the only mode that receives a **button press**, so
-Approve / Request changes buttons are rendered only here (and only with the
-`gate.feedback` grant), and so are the **Execute** / **Start** buttons (only with the
-`control.command` grant — [issue-337](https://github.com/MadaraUchiha-314/the-loop/issues/337)):
-a button nobody can receive is worse than none — and it is the only mode the
+this mode too, as a reconciliation). `socket` and `gateway` are the only modes that
+receive a **button press**, so Approve / Request changes buttons are rendered only there
+(and only with the `gate.feedback` grant), and so are the **Execute** / **Start** buttons
+(only with the `control.command` grant —
+[issue-337](https://github.com/MadaraUchiha-314/the-loop/issues/337)): a button nobody
+can receive is worse than none. They are also the only modes the
 [`/the-loop` slash command](#the-slash-command) can arrive in. A processed press is
 written back onto the pressed message (the buttons replaced by the outcome line);
 `the-loop channels status` prints the steps a configuration still needs before a press
 can arrive. See the [Slack guide's buttons section](/guide/slack#the-buttons). A change
 to this key takes effect in the running service without a restart: the hosted listener is
 stopped within a few seconds when the mode leaves `socket`, and started when it returns
-([issue-395](https://github.com/MadaraUchiha-314/the-loop/issues/395)). `off`: nothing
-is read. An unknown value resolves to `off` with a warning — never to a reading mode by
-accident.
+([issue-395](https://github.com/MadaraUchiha-314/the-loop/issues/395)).
+
+`gateway` ([issue-503](https://github.com/MadaraUchiha-314/the-loop/issues/503)) is for an
+instance behind a [gateway](/config/cli/gateway-options). The instance never opens a
+Socket Mode connection of its own and starts no poll reader. Slack arrives only through
+the gateway client, and everything `socket` offers is available under the same grants:
+the buttons, the kickoff picker, the slash command, mentions and the message shortcuts.
+The app-level token is the gateway's, so the instance does not need one. The mode needs a
+`gateway` block. Without one it reads nothing and renders no button, and the error log
+and `the-loop channels status` both say why. It never falls back to a socket, so deleting
+the block cannot put a second consumer on the gateway's app.
+
+A 20.3.0 config that set `socket` beside a `gateway` block keeps working: the block still
+keeps the listener off. It is flagged in the log and in `channels status`, and
+`the-loop migrate-config` rewrites it to `gateway`. Whatever the mode,
+`the-loop channels listen` refuses to open a socket while a `gateway` block is present.
+
+`off`: nothing is read. An unknown value resolves to `off` with a warning — never to a
+reading mode by accident.
 
 ### `slack.read.intervalSeconds`
 
@@ -542,7 +559,7 @@ mode — poll mode has no connection to split.
 [decision-116](/decisions/decision-116)) is the channel's third inbound shape — the one
 for things that have **no thread to type into**: a work item that has not started, a
 standing session that is not running, this instance itself. It arrives over **Socket
-Mode only** (`read.mode: socket`; Slack needs an acknowledgment within seconds, which a
+Mode only** (`read.mode: socket`, or `gateway` when the gateway holds the connection; Slack needs an acknowledgment within seconds, which a
 poll cycle cannot give), is judged by the same `slack` ids of
 [`routing.authorizedUsers`](/config/cli/routing-options#authorizedusers) — an unlisted
 member gets no answer — and each verb family needs its grant in `publish`:

@@ -60,7 +60,7 @@ code task reads what it produces. The docs task waits for the behaviour to settl
   - _Depends on:_ 1
   - _Requirements:_ R1.4, R2.2
   - _Test:_ T2, `tests/test_slack_gateway_read_mode_integration.py`
-- [ ] 6. Schema, template and docs
+- [x] 6. Schema, template and docs
   - The schema enum and descriptions (`read.mode`, the `gateway` block, the grants that
     say "needs socket").
   - `templates/cli-config.yaml` and the gateway template.

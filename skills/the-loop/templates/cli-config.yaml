@@ -684,7 +684,7 @@ channels:
   slack:
     enabled: false
     # botTokenEnv: THE_LOOP_SLACK_BOT_TOKEN  # xoxb-, chat:write + channels.history
-    # appTokenEnv: THE_LOOP_SLACK_APP_TOKEN  # xapp-, only for read.mode: socket
+    # appTokenEnv: THE_LOOP_SLACK_APP_TOKEN  # xapp-, only for read.mode: socket (a gateway holds its own)
     # channel: ""                            # where the bot posts: #name or a C… id
     #                                        # (a name needs channels:read/groups:read
     #                                        #  and is resolved once; an id needs neither)
@@ -703,7 +703,7 @@ channels:
     #                                        # + context.added (`@the-loop record-context` snapshots a
     #                                        #   thread onto the work item and into context.md),
     #                                        # + decision.recorded (`@the-loop record-decision <text>`
-    #                                        #   becomes a decision record) — issue-389, socket only;
+    #                                        #   becomes a decision record) — issue-389, socket or gateway;
     #                                        # the slash command's work-item verbs ride on control.command.
     #                                        # A ticket-bound one is recorded on the ledger first and
     #                                        # judged there; the two instance-side ones log to the event log.
@@ -716,8 +716,10 @@ channels:
     #   repo: ""                             # owner/repo the issue is created in; empty = off
     #   labels: []                           # applied to the created issue — from here only
     # read:
-    #   mode: poll                           # poll | socket | off — only socket receives a button
-    #                                        # press (Approve, Execute, Start) or a /the-loop command;
+    #   mode: poll                           # poll | socket | gateway | off — only socket and gateway
+    #                                        # receive a button press (Approve, Execute, Start) or a
+    #                                        # /the-loop command; gateway = behind a `gateway:` block,
+    #                                        # never opens Socket Mode itself (issue-503);
     #                                        # `the-loop channels status` prints the steps that remain
     #   intervalSeconds: 30
     #   catchUpSeconds: 900                  # socket mode only: how often the listener
