@@ -148,7 +148,7 @@ abuse cases of `design.md` § Security design are tests like any other (task 9).
     still target the work item`; abuse case 2 — a record whose `cwd`, `harnessSessionId`
     and transcript path carry `<b>x</b>` renders them as text, no `b` element
     (red→green)
-- [ ] 7. The main column assembled: header meta, one statement of the position, no panel
+- [x] 7. The main column assembled: header meta, one statement of the position, no panel
   - `ui/src/views/WorkItemDetail.tsx`: the header meta is **ref chip · `PhaseChip` ·
     the `railNote` qualifier (when non-empty) · `updated <age>` · *Full graph* /
     *Collapse graph*** (a button with `aria-expanded`, the state local to the view, off

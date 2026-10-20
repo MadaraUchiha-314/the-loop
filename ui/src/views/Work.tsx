@@ -1,10 +1,12 @@
 /**
- * The Work surface (issue-327): the sidebar, the main column and the session
- * panel, side by side in a viewport-locked shell. The main column shows the
- * selected work item — or the most recently active one when nothing is
- * selected — or, on `#/standing`, `#/settings`, `#/instances` and
- * `#/instances/<name>`, those panes; the sidebar is the navigation in every
- * case, and the session panel appears only beside a work item.
+ * The Work surface (issue-327, de-cluttered to issue-511's Option C): the
+ * sidebar and the main column, side by side in a viewport-locked shell. The
+ * main column shows the selected work item — or the most recently active one
+ * when nothing is selected — or, on `#/standing`, `#/settings`, `#/instances`
+ * and `#/instances/<name>`, those panes; the sidebar is the navigation in
+ * every case. The session panel is no longer a column: its facts sit behind
+ * the header's Session details disclosure and its verbs among the header
+ * actions, so `Panels.asideOpen` is unread here.
  *
  * One ref selects, whichever level it names: the hash is the single source of
  * truth for what the column shows, so a PR row in the sidebar and a session
@@ -19,7 +21,6 @@ import type { DaemonStatus, InstancesDocument } from "../api/types.ts";
 import type { Chrome } from "../components/HeaderBar.tsx";
 import { HeaderBar } from "../components/HeaderBar.tsx";
 import { Empty } from "../components/primitives.tsx";
-import { SessionAside } from "../components/SessionAside.tsx";
 import { Sidebar } from "../components/Sidebar.tsx";
 import { useApi } from "../state/ApiContext.tsx";
 import { hrefFor, type Surface } from "../state/route.ts";
@@ -29,7 +30,7 @@ import { InstanceDetail } from "./InstanceDetail.tsx";
 import { Instances } from "./Instances.tsx";
 import { Settings } from "./Settings.tsx";
 import { Standing } from "./Standing.tsx";
-import { railNote, resolveViewed, WorkItemDetail } from "./WorkItemDetail.tsx";
+import { WorkItemDetail } from "./WorkItemDetail.tsx";
 
 export type { Surface };
 
@@ -99,11 +100,6 @@ export function Work({
   const selected = selectedRef ? findOwner(views, selectedRef, selectedInstance) : sorted[0];
   const activeRef = surface === "work" ? selectedRef || selected?.ref || "" : "";
   const activeInstance = surface === "work" ? (selected?.instance ?? "") : "";
-  const showAside = surface === "work" && selected !== undefined && panels.asideOpen;
-  const chromeForPane: Chrome =
-    surface === "work"
-      ? { ...chrome, asideOpen: panels.asideOpen, onOpenAside: () => panels.setAsideOpen(true) }
-      : chrome;
 
   return (
     <div className="relative flex min-h-0 flex-1">
@@ -129,13 +125,13 @@ export function Work({
 
       <main className="flex min-w-0 flex-1 flex-col">
         {surface === "settings" ? (
-          <Settings chrome={chromeForPane} />
+          <Settings chrome={chrome} />
         ) : surface === "standing" ? (
-          <Standing chrome={chromeForPane} onChanged={() => standingSessions.reload()} />
+          <Standing chrome={chrome} onChanged={() => standingSessions.reload()} />
         ) : surface === "instances" ? (
-          <Instances chrome={chromeForPane} onChanged={onChanged} />
+          <Instances chrome={chrome} onChanged={onChanged} />
         ) : surface === "instance" ? (
-          <InstanceDetail key={instanceName} chrome={chromeForPane} name={instanceName} onChanged={onChanged} />
+          <InstanceDetail key={instanceName} chrome={chrome} name={instanceName} onChanged={onChanged} />
         ) : selected ? (
           <WorkItemDetail
             // Keyed by board key so switching items — or instances — remounts
@@ -147,11 +143,11 @@ export function Work({
             onChanged={onChanged}
             transcriptTick={transcriptTick}
             traceRef={activeRef || selected.ref}
-            chrome={chromeForPane}
+            chrome={chrome}
           />
         ) : (
           <>
-            <HeaderBar chrome={chromeForPane} title="the-loop" meta={<span>control plane</span>} />
+            <HeaderBar chrome={chrome} title="the-loop" meta={<span>control plane</span>} />
             <div className="px-6 py-6">
               {selectedRef && !loading ? (
                 <Empty>
@@ -175,17 +171,6 @@ export function Work({
           </>
         )}
       </main>
-
-      {showAside && selected ? (
-        <SessionAside
-          key={selected.key}
-          view={selected}
-          viewed={resolveViewed(selected, activeRef || selected.ref)}
-          note={railNote(selected)}
-          onChanged={onChanged}
-          onClose={() => panels.setAsideOpen(false)}
-        />
-      ) : null}
     </div>
   );
 }

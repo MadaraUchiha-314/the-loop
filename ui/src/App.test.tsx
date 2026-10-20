@@ -253,7 +253,7 @@ describe("the control plane, on demo data", () => {
     expect(JSON.parse(globalThis.localStorage.getItem("the-loop:settings:v1") ?? "{}").theme).toBe("light");
   });
 
-  it("collapses the sidebar and the session panel, and reopens both from the header", async () => {
+  it("collapses the sidebar and reopens it from the header; the session panel is no longer a column", async () => {
     const user = userEvent.setup();
     renderApp();
     await sidebarRow("loop-lab#214");
@@ -263,10 +263,33 @@ describe("the control plane, on demo data", () => {
     await user.click(screen.getByRole("button", { name: "Open sidebar" }));
     expect(await screen.findByRole("complementary", { name: "Work items" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Close panel" }));
+    // Option C (issue-511): no session column, so no panel controls either —
+    // the facts are behind the header's Session details disclosure.
     expect(screen.queryByRole("complementary", { name: "Session" })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Open session panel" }));
-    expect(await screen.findByRole("complementary", { name: "Session" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Close panel" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open session panel" })).toBeNull();
+    expect(document.querySelector("[data-session-details] > summary")).toHaveAttribute("aria-label", "Session details");
+  });
+
+  it("Scenario: the header meta is the ref chip, the phase chip, the note and the age — the repository line and the instance chip are gone", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.click(await sidebarRow("loop-lab#205"));
+    await screen.findByText("Human gate");
+
+    const header = screen.getByRole("banner");
+    const meta = header.querySelector("h1 + div") as HTMLElement;
+    expect(within(meta).getByText("github:octo/loop-lab#205")).toHaveClass("ref-chip");
+    expect(within(meta).getByText("human-approval")).toBeInTheDocument();
+    expect(within(meta).getByText("parked — awaiting a human")).toBeInTheDocument();
+    expect(within(meta).getByText(/^updated /)).toBeInTheDocument();
+    expect(within(meta).getByRole("button", { name: /Full graph/ })).toHaveAttribute("aria-expanded", "false");
+    // The repository is drawn once, inside the ref chip: no bare `octo/loop-lab` line.
+    expect(within(meta).queryByText("octo/loop-lab")).toBeNull();
+    expect(within(meta).queryByText("loop-lab", { selector: ":not(.ref-chip)" })).toBeNull();
+    expect(meta.querySelector("[data-instance]")).toBeNull();
+    // One statement of the position: the parked node appears once in the whole main column.
+    expect(within(screen.getByRole("main")).getAllByText("human-approval", { selector: "span" })).toHaveLength(1);
   });
 
   it("filters the sidebar by what is typed into the search box", async () => {

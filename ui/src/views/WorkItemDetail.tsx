@@ -1,10 +1,14 @@
 /**
- * One work item as the design's main column (issue-327): the header (title,
- * ref chip, phase chip, repository, age; copy / GitHub / theme controls), the
- * loop as a node strip, one tab per session, the harness trace as a reading
- * column with a **Verbose** switch, the two things that need a human —
- * a parked gate, the agent's question — as accent banners above the composer,
- * and the composer itself. The session panel beside it is rendered by `Work`.
+ * One work item as the design's main column (issue-327, de-cluttered to
+ * issue-511's Option C): the header — title; meta = ref chip · phase chip ·
+ * the parked/blocked note · age · **Full graph**; actions = the session verbs,
+ * copy, GitHub, theme and the **Session details** disclosure — the node row
+ * while Full graph is on, the session tabs when there is more than one
+ * session, the harness trace as a reading column with a **Verbose** switch,
+ * the two things that need a human — a parked gate, the agent's question — as
+ * accent banners above the composer, and the composer itself. Each fact is
+ * drawn once: the phase chip is the one statement of the position, the ref
+ * chip the one copy of the repository, `updated` the one age.
  *
  * The trace renders the session's own transcript from
  * `GET /api/v1/sessions/transcript` (issue-209). When the route answers 404
@@ -31,14 +35,14 @@ import {
 import type { EventRecord } from "../api/types.ts";
 import { GraphStrip } from "../components/GraphStrip.tsx";
 import { HeaderBar, type Chrome } from "../components/HeaderBar.tsx";
-import { CheckIcon, ChevronDownIcon, CopyIcon, ExternalLinkIcon, GitBranchIcon, InfoIcon, TriangleAlertIcon } from "../components/Icons.tsx";
-import { ControlButton, Empty, IconButton, InstanceChip, Notice, PhaseChip } from "../components/primitives.tsx";
+import { CheckIcon, ChevronDownIcon, CopyIcon, ExternalLinkIcon, InfoIcon, TriangleAlertIcon } from "../components/Icons.tsx";
+import { ControlButton, Empty, IconButton, Notice, PhaseChip } from "../components/primitives.tsx";
 import { SessionControls, SessionFacts } from "../components/SessionAside.tsx";
 import { SessionTabs } from "../components/SessionTabs.tsx";
 import { ChatBar, EventTrail, TranscriptView, VERBOSE_LABEL } from "../components/Transcript.tsx";
 import { useApi } from "../state/ApiContext.tsx";
 import { useAsync } from "../state/useAsync.ts";
-import { itemStatus, repoOf } from "./grouping.ts";
+import { itemStatus } from "./grouping.ts";
 
 /** How close to the bottom still counts as "following the newest entry". */
 const PIN_THRESHOLD_PX = 24;
@@ -150,7 +154,6 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
         meta={
           <>
             <span className="ref-chip">{view.ref}</span>
-            {view.instance ? <InstanceChip instance={view.instance} /> : null}
             <PhaseChip phase={view.currentNode || (view.rail.length > 0 ? "planned" : "no graph")} status={itemStatus(view)} />
             {note ? (
               <span
@@ -161,10 +164,6 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
                 {note}
               </span>
             ) : null}
-            <span className="inline-flex items-center gap-1">
-              <GitBranchIcon className="h-3 w-3" />
-              <span className="font-mono">{repoOf(view.ref)}</span>
-            </span>
             <span aria-hidden="true">·</span>
             <span title={view.lastActivity || undefined}>updated {relativeTime(view.lastActivity)}</span>
             {view.rail.length > 0 ? (
