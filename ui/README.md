@@ -83,28 +83,36 @@ translates that into the same advice rather than "failed to fetch".
 Nothing here is a new endpoint. The interesting part is the **join**, which lives in
 [`src/api/model.ts`](src/api/model.ts):
 
-One screen, three columns (issue-327's design, Control Plane UI 3.0): a **sidebar** of work
-items grouped by what they need from you — *Needs you*, *In flight*, *Shipped*, *Idle*; an item
-whose record says it ended (issue-329) goes to *Shipped* or *Idle* with its stale question and
-gate retired, never to *Needs you* — each
-row `#n · title / repo · node · age`, with its pull requests nested beneath it (issue-300: `#216`,
-or `loop-docs#47` when the PR is in another repository; a linked PR appears there and *not* also
-as a top-level row, issue-302), a search box that filters the loaded rows, the standing
-sessions as their own group, and a footer with Settings and the health word; the **main
-column** for the selected work item — title and ref, the loop as a compacted node strip
-(`Full graph` expands it), one tab per session, the harness trace as a reading column with
-a **Tool calls** switch, the parked gate and the agent's question as accent banners, and the
-composer at the foot (nothing selected shows the most recently active item); and a **session
-panel** — harness, tmux, ticket, controls. `#/standing` and `#/settings` swap the main column
-for those panes and keep the sidebar. Either side panel collapses from its own icon and
-reopens from the header. The standalone Events screen retired with issue-298 — the event
-trail still renders as the trace's fallback, and legacy `#/events` hashes land on Work.
+One screen, two columns (issue-327's design, de-cluttered to issue-511's Option C — each fact
+drawn once): a **sidebar** of work items in two groups — *Needs you*, with the one count that
+changes what you do, and *Everything else*, by last activity; an item whose record says it
+ended (issue-329) needs nothing and sits under *Everything else* with its stale question and gate
+retired — each row one line, `#n · title`, with a flag only when the item needs a human (`needs
+input`, `human gate`, `blocked`), the **selected** item's pull requests nested beneath it
+(issue-300: `#216`, or `loop-docs#47` when the PR is in another repository; a linked PR appears
+there and *not* also as a top-level row, issue-302), the search box and the fleet's instance
+filter behind the search icon in the brand row, and a footer with Settings, the service line
+and the health word; and the **main column** for the selected work item (nothing selected shows
+the most recently active item) — the title, a meta line of ref chip · phase chip · the
+parked/blocked note · `updated <age>` · *Full graph*, which reveals the loop's node row beneath
+the header; one tab per session, only when the item has more than one; the harness trace as a
+reading column with a **Verbose** switch; the parked gate (`Human gate · waiting <age>`) and the
+agent's question as accent banners; and the composer at the foot, whose only hint is a blocked
+session's reason. The session's facts — harness, status, started, session id, transcript path,
+working directory, the attach command to copy, the ticket or pull request with *Open on GitHub*
+— sit behind the header's **Session details** disclosure, and its verbs (pause / resume / stop /
+start, acting on the work item's session; a `work item` label says so when a PR session is
+viewed) sit among the header actions. `#/standing` and `#/settings` swap the main column for
+those panes and keep the sidebar; the Standing surface is where the standing sessions are
+listed. The sidebar collapses from its own icon and reopens from the header. The standalone
+Events screen retired with issue-298 — the event trail still renders as the trace's fallback,
+and legacy `#/events` hashes land on Work.
 
 | Surface | Reads |
 |---|---|
 | Work sidebar | `GET /work-items` + `GET /sessions` + `GET /attention`, then one `POST /graph/check` per active loop — the rows' chips are the deduped, tiered attention (needs-input &gt; gate &gt; waits &gt; errors), and the nested PR rows are `sessionTree`'s inner level over the same `/sessions` records (a loop with no outer/inner split renders treeless). A labeled PR has a portable record of its own *and* a nested endpoint, so the join reconciles them and draws it once, under the item it delivers (issue-302) |
 | Work item canvas | the same, plus `GET /events?workItem=…` (the trace's fallback trail), `GET /sessions/transcript?ref=…` for the viewed trace (outer session or a PR endpoint's), `POST /graph/complete` from the parked-gate card, and `POST /sessions/reply` from the chat bar (issue-230 — the chat bar is also how an agent's question is answered) |
-| Standing (a sidebar section of Work) | `GET /standing-sessions`, plus `POST /standing-sessions/{create,delete,control,say}` — the sessions that belong to no work item (issue-277) |
+| Standing (`#/standing`) | `GET /standing-sessions`, plus `POST /standing-sessions/{create,delete,control,say}` — the sessions that belong to no work item (issue-277) |
 | Sidebar footer | `GET /daemons`, folded with the stream state — and, on a manager, every row of `GET /instances` — into one health word + popover |
 | Settings | `GET /health`, plus `GET /config` + `GET /config/schema` and `POST /config` for the CLI-config editor (issue-222) |
 | Instances (`#/instances`) | `GET /instances` — the fleet, one row per instance with its probe state — plus `POST /instances/register` and `POST /instances/unregister` from the Register card and the per-row Unregister (issue-374). On a worker: the one row, no Register card, and the sentence naming `instance.role` |
@@ -244,9 +252,11 @@ src/
   state/      settings (localStorage, incl. the theme) · theme · hash route · the board's fetch loop
               stream.ts (what a frame makes stale) · useStream.ts (the connection)
   components/ the design's pieces: Icons, StatusDot, primitives (chip, icon button, section,
-              notice…), Sidebar, HeaderBar, GraphStrip, SessionTabs, Transcript (trace +
-              composer), SessionAside, Banner, Nav (the health word)
-  views/      Work (the three columns) · WorkItemDetail · Standing · Settings · Instances ·
+              notice…), Sidebar, HeaderBar, GraphStrip (the node row behind Full graph),
+              SessionTabs, Transcript (trace + composer), SessionAside (SessionFacts for the
+              Session details popover, SessionControls for the header verbs), Banner,
+              Nav (the health word)
+  views/      Work (the two columns) · WorkItemDetail · Standing · Settings · Instances ·
               InstanceDetail · grouping
   test/       setup.ts · manager.ts (a transport answering as a manager, for the fleet tests)
   styles/     app.css — the tokens, the .dark theme, three custom utilities, Tailwind
@@ -256,6 +266,6 @@ src/
 ## Screenshot evidence
 
 `scripts/screenshots.mjs` drives the built app in demo mode through every surface and state
-in both themes and writes one PNG per state — the evidence a UI work item commits under its
+— including Full graph, Session details and the finder open — in both themes and writes one PNG per state — the evidence a UI work item commits under its
 spec's `evidence/`. It needs Playwright resolvable from `ui/` (`npm i --no-save playwright`)
 and a preview server (`bun run build && bun run preview --port 4173`).

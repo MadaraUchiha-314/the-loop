@@ -245,7 +245,7 @@ abuse cases of `design.md` § Security design are tests like any other (task 9).
     against `bun run preview --port 4173` over `dist/`; `capture.log` lists every
     state and no `pageerror` / `console.error` line (the run is the test; red = a
     selector no longer resolves)
-- [ ] 11. The documents describe the C layout
+- [x] 11. The documents describe the C layout
   - `ui/README.md` § *Where the screens get their data*: the one-screen paragraph
     describes two columns — the sidebar (**Needs you** / **Everything else**, one-line
     rows `#n · title · flag`, PRs nested under the selected item, the finder behind the
