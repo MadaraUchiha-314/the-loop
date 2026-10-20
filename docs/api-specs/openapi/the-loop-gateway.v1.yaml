@@ -9,8 +9,8 @@ info:
     300 s replay window, url_verification answered). Each stores the delivery on its work item''s subject
     and fans it out to every consuming instance''s queue BEFORE acknowledging. The CONSUMER API under
     /api/v1/gateway is pull: an instance POSTs /fetch for ITS OWN queue, with the previous batch''s outcomes
-    in `commit`, and may hold the request open (`wait`) until a delivery is appended; /claims, /actors
-    and /bindings are the registrations the gateway routes on; health, subjects, queues and instances
+    in `commit`, and may hold the request open (`wait`) until a delivery is appended; /claims, /actors,
+    /bindings and /rooms are the registrations the gateway routes on; health, subjects, queues and instances
     are read-only. No streaming route is offered. The instance-to-gateway boundary carries no authentication
     in this release: the gateway binds loopback unless `listen.exposed: true`. This file is the authored
     contract: cli/tests/test_api_contract_parity.py asserts the served schema matches it, and that every
@@ -230,6 +230,35 @@ paths:
             application/json:
               schema:
                 title: Response Gatewaybind
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/gateway/rooms:
+    put:
+      summary: Rooms
+      description: Replace the instance's rooms, the Slack collaboration channels its work items declared
+        (issue-505). A Slack event in a room with no thread binding resolves to the room's work item, ahead
+        of the static `slack.rooms`; the events held under the channel (`<channel>:<ts>`) are routed when
+        the room is published. A room another instance holds with a live lease is kept and reported in
+        `refused` (`gateway.refused`, reason `duplicate-room`); a room the set leaves out is retracted. Checked
+        like a claim (allow-listed, a stale peer under a live name is 409).
+      operationId: gatewayPublishRooms
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoomsBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                title: Response Gatewaypublishrooms
         '422':
           description: Validation Error
           content:
@@ -463,6 +492,29 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
+    RoomsBody:
+      properties:
+        instance:
+          type: string
+          title: Instance
+          description: 'The publishing instance''s name: allow-listed like a claim.'
+        peer:
+          type: string
+          title: Peer
+          default: ''
+          description: Its persisted peer id; a different peer under a live name is 409 duplicate-instance.
+        rooms:
+          additionalProperties:
+            type: string
+          type: object
+          title: Rooms
+          description: 'Every room the instance holds, `{Slack channel id: work item ref}`, at most 256. Replaces
+            the instance''s previous set; a room left out is retracted. A key that is not a Slack conversation
+            id (`^[CGD][A-Z0-9_-]{1,20}$`) or a ref that does not parse is 422.'
+      type: object
+      required:
+      - instance
+      title: RoomsBody
     ValidationError:
       properties:
         loc:

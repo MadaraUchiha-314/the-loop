@@ -19,6 +19,7 @@ a name outside the allow-list (``unknown-instance``).
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Set
@@ -107,6 +108,11 @@ NAME_MAX = 128
 SUBJECT_MAX = 256
 KEY_MAX = 512
 ACTORS_MAX = 256
+#: The most rooms one instance may publish (issue-505, abuse case 5).
+ROOMS_MAX = 256
+#: A Slack conversation id — the id half of ``workchannels._SLACK_TARGET_RE``. No
+#: ``:``, so a room can never collide with a thread key ``<channel>:<ts>``.
+SLACK_CHANNEL_RE = re.compile(r"^[CGD][A-Z0-9_-]{1,20}$")
 COMMITS_MAX = 1024
 SEQ_MAX = 2**63 - 1
 #: The most long-polls held open at once (SEC-5); the rest answer as plain polls.
@@ -231,6 +237,43 @@ class BindingBody(BaseModel):
     def _known(cls, value: str) -> str:
         if value not in PROVIDERS:
             raise ValueError(f"unknown provider {value!r}")
+        return value
+
+
+class RoomsBody(BaseModel):
+    instance: str = Field(
+        ...,
+        min_length=1,
+        max_length=NAME_MAX,
+        description="The publishing instance's name: allow-listed like a claim.",
+    )
+    peer: str = Field(
+        "",
+        max_length=NAME_MAX,
+        description="Its persisted peer id; a different peer under a live name is 409.",
+    )
+    rooms: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Every room the instance holds, `{Slack channel id: work item ref}`. "
+        "Replaces the instance's previous set; a room left out is retracted.",
+    )
+
+    @field_validator("rooms")
+    @classmethod
+    def _bounded(cls, value: Dict[str, str]) -> Dict[str, str]:
+        from .adapters.common import slug_of
+
+        if len(value) > ROOMS_MAX:
+            raise ValueError(f"more than {ROOMS_MAX} rooms")
+        for channel, ref in value.items():
+            if not SLACK_CHANNEL_RE.match(channel):
+                raise ValueError(f"{channel[:40]!r} is not a Slack conversation id")
+            if not ref or len(ref) > KEY_MAX:
+                raise ValueError(f"{channel}: the work item ref is empty or too long")
+            try:
+                slug_of(ref)
+            except Exception as exc:  # noqa: BLE001 — a ref the schemes cannot parse
+                raise ValueError(f"{channel}: {exc}") from exc
         return value
 
 
@@ -522,6 +565,53 @@ def build_consume_router(state: GatewayState, **router_kwargs: Any) -> APIRouter
             "routed": len(routed),
         }
 
+    @router.put(f"{API_PREFIX}/rooms", operation_id="gatewayPublishRooms")
+    def rooms(body: RoomsBody) -> Any:
+        """Replace the instance's rooms — the Slack collaboration channels its work
+        items declared (issue-505). A Slack event in a room with no thread binding
+        resolves to the room's work item; the events held under the channel are routed
+        when the room is published. A room another live instance holds is kept and
+        reported in `refused`. Checked like a claim: allow-listed, and a stale peer
+        under a live name is 409."""
+        from .adapters.common import slug_of
+
+        denied = _check_allowed(state, body.instance)
+        if denied is not None:
+            return denied
+        wanted = {channel: (ref, slug_of(ref)) for channel, ref in body.rooms.items()}
+        result = store.publish_rooms(body.instance, wanted, peer=body.peer)
+        if isinstance(result, Refused):
+            return _refused(state, result, instance=body.instance, peer=body.peer)
+        for channel, holder in result.refused:
+            eventlog.emit(
+                "gateway.refused",
+                level="warning",
+                instance=body.instance,
+                reason="duplicate-room",
+                holder=holder,
+                channel=channel,
+            )
+        eventlog.emit(
+            "gateway.rooms",
+            instance=body.instance,
+            rooms=len(result.rooms),
+            routed=len(result.routed),
+            refused=[channel for channel, _ in result.refused] or None,
+        )
+        for event_id, subject in result.routed:
+            eventlog.emit(
+                "subject.routed", event_id=event_id, subject=subject, by="room"
+            )
+        return {
+            "instance": body.instance,
+            "rooms": {channel: body.rooms[channel] for channel in result.rooms},
+            "refused": [
+                {"channel": channel, "holder": holder}
+                for channel, holder in result.refused
+            ],
+            "routed": len(result.routed),
+        }
+
     @router.get(f"{API_PREFIX}/health", operation_id="gatewayHealth")
     def health() -> Dict[str, Any]:
         return state.health()
@@ -580,6 +670,10 @@ def build_consume_router(state: GatewayState, **router_kwargs: Any) -> APIRouter
                     "claims": [
                         {"subject": c.subject, "role": c.role}
                         for c in store.claims_of(i.instance)
+                    ],
+                    "rooms": [
+                        {"channel": channel, "workItem": ref}
+                        for channel, ref in store.rooms_of(i.instance)
                     ],
                 }
                 for i in store.instances()

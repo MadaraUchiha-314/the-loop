@@ -25,7 +25,7 @@ settle.
     compatibility
   - _Test:_ T1 + T8 + T10, `tests/test_gateway_rooms.py` (store cases, abuse 2 and 3,
     migration) (red→green)
-- [ ] 2. Gateway: `PUT /rooms`, the instances view, and resolution order
+- [x] 2. Gateway: `PUT /rooms`, the instances view, and resolution order
   - `RoomsBody` with the id regex, `KEY_MAX`, `ROOMS_MAX`, `slug_of`; the handler, its
     `gateway.rooms` / `gateway.refused` / `subject.routed` records; `rooms` in
     `GET /instances`.

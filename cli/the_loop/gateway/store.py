@@ -1067,7 +1067,7 @@ class SqliteStore:
         now_s = time.time()
         accepted: List[str] = []
         refused: List[Tuple[str, str]] = []
-        routed: List[int] = []
+        routed: List[Tuple[int, str]] = []
         consumers_touched: List[str] = []
         with self._tx() as cur:
             cur.execute(
@@ -1118,7 +1118,7 @@ class SqliteStore:
                 ids, touched = self._route_held_rows(
                     cur, rows, subject, ref, "slack", now
                 )
-                routed.extend(ids)
+                routed.extend((event_id, subject) for event_id in ids)
                 consumers_touched.extend(touched)
         if consumers_touched:
             self._notify(consumers_touched)
