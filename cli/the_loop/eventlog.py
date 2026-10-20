@@ -1312,7 +1312,8 @@ EVENT_TYPES: Dict[str, str] = {
     ),
     "subject.routed": (
         "The stored event's consumers were resolved (event_id, subject, to: the instance "
-        "list, or `unassigned` when none; by: claim | actor | hold | binding | room)."
+        "list, or `unassigned` when none; by: claim | actor | hold | binding | room | late, when a binding or room "
+        "published between the resolve and the append routed it)."
     ),
     "subject.committed": (
         "An instance committed a delivery (instance, seq, event_id, outcome)."

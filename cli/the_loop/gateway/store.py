@@ -533,6 +533,8 @@ class SqliteStore:
                 (env.subject, now),
             )
             seqs = self._fan_out(cur, event_id, consumers, now)
+            if not consumers and held_key and env.provider == "slack":
+                consumers = self._route_late_slack(cur, event_id, env, held_key, now)
         self._notify(consumers)
         return AppendResult(
             event_id=event_id,
@@ -541,6 +543,37 @@ class SqliteStore:
             seqs=tuple(seqs),
             held=not consumers,
         )
+
+    def _route_late_slack(
+        self, cur: sqlite3.Cursor, event_id: int, env: Envelope, held_key: str, now: str
+    ) -> Tuple[str, ...]:
+        """A Slack event about to be held, re-resolved inside the append's write
+        transaction (critic C2): the ingest resolved it in an earlier one, so a thread
+        binding or a room published in between — whose drain could not see this row
+        yet — still routes it. Thread binding first, then the room (R2.4)."""
+        cur.execute(
+            "SELECT ref, slug FROM bindings WHERE provider = 'slack' AND key = ?",
+            (held_key,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            cur.execute(
+                "SELECT ref, slug FROM rooms WHERE channel = ?",
+                (held_key.split(":", 1)[0],),
+            )
+            row = cur.fetchone()
+        if row is None:
+            return ()
+        ref, slug = str(row[0]), str(row[1])
+        subject = subject_for_slug(slug)
+        cur.execute(
+            "INSERT OR IGNORE INTO subjects(subject, first_seen) VALUES (?, ?)",
+            (subject, now),
+        )
+        _, consumers = self._route_held_rows(
+            cur, [(event_id, env.actor, True)], subject, ref, "slack", now
+        )
+        return tuple(consumers)
 
     def _fan_out(
         self, cur: sqlite3.Cursor, event_id: int, consumers: Sequence[str], now: str

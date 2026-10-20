@@ -538,3 +538,28 @@ def test_the_drain_leaves_an_event_a_thread_binding_already_claimed(store):
     store.publish_rooms("laptop-b", {"C0123ABCD": (REF, SLUG)})
     assert subject_of(store, event) == "loop-github-o-r-2"
     assert store.fetch("laptop-b", 0, 10).deliveries == []
+
+
+def test_a_room_published_between_resolve_and_append_still_routes_the_event(
+    gw, monkeypatch
+):
+    """Critic C2: the ingest resolves, then appends in another transaction."""
+    import json
+
+    import the_loop.gateway.adapters.ingest as ingest_mod
+
+    gw.store.claim(SUBJECT, "laptop-a", "driver")
+    real_resolve = ingest_mod.resolve_ref
+
+    def resolve_then_publish(*args, **kwargs):
+        resolved = real_resolve(*args, **kwargs)  # unassigned: no room yet
+        gw.store.publish_rooms("laptop-a", {"C0123ABCD": (REF, SLUG)})
+        return resolved
+
+    monkeypatch.setattr(ingest_mod, "resolve_ref", resolve_then_publish)
+    payload = _slack_event("C0123ABCD", "1700.7")
+    ingest_mod.Ingest(gw.state).accept(
+        "slack", "socket", "events_api", "d-race", {}, json.dumps(payload).encode()
+    )
+    (delivery,) = gw.store.fetch("laptop-a", 0, 10).deliveries
+    assert delivery.event.subject == SUBJECT and delivery.event.work_item == REF

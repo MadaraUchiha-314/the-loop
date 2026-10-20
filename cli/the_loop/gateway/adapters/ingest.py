@@ -168,18 +168,21 @@ class Ingest:
             kind=kind,
             delivery_id=delivery_id,
         )
+        # a binding or room published between the resolve and the append routed it
+        # inside the append (issue-505, critic C2)
+        late = bool(result.consumers) and not routing.consumers
         eventlog.emit(
             "subject.routed",
             event_id=result.event_id,
             subject=resolved.subject,
-            to=list(routing.consumers) if routing.consumers else "unassigned",
-            by=routing.by,
+            to=list(result.consumers) if result.consumers else "unassigned",
+            by="late" if late else routing.by,
         )
         return Outcome(
             status="stored",
             event_id=result.event_id,
             subject=resolved.subject,
-            consumers=tuple(routing.consumers),
+            consumers=tuple(result.consumers),
             held=result.held,
         )
 
