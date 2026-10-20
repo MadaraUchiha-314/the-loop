@@ -10,8 +10,11 @@ workItem: "github:MadaraUchiha-314/the-loop#505"
 - **Mechanism:** both. The built-in `/security-review` skill, run as an independent
   sub-agent over `git diff origin/main -- cli/the_loop`, and the-loop's checklist
   (`reference/security.md`), checked against the diff below.
-- **Outcome:** the checklist passes (below). The `/security-review` run is in progress,
-  and its result is recorded here before this node is completed.
+- **Outcome:** pass. The `/security-review` run reported no vulnerability at confidence
+  8 or above. It checked SQL parameterization, the allow-list and peer checks on the new
+  route, cross-instance takeover and retraction, channel id and ref validation, routing
+  precedence, the data exposed by `GET /instances` and the event log, and the client's
+  handling of the gateway's untrusted answer. The checklist also passes (below).
 - **Findings:** none.
 - **Human sign-off:** n/a. Effective risk tier 3: the diff touches no fixed sensitive
   path (`*schema*`, `.the-loop/**`, `.github/workflows/**`, `auth`, `secret`,
