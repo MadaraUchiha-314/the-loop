@@ -715,11 +715,26 @@ class GatewayClient:
 
 def _declared_rooms(channel_store: Any) -> Dict[str, str]:
     """``{channel id: work item ref}`` for the declared Slack channels. ``targets``
-    already leaves a contested channel out (R1.5); the directory is listed first so a
-    read failure raises instead of reading as "no rooms"."""
-    from ..workchannels import SLACK
+    already leaves a contested channel out (R1.5).
 
-    channel_store.store.refs()
+    The record reader degrades an unreadable or corrupt file to "nothing recorded",
+    which here would retract that work item's room. So every record is read strictly
+    first, and any failure raises ``OSError`` / ``ValueError`` — the caller then keeps
+    the gateway's rooms as they are (critic C3, fail closed)."""
+    import json as json_mod
+
+    from ..workchannels import SLACK
+    from ..workitem import INDEX_FILE
+
+    root = Path(channel_store.root)
+    if root.exists():
+        for path in sorted(root.iterdir()):
+            if path.suffix != ".json" or path.name == INDEX_FILE:
+                continue
+            try:
+                json_mod.loads(path.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                continue  # removed since the listing: a real removal
     return channel_store.targets(SLACK)
 
 

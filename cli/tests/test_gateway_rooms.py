@@ -513,11 +513,26 @@ def test_abuse_an_unreadable_directory_retracts_nothing(
     declared.add(REF, "slack@C0123ABCD", actor="op")
     client, transport = _gateway_client(gw, tmp_path, declared)
     client.step()
+    real_iterdir = type(declared.root).iterdir
 
-    def unreadable():
-        raise PermissionError("denied")
+    def unreadable(path):
+        if path == declared.root:
+            raise PermissionError("denied")
+        return real_iterdir(path)
 
-    monkeypatch.setattr(declared.store, "refs", unreadable)
+    monkeypatch.setattr(type(declared.root), "iterdir", unreadable)
+    assert client.publish_rooms(force=True) is False
+    assert len(_rooms_calls(transport)) == 1
+    assert gw.store.resolve_room("C0123ABCD") == (REF, SLUG)
+
+
+def test_abuse_a_corrupt_record_retracts_nothing(gw, tmp_path, declared):
+    """Critic C3: the record reader swallows a corrupt file; the snapshot must not."""
+    declared.add(REF, "slack@C0123ABCD", actor="op")
+    client, transport = _gateway_client(gw, tmp_path, declared)
+    client.step()
+    (record,) = [p for p in declared.root.glob("*.json") if p.name != "index.json"]
+    record.write_text("{not json", encoding="utf-8")
     assert client.publish_rooms(force=True) is False
     assert len(_rooms_calls(transport)) == 1
     assert gw.store.resolve_room("C0123ABCD") == (REF, SLUG)
