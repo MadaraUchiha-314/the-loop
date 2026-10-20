@@ -13,4 +13,4 @@ implementation.
 
 | PR | Repository | Scope / tasks | Status |
 |----|------------|---------------|--------|
-| [#513](https://github.com/MadaraUchiha-314/the-loop/pull/513) | MadaraUchiha-314/the-loop | spec chain (requirements so far) | draft |
+| [#513](https://github.com/MadaraUchiha-314/the-loop/pull/513) | MadaraUchiha-314/the-loop | spec chain (requirements, design, testing plan) | draft |
