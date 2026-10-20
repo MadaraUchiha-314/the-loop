@@ -106,24 +106,37 @@ on/off, selected) and a pair of stills shows it.
 
 ## Verification activities
 
-- [ ] T1/T2/T8/T9 — `cd ui && bun run test`
-- [ ] T12 — `cd ui && bun run lint && bun run build`, then `ls -l ui/dist/assets` against the 20.5.1 sizes
-- [ ] T12 — `git diff --stat origin/main -- ui/src/api ui/src/state ui/src/demo` (expect empty)
-- [ ] T13 — `npx --yes markdownlint-cli2@0.18.1 "**/*.md"`
-- [ ] T8 — `grep -rn "dangerouslySetInnerHTML\|innerHTML\|eval(" ui/src ui/index.html` (expect no matches)
-- [ ] T9 — `grep -n "prefers-reduced-motion" ui/src/styles/app.css` (expect a match)
-- [ ] T5 — `node ui/scripts/screenshots.mjs <out-dir>` against `bun run preview` over `dist/`, both themes, 1440×900 and 390×844; copy the captures under `evidence/ui/`
-- [ ] T14 — read `ui/README.md` and `docs/capabilities/control-plane.md` against the inventory's C column; record in `evidence/documentation.md`
+- [x] T1/T2/T8/T9 — `cd ui && bun run test`
+- [x] T12 — `cd ui && bun run lint && bun run build`, then `ls -l ui/dist/assets` against the 20.5.1 sizes
+- [x] T12 — `git diff --stat origin/main -- ui/src/api ui/src/state ui/src/demo` (expect empty)
+- [x] T13 — `npx --yes markdownlint-cli2@0.18.1 "**/*.md"`
+- [x] T8 — `grep -rn "dangerouslySetInnerHTML\|innerHTML\|eval(" ui/src ui/index.html` (expect no matches)
+- [x] T9 — `grep -n "prefers-reduced-motion" ui/src/styles/app.css` (expect a match)
+- [x] T5 — `node ui/scripts/screenshots.mjs <out-dir>` against `bun run preview` over `dist/`, both themes, 1440×900 and 390×844; copy the captures under `evidence/ui/`
+- [x] T14 — read `ui/README.md` and `docs/capabilities/control-plane.md` against the inventory's C column; record in `evidence/documentation.md`
 
 ## Verification results
 
-*Not yet executed.*
+Executed on 2026-10-20 on branch `issue-511-declutter-control-plane` at the head of the
+implementation commits, in demo mode, no credentials. Every planned activity ran and
+passed; the n/a rows stayed n/a as planned.
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1 unit | `cd ui && bun run test` | pass — 22 files, 366 tests | [`evidence/unit.md`](evidence/unit.md) |
+| T2 integration · T9 accessibility | `cd ui && bun run test` (with `NODE_OPTIONS=--no-experimental-webstorage` on this Node 26 workstation; not needed on CI's Node 22) | pass — every scenario title of the trace table has a test | [`evidence/integration.md`](evidence/integration.md) |
+| T8 security / abuse case | `cd ui && bun run test`; `grep -rn "dangerouslySetInnerHTML\|innerHTML\|eval(" ui/src ui/index.html` | pass — abuse cases 1 and 2 and the four fail-closed signals; the grep has no match | [`evidence/security.md`](evidence/security.md) |
+| T9 reduced motion | `grep -n "prefers-reduced-motion" ui/src/styles/app.css` | pass — one match, the guard unchanged | [`evidence/integration.md`](evidence/integration.md) |
+| T12 lint · typecheck · build | `cd ui && bun run lint && bun run build` | pass — oxlint clean; `tsc --noEmit` clean; built in 1.29 s | [`evidence/lint-and-typecheck.md`](evidence/lint-and-typecheck.md), [`evidence/build.md`](evidence/build.md) |
+| T12 bundle | `ls -l ui/dist/assets` against the branch point | pass — JS 337 157 B (was 341 685), CSS 24 421 B (was 24 469) | [`evidence/build.md`](evidence/build.md) |
+| T12 untouched directories | `git diff --stat origin/main -- ui/src/api ui/src/state ui/src/demo` | pass — empty | [`evidence/build.md`](evidence/build.md) |
+| T13 markdown lint | `npx --yes markdownlint-cli2@0.18.1 "**/*.md"` | pass — 1764 files, 0 errors | [`evidence/lint-and-typecheck.md`](evidence/lint-and-typecheck.md) |
+| T5 UI / visual | `node ui/scripts/screenshots.mjs <out> http://localhost:4173/the-loop/ui/` over `bun run preview --port 4173` | pass — 32 stills, both themes, 1440×900 and 390×844, no page error; before/after 56 → 27 | [`evidence/ui-visual.md`](evidence/ui-visual.md), [`evidence/ui/`](evidence/ui/) |
+| T14 documentation parity | `ui/README.md` and `docs/capabilities/control-plane.md` read against the inventory's C column | pass | [`evidence/documentation.md`](evidence/documentation.md) |
 
-**Not executed:** T3, T4, T6, T7, T10, T11 — n/a as planned.
+**Not executed:** T3, T4, T6, T7, T10, T11 — n/a as planned (no contract, data-path,
+snapshot, performance, migration or live-service change; the bundle check stands in for
+T7 and the owner's PR review, with the stills beside the prototype's, for T11).
 
 ## Review comments
 

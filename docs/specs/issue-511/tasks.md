@@ -267,7 +267,7 @@ abuse cases of `design.md` § Security design are tests like any other (task 9).
     "docs/capabilities/control-plane.md" "docs/specs/issue-511/*.md"` clean; the two
     sections read against the inventory's C column and quoted in
     `evidence/documentation.md` (task 12)
-- [ ] 12. Checkpoint: the whole plan, the evidence records, the bundle
+- [x] 12. Checkpoint: the whole plan, the evidence records, the bundle
   - Run `testing-plan.md` § Verification activities end to end and tick each only when
     it has run: `cd ui && bun run lint && bun run test && bun run build`; `ls -l
     ui/dist/assets` against JS 341 685 B / CSS 24 469 B (not larger); `git diff --stat
