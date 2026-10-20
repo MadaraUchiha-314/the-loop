@@ -37,7 +37,7 @@ code task reads what it produces. The docs task waits for the behaviour to settl
   - _Requirements:_ R1.2, R3.3, R4.1–R4.3, R6.2, R6.3
   - _Test:_ T1 + T8, `tests/test_slack_gateway_read_mode.py` (`enabled_services`,
     listener refusals AC3, status rows, the warning) (red→green)
-- [ ] 3. Make `channels status` tell the truth
+- [x] 3. Make `channels status` tell the truth
   - `read: gateway — …`.
   - Two `[!]` lines: no block, and socket beside a block.
   - `commands`, `mentions`, `shortcuts` and the kickoff line use `push_reachable` and

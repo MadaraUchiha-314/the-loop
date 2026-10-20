@@ -292,3 +292,81 @@ def test_the_gateway_client_warns_once_about_socket_beside_it(
         assert ingress._start_gateway_client(config(tmp_path, mode)) == (None, "held")
     hit = "read.mode: gateway" in caplog.text and "migrate-config" in caplog.text
     assert hit is warned
+
+
+# -- R6.1 / R3.2 / R4.2: `channels status` tells the truth -------------------------
+
+
+def _channels_status(tmp_path, monkeypatch, capsys, cfg):
+    import argparse
+    import json
+
+    from the_loop.commands.channels_cmd import ChannelsCommand
+
+    path = tmp_path / "cli-config.yaml"
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+    monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(path))
+    parser = argparse.ArgumentParser()
+    ChannelsCommand().add_arguments(parser)
+    assert ChannelsCommand().run(parser.parse_args(["status"])) == 0
+    return capsys.readouterr().out
+
+
+def test_channels_status_in_gateway_mode(tmp_path, monkeypatch, capsys):
+    """R6.1: `read: gateway`, everything interactive available through the gateway,
+    and no app-level-token step — the gateway holds that token."""
+    monkeypatch.delenv("THE_LOOP_SLACK_APP_TOKEN", raising=False)
+    out = _channels_status(tmp_path, monkeypatch, capsys, config(tmp_path, "gateway"))
+    assert "  read:         gateway — events arrive through the gateway client" in out
+    assert "https://gateway.example" in out and "no Socket Mode connection" in out
+    assert "Approve / Request changes: on · Execute / Start: on" in out
+    assert "mint an app-level token" not in out
+    assert "  commands:     /the-loop through the gateway" in out
+    assert "  mentions:     @the-loop is the address" in out
+    assert "through the gateway" in out.split("  shortcuts:")[1].splitlines()[0]
+    # The picker is not refused for the read mode (here only for want of a
+    # declared repository, which is the kickoff's own rule).
+    assert "cannot ask which repository — read.mode" not in out
+    assert "[!]" not in out.split("subscribable events")[0]
+
+
+def test_channels_status_flags_gateway_mode_without_a_block(
+    tmp_path, monkeypatch, capsys
+):
+    """R3.2: nothing reads Slack, and the line says why."""
+    out = _channels_status(
+        tmp_path, monkeypatch, capsys, config(tmp_path, "gateway", gateway=False)
+    )
+    assert (
+        "[!] read.mode is gateway but no gateway block is configured — nothing "
+        "reads Slack"
+    ) in out
+    assert "  read:         off" in out
+    assert "Approve / Request changes: off" in out
+
+
+def test_channels_status_flags_socket_beside_a_block(tmp_path, monkeypatch, capsys):
+    """R4.2: the 20.3.0 form is named and the fix given."""
+    out = _channels_status(tmp_path, monkeypatch, capsys, config(tmp_path, "socket"))
+    assert "[!] read.mode is socket beside a gateway block" in out
+    assert "the-loop migrate-config" in out and "read.mode: gateway" in out
+
+
+def test_channels_status_socket_without_a_block_is_unchanged(
+    tmp_path, monkeypatch, capsys
+):
+    """Behaviour preserved."""
+    out = _channels_status(
+        tmp_path, monkeypatch, capsys, config(tmp_path, "socket", gateway=False)
+    )
+    assert "  commands:     /the-loop over Socket Mode" in out
+    assert "beside a gateway block" not in out
+
+
+def test_channels_status_poll_beside_a_block_names_gateway_as_the_step(
+    tmp_path, monkeypatch, capsys
+):
+    """R6.1: with a block present, the step to turn buttons on is `gateway`."""
+    out = _channels_status(tmp_path, monkeypatch, capsys, config(tmp_path, "poll"))
+    assert "set channels.slack.read.mode: gateway (now: poll)" in out
+    assert "mint an app-level token" not in out

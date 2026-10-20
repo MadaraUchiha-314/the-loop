@@ -39,12 +39,36 @@ from ..channels.slack import (
     slack_state_path,
     unchecked_advice,
 )
+from ..cli_config import gateway_block
 from ..repos import declared_repositories
 from ..channels.state import ChannelState, ChannelStores, canonical
 
 
 def _presence(env_name: str) -> str:
     return "set" if os.environ.get(env_name) else "unset"
+
+
+def _transport(slack: SlackChannelConfig) -> str:
+    """How an interactive payload reaches this instance (issue-503)."""
+    return "through the gateway" if slack.read_mode == "gateway" else "over Socket Mode"
+
+
+def _read_mode_findings(config: dict) -> list:
+    """The two issue-503 misconfigurations, read off the raw config: a ``gateway`` mode
+    the parse switched off for want of a block (R3.2), and 20.3.0's ``socket`` beside a
+    block (R4.2)."""
+    from ..core.lifecycle import GATEWAY_MISSING, socket_beside_gateway
+
+    raw = ((config.get("channels") or {}).get("slack") or {}).get("read") or {}
+    mode = raw.get("mode") if isinstance(raw, dict) else None
+    if mode == "gateway" and gateway_block(config) is None:
+        return ["  [!] " + GATEWAY_MISSING.removeprefix("off · ")]
+    if socket_beside_gateway(config):
+        return [
+            "  [!] read.mode is socket beside a gateway block — the listener stays "
+            "off; run the-loop migrate-config to set read.mode: gateway"
+        ]
+    return []
 
 
 def _status(config: dict, probe: bool = False) -> int:
@@ -85,9 +109,17 @@ def _status(config: dict, probe: bool = False) -> int:
             if slack.catch_up_seconds
             else ", reconciling only at connect (read.catchUpSeconds: 0)"
         )
+    elif slack.read_mode == "gateway":
+        block = gateway_block(config)
+        cadence = (
+            " — events arrive through the gateway client"
+            f" ({block.url if block else '?'}); no Socket Mode connection here"
+        )
     else:
         cadence = ""
     print(f"  read:         {slack.read_mode}{cadence}")
+    for line in _read_mode_findings(config):
+        print(line)
     for line in _split_check_lines(slack, config):
         print(line)
     for line in _subscription_lines(slack, probe, config):
@@ -131,16 +163,16 @@ def _status(config: dict, probe: bool = False) -> int:
     # or why none can arrive at all.
     from ..channels.commands import FAMILY_GRANTS
 
-    if slack.read_mode == "socket":
+    if slack.push_reachable:
         families = " · ".join(
             f"{family}: {'granted' if grant in slack.publish else 'not granted'}"
             for family, grant in FAMILY_GRANTS.items()
         )
-        print(f"  commands:     /the-loop over Socket Mode — {families}")
+        print(f"  commands:     /the-loop {_transport(slack)} — {families}")
     else:
         print(
             f"  commands:     off (read.mode is {slack.read_mode} — slash commands "
-            "need read.mode: socket)"
+            "need read.mode: socket or gateway)"
         )
     # The address (issue-389): a mention is the one way a message in a room
     # reaches the-loop, and it arrives only over Socket Mode — so `status`
@@ -328,26 +360,26 @@ def _mention_lines(slack: SlackChannelConfig, stores: ChannelStores) -> list:
     Read from the config and the portable declarations only — no Slack call;
     `--probe` is what measures the scope (`mention_findings`).
     """
-    if slack.read_mode == "socket":
+    if slack.push_reachable:
         mentions = (
-            f"@the-loop is the address in every channel — {MENTION.event} over "
-            f"Socket Mode; needs the bot scope {MENTION.scope} (`--probe` "
+            f"@the-loop is the address in every channel — {MENTION.event} "
+            f"{_transport(slack)}; needs the bot scope {MENTION.scope} (`--probe` "
             "measures it). A DM with the bot and a room declared --listen all "
             "also hear plain messages"
         )
         shortcuts = (
             "Add as the-loop context / Record the-loop decision "
-            f"({', '.join(MENTION_SHORTCUTS)}) over Socket Mode — each exactly "
+            f"({', '.join(MENTION_SHORTCUTS)}) {_transport(slack)} — each exactly "
             "the typed mention"
         )
     else:
         mentions = (
             f"off (read.mode is {slack.read_mode} — nothing addressed can "
-            f"arrive; {MENTION.event} needs read.mode: socket)"
+            f"arrive; {MENTION.event} needs read.mode: socket or gateway)"
         )
         shortcuts = (
             f"off (read.mode is {slack.read_mode} — a message shortcut needs "
-            "read.mode: socket)"
+            "read.mode: socket or gateway)"
         )
     targets = stores.declared_targets()
     hearing_all = sum(1 for target in targets if stores.listen_mode(target) == "all")
@@ -377,14 +409,17 @@ def _button_lines(slack: SlackChannelConfig) -> list:
     )
     app_token = _presence(slack.app_token_env)
     steps: list = []
-    if app_token != "set":
+    # Behind a gateway the app-level token is the gateway's (issue-503): this
+    # instance opens no connection, so it neither needs the token nor `socket`.
+    if app_token != "set" and not slack.gateway:
         steps.append(
             "mint an app-level token: api.slack.com/apps → your app → Basic "
             "Information → App-Level Tokens → Generate (scope connections:write), "
             f"and export it as {slack.app_token_env} (now: {app_token})"
         )
-    if slack.read_mode != "socket":
-        steps.append(f"set channels.slack.read.mode: socket (now: {slack.read_mode})")
+    if not slack.push_reachable:
+        wanted = "gateway" if slack.gateway else "socket"
+        steps.append(f"set channels.slack.read.mode: {wanted} (now: {slack.read_mode})")
     missing = [
         f"{grant} ({label})"
         for grant, label in (
@@ -402,8 +437,14 @@ def _button_lines(slack: SlackChannelConfig) -> list:
         "shows the slack-listener row, and this line reads on"
     )
     lines = [
-        head + " — a press reaches the-loop only over a Socket Mode listener connected "
-        "with the app-level token. Still needed:"
+        head
+        + (
+            " — a press reaches this instance only through the gateway client. "
+            if slack.gateway
+            else " — a press reaches the-loop only over a Socket Mode listener "
+            "connected with the app-level token. "
+        )
+        + "Still needed:"
     ]
     lines += [f"                  {n}. {step}" for n, step in enumerate(steps, 1)]
     return lines
