@@ -772,6 +772,9 @@ def process_reply(
         "url": (record.url if record else "") or "",
         "person": (actor.label if actor else "") or f"{reply.channel}:{reply.author}",
     }
+    if event_type == "work-item.reply" and not parse_standing_ref(reply.work_item):
+        # Before the session can answer, so the answer finds it (issue-507).
+        _note_reply_thread(bot, reply)
     delivered, error = _deliver(
         replace(reply, text=pane_text if kind == "reply" else text),
         cli_config,
@@ -793,6 +796,29 @@ def process_reply(
         link = f" — {record.url}" if record.url else ""
         bot.say(reply.thread, f"{what} on `{reply.work_item}`{link}", reply.channel_id)
     return outcome
+
+
+def _note_reply_thread(bot: SlackBotChannel, reply: InboundReply) -> None:
+    """Remember the thread ``reply`` was typed in as its work item's reply
+    thread, so the agent's next comments are posted there (issue-507 R1.1).
+
+    A mention at the top level — its own thread root — clears it (R2.2), so its
+    answer is top-level, as before. Best-effort (R3.1): a lock or save that fails
+    leaves the answer top-level and never fails the reply.
+    """
+    in_thread = bool(reply.thread) and reply.thread != reply.ts
+    try:
+        with ChannelState.locked(bot.state_path, bot.stores) as state:
+            state.remember_delivery(
+                reply.work_item,
+                replyChannel=reply.channel_id if in_thread else "",
+                replyThread=reply.thread if in_thread else "",
+            )
+            state.save(bot.state_path)
+    except Exception as exc:  # noqa: BLE001 — never fails the reply
+        logger.debug(
+            "slack: could not note the reply thread for %s (%s)", reply.work_item, exc
+        )
 
 
 def _selection_checklist(work_item: str, cli_config: Optional[Mapping]) -> str:

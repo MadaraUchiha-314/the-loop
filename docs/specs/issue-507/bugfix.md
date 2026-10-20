@@ -108,9 +108,9 @@ thread somebody once asked in does not swallow the work item's updates.
    `work-item.reply` THEN the system SHALL clear the reply thread, so the answer is a
    top-level message as it is today.
 3. WHEN any event other than `comment.agent` or a within-phase progress event
-   (`phase.progress`, `*.progress`) is posted to Slack for the work item THEN the system
-   SHALL clear the reply thread before posting, and SHALL post that event exactly where
-   it is posted today.
+   (`phase.progress`, `*.progress`) is handed to the Slack channel for the work item THEN
+   the system SHALL clear the reply thread first, even when RoomPolicy then drops that
+   event, and SHALL post it exactly where it is posted today.
 4. WHEN no reply thread is remembered THEN every event SHALL be posted exactly as it is
    today.
 

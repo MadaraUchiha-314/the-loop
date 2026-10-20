@@ -2466,12 +2466,14 @@ class SlackBotChannel:
             raise self._no_channel(event.work_item)
         client = self._client()
         bound: Optional[Tuple[str, str]] = None
+        reply_to = ""
         if event.work_item:
             with ChannelState.locked(self.state_path, self.stores) as state:
                 before = state.conversation_for(event.work_item)
                 bound = self._conversation(client, state, event.work_item)
                 if before == bound and state.backfilled:
                     state.save(self.state_path)  # a 13.0.1 file, now keyed (R3.4)
+                reply_to = self._reply_thread(state, event, bound)
         # The agentic voice (issue-393 B4) applies to a work item's own ROOM — a
         # channel-mode binding, `thread_ts == ""` with a channel — and only when
         # the operator has not asked for the classic rendering. A shared channel,
@@ -2531,8 +2533,9 @@ class SlackBotChannel:
                     text=text,
                     blocks=blocks,
                     # A room conversation has no thread (issue-378): top-level,
-                    # never `thread_ts=""`, which Slack refuses.
-                    thread_ts=(bound[1] or None) if bound else None,
+                    # never `thread_ts=""`, which Slack refuses — unless the agent
+                    # is answering a mention in a thread (issue-507).
+                    thread_ts=reply_to or ((bound[1] or None) if bound else None),
                 )
         except ChannelError:
             raise
@@ -2541,11 +2544,43 @@ class SlackBotChannel:
         # Record what the room now holds, so the next decision reads it (B5).
         if agentic and event.work_item:
             self._remember_delivery(event, decision, str(response.get("ts") or ""))
+        posted_plain = decision.action not in (room_policy.EDIT, room_policy.THREAD)
+        if reply_to and posted_plain:
+            return PostResult(channel=self.name, ok=True, thread=reply_to)
         if bound and bound[1]:
             return PostResult(channel=self.name, ok=True, thread=bound[1])
         return PostResult(
             channel=self.name, ok=True, thread=str(response.get("ts") or "")
         )
+
+    def _reply_thread(
+        self, state: ChannelState, event: Event, bound: Optional[Tuple[str, str]]
+    ) -> str:
+        """The thread ``event`` answers in, or ``""`` (issue-507).
+
+        A ``comment.agent`` goes to the work item's reply thread — the thread of
+        the last mention delivered from one — when that thread is in the channel
+        the conversation is bound to (R1.2, R3.2). Any other event, progress
+        aside, starts a new conversation and clears it first (R2.3). Called inside
+        :meth:`post`'s lock; a failure degrades to ``""``, today's top level.
+        """
+        try:
+            memory = state.delivery_for(event.work_item)
+            thread, channel = memory["replyThread"], memory["replyChannel"]
+            if not thread:
+                return ""
+            if event.event_type == "comment.agent":
+                return thread if bound and channel == bound[0] else ""
+            if not room_policy.is_progress(event.event_type):
+                state.remember_delivery(
+                    event.work_item, replyChannel="", replyThread=""
+                )
+                state.save(self.state_path)
+        except Exception as exc:  # noqa: BLE001 — never fails a post (R3.1)
+            logger.debug(
+                "slack: reply thread for %s unavailable (%s)", event.work_item, exc
+            )
+        return ""
 
     def open(self, work_item: str, *, origin: str = "start") -> PostResult:
         """Open ``work_item``'s thread now — the root alone, no reply — or

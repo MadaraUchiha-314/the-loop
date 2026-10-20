@@ -56,6 +56,7 @@ __all__ = [
     "EDIT",
     "THREAD",
     "decide",
+    "is_progress",
     "GATE_PENDING_EVENTS",
     "LIFECYCLE_EVENTS",
     "PROGRESS_EVENTS",
@@ -114,7 +115,9 @@ def _phase_of(event: Any) -> str:
     return str(detail.get("phase") or detail.get("node") or "")
 
 
-def _is_progress(event_type: str) -> bool:
+def is_progress(event_type: str) -> bool:
+    """Whether ``event_type`` is a within-phase progress event — one that edits
+    a phase's message rather than starting a new conversation in the room."""
     return event_type in PROGRESS_EVENTS or event_type.endswith(".progress")
 
 
@@ -224,7 +227,7 @@ def decide(
 
     # progress-edit — a within-phase progress event edits that phase's one
     # message; the first one posts and is remembered, the rest edit it.
-    if _is_progress(event_type):
+    if is_progress(event_type):
         phase = _phase_of(event)
         existing = progress_ts.get(phase)
         if existing:

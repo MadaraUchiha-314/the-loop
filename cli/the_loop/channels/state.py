@@ -927,6 +927,10 @@ def _delivery_record(info: Dict[str, Any]) -> Dict[str, Any]:
         # The node the session last spoke for (issue-393 B9/R12.3), so a later
         # runtime template for it is suppressed.
         "sessionSpokeFor": str(info.get("sessionSpokeFor") or ""),
+        # The thread of the last in-thread mention delivered for the item
+        # (issue-507), so the agent's answer is posted where it was asked.
+        "replyChannel": str(info.get("replyChannel") or ""),
+        "replyThread": str(info.get("replyThread") or ""),
     }
 
 
