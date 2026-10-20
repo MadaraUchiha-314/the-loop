@@ -69,7 +69,7 @@ abuse cases of `design.md` § Security design are tests like any other (task 9).
   - *Requirements:* R2.4, R2.5, R3.3, R6.1
   - *Test:* T2 / T9 — `ui/src/components/GraphStrip.test.tsx`: nothing renders while
     collapsed; expanded renders every node with `aria-current="step"` on the current
-    one and no `of … passed` / `skipped` / `at ` text; `compactRail` and `railLabel`
+    one and no `of … passed` / `skipped` / `at <node>` text; `compactRail` and `railLabel`
     cases unchanged (red→green)
 - [ ] 3. `SessionTabs` renders only for more than one session, without the tally
   - `ui/src/components/SessionTabs.tsx`: return `null` when `view.pullRequests` is
