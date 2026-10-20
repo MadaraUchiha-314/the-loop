@@ -152,8 +152,8 @@ def test_each_setting_states_its_default_before_its_rows():
         default = section.index("**Default:**")
         row = _ROW.search(section)
         assert row is None or default < row.start(), section[:60]
-    assert "**Default:** `claude`, this deployment's default." in body
-    assert "**Default:** `sonnet`, the `claude` harness's default model." in body
+    assert "**Default:** `claude` — already ticked." in body
+    assert "**Default:** `sonnet` — already ticked." in body
     assert "**Default:** `cross-repository`" in body
 
 
@@ -182,7 +182,7 @@ def test_no_fact_the_comment_stated_is_lost():
         "none declared — this item's updates go to the operator's central channel",
         "a comment may carry only one keyword",
         "A model or effort ticked below is kept only if the harness it ends up on",
-        "Ticking more than one means the same thing",
+        "ticking more than one, falls back to the harness's own setting",
         "Every phase of this loop is selectable",
         "recorded as its own declared choice",
     ):
@@ -202,7 +202,7 @@ def test_the_rows_read_back_exactly_as_the_graph_lists_them():
     assert [r.token for r in rows.phases] == [
         n.id for n in ordered if n.skippable and not n.opt_in
     ] + [n.id for n in ordered if n.opt_in]
-    assert rows.surface is not None and not rows.surface.ticked
+    assert rows.surface is not None and rows.surface.ticked
     assert [r.token for r in rows.others] == [
         selection.CLAUDE_ARTIFACT_TOKEN,
         selection.EXPLAINER_TOKEN,
@@ -216,7 +216,8 @@ def test_the_rows_read_back_exactly_as_the_graph_lists_them():
     ]
     for node in ordered:
         if node.skippable and not node.opt_in:
-            assert f"\n- [x] {node.id}\n" in body, node.id
+            mark = " " if node.id in selection.UNTICKED_BY_DEFAULT else "x"
+            assert f"\n- [{mark}] {node.id}\n" in body, node.id
 
 
 def test_only_the_protected_phases_read_as_always_runs():

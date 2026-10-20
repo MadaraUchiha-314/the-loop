@@ -720,7 +720,7 @@ def test_the_surface_row_is_never_read_as_a_phase(selecting, repo, fake_github):
 def test_the_posted_checklist_offers_the_surface_row(selecting, repo, fake_github):
     selecting.start(WORK_ITEM, ref="github:o/r#1")
     posted = fake_github.posted[0]
-    assert "- [ ] `outer-loop-on-pull-request`" in posted
+    assert "- [x] `outer-loop-on-pull-request`" in posted
     assert "Where should the outer loop happen?" in posted
 
 
@@ -1095,6 +1095,8 @@ def test_the_checklist_says_so_when_nothing_is_protected(repo, fake_github):
 
 def test_the_shipped_checklist_offers_every_phase_the_item_walks(repo, fake_github):
     """M12, R1.7 — against the SHIPPED graph, not a fixture of it."""
+    from the_loop.graph.hooks.selection import UNTICKED_BY_DEFAULT
+
     runtime = Runtime(repo, graph=load_graph(), config={"authorizedUsers": ["@owner"]})
     runtime.start(WORK_ITEM, ref="github:o/r#1")
     body = fake_github.posted[0]
@@ -1110,6 +1112,9 @@ def test_the_shipped_checklist_offers_every_phase_the_item_walks(repo, fake_gith
             # must never be rendered as a ticked row.
             assert f"- [ ] {node.id}" in body, node.id
             assert f"- [x] {node.id}" not in body, node.id
+        elif node.id in UNTICKED_BY_DEFAULT:
+            # issue-510: default-on in the graph, rendered unticked.
+            assert f"- [ ] {node.id}" in body, node.id
         elif node.skippable:
             assert f"- [x] {node.id}" in body, node.id
     assert "- [x] phase-selection" not in body

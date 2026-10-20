@@ -75,17 +75,20 @@ protected phases are refused and named in the confirmation; a reply with no list
 full process.
 
 ```text
-- [x] brainstorming
+- [ ] brainstorming             ← rendered unticked (issue-510), as is
+                                   brainstorm-approval: tick to brainstorm
 - [ ] requirements-definition   ← unticked: this phase will be skipped
 - [x] design
 …
 - [ ] design-critic-review        ← an OPT-IN phase: unticked (the default) = it
                                      does not run. Tick it to add it.
 
-- [ ] outer-loop-on-pull-request  ← not a phase: where the OUTER loop happens.
-                                     Unticked (the default) = on the work item.
-- [ ] claude-artifact             ← not a phase: also publish the spec chain as
+- [x] outer-loop-on-pull-request  ← not a phase: where the OUTER loop happens.
+                                     Ticked (the default) = on a pull request;
+                                     unticked = on the work item.
+- [x] claude-artifact             ← not a phase: also publish the spec chain as
                                      one Claude artifact (`claude` harness only).
+                                     Ticked by default (issue-510).
 - [x] explainer                   ← the explainer and two quizzes (issue-488):
                                      ticked (the default) = they run; unticked =
                                      their four nodes are declared skipped.

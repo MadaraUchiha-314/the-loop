@@ -49,10 +49,12 @@ itself, or a pull request in this repository. It belongs here for the same
 reason the phases do: it is a property of **this** work item, not of the
 repository (one project has both a one-repo bugfix and a three-repo migration)
 and not of the operator's machine. One box, signed by the same reply, frozen
-into the same record. **The default is the work item** — leave the box alone and
-the requirements, design and testing plan are iterated on the ticket, which is
-what keeps a multi-repo item from opening a pull request that only ever holds a
-discussion. The INNER loop has no such question: a pull request's loop runs on
+into the same record. The box is rendered **ticked** (issue-510, the owner's
+call): leave it alone and the requirements, design and testing plan are iterated
+on a pull request. Untick it to keep them on the ticket, which is what keeps a
+multi-repo item from opening a pull request that only ever holds a discussion. A
+reply the-loop cannot read still falls back to the work item, the direction
+that opens nothing. The INNER loop has no such question: a pull request's loop runs on
 that pull request.
 
 **And a third question, for the same reason** (issue-260): *how many tmux+claude
@@ -76,7 +78,8 @@ what "there was nothing to choose" looks like when read back.
 
 **And one more, offered rather than asked** (issue-471): *should the spec chain
 also be published as one Claude artifact* — a page with a tab per spec file,
-which its readers can comment on. Off unless ticked, and offered only where
+which its readers can comment on. Rendered ticked (issue-510); a reply without
+the row, or one the-loop cannot read, still means off. Offered only where
 there is a spec chain to publish (the loops that own an outer loop). It is a
 Claude Code capability, so a tick on a work item resolved to any other harness
 is **not applied**, and the confirmation says so. The markdown files stay the
@@ -162,6 +165,16 @@ SURFACE_TOKEN = "outer-loop-on-pull-request"
 #: (issue-471). A bare token like the surface row's — there is one value, so a
 #: prefix would announce a family that does not exist.
 CLAUDE_ARTIFACT_TOKEN = "claude-artifact"
+
+#: Selectable phases rendered UNTICKED on the checklist (issue-510): still
+#: default-on in the graph, so an item already past this gate is unchanged, but a
+#: new item walks them only if somebody ticks them. Leaving the box alone is then
+#: an ordinary declared skip, signed by the replier like any other.
+UNTICKED_BY_DEFAULT = frozenset({"brainstorming", "brainstorm-approval"})
+
+#: The effort row rendered ticked when it is offered (issue-510). The harness and
+#: model rows are ticked from the operator's own defaults; effort has none.
+DEFAULT_EFFORT = "medium"
 
 #: The checklist token that keeps (ticked, the default) or declares away
 #: (unticked) the explainer and the two quizzes (issue-488). It is also the name
@@ -446,7 +459,7 @@ def _choice_lines(ctx: HookContext) -> List[str]:
     # What an unticked model section means (issue-451): the default harness's own
     # default model when the operator declared one, named so nobody is surprised.
     fallback = default_model(ctx.config, harness)
-    for kind, prefix, names, heading, default, about in (
+    for kind, prefix, names, heading, default, about, preset in (
         (
             "harness",
             HARNESS_PREFIX,
@@ -455,6 +468,7 @@ def _choice_lines(ctx: HookContext) -> List[str]:
             f"`{harness}`, this deployment's default.",
             "Not a phase — it is the agent CLI its session is. A model or effort "
             "ticked below is kept only if the harness it ends up on can run it.",
+            harness,
         ),
         (
             "model",
@@ -467,6 +481,7 @@ def _choice_lines(ctx: HookContext) -> List[str]:
                 else "the model this harness is configured with."
             ),
             "Not a phase — it is what the session is.",
+            fallback,
         ),
         (
             "effort",
@@ -475,19 +490,32 @@ def _choice_lines(ctx: HookContext) -> List[str]:
             "🎚️ How hard should it think?",
             "the harness's own default effort.",
             "Not a phase, and independent of the model above.",
+            DEFAULT_EFFORT,
         ),
     ):
         if not names:
             continue
+        # The default row comes ticked (issue-510) when it is on offer, so the
+        # record names what the item runs on instead of leaving it to config.
+        shown = names[:CANDIDATE_LIMIT]
+        preset = preset if preset in shown else ""
         lines += [
             f"#### {heading}",
             "",
-            f"**Default:** {default} **Tick at most one** to change it.",
+            (
+                f"**Default:** `{preset}` — already ticked. **Tick at most one**: "
+                "untick it and tick another to change it."
+                if preset
+                else f"**Default:** {default} **Tick at most one** to change it."
+            ),
             "",
         ]
-        for name in names[:CANDIDATE_LIMIT]:
+        for name in shown:
             detail = _about(ctx, name) if kind == "model" else ""
-            lines.append(f"- [ ] `{prefix}{name}`" + (f" — {detail}" if detail else ""))
+            mark = "x" if name == preset else " "
+            lines.append(
+                f"- [{mark}] `{prefix}{name}`" + (f" — {detail}" if detail else "")
+            )
         if len(names) > CANDIDATE_LIMIT:
             lines.append(
                 f"- …and {len(names) - CANDIDATE_LIMIT} more not shown "
@@ -497,9 +525,10 @@ def _choice_lines(ctx: HookContext) -> List[str]:
         lines += _collapsed(
             "ℹ️ What this means",
             about,
-            "Leave them alone and the default stands. Ticking more than one means "
-            "the same thing — two ticks are not a choice, and guessing which one you "
-            "meant is how a work item ends up somewhere nobody asked for.",
+            "Leave them alone and the ticked default stands. Unticking every row, "
+            "or ticking more than one, falls back to the harness's own setting — two "
+            "ticks are not a choice, and guessing which one you meant is how a work "
+            "item ends up somewhere nobody asked for.",
         )
     return lines
 
@@ -668,7 +697,10 @@ def _checklist_body(ctx: HookContext) -> str:
     if skippable or opt_in or protected:
         # No graph in context means no truthful rows, so no empty heading either.
         lines += ["### 🧩 Phases — ticked ones run", ""]
-        lines += [f"- [x] {node}" for node in skippable]
+        lines += [
+            f"- [{' ' if node in UNTICKED_BY_DEFAULT else 'x'}] {node}"
+            for node in skippable
+        ]
         lines += [""]
     if opt_in:
         # The other default (issue-188). Rendered unticked, under a heading of its
@@ -722,18 +754,18 @@ def _checklist_body(ctx: HookContext) -> str:
         lines += [
             "#### 📍 Where should the outer loop happen?",
             "",
-            "**Default:** on **this work item**, here. Tick the box to move it to a "
-            "pull request.",
+            "**Default:** on a **pull request** — already ticked. Untick the box to "
+            "keep it here, on this work item.",
             "",
-            f"- [ ] `{SURFACE_TOKEN}` — on a pull request in this repository.",
+            f"- [x] `{SURFACE_TOKEN}` — on a pull request in this repository.",
             "",
         ]
         lines += _collapsed(
             "ℹ️ What this means",
             "Not a phase — it is where the requirements, design, testing plan and "
-            "task list are iterated with you. Leave it unticked (the default) and "
-            "they happen **on this work item**, here. Tick it and they happen on a "
-            "pull request instead.",
+            "task list are iterated with you. Leave it ticked (the default) and "
+            "they happen on a **pull request**. Untick it and they happen **on this "
+            "work item**, here, instead.",
             "Either way the artifacts are committed files linked from here, and each "
             "repository this work item contributes code to gets its own pull request "
             "for the inner loop.",
@@ -743,16 +775,16 @@ def _checklist_body(ctx: HookContext) -> str:
         lines += [
             "#### 📄 Publish the spec chain as a Claude artifact too?",
             "",
-            "**Default:** no — the markdown files only. Only the "
-            f"`{CLAUDE_HARNESS}` harness can publish one.",
+            "**Default:** yes — already ticked. Untick it for the markdown files "
+            f"only. Only the `{CLAUDE_HARNESS}` harness can publish one.",
             "",
-            f"- [ ] `{CLAUDE_ARTIFACT_TOKEN}` — one Claude artifact for this work "
+            f"- [x] `{CLAUDE_ARTIFACT_TOKEN}` — one Claude artifact for this work "
             f"item (`{CLAUDE_HARNESS}` harness only).",
             "",
         ]
         lines += _collapsed(
             "ℹ️ What this means",
-            "Not a phase, and off unless you tick it. The requirements, design, "
+            "Not a phase, and on unless you untick it. The requirements, design, "
             "testing plan and task list become one page with a tab per file, which "
             "you can read and comment on in Claude.",
             "On any other harness the-loop ignores this box. The markdown files "
@@ -1131,8 +1163,8 @@ def _confirmation(
                 "The outer loop happens **on a pull request** in this "
                 f"repository, as @{actor} chose."
                 if surface == SURFACE_PULL_REQUEST
-                else "The outer loop happens **here, on this work item** (the "
-                "default). Each repository this item contributes code to gets "
+                else "The outer loop happens **here, on this work item**. Each "
+                "repository this item contributes code to gets "
                 "its own pull request for the inner loop."
             ),
         ]
@@ -1153,7 +1185,7 @@ def _confirmation(
                 "spec chain stays in markdown files only."
             )
         else:
-            line = "Spec artifacts: markdown files only (the default)."
+            line = "Spec artifacts: markdown files only."
         lines += ["", line]
     # The explainer row, in both directions (issue-488, R1.5).
     if explainer is True:
