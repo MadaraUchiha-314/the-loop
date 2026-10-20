@@ -222,3 +222,11 @@ export const RefreshIcon = (p: IconProps) => (
     <path d="M8 16H3v5" />
   </Svg>
 );
+/** lucide `info` — the header's Session details disclosure (issue-511). */
+export const InfoIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="10" />
+    <path d="M12 16v-4" />
+    <path d="M12 8h.01" />
+  </Svg>
+);

@@ -108,7 +108,7 @@ abuse cases of `design.md` § Security design are tests like any other (task 9).
     the phase chip — and the gate banner says Human gate without the node` (for #205
     the node id occurs exactly once in the main column, inside the phase chip); the
     existing gate-approval scenario still passes (red→green)
-- [ ] 6. `SessionFacts` and the header's verbs: the panel's content, relocated
+- [x] 6. `SessionFacts` and the header's verbs: the panel's content, relocated
   - `ui/src/components/SessionAside.tsx`: extract the facts into an exported
     `SessionFacts({ view, viewed })` — **Harness** (harness, status, started, session id
     **in full**, transcript path **in full**) · **tmux** (cwd **in full**, the attach
