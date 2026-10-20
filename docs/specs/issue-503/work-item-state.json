@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-503",
-  "currentNode": "evidence",
+  "currentNode": "code-quiz",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -141,8 +141,32 @@
     },
     "evidence": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-20T01:49:42+00:00",
+      "exitedAt": "2026-10-20T01:50:08+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "capability-docs": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-20T01:50:08+00:00",
+      "exitedAt": "2026-10-20T01:50:12+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "reviewer-briefing": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-20T01:50:12+00:00",
+      "exitedAt": "2026-10-20T01:51:25+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "code-quiz": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-20T01:51:25+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -361,7 +385,11 @@
     }
   },
   "forced": [],
-  "parked": null,
+  "parked": {
+    "node": "code-quiz",
+    "reason": "awaiting a human",
+    "since": "2026-10-20T01:51:25+00:00"
+  },
   "completions": {
     "requirements-definition": {
       "at": "2026-10-20T01:18:32+00:00",
@@ -393,6 +421,18 @@
     },
     "code-explainer": {
       "at": "2026-10-20T01:49:42+00:00",
+      "by": "cli"
+    },
+    "evidence": {
+      "at": "2026-10-20T01:50:08+00:00",
+      "by": "cli"
+    },
+    "capability-docs": {
+      "at": "2026-10-20T01:50:12+00:00",
+      "by": "cli"
+    },
+    "reviewer-briefing": {
+      "at": "2026-10-20T01:51:25+00:00",
       "by": "cli"
     }
   },
