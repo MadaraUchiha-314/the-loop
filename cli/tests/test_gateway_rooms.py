@@ -527,3 +527,14 @@ def test_a_client_without_a_channel_store_publishes_no_rooms(gw, tmp_path):
     client, transport = _gateway_client(gw, tmp_path)
     client.step()
     assert _rooms_calls(transport) == []
+
+
+def test_the_drain_leaves_an_event_a_thread_binding_already_claimed(store):
+    """Critic C1: a bound thread keeps its work item (R2.4), even unclaimed."""
+    event = held(store, 1, "C0123ABCD:1700.0", actor="U_NOBODY")
+    store.bind("slack", "C0123ABCD:1700.0", "github:o/r#2", "github-o-r-2")
+    assert subject_of(store, event) == "loop-github-o-r-2"  # held there, no claimant
+    store.claim(SUBJECT, "laptop-b", "driver")
+    store.publish_rooms("laptop-b", {"C0123ABCD": (REF, SLUG)})
+    assert subject_of(store, event) == "loop-github-o-r-2"
+    assert store.fetch("laptop-b", 0, 10).deliveries == []

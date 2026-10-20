@@ -45,6 +45,7 @@ from typing import (
 
 from .envelope import (
     DEAD_LETTERED,
+    UNASSIGNED,
     Delivery,
     Envelope,
     is_outcome,
@@ -1110,9 +1111,11 @@ class SqliteStore:
                 # substr, not LIKE: a Slack id may contain `_`, a LIKE wildcard
                 prefix = f"{channel}:"
                 cur.execute(
+                    # only what is still unresolved: an event a thread binding
+                    # already moved onto its work item stays there (critic C1, R2.4)
                     "SELECT id, actor FROM events WHERE routed = 0 AND provider = 'slack'"
-                    " AND substr(held_key, 1, ?) = ? ORDER BY id",
-                    (len(prefix), prefix),
+                    " AND subject = ? AND substr(held_key, 1, ?) = ? ORDER BY id",
+                    (UNASSIGNED, len(prefix), prefix),
                 )
                 rows = [(int(r[0]), r[1], True) for r in cur.fetchall()]
                 ids, touched = self._route_held_rows(
