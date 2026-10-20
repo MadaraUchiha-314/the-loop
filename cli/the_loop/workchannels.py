@@ -496,7 +496,7 @@ class CollaborationChannelStore:
     #: gateway client sets it, so the gateway learns the room at once. A class
     #: variable, as ``ChannelState.publisher`` is, because the dispatcher, the Slack
     #: listener and the CLI each build their own store over one directory.
-    on_change: ClassVar[Optional[Callable[[], Any]]] = None
+    on_change: ClassVar[Optional[Callable[..., Any]]] = None
 
     def __init__(self, root: Union[str, Path], legacy: Optional[LegacyLayout] = None):
         self.store = WorkItemStore(root, legacy=legacy)
@@ -742,7 +742,9 @@ class CollaborationChannelStore:
         try:
             hook()
         except Exception as exc:  # noqa: BLE001 — the declaration stands either way
-            logger.warning("could not publish the changed channel declarations: %s", exc)
+            logger.warning(
+                "could not publish the changed channel declarations: %s", exc
+            )
 
     def _write(
         self, item: WorkItemRef, records: Sequence[CollaborationChannel]

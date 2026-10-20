@@ -184,7 +184,6 @@ def test_bind_keeps_routing_held_events_after_the_refactor(store):
     assert store.bind("slack", "C1:1700.1", REF, SLUG) == [event]
 
 
-
 # -- resolution order (R2.1, R2.3, R2.4) ----------------------------------------------------
 
 
@@ -231,9 +230,7 @@ def test_a_published_room_beats_the_static_room(gw):
 
 
 def test_without_a_room_resolution_is_unchanged(gw):
-    assert (
-        _resolve(gw, _slack_event("C0STATIC", "1700.1")).work_item == "github:o/r#1"
-    )
+    assert _resolve(gw, _slack_event("C0STATIC", "1700.1")).work_item == "github:o/r#1"
     resolved = _resolve(gw, _slack_event("C0123ABCD", "1700.1"))
     assert resolved.subject == UNASSIGNED and resolved.held_key == "C0123ABCD:1700.1"
 
@@ -341,9 +338,7 @@ def channels(tmp_path, monkeypatch):
     from the_loop.workchannels import CollaborationChannelStore
 
     calls: list = []
-    monkeypatch.setattr(
-        CollaborationChannelStore, "on_change", lambda: calls.append(1)
-    )
+    monkeypatch.setattr(CollaborationChannelStore, "on_change", lambda: calls.append(1))
     return CollaborationChannelStore(tmp_path / "portable"), calls
 
 
@@ -406,7 +401,11 @@ def _gateway_client(gw, tmp_path, channel_store=None):
         {
             "state": {"root": str(tmp_path / ".the-loop")},
             "instance": {"name": "laptop-a"},
-            "gateway": {"url": "http://gw", "pollIntervalSeconds": 5, "longPollSeconds": 0},
+            "gateway": {
+                "url": "http://gw",
+                "pollIntervalSeconds": 5,
+                "longPollSeconds": 0,
+            },
         },
         threading.Event(),
         transport=transport,

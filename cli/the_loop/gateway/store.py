@@ -170,11 +170,11 @@ class InstanceRow:
 class RoomsResult:
     """What a room publication applied (issue-505): the channels the instance now
     holds, the ones another live instance keeps (``(channel, holder)``), and the held
-    events the new rooms routed."""
+    events the new rooms routed (``(event id, subject)``)."""
 
     rooms: Tuple[str, ...] = ()
     refused: Tuple[Tuple[str, str], ...] = ()
-    routed: List[int] = field(default_factory=list)
+    routed: List[Tuple[int, str]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

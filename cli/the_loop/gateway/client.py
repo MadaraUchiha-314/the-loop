@@ -349,7 +349,9 @@ class GatewayClient:
                 desired = dict(self._rooms())
             except (OSError, ValueError) as exc:
                 # an unreadable directory is not "no rooms": keep the gateway's (fail closed)
-                logger.warning("gateway: rooms not published, declarations unreadable (%s)", exc)
+                logger.warning(
+                    "gateway: rooms not published, declarations unreadable (%s)", exc
+                )
                 return False
             if not force and desired == self._published_rooms:
                 return True

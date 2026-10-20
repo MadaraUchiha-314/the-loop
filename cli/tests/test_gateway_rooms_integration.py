@@ -102,9 +102,12 @@ def _post(gw: GatewayHarness, user: str, ts: str, channel: str = ROOM) -> None:
         }
     ).encode()
     stamp = str(int(time.time()))
-    sig = "v0=" + hmac.new(
-        SIGNING.encode(), b"v0:" + stamp.encode() + b":" + body, hashlib.sha256
-    ).hexdigest()
+    sig = (
+        "v0="
+        + hmac.new(
+            SIGNING.encode(), b"v0:" + stamp.encode() + b":" + body, hashlib.sha256
+        ).hexdigest()
+    )
     answer = gw.client.post(
         "/slack/events",
         content=body,

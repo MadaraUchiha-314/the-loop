@@ -57,7 +57,7 @@ settle.
   - _Requirements:_ R1.1, R1.4, R2.2, R3.1, R4.1, R4.3, R6.1, R7.2
   - _Test:_ T2 + T8, `tests/test_gateway_rooms_integration.py` (red→green on the
     branch before task 4's wiring, green after)
-- [ ] 6. Docs: issue-496 amendment and capability docs
+- [x] 6. Docs: issue-496 amendment and capability docs
   - issue-496 `requirements.md` R5.2 and R5.7 name rooms, pointing at this work item.
   - `docs/capabilities/gateway.md` and `docs/capabilities/channels.md`: how a room
     reaches the gateway, the resolution order, `slack.rooms` as a static override.

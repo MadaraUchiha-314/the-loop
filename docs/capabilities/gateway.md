@@ -30,11 +30,11 @@ flowchart LR
   GH[GitHub webhook / poll] --> GW
   JR[Jira webhook / poll] --> GW
   SL[Slack Socket Mode / HTTP] --> GW
-  GW[gateway<br/>resolve subject · decide consumers · store · ack] --> ST[(SQLite store<br/>events · deliveries · claims · actors · bindings)]
+  GW[gateway<br/>resolve subject · decide consumers · store · ack] --> ST[(SQLite store<br/>events · deliveries · claims · actors · bindings · rooms)]
   ST -- "POST /fetch (own queue)" --> A[instance laptop-a<br/>gateway client → router → dispatcher]
   ST -- "POST /fetch (own queue)" --> B[instance laptop-b<br/>gateway client → router → dispatcher]
-  A -- "claims · actors · bindings · commits" --> GW
-  B -- "claims · actors · bindings · commits" --> GW
+  A -- "claims · actors · bindings · rooms · commits" --> GW
+  B -- "claims · actors · bindings · rooms · commits" --> GW
 ```
 
 The word *gateway*, unqualified, is this process; decision-059's is the
@@ -120,8 +120,14 @@ The word *gateway*, unqualified, is this process; decision-059's is the
   config. A pull request with no binding is its own subject; the instance that receives
   it recognises the linkage with today's router inference and publishes the binding;
   what was held on the pull request's own subject before the binding is routed onto
-  the work item's claimants by it. A
-  Slack thread nobody bound is held under its thread key. An object that can start no
+  the work item's claimants by it.
+- A Slack event resolves, in order: the **thread binding** `<channel>:<thread_ts>`, then
+  the **room** an instance published for the channel (issue-505), then the static
+  `slack.rooms` of `gateway-config.yaml`, else it is held under `<channel>:<ts>`. A room
+  is a work item's collaboration channel (`slack@C…`, issue-375): every message in it is
+  about that work item, so a top-level message from any collaborator routes to the work
+  item's claimants, whoever registered the author. `slack.rooms` remains for a room no
+  instance declares. An object that can start no
   work item is dropped (`gateway.dropped: unbound`).
 - Consumers are decided **on write**, in order: the claimants of the subject and of each
   linked subject (a PR's ticket), else the one instance that registered the event's
@@ -183,6 +189,20 @@ The word *gateway*, unqualified, is this process; decision-059's is the
   pull request and a bound Slack thread publish bindings. A binding names its instance
   and peer like a claim: allow-listed, refused for a stale peer under a live name, and
   recorded as `gateway.bound`, so a binding that redirects a subject is never anonymous.
+- The instance publishes its Slack collaboration channels as **rooms** with
+  `PUT /api/v1/gateway/rooms` (issue-505): the whole set `{channel id: work item ref}`,
+  replacing the instance's previous one. It publishes at every registration (so a gateway
+  that lost its store, or a room removed while the instance was stopped, is repaired),
+  at once when a declaration changes in the daemon (`CollaborationChannelStore.on_change`),
+  and every 30 s for a change another process made (`the-loop channels add`). A new room
+  drains the events held under its channel's keys onto the work item's subject. A room
+  another instance holds with a live lease stays the holder's and is reported in
+  `refused` (`gateway.refused: duplicate-room`); an instance can replace or retract only
+  its own rooms; a pruned instance's rooms go with it. Each publication is recorded as
+  `gateway.rooms`, and `GET /api/v1/gateway/instances` lists each instance's rooms. A
+  room moves events and grants nothing: the instance applies `channels.slack`'s
+  principals, the room's listen mode, `routing.authorizedUsers` and the roster to what it
+  is handed.
 - When the gateway is unreachable the instance keeps running, records
   `gateway.unreachable` once, retries with back-off (1 s → 60 s), records
   `gateway.connected` on recovery, and **never** falls back to its own ingresses. A
@@ -250,5 +270,6 @@ The word *gateway*, unqualified, is this process; decision-059's is the
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-505 | Collaboration channels reach the gateway (2026-10-20): the instance publishes its declared Slack channels as rooms (`PUT /api/v1/gateway/rooms`, a replace-set per instance), the gateway resolves a Slack event through a published room after the thread binding and before `slack.rooms`, a late room drains the channel's held events, a live holder keeps its room, and `GET /instances` lists rooms. A collaborator's top-level message in a declared room is no longer held | [spec](../specs/issue-505/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/505) |
 | issue-503 | The instance side gets `channels.slack.read.mode: gateway` (2026-10-20): the explicit "no Socket Mode here" setting, with interactivity keyed on reachability rather than on `socket`; fail closed without a block; `migrate-config` rewrites 20.3.0's `socket` beside a block | [spec](../specs/issue-503/), [channels](channels.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/503) |
 | issue-496 | The capability, whole (2026-10-19): the gateway process and its verbs, `gateway-config.yaml` and schema, the GitHub/Jira/Slack transports, the SQLite store with subjects and one queue per instance, consumers resolved at ingest by claim then actor, pull with commit and long-poll, at-least-once with dead-letter, the instance's `gateway` block and client, claims and bindings published by the instance, `GET /api/v1/gateway`, the Gateway card, the two event families | [spec](../specs/issue-496/), [decision-144](../decisions/decision-144.md), [decision-145](../decisions/decision-145.md), [decision-146](../decisions/decision-146.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/496) |
