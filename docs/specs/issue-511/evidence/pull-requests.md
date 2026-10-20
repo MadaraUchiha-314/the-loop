@@ -13,4 +13,4 @@ implementation.
 
 | PR | Repository | Scope / tasks | Status |
 |----|------------|---------------|--------|
-| [#513](https://github.com/MadaraUchiha-314/the-loop/pull/513) | MadaraUchiha-314/the-loop | the spec chain (requirements, design, testing plan, tasks) and the Option C implementation (tasks 1–12), the evidence, the decision record and the two documents | open (draft until the reviewer briefing is posted) |
+| [#513](https://github.com/MadaraUchiha-314/the-loop/pull/513) | MadaraUchiha-314/the-loop | the spec chain (requirements, design, testing plan, tasks) and the Option C implementation (tasks 1–12), the evidence, the decision record and the two documents | open — ready for review |
