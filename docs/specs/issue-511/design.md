@@ -195,17 +195,19 @@ never `— <node>`; the panel's `current node` row is gone. One statement, one m
 
 | Artifact | Type | Location / link | Covers (screen · requirement) | Status |
 |----------|------|-----------------|-------------------------------|--------|
-| Option A — Trim | html-prototype | [`design/option-a-trim.html`](design/option-a-trim.html) | Work · R2, R3.1, R4, R6 | draft |
-| Option B — Focus | html-prototype | [`design/option-b-focus.html`](design/option-b-focus.html) | Work · R2, R3.2, R4, R6 | draft |
-| Option C — Minimal | html-prototype | [`design/option-c-minimal.html`](design/option-c-minimal.html) | Work · R2, R3.3, R4, R6 | draft |
+| Option A — Trim | html-prototype | [`design/option-a-trim.html`](design/option-a-trim.html) | Work · R2, R3.1, R4, R6 | offered, not chosen — kept as the record (R1.5) |
+| Option B — Focus | html-prototype | [`design/option-b-focus.html`](design/option-b-focus.html) | Work · R2, R3.2, R4, R6 | offered, not chosen — kept as the record (R1.5) |
+| **Option C — Minimal** | html-prototype | [`design/option-c-minimal.html`](design/option-c-minimal.html) | Work · R2, R3.3, R4, R6 | **selected** — chosen by @MadaraUchiha-314 on PR #513, 2026-10-20 ([comment](https://github.com/MadaraUchiha-314/the-loop/pull/513#issuecomment-6295462213)); [decision-148](../../decisions/decision-148.md). The visual contract the implementation matches. |
 | `design/screenshots/current-*.png` | rendered stills of the **built 20.5.1 app** on the demo fixture | [`design/screenshots/`](design/screenshots/) | the baseline, #214 and the #205 gate, both themes | reference |
 | `design/screenshots/{a,b,c}-01…07-*.png` | rendered stills of the three prototypes | same | item · full graph · disclosures open · gate · PR session · no-transcript fallback · 390 px, both themes | draft |
 
-The owner names one option at the `design-approval` gate (a review comment on the PR
-naming A, B or C). That comment is the sign-off: the hook appends it under *Review
-comments*, the chosen row above is marked **selected** and a decision record is written
-(`docs/decisions/decision-148.md`) in the same commit; the two other prototypes stay
-checked in as the record of what was offered (R1.5).
+The owner named **Option C** on PR #513 on 2026-10-20 ("I prefer the "minimal" option,
+option-c"), before the gate asked: the row above is marked selected and
+[decision-148](../../decisions/decision-148.md) records the pick. The two other
+prototypes stay checked in as the record of what was offered (R1.5). The
+`design-approval` gate still posts its one review request covering this document and
+the testing plan; the component table's **C** column and the inventory's **C** column
+are what the tasks derive from.
 
 - **How to look at them:** open a prototype in a browser; it needs no server. The
   sidebar rows and the PR rows navigate (`#item/<ref>`), the header's theme button
