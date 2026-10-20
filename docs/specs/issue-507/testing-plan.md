@@ -71,14 +71,24 @@ call carries, and the fake client records exactly that.
 
 ## Verification activities
 
-- [ ] T1 — `cd cli && uv run python -m pytest -q tests/test_channels_reply_thread.py`
-- [ ] T2 — `cd cli && uv run python -m pytest -q tests/test_channels_reply_thread_integration.py` (and red on `origin/main` for T2.1)
-- [ ] T3 — `cd cli && uv run python -m pytest -q tests/test_channels_reply_thread_integration.py -k abuse`
-- [ ] T4 — `cd cli && uv run python -m pytest -q tests/test_channels_reply_thread_integration.py -k save_fails`
-- [ ] T5 — `uv run pre-commit run --all-files`
+- [x] T1 — `cd cli && uv run python -m pytest -q tests/test_channels_reply_thread.py`
+- [x] T2 — `cd cli && uv run python -m pytest -q tests/test_channels_reply_thread_integration.py` (and red on `origin/main` for T2.1)
+- [x] T3 — `cd cli && uv run python -m pytest -q tests/test_channels_reply_thread_integration.py -k abuse`
+- [x] T4 — `cd cli && uv run python -m pytest -q tests/test_channels_reply_thread_integration.py -k save_fails`
+- [x] T5 — `uv run pre-commit run --all-files`
 
 ## Verification results
 
-Not run yet. The `verification` node fills this table.
+All five activities ran and passed on `21eb530`. The regression test (T2.1) is red on
+`origin/main` and green here. Critic C1 and C3 each added a test that was red before its
+fix. Every command ran with `THE_LOOP_CLI_CONFIG` unset.
+
+| Activity | Command / procedure | Outcome | Evidence |
+|----------|--------------------|---------|----------|
+| T1 | `cd cli && uv run python -m pytest -q tests/test_channels_reply_thread.py` | 12 passed (record fields, migration, `is_progress`, C3 malformed values) | [unit.md](evidence/unit.md) |
+| T2 | `cd cli && uv run python -m pytest -q tests/test_channels_reply_thread_integration.py`; the same file against `origin/main` source | 13 passed; on main 5 failed, 7 passed (the answer posted with `thread_ts=None`); 4 scenarios listed | [integration.md](evidence/integration.md) |
+| T3 | `… tests/test_channels_reply_thread_integration.py -k abuse` | 2 passed (abuse cases 1 and 2) | [integration.md](evidence/integration.md) |
+| T4 | `… tests/test_channels_reply_thread_integration.py -k save_fails` | 1 passed: a failed save still delivers the reply, and the answer posts top-level | [unit.md](evidence/unit.md) |
+| T5 | `uv run pre-commit run --all-files` | all six hooks passed; full suite 6484 passed | [lint-and-typecheck.md](evidence/lint-and-typecheck.md) |
 
 ## Review comments
