@@ -25,8 +25,10 @@ One instance on one machine gains nothing from a gateway; leave it as it is.
    `templates/gateway-config.yaml` in the plugin. Every secret is an environment-variable
    **name** (`*Env`) read from `env.file`: the GitHub poll token (read access only), the
    Slack app-level token and bot token. They move to the gateway; the gateway holds no
-   posting token and spawns nothing. List the repositories (`repositories`) and, for
-   Slack rooms, the `slack.rooms` entries the instances declared. The gateway's own
+   posting token and spawns nothing. List the repositories (`repositories`). Slack
+   collaboration channels need no entry: each instance publishes the rooms its work
+   items declare (`the-loop add-channel`), and keeps them current (issue-505).
+   `slack.rooms` is only for a channel that no instance declares. The gateway's own
    GitHub and Jira pollers are **off** unless you turn them on (`github.poll.enabled`,
    `github.poll.sources`): your instances keep polling as they do today.
 2. **Start it**: `the-loop gateway start`. It validates the file, refuses to start on a
