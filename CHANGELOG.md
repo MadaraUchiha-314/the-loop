@@ -1,3 +1,9 @@
+## v20.6.0 (2026-10-20)
+
+### Feat
+
+- **issue-510**: pre-tick the phase-selection checklist's defaults (#512)
+
 ## v20.5.1 (2026-10-20)
 
 ### Fix
