@@ -1267,7 +1267,8 @@ EVENT_TYPES: Dict[str, str] = {
     ),
     "gateway.refused": (
         "The consumer API refused a request (instance, reason: duplicate-instance | "
-        "duplicate-actor | commit-undelivered | unknown-instance, holder, peer). On the "
+        "duplicate-actor | duplicate-room | commit-undelivered | unknown-instance, holder, "
+        "peer; channel for duplicate-room). On the "
         "client side the same event records the 409 it received, with `holder`."
     ),
     "gateway.reloaded": (
@@ -1288,6 +1289,11 @@ EVENT_TYPES: Dict[str, str] = {
         "events it routed). Recorded so a binding that redirects a subject is never "
         "anonymous (issue-496, security review SEC-2)."
     ),
+    "gateway.rooms": (
+        "An instance published its rooms — the Slack collaboration channels its work "
+        "items declared (instance, rooms: how many it now holds, routed: held events "
+        "drained, refused: channels another live instance keeps) (issue-505)."
+    ),
     "gateway.registered": (
         "An instance registered the actors it works for (instance, actors: counts per "
         "provider)."
@@ -1306,7 +1312,8 @@ EVENT_TYPES: Dict[str, str] = {
     ),
     "subject.routed": (
         "The stored event's consumers were resolved (event_id, subject, to: the instance "
-        "list, or `unassigned` when none; by: claim | actor | hold)."
+        "list, or `unassigned` when none; by: claim | actor | hold | binding | room | late, when a binding or room "
+        "published between the resolve and the append routed it)."
     ),
     "subject.committed": (
         "An instance committed a delivery (instance, seq, event_id, outcome)."

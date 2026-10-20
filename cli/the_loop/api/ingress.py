@@ -311,13 +311,15 @@ def _start_gateway_client(cli_config: dict) -> _Start:
 
     Builds today's pipeline once (router, dispatcher, doorbell) and a client that
     polls the gateway for this instance's queue; a registered session publishes its
-    claim, a bound Slack thread its binding. The lock is the client's pidfile under
+    claim, a bound Slack thread its binding, a declared collaboration channel its
+    room (issue-505). The lock is the client's pidfile under
     the local state dir, so `status` reads it like every other ingress.
     """
     from ..channels.state import ChannelState
     from ..core import daemons as core_daemons
     from ..gateway import client as gateway_client
     from ..gateway.client_dispatch import build_pipeline
+    from ..workchannels import CollaborationChannelStore
 
     if cli_config_mod.gateway_block(cli_config) is None:
         return None, ""
@@ -346,6 +348,7 @@ def _start_gateway_client(cli_config: dict) -> _Start:
             pipeline.dispatcher.registry,
             control_store=pipeline.dispatcher.control_store,
             pipeline=pipeline,
+            channel_store=pipeline.dispatcher.channel_store,
         )
     except Exception as exc:  # noqa: BLE001 — reported, never hosted half-built
         lock.release()
@@ -355,6 +358,8 @@ def _start_gateway_client(cli_config: dict) -> _Start:
         client.publish_binding(work_item, provider, key)
 
     ChannelState.publisher = publish_thread
+    # a declaration made in this process reaches the gateway at once (issue-505, R1.2)
+    CollaborationChannelStore.on_change = lambda: client.publish_rooms()
     gateway_client.set_current(client)
 
     def run() -> None:
@@ -364,6 +369,7 @@ def _start_gateway_client(cli_config: dict) -> _Start:
             if gateway_client.current() is client:
                 gateway_client.set_current(None)
             ChannelState.publisher = None
+            CollaborationChannelStore.on_change = None
             pipeline.dispatcher.stop()
 
     return _host(core_daemons.GATEWAY_CLIENT, lock, run, stop_event.set), ""

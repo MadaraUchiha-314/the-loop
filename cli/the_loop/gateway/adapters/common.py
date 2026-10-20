@@ -3,8 +3,8 @@
 
 **Only the direct reference.** :func:`resolve_ref` reads the issue or pull-request
 number, the Jira key or the Slack thread the payload itself names, then the bindings
-instances have published and the rooms and repositories declared in
-``gateway-config.yaml`` — and nothing else (R5.2). The closing-keyword and branch-name
+and rooms instances have published (issue-505) and the rooms and repositories declared
+in ``gateway-config.yaml`` — and nothing else (R5.2). The closing-keyword and branch-name
 linkage that ties a pull request to its ticket stays the instance's router's: the
 instance that receives the PR event publishes the binding (R5.8), and the gateway only
 follows it from then on.
@@ -254,6 +254,13 @@ def _resolve_slack(
         bound = store.resolve_slug("slack", slack_thread_key(channel, thread))
         if bound:
             ref, slug = bound
+            return Resolved(subject=subject_for_slug(slug), work_item=ref)
+    if channel:
+        # a collaboration channel an instance published (issue-505): every message
+        # there is about its work item, so it beats the static rooms
+        room = store.resolve_room(channel)
+        if room:
+            ref, slug = room
             return Resolved(subject=subject_for_slug(slug), work_item=ref)
     rooms = {
         r.channel: r.work_item for r in (config.slack.rooms if config.slack else ())

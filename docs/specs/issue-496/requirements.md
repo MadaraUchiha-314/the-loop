@@ -268,8 +268,10 @@ reused intact, while the gateway alone decides **which instances** an event is f
    on the subject (R5.3); when there are none, the actor registration matching the event's
    actor (R5.5); when neither matches, the `unassigned` subject (R2.2). To resolve the
    subject it SHALL use only the reference the payload names directly (a GitHub issue or
-   pull-request number, a Jira issue key, a Slack thread), the bindings instances have
-   published (R5.7), and the rooms and projects declared in `gateway-config.yaml`. It
+   pull-request number, a Jira issue key, a Slack thread), the bindings and rooms
+   instances have published (R5.7), and the rooms and projects declared in
+   `gateway-config.yaml`. *(Amended by [issue-505](../issue-505/requirements.md): a room
+   an instance published resolves before a room declared in the config.)* It
    SHALL NOT run the dispatcher, the control grammar, the authorized-actor guard or the
    self-marker check.
 3. WHEN an instance spawns or resumes a session for a work item THEN it SHALL publish a
@@ -297,6 +299,10 @@ reused intact, while the gateway alone decides **which instances** an event is f
    publish the binding `{ref, provider, key}` to the gateway, and the gateway SHALL keep
    only that mapping, never message or payload bodies, so later events on that object
    land on the right subject and the deliveries held on `unassigned` for it are routed.
+   *(Amended by [issue-505](../issue-505/requirements.md): a Slack collaboration channel
+   the instance declared is published too, as a room `{channel id → work item ref}`
+   through `PUT /api/v1/gateway/rooms`, so a top-level message in it resolves to that
+   work item.)*
 8. WHEN a GitHub event names a pull request the gateway has no binding for THEN the gateway
    SHALL route it by actor (R5.5) or hold it on `unassigned`, and the instance that
    receives it, recognising the linkage with today's router inference, SHALL publish the

@@ -69,6 +69,8 @@ slack:
   http:
     enabled: false
     signingSecretEnv: SLACK_SIGNING_SECRET
+  # Static rooms, only for a channel no instance declares: an instance publishes its own
+  # collaboration channels (`the-loop add-channel`), and those take precedence (issue-505).
   rooms: []                     # - { channel: C0123ABCD, workItem: "github:owner/repo#14" }
 
 instances: []                   # optional allow-list of instance names (a misconfiguration guard, not auth)
