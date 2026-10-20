@@ -91,6 +91,32 @@ def gateway_configured(config: Optional[dict]) -> bool:
 #: What `status` and `start` say about the Slack listener a gateway block switched off
 #: (R3.8 as amended on the PR, 2026-10-19: the listener alone).
 GATEWAY_OFF = "off · gateway configured"
+#: ... and about one `read.mode: gateway` switched off for want of a block (issue-503,
+#: R6.3): nothing reads Slack, and no socket is opened in its place.
+GATEWAY_MISSING = "off · read.mode is gateway but no gateway block is configured — nothing reads Slack"
+_LISTENER_OFF = "channels.slack.enabled is false or read.mode is not socket"
+
+
+def _raw_read_mode(config: Optional[dict]) -> str:
+    slack = ((config or {}).get("channels") or {}).get("slack") or {}
+    read = slack.get("read") if isinstance(slack, dict) else None
+    return str(read.get("mode", "poll")) if isinstance(read, dict) else "poll"
+
+
+def socket_beside_gateway(config: Optional[dict]) -> bool:
+    """Whether the config is 20.3.0's gateway form — a usable ``gateway`` block beside
+    ``read.mode: socket`` (issue-503, R4). It keeps working, the listener stays off, and
+    ``migrate-config`` rewrites it to ``read.mode: gateway``."""
+    return gateway_configured(config) and _raw_read_mode(config) == "socket"
+
+
+def listener_off_detail(config: Optional[dict]) -> str:
+    """Why the Slack listener is off, for a config that does not enable it."""
+    if gateway_configured(config):
+        return GATEWAY_OFF
+    if _raw_read_mode(config) == "gateway":
+        return GATEWAY_MISSING
+    return _LISTENER_OFF
 
 
 def enabled_services(config: Optional[dict] = None) -> Dict[str, bool]:
@@ -143,8 +169,10 @@ def ingress_health(config: Optional[dict] = None) -> List[Dict[str, Any]]:
         detail = ""
         if enabled[name] and not running:
             detail = f"{ENABLED_BY[name]} is true but nothing holds {pidfile}"
-        elif gateway and name == SLACK_LISTENER:
-            detail = GATEWAY_OFF
+        elif name == SLACK_LISTENER and (
+            gateway or _raw_read_mode(config) == "gateway"
+        ):
+            detail = listener_off_detail(config)
         rows.append(
             {
                 "name": name,
@@ -435,7 +463,7 @@ def start_all(config: Optional[dict] = None) -> Dict[str, Any]:
                 SLACK_LISTENER,
                 False,
                 "disabled",
-                "channels.slack.enabled is false or read.mode is not socket",
+                listener_off_detail(config),
             )
         )
     elif hosting:
@@ -607,6 +635,8 @@ def status_all(
         running and listener["running"] and listener["pid"] == rows[0]["pid"]
     )
     rows.append(listener)
+    if not gateway_configured(config) and _raw_read_mode(config) == "gateway":
+        listener["detail"] = GATEWAY_MISSING
     gateway_doc: Dict[str, Any] = {"configured": False, "state": "off"}
     if gateway_configured(config):
         listener["detail"] = GATEWAY_OFF

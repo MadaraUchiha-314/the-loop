@@ -38,6 +38,16 @@ flowchart LR
 > two transports. A thread bound to a work item publishes a binding to the gateway so
 > later replies land on that work item's subject. The heartbeat split check is observed
 > by the gateway's connection. See [gateway](gateway.md).
+>
+> **`read.mode: gateway` (issue-503):** the setting for such an instance. It opens no
+> Socket Mode connection and starts no poll reader, and every interactive feature stays
+> on under its grants. Interactivity keys on whether a press can **reach** this instance
+> (`SlackChannelConfig.push_reachable`): over its own socket (`socket`), or through the
+> gateway client (`gateway` with a usable `gateway` block). It does not key on
+> `read.mode == socket`. Without the block, `gateway` resolves to `off` with an error and
+> never opens a socket. `channels listen` refuses beside any `gateway` block. 20.3.0's
+> `socket` beside a block keeps working, is warned about, and is rewritten by
+> `migrate-config`.
 
 - **One catalog.** Every event type is a row of `channels/events.py` declaring whether a
   channel may subscribe to it, may publish it, and whether the ledger records it. The
@@ -259,11 +269,12 @@ flowchart LR
   person, work item), the text drawn as mrkdwn and — above `maxChars` — digested or
   truncated per `longMessages` (the next bullet), a context line at `verbose`, a link
   button whenever the event has a URL,
-  Approve / Request changes buttons for an approval-shaped event **only** when
-  `read.mode: socket` and the `gate.feedback` grant both hold, and — since issue-337 —
+  Approve / Request changes buttons for an approval-shaped event **only** when a press
+  can reach this instance (`read.mode: socket`, or `gateway` behind a gateway block —
+  issue-503) and the `gate.feedback` grant both hold, and — since issue-337 —
   an **Execute** button on the phase-selection checklist mirror (a `comment.agent`
   carrying the hook's marker) and a **Start** button on the kickoff's "opened" reply,
-  each **only** when `read.mode: socket` and the `control.command` grant both hold,
+  each **only** under the same reachability rule and the `control.command` grant,
   each carrying the **configured keyword** as its value (a disabled keyword renders no
   button). A press enters the pipeline as that member's reply carrying the button's
   text; an unrecognised value is plain text.
@@ -397,7 +408,7 @@ flowchart LR
   [decision-122](../decisions/decision-122.md)). The rule is one sentence: *if a pick
   could answer it, ask; otherwise refuse.* WHEN a top-level message from an authorized
   member resolves to no target, to several, or to a repository that is not declared, AND
-  `read.mode` is `socket`, AND the instance declares at least one repository, THEN the
+  `read.mode` is `socket` (or `gateway` behind a gateway block, issue-503), AND the instance declares at least one repository, THEN the
   channel SHALL post a question in that message's thread offering the declared
   repositories as Block Kit options — buttons at five or fewer, a static select menu
   above that, capped at Slack's ceiling of 100 with the `<repo>:` prefix named for the
@@ -1063,6 +1074,7 @@ ticket, with no Jira work items, ingress or ledger:
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-503 | `read.mode: gateway` (2026-10-20): a fourth read mode for an instance behind a gateway — no Socket Mode connection, no poll reader, events only from the gateway client; the button, picker, slash-command, mention and shortcut gates key on `push_reachable` (socket, or gateway with a block) instead of `read.mode == socket`; `gateway` without a block resolves to `off` (fail closed); `channels listen` refuses beside any gateway block; `channels status` names the transport and flags both misconfigurations; `migrate-config` rewrites `gateway` + `socket` | [spec](../specs/issue-503/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/503) |
 | issue-496 | The gateway (2026-10-19): with a `gateway` block the Slack listener is the gateway's one Socket Mode connection per app; the listener's classification half is `slack.dispatch_envelope`, called by the gateway-less listener and by the gateway client alike; `ChannelState.bind` publishes the thread binding; the HTTP routes (`/slack/events`, `/slack/interactions`, `/slack/commands`) exist on the gateway behind `slack.http.enabled` | [spec](../specs/issue-496/), [gateway](gateway.md) |
 | issue-475 | **Verbs record on the Jira ticket** (2026-10-06, PR 5 of 5): `comment`, `ask`, announcements, `add-channel` declarations and Slack mirrors on a Jira work item go to its Jira ticket (announcements as relays); `list-comments` reads a service-account relay as the operator's words and names authors `jira:<id>`; `channels status` prints a `jira:` block. Before, each of these posted through a GitHub-only path | [spec](../specs/issue-475/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-475 | **A relay is the operator's words on Jira** (2026-10-06, PR 4 of 5, a design addendum to §C7): the Jira ledger posts a relay (`gate.feedback`, `control.command`) with the visible relay marker `[the-loop:relay]` instead of the self-marker, and the Jira ingress accepts a service-account comment carrying it as authorized — as the GitHub ingress reads an unmarked relay posted under the operator's credentials. The marker on anyone else's comment grants nothing | [spec](../specs/issue-475/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |

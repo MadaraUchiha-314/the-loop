@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .. import eventlog
+from ..cli_config import gateway_block
 from ..identity import Principal, ids_for, parse_authorized_users
 from .directory import is_conversation_id
 from .base import (
@@ -154,7 +155,9 @@ DEFAULT_MAX_CHARS = 1500
 _SECTION_LIMIT = 2900
 _HEADER_LIMIT = 150
 
-READ_MODES: Tuple[str, ...] = ("poll", "socket", "off")
+#: ``gateway`` (issue-503): Slack arrives through the gateway client, and this instance
+#: never opens a Socket Mode connection of its own.
+READ_MODES: Tuple[str, ...] = ("poll", "socket", "gateway", "off")
 
 #: How often socket mode re-reads the bound threads on top of the one read it
 #: runs at connect (issue-362, R3). The reconcile bounds EVERY cause of a missed
@@ -1247,6 +1250,9 @@ class SlackChannelConfig:
     principals: Tuple[Principal, ...] = ()
     authorized_users: Tuple[str, ...] = ()
     read_mode: str = "poll"
+    #: Whether the config carries a usable ``gateway`` block (issue-503) — the other
+    #: half of :attr:`push_reachable` in ``gateway`` mode.
+    gateway: bool = False
     read_interval_seconds: float = 30.0
     #: How often socket mode re-reads the bound threads on top of the connect-time
     #: read (issue-362). ``0`` means connect-only — 16.0.1's behaviour.
@@ -1269,17 +1275,26 @@ class SlackChannelConfig:
         return self.subscribe
 
     @property
+    def push_reachable(self) -> bool:
+        """Whether an interactive payload can reach this instance (issue-503): over its
+        own Socket Mode connection, or delivered by the gateway client."""
+        return self.read_mode == "socket" or (
+            self.read_mode == "gateway" and self.gateway
+        )
+
+    @property
     def interactive(self) -> bool:
-        """Whether an action button can be received: Socket Mode AND the grant
-        (decision-103 D5) — a button nobody can receive is worse than none."""
-        return self.read_mode == "socket" and "gate.feedback" in self.publish
+        """Whether an action button can be received: a press can reach this instance
+        (:attr:`push_reachable`) AND the grant (decision-103 D5) — a button nobody can
+        receive is worse than none."""
+        return self.push_reachable and "gate.feedback" in self.publish
 
     @property
     def command_buttons(self) -> bool:
-        """Whether an Execute / Start button can be received AND acted on: Socket
-        Mode and the ``control.command`` grant (issue-337 R1.4) — the same rule
-        :attr:`interactive` applies to the Approve pair."""
-        return self.read_mode == "socket" and "control.command" in self.publish
+        """Whether an Execute / Start button can be received AND acted on: a press can
+        reach this instance and the ``control.command`` grant (issue-337 R1.4) — the
+        same rule :attr:`interactive` applies to the Approve pair."""
+        return self.push_reachable and "control.command" in self.publish
 
     def keyword(self, command: str) -> str:
         """The configured keyword for ``command`` — ``""`` for an unknown command
@@ -1313,12 +1328,13 @@ class SlackChannelConfig:
 
         The same two-part rule :attr:`interactive` and :attr:`command_buttons`
         apply, with the grant that is **already** required to reach the kickoff at
-        all: Socket Mode, because decision-116 D5 says an interactive payload
-        reaches the-loop no other way, and ``work-item.create``, because that is
+        all: a press that can reach this instance (Socket Mode, or the gateway's
+        delivery since issue-503 — decision-116 D5 says an interactive payload
+        reaches the-loop no other way), and ``work-item.create``, because that is
         what the answer does. No new grant, no new key. In ``poll`` mode the typed
         ``<repo>: `` prefix stays the only route and the refusal is unchanged.
         """
-        return self.read_mode == "socket" and self.kickoff_enabled
+        return self.push_reachable and self.kickoff_enabled
 
     @classmethod
     def from_mapping(cls, cli_config: Optional[Mapping]) -> "SlackChannelConfig":
@@ -1360,6 +1376,16 @@ class SlackChannelConfig:
                     "channels.slack.read.mode %r is not one of %s — resolving to 'off'",
                     mode,
                     "/".join(READ_MODES),
+                )
+                mode = "off"
+            gateway = gateway_block(config) is not None
+            if mode == "gateway" and not gateway:
+                # issue-503 R3.1: never fall back to a socket of our own — a deleted
+                # block must not put a second consumer on the gateway's app.
+                logger.error(
+                    "channels.slack.read.mode is 'gateway' but no usable gateway: "
+                    "block is configured — nothing is read from Slack (fail closed); "
+                    "add gateway.url, or set read.mode"
                 )
                 mode = "off"
             verbosity = str(section.get("verbosity", "normal"))
@@ -1440,6 +1466,7 @@ class SlackChannelConfig:
                 principals=principals,
                 authorized_users=tuple(ids_for(principals, "slack")),
                 read_mode=mode,
+                gateway=gateway,
                 read_interval_seconds=float(read.get("intervalSeconds") or 30),
                 catch_up_seconds=_catch_up_seconds(read.get("catchUpSeconds")),
                 split_check_beats=_split_check_beats(read.get("splitCheckBeats")),
@@ -3581,6 +3608,16 @@ def run_socket_listener(
     config = SlackChannelConfig.from_mapping(cli_config)
     if not config.enabled:
         logger.error("channels.slack is not enabled — nothing to listen for")
+        return 1
+    if config.gateway:
+        # issue-503 R4.3: one app has one Socket Mode connection, and the gateway
+        # holds it — whatever read.mode says, a second consumer here would split
+        # every envelope between the two.
+        logger.error(
+            "a gateway block is configured — this instance consumes Slack from the "
+            "gateway, which holds the app's Socket Mode connection; not opening a "
+            "second one (read.mode: gateway is the setting for this instance)"
+        )
         return 1
     if config.read_mode != "socket":
         logger.error(

@@ -38,6 +38,26 @@ refused with `409 duplicate-instance`, so a fleet should name each instance. Whe
 gateway is unreachable the instance keeps running, retries with back-off and never
 starts a Slack listener of its own. Absent, the instance behaves exactly as before.
 
+Beside the block, set
+[`channels.slack.read.mode: gateway`](/config/cli/channels-options#slackreadmode)
+([issue-503](https://github.com/MadaraUchiha-314/the-loop/issues/503)):
+
+```yaml
+gateway:
+  url: http://127.0.0.1:8790
+channels:
+  slack:
+    enabled: true
+    read:
+      mode: gateway   # never open Socket Mode here; buttons and the picker stay on
+```
+
+`gateway` says what the instance does: it opens no Socket Mode connection, and every
+interactive feature stays on under its grants. If the block is ever removed, a `gateway`
+mode reads nothing rather than opening a second socket on the gateway's app. A 20.3.0
+config that set `mode: socket` here still works. `the-loop channels status` flags it,
+and `the-loop migrate-config` rewrites it.
+
 ## Options
 
 ### `url`

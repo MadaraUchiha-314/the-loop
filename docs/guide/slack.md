@@ -140,7 +140,7 @@ settings:
       - message.mpim        # a group direct message (issue-362)
       - app_mention         # @the-loop, in any of them (issue-389)
   interactivity:
-    is_enabled: true        # Approve / Request changes, Execute / Start buttons (read.mode: socket)
+    is_enabled: true        # Approve / Request changes, Execute / Start buttons (read.mode: socket or gateway)
   org_deploy_enabled: false
   socket_mode_enabled: true # `the-loop channels listen` — an outbound connection, nothing exposed
   token_rotation_enabled: false
@@ -261,7 +261,7 @@ channels:
       repo: octocat/hello-world         # where a top-level message becomes an issue,
       labels: ["the-loop: auto-execute"]  # every routing.autoExecuteLabels entry, so the item is armed
     read:
-      mode: socket                      # buttons and the slash command need this
+      mode: socket                      # buttons and the slash command need this (gateway behind a gateway)
 ```
 
 `subscribe` is what the channel **hears**; `publish` is what a message on it **may

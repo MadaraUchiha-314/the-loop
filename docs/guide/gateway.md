@@ -37,10 +37,19 @@ One instance on one machine gains nothing from a gateway; leave it as it is.
 3. **Point each instance at it.** Add the [`gateway` block](../config/cli/gateway-options.md)
    to the instance's `cli-config.yaml` — `url`, and `actors` for the users this instance
    works for — give the instance a distinct `instance.name` (a second peer under a live
-   name is refused with `409`), and `the-loop restart`. Its webhook receiver and its
+   name is refused with `409`), set
+   [`channels.slack.read.mode: gateway`](../config/cli/channels-options.md#slackreadmode)
+   if the instance uses Slack, and `the-loop restart`. Its webhook receiver and its
    poller keep running exactly as `webhooks` and `polling` say; only its Slack listener
    (or poll reader) stops, and `the-loop status` reads `off · gateway configured` for
-   it. Remove the `gateway` block and the instance is exactly as before.
+   it. With `read.mode: gateway` the Approve, Execute and Start buttons, the kickoff
+   picker and the slash command all keep working through the gateway, and the instance
+   never opens a Socket Mode connection itself. A 20.3.0 config with `mode: socket` here
+   still works, and `the-loop migrate-config` rewrites it to `gateway`
+   ([issue-503](https://github.com/MadaraUchiha-314/the-loop/issues/503)). To leave the
+   gateway, remove the block **and** set `read.mode` back to `socket` or `poll`. A
+   `gateway` mode without a block reads nothing, on purpose, so that leaving cannot
+   silently open a second socket on the gateway's app.
 4. **Re-point a GitHub webhook**, if you had one, at the gateway's `/gh-webhook` with the
    same secret: the contract is GitHub's verbatim.
 5. **Slack reads over Socket Mode only.** Behind a gateway there is no poll reader, so a
