@@ -41,7 +41,7 @@ settle.
   - _Depends on:_ none
   - _Requirements:_ R1.2
   - _Test:_ T1, `tests/test_gateway_rooms.py -k on_change` (red→green)
-- [ ] 4. Instance: the client publishes rooms
+- [x] 4. Instance: the client publishes rooms
   - `GatewayClient.publish_rooms`, the reconcile in `step()`, the full publish in
     `register()`, `rooms` in `document()`, `attach(channel_store=…)`, the unreadable-dir
     guard.

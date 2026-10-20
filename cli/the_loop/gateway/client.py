@@ -63,6 +63,10 @@ MAX_BATCH = 64
 #: The most a gateway answer may weigh before the client refuses to parse it (SEC-3).
 MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 BACKOFF_MIN_S, BACKOFF_MAX_S = 1.0, 60.0
+#: How often the loop re-reads the declared collaboration channels (issue-505, R1.3):
+#: a declaration made by another process (the CLI) reaches the gateway this late at most,
+#: plus one long-poll.
+ROOMS_RECONCILE_S = 30.0
 
 #: ``(method, path, body) -> (status, json body)``; the default is urllib.
 Transport = Callable[[str, str, Optional[Mapping[str, Any]], float], Tuple[int, Any]]
@@ -155,6 +159,11 @@ class GatewayClient:
         self._deferred: List[Tuple[int, Any]] = []
         self._lock = threading.Lock()
         self.fetches = 0
+        # the rooms (issue-505): what to publish, what was last accepted, and when
+        self._rooms: Optional[Callable[[], Dict[str, str]]] = None
+        self._published_rooms: Optional[Dict[str, str]] = None
+        self._rooms_at = 0.0
+        self._rooms_lock = threading.Lock()
 
     # -- the peer id survives restarts (R4.3) ----------------------------------------------
 
@@ -261,6 +270,9 @@ class GatewayClient:
             raise urllib.error.URLError(f"PUT /actors answered {status}")
         for subject, role in self._claims():
             self.publish_claim(subject, role, _raise=True)
+        # the whole set, changed or not: a gateway that lost its store gets the rooms
+        # back, and a room removed while this instance was stopped is retracted (R1.4)
+        self.publish_rooms(force=True, _raise=True)
         self.registered = True
         # the gateway answered the registration: the client is connected from here,
         # not only once a (possibly long-polling) first fetch returns
@@ -323,6 +335,54 @@ class GatewayClient:
             return False
         return status == 200
 
+    def publish_rooms(self, *, force: bool = False, _raise: bool = False) -> bool:
+        """``PUT /rooms`` with every Slack collaboration channel this instance's work
+        items declare (issue-505). Skipped when nothing is attached, and — unless
+        ``force`` — when the set equals the one last published. ``False`` on a failure,
+        which is logged and retried by the next reconcile (R1.6); a 409 for a second
+        peer is a refusal like a fetch's."""
+        if self._rooms is None:
+            return True
+        with self._rooms_lock:
+            self._rooms_at = time.monotonic()
+            try:
+                desired = dict(self._rooms())
+            except (OSError, ValueError) as exc:
+                # an unreadable directory is not "no rooms": keep the gateway's (fail closed)
+                logger.warning("gateway: rooms not published, declarations unreadable (%s)", exc)
+                return False
+            if not force and desired == self._published_rooms:
+                return True
+            try:
+                status, body = self._call(
+                    "PUT",
+                    "/api/v1/gateway/rooms",
+                    {"instance": self.instance, "peer": self.peer, "rooms": desired},
+                )
+            except Exception as exc:  # noqa: BLE001 — retried by the next reconcile
+                if _raise:
+                    raise
+                logger.warning("gateway: rooms not published (%s)", exc)
+                return False
+            if status == 409:
+                self._refused(body)
+                return False
+            if status != 200:
+                if _raise:
+                    raise urllib.error.URLError(f"PUT /rooms answered {status}")
+                logger.warning("gateway: rooms not published (answered %s)", status)
+                return False
+            self._published_rooms = desired
+            refused = body.get("refused") if isinstance(body, Mapping) else None
+            for entry in refused if isinstance(refused, list) else ():
+                entry = entry if isinstance(entry, Mapping) else {}
+                logger.warning(
+                    "gateway: room %s is held by instance %s; its messages go there",
+                    str(entry.get("channel") or "?")[:40],
+                    str(entry.get("holder") or "?")[:128],
+                )
+            return True
+
     # -- what the instance publishes (R5.3, R5.7, R5.8) ---------------------------------------------------
 
     def attach(
@@ -332,14 +392,18 @@ class GatewayClient:
         control_store: Any = None,
         channel_state: Any = None,
         pipeline: Any = None,
+        channel_store: Any = None,
     ) -> None:
         """Wire the instance's registry, control store, Slack state and pipeline to this
         client: a registered session publishes a claim (``reviewer`` when the work
         item's control command is ``review``, else ``driver``), a closed one releases
         it, a linked pull request and a bound Slack thread publish bindings, and the
-        live sessions are what ``register`` re-asserts after an outage."""
+        live sessions are what ``register`` re-asserts after an outage. The
+        ``channel_store``'s declared Slack channels are the rooms (issue-505)."""
         self._registry = registry
         self._control_store = control_store
+        if channel_store is not None:
+            self._rooms = lambda: _declared_rooms(channel_store)
 
         def role_of(ref: str) -> str:
             record = None
@@ -552,6 +616,8 @@ class GatewayClient:
         try:
             if not self.registered and not self.register():
                 return False
+            if time.monotonic() - self._rooms_at >= ROOMS_RECONCILE_S:
+                self.publish_rooms()  # a declaration another process made (R1.3)
             deliveries = self.fetch_once()
         except (urllib.error.URLError, OSError, ValueError) as exc:
             self._unreachable(str(exc))
@@ -639,9 +705,20 @@ class GatewayClient:
                 "longPollSeconds": self.block.long_poll_s,
             },
             "claims": [{"subject": s, "role": r} for s, r in self._claims()],
+            "rooms": dict(self._published_rooms or {}),
             "health": health,
             "queue": queue,
         }
+
+
+def _declared_rooms(channel_store: Any) -> Dict[str, str]:
+    """``{channel id: work item ref}`` for the declared Slack channels. ``targets``
+    already leaves a contested channel out (R1.5); the directory is listed first so a
+    read failure raises instead of reading as "no rooms"."""
+    from ..workchannels import SLACK
+
+    channel_store.store.refs()
+    return channel_store.targets(SLACK)
 
 
 def _utcnow() -> str:

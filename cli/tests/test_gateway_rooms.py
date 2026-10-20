@@ -11,6 +11,7 @@ import pytest
 
 from the_loop.gateway.envelope import UNASSIGNED, Envelope
 from the_loop.gateway.store import Refused, SqliteStore
+from the_loop.sessions import WorkItemRef
 
 REF = "github:o/r#14"
 SLUG = "github-o-r-14"
@@ -373,3 +374,157 @@ def test_on_change_failing_never_fails_the_declaration(tmp_path, monkeypatch):
     store = CollaborationChannelStore(tmp_path / "portable")
     changed, _ = store.add(REF, "slack@C0123ABCD", actor="op")
     assert changed and store.targets() == {"C0123ABCD": REF}
+
+
+# -- the instance: the client publishes rooms (R1.1–R1.6, R4.1, R4.2) ------------------------
+
+
+class _Transport:
+    def __init__(self, harness):
+        self.harness = harness
+        self.down = False
+        self.status: "int | None" = None
+        self.calls: list = []
+
+    def __call__(self, method, path, body, timeout):
+        self.calls.append((method, path, dict(body) if body else None))
+        if self.down:
+            raise OSError("connection refused")
+        if self.status is not None and path.endswith("/rooms"):
+            return self.status, {"error": "boom"}
+        response = self.harness.client.request(method, path, json=body)
+        return response.status_code, (response.json() if response.content else None)
+
+
+def _gateway_client(gw, tmp_path, channel_store=None):
+    import threading
+
+    from the_loop.gateway.client import GatewayClient
+
+    transport = _Transport(gw)
+    client = GatewayClient(
+        {
+            "state": {"root": str(tmp_path / ".the-loop")},
+            "instance": {"name": "laptop-a"},
+            "gateway": {"url": "http://gw", "pollIntervalSeconds": 5, "longPollSeconds": 0},
+        },
+        threading.Event(),
+        transport=transport,
+        sleep=lambda _: None,
+        rng=lambda: 0.5,
+    )
+
+    class _Registry:
+        publisher = None
+
+        def list_sessions(self):
+            return []
+
+    if channel_store is not None:
+        client.attach(_Registry(), channel_store=channel_store)
+    return client, transport
+
+
+def _rooms_calls(transport):
+    return [body for _, path, body in transport.calls if path.endswith("/rooms")]
+
+
+@pytest.fixture()
+def declared(tmp_path):
+    from the_loop.workchannels import CollaborationChannelStore
+
+    return CollaborationChannelStore(tmp_path / "portable")
+
+
+def test_register_publishes_every_declared_room(gw, tmp_path, declared):
+    declared.add(REF, "slack@C0123ABCD", actor="op")
+    client, transport = _gateway_client(gw, tmp_path, declared)
+    client.step()
+    assert _rooms_calls(transport)[0]["rooms"] == {"C0123ABCD": REF}
+    assert gw.store.resolve_room("C0123ABCD") == (REF, SLUG)
+    assert client.document(probe=False)["rooms"] == {"C0123ABCD": REF}
+
+
+def test_a_contested_channel_is_not_published(gw, tmp_path, declared):
+    declared.add(REF, "slack@C0123ABCD", actor="op")
+    # a second record naming the same channel (hand-edited): declared by none
+    declared._write(WorkItemRef.parse("github:o/r#99"), declared.list(REF))
+    client, transport = _gateway_client(gw, tmp_path, declared)
+    client.step()
+    assert _rooms_calls(transport)[0]["rooms"] == {}
+
+
+def test_the_reconcile_publishes_only_a_changed_set_after_the_interval(
+    gw, tmp_path, declared
+):
+    client, transport = _gateway_client(gw, tmp_path, declared)
+    client.step()  # registers: one publish of {}
+    assert len(_rooms_calls(transport)) == 1
+    declared.add(REF, "slack@C0123ABCD", actor="op")  # another process: no hook here
+    client.step()
+    assert len(_rooms_calls(transport)) == 1  # the interval has not passed
+    client._rooms_at -= 31
+    client.step()
+    assert _rooms_calls(transport)[-1]["rooms"] == {"C0123ABCD": REF}
+    client._rooms_at -= 31
+    client.step()
+    assert len(_rooms_calls(transport)) == 2  # unchanged: no call
+
+
+def test_register_publishes_the_full_set_even_when_unchanged(gw, tmp_path, declared):
+    declared.add(REF, "slack@C0123ABCD", actor="op")
+    client, transport = _gateway_client(gw, tmp_path, declared)
+    client.step()
+    client.registered = False  # an outage
+    client.step()
+    assert len(_rooms_calls(transport)) == 2
+
+
+def test_a_failed_publish_is_logged_and_retried(gw, tmp_path, declared, caplog):
+    client, transport = _gateway_client(gw, tmp_path, declared)
+    client.step()
+    declared.add(REF, "slack@C0123ABCD", actor="op")
+    transport.status = 500
+    assert client.publish_rooms() is False
+    assert "rooms not published" in caplog.text
+    transport.status = None
+    transport.down = True
+    assert client.publish_rooms() is False
+    transport.down = False
+    assert client.publish_rooms() is True
+    assert gw.store.resolve_room("C0123ABCD") == (REF, SLUG)
+
+
+def test_retraction_reaches_the_gateway(gw, tmp_path, declared):
+    declared.add(REF, "slack@C0OLD", actor="op")
+    client, _ = _gateway_client(gw, tmp_path, declared)
+    client.step()
+    declared.add(REF, "slack@C0NEW", actor="op")  # moves the room
+    client.publish_rooms()
+    assert gw.store.resolve_room("C0OLD") is None
+    assert gw.store.resolve_room("C0NEW") == (REF, SLUG)
+    declared.clear(REF)
+    client.publish_rooms()
+    assert gw.store.resolve_room("C0NEW") is None
+
+
+def test_abuse_an_unreadable_directory_retracts_nothing(
+    gw, tmp_path, declared, monkeypatch
+):
+    declared.add(REF, "slack@C0123ABCD", actor="op")
+    client, transport = _gateway_client(gw, tmp_path, declared)
+    client.step()
+
+    def unreadable():
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(declared.store, "refs", unreadable)
+    assert client.publish_rooms(force=True) is False
+    assert len(_rooms_calls(transport)) == 1
+    assert gw.store.resolve_room("C0123ABCD") == (REF, SLUG)
+
+
+def test_a_client_without_a_channel_store_publishes_no_rooms(gw, tmp_path):
+    client, transport = _gateway_client(gw, tmp_path)
+    client.step()
+    assert _rooms_calls(transport) == []
