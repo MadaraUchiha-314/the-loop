@@ -379,7 +379,9 @@ class GatewayClient:
             refused: Dict[str, str] = {}
             for entry in body.get("refused") or ():
                 if isinstance(entry, Mapping) and entry.get("channel"):
-                    refused[str(entry["channel"])[:40]] = str(entry.get("holder") or "?")
+                    refused[str(entry["channel"])[:40]] = str(
+                        entry.get("holder") or "?"
+                    )
             # what the gateway ACCEPTED: a refused room differs from the desired set,
             # so the next reconcile asks for it again (critic C4)
             self._published_rooms = {

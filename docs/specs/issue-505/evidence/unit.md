@@ -5,7 +5,7 @@ workItem: "github:MadaraUchiha-314/the-loop#505"
 
 # Unit, abuse-case and migration tests (T1, T8, T10)
 
-All 39 tests in `tests/test_gateway_rooms.py` pass. Against `origin/main` (20.4.0) code,
+All 43 tests in `tests/test_gateway_rooms.py` pass. Against `origin/main` (20.4.0) code,
 the new unit and integration files give 35 failed, 3 passed and 5 errors. That is the
 red half of red → green. The 3 that pass check behaviour this change keeps: resolution
 without a room, and `bind`'s held routing.
@@ -17,7 +17,7 @@ live config, and inherited, it skews unrelated tests.
 ## T1: `uv run python -m pytest -q tests/test_gateway_rooms.py`
 
 ```text
-39 passed
+43 passed
 tests/test_gateway_rooms.py::test_publish_rooms_records_and_resolves_a_room
 tests/test_gateway_rooms.py::test_publishing_drains_the_rooms_held_events_in_order
 tests/test_gateway_rooms.py::test_a_drained_event_waits_on_the_subject_until_a_claim
@@ -56,18 +56,22 @@ tests/test_gateway_rooms.py::test_register_publishes_the_full_set_even_when_unch
 tests/test_gateway_rooms.py::test_a_failed_publish_is_logged_and_retried
 tests/test_gateway_rooms.py::test_retraction_reaches_the_gateway
 tests/test_gateway_rooms.py::test_abuse_an_unreadable_directory_retracts_nothing
+tests/test_gateway_rooms.py::test_abuse_a_corrupt_record_retracts_nothing
 tests/test_gateway_rooms.py::test_a_client_without_a_channel_store_publishes_no_rooms
+tests/test_gateway_rooms.py::test_the_drain_leaves_an_event_a_thread_binding_already_claimed
+tests/test_gateway_rooms.py::test_a_room_published_between_resolve_and_append_still_routes_the_event
+tests/test_gateway_rooms.py::test_a_refused_room_is_taken_on_a_later_reconcile_once_the_holder_lets_go
 ```
 
 ## T8: `… tests/test_gateway_rooms.py tests/test_gateway_rooms_integration.py -k abuse`
 
 ```text
-11 passed, 32 deselected
+12 passed, 35 deselected
 ```
 
 Abuse cases 1 (allow-list), 2 (live holder kept), 3 (another instance's room untouched),
 5 (five malformed shapes → 422, nothing stored), a second peer under a live name (409),
-and fail closed (an unreadable portable directory retracts nothing). Abuse case 4 (a
+and fail closed: neither an unreadable portable directory nor a corrupt record retracts a room (critic C3). Abuse case 4 (a
 stranger's message still judged by the instance) is asserted in the first T2 scenario:
 the gateway hands over the raw payload with its author. The instance's Slack pipeline,
 which applies the principals, listen mode and `authorizedUsers`, is unchanged and keeps
@@ -76,7 +80,7 @@ its own tests (issue-496, issue-389).
 ## T10: `… tests/test_gateway_rooms.py -k migration`
 
 ```text
-1 passed, 38 deselected
+1 passed, 42 deselected
 ```
 
 A store with the `rooms` table dropped (the 20.4.0 schema) reopens, keeps its bindings,
@@ -90,3 +94,13 @@ tree's `the_loop`:
 ```text
 35 failed, 3 passed, 5 errors in 1.24s
 ```
+
+## After the critic round
+
+Four tests were added, one per critic finding, and each was red before its fix:
+`test_the_drain_leaves_an_event_a_thread_binding_already_claimed` (C1),
+`test_a_room_published_between_resolve_and_append_still_routes_the_event` (C2),
+`test_abuse_a_corrupt_record_retracts_nothing` (C3) and
+`test_a_refused_room_is_taken_on_a_later_reconcile_once_the_holder_lets_go` (C4). The
+first unreadable-directory test now fails the real `iterdir` rather than mocking
+`refs()`.

@@ -87,7 +87,16 @@ them to claimants, else to the actor's instance, else leaves them held, moves in
 `_route_held_rows(cur, rows, subject, ref, provider, now)`. `bind` and `publish_rooms`
 both call it. A room has no subject of its own, so every drained event is re-subjected
 onto the work item's subject (R3.2: with no claimant it stays held there, and the claim
-routes it later through `_route_held`). Only `routed = 0` rows are selected (R3.3).
+routes it later through `_route_held`). Only `routed = 0` rows still on `unassigned` are
+selected (R3.3): an event a thread binding already moved onto its work item stays there,
+even unclaimed (critic C1, R2.4).
+
+**The race with ingest (critic C2).** The ingest resolves an event in one transaction and
+appends it in the next, so a room published in between would drain before the row
+exists. `append` therefore re-resolves a Slack event it is about to hold, inside its own
+write transaction: the thread binding for `held_key`, then the room for its channel.
+When one matches, the event is routed there, and the ingest records
+`subject.routed … by: "late"`.
 
 **Pruning (R4.5).** `_prune` deletes the pruned instance's `rooms` rows beside
 its claims and actors, and the subject pruning's `NOT EXISTS` list gains `rooms`.
@@ -215,14 +224,15 @@ flowchart LR
 | Gateway unreachable during `publish_rooms` from the hook or reconcile | warning, `False`; the next reconcile retries, because `_published_rooms` did not change |
 | Gateway unreachable during `register` | raised → `gateway.unreachable`, back-off, re-register (today's path) |
 | `409 duplicate-instance` | `_refused`, as for a fetch |
-| A room refused as `duplicate-room` | warning naming channel and holder; the rest applied; not retried until the set changes or the next registration |
+| A room refused as `duplicate-room` | warning naming channel and holder, once per holder; the rest applied; the client caches only the accepted rooms, so the next reconcile asks for the refused one again (critic C4) |
 | The portable directory cannot be read | `targets()` answers `{}`. The client would then retract every room, so `publish_rooms` skips the call when `targets()` raised (see below) |
 | The hook raises | caught in `_changed`, logged; the declaration stands |
 
-`targets()` swallows read errors and answers `{}`, which would retract every room on a
-transient read failure. `publish_rooms` therefore reads through a small helper that calls
-`store.store.refs()` first and skips the publish on `OSError` / `ValueError`, keeping the
-gateway's previous rooms (fail closed, requirements §Security).
+`targets()` swallows read errors, and so does the record reader under it, so an
+unreadable directory or one corrupt record would read as "no rooms" and retract them.
+`publish_rooms` therefore reads through `_declared_rooms`, which lists the directory and
+parses every record strictly first. On any `OSError` / `ValueError` it skips the publish
+and keeps the gateway's previous rooms (critic C3, fail closed, requirements §Security).
 
 ## Security design
 
@@ -246,7 +256,7 @@ end; the contract parity test. Detail in [`testing-plan.md`](testing-plan.md).
 
 - **Replace-set over bind + delete** — see § Architecture.
 - **A periodic reconcile (30 s) beside the in-process hook.** The hook makes the common path (a comment keyword the daemon's dispatcher handles) immediate; the reconcile catches a declaration made by the CLI in another process, at the cost of a directory scan every 30 s.
-- **A refused room is not retried every reconcile.** The client remembers the set it sent, so a room held by another live instance is reported once per change or registration, not every 30 s.
+- **A refused room is retried every reconcile, quietly.** The client caches what the gateway accepted, so a room another live instance holds is asked for every 30 s and taken when the holder lets go. The warning is logged only when the holder changes (critic C4).
 
 ### Alternatives considered
 

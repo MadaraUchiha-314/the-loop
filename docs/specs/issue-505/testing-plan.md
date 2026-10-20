@@ -42,6 +42,8 @@ Nothing needs Slack.
 | T1 | R1.4 | `register()` publishes the full set even when unchanged |
 | T1 | R1.6 | a transport error or a 500 logs a warning and returns `False`; the next reconcile retries |
 | T1 | R2.1, R2.3, R2.4 | resolution order: thread binding → published room → static room → held |
+| T1 | R2.4, R3.1 | critic C1: a drain leaves an event a thread binding moved; critic C2: a room published between resolve and append still routes the event |
+| T1 | R5.2 | critic C4: a refused room is retried and taken once the holder lets go |
 | T1 | R3.1–R3.3 | drain re-subjects and routes held `<channel>:*` events in order; held on the subject without claimants, routed by a later claim; routed events untouched; another channel's held events untouched |
 | T1 | R4.1, R4.2, R4.4 | a set without a room deletes it; a moved room swaps |
 | T1 | R4.5 | pruning a lapsed instance drops its rooms |
@@ -98,10 +100,10 @@ All six activities ran and passed. The two new test files are red on `origin/mai
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| T1 | `cd cli && uv run python -m pytest -q tests/test_gateway_rooms.py` | 39 passed | [unit.md](evidence/unit.md) |
+| T1 | `cd cli && uv run python -m pytest -q tests/test_gateway_rooms.py` | 43 passed, including one regression test per critic finding (C1–C4) | [unit.md](evidence/unit.md) |
 | T2 | `cd cli && uv run python -m pytest -q tests/test_gateway_rooms_integration.py`; `the-loop scenarios --glob …` | 4 passed; 4 scenarios listed with requirement links | [integration.md](evidence/integration.md) |
 | T3 | `cd cli && uv run python -m pytest -q tests/test_api_contract_parity.py` | 6 passed; `PUT /api/v1/gateway/rooms` in the contract | [contract.md](evidence/contract.md) |
-| T8 | `… tests/test_gateway_rooms.py tests/test_gateway_rooms_integration.py -k abuse` | 11 passed (abuse cases 1, 2, 3, 5, the peer rule, fail closed); abuse case 4 asserted in T2 scenario 1 | [unit.md](evidence/unit.md) |
+| T8 | `… tests/test_gateway_rooms.py tests/test_gateway_rooms_integration.py -k abuse` | 12 passed (abuse cases 1, 2, 3, 5, the peer rule, fail closed on an unreadable dir and on a corrupt record); abuse case 4 asserted in T2 scenario 1 | [unit.md](evidence/unit.md) |
 | T10 | `… tests/test_gateway_rooms.py -k migration` | 1 passed: a 20.4.0 store reopens and gains `rooms` | [unit.md](evidence/unit.md) |
 | T11 | `uv run pre-commit run --all-files` | all six hooks passed, after fixing five pyright errors from the first run | [lint-and-typecheck.md](evidence/lint-and-typecheck.md) |
 
