@@ -91,9 +91,7 @@ def test_an_untouched_checklist_freezes_the_owners_defaults(repo, fake_github):
         assert row in checklist, row
 
     fake_github.comments.append({"author": "@owner", "body": "the-loop execute"})
-    runtime.advance(
-        WORK_ITEM, ref=REF, event={"comments": list(fake_github.comments)}
-    )
+    runtime.advance(WORK_ITEM, ref=REF, event={"comments": list(fake_github.comments)})
     state = WorkItemState.load(repo / "docs" / "specs" / WORK_ITEM, WORK_ITEM)
     assert state.surface == "pull-request"
     assert state.claude_artifact is True
