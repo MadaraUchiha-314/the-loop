@@ -5,6 +5,8 @@ workItem: "github:MadaraUchiha-314/the-loop#511"
 
 # Design critic review: de-cluttering the control plane UI
 
+## Design critic review
+
 One round, the operator's cap (`criticReviewCount: 1`). The critic was codex, run with
 `the-loop critic run codex --root <worktree> --cwd <worktree>` in 64 s against `5ca236f`,
 reading the requirements, the design, the chosen Option C prototype and the components
