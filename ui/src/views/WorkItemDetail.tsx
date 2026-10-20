@@ -156,13 +156,16 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
             <span className="ref-chip">{view.ref}</span>
             <PhaseChip phase={view.currentNode || (view.rail.length > 0 ? "planned" : "no graph")} status={itemStatus(view)} />
             {note ? (
-              <span
-                className={view.parked || view.rail.some((node) => node.state === "blocked") ? "text-state-blocked" : ""}
-                title={note}
-                data-note
-              >
-                {note}
-              </span>
+              <>
+                <span aria-hidden="true">·</span>
+                <span
+                  className={view.parked || view.rail.some((node) => node.state === "blocked") ? "text-state-blocked" : ""}
+                  title={note}
+                  data-note
+                >
+                  {note}
+                </span>
+              </>
             ) : null}
             <span aria-hidden="true">·</span>
             <span title={view.lastActivity || undefined}>updated {relativeTime(view.lastActivity)}</span>
