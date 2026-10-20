@@ -77,14 +77,14 @@ describe("railLabel and humanize", () => {
 
 describe("GraphStrip (issue-511: the band behind Full graph)", () => {
   it("renders nothing while collapsed — the header carries the position and the control", () => {
-    render(<GraphStrip nodes={rail("human-approval")} loop="pdlc-work-item-loop" emptyMessage="—" expanded={false} />);
+    render(<GraphStrip nodes={rail("human-approval")} loop="pdlc-work-item-loop" expanded={false} />);
     expect(screen.queryByRole("region", { name: "Loop position" })).toBeNull();
     expect(screen.queryByRole("list", { name: "loop position" })).toBeNull();
     expect(document.querySelectorAll("[data-node]")).toHaveLength(0);
   });
 
   it("shows every node when expanded, the current one as the step, with no counts and no second statement of the position", () => {
-    render(<GraphStrip nodes={rail("human-approval")} loop="pdlc-work-item-loop" emptyMessage="—" expanded />);
+    render(<GraphStrip nodes={rail("human-approval")} loop="pdlc-work-item-loop" expanded />);
     const region = screen.getByRole("region", { name: "Loop position" });
     const list = screen.getByRole("list", { name: "loop position" });
     expect(list.querySelectorAll("[data-node]")).toHaveLength(19);
@@ -98,9 +98,17 @@ describe("GraphStrip (issue-511: the band behind Full graph)", () => {
     expect(within(region).queryByRole("button")).toBeNull();
   });
 
-  it("says why when there is no rail", () => {
-    render(<GraphStrip nodes={[]} loop="pdlc-work-item-loop" emptyMessage="No checkout recorded." expanded />);
-    expect(screen.getByText("No checkout recorded.")).toBeInTheDocument();
-    expect(screen.queryByRole("list", { name: "loop position" })).toBeNull();
+  it("marks the pointer node as the step even when it is blocked, and only it (critic round 1, R6.2)", () => {
+    const nodes = rail("implementation");
+    for (const node of nodes) if (node.id === "implementation" || node.id === "design") node.state = "blocked";
+    render(<GraphStrip nodes={nodes} loop="pdlc-work-item-loop" expanded current="implementation" />);
+    const steps = document.querySelectorAll('[aria-current="step"]');
+    expect(steps).toHaveLength(1);
+    expect(steps[0]).toHaveTextContent("Implementation");
+  });
+
+  it("renders nothing for an empty rail — the header says why, in the Full graph slot", () => {
+    render(<GraphStrip nodes={[]} loop="pdlc-work-item-loop" expanded />);
+    expect(screen.queryByRole("region", { name: "Loop position" })).toBeNull();
   });
 });

@@ -138,6 +138,11 @@ passed; the n/a rows stayed n/a as planned.
 composer's dead prop dropped): `bun run lint`, `bun run test` (22 files, 366 tests) and
 `bun run build` clean; JS 336 728 B, CSS 24 350 B.
 
+**Re-run after the critic round** (`evidence/critic-review.md`: the empty-rail sentence,
+the popover's measured bound, the blocked pointer's `aria-current`, the verbs test):
+`bun run lint`, `bun run test` (22 files, 372 tests) and `bun run build` clean; JS
+336 965 B, CSS 24 350 B; the 32 stills recaptured with no page error.
+
 **Not executed:** T3, T4, T6, T7, T10, T11 — n/a as planned (no contract, data-path,
 snapshot, performance, migration or live-service change; the bundle check stands in for
 T7 and the owner's PR review, with the stills beside the prototype's, for T11).

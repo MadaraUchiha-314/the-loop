@@ -9,7 +9,8 @@ workItem: "github:MadaraUchiha-314/the-loop#511"
 > 1440×900 and 390×844, captured at `verification` on 2026-10-20 by
 > `node ui/scripts/screenshots.mjs` against `bun run preview --port 4173` over `dist/`.
 > 32 captures under [`ui/`](ui/); [`ui/capture.log`](ui/capture.log) lists them and
-> recorded no `pageerror` and no `console.error`. The web fonts loaded, so the stills
+> recorded no `pageerror` and no `console.error`. Recaptured after the self-review and
+> critic rounds, so the stills are of the reviewed code. The web fonts loaded, so the stills
 > render in the design's faces; the prototype stills render in system faces (design D10).
 
 ## Each state beside its prototype still

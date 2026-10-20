@@ -21,7 +21,7 @@
  * this file owns the switch and which events it is given.
  */
 
-import { useEffect, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type SyntheticEvent, type UIEvent } from "react";
 
 import { ApiError } from "../api/client.ts";
 import {
@@ -115,6 +115,23 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
   const traceState = sessionState(traceSession);
 
   const traceScroll = useRef<HTMLDivElement | null>(null);
+  const popover = useRef<HTMLDivElement | null>(null);
+  /**
+   * Bound the Session details popover to the space actually left below it
+   * (critic round 1): the header wraps at a phone's width, so a static
+   * `calc(100vh - 9rem)` can overshoot a short viewport. Measured on open,
+   * cleared on close; the class value is the fallback before the first measure.
+   */
+  function onDetailsToggle(event: SyntheticEvent<HTMLDetailsElement>): void {
+    const body = popover.current;
+    if (!body) return;
+    if (!event.currentTarget.open) {
+      body.style.maxHeight = "";
+      return;
+    }
+    const top = body.getBoundingClientRect().top;
+    body.style.maxHeight = `${Math.max(Math.floor(globalThis.innerHeight - top - 16), 160)}px`;
+  }
   const entryCount = transcript.data?.entries.length ?? 0;
   /**
    * Follow the newest entry, but only for a reader who is already there —
@@ -169,20 +186,26 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
             ) : null}
             <span aria-hidden="true">·</span>
             <span title={view.lastActivity || undefined}>updated {relativeTime(view.lastActivity)}</span>
+            <span aria-hidden="true">·</span>
             {view.rail.length > 0 ? (
-              <>
-                <span aria-hidden="true">·</span>
-                <button
-                  type="button"
-                  aria-expanded={graphOpen}
-                  onClick={() => setGraphOpen((value) => !value)}
-                  className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  {graphOpen ? "Collapse graph" : "Full graph"}
-                  <ChevronDownIcon className={`h-3.5 w-3.5 transition-transform ${graphOpen ? "rotate-180" : ""}`} />
-                </button>
-              </>
-            ) : null}
+              <button
+                type="button"
+                aria-expanded={graphOpen}
+                onClick={() => setGraphOpen((value) => !value)}
+                className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {graphOpen ? "Collapse graph" : "Full graph"}
+                <ChevronDownIcon className={`h-3.5 w-3.5 transition-transform ${graphOpen ? "rotate-180" : ""}`} />
+              </button>
+            ) : (
+              /* No rail to reveal: the reason takes the control's slot, visible
+                 by default as it was at 20.5.1 (R5.3; critic round 1). */
+              <span>
+                {view.repoPath
+                  ? "The checkout has no work-item state for this item yet — it starts at phase-selection."
+                  : "No session on this machine recorded a checkout, so the work-item state cannot be read from here."}
+              </span>
+            )}
           </>
         }
         actions={
@@ -203,7 +226,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
           /* The panel's facts, behind one native disclosure: bounded to the
              viewport and scrolling inside (critic C4), closed by default at
              every width (R6.3). The summary wears the icon-button idiom. */
-          <details className="relative" data-session-details>
+          <details className="relative" data-session-details onToggle={onDetailsToggle}>
             <summary
               aria-label="Session details"
               title="Session details"
@@ -211,23 +234,17 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
             >
               <InfoIcon className="h-4 w-4" />
             </summary>
-            <div className="scroll-thin absolute right-0 z-20 mt-2 max-h-[calc(100vh-9rem)] w-[min(20rem,calc(100vw-2rem))] overflow-y-auto rounded-lg border border-border bg-surface text-left">
+            <div
+              ref={popover}
+              className="scroll-thin absolute right-0 z-20 mt-2 max-h-[calc(100vh-9rem)] w-[min(20rem,calc(100vw-2rem))] overflow-y-auto rounded-lg border border-border bg-surface text-left"
+            >
               <SessionFacts view={view} viewed={viewed} />
             </div>
           </details>
         }
       />
 
-      <GraphStrip
-        nodes={view.rail}
-        loop={view.record.graph?.loop ?? "loop"}
-        expanded={graphOpen}
-        emptyMessage={
-          view.repoPath
-            ? "The checkout has no work-item state for this item yet — it starts at phase-selection."
-            : "No session on this machine recorded a checkout, so the work-item state cannot be read from here."
-        }
-      />
+      <GraphStrip nodes={view.rail} loop={view.record.graph?.loop ?? "loop"} expanded={graphOpen} current={view.currentNode} />
 
       <SessionTabs view={view} viewed={viewed} />
 

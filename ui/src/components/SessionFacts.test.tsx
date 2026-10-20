@@ -120,23 +120,31 @@ describe("Session details (issue-511 R2.3, R3.3, R6.1)", () => {
 });
 
 describe("the verbs in the header (issue-511 R3.3, R3.4, R5.2)", () => {
-  it("Scenario: pause, resume, stop and start render in the header and call controlSession with the work item's ref", async () => {
+  it.each([
+    ["active", ["pause", "stop"]],
+    ["paused", ["resume", "stop"]],
+    ["none", ["start"]],
+  ] as const)("Scenario: pause, resume, stop and start render in the header and call controlSession with the work item's ref (session %s)", async (state, expected) => {
     const user = userEvent.setup();
     const api = new DemoApi();
     const control = vi.spyOn(api, "controlSession");
-    const view = viewOf("loop-lab#214");
+    const view: WorkItemView = { ...viewOf("loop-lab#214"), sessionState: state };
     const { onChanged } = renderDetail(view, undefined, api);
     await screen.findByRole("log", { name: /session transcript/i });
 
-    const header = screen.getByRole("banner");
-    const verbs = within(header).getByRole("group", { name: "Controls" });
-    expect(within(verbs).getByRole("button", { name: "pause" })).toBeInTheDocument();
-    expect(within(verbs).getByRole("button", { name: "stop" })).toBeInTheDocument();
+    const verbs = within(screen.getByRole("banner")).getByRole("group", { name: "Controls" });
+    expect(within(verbs).getAllByRole("button").map((el) => el.textContent)).toEqual([...expected]);
     expect(within(verbs).queryByText("work item")).toBeNull();
 
-    await user.click(within(verbs).getByRole("button", { name: "pause" }));
-    await vi.waitFor(() => expect(onChanged).toHaveBeenCalled());
-    expect(control).toHaveBeenCalledWith(view.ref, "pause", true, view.instance);
+    // One verb at a time: the group disables itself while a verb is in flight.
+    const click = async (verb: string): Promise<void> => {
+      await user.click(within(verbs).getByRole("button", { name: verb }));
+      await vi.waitFor(() => expect(control).toHaveBeenCalledWith(view.ref, verb, true, view.instance));
+      await vi.waitFor(() => expect(within(verbs).getByRole("button", { name: verb })).toBeEnabled());
+    };
+    await expected.reduce((chain, verb) => chain.then(() => click(verb)), Promise.resolve());
+    expect(control).toHaveBeenCalledTimes(expected.length);
+    expect(onChanged).toHaveBeenCalledTimes(expected.length);
   });
 
   it("Scenario: with a PR session selected the verbs carry a visible work item label and still target the work item", async () => {

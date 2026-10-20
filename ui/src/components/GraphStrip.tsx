@@ -52,41 +52,36 @@ interface GraphStripProps {
   nodes: RailNode[];
   /** The loop's name (`pdlc-work-item-loop`); the row's label. */
   loop: string;
-  /** What to say when there is no rail at all. */
-  emptyMessage: string;
   /** Whether the header's Full graph control is on; nothing renders otherwise. */
   expanded: boolean;
+  /**
+   * The node the pointer is on, by id — the step, whether its state is
+   * `current` or `blocked` (the model marks a blocked pointer `blocked`).
+   * Without it the `current` state alone decides.
+   */
+  current?: string | undefined;
 }
 
-export function GraphStrip({ nodes, loop, emptyMessage, expanded }: GraphStripProps) {
-  if (!expanded) return null;
+export function GraphStrip({ nodes, loop, expanded, current }: GraphStripProps) {
+  if (!expanded || nodes.length === 0) return null;
   return (
     <section className="border-b border-border bg-surface/60 px-6 py-3" aria-label="Loop position">
       <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span className="font-mono text-foreground">{loop}</span>
-        {nodes.length === 0 ? (
-          <>
-            <span aria-hidden="true">·</span>
-            <span>{emptyMessage}</span>
-          </>
-        ) : null}
       </div>
-
-      {nodes.length > 0 ? (
-        <ol className="scroll-thin mt-3 flex items-center gap-1 overflow-x-auto pb-1" role="list" aria-label="loop position">
-          {nodes.map((node, index) => (
-            <li key={node.id} className="flex shrink-0 items-center gap-1" role="listitem" data-node={node.id}>
-              <GraphNode node={node} />
-              {index < nodes.length - 1 ? <span className="h-px w-3 shrink-0 bg-border-strong" aria-hidden="true" /> : null}
-            </li>
-          ))}
-        </ol>
-      ) : null}
+      <ol className="scroll-thin mt-3 flex items-center gap-1 overflow-x-auto pb-1" role="list" aria-label="loop position">
+        {nodes.map((node, index) => (
+          <li key={node.id} className="flex shrink-0 items-center gap-1" role="listitem" data-node={node.id}>
+            <GraphNode node={node} step={current ? node.id === current : node.state === "current"} />
+            {index < nodes.length - 1 ? <span className="h-px w-3 shrink-0 bg-border-strong" aria-hidden="true" /> : null}
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }
 
-function GraphNode({ node }: { node: RailNode }) {
+function GraphNode({ node, step }: { node: RailNode; step: boolean }) {
   const status = nodeDot(node.state);
   const shell =
     node.state === "current"
@@ -101,7 +96,7 @@ function GraphNode({ node }: { node: RailNode }) {
       className={`inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-xs ${shell}`}
       title={node.detail || `${node.label} · ${node.state}`}
       aria-label={`${node.label} — ${node.state}`}
-      aria-current={node.state === "current" ? "step" : undefined}
+      aria-current={step ? "step" : undefined}
     >
       <StatusDot status={status} />
       <span className={node.state === "skipped" ? "line-through" : ""}>{humanize(node.label)}</span>

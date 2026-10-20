@@ -209,3 +209,39 @@ describe("the truncated tail (issue-511 R5.3)", () => {
     expect(await screen.findByText(/tail — the last \d+ of \d+ entries/)).toBeInTheDocument();
   });
 });
+
+describe("critic round 1 (issue-511): the empty rail and the popover's bound", () => {
+  beforeEach(() => {
+    vi.stubGlobal("EventSource", undefined);
+    globalThis.localStorage?.clear();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("draws the empty-rail explanation by default, in the Full graph slot, for an item with a checkout", async () => {
+    renderDetail(0, { ...viewOf("loop-lab#214"), rail: [], currentNode: "" });
+    await screen.findByRole("log", { name: /session transcript/i });
+    const meta = screen.getByRole("banner").querySelector("h1 + div") as HTMLElement;
+    expect(within(meta).getByText(/The checkout has no work-item state for this item yet/)).toBeInTheDocument();
+    expect(within(meta).queryByRole("button", { name: /Full graph/ })).toBeNull();
+  });
+
+  it("says that no checkout was recorded when the rail is empty and the item has none", async () => {
+    renderDetail(0, { ...viewOf("loop-lab#214"), rail: [], currentNode: "", repoPath: "" });
+    await screen.findByRole("log", { name: /session transcript/i });
+    const meta = screen.getByRole("banner").querySelector("h1 + div") as HTMLElement;
+    expect(within(meta).getByText(/No session on this machine recorded a checkout/)).toBeInTheDocument();
+  });
+
+  it("bounds the Session details popover to the space left below it when it opens", async () => {
+    renderDetail(0, viewOf("loop-lab#214"));
+    await screen.findByRole("log", { name: /session transcript/i });
+    const disclosure = document.querySelector("[data-session-details]") as HTMLDetailsElement;
+    const body = disclosure.querySelector("[data-session-facts]")!.parentElement as HTMLElement;
+    expect(body.style.maxHeight).toBe("");
+    disclosure.open = true;
+    disclosure.dispatchEvent(new Event("toggle"));
+    await vi.waitFor(() => expect(body.style.maxHeight).toMatch(/^\d+px$/));
+    // jsdom lays nothing out, so the popover's top is 0: the whole viewport less the gutter.
+    expect(body.style.maxHeight).toBe(`${globalThis.innerHeight - 16}px`);
+  });
+});

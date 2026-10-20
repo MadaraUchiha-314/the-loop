@@ -33,6 +33,10 @@ classes the app already used (commit `46a85e2`), which brought it under the base
 button path, three icons, a dead composer prop): `bun run build` clean; JS 336 728 B,
 CSS 24 350 B — smaller again.
 
+**Re-run after the critic round** (the empty-rail sentence restored in the header, the
+popover measured on open, the pointer's `aria-current`): `bun run build` clean;
+JS 336 965 B, CSS 24 350 B.
+
 ## Untouched directories (R5.1)
 
 ```text
