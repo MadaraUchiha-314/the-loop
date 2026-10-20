@@ -14,7 +14,7 @@ code task reads what it produces. The docs task waits for the behaviour to settl
 
 ## Task list
 
-- [ ] 1. Parse `gateway`, and derive interactivity from reachability
+- [x] 1. Parse `gateway`, and derive interactivity from reachability
   - `READ_MODES` gains `gateway`. `SlackChannelConfig` gains `gateway: bool`, set from
     `cli_config.gateway_block`.
   - `gateway` with no usable block resolves to `off`, with an error log that names both

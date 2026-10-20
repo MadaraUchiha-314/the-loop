@@ -1315,7 +1315,7 @@ def poll_once(
     ``socket`` mode (issue-334): the listener runs it once after connecting,
     and an operator may run ``the-loop channels poll`` beside the listener as a
     reconciliation — the cursors are shared, so nothing is processed twice.
-    Only ``off`` refuses.
+    ``gateway`` (issue-503) reads exactly as ``socket`` does. Only ``off`` refuses.
     """
     config = SlackChannelConfig.from_mapping(cli_config)
     if not config.enabled:
