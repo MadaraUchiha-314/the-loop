@@ -10,7 +10,8 @@ workItem: "github:MadaraUchiha-314/the-loop#505"
 - **Mechanism:** both. The built-in `/security-review` skill, run as an independent
   sub-agent over `git diff origin/main -- cli/the_loop`, and the-loop's checklist
   (`reference/security.md`), checked against the diff below.
-- **Outcome:** pass. No finding at confidence 8 or above.
+- **Outcome:** the checklist passes (below). The `/security-review` run is in progress,
+  and its result is recorded here before this node is completed.
 - **Findings:** none.
 - **Human sign-off:** n/a. Effective risk tier 3: the diff touches no fixed sensitive
   path (`*schema*`, `.the-loop/**`, `.github/workflows/**`, `auth`, `secret`,
