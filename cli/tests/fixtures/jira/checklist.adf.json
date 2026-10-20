@@ -218,7 +218,7 @@
           "type": "taskItem",
           "attrs": {
             "localId": "the-loop-task-1",
-            "state": "DONE"
+            "state": "TODO"
           },
           "content": [
             {
@@ -231,7 +231,7 @@
           "type": "taskItem",
           "attrs": {
             "localId": "the-loop-task-2",
-            "state": "DONE"
+            "state": "TODO"
           },
           "content": [
             {
@@ -575,11 +575,11 @@
         },
         {
           "type": "text",
-          "text": " on "
+          "text": " on a "
         },
         {
           "type": "text",
-          "text": "this work item",
+          "text": "pull request",
           "marks": [
             {
               "type": "strong"
@@ -588,7 +588,7 @@
         },
         {
           "type": "text",
-          "text": ", here. Tick the box to move it to a pull request."
+          "text": " — already ticked. Untick the box to keep it here, on this work item."
         }
       ]
     },
@@ -602,7 +602,7 @@
           "type": "taskItem",
           "attrs": {
             "localId": "the-loop-task-19",
-            "state": "TODO"
+            "state": "DONE"
           },
           "content": [
             {
@@ -641,7 +641,20 @@
       "content": [
         {
           "type": "text",
-          "text": "Not a phase — it is where the requirements, design, testing plan and task list are iterated with you. Leave it unticked (the default) and they happen "
+          "text": "Not a phase — it is where the requirements, design, testing plan and task list are iterated with you. Leave it ticked (the default) and they happen on a "
+        },
+        {
+          "type": "text",
+          "text": "pull request",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ". Untick it and they happen "
         },
         {
           "type": "text",
@@ -654,7 +667,7 @@
         },
         {
           "type": "text",
-          "text": ", here. Tick it and they happen on a pull request instead."
+          "text": ", here, instead."
         }
       ]
     },
@@ -693,7 +706,7 @@
         },
         {
           "type": "text",
-          "text": " no — the markdown files only. Only the "
+          "text": " yes — already ticked. Untick it for the markdown files only. Only the "
         },
         {
           "type": "text",
@@ -720,7 +733,7 @@
           "type": "taskItem",
           "attrs": {
             "localId": "the-loop-task-20",
-            "state": "TODO"
+            "state": "DONE"
           },
           "content": [
             {
@@ -772,7 +785,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Not a phase, and off unless you tick it. The requirements, design, testing plan and task list become one page with a tab per file, which you can read and comment on in Claude."
+          "text": "Not a phase, and on unless you untick it. The requirements, design, testing plan and task list become one page with a tab per file, which you can read and comment on in Claude."
         }
       ]
     },
@@ -1327,7 +1340,7 @@
         },
         {
           "type": "text",
-          "text": ", this deployment's default. "
+          "text": " — already ticked. "
         },
         {
           "type": "text",
@@ -1340,7 +1353,7 @@
         },
         {
           "type": "text",
-          "text": " to change it."
+          "text": ": untick it and tick another to change it."
         }
       ]
     },
@@ -1354,7 +1367,7 @@
           "type": "taskItem",
           "attrs": {
             "localId": "the-loop-task-25",
-            "state": "TODO"
+            "state": "DONE"
           },
           "content": [
             {
@@ -1416,7 +1429,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Leave them alone and the default stands. Ticking more than one means the same thing — two ticks are not a choice, and guessing which one you meant is how a work item ends up somewhere nobody asked for."
+          "text": "Leave them alone and the ticked default stands. Unticking every row, or ticking more than one, falls back to the harness's own setting — two ticks are not a choice, and guessing which one you meant is how a work item ends up somewhere nobody asked for."
         }
       ]
     },
@@ -1459,20 +1472,7 @@
         },
         {
           "type": "text",
-          "text": ", the "
-        },
-        {
-          "type": "text",
-          "text": "claude",
-          "marks": [
-            {
-              "type": "code"
-            }
-          ]
-        },
-        {
-          "type": "text",
-          "text": " harness's default model. "
+          "text": " — already ticked. "
         },
         {
           "type": "text",
@@ -1485,7 +1485,7 @@
         },
         {
           "type": "text",
-          "text": " to change it."
+          "text": ": untick it and tick another to change it."
         }
       ]
     },
@@ -1521,7 +1521,7 @@
           "type": "taskItem",
           "attrs": {
             "localId": "the-loop-task-28",
-            "state": "TODO"
+            "state": "DONE"
           },
           "content": [
             {
@@ -1565,7 +1565,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Leave them alone and the default stands. Ticking more than one means the same thing — two ticks are not a choice, and guessing which one you meant is how a work item ends up somewhere nobody asked for."
+          "text": "Leave them alone and the ticked default stands. Unticking every row, or ticking more than one, falls back to the harness's own setting — two ticks are not a choice, and guessing which one you meant is how a work item ends up somewhere nobody asked for."
         }
       ]
     },
@@ -1684,7 +1684,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Leave them alone and the default stands. Ticking more than one means the same thing — two ticks are not a choice, and guessing which one you meant is how a work item ends up somewhere nobody asked for."
+          "text": "Leave them alone and the ticked default stands. Unticking every row, or ticking more than one, falls back to the harness's own setting — two ticks are not a choice, and guessing which one you meant is how a work item ends up somewhere nobody asked for."
         }
       ]
     },

@@ -88,7 +88,9 @@ def test_the_model_section_names_the_default_harnesss_default_model():
     """issue-451 R3.1 — what "no tick" means is readable before anyone replies."""
     harnesses = [{"name": "claude", "default": True, "defaultModel": "opus-5"}]
     body = "\n".join(selection._choice_lines(_ctx(**_declared(harnesses=harnesses))))
-    assert "**Default:** `opus-5`, the `claude` harness's default model" in body
+    # issue-510: the default model's own row comes ticked when it is offered.
+    assert "**Default:** `opus-5` — already ticked." in body
+    assert "- [x] `model-opus-5`" in body
 
     plain = "\n".join(selection._choice_lines(_ctx(**_declared())))
     assert "the model this harness is configured with" in plain

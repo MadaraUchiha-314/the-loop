@@ -857,9 +857,9 @@ def selection_control_blocks(rows: SelectionRows, keyword: str) -> List[Dict[str
                 "type": "section",
                 "block_id": f"{SELECTION_BLOCK}:surface-label",
                 "text": _mrkdwn(
-                    "*Where does the outer loop happen?* Left unticked, the "
+                    "*Where does the outer loop happen?* Ticked (the default), the "
                     "requirements, design, testing plan and task list are iterated "
-                    "on the work item itself (the default)."
+                    "on a pull request; unticked, on the work item itself."
                 ),
             }
         )

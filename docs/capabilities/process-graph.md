@@ -256,7 +256,10 @@ There are exactly **two** runtime concepts and **one** contract between them.
     dead. Exactly one ticked row is a choice; none, several, an unknown token and an
     unreadable checklist all mean **no choice** — which is a different recorded fact from
     "the default", and is what lets a later change to the operator's configuration apply
-    to the item. Both are written to the frozen record beside `surface` and
+    to the item. The checklist renders the default row of each section **ticked**
+    when it is on offer (issue-510): the default harness, that harness's
+    `defaultModel`, and `medium` effort — so an untouched reply records them as chosen.
+    Both are written to the frozen record beside `surface` and
     `sessionPerPr`, and the confirmation names each outcome in both directions.
   - Which **harness** a work item's sessions run on SHALL be declared at
     `phase-selection` as a third row group, `harness-<name>`, rendered first and only
@@ -278,17 +281,18 @@ There are exactly **two** runtime concepts and **one** contract between them.
   - Where the **outer** loop's artifacts are iterated with humans SHALL be declared **per
     work item** at `phase-selection`, by the same authorized reply that freezes the phase
     selection: one extra checklist row (`outer-loop-on-pull-request`) whose resolved value
-    is written to `work-item-state.json` and to the portable record. IF it is unticked or
-    absent THEN the surface SHALL be the **work item itself** — the default, because a
-    work item only opens a pull request in the origin repository when its author asks for
-    one. It SHALL NOT be a key in the harness config or the CLI config: one repository has
+    is written to `work-item-state.json` and to the portable record. The row SHALL be
+    rendered **ticked** (issue-510): left alone, the surface is a pull request. IF it is
+    unticked, absent or unreadable THEN the surface SHALL be the **work item itself** —
+    the direction that opens nothing. It SHALL NOT be a key in the harness config or the CLI config: one repository has
     both a one-repo bugfix and a three-repo migration (owner's call, PR #184). The
     artifacts SHALL be committed files linked from the ticket in either case, and the
     **inner** loop SHALL have no such choice: a pull request's loop is iterated on that
     pull request. WHEN a session enters a node THEN its assignment SHALL name the surface
     it is working on, and a cross-repo claim command SHALL carry `--pr-repo`.
   - The same reply SHALL resolve one more non-phase row, `claude-artifact` (issue-471),
-    offered unticked wherever the surface row is. Ticked, it SHALL freeze
+    offered wherever the surface row is and rendered ticked (issue-510); absent or
+    unreadable reads as unticked. Ticked, it SHALL freeze
     `claudeArtifact: true` only when the work item's resolved harness is `claude` or
     unknown; on a known other harness it SHALL freeze `false` and the confirmation SHALL
     name that harness. The value SHALL be read back only as the boolean `true`, and the

@@ -116,17 +116,17 @@ def _confirmation(fake_github):
 # -- R1: the gate offers the choice --------------------------------------------
 
 
-def test_the_outer_loop_checklist_offers_an_unticked_row(repo, fake_github):
+def test_the_outer_loop_checklist_offers_a_ticked_row(repo, fake_github):
     """
     Scenario: the checklist is posted for a work item
       Given an outer loop with a phase-selection gate
       When the gate is entered
-      Then the checklist carries an unticked `claude-artifact` row
+      Then the checklist carries a `claude-artifact` row, ticked by default (issue-510)
       And says it applies only on the `claude` harness
     """
     _runtime(repo).start(WORK_ITEM, ref=REF)
     posted = fake_github.posted[0]
-    assert f"- [ ] `{TOKEN}`" in posted
+    assert f"- [x] `{TOKEN}`" in posted
     assert "Publish the spec chain as a Claude artifact too?" in posted
     assert "the-loop ignores this box" in posted
 

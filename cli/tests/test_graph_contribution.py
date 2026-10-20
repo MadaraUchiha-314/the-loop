@@ -667,7 +667,7 @@ def test_the_outer_loops_checklist_still_asks_the_question(repo, fake_github):
     )
     outer.start(WORK_ITEM, ref=REF)
     checklist = fake_github.posted[-1]
-    assert f"- [ ] `{SURFACE_TOKEN}`" in checklist
+    assert f"- [x] `{SURFACE_TOKEN}`" in checklist
     assert "Where should the outer loop happen?" in checklist
 
 

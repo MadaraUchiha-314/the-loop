@@ -16,8 +16,8 @@ Only the boxes under **Phases** change what work is done. Everything under **Set
 
 ### 🧩 Phases — ticked ones run
 
-- [x] brainstorming
-- [x] brainstorm-approval
+- [ ] brainstorming
+- [ ] brainstorm-approval
 - [x] requirements-definition
 - [x] requirements-approval
 - [x] design
@@ -50,25 +50,25 @@ These decide how and where the work happens, not what work is done. Leave alone 
 
 #### 📍 Where should the outer loop happen?
 
-**Default:** on **this work item**, here. Tick the box to move it to a pull request.
+**Default:** on a **pull request** — already ticked. Untick the box to keep it here, on this work item.
 
-- [ ] `outer-loop-on-pull-request` — on a pull request in this repository.
+- [x] `outer-loop-on-pull-request` — on a pull request in this repository.
 
 **ℹ️ What this means**
 
-Not a phase — it is where the requirements, design, testing plan and task list are iterated with you. Leave it unticked (the default) and they happen **on this work item**, here. Tick it and they happen on a pull request instead.
+Not a phase — it is where the requirements, design, testing plan and task list are iterated with you. Leave it ticked (the default) and they happen on a **pull request**. Untick it and they happen **on this work item**, here, instead.
 
 Either way the artifacts are committed files linked from here, and each repository this work item contributes code to gets its own pull request for the inner loop.
 
 #### 📄 Publish the spec chain as a Claude artifact too?
 
-**Default:** no — the markdown files only. Only the `claude` harness can publish one.
+**Default:** yes — already ticked. Untick it for the markdown files only. Only the `claude` harness can publish one.
 
-- [ ] `claude-artifact` — one Claude artifact for this work item (`claude` harness only).
+- [x] `claude-artifact` — one Claude artifact for this work item (`claude` harness only).
 
 **ℹ️ What this means**
 
-Not a phase, and off unless you tick it. The requirements, design, testing plan and task list become one page with a tab per file, which you can read and comment on in Claude.
+Not a phase, and on unless you untick it. The requirements, design, testing plan and task list become one page with a tab per file, which you can read and comment on in Claude.
 
 On any other harness the-loop ignores this box. The markdown files stay the source of truth either way, and every gate still reads them.
 
@@ -114,29 +114,29 @@ Declare it in a comment of its own, before or after this gate — the order does
 
 #### 🛠️ Which harness should this work item run on?
 
-**Default:** `claude`, this deployment's default. **Tick at most one** to change it.
+**Default:** `claude` — already ticked. **Tick at most one**: untick it and tick another to change it.
 
-- [ ] `harness-claude`
+- [x] `harness-claude`
 - [ ] `harness-codex`
 
 **ℹ️ What this means**
 
 Not a phase — it is the agent CLI its session is. A model or effort ticked below is kept only if the harness it ends up on can run it.
 
-Leave them alone and the default stands. Ticking more than one means the same thing — two ticks are not a choice, and guessing which one you meant is how a work item ends up somewhere nobody asked for.
+Leave them alone and the ticked default stands. Unticking every row, or ticking more than one, falls back to the harness's own setting — two ticks are not a choice, and guessing which one you meant is how a work item ends up somewhere nobody asked for.
 
 #### 🧠 Which model should this work item run on?
 
-**Default:** `sonnet`, the `claude` harness's default model. **Tick at most one** to change it.
+**Default:** `sonnet` — already ticked. **Tick at most one**: untick it and tick another to change it.
 
 - [ ] `model-opus` — deepest
-- [ ] `model-sonnet`
+- [x] `model-sonnet`
 
 **ℹ️ What this means**
 
 Not a phase — it is what the session is.
 
-Leave them alone and the default stands. Ticking more than one means the same thing — two ticks are not a choice, and guessing which one you meant is how a work item ends up somewhere nobody asked for.
+Leave them alone and the ticked default stands. Unticking every row, or ticking more than one, falls back to the harness's own setting — two ticks are not a choice, and guessing which one you meant is how a work item ends up somewhere nobody asked for.
 
 #### 🎚️ How hard should it think?
 
@@ -149,7 +149,7 @@ Leave them alone and the default stands. Ticking more than one means the same th
 
 Not a phase, and independent of the model above.
 
-Leave them alone and the default stands. Ticking more than one means the same thing — two ticks are not a choice, and guessing which one you meant is how a work item ends up somewhere nobody asked for.
+Leave them alone and the ticked default stands. Unticking every row, or ticking more than one, falls back to the harness's own setting — two ticks are not a choice, and guessing which one you meant is how a work item ends up somewhere nobody asked for.
 
 ### ✅ Ready?
 

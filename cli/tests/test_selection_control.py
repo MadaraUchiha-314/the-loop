@@ -1036,11 +1036,12 @@ def test_the_checklist_copy_neither_threatens_nor_promises_ticking_right_here():
     graph = load_graph()
     grouped = set(graph.skip_sets.get(selection.EXPLAINER_TOKEN, ()))
     ordered = [n for n in graph.ordered() if n.id not in grouped]
+    unticked = selection.UNTICKED_BY_DEFAULT
     assert [r.token for r in rows.phases if r.ticked] == [
-        n.id for n in ordered if n.skippable and not n.opt_in
+        n.id for n in ordered if n.skippable and not n.opt_in and n.id not in unticked
     ]
     assert [r.token for r in rows.phases if not r.ticked] == [
-        n.id for n in ordered if n.opt_in
-    ]
-    assert rows.surface is not None and not rows.surface.ticked
+        n.id for n in ordered if n.skippable and not n.opt_in and n.id in unticked
+    ] + [n.id for n in ordered if n.opt_in]
+    assert rows.surface is not None and rows.surface.ticked
     assert len(rows.phases) > CHECKBOX_LIMIT, "the shipped loop needs the chunking"
