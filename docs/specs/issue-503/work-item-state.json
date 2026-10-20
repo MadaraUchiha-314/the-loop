@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-503",
-  "currentNode": "verification",
+  "currentNode": "code-explainer",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -101,8 +101,40 @@
     },
     "verification": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-20T01:46:05+00:00",
+      "exitedAt": "2026-10-20T01:48:04+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "self-review": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-20T01:48:04+00:00",
+      "exitedAt": "2026-10-20T01:48:04+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "critic-review": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-20T01:48:04+00:00",
+      "exitedAt": "2026-10-20T01:48:04+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "security-review": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-20T01:48:04+00:00",
+      "exitedAt": "2026-10-20T01:48:04+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "code-explainer": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-20T01:48:04+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -345,6 +377,10 @@
     },
     "implementation": {
       "at": "2026-10-20T01:46:05+00:00",
+      "by": "cli"
+    },
+    "verification": {
+      "at": "2026-10-20T01:48:04+00:00",
       "by": "cli"
     }
   },
