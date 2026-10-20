@@ -50,7 +50,7 @@ settle.
   - _Requirements:_ R1.1–R1.6, R4.1, R4.2
   - _Test:_ T1 + T8, `tests/test_gateway_rooms.py` (client cases, fail-closed read)
     (red→green)
-- [ ] 5. End-to-end scenarios
+- [x] 5. End-to-end scenarios
   - `tests/test_gateway_rooms_integration.py`: the four Gherkin scenarios of the testing
     plan, through `GatewayHarness`, the Slack HTTP ingress and a `GatewayClient`.
   - _Depends on:_ 4
