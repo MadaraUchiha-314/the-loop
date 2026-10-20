@@ -117,7 +117,7 @@ on/off, selected) and a pair of stills shows it.
 
 ## Verification results
 
-_Not yet executed._
+*Not yet executed.*
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
