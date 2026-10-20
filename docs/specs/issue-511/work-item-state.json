@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-511",
-  "currentNode": "design-critic-review",
+  "currentNode": "test-planning",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -45,8 +45,16 @@
     },
     "design-critic-review": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-20T16:03:39+00:00",
+      "exitedAt": "2026-10-20T16:19:49+00:00",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required section is missing: Design critic review (docs/specs/issue-511/evidence/design-critic-review.md)",
+      "forced": false
+    },
+    "test-planning": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-20T16:19:49+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -267,6 +275,10 @@
     "design": {
       "at": "2026-10-20T16:03:39+00:00",
       "by": "cli"
+    },
+    "design-critic-review": {
+      "at": "2026-10-20T16:19:49+00:00",
+      "by": "cli"
     }
   },
   "skips": {
@@ -313,5 +325,5 @@
     }
   ],
   "loop": "pdlc-work-item-loop",
-  "phase": "design"
+  "phase": "test-planning"
 }
