@@ -19,9 +19,7 @@
  * as they always did; a PR selection says so with a `work item` kicker
  * (critic C3).
  *
- * `SessionAside`, the standing column of 20.5.1, composes the two and is no
- * longer rendered on Work; it stays as the panel's shape for any pane that
- * wants a column.
+ * The standing column of 20.5.1 (`SessionAside`) is gone with Option C.
  */
 
 import { useState } from "react";
@@ -31,7 +29,7 @@ import { relativeTime, transcriptPath, type PullRequestView, type WorkItemView }
 import type { SessionVerb } from "../api/types.ts";
 import { useApi } from "../state/ApiContext.tsx";
 import { railLabel } from "./GraphStrip.tsx";
-import { CopyIcon, ExternalLinkIcon, PanelRightCloseIcon } from "./Icons.tsx";
+import { CopyIcon, ExternalLinkIcon } from "./Icons.tsx";
 import { ControlButton, Kicker, KV, Section } from "./primitives.tsx";
 import { sessionLabel } from "./StatusDot.tsx";
 
@@ -163,37 +161,5 @@ export function SessionControls({ view, viewed, onChanged }: ControlsProps) {
         </p>
       ) : null}
     </div>
-  );
-}
-
-interface SessionAsideProps extends FactsProps {
-  onChanged: () => void;
-  onClose: () => void;
-}
-
-/** The 20.5.1 column: head, verbs, facts. Not rendered on Work since issue-511. */
-export function SessionAside({ view, viewed, onChanged, onClose }: SessionAsideProps) {
-  return (
-    <aside
-      className="scroll-thin flex h-full w-[19rem] shrink-0 flex-col overflow-y-auto border-l border-border bg-surface max-md:absolute max-md:inset-y-0 max-md:right-0 max-md:z-20"
-      aria-label="Session"
-    >
-      <div className="flex items-center justify-between px-4 py-3">
-        <Kicker>Session</Kicker>
-        <button
-          type="button"
-          aria-label="Close panel"
-          title="Close panel"
-          onClick={onClose}
-          className="text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <PanelRightCloseIcon className="h-4 w-4" />
-        </button>
-      </div>
-      <div className="px-4 pb-3">
-        <SessionControls view={view} viewed={viewed} onChanged={onChanged} />
-      </div>
-      <SessionFacts view={view} viewed={viewed} />
-    </aside>
   );
 }

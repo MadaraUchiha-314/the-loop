@@ -29,6 +29,10 @@ The CSS first grew by a few hundred bytes from new utility classes on the popove
 the header; the summary's marker, a separator span and five utilities were replaced by
 classes the app already used (commit `46a85e2`), which brought it under the baseline.
 
+**Re-run after self-review round 1** (dead code removed: the panel column, the open-panel
+button path, three icons, a dead composer prop): `bun run build` clean; JS 336 728 B,
+CSS 24 350 B — smaller again.
+
 ## Untouched directories (R5.1)
 
 ```text

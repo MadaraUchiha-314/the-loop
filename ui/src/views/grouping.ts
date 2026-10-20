@@ -42,9 +42,14 @@ export function minimalGroup(view: WorkItemView): MinimalGroup {
   return sidebarGroup(view) === "needs-you" ? "needs-you" : "everything";
 }
 
-/** The rows newest first by last activity, ties by ref — a copy, the input untouched. */
+/** Newest first by last activity, ties by ref. */
+export function byActivity(a: Pick<WorkItemView, "lastActivity" | "ref">, b: Pick<WorkItemView, "lastActivity" | "ref">): number {
+  return (b.lastActivity || "").localeCompare(a.lastActivity || "") || a.ref.localeCompare(b.ref);
+}
+
+/** The rows newest first by last activity — a copy, the input untouched. */
 export function sortByActivity<T extends Pick<WorkItemView, "lastActivity" | "ref">>(views: T[]): T[] {
-  return views.toSorted((a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || "") || a.ref.localeCompare(b.ref));
+  return views.toSorted(byActivity);
 }
 
 export function sidebarGroup(view: WorkItemView): SidebarGroup {

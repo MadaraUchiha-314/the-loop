@@ -253,9 +253,8 @@ src/
               stream.ts (what a frame makes stale) · useStream.ts (the connection)
   components/ the design's pieces: Icons, StatusDot, primitives (chip, icon button, section,
               notice…), Sidebar, HeaderBar, GraphStrip (the node row behind Full graph),
-              SessionTabs, Transcript (trace + composer), SessionAside (SessionFacts for the
-              Session details popover, SessionControls for the header verbs), Banner,
-              Nav (the health word)
+              SessionTabs, Transcript (trace + composer), SessionFacts (the Session details
+              popover, and SessionControls for the header verbs), Banner, Nav (the health word)
   views/      Work (the two columns) · WorkItemDetail · Standing · Settings · Instances ·
               InstanceDetail · grouping
   test/       setup.ts · manager.ts (a transport answering as a manager, for the fleet tests)

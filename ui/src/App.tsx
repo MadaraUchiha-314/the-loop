@@ -64,9 +64,9 @@ export function App() {
     applyTheme(theme);
   }, [theme]);
 
-  // The side panels: open on a wide viewport, closed on a narrow one (R4.6).
+  // The sidebar: open on a wide viewport, closed on a narrow one (R4.6). The
+  // session panel is a header disclosure since issue-511, closed at every width.
   const [sidebarOpen, setSidebarOpen] = useState(() => wideEnough(768));
-  const [asideOpen, setAsideOpen] = useState(() => wideEnough(1280));
 
   const chrome: Chrome = {
     theme,
@@ -124,7 +124,7 @@ export function App() {
         onInstanceFilter={setInstanceFilter}
         stream={board.stream}
         chrome={chrome}
-        panels={{ sidebarOpen, asideOpen, setSidebarOpen, setAsideOpen }}
+        panels={{ sidebarOpen, setSidebarOpen }}
         serviceLabel={serviceLabel}
       />
     </div>

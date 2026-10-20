@@ -334,8 +334,6 @@ export function ChatBar({
   refFor: string;
   state: SessionState;
   onSent?: () => void;
-  /** Accepted and unread: the target is the Session details' attach command now (issue-511). */
-  tmuxTarget?: string | undefined;
   /** The instance the session is on (issue-374); `""` on a worker. */
   instance?: string | undefined;
 }) {

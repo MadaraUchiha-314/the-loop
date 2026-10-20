@@ -37,7 +37,7 @@ import { GraphStrip } from "../components/GraphStrip.tsx";
 import { HeaderBar, type Chrome } from "../components/HeaderBar.tsx";
 import { CheckIcon, ChevronDownIcon, CopyIcon, ExternalLinkIcon, InfoIcon, TriangleAlertIcon } from "../components/Icons.tsx";
 import { ControlButton, Empty, IconButton, Notice, PhaseChip } from "../components/primitives.tsx";
-import { SessionControls, SessionFacts } from "../components/SessionAside.tsx";
+import { SessionControls, SessionFacts } from "../components/SessionFacts.tsx";
 import { SessionTabs } from "../components/SessionTabs.tsx";
 import { ChatBar, EventTrail, TranscriptView, VERBOSE_LABEL } from "../components/Transcript.tsx";
 import { useApi } from "../state/ApiContext.tsx";

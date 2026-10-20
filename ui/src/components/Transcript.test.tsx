@@ -242,7 +242,7 @@ describe("ChatBar", () => {
   it("Scenario: the composer carries no delivery hint — ⌘⏎ lives in the send button's title (issue-511 R2.4)", () => {
     render(
       <ApiProvider>
-        <ChatBar refFor="github:octo/loop-lab#216" state="active" tmuxTarget="loop-github-octo-loop-lab-216" />
+        <ChatBar refFor="github:octo/loop-lab#216" state="active" />
       </ApiProvider>,
     );
     expect(screen.queryByText(/delivers to tmux/)).toBeNull();

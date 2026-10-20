@@ -134,6 +134,10 @@ passed; the n/a rows stayed n/a as planned.
 | T5 UI / visual | `node ui/scripts/screenshots.mjs <out> http://localhost:4173/the-loop/ui/` over `bun run preview --port 4173` | pass — 32 stills, both themes, 1440×900 and 390×844, no page error; before/after 56 → 27 | [`evidence/ui-visual.md`](evidence/ui-visual.md), [`evidence/ui/`](evidence/ui/) |
 | T14 documentation parity | `ui/README.md` and `docs/capabilities/control-plane.md` read against the inventory's C column | pass | [`evidence/documentation.md`](evidence/documentation.md) |
 
+**Re-run after self-review round 1** (`SessionAside` and the open-panel path removed, the
+composer's dead prop dropped): `bun run lint`, `bun run test` (22 files, 366 tests) and
+`bun run build` clean; JS 336 728 B, CSS 24 350 B.
+
 **Not executed:** T3, T4, T6, T7, T10, T11 — n/a as planned (no contract, data-path,
 snapshot, performance, migration or live-service change; the bundle check stands in for
 T7 and the owner's PR review, with the stills beside the prototype's, for T11).

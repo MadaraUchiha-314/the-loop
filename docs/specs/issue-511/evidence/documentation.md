@@ -21,7 +21,7 @@ workItem: "github:MadaraUchiha-314/the-loop#511"
 | Document | What changed |
 |----------|--------------|
 | [`ui/README.md`](../../../../ui/README.md) § Where the screens get their data | the one-screen paragraph describes two columns and the C bands — what each shows by default and what sits behind the Session details disclosure and Full graph; the Standing row of the reads table names `#/standing` rather than "a sidebar section of Work" |
-| `ui/README.md` § Layout | `components/` names GraphStrip as the node row behind Full graph and SessionAside as the module of `SessionFacts` (the popover) and `SessionControls` (the header verbs); `views/` says "the two columns" |
+| `ui/README.md` § Layout | `components/` names GraphStrip as the node row behind Full graph and `SessionFacts` as the module of the popover's facts and the header's `SessionControls`; `views/` says "the two columns" |
 | `ui/README.md` § Screenshot evidence | notes the states the run now covers (Full graph, Session details, the finder) |
 | `docs/specs/issue-511/` (requirements, design, testing plan, tasks, decision-148) | the spec chain itself; `design.md` § UI/UX design marks Option C selected |
 

@@ -6,7 +6,7 @@
  * and `#/instances/<name>`, those panes; the sidebar is the navigation in
  * every case. The session panel is no longer a column: its facts sit behind
  * the header's Session details disclosure and its verbs among the header
- * actions, so `Panels.asideOpen` is unread here.
+ * actions.
  *
  * One ref selects, whichever level it names: the hash is the single source of
  * truth for what the column shows, so a PR row in the sidebar and a session
@@ -36,9 +36,7 @@ export type { Surface };
 
 export interface Panels {
   sidebarOpen: boolean;
-  asideOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
-  setAsideOpen: (open: boolean) => void;
 }
 
 interface WorkProps {

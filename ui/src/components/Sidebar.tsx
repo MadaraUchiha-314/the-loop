@@ -26,7 +26,7 @@ import { rowFlag, sessionTree, type SessionNode, type WorkItemView } from "../ap
 import type { DaemonStatus, InstancesDocument } from "../api/types.ts";
 import { hrefFor, itemHref, type Surface } from "../state/route.ts";
 import type { StreamState } from "../state/useStream.ts";
-import { filterViews, itemStatus, minimalGroup, SIDEBAR_GROUPS_MINIMAL, sortByActivity } from "../views/grouping.ts";
+import { byActivity, filterViews, itemStatus, minimalGroup, repoOf, SIDEBAR_GROUPS_MINIMAL } from "../views/grouping.ts";
 import { GitPullRequestIcon, PanelLeftCloseIcon, RadioIcon, SearchIcon, SettingsIcon } from "./Icons.tsx";
 import { HealthDot } from "./Nav.tsx";
 import { IconButton, InstanceChip, Kicker } from "./primitives.tsx";
@@ -184,10 +184,7 @@ export function Sidebar({
         {SIDEBAR_GROUPS_MINIMAL.map((group) => {
           const members = tree.filter(({ view }) => minimalGroup(view) === group.key);
           // Everything else by last activity (row 16); Needs you keeps the board's order.
-          const items =
-            group.key === "everything"
-              ? sortByActivity(members.map(({ view, inner }) => ({ view, inner, lastActivity: view.lastActivity, ref: view.ref })))
-              : members;
+          const items = group.key === "everything" ? members.toSorted((a, b) => byActivity(a.view, b.view)) : members;
           if (items.length === 0) return null;
           return (
             <div className="mb-4" key={group.key}>
@@ -282,7 +279,7 @@ function ItemRow({
         <StatusDot status={status} />
         <span className="shrink-0 font-mono text-[0.7rem] text-muted-foreground">#{view.number}</span>
         <span className={`min-w-0 flex-1 truncate text-sm ${selected ? "text-foreground" : "text-foreground/85"}`}>
-          {title ?? view.shortRef}
+          {title ?? repoOf(view.ref)}
         </span>
         {view.instance ? <InstanceChip instance={view.instance} /> : null}
         {urgent ? <span className={`shrink-0 font-mono text-[0.68rem] ${STATUS_TEXT.blocked}`}>{urgent.label}</span> : null}
