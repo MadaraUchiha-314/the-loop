@@ -41,7 +41,7 @@ export function HeaderBar({
   chrome: Chrome;
 }) {
   return (
-    <header className="flex flex-wrap items-start gap-x-4 gap-y-2 border-b border-border px-6 py-4">
+    <header className="flex flex-wrap items-start gap-4 border-b border-border px-6 py-4">
       {chrome.sidebarOpen ? null : (
         <IconButton label="Open sidebar" onClick={chrome.onOpenSidebar}>
           <PanelLeftOpenIcon className="h-4 w-4" />

@@ -227,7 +227,7 @@ abuse cases of `design.md` § Security design are tests like any other (task 9).
   - *Test:* T8 / T9 / T2 — the scenarios above in `App.test.tsx`, `Sidebar.test.tsx`,
     `SessionFacts.test.tsx`, `primitives.test.tsx`; `grep -rn
     "dangerouslySetInnerHTML\|innerHTML\|eval(" ui/src ui/index.html` empty (red→green)
-- [ ] 10. The screenshot run covers the C layout
+- [x] 10. The screenshot run covers the C layout
   - `ui/scripts/screenshots.mjs`: re-point the selectors the change moved — the
     *Verbose* switch (the script still says *Tool calls*), `Full graph` now in the
     header, the sidebar's *Collapse sidebar*, no *Close panel* — and add the states T5

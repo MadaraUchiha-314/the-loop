@@ -186,7 +186,6 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
           <>
             {/* The session verbs, relocated from the panel (issue-511 row 64). */}
             <SessionControls view={view} viewed={viewed} onChanged={onChanged} />
-            <span className="mx-1 h-4 w-px bg-border" aria-hidden="true" />
             <IconButton label={copied ? "Copied" : "Copy work item ref"} onClick={() => void copyRef()}>
               {copied ? <CheckIcon className="h-4 w-4 text-state-done" /> : <CopyIcon className="h-4 w-4" />}
             </IconButton>
@@ -205,11 +204,11 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
             <summary
               aria-label="Session details"
               title="Session details"
-              className="inline-flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-md border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-surface-2 hover:text-foreground [&::-webkit-details-marker]:hidden"
+              className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-surface-2 hover:text-foreground"
             >
               <InfoIcon className="h-4 w-4" />
             </summary>
-            <div className="scroll-thin absolute right-0 top-full z-30 mt-2 max-h-[calc(100vh-9rem)] w-[min(20rem,calc(100vw-2rem))] overflow-y-auto rounded-lg border border-border bg-surface text-left">
+            <div className="scroll-thin absolute right-0 z-20 mt-2 max-h-[calc(100vh-9rem)] w-[min(20rem,calc(100vw-2rem))] overflow-y-auto rounded-lg border border-border bg-surface text-left">
               <SessionFacts view={view} viewed={viewed} />
             </div>
           </details>

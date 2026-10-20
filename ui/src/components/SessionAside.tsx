@@ -68,7 +68,7 @@ export function SessionFacts({ view, viewed }: FactsProps) {
 
   return (
     <div data-session-facts>
-      <Section title="Harness" className="border-t-0">
+      <Section title="Harness">
         <KV k="harness" v={session?.harness ?? "—"} />
         <KV k="status" v={sessionLabel(state)} />
         {session?.createdAt ? <KV k="started" v={relativeTime(session.createdAt)} mono={false} title={session.createdAt} /> : null}
@@ -146,7 +146,7 @@ export function SessionControls({ view, viewed, onChanged }: ControlsProps) {
 
   return (
     <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={pr ? "Controls · work item session" : "Controls"}>
-      {pr ? <Kicker className="mr-0.5">work item</Kicker> : null}
+      {pr ? <Kicker>work item</Kicker> : null}
       {verbs.map((verb) => (
         <ControlButton
           key={verb}
@@ -158,7 +158,7 @@ export function SessionControls({ view, viewed, onChanged }: ControlsProps) {
         </ControlButton>
       ))}
       {error ? (
-        <p role="alert" className="basis-full text-xs text-state-blocked">
+        <p role="alert" className="w-full text-xs text-state-blocked">
           {error}
         </p>
       ) : null}

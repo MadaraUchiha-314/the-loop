@@ -1,5 +1,6 @@
 /**
- * Screenshot evidence for the dashboard (issue-327, testing-plan T5).
+ * Screenshot evidence for the dashboard (issue-327, testing-plan T5; the
+ * states issue-511's Option C added or moved).
  *
  * Drives the BUILT app in demo mode through every surface and state, in both
  * themes, at 1440×900 and at 390×844, and writes one PNG per state.
@@ -11,6 +12,15 @@
  * Chromium comes from Playwright's own install (PLAYWRIGHT_BROWSERS_PATH), or
  * from CHROMIUM_PATH when set. Nothing here touches a live service: the demo
  * transport is selected through localStorage before the page loads.
+ *
+ * The states, each matched to a still of the chosen prototype
+ * (`docs/specs/issue-511/design/screenshots/c-*.png`):
+ *   01 home · 02 #214 with the question banner · 03 Full graph on ·
+ *   04 Verbose on with a tool call open · 05 Verbose off · 06 the PR #216
+ *   session (the `work item` kicker) · 07 the #205 gate · 08 #187's fallback
+ *   and blocked composer · 09 Standing · 10 Settings · 11 the sidebar
+ *   collapsed · 12 390 px, 12b with the sidebar open, 12c with Session
+ *   details open · 13 Session details open · 14 the finder open.
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -60,34 +70,36 @@ async function open(page, hash) {
 }
 
 const row = (page, shortRef) => page.locator(`[data-row="item"][aria-label^="${shortRef}"]`).first();
+const details = (page) => page.locator("[data-session-details] > summary");
+const tabs = (page) => page.getByRole("navigation", { name: "Sessions" });
 
 for (const theme of ["dark", "light"]) {
   const { ctx, page } = await context(theme, { width: 1440, height: 900 });
 
   await open(page, "#/");
   await page.waitForSelector('[data-row="item"]');
-  await page.waitForSelector('[data-node]');
   await shot(page, `01-home-${theme}`);
 
   await row(page, "loop-lab#214").click();
   await page.waitForSelector("text=The loop asks");
-  await page.waitForSelector("[data-tools]");
+  await page.waitForSelector("[data-trace]");
   await shot(page, `02-item-214-${theme}`);
 
   await page.getByRole("button", { name: /Full graph/ }).click();
+  await page.waitForSelector("[data-node]");
   await shot(page, `03-full-graph-${theme}`);
   await page.getByRole("button", { name: /Collapse graph/ }).click();
 
+  await page.getByRole("switch", { name: "Verbose" }).click();
   const group = page.locator("details[data-fold='tools'] > summary").first();
   await group.click();
   await page.locator("details[data-tool] > summary").first().click();
-  await shot(page, `04-tools-expanded-${theme}`);
+  await shot(page, `04-verbose-expanded-${theme}`);
 
-  await page.getByRole("switch", { name: "Tool calls" }).click();
-  await shot(page, `05-tools-off-${theme}`);
-  await page.getByRole("switch", { name: "Tool calls" }).click();
+  await page.getByRole("switch", { name: "Verbose" }).click();
+  await shot(page, `05-verbose-off-${theme}`);
 
-  await page.getByRole("link", { name: "loop-lab#216" }).click();
+  await tabs(page).getByRole("link", { name: "loop-lab#216" }).click();
   await page.waitForSelector('[aria-label="loop-lab#216"][aria-current="page"]');
   await page.waitForTimeout(400);
   await shot(page, `06-pr-session-${theme}`);
@@ -109,18 +121,31 @@ for (const theme of ["dark", "light"]) {
   await shot(page, `10-settings-${theme}`);
 
   await open(page, "#/item/github%3Aocto%2Floop-lab%23214");
-  await page.waitForSelector("[data-tools]");
+  await page.waitForSelector("[data-trace]");
   await page.getByRole("button", { name: "Collapse sidebar" }).click();
-  await page.getByRole("button", { name: "Close panel" }).click();
-  await shot(page, `11-panels-closed-${theme}`);
+  await shot(page, `11-sidebar-collapsed-${theme}`);
+  await page.getByRole("button", { name: "Open sidebar" }).click();
+
+  await details(page).click();
+  await page.waitForSelector("[data-session-details][open]");
+  await shot(page, `13-details-open-${theme}`);
+  await details(page).click();
+
+  await page.getByRole("button", { name: "Search and filter" }).click();
+  await page.waitForSelector('input[type="search"]');
+  await shot(page, `14-search-open-${theme}`);
   await ctx.close();
 
   const mobile = await context(theme, { width: 390, height: 844 });
-  await open(mobile.page, "#/");
-  await mobile.page.waitForSelector("[data-node]");
+  await open(mobile.page, "#/item/github%3Aocto%2Floop-lab%23214");
+  await mobile.page.waitForSelector("[data-trace]");
   await shot(mobile.page, `12-mobile-${theme}`);
   await mobile.page.getByRole("button", { name: "Open sidebar" }).click();
   await shot(mobile.page, `12b-mobile-sidebar-${theme}`);
+  await mobile.page.getByRole("button", { name: "Collapse sidebar" }).click();
+  await details(mobile.page).click();
+  await mobile.page.waitForSelector("[data-session-details][open]");
+  await shot(mobile.page, `12c-mobile-details-${theme}`);
   await mobile.ctx.close();
 }
 
