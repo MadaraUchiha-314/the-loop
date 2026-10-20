@@ -329,12 +329,12 @@ export function ChatBar({
   refFor,
   state,
   onSent,
-  tmuxTarget,
   instance = "",
 }: {
   refFor: string;
   state: SessionState;
   onSent?: () => void;
+  /** Accepted and unread: the target is the Session details' attach command now (issue-511). */
   tmuxTarget?: string | undefined;
   /** The instance the session is on (issue-374); `""` on a worker. */
   instance?: string | undefined;
@@ -406,22 +406,14 @@ export function ChatBar({
             <SendHorizontalIcon className="h-3.5 w-3.5" />
           </button>
         </div>
-        <div className="mt-1.5 flex flex-wrap items-center gap-3 font-mono text-[0.68rem] text-muted-foreground">
-          {blocked ? (
+        {/* The one hint still drawn is the blocked reason — fail-closed
+            (issue-511). The delivery target is the Session details' attach
+            command; ⌘⏎ is the send button's title. */}
+        {blocked ? (
+          <div className="mt-1.5 font-mono text-[0.68rem] text-muted-foreground">
             <span>{blocked}</span>
-          ) : (
-            <>
-              <span className="break-all">
-                delivers to tmux{tmuxTarget ? ` · ${tmuxTarget}` : ""}
-                {instance ? ` · on ${instance}` : ""}
-              </span>
-              <span aria-hidden="true">·</span>
-              <span>bracketed paste + enter</span>
-              <span aria-hidden="true">·</span>
-              <span>⌘⏎ to send</span>
-            </>
-          )}
-        </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
