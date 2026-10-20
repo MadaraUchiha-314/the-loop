@@ -204,7 +204,7 @@ abuse cases of `design.md` § Security design are tests like any other (task 9).
     toggle, which carries aria-expanded`; `Scenario: an instance filter renders on a
     fleet and not on a worker` (the manager transport of `ui/src/test/manager.ts`);
     the sidebar's collapse and reopen scenario still passes (red→green)
-- [ ] 9. Nothing lost, nothing trusted: the abuse cases, the fail-closed signals, the hashes, the breakpoints
+- [x] 9. Nothing lost, nothing trusted: the abuse cases, the fail-closed signals, the hashes, the breakpoints
   - Add, in the suites of tasks 6–8, the negative tests `design.md` § Security design
     names: **abuse case 1** — a fixture-shaped view whose title is `<b>x</b>`, whose
     current node is `**n**` and whose transcript line carries backticks renders them as

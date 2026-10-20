@@ -275,11 +275,51 @@ describe("the sidebar de-cluttered (issue-511, Option C)", () => {
   });
 
   it("sorts Everything else by last activity, newest first", () => {
-    const views = board().map((view) => (view.ref === OTHER ? { ...view, lastActivity: "2026-09-30T10:00:00Z" } : view));
-    const third = { ...views.find((view) => view.ref === OTHER)!, ref: "github:octo/lab#18", shortRef: "lab#18", number: 18, key: "github:octo/lab#18", lastActivity: "2026-09-28T10:00:00Z" };
+    const views = board();
+    const other = views.find((view) => view.ref === OTHER)!;
+    other.lastActivity = "2026-09-30T10:00:00Z";
+    const third = { ...other, ref: "github:octo/lab#18", shortRef: "lab#18", number: 18, key: "github:octo/lab#18", lastActivity: "2026-09-28T10:00:00Z" };
     renderSidebar({ views: [third, ...views], titleFor: () => undefined });
     const everything = screen.getByText("Everything else").parentElement!.parentElement!;
     const labels = within(everything).getAllByRole("link").map((el) => el.getAttribute("aria-label"));
     expect(labels).toEqual(["lab#16", "lab#18"]);
+  });
+});
+
+describe("the sidebar fails closed and renders untrusted text as text (issue-511 security)", () => {
+  it("abuse case 1: a title with markup renders as text in the one-line row and in its accessible name", () => {
+    const views = buildWorkItemViews({ workItems: [item(REF)], sessions: [session(REF)], attention: [] });
+    renderSidebar({ views, titleFor: () => '<b>x</b><img src=x onerror="alert(1)">' });
+    const row = itemRows()[0]!;
+    expect(row.getAttribute("aria-label")).toBe('lab#15 — <b>x</b><img src=x onerror="alert(1)">');
+    expect(within(row).getByText('<b>x</b><img src=x onerror="alert(1)">')).toBeInTheDocument();
+    expect(row.querySelector("b, img")).toBeNull();
+  });
+
+  it("reads degraded in the footer when a daemon is stopped — the word survives the de-cluttering", () => {
+    const views = buildWorkItemViews({ workItems: [item(REF)], sessions: [session(REF)], attention: [] });
+    renderSidebar({ views, daemons: [{ daemon: "poller", running: false }] as never });
+    expect(screen.getByLabelText("Service health: degraded")).toBeInTheDocument();
+  });
+
+  it("says Loading… and then that nothing is tracked, in the C layout", () => {
+    const { unmount } = render(
+      <Sidebar
+        views={[]}
+        loading
+        titleFor={() => undefined}
+        activeRef=""
+        surface="work"
+        daemons={[]}
+        stream={stream}
+        onRefresh={() => {}}
+        onCollapse={() => {}}
+        serviceLabel="service"
+      />,
+    );
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    unmount();
+    renderSidebar({ views: [] });
+    expect(screen.getByText(/Nothing is tracked on this machine yet/)).toBeInTheDocument();
   });
 });

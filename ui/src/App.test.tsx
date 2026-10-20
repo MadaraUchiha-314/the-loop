@@ -10,6 +10,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import type { TheLoopApi } from "./api/client.ts";
 import { App } from "./App.tsx";
 import { ApiProvider } from "./state/ApiContext.tsx";
 
@@ -320,5 +321,79 @@ describe("the control plane, on demo data", () => {
     globalThis.location.hash = "#/sessions/github%3Aocto%2Floop-lab%23214";
     renderApp();
     expect(await screen.findByRole("heading", { name: /Control plane UI/ })).toBeInTheDocument();
+  });
+});
+
+/** A `matchMedia` that answers every min-width query with "narrower than that". */
+const narrowViewport = (query: string) =>
+  ({ matches: false, media: query, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList;
+
+describe("nothing lost, nothing trusted (issue-511 R5.3, R5.4, R6.3, fail-closed)", () => {
+  it("Scenario: loading, empty board, missing deep link, no-transcript fallback, truncated tail and blocked composer render their sentences in the C layout", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    // #187 is armed with no session: the trace falls back to the event trail
+    // and the composer is blocked with its reason — the one hint still drawn.
+    await user.click(await sidebarRow("loop-lab#187"));
+    expect(await screen.findByText(/No transcript served for this session/)).toBeInTheDocument();
+    expect(screen.getByText(/Falling back to the event-log trail/)).toBeInTheDocument();
+    expect(screen.getByText("No session is registered for this ref on the service's machine.", { selector: "span" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /Message the session/ })).toBeDisabled();
+    // The truncated tail is asserted in WorkItemDetail.test.tsx: the demo
+    // transcript is shorter than the tail the column asks for.
+  });
+
+  it("keeps the connection banner above the columns when the service cannot be reached", async () => {
+    const failing = new Proxy({} as TheLoopApi, {
+      get: (_target, key) => {
+        if (key === "baseUrl") return "http://127.0.0.1:8787";
+        if (key === "isDemo") return false;
+        return () => Promise.reject(new TypeError("fetch failed"));
+      },
+    });
+    render(
+      <ApiProvider api={failing}>
+        <App />
+      </ApiProvider>,
+    );
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/reach|connect|service/i);
+  });
+
+  /** A hash is opened and its landmark awaited, one mount at a time: the hash is global state. */
+  async function lands(hash: string, landmark: () => Promise<unknown>): Promise<void> {
+    globalThis.location.hash = hash;
+    const { unmount } = renderApp();
+    await landmark();
+    unmount();
+  }
+
+  it("Scenario: every hash the 20.5.1 app parses lands on the same surface", async () => {
+    const cases: [string, () => Promise<unknown>][] = [
+      ["#/", () => screen.findByRole("heading", { name: /Webhook replay protection/ })],
+      ["#/item/github%3Aocto%2Floop-lab%23205", () => screen.findByText("Human gate")],
+      ["#/standing", () => screen.findByRole("heading", { name: /Standing/ })],
+      ["#/settings", () => screen.findByText("CLI config")],
+      ["#/instances", () => screen.findByRole("heading", { name: /Instances/ })],
+      ["#/events", () => screen.findByRole("heading", { name: /Webhook replay protection/ })],
+      ["#/sessions/github%3Aocto%2Floop-lab%23214", () => screen.findByRole("heading", { name: /Control plane UI/ })],
+    ];
+    await cases.reduce((chain, [hash, landmark]) => chain.then(() => lands(hash, landmark)), Promise.resolve());
+  });
+
+  it("Scenario: below 768 px the sidebar starts closed and reopens from the header", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(globalThis, "matchMedia", { value: narrowViewport, configurable: true, writable: true });
+    try {
+      renderApp();
+      await screen.findByRole("heading", { name: /Webhook replay protection/ });
+      expect(screen.queryByRole("complementary", { name: "Work items" })).toBeNull();
+      await user.click(screen.getByRole("button", { name: "Open sidebar" }));
+      expect(await screen.findByRole("complementary", { name: "Work items" })).toBeInTheDocument();
+      // The Session details disclosure starts closed at every width (R6.3).
+      expect((document.querySelector("[data-session-details]") as HTMLDetailsElement).open).toBe(false);
+    } finally {
+      Reflect.deleteProperty(globalThis, "matchMedia");
+    }
   });
 });

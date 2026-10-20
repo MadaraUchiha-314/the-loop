@@ -16,6 +16,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { DemoApi } from "../demo/client.ts";
 import { ApiProvider } from "../state/ApiContext.tsx";
 import { buildWorkItemViews } from "../api/model.ts";
 import { DEMO_ATTENTION, DEMO_INNER_GRAPHS, DEMO_OUTER_GRAPHS, DEMO_SESSIONS, DEMO_WORK_ITEMS } from "../demo/fixture.ts";
@@ -152,5 +153,59 @@ describe("the trace head (issue-511 R3.2)", () => {
     const panel = screen.getByRole("log", { name: /session transcript/i });
     expect(panel).toHaveAttribute("tabindex", "0");
     expect(screen.getByRole("switch", { name: "Verbose" })).toBeInTheDocument();
+  });
+});
+
+describe("the header renders untrusted text as text (issue-511 abuse case 1)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("EventSource", undefined);
+    globalThis.localStorage?.clear();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("keeps markup in the title, the node name and the note as text — no element is created from them", async () => {
+    const base = viewOf("loop-lab#214");
+    const view = {
+      ...base,
+      currentNode: "**n**<i>x</i>",
+      parked: { node: "**n**<i>x</i>", reason: "<b>approve</b>", since: "2026-10-15T09:00:00Z" },
+    };
+    render(
+      <ApiProvider>
+        <WorkItemDetail view={view} title='<b>x</b><img src=x onerror="alert(1)">' onChanged={() => {}} chrome={chrome} />
+      </ApiProvider>,
+    );
+    await screen.findByRole("log", { name: /session transcript/i });
+    const header = screen.getByRole("banner");
+    expect(within(header).getByRole("heading").textContent).toBe('<b>x</b><img src=x onerror="alert(1)">');
+    expect(within(header).getByText("**n**<i>x</i>")).toBeInTheDocument();
+    expect(header.querySelector("b, i, img, strong")).toBeNull();
+    const banner = screen.getByText("Human gate").closest("[role='status']") as HTMLElement;
+    expect(within(banner).getByText("<b>approve</b>")).toBeInTheDocument();
+    expect(banner.querySelector("b")).toBeNull();
+  });
+});
+
+describe("the truncated tail (issue-511 R5.3)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("EventSource", undefined);
+    globalThis.localStorage?.clear();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("still says which slice of the transcript the column shows", async () => {
+    const api = new DemoApi();
+    const served = api.transcript.bind(api);
+    vi.spyOn(api, "transcript").mockImplementation(async (ref, limit, signal, instance) => {
+      const page = await served(ref, limit, signal, instance);
+      return { ...page, truncated: true, totalLines: page.entries.length + 40 };
+    });
+    const view = viewOf("loop-lab#214");
+    render(
+      <ApiProvider api={api}>
+        <WorkItemDetail view={view} title={view.ref} onChanged={() => {}} chrome={chrome} />
+      </ApiProvider>,
+    );
+    expect(await screen.findByText(/tail — the last \d+ of \d+ entries/)).toBeInTheDocument();
   });
 });
