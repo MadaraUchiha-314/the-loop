@@ -5,6 +5,10 @@
  * paused. Links on the hash, like the sidebar's nested rows, so the two
  * selectors cannot disagree about what the trace shows (issue-300). Each
  * link's accessible name is the session's short ref.
+ *
+ * A bar with one tab is chrome for a choice that does not exist, so it
+ * renders only when the item has more than one session, and it carries no
+ * tally (issue-511 R2.4, R2.6).
  */
 
 import type { WorkItemView } from "../api/model.ts";
@@ -13,6 +17,7 @@ import { GitPullRequestIcon, PauseIcon, SquareTerminalIcon } from "./Icons.tsx";
 
 export function SessionTabs({ view, viewed }: { view: WorkItemView; viewed: string }) {
   const prs = view.pullRequests;
+  if (prs.length === 0) return null;
   const tab =
     "-mb-px flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm transition-colors";
   const on = "border-primary text-foreground";
@@ -43,10 +48,6 @@ export function SessionTabs({ view, viewed }: { view: WorkItemView; viewed: stri
           {pr.sessionState === "paused" ? <PauseIcon className="h-3 w-3 text-state-blocked" /> : null}
         </a>
       ))}
-      <span className="ml-auto shrink-0 py-2.5 font-mono text-[0.68rem] text-muted-foreground">
-        {1 + prs.length} {1 + prs.length === 1 ? "session" : "sessions"} · 1 work item loop
-        {prs.length > 0 ? ` · ${prs.length} pr ${prs.length === 1 ? "loop" : "loops"}` : ""}
-      </span>
     </div>
   );
 }

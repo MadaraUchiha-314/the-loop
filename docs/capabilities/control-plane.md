@@ -384,31 +384,47 @@ package — there are no install extras (owner decision, PR #162).
   row budget SHALL be spent after the filter, not before, and a view the filter
   emptied SHALL say how many rows are hidden and which switch reveals them
   rather than render an empty column.
-- The dashboard SHALL be **one screen of three columns** (issue-327, the owner's
-  prototype — Control Plane UI 3.0 — superseding issue-298's Classical pair of
-  surfaces): a **sidebar** of work items grouped by what they need from a human
-  (*Needs you*, *In flight*, *Shipped*, *Idle*; each row `#n · title / repo · node
-  · age`, a search box filtering the loaded rows, standing sessions as their own
-  group, Settings and the health word in the footer), each item with **its pull
-  requests nested beneath it** (issue-300) — and a work item whose record says it
-  **ended** (`ended`, issue-329, [decision-113](../decisions/decision-113.md)) SHALL
-  sit under *Shipped* (merged, or an issue closed) or *Idle* (a pull request closed
-  unmerged), never under *Needs you*: its question, its parked gate and its blocked
-  nodes are retired at the join, its row wears a muted `merged` / `closed` chip, and
-  the inbox holds nothing for it or its pull requests; a record without the field, or
-  with a malformed one, reads as open; a **main column** showing the
-  selected item's title and ref chip, its loop as a compacted node strip (first,
-  last and two either side of the current node; *Full graph* expands it), one
-  tab per session, the harness trace as a reading column with a *Verbose*
-  switch, the parked gate and the agent's question as accent banners, and the
-  composer at the foot — the most recently active item when nothing is selected;
-  and a **session panel** naming the viewed session's harness, id, status,
-  current node and transcript file, its tmux target and cwd, the ticket or pull
-  request it delivers, and the work item's session verbs. `#/standing` and
+- The dashboard SHALL be **one screen of two columns** (issue-327's prototype —
+  Control Plane UI 3.0 — de-cluttered to issue-511's Option C, chosen by the
+  owner, [decision-148](../decisions/decision-148.md); superseding issue-298's
+  Classical pair of surfaces): a **sidebar** of work items in two groups —
+  *Needs you*, carrying the one count that changes what the viewer does, and
+  *Everything else*, by last activity — each row one line (`#n · title`, with a
+  flag only when the item needs a human: `needs input`, `human gate`, `blocked`;
+  its accessible name carries all three), the **selected** item's pull requests
+  nested beneath it (issue-300), the search box and the fleet's instance filter
+  behind a search toggle with `aria-expanded` in the brand row, and Settings,
+  the service line and the health word in the footer; a work item whose record
+  says it **ended** (`ended`, issue-329, [decision-113](../decisions/decision-113.md))
+  SHALL sit under *Everything else*, never under *Needs you*: its question, its
+  parked gate and its blocked nodes are retired at the join, and the inbox holds
+  nothing for it or its pull requests; a record without the field, or with a
+  malformed one, reads as open; a **main column** showing the selected item's
+  title, a meta line of ref chip · phase chip · the parked/blocked note ·
+  `updated <age>` · *Full graph* (a control with `aria-expanded` that reveals the
+  loop's node row — the phase chip is the **one** statement of the current node,
+  the row is the map; no `n of m` count, no second `at <node>`), one tab per
+  session only when the item has more than one, the harness trace as a reading
+  column with a *Verbose* switch, the parked gate (`Human gate · waiting <age>`,
+  never the node) and the agent's question as accent banners, and the composer
+  at the foot, whose only hint is a blocked session's reason — the most recently
+  active item when nothing is selected; the session's facts (harness, status,
+  started, session id, transcript path and working directory in full, the
+  attach command to copy, the ticket or pull request it delivers) behind the
+  header's **Session details** disclosure — a native `<details>` bounded to the
+  viewport and scrolling inside, closed by default at every width — and the
+  work item's session verbs among the header actions, preceded by a visible
+  `work item` label when a pull request's session is viewed. Each fact is drawn
+  **once** by default — the current node, the parked/blocked note, the
+  repository (inside the ref chip), the tmux target (inside the attach command),
+  the age — and a second copy appears only behind a disclosure. The standing
+  sessions are listed on the Standing surface alone. `#/standing` and
   `#/settings` SHALL swap the main column for those panes and keep the sidebar.
-  Either side panel SHALL collapse from its own control and reopen from the
-  header; below 1280 px the session panel and below 768 px the sidebar SHALL start
-  closed. The visual system is the prototype's: IBM Plex Sans, JetBrains Mono for
+  The sidebar SHALL collapse from its own control and reopen from the header;
+  below 768 px it SHALL start closed. The demo banner, the connection banner,
+  the health word with its `degraded` state and a blocked composer's reason
+  SHALL remain visible by default: de-cluttering never hides a warning.
+  The visual system is the prototype's: IBM Plex Sans, JetBrains Mono for
   identifiers, Space Grotesk for the title, surfaces and hairlines instead of
   shadows, one primary for the human's actions, five state colours behind a 6 px
   dot — its oklch tokens declared once as a Tailwind theme
@@ -521,6 +537,7 @@ package — there are no install extras (owner decision, PR #162).
 | issue-329 | Closed work items leave *Needs you* (2026-09-09): the join reads the portable record's new `ended` section, nulls the item's question and parked gate, keeps it out of `needs-you`, groups it under *Shipped* (merged or issue closed) or *Idle* (PR closed unmerged) with a muted `merged` / `closed` chip, and contributes nothing to the inbox for it or its pull requests; `GET /attention` applies the same rule and reports neither `awaiting-input` nor `armed-without-session` for a stamped record. A record without the field, or with a malformed one, is open, as at 13.6.0. The demo's shipped item now carries the stamp | [spec](../specs/issue-329/), [decision-113](../decisions/decision-113.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/329) |
 | issue-322 | `GET /api/v1/instance` (`getInstance`; the `get_instance` MCP tool; `loop.instance()` on the SDK): which instance of the-loop answered — its name, scope mode, declared work items and the managed set with the source of each entry. The seam a manager of several instances aggregates across: every instance serves the same surface, and this document says which one it is | [spec](../specs/issue-322/), [decision-110](../decisions/decision-110.md), [instances](instances.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/322) |
 | issue-302 | A pull request stopped appearing twice on the board. A labeled, linked PR carries two identities the service writes on purpose — the poller's portable ledger under its own ref, and a session endpoint nested under the work item it delivers — and `buildWorkItemViews` unioned them, so PR #301's nesting made the same PR render as a live nested row *and* a dead top-level shell (grey dot, "no session", because its session is nested elsewhere). The join now reconciles the two: a ref another item's row draws as its pull request is not a work item, unless nothing would draw it (a treeless owner), it has a session record of its own, or the claim is a self- or two-level claim a hand-edited record could use to hide a row. What the removed row carried is folded onto the nested one — its portable record for the age fallback, and its attention and open question onto the owning item's card and chip — so the drop moves information rather than deleting it. Service side, `list_attention` now counts a live nested PR endpoint as a session for its ref, which is what made every linked, labeled PR report a permanent stall | [spec](../specs/issue-302/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/302) |
+| issue-511 | **The control plane de-cluttered to Option C — Minimal**, the owner's pick of three nested prototypes ([decision-148](../decisions/decision-148.md)): the session panel column is gone — its facts sit behind the header's Session details disclosure and its verbs among the header actions; the graph strip's counts and second position statement are gone and the node row sits behind *Full graph* in the header meta beside the phase chip, the one statement of the current node; the sidebar is two groups (Needs you with its count, Everything else by activity) of one-line rows with the selected item's PRs nested beneath, the finder behind a search icon, and no Standing group; a one-session tab bar, the composer's delivery hint, the trace head's harness name and the gate banner's node name leave. Inventory elements drawn by default on the Work surface: 56 → 27. Presentation only: no route, request, control verb, setting or dependency changes; the design system is untouched and the bundle is smaller | [spec](../specs/issue-511/), [decision-148](../decisions/decision-148.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/511) |
 | issue-300 | The Work sidebar stopped flattening the board: each work item now carries its pull requests as nested rows (dot &middot; number-or-qualified-ref &middot; age), rendered from the `sessionTree` join the retired Sessions screen left behind rather than a second derivation, so treeless loops stay treeless. Selecting a PR row opens that PR's session on its work item's canvas, and the parent row keeps a lighter marker so the open item is still visible. The viewed trace moved from pane-local state to the hash — the trace tabs became links to the same route the sidebar rows use — which removes the second source of truth and, with it, the class of bug where a PR of the already-open item could be selected and change nothing | [spec](../specs/issue-300/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/300) |
 | issue-327 | **Control Plane UI 3.0**: the dashboard's presentational layer rebuilt on the owner's prototype (https://the-loopy-one.lovable.app/), light and dark. One screen of three columns — a work-item sidebar grouped Needs you / In flight / Shipped / Idle with search and nested PR rows, a main column with the loop as a compacted node strip, session tabs, the harness trace as a reading column with a Tool calls switch and the composer, and a session panel (harness · tmux · ticket · controls); Standing and Settings as panes of the same column. Tokens are the prototype's oklch values in a Tailwind v4 `@theme`; the theme follows the browser until chosen, is persisted beside the base URL and applied before first paint. Presentation only: every connector, model join, route and control verb is unchanged, and nothing the service cannot back is rendered | [spec](../specs/issue-327/), [decision-112](../decisions/decision-112.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/327) |
 | issue-298 | The dashboard's design overhaul, in two rounds. Round one: the Industry system replaced wholesale by **Classical** (Cormorant Garamond over Lora, hairline rules, color as stroke), vendored as `ui/src/styles/classical.css` from the owner's signed-off export (checked in under `docs/specs/issue-298/design/`); the header bar retired into the sidebar; the labelled node rail became a tick bar captioned `current · n of m` (node names in tooltips); the transcript an editorial "You" / "the-loop" thread. Round two, on the owner's decluttering direction: one flat Work-items sidebar (chips carry the attention), the canvas pared to header + trace + chat with the most recent item shown by default, the question answered by the chat bar itself, the inbox/overview and PR cards folded into chips, cards and trace tabs, and the standalone Events screen retired (the trail remains as the trace's fallback; `#/events` lands on Work). Presentation only: every API connector, model join and control verb is unchanged | [design](../specs/issue-298/design/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/298) |

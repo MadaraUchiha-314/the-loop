@@ -1,5 +1,4 @@
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { RailNode } from "../api/model.ts";
@@ -76,27 +75,40 @@ describe("railLabel and humanize", () => {
   });
 });
 
-describe("GraphStrip", () => {
-  it("compacts by default and shows every node behind Full graph", async () => {
-    const user = userEvent.setup();
-    render(<GraphStrip nodes={rail("human-approval")} loop="pdlc-work-item-loop" emptyMessage="—" />);
-    const list = screen.getByRole("list", { name: "loop position" });
-    expect(list.querySelectorAll("[data-node]")).toHaveLength(6);
-    expect(screen.getByText("15 of 19 nodes passed")).toBeInTheDocument();
-    expect(screen.getByText("1 skipped")).toBeInTheDocument();
-    expect(screen.getByText("at human-approval")).toBeInTheDocument();
-    // The current node is the step; a skipped one is struck through.
-    expect(list.querySelector('[aria-current="step"]')).toHaveTextContent("Human approval");
-
-    await user.click(screen.getByRole("button", { name: /Full graph/ }));
-    expect(list.querySelectorAll("[data-node]")).toHaveLength(19);
-    expect(screen.getByText("Brainstorming").className).toContain("line-through");
-    expect(screen.getByRole("button", { name: /Collapse graph/ })).toHaveAttribute("aria-expanded", "true");
+describe("GraphStrip (issue-511: the band behind Full graph)", () => {
+  it("renders nothing while collapsed — the header carries the position and the control", () => {
+    render(<GraphStrip nodes={rail("human-approval")} loop="pdlc-work-item-loop" expanded={false} />);
+    expect(screen.queryByRole("region", { name: "Loop position" })).toBeNull();
+    expect(screen.queryByRole("list", { name: "loop position" })).toBeNull();
+    expect(document.querySelectorAll("[data-node]")).toHaveLength(0);
   });
 
-  it("says why when there is no rail", () => {
-    render(<GraphStrip nodes={[]} loop="pdlc-work-item-loop" emptyMessage="No checkout recorded." />);
-    expect(screen.getByText("No checkout recorded.")).toBeInTheDocument();
-    expect(screen.queryByRole("list", { name: "loop position" })).toBeNull();
+  it("shows every node when expanded, the current one as the step, with no counts and no second statement of the position", () => {
+    render(<GraphStrip nodes={rail("human-approval")} loop="pdlc-work-item-loop" expanded />);
+    const region = screen.getByRole("region", { name: "Loop position" });
+    const list = screen.getByRole("list", { name: "loop position" });
+    expect(list.querySelectorAll("[data-node]")).toHaveLength(19);
+    expect(list.querySelector('[aria-current="step"]')).toHaveTextContent("Human approval");
+    expect(screen.getByText("Brainstorming").className).toContain("line-through");
+    expect(within(region).getByText("pdlc-work-item-loop")).toBeInTheDocument();
+    expect(region.textContent).not.toMatch(/of \d+ nodes passed/);
+    expect(region.textContent).not.toMatch(/skipped/);
+    expect(region.textContent).not.toMatch(/\bat human-approval/);
+    // The strip owns no toggle any more: the header's Full graph button does.
+    expect(within(region).queryByRole("button")).toBeNull();
+  });
+
+  it("marks the pointer node as the step even when it is blocked, and only it (critic round 1, R6.2)", () => {
+    const nodes = rail("implementation");
+    for (const node of nodes) if (node.id === "implementation" || node.id === "design") node.state = "blocked";
+    render(<GraphStrip nodes={nodes} loop="pdlc-work-item-loop" expanded current="implementation" />);
+    const steps = document.querySelectorAll('[aria-current="step"]');
+    expect(steps).toHaveLength(1);
+    expect(steps[0]).toHaveTextContent("Implementation");
+  });
+
+  it("renders nothing for an empty rail — the header says why, in the Full graph slot", () => {
+    render(<GraphStrip nodes={[]} loop="pdlc-work-item-loop" expanded />);
+    expect(screen.queryByRole("region", { name: "Loop position" })).toBeNull();
   });
 });

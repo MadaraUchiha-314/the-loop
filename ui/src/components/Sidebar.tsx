@@ -1,29 +1,32 @@
 /**
- * The design's left column (issue-327): the brand row, a search box that
- * filters the loaded rows, work items grouped by what they need from the
- * operator — Needs you · In flight · Shipped · Idle — each with its pull
- * requests nested beneath it (issue-300), a Standing group for the sessions
- * that belong to no work item (issue-277), and a footer with the Settings
- * link and the health word.
+ * The design's left column (issue-327), de-cluttered to issue-511's Option C:
+ * the brand row with the collapse control and a search toggle, the surface
+ * nav, the finder (search box, and the instance filter on a fleet) behind that
+ * toggle, work items in two groups — **Needs you**, with its count, and
+ * **Everything else** by last activity — as one-line rows that carry what is
+ * needed to choose (dot, number, title, and a flag only when the item needs a
+ * human), the selected item's pull requests nested beneath it (issue-300),
+ * and a footer with the Settings link, the service line and the health word.
+ * The standing sessions live on the Standing surface the nav reaches.
  *
  * Every row is an anchor on the hash: the hash is the one record of what the
  * main column shows, so a sidebar row and a session tab are the same
  * navigation and cannot disagree (issue-300).
  *
  * On a manager the board is a fleet (issue-374, R5.2): each row that a
- * manager stamped carries an instance chip, a native `<select>` beside the
- * search box filters the loaded rows to one instance, and a row's hash names
- * its instance so a work item present on two instances is two rows, each
+ * manager stamped carries an instance chip, a native `<select>` in the finder
+ * filters the loaded rows to one instance, and a row's hash names its
+ * instance so a work item present on two instances is two rows, each
  * addressable. A worker's rows carry no stamp and none of this renders.
  */
 
 import { useState } from "react";
 
-import { relativeTime, rowFlag, sessionTree, type SessionNode, type WorkItemView } from "../api/model.ts";
-import type { DaemonStatus, InstancesDocument, StandingSessionRecord } from "../api/types.ts";
+import { rowFlag, sessionTree, type SessionNode, type WorkItemView } from "../api/model.ts";
+import type { DaemonStatus, InstancesDocument } from "../api/types.ts";
 import { hrefFor, itemHref, type Surface } from "../state/route.ts";
 import type { StreamState } from "../state/useStream.ts";
-import { filterViews, itemStatus, repoOf, SIDEBAR_GROUPS, sidebarGroup } from "../views/grouping.ts";
+import { byActivity, filterViews, itemStatus, minimalGroup, repoOf, SIDEBAR_GROUPS_MINIMAL } from "../views/grouping.ts";
 import { GitPullRequestIcon, PanelLeftCloseIcon, RadioIcon, SearchIcon, SettingsIcon } from "./Icons.tsx";
 import { HealthDot } from "./Nav.tsx";
 import { IconButton, InstanceChip, Kicker } from "./primitives.tsx";
@@ -39,7 +42,6 @@ interface SidebarProps {
   activeInstance?: string;
   /** Which surface is current. */
   surface: Surface;
-  standingSessions: StandingSessionRecord[];
   daemons: DaemonStatus[];
   stream: StreamState;
   /** The fleet (issue-374): decides whether the filter and the chips render. */
@@ -71,7 +73,6 @@ export function Sidebar({
   activeRef,
   activeInstance = "",
   surface,
-  standingSessions,
   daemons,
   stream,
   instances,
@@ -82,12 +83,12 @@ export function Sidebar({
   serviceLabel,
 }: SidebarProps) {
   const [query, setQuery] = useState("");
+  // The finder starts closed (issue-511 row 3): the rows are the list.
+  const [finderOpen, setFinderOpen] = useState(false);
   const fleet = showsFleet(instances);
   const byInstance = fleet && instanceFilter ? views.filter((view) => view.instance === instanceFilter) : views;
   const shown = filterViews(byInstance, query, titleFor);
   const tree = sessionTree(shown);
-  const standing =
-    fleet && instanceFilter ? standingSessions.filter((session) => session.instance === instanceFilter) : standingSessions;
 
   const navLink = (target: Surface, href: string, label: string) => (
     <a
@@ -113,15 +114,14 @@ export function Sidebar({
           </span>
           <span className="font-display text-sm font-semibold tracking-tight">the-loop</span>
         </a>
-        <button
-          type="button"
-          aria-label="Collapse sidebar"
-          title="Collapse sidebar"
-          onClick={onCollapse}
-          className="text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <PanelLeftCloseIcon className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <IconButton label="Search and filter" expanded={finderOpen} active={finderOpen} onClick={() => setFinderOpen((value) => !value)}>
+            <SearchIcon className="h-4 w-4" />
+          </IconButton>
+          <IconButton label="Collapse sidebar" onClick={onCollapse}>
+            <PanelLeftCloseIcon className="h-4 w-4" />
+          </IconButton>
+        </div>
       </div>
 
       <nav className="flex items-center gap-1 px-3 pt-3" aria-label="Surfaces">
@@ -130,38 +130,40 @@ export function Sidebar({
         {navLink("instances", hrefFor({ name: "instances" }), "Instances")}
       </nav>
 
-      <div className="space-y-2 px-3 pt-3">
-        <label className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-1.5 focus-within:border-border-strong">
-          <SearchIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search work items"
-            aria-label="Search work items"
-            autoComplete="off"
-            className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-          />
-        </label>
-        {/* The instance filter (R5.2): a native <select>, over the loaded rows
-            only — it asks the service for nothing. Present only when there is
-            a fleet to filter, so a worker's sidebar is the one it always was. */}
-        {fleet && instances ? (
-          <select
-            aria-label="Instance filter"
-            value={instanceFilter}
-            onChange={(event) => onInstanceFilter?.(event.target.value)}
-            className="w-full rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-[0.72rem] text-foreground outline-none focus:border-border-strong"
-          >
-            <option value="">All instances ({instances.instances.length})</option>
-            {instances.instances.map((row) => (
-              <option key={row.name} value={row.name}>
-                {instanceOption(row, row.name === instances.name)}
-              </option>
-            ))}
-          </select>
-        ) : null}
-      </div>
+      {finderOpen ? (
+        <div className="space-y-2 px-3 pt-3">
+          <label className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-1.5 focus-within:border-border-strong">
+            <SearchIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search work items"
+              aria-label="Search work items"
+              autoComplete="off"
+              className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            />
+          </label>
+          {/* The instance filter (R5.2): a native <select>, over the loaded rows
+              only — it asks the service for nothing. Present only when there is
+              a fleet to filter (R2.6), so a worker's finder is the search box. */}
+          {fleet && instances ? (
+            <select
+              aria-label="Instance filter"
+              value={instanceFilter}
+              onChange={(event) => onInstanceFilter?.(event.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-[0.72rem] text-foreground outline-none focus:border-border-strong"
+            >
+              <option value="">All instances ({instances.instances.length})</option>
+              {instances.instances.map((row) => (
+                <option key={row.name} value={row.name}>
+                  {instanceOption(row, row.name === instances.name)}
+                </option>
+              ))}
+            </select>
+          ) : null}
+        </div>
+      ) : null}
 
       <nav className="scroll-thin mt-4 flex-1 overflow-y-auto px-2 pb-4" aria-label="Board">
         {loading && views.length === 0 ? <p className="px-2 py-4 text-xs text-muted-foreground">Loading…</p> : null}
@@ -179,81 +181,47 @@ export function Sidebar({
           </p>
         ) : null}
 
-        {SIDEBAR_GROUPS.map((group) => {
-          const items = tree.filter(({ view }) => sidebarGroup(view) === group.key);
+        {SIDEBAR_GROUPS_MINIMAL.map((group) => {
+          const members = tree.filter(({ view }) => minimalGroup(view) === group.key);
+          // Everything else by last activity (row 16); Needs you keeps the board's order.
+          const items = group.key === "everything" ? members.toSorted((a, b) => byActivity(a.view, b.view)) : members;
           if (items.length === 0) return null;
           return (
             <div className="mb-4" key={group.key}>
               <div className="flex items-center justify-between px-2 pb-1.5">
                 <Kicker>{group.title}</Kicker>
-                <span className="text-[0.68rem] text-muted-foreground">{items.length}</span>
+                {/* The one count that changes what you do (R2.4). */}
+                {group.key === "needs-you" ? <span className="text-[0.68rem] text-muted-foreground">{items.length}</span> : null}
               </div>
               <ul className="space-y-0.5">
-                {items.map(({ view, inner }) => (
-                  <li key={view.key}>
-                    <ItemRow
-                      view={view}
-                      title={titleFor(view.ref)}
-                      selected={activeRef === view.ref && activeInstance === view.instance}
-                      owner={activeInstance === view.instance && inner.some((pr) => pr.ref === activeRef)}
-                    />
-                    {inner.length > 0 ? (
-                      <ul className="mt-0.5 space-y-0.5 pl-[1.1rem]" aria-label={`Pull requests for ${view.shortRef}`}>
-                        {inner.map((pr) => (
-                          <li key={pr.ref}>
-                            <PullRequestRow
-                              node={pr}
-                              instance={view.instance}
-                              selected={activeRef === pr.ref && activeInstance === view.instance}
-                            />
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </li>
-                ))}
+                {items.map(({ view, inner }) => {
+                  const selected = activeRef === view.ref && activeInstance === view.instance;
+                  const owner = activeInstance === view.instance && inner.some((pr) => pr.ref === activeRef);
+                  return (
+                    <li key={view.key}>
+                      <ItemRow view={view} title={titleFor(view.ref)} selected={selected} owner={owner} />
+                      {/* PR rows nest under the selected item only (row 13): the
+                          tab bar lists them once the item is open. */}
+                      {inner.length > 0 && (selected || owner) ? (
+                        <ul className="mt-0.5 space-y-0.5 pl-[1.1rem]" aria-label={`Pull requests for ${view.shortRef}`}>
+                          {inner.map((pr) => (
+                            <li key={pr.ref}>
+                              <PullRequestRow
+                                node={pr}
+                                instance={view.instance}
+                                selected={activeRef === pr.ref && activeInstance === view.instance}
+                              />
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           );
         })}
-
-        <div className="mb-4">
-          <div className="flex items-center justify-between px-2 pb-1.5">
-            <Kicker>Standing</Kicker>
-            <span className="text-[0.68rem] text-muted-foreground">{standing.length}</span>
-          </div>
-          <ul className="space-y-0.5">
-            {standing.map((session) => (
-              <li key={`${session.instance ?? ""}:${session.name}`}>
-                <a
-                  href={hrefFor({ name: "standing" })}
-                  data-row="standing"
-                  className={`block w-full rounded-lg px-2 py-1.5 text-left transition-colors ${
-                    surface === "standing" ? "bg-surface-2" : "hover:bg-surface-2/60"
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <StatusDot status={session.running ? "active" : "pending"} />
-                    <span className="min-w-0 truncate font-mono text-[0.75rem] text-foreground/85">{session.name}</span>
-                    {session.instance ? <InstanceChip instance={session.instance} className="ml-auto" /> : null}
-                  </div>
-                  {session.description ? (
-                    <div className="mt-0.5 truncate pl-[1.1rem] text-[0.7rem] text-muted-foreground">{session.description}</div>
-                  ) : null}
-                </a>
-              </li>
-            ))}
-            <li>
-              <a
-                href={hrefFor({ name: "standing" })}
-                aria-current={surface === "standing" ? "page" : undefined}
-                className="block rounded-lg px-2 py-1.5 text-[0.7rem] text-muted-foreground transition-colors hover:bg-surface-2/60 hover:text-foreground"
-              >
-                Manage standing sessions →
-              </a>
-            </li>
-          </ul>
-        </div>
       </nav>
 
       <div className="flex items-center gap-2 border-t border-border px-4 py-3">
@@ -274,6 +242,11 @@ export function Sidebar({
   );
 }
 
+/**
+ * One line: dot · `#n` · title · (instance chip on a fleet) · the flag when the
+ * item needs a human (R2.2). The accessible name carries the number, the
+ * title and that flag (R6.2); the header has the full title.
+ */
 function ItemRow({
   view,
   title,
@@ -287,12 +260,14 @@ function ItemRow({
   owner: boolean;
 }) {
   const flag = rowFlag(view);
+  const urgent = flag?.urgent ? flag : null;
   const status = itemStatus(view);
+  const name = `${view.shortRef}${title ? ` — ${title}` : ""}${urgent ? ` — ${urgent.label}` : ""}${view.instance ? ` on ${view.instance}` : ""}`;
   return (
     <a
       href={itemHref(view.ref, view.instance)}
       aria-current={selected ? "page" : undefined}
-      aria-label={`${view.shortRef}${title ? ` — ${title}` : ""}${view.instance ? ` on ${view.instance}` : ""}`}
+      aria-label={name}
       data-row="item"
       data-instance={view.instance || undefined}
       data-owner={owner ? "true" : undefined}
@@ -300,28 +275,14 @@ function ItemRow({
         selected ? "bg-surface-2" : owner ? "bg-surface-2/40" : "hover:bg-surface-2/60"
       }`}
     >
-      <div className="flex items-start gap-2">
-        <StatusDot status={status} className="mt-2" />
-        <span className="mt-[0.2rem] shrink-0 font-mono text-[0.7rem] text-muted-foreground">#{view.number}</span>
-        <span className={`line-clamp-2 min-w-0 flex-1 break-words text-sm ${selected ? "text-foreground" : "text-foreground/85"}`}>
-          {title ?? positionLabel(view)}
+      <div className="flex items-center gap-2">
+        <StatusDot status={status} />
+        <span className="shrink-0 font-mono text-[0.7rem] text-muted-foreground">#{view.number}</span>
+        <span className={`min-w-0 flex-1 truncate text-sm ${selected ? "text-foreground" : "text-foreground/85"}`}>
+          {title ?? repoOf(view.ref)}
         </span>
-        {view.instance ? <InstanceChip instance={view.instance} className="mt-[0.2rem]" /> : null}
-      </div>
-      {/* repo · what it is at · age. The flag ("needs input", "human gate",
-          "blocked"…) is the more urgent fact, so it takes the node's slot. */}
-      <div className="mt-0.5 flex items-center gap-1.5 pl-[1.1rem] text-[0.7rem] text-muted-foreground">
-        <span className="shrink-0 font-mono">{repoOf(view.ref)}</span>
-        <span aria-hidden="true">·</span>
-        {flag ? (
-          <span className={`min-w-0 truncate font-mono ${flag.urgent ? STATUS_TEXT.blocked : ""}`}>{flag.label}</span>
-        ) : (
-          <span className="min-w-0 truncate font-mono">{view.currentNode || (view.rail.length > 0 ? "planned" : "no graph")}</span>
-        )}
-        <span aria-hidden="true">·</span>
-        <span className="shrink-0" title={view.lastActivity || undefined}>
-          {relativeTime(view.lastActivity)}
-        </span>
+        {view.instance ? <InstanceChip instance={view.instance} /> : null}
+        {urgent ? <span className={`shrink-0 font-mono text-[0.68rem] ${STATUS_TEXT.blocked}`}>{urgent.label}</span> : null}
       </div>
     </a>
   );
@@ -329,8 +290,8 @@ function ItemRow({
 
 /**
  * One pull request under its work item: the PR's own session, selectable.
- * Quieter than the row above — icon, number, age, no title; the nesting says
- * which item it belongs to, and the chip which instance (R5.2).
+ * Quieter than the row above — icon, number, no title, no age; the nesting
+ * says which item it belongs to, and the chip which instance (R5.2).
  */
 function PullRequestRow({ node, instance, selected }: { node: SessionNode; instance: string; selected: boolean }) {
   return (
@@ -347,16 +308,6 @@ function PullRequestRow({ node, instance, selected }: { node: SessionNode; insta
       <GitPullRequestIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
       <span className="font-mono">{node.label}</span>
       {instance ? <InstanceChip instance={instance} /> : null}
-      <span className="ml-auto shrink-0 text-[0.7rem] text-muted-foreground" title={node.lastActivity || undefined}>
-        {relativeTime(node.lastActivity)}
-      </span>
     </a>
   );
-}
-
-/** Where the item stands, for a row with no cached title to show. */
-function positionLabel(view: WorkItemView): string {
-  if (view.currentNode) return `${view.currentNode} · ${view.progress}`;
-  if (view.rail.length > 0) return `planned · ${view.progress}`;
-  return view.shortRef;
 }

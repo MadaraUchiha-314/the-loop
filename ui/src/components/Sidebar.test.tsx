@@ -1,8 +1,13 @@
 /**
  * The sidebar on a fleet (issue-374, R5.2): the instance chip on the rows a
- * manager stamped, the filter beside the search box, and the health popover
+ * manager stamped, the filter behind the search toggle, and the health popover
  * listing each instance — and none of it on a worker, whose sidebar must be
  * the one it always was.
+ *
+ * And the sidebar de-cluttered to issue-511's Option C: one-line rows that
+ * carry what is needed to choose — number, title, the urgent flag — pull
+ * requests nested under the selected item only, two groups with a count on
+ * Needs you alone, no Standing group, and the finder behind one icon.
  */
 
 import { render, screen, within } from "@testing-library/react";
@@ -10,7 +15,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { buildWorkItemViews } from "../api/model.ts";
-import type { SessionRecord, StandingSessionRecord, WorkItemRecord } from "../api/types.ts";
+import type { SessionRecord, WorkItemRecord } from "../api/types.ts";
 import type { StreamState } from "../state/useStream.ts";
 import { CLOUD, HQ, LAPTOP, managerDocument } from "../test/manager.ts";
 import { instanceOption, showsFleet, Sidebar } from "./Sidebar.tsx";
@@ -45,27 +50,6 @@ function session(ref: string, instance?: string, prs: string[] = []): SessionRec
   };
 }
 
-function standing(name: string, instance?: string): StandingSessionRecord {
-  return {
-    name,
-    declared: true,
-    description: "",
-    autoStart: true,
-    harness: "claude",
-    cwd: "/w",
-    tmuxTarget: `loop-standing-${name}`,
-    ref: `standing:${name}`,
-    status: "running",
-    running: true,
-    harnessSessionId: "",
-    slackChannel: "",
-    slackThread: "",
-    startedAt: "",
-    lastMessageAt: "",
-    ...(instance ? { instance } : {}),
-  };
-}
-
 const stream: StreamState = { name: "off" };
 
 function renderSidebar(props: Partial<Parameters<typeof Sidebar>[0]> & { views: Parameters<typeof Sidebar>[0]["views"] }) {
@@ -76,7 +60,6 @@ function renderSidebar(props: Partial<Parameters<typeof Sidebar>[0]> & { views: 
       titleFor={() => undefined}
       activeRef=""
       surface="work"
-      standingSessions={[]}
       daemons={[]}
       stream={stream}
       onRefresh={() => {}}
@@ -118,12 +101,8 @@ describe("the sidebar on a manager", () => {
       attention: [],
     });
 
-  it("chips every stamped row — work item, PR and standing session — and links each to its instance's hash", () => {
-    renderSidebar({
-      views: views(),
-      instances: managerDocument(),
-      standingSessions: [standing("triage", "ci-box")],
-    });
+  it("chips every stamped row — work item and PR — and links each to its instance's hash", () => {
+    renderSidebar({ views: views(), instances: managerDocument(), activeRef: REF, activeInstance: "laptop-a" });
 
     const rows = itemRows();
     expect(rows).toHaveLength(3);
@@ -139,15 +118,13 @@ describe("the sidebar on a manager", () => {
     const pr = within(prs).getByRole("link");
     expect(pr).toHaveAttribute("href", `#/item/${encodeURIComponent(PR)}@laptop-a`);
     expect(within(pr).getByText("laptop-a")).toBeInTheDocument();
-
-    const standingRow = screen.getAllByRole("link").find((el) => el.dataset["row"] === "standing")!;
-    expect(within(standingRow).getByText("ci-box")).toBeInTheDocument();
   });
 
   it("offers the filter with every instance, naming the own row and a member's state", async () => {
     const user = userEvent.setup();
     const { onInstanceFilter } = renderSidebar({ views: views(), instances: managerDocument() });
 
+    await user.click(screen.getByRole("button", { name: "Search and filter" }));
     const select = screen.getByRole("combobox", { name: "Instance filter" });
     const options = within(select).getAllByRole("option").map((option) => option.textContent);
     expect(options).toEqual(["All instances (3)", "hq · this instance", "laptop-a", "cloud-1 · unreachable"]);
@@ -158,17 +135,11 @@ describe("the sidebar on a manager", () => {
   });
 
   it("filters the loaded rows to the chosen instance", () => {
-    renderSidebar({
-      views: views(),
-      instances: managerDocument(),
-      instanceFilter: "ci-box",
-      standingSessions: [standing("triage", "ci-box"), standing("watch", "laptop-a")],
-    });
+    renderSidebar({ views: views(), instances: managerDocument(), instanceFilter: "ci-box" });
 
     const rows = itemRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toHaveAttribute("data-instance", "ci-box");
-    expect(screen.getAllByRole("link").filter((el) => el.dataset["row"] === "standing")).toHaveLength(1);
   });
 
   it("highlights only the selected instance's row when a ref is on two", () => {
@@ -193,5 +164,162 @@ describe("the sidebar on a manager", () => {
     const link = screen.getByRole("link", { name: "Instances" });
     expect(link).toHaveAttribute("href", "#/instances");
     expect(link).toHaveAttribute("aria-current", "page");
+  });
+});
+
+describe("the sidebar de-cluttered (issue-511, Option C)", () => {
+  const titleFor = (ref: string) => (ref === REF ? "Session announce comment loops back" : ref === OTHER ? "Other thing" : undefined);
+  const graphs = {
+    outer: {
+      [REF]: {
+        currentNode: "human-approval",
+        parked: { node: "human-approval", reason: "approve the PR", since: "2026-09-29T09:00:00Z" },
+        nodes: [{ id: "design", phase: "design", state: "done" }],
+      },
+    },
+    inner: {},
+  };
+
+  const board = () =>
+    buildWorkItemViews({
+      workItems: [item(REF), item(OTHER)],
+      sessions: [session(REF, undefined, [PR]), { ...session(OTHER), status: "paused" }],
+      attention: [],
+      graphs: graphs as never,
+    });
+
+  it("Scenario: a sidebar row is one line carrying the number, the title and the urgent flag, and its accessible name carries all three", () => {
+    renderSidebar({ views: board(), titleFor });
+    const row = itemRows().find((el) => el.getAttribute("aria-label")?.startsWith("lab#15"))!;
+    expect(row).toHaveAttribute("aria-label", "lab#15 — Session announce comment loops back — human gate");
+    expect(within(row).getByText("#15")).toBeInTheDocument();
+    expect(within(row).getByText("Session announce comment loops back")).toHaveClass("truncate");
+    expect(within(row).getByText("human gate")).toBeInTheDocument();
+    // Nothing that is only needed once the item is open: no repository, no node, no age.
+    expect(row.textContent).not.toContain("lab ·");
+    expect(row.textContent).not.toMatch(/ago/);
+    expect(row.textContent).not.toContain("human-approval");
+    expect(row.querySelectorAll(":scope > div")).toHaveLength(1);
+  });
+
+  it("Scenario: a paused, merged or closed item shows no flag on its row", () => {
+    const paused = board().find((view) => view.ref === OTHER)!;
+    const merged = { ...paused, ended: { state: "merged", reason: "pr-merged" } };
+    renderSidebar({ views: [paused, merged], titleFor });
+    for (const row of itemRows()) {
+      expect(row.textContent).not.toMatch(/paused|merged|closed/);
+      expect(row.getAttribute("aria-label")).toBe("lab#16 — Other thing");
+    }
+  });
+
+  it("Scenario: pull request rows nest only under the selected item", () => {
+    const { unmount } = render(<></>);
+    unmount();
+    renderSidebar({ views: board(), titleFor });
+    expect(screen.queryByRole("list", { name: "Pull requests for lab#15" })).toBeNull();
+  });
+
+  it("nests the pull requests, without their age, when the item or one of its PRs is selected", () => {
+    renderSidebar({ views: board(), titleFor, activeRef: PR });
+    const prs = screen.getByRole("list", { name: "Pull requests for lab#15" });
+    const pr = within(prs).getByRole("link");
+    expect(pr).toHaveAttribute("aria-current", "page");
+    expect(pr.textContent).not.toMatch(/ago/);
+    const owner = itemRows().find((el) => el.getAttribute("aria-label")?.startsWith("lab#15"))!;
+    expect(owner).toHaveAttribute("data-owner", "true");
+  });
+
+  it("Scenario: only the Needs you group shows a count", () => {
+    renderSidebar({ views: board(), titleFor });
+    const needsYou = screen.getByText("Needs you").parentElement!;
+    expect(within(needsYou).getByText("1")).toBeInTheDocument();
+    const everything = screen.getByText("Everything else").parentElement!;
+    expect(everything.querySelectorAll("span")).toHaveLength(1);
+    expect(screen.queryByText("In flight")).toBeNull();
+    expect(screen.queryByText("Shipped")).toBeNull();
+    expect(screen.queryByText("Idle")).toBeNull();
+  });
+
+  it("Scenario: the Standing group does not render in the sidebar", () => {
+    renderSidebar({ views: board(), titleFor });
+    expect(screen.queryByText("Standing", { selector: "span" })).toBeNull();
+    expect(document.querySelector("[data-row='standing']")).toBeNull();
+    expect(screen.queryByText(/Manage standing sessions/)).toBeNull();
+    // The surface nav still reaches the Standing surface (R3.4).
+    expect(screen.getByRole("link", { name: "Standing" })).toHaveAttribute("href", "#/standing");
+  });
+
+  it("Scenario: the search box and the instance filter appear behind the search toggle, which carries aria-expanded", async () => {
+    const user = userEvent.setup();
+    renderSidebar({ views: board(), titleFor, instances: managerDocument() });
+    const toggle = screen.getByRole("button", { name: "Search and filter" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("searchbox", { name: "Search work items" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Instance filter" })).toBeNull();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("searchbox", { name: "Search work items" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Instance filter" })).toBeInTheDocument();
+
+    await user.type(screen.getByRole("searchbox", { name: "Search work items" }), "other");
+    expect(itemRows()).toHaveLength(1);
+  });
+
+  it("Scenario: an instance filter renders on a fleet and not on a worker", async () => {
+    const user = userEvent.setup();
+    renderSidebar({ views: board(), titleFor, instances: { role: "worker", name: "solo", instances: [HQ] } });
+    await user.click(screen.getByRole("button", { name: "Search and filter" }));
+    expect(screen.getByRole("searchbox", { name: "Search work items" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Instance filter" })).toBeNull();
+  });
+
+  it("sorts Everything else by last activity, newest first", () => {
+    const views = board();
+    const other = views.find((view) => view.ref === OTHER)!;
+    other.lastActivity = "2026-09-30T10:00:00Z";
+    const third = { ...other, ref: "github:octo/lab#18", shortRef: "lab#18", number: 18, key: "github:octo/lab#18", lastActivity: "2026-09-28T10:00:00Z" };
+    renderSidebar({ views: [third, ...views], titleFor: () => undefined });
+    const everything = screen.getByText("Everything else").parentElement!.parentElement!;
+    const labels = within(everything).getAllByRole("link").map((el) => el.getAttribute("aria-label"));
+    expect(labels).toEqual(["lab#16", "lab#18"]);
+  });
+});
+
+describe("the sidebar fails closed and renders untrusted text as text (issue-511 security)", () => {
+  it("abuse case 1: a title with markup renders as text in the one-line row and in its accessible name", () => {
+    const views = buildWorkItemViews({ workItems: [item(REF)], sessions: [session(REF)], attention: [] });
+    renderSidebar({ views, titleFor: () => '<b>x</b><img src=x onerror="alert(1)">' });
+    const row = itemRows()[0]!;
+    expect(row.getAttribute("aria-label")).toBe('lab#15 — <b>x</b><img src=x onerror="alert(1)">');
+    expect(within(row).getByText('<b>x</b><img src=x onerror="alert(1)">')).toBeInTheDocument();
+    expect(row.querySelector("b, img")).toBeNull();
+  });
+
+  it("reads degraded in the footer when a daemon is stopped — the word survives the de-cluttering", () => {
+    const views = buildWorkItemViews({ workItems: [item(REF)], sessions: [session(REF)], attention: [] });
+    renderSidebar({ views, daemons: [{ daemon: "poller", running: false }] as never });
+    expect(screen.getByLabelText("Service health: degraded")).toBeInTheDocument();
+  });
+
+  it("says Loading… and then that nothing is tracked, in the C layout", () => {
+    const { unmount } = render(
+      <Sidebar
+        views={[]}
+        loading
+        titleFor={() => undefined}
+        activeRef=""
+        surface="work"
+        daemons={[]}
+        stream={stream}
+        onRefresh={() => {}}
+        onCollapse={() => {}}
+        serviceLabel="service"
+      />,
+    );
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    unmount();
+    renderSidebar({ views: [] });
+    expect(screen.getByText(/Nothing is tracked on this machine yet/)).toBeInTheDocument();
   });
 });

@@ -239,6 +239,19 @@ describe("ChatBar", () => {
     expect(box).toHaveValue("");
   });
 
+  it("Scenario: the composer carries no delivery hint — ⌘⏎ lives in the send button's title (issue-511 R2.4)", () => {
+    render(
+      <ApiProvider>
+        <ChatBar refFor="github:octo/loop-lab#216" state="active" />
+      </ApiProvider>,
+    );
+    expect(screen.queryByText(/delivers to tmux/)).toBeNull();
+    expect(screen.queryByText(/loop-github-octo-loop-lab-216/)).toBeNull();
+    expect(screen.queryByText(/bracketed paste/)).toBeNull();
+    expect(screen.queryByText(/⌘⏎ to send/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Send" })).toHaveAttribute("title", expect.stringContaining("⌘⏎"));
+  });
+
   it.each([
     ["paused", /paused/],
     ["closed", /closed/],
@@ -253,5 +266,7 @@ describe("ChatBar", () => {
     expect(box).toBeDisabled();
     expect(box).toHaveAttribute("placeholder", expect.stringMatching(reason));
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    // Fail-closed (issue-511): the blocked reason is the one hint still drawn.
+    expect(screen.getByText(reason, { selector: "span" })).toBeInTheDocument();
   });
 });

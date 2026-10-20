@@ -1,10 +1,14 @@
 /**
- * One work item as the design's main column (issue-327): the header (title,
- * ref chip, phase chip, repository, age; copy / GitHub / theme controls), the
- * loop as a node strip, one tab per session, the harness trace as a reading
- * column with a **Verbose** switch, the two things that need a human —
- * a parked gate, the agent's question — as accent banners above the composer,
- * and the composer itself. The session panel beside it is rendered by `Work`.
+ * One work item as the design's main column (issue-327, de-cluttered to
+ * issue-511's Option C): the header — title; meta = ref chip · phase chip ·
+ * the parked/blocked note · age · **Full graph**; actions = the session verbs,
+ * copy, GitHub, theme and the **Session details** disclosure — the node row
+ * while Full graph is on, the session tabs when there is more than one
+ * session, the harness trace as a reading column with a **Verbose** switch,
+ * the two things that need a human — a parked gate, the agent's question — as
+ * accent banners above the composer, and the composer itself. Each fact is
+ * drawn once: the phase chip is the one statement of the position, the ref
+ * chip the one copy of the repository, `updated` the one age.
  *
  * The trace renders the session's own transcript from
  * `GET /api/v1/sessions/transcript` (issue-209). When the route answers 404
@@ -17,7 +21,7 @@
  * this file owns the switch and which events it is given.
  */
 
-import { useEffect, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type SyntheticEvent, type UIEvent } from "react";
 
 import { ApiError } from "../api/client.ts";
 import {
@@ -31,13 +35,14 @@ import {
 import type { EventRecord } from "../api/types.ts";
 import { GraphStrip } from "../components/GraphStrip.tsx";
 import { HeaderBar, type Chrome } from "../components/HeaderBar.tsx";
-import { CheckIcon, CopyIcon, ExternalLinkIcon, GitBranchIcon, TriangleAlertIcon } from "../components/Icons.tsx";
-import { ControlButton, Empty, IconButton, InstanceChip, Notice, PhaseChip } from "../components/primitives.tsx";
+import { CheckIcon, ChevronDownIcon, CopyIcon, ExternalLinkIcon, InfoIcon, TriangleAlertIcon } from "../components/Icons.tsx";
+import { ControlButton, Empty, IconButton, Notice, PhaseChip } from "../components/primitives.tsx";
+import { SessionControls, SessionFacts } from "../components/SessionFacts.tsx";
 import { SessionTabs } from "../components/SessionTabs.tsx";
 import { ChatBar, EventTrail, TranscriptView, VERBOSE_LABEL } from "../components/Transcript.tsx";
 import { useApi } from "../state/ApiContext.tsx";
 import { useAsync } from "../state/useAsync.ts";
-import { itemStatus, repoOf } from "./grouping.ts";
+import { itemStatus } from "./grouping.ts";
 
 /** How close to the bottom still counts as "following the newest entry". */
 const PIN_THRESHOLD_PX = 24;
@@ -52,11 +57,12 @@ export function isAtNewest(panel: Pick<HTMLElement, "scrollHeight" | "scrollTop"
 
 /**
  * The one line for "this item is stuck": the parked gate, or the newest
- * wait/error the attention model holds. Shown in the graph strip and the
- * session panel's banner.
+ * wait/error the attention model holds. Shown once, in the header meta beside
+ * the phase chip — which is why it never names the node (issue-511 R2.1,
+ * R2.5: the chip is the one statement of the position).
  */
 export function railNote(view: WorkItemView): string {
-  if (view.parked) return `parked — awaiting a human at ${view.parked.node}`;
+  if (view.parked) return "parked — awaiting a human";
   const entry = attentionEntries([view]).find((candidate) => candidate.tier >= 2);
   if (!entry) return "";
   const detail = entry.detail || entry.kind;
@@ -84,6 +90,8 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
   const viewed = resolveViewed(view, traceRef);
   const [verbose, setVerbose] = useState(false);
   const [copied, setCopied] = useState(false);
+  // The node row is the map behind the header's Full graph control (issue-511).
+  const [graphOpen, setGraphOpen] = useState(false);
 
   // On a manager `/events` is the union with each record stamped (issue-374),
   // so the trail keeps this row's instance's records — and a worker's
@@ -105,9 +113,25 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
 
   const traceSession = viewed === view.ref ? view.session : (view.pullRequests.find((pr) => pr.ref === viewed)?.session ?? null);
   const traceState = sessionState(traceSession);
-  const tmux = viewed === view.ref ? view.tmuxTarget : (view.pullRequests.find((pr) => pr.ref === viewed)?.tmuxTarget ?? "");
 
   const traceScroll = useRef<HTMLDivElement | null>(null);
+  const popover = useRef<HTMLDivElement | null>(null);
+  /**
+   * Bound the Session details popover to the space actually left below it
+   * (critic round 1): the header wraps at a phone's width, so a static
+   * `calc(100vh - 9rem)` can overshoot a short viewport. Measured on open,
+   * cleared on close; the class value is the fallback before the first measure.
+   */
+  function onDetailsToggle(event: SyntheticEvent<HTMLDetailsElement>): void {
+    const body = popover.current;
+    if (!body) return;
+    if (!event.currentTarget.open) {
+      body.style.maxHeight = "";
+      return;
+    }
+    const top = body.getBoundingClientRect().top;
+    body.style.maxHeight = `${Math.max(Math.floor(globalThis.innerHeight - top - 16), 160)}px`;
+  }
   const entryCount = transcript.data?.entries.length ?? 0;
   /**
    * Follow the newest entry, but only for a reader who is already there —
@@ -147,18 +171,47 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
         meta={
           <>
             <span className="ref-chip">{view.ref}</span>
-            {view.instance ? <InstanceChip instance={view.instance} /> : null}
             <PhaseChip phase={view.currentNode || (view.rail.length > 0 ? "planned" : "no graph")} status={itemStatus(view)} />
-            <span className="inline-flex items-center gap-1">
-              <GitBranchIcon className="h-3 w-3" />
-              <span className="font-mono">{repoOf(view.ref)}</span>
-            </span>
+            {note ? (
+              <>
+                <span aria-hidden="true">·</span>
+                <span
+                  className={view.parked || view.rail.some((node) => node.state === "blocked") ? "text-state-blocked" : ""}
+                  title={note}
+                  data-note
+                >
+                  {note}
+                </span>
+              </>
+            ) : null}
             <span aria-hidden="true">·</span>
             <span title={view.lastActivity || undefined}>updated {relativeTime(view.lastActivity)}</span>
+            <span aria-hidden="true">·</span>
+            {view.rail.length > 0 ? (
+              <button
+                type="button"
+                aria-expanded={graphOpen}
+                onClick={() => setGraphOpen((value) => !value)}
+                className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {graphOpen ? "Collapse graph" : "Full graph"}
+                <ChevronDownIcon className={`h-3.5 w-3.5 transition-transform ${graphOpen ? "rotate-180" : ""}`} />
+              </button>
+            ) : (
+              /* No rail to reveal: the reason takes the control's slot, visible
+                 by default as it was at 20.5.1 (R5.3; critic round 1). */
+              <span>
+                {view.repoPath
+                  ? "The checkout has no work-item state for this item yet — it starts at phase-selection."
+                  : "No session on this machine recorded a checkout, so the work-item state cannot be read from here."}
+              </span>
+            )}
           </>
         }
         actions={
           <>
+            {/* The session verbs, relocated from the panel (issue-511 row 64). */}
+            <SessionControls view={view} viewed={viewed} onChanged={onChanged} />
             <IconButton label={copied ? "Copied" : "Copy work item ref"} onClick={() => void copyRef()}>
               {copied ? <CheckIcon className="h-4 w-4 text-state-done" /> : <CopyIcon className="h-4 w-4" />}
             </IconButton>
@@ -169,26 +222,35 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
             ) : null}
           </>
         }
-      />
-
-      <GraphStrip
-        nodes={view.rail}
-        loop={view.record.graph?.loop ?? "loop"}
-        note={note}
-        emptyMessage={
-          view.repoPath
-            ? "The checkout has no work-item state for this item yet — it starts at phase-selection."
-            : "No session on this machine recorded a checkout, so the work-item state cannot be read from here."
+        trailing={
+          /* The panel's facts, behind one native disclosure: bounded to the
+             viewport and scrolling inside (critic C4), closed by default at
+             every width (R6.3). The summary wears the icon-button idiom. */
+          <details className="relative" data-session-details onToggle={onDetailsToggle}>
+            <summary
+              aria-label="Session details"
+              title="Session details"
+              className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-surface-2 hover:text-foreground"
+            >
+              <InfoIcon className="h-4 w-4" />
+            </summary>
+            <div
+              ref={popover}
+              className="scroll-thin absolute right-0 z-20 mt-2 max-h-[calc(100vh-9rem)] w-[min(20rem,calc(100vw-2rem))] overflow-y-auto rounded-lg border border-border bg-surface text-left"
+            >
+              <SessionFacts view={view} viewed={viewed} />
+            </div>
+          </details>
         }
       />
+
+      <GraphStrip nodes={view.rail} loop={view.record.graph?.loop ?? "loop"} expanded={graphOpen} current={view.currentNode} />
 
       <SessionTabs view={view} viewed={viewed} />
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex items-center justify-between border-b border-border px-6 py-2 text-xs text-muted-foreground">
-          <span>
-            Harness trace{traceSession?.harness ? <span className="font-mono"> · {traceSession.harness}</span> : null}
-          </span>
+          <span>Harness trace</span>
           <label
             className="flex cursor-pointer items-center gap-2"
             title="Show the tool calls, the harness bookkeeping and the whole event trail"
@@ -277,7 +339,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
           </div>
         ) : null}
 
-        <ChatBar refFor={viewed} state={traceState} onSent={onChanged} tmuxTarget={tmux} instance={view.instance} />
+        <ChatBar refFor={viewed} state={traceState} onSent={onChanged} instance={view.instance} />
       </div>
     </>
   );
@@ -292,8 +354,9 @@ function fallbackReason(error: Error | null): string {
 }
 
 /**
- * The parked human gate: what it waits for, since when, and the one in-place
- * action — Approve, which posts `POST /graph/complete` for the parked node.
+ * The parked human gate: since when, the reason, and the one in-place action —
+ * Approve, which posts `POST /graph/complete` for the parked node. It does not
+ * name the node: the phase chip is the one statement (issue-511 R2.1).
  */
 function GateBanner({ view, onChanged }: { view: WorkItemView; onChanged: () => void }) {
   const { api } = useApi();
@@ -319,7 +382,7 @@ function GateBanner({ view, onChanged }: { view: WorkItemView; onChanged: () => 
   return (
     <Notice icon={<TriangleAlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />} role="status">
       <div className="flex flex-wrap items-baseline gap-x-2">
-        <span className="font-medium">Human gate — {parked.node}</span>
+        <span className="font-medium">Human gate</span>
         {parked.since ? (
           <span className="font-mono text-[0.68rem] opacity-80" title={parked.since}>
             waiting {relativeTime(parked.since)}
