@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-503",
-  "currentNode": "code-explainer",
+  "currentNode": "evidence",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -133,8 +133,16 @@
     },
     "code-explainer": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-20T01:48:04+00:00",
+      "exitedAt": "2026-10-20T01:49:42+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "evidence": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-20T01:49:42+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -381,6 +389,10 @@
     },
     "verification": {
       "at": "2026-10-20T01:48:04+00:00",
+      "by": "cli"
+    },
+    "code-explainer": {
+      "at": "2026-10-20T01:49:42+00:00",
       "by": "cli"
     }
   },
