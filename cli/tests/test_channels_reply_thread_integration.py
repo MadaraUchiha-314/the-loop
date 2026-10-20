@@ -290,3 +290,27 @@ def test_save_fails_the_reply_is_still_delivered_and_posts_top_level(
     assert outcome["outcome"] == "processed"
     assert sink.refs == [REF]
     assert client.posted[-1]["thread_ts"] is None
+
+
+def test_a_mention_that_is_not_delivered_keeps_the_earlier_thread(tmp_path):
+    """Critic C1: a mention whose delivery fails does not steal the answer the
+    agent is writing to an earlier, delivered question."""
+    config, client, bot = _room(tmp_path)
+    _mention_in(config, client, THREAD, "1700.000200")
+
+    def refuse(ref, text, **kwargs):
+        raise LookupError("no live session")
+
+    sink = Sink()
+    inbound.handle_socket_event(
+        _message("<@UBOT> and this?", ts="1700.000400", thread=OTHER_THREAD),
+        config,
+        post_comment=sink.post_comment,
+        deliver=refuse,
+        create_issue=sink.create_issue,
+        client_factory=lambda token: client,
+        addressed=True,
+    )
+    _answer(bot)
+
+    assert client.posted[-1]["thread_ts"] == THREAD

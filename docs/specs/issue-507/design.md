@@ -182,7 +182,8 @@ stateDiagram-v2
 | State lock or save fails while clearing | debug log; the event posts where it would today. The next `comment.agent` may still thread; the next successful clear ends it |
 | Reply thread's channel ≠ the conversation's channel | ignored, posted as today (R3.2) |
 | Slack refuses the threaded post (thread deleted) | the existing `ChannelError("slack: post failed …")` path, as for any post |
-| Malformed record on disk | `_delivery_record` coerces it to `""` → today's behaviour |
+| Malformed record on disk | `_delivery_record` keeps `replyThread` only when it is a Slack ts (`digits.digits`) and `replyChannel` only when it is a string, else `""` → today's behaviour (critic C3) |
+| The reply is noted but not delivered (no session, a refusal) | the previous reply thread is restored, only if the record still holds what this reply wrote, so a newer mention or a clear is never overwritten (critic C1) |
 
 `_reply_thread` runs inside `post`'s existing `with ChannelState.locked(...)` block. A
 failure there would fail the post, so the read and clear are wrapped and degrade to
@@ -222,6 +223,10 @@ inbound pipeline, `FakeSlackClient`. Unit tests for `_delivery_record` coercion 
 - **No time limit.** A remembered thread with no further events would catch a much later
   agent comment. In practice a phase or gate event clears it first. A TTL can follow if
   that turns out to be wrong.
+- **No lock across delivery** (critic C2). A phase event posted in the moment between
+  the note and the delivery clears the thread, and that answer posts top-level. That is
+  today's behaviour, never a wrong thread, and holding the channel state lock across the
+  tmux delivery would block every channel operation on the machine meanwhile.
 - **Thread-shaped conversations too.** The rule is "same channel as the conversation",
   not "room only". In a central-channel thread the reply thread equals the bound thread,
   so nothing changes there. A legacy thread inside a room also answers in the asker's

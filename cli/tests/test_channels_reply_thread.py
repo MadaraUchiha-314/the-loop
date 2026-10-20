@@ -43,3 +43,14 @@ def test_migration_a_record_written_before_issue_507_has_no_reply_thread():
 )
 def test_is_progress(event_type, expected):
     assert room_policy.is_progress(event_type) is expected
+
+
+@pytest.mark.parametrize(
+    "thread, channel",
+    [({"bad": "value"}, "C0ROOM"), ("not-a-ts", "C0ROOM"), ("1700.000100", ["C0"])],
+)
+def test_a_truthy_malformed_reply_thread_coerces_to_empty(thread, channel):
+    """Critic C3: a malformed value never reaches Slack as a thread_ts."""
+    record = _delivery_record({"replyChannel": channel, "replyThread": thread})
+
+    assert record["replyThread"] == "" or record["replyChannel"] == ""

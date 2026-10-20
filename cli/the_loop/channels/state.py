@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -929,9 +930,23 @@ def _delivery_record(info: Dict[str, Any]) -> Dict[str, Any]:
         "sessionSpokeFor": str(info.get("sessionSpokeFor") or ""),
         # The thread of the last in-thread mention delivered for the item
         # (issue-507), so the agent's answer is posted where it was asked.
-        "replyChannel": str(info.get("replyChannel") or ""),
-        "replyThread": str(info.get("replyThread") or ""),
+        "replyChannel": _str_or_empty(info.get("replyChannel")),
+        "replyThread": _ts_or_empty(info.get("replyThread")),
     }
+
+
+#: A Slack message ts — the only shape a reply thread may hold (issue-507).
+_SLACK_TS = re.compile(r"^\d+\.\d+$")
+
+
+def _str_or_empty(value: Any) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def _ts_or_empty(value: Any) -> str:
+    """``value`` when it is a Slack ts, else ``""`` — a malformed reply thread
+    never reaches Slack as a ``thread_ts`` (critic C3)."""
+    return value if isinstance(value, str) and _SLACK_TS.match(value) else ""
 
 
 def _expired(record: Dict[str, Any]) -> bool:
