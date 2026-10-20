@@ -1,3 +1,9 @@
+## v20.5.1 (2026-10-20)
+
+### Fix
+
+- **issue-507**: answer a Slack mention in the thread it came from (#508)
+
 ## v20.5.0 (2026-10-20)
 
 ### Feat
