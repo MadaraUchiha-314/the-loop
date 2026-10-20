@@ -54,7 +54,7 @@ abuse cases of `design.md` § Security design are tests like any other (task 9).
     detail otherwise) and `ui/src/views/grouping.test.ts` (the two-group mapping puts
     needs-you first, everything else by `lastActivity`; `sidebarGroup` still answers
     four ways) (red→green)
-- [ ] 2. `GraphStrip` becomes the band behind *Full graph*
+- [x] 2. `GraphStrip` becomes the band behind *Full graph*
   - `ui/src/components/GraphStrip.tsx`: the component takes `expanded: boolean` from its
     parent and renders **only while expanded** — the loop name as the row's label and the
     **full** node row (every node, the current one highlighted, skipped struck through,

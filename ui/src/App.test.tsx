@@ -92,9 +92,14 @@ describe("the control plane, on demo data", () => {
     await user.click(await sidebarRow("loop-lab#214"));
 
     expect(await screen.findByRole("heading", { name: /Control plane UI/ })).toBeInTheDocument();
-    // The outer loop draws as the header's tick rail (issue-298); its position
-    // caption names the current node among the phases the item kept.
+    // The node row is the map behind the header's Full graph control
+    // (issue-511); the phase chip is the one statement of the position.
+    expect(screen.queryByRole("list", { name: "loop position" })).toBeNull();
+    const fullGraph = await screen.findByRole("button", { name: /Full graph/ });
+    expect(fullGraph).toHaveAttribute("aria-expanded", "false");
+    await user.click(fullGraph);
     expect(screen.getAllByRole("list", { name: "loop position" }).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /Collapse graph/ })).toHaveAttribute("aria-expanded", "true");
     // The PRs' sessions are reachable as trace tabs (issue-172/230). They are
     // links on the same hash the sidebar's nested rows use (issue-300), so the
     // two selectors cannot disagree about what the canvas shows.

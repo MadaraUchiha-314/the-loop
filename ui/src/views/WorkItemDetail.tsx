@@ -31,7 +31,7 @@ import {
 import type { EventRecord } from "../api/types.ts";
 import { GraphStrip } from "../components/GraphStrip.tsx";
 import { HeaderBar, type Chrome } from "../components/HeaderBar.tsx";
-import { CheckIcon, CopyIcon, ExternalLinkIcon, GitBranchIcon, TriangleAlertIcon } from "../components/Icons.tsx";
+import { CheckIcon, ChevronDownIcon, CopyIcon, ExternalLinkIcon, GitBranchIcon, TriangleAlertIcon } from "../components/Icons.tsx";
 import { ControlButton, Empty, IconButton, InstanceChip, Notice, PhaseChip } from "../components/primitives.tsx";
 import { SessionTabs } from "../components/SessionTabs.tsx";
 import { ChatBar, EventTrail, TranscriptView, VERBOSE_LABEL } from "../components/Transcript.tsx";
@@ -85,6 +85,8 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
   const viewed = resolveViewed(view, traceRef);
   const [verbose, setVerbose] = useState(false);
   const [copied, setCopied] = useState(false);
+  // The node row is the map behind the header's Full graph control (issue-511).
+  const [graphOpen, setGraphOpen] = useState(false);
 
   // On a manager `/events` is the union with each record stamped (issue-374),
   // so the trail keeps this row's instance's records — and a worker's
@@ -150,12 +152,35 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
             <span className="ref-chip">{view.ref}</span>
             {view.instance ? <InstanceChip instance={view.instance} /> : null}
             <PhaseChip phase={view.currentNode || (view.rail.length > 0 ? "planned" : "no graph")} status={itemStatus(view)} />
+            {note ? (
+              <span
+                className={view.parked || view.rail.some((node) => node.state === "blocked") ? "text-state-blocked" : ""}
+                title={note}
+                data-note
+              >
+                {note}
+              </span>
+            ) : null}
             <span className="inline-flex items-center gap-1">
               <GitBranchIcon className="h-3 w-3" />
               <span className="font-mono">{repoOf(view.ref)}</span>
             </span>
             <span aria-hidden="true">·</span>
             <span title={view.lastActivity || undefined}>updated {relativeTime(view.lastActivity)}</span>
+            {view.rail.length > 0 ? (
+              <>
+                <span aria-hidden="true">·</span>
+                <button
+                  type="button"
+                  aria-expanded={graphOpen}
+                  onClick={() => setGraphOpen((value) => !value)}
+                  className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {graphOpen ? "Collapse graph" : "Full graph"}
+                  <ChevronDownIcon className={`h-3.5 w-3.5 transition-transform ${graphOpen ? "rotate-180" : ""}`} />
+                </button>
+              </>
+            ) : null}
           </>
         }
         actions={
@@ -175,7 +200,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
       <GraphStrip
         nodes={view.rail}
         loop={view.record.graph?.loop ?? "loop"}
-        note={note}
+        expanded={graphOpen}
         emptyMessage={
           view.repoPath
             ? "The checkout has no work-item state for this item yet — it starts at phase-selection."
