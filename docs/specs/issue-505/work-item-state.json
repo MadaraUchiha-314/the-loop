@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-505",
-  "currentNode": "capability-docs",
+  "currentNode": "reviewer-briefing",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -149,10 +149,18 @@
     },
     "capability-docs": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-20T03:16:53+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-10-20T03:17:56+00:00",
       "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-505/evidence/documentation.md)",
+      "forced": false
+    },
+    "reviewer-briefing": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-20T03:17:56+00:00",
+      "exitedAt": "",
+      "lastBlock": "",
       "forced": false
     }
   },
@@ -405,7 +413,7 @@
       "by": "cli"
     },
     "capability-docs": {
-      "at": "2026-10-20T03:16:59+00:00",
+      "at": "2026-10-20T03:17:56+00:00",
       "by": "cli"
     }
   },
