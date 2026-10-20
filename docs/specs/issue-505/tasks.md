@@ -15,7 +15,7 @@ settle.
 
 ## Task list
 
-- [ ] 1. Store: the `rooms` table and `publish_rooms`
+- [x] 1. Store: the `rooms` table and `publish_rooms`
   - Add the table, `RoomsResult`, `publish_rooms`, `resolve_room`, `rooms_of`, and the
     `Store` protocol entries.
   - Extract `_route_held_rows` from `bind`; `bind` keeps its behaviour.

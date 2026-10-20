@@ -61,6 +61,7 @@ __all__ = [
     "Lease",
     "QueueRow",
     "Refused",
+    "RoomsResult",
     "SCHEMA_VERSION",
     "SqliteStore",
     "Store",
@@ -166,6 +167,17 @@ class InstanceRow:
 
 
 @dataclass(frozen=True)
+class RoomsResult:
+    """What a room publication applied (issue-505): the channels the instance now
+    holds, the ones another live instance keeps (``(channel, holder)``), and the held
+    events the new rooms routed."""
+
+    rooms: Tuple[str, ...] = ()
+    refused: Tuple[Tuple[str, str], ...] = ()
+    routed: List[int] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class ExpireResult:
     expired: Tuple[Tuple[str, int, str], ...] = ()  # (subject, event_id, instance | "")
     dead_lettered: Tuple[Tuple[str, int, int], ...] = ()  # (instance, seq, event_id)
@@ -222,6 +234,11 @@ class Store(Protocol):
     ) -> List[int]: ...
     def resolve(self, provider: str, key: str) -> Optional[str]: ...
     def resolve_slug(self, provider: str, key: str) -> Optional[Tuple[str, str]]: ...
+    def publish_rooms(
+        self, instance: str, rooms: Mapping[str, Tuple[str, str]], peer: str = ""
+    ) -> Union[RoomsResult, Refused]: ...
+    def resolve_room(self, channel: str) -> Optional[Tuple[str, str]]: ...
+    def rooms_of(self, instance: str) -> List[Tuple[str, str]]: ...
     def claims_of(self, instance: str) -> List[Claim]: ...
     def actors_of(self, instance: str) -> Dict[str, Tuple[str, ...]]: ...
     def committed(self, instance: str) -> int: ...
@@ -312,6 +329,13 @@ CREATE TABLE IF NOT EXISTS bindings (
   slug TEXT NOT NULL,
   published_at TEXT NOT NULL,
   PRIMARY KEY (provider, key)
+);
+CREATE TABLE IF NOT EXISTS rooms (
+  channel TEXT PRIMARY KEY,
+  ref TEXT NOT NULL,
+  slug TEXT NOT NULL,
+  instance TEXT NOT NULL,
+  published_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS poll_ledger (
   ref TEXT PRIMARY KEY,
@@ -936,8 +960,6 @@ class SqliteStore:
         event's actor's instance, else they stay held. Returns the ids routed."""
         now = utcnow()
         subject = subject_for_slug(slug)
-        routed: List[int] = []
-        consumers_touched: List[str] = []
         with self._tx() as cur:
             cur.execute(
                 "INSERT OR REPLACE INTO bindings(provider, key, ref, slug, published_at)"
@@ -948,11 +970,6 @@ class SqliteStore:
                 "INSERT OR IGNORE INTO subjects(subject, first_seen) VALUES (?, ?)",
                 (subject, now),
             )
-            cur.execute(
-                "SELECT subject, instance, role, since FROM claims WHERE subject = ?",
-                (subject,),
-            )
-            claimants = [str(r[1]) for r in cur.fetchall()]
             cur.execute(
                 "SELECT id, actor FROM events WHERE routed = 0 AND provider = ?"
                 " AND held_key = ? ORDER BY id",
@@ -966,32 +983,53 @@ class SqliteStore:
                     (provider, own_subject),
                 )
                 held.extend((int(r[0]), r[1], False) for r in cur.fetchall())
-            for event_id, actor, re_subject in held:
-                if re_subject:
-                    # held under a key with no subject of its own: it takes the work item's
-                    cur.execute(
-                        "UPDATE events SET subject = ?, work_item = ? WHERE id = ?",
-                        (subject, ref, int(event_id)),
-                    )
-                consumers = list(dict.fromkeys(claimants))
-                if not consumers and actor:
-                    cur.execute(
-                        "SELECT instance FROM actors WHERE provider = ? AND actor = ?",
-                        (provider, str(actor)),
-                    )
-                    row = cur.fetchone()
-                    if row:
-                        consumers = [str(row[0])]
-                if consumers:
-                    self._fan_out(cur, int(event_id), consumers, now)
-                    cur.execute(
-                        "UPDATE events SET routed = 1 WHERE id = ?", (int(event_id),)
-                    )
-                    routed.append(int(event_id))
-                    consumers_touched.extend(consumers)
+            routed, consumers_touched = self._route_held_rows(
+                cur, held, subject, ref, provider, now
+            )
         if consumers_touched:
             self._notify(consumers_touched)
         return routed
+
+    def _route_held_rows(
+        self,
+        cur: sqlite3.Cursor,
+        held: Sequence[Tuple[int, Any, bool]],
+        subject: str,
+        ref: str,
+        provider: str,
+        now: str,
+    ) -> Tuple[List[int], List[str]]:
+        """Route held ``(event id, actor, re_subject)`` rows onto ``subject``'s
+        claimants, else the actor's instance, else leave them held there — what a
+        binding and a room both do with the events their key now resolves."""
+        cur.execute("SELECT instance FROM claims WHERE subject = ?", (subject,))
+        claimants = list(dict.fromkeys(str(r[0]) for r in cur.fetchall()))
+        routed: List[int] = []
+        consumers_touched: List[str] = []
+        for event_id, actor, re_subject in held:
+            if re_subject:
+                # held under a key with no subject of its own: it takes the work item's
+                cur.execute(
+                    "UPDATE events SET subject = ?, work_item = ? WHERE id = ?",
+                    (subject, ref, int(event_id)),
+                )
+            consumers = list(claimants)
+            if not consumers and actor:
+                cur.execute(
+                    "SELECT instance FROM actors WHERE provider = ? AND actor = ?",
+                    (provider, str(actor)),
+                )
+                row = cur.fetchone()
+                if row:
+                    consumers = [str(row[0])]
+            if consumers:
+                self._fan_out(cur, int(event_id), consumers, now)
+                cur.execute(
+                    "UPDATE events SET routed = 1 WHERE id = ?", (int(event_id),)
+                )
+                routed.append(int(event_id))
+                consumers_touched.extend(consumers)
+        return routed, consumers_touched
 
     def resolve(self, provider: str, key: str) -> Optional[str]:
         with self._tx() as cur:
@@ -1010,6 +1048,97 @@ class SqliteStore:
             )
             row = cur.fetchone()
             return (str(row[0]), str(row[1])) if row else None
+
+    # -- rooms: the collaboration channels instances publish (issue-505) --------------------
+
+    def publish_rooms(
+        self, instance: str, rooms: Mapping[str, Tuple[str, str]], peer: str = ""
+    ) -> Union[RoomsResult, Refused]:
+        """Replace ``instance``'s rooms with ``rooms`` (``{channel: (ref, slug)}``).
+
+        A different peer under a live name is ``Refused("duplicate-instance")`` and
+        nothing is applied (R5.4). A channel another instance holds with a live lease
+        stays the holder's and is reported in ``refused``; an expired holder's is taken
+        over (R5.1, R5.2). The instance's other rooms are dropped — only its own
+        (R4.1, R5.3). A room that is new, or now names another work item, drains the
+        Slack events held under its channel's keys (``<channel>:<ts>``) onto the work
+        item's subject (R3.1)."""
+        now = utcnow()
+        now_s = time.time()
+        accepted: List[str] = []
+        refused: List[Tuple[str, str]] = []
+        routed: List[int] = []
+        consumers_touched: List[str] = []
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT OR IGNORE INTO instances(instance, first_seen) VALUES (?, ?)",
+                (instance, now),
+            )
+            conflict = self._other_peer_holds(cur, instance, peer, now_s)
+            if conflict is not None:
+                return conflict
+            fresh: List[Tuple[str, str, str]] = []
+            for channel in sorted(rooms):
+                ref, slug = rooms[channel]
+                cur.execute(
+                    "SELECT instance, ref FROM rooms WHERE channel = ?", (channel,)
+                )
+                row = cur.fetchone()
+                if row and row[0] != instance and self._lease_live(cur, row[0], now_s):
+                    refused.append((channel, str(row[0])))
+                    continue
+                accepted.append(channel)
+                if row is None or row[0] != instance or row[1] != ref:
+                    fresh.append((channel, ref, slug))
+            cur.execute("SELECT channel FROM rooms WHERE instance = ?", (instance,))
+            for (channel,) in cur.fetchall():
+                if channel not in accepted:
+                    cur.execute("DELETE FROM rooms WHERE channel = ?", (channel,))
+            for channel in accepted:
+                ref, slug = rooms[channel]
+                cur.execute(
+                    "INSERT OR REPLACE INTO rooms(channel, ref, slug, instance,"
+                    " published_at) VALUES (?, ?, ?, ?, ?)",
+                    (channel, ref, slug, instance, now),
+                )
+            for channel, ref, slug in fresh:
+                subject = subject_for_slug(slug)
+                cur.execute(
+                    "INSERT OR IGNORE INTO subjects(subject, first_seen) VALUES (?, ?)",
+                    (subject, now),
+                )
+                # substr, not LIKE: a Slack id may contain `_`, a LIKE wildcard
+                prefix = f"{channel}:"
+                cur.execute(
+                    "SELECT id, actor FROM events WHERE routed = 0 AND provider = 'slack'"
+                    " AND substr(held_key, 1, ?) = ? ORDER BY id",
+                    (len(prefix), prefix),
+                )
+                rows = [(int(r[0]), r[1], True) for r in cur.fetchall()]
+                ids, touched = self._route_held_rows(
+                    cur, rows, subject, ref, "slack", now
+                )
+                routed.extend(ids)
+                consumers_touched.extend(touched)
+        if consumers_touched:
+            self._notify(consumers_touched)
+        return RoomsResult(rooms=tuple(accepted), refused=tuple(refused), routed=routed)
+
+    def resolve_room(self, channel: str) -> Optional[Tuple[str, str]]:
+        """``(ref, slug)`` of the room published for ``channel``, or ``None``."""
+        with self._tx() as cur:
+            cur.execute("SELECT ref, slug FROM rooms WHERE channel = ?", (channel,))
+            row = cur.fetchone()
+            return (str(row[0]), str(row[1])) if row else None
+
+    def rooms_of(self, instance: str) -> List[Tuple[str, str]]:
+        """``(channel, ref)`` for every room ``instance`` holds, by channel."""
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT channel, ref FROM rooms WHERE instance = ? ORDER BY channel",
+                (instance,),
+            )
+            return [(str(r[0]), str(r[1])) for r in cur.fetchall()]
 
     # -- the poll ledger, relocated (design §gateway/adapters/poll.py) ----------------------------
 
@@ -1200,7 +1329,7 @@ class SqliteStore:
         """What an unauthenticated peer can create and retention never touched
         (security review SEC-4): an instance name whose lease lapsed, that has nothing
         queued and has not fetched since the retention cutoff goes, with its claims,
-        its actors and its in-memory condition; a subject with no event, no claim and
+        its actors, its rooms and its in-memory condition; a subject with no event, no claim and
         no binding left, older than the cutoff, goes too. A stopped instance keeps its
         queue up to retention (R4.4) and re-asserts its claims and actors when it
         registers again, so nothing a live fleet relies on is pruned."""
@@ -1217,6 +1346,7 @@ class SqliteStore:
             for instance in pruned:
                 cur.execute("DELETE FROM claims WHERE instance = ?", (instance,))
                 cur.execute("DELETE FROM actors WHERE instance = ?", (instance,))
+                cur.execute("DELETE FROM rooms WHERE instance = ?", (instance,))
                 cur.execute("DELETE FROM deliveries WHERE instance = ?", (instance,))
                 cur.execute("DELETE FROM instances WHERE instance = ?", (instance,))
             cur.execute(
@@ -1224,7 +1354,9 @@ class SqliteStore:
                 " AND NOT EXISTS (SELECT 1 FROM events e WHERE e.subject = subjects.subject)"
                 " AND NOT EXISTS (SELECT 1 FROM claims c WHERE c.subject = subjects.subject)"
                 " AND NOT EXISTS (SELECT 1 FROM bindings b"
-                "   WHERE 'loop-' || b.slug = subjects.subject)",
+                "   WHERE 'loop-' || b.slug = subjects.subject)"
+                " AND NOT EXISTS (SELECT 1 FROM rooms r"
+                "   WHERE 'loop-' || r.slug = subjects.subject)",
                 (cutoff,),
             )
             pruned_subjects = int(cur.rowcount)
