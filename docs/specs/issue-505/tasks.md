@@ -35,7 +35,7 @@ settle.
   - _Requirements:_ R2.1–R2.4, R5.1, R5.4, R7.1, R7.2, NFR contract
   - _Test:_ T1 + T3 + T8, `tests/test_gateway_rooms.py` (resolution order, route cases,
     abuse 1 and 5), `tests/test_api_contract_parity.py` (red→green)
-- [ ] 3. Instance: the store hook
+- [x] 3. Instance: the store hook
   - `CollaborationChannelStore.on_change`, called after a changing `add`, `remove` and
     `clear`, guarded so a raising hook never fails a declaration.
   - _Depends on:_ none

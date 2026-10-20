@@ -330,3 +330,46 @@ def test_abuse_a_second_peer_under_a_live_name_gets_409(gw):
 def test_abuse_a_malformed_publication_is_422_and_stores_nothing(gw, rooms):
     assert _put_rooms(gw, rooms).status_code == 422
     assert gw.store.rooms_of("laptop-a") == []
+
+
+# -- the instance: the store hook (R1.2) ------------------------------------------------------
+
+
+@pytest.fixture()
+def channels(tmp_path, monkeypatch):
+    from the_loop.workchannels import CollaborationChannelStore
+
+    calls: list = []
+    monkeypatch.setattr(
+        CollaborationChannelStore, "on_change", lambda: calls.append(1)
+    )
+    return CollaborationChannelStore(tmp_path / "portable"), calls
+
+
+def test_on_change_fires_after_a_changing_add_remove_and_clear(channels):
+    store, calls = channels
+    store.add(REF, "slack@C0123ABCD", actor="op")
+    assert len(calls) == 1
+    store.add(REF, "slack@C0123ABCD", actor="op")  # unchanged
+    assert len(calls) == 1
+    store.remove(REF, "slack@C0123ABCD")
+    assert len(calls) == 2
+    store.remove(REF, "slack@C0123ABCD")  # nothing to remove
+    assert len(calls) == 2
+    store.add(REF, "slack@C0OTHER", actor="op")
+    store.clear(REF)
+    assert len(calls) == 4
+    store.clear(REF)  # nothing to clear
+    assert len(calls) == 4
+
+
+def test_on_change_failing_never_fails_the_declaration(tmp_path, monkeypatch):
+    from the_loop.workchannels import CollaborationChannelStore
+
+    def boom() -> None:
+        raise RuntimeError("gateway down")
+
+    monkeypatch.setattr(CollaborationChannelStore, "on_change", boom)
+    store = CollaborationChannelStore(tmp_path / "portable")
+    changed, _ = store.add(REF, "slack@C0123ABCD", actor="op")
+    assert changed and store.targets() == {"C0123ABCD": REF}

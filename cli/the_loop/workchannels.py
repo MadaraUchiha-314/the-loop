@@ -90,7 +90,18 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 from .sessions import WorkItemRef
 from .state import LegacyLayout
@@ -481,6 +492,12 @@ class CollaborationChannelStore:
     operator's central channel keeps carrying the conversation.
     """
 
+    #: Called after a declaration changes in this process (issue-505): the hosted
+    #: gateway client sets it, so the gateway learns the room at once. A class
+    #: variable, as ``ChannelState.publisher`` is, because the dispatcher, the Slack
+    #: listener and the CLI each build their own store over one directory.
+    on_change: ClassVar[Optional[Callable[[], Any]]] = None
+
     def __init__(self, root: Union[str, Path], legacy: Optional[LegacyLayout] = None):
         self.store = WorkItemStore(root, legacy=legacy)
 
@@ -682,6 +699,7 @@ class CollaborationChannelStore:
             if replaced
             else (f", was listening to {existing.listen}" if existing else ""),
         )
+        self._changed()
         return True, replaced
 
     def remove(
@@ -704,6 +722,7 @@ class CollaborationChannelStore:
             return False
         self._write(item, remaining)
         logger.info("%s is no longer %s's collaboration channel", target.ref, item.ref)
+        self._changed()
         return True
 
     def clear(self, work_item: Union[str, WorkItemRef]) -> bool:
@@ -711,7 +730,19 @@ class CollaborationChannelStore:
         if self.store.section(work_item, COLLABORATION_CHANNELS) is None:
             return False
         self.store.write_section(work_item, COLLABORATION_CHANNELS, None)
+        self._changed()
         return True
+
+    @staticmethod
+    def _changed() -> None:
+        """Tell the hook a declaration changed; a failing hook never fails one."""
+        hook = CollaborationChannelStore.on_change
+        if hook is None:
+            return
+        try:
+            hook()
+        except Exception as exc:  # noqa: BLE001 — the declaration stands either way
+            logger.warning("could not publish the changed channel declarations: %s", exc)
 
     def _write(
         self, item: WorkItemRef, records: Sequence[CollaborationChannel]
