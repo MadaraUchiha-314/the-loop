@@ -44,8 +44,9 @@ gateway client's dispatch path; abuse-case tests for each boundary in `design.md
 | T1 | R4.2 | `socket` + block: `channels status` prints the migrate warning; `_start_gateway_client` logs it |
 | T1 | R6.1 | `channels status` under `gateway`: `read: gateway`, commands, mentions and shortcuts available, no app-token step |
 | T1 | R6.2, R6.3 | `ingress_health` / `start` rows: `off · gateway configured` with a block; the missing-block detail without one |
-| T2 | R1.4, R2.2 | `Scenario: an approval pressed in Slack reaches a gateway-mode instance and is handled` |
-| T2 | R2.2 | `Scenario: a gateway-mode instance renders Approve / Request changes on an approval notification` |
+| T2 | R1.2, R1.4, R2.2 | `Scenario: a button pressed in Slack reaches a gateway-mode instance and is handled` |
+| T2 | R1.4 | `Scenario: the gateway client's Slack path classifies a press without checking the read mode` |
+| T2 | R2.2, R3.1 | `Scenario: a gateway-mode instance renders Approve / Request changes on an approval notification` |
 | T8 | R3.1, R3.2, AC1 | `gateway` with no block → `read_mode == "off"`, an error log naming both keys, no buttons, and the `[!]` line in `channels status` |
 | T8 | AC2 | unknown mode → `off` (existing behaviour, re-asserted) |
 | T8 | R4.3, AC3 | `run_socket_listener` returns `1` with a block present and with `mode: gateway`, without reading the token variables |
@@ -76,18 +77,25 @@ gateway client's dispatch path; abuse-case tests for each boundary in `design.md
 
 ## Verification activities
 
-- [ ] T1 — `cd cli && uv run python -m pytest -q tests/test_slack_gateway_read_mode.py`
-- [ ] T2 — `cd cli && uv run python -m pytest -q tests/test_slack_gateway_read_mode_integration.py`
-- [ ] T8 — `cd cli && uv run python -m pytest -q tests/test_slack_gateway_read_mode.py -k abuse`
-- [ ] T10 — `cd cli && uv run python -m pytest -q tests/test_migrations.py -k gateway`
-- [ ] T11 — `uv run pre-commit run --all-files`
+- [x] T1 — `cd cli && uv run python -m pytest -q tests/test_slack_gateway_read_mode.py`
+- [x] T2 — `cd cli && uv run python -m pytest -q tests/test_slack_gateway_read_mode_integration.py`
+- [x] T8 — `cd cli && uv run python -m pytest -q tests/test_slack_gateway_read_mode.py -k abuse`
+- [x] T10 — `cd cli && uv run python -m pytest -q tests/test_migrations.py -k gateway`
+- [x] T11 — `uv run pre-commit run --all-files`
 
 ## Verification results
 
-_Not yet executed._
+All five activities ran and passed. The new tests are red on `origin/main` (23 of 40) and
+green here. Every command ran with `THE_LOOP_CLI_CONFIG` unset, because a the-loop session
+exports it pointing at the operator's live config, and inherited, it skews unrelated tests
+(see [unit.md](evidence/unit.md)).
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1 | `cd cli && uv run python -m pytest -q tests/test_slack_gateway_read_mode.py` | 37 passed. On `origin/main`: 23 failed, 17 passed | [unit.md](evidence/unit.md) |
+| T2 | `cd cli && uv run python -m pytest -q tests/test_slack_gateway_read_mode_integration.py`; `the-loop scenarios --glob …` | 3 passed. 3 scenarios listed with requirement links. The Approve-pair scenario is red on main | [integration.md](evidence/integration.md) |
+| T8 | `… tests/test_slack_gateway_read_mode.py -k abuse` | 13 passed (AC1–AC4) | [unit.md](evidence/unit.md) |
+| T10 | `… tests/test_migrations.py -k gateway`; `the-loop migrate-config --dry-run`, then two real runs on a sample 20.3.0 config; `channels status` before and after | 6 passed. Rewritten `socket → gateway`, and the second run reports nothing to migrate. Status flags the old form and describes the new one | [migration.md](evidence/migration.md) |
+| T11 | `uv run pre-commit run --all-files` | All six hooks passed (ruff ×2, pyright, the full pytest suite, markdownlint, config validation) | [lint-and-typecheck.md](evidence/lint-and-typecheck.md) |
 
 ## Review comments
