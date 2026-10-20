@@ -79,4 +79,6 @@ call carries, and the fake client records exactly that.
 
 ## Verification results
 
+Not run yet. The `verification` node fills this table.
+
 ## Review comments
