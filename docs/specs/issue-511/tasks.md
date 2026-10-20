@@ -71,7 +71,7 @@ abuse cases of `design.md` § Security design are tests like any other (task 9).
     collapsed; expanded renders every node with `aria-current="step"` on the current
     one and no `of … passed` / `skipped` / `at <node>` text; `compactRail` and `railLabel`
     cases unchanged (red→green)
-- [ ] 3. `SessionTabs` renders only for more than one session, without the tally
+- [x] 3. `SessionTabs` renders only for more than one session, without the tally
   - `ui/src/components/SessionTabs.tsx`: return `null` when `view.pullRequests` is
     empty (row 37, R2.6, D4); delete the `n sessions · 1 work item loop · …` span
     (row 38). Tabs keep their links, `aria-label` = short ref, `aria-current="page"`
@@ -82,7 +82,7 @@ abuse cases of `design.md` § Security design are tests like any other (task 9).
     renders only when the item has more than one session` (no `navigation` named
     *Sessions* for #205; present for #214 with #216 and loop-docs#47) and `Scenario: the
     tab bar carries no session tally` (red→green)
-- [ ] 4. The composer's hint and the trace head
+- [x] 4. The composer's hint and the trace head
   - `ui/src/components/Transcript.tsx` → `ChatBar`: the hint slot renders **only** the
     blocked reason (`chatBlocked`, unchanged); `delivers to tmux · <target>`,
     `bracketed paste + enter` and `⌘⏎ to send` leave (rows 47, 48); `⌘⏎` stays in the
@@ -97,7 +97,7 @@ abuse cases of `design.md` § Security design are tests like any other (task 9).
     carries no delivery hint`; the blocked composer still shows its reason; the send
     title carries ⌘⏎) and `ui/src/views/WorkItemDetail.test.tsx` (the trace head text
     has no harness name; `role="log"`, its name and `tabindex` unchanged) (red→green)
-- [ ] 5. `GateBanner` says *Human gate*, never the node
+- [x] 5. `GateBanner` says *Human gate*, never the node
   - `ui/src/views/WorkItemDetail.tsx` → `GateBanner`: heading `Human gate · waiting
     <age>` (rows 42, 43, D5); reason, **Approve — advance graph** (→ `graphComplete`,
     its disabled reason when no checkout) and *Request changes on the ticket* unchanged

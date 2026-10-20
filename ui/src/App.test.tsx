@@ -80,9 +80,17 @@ describe("the control plane, on demo data", () => {
 
     await user.click(await sidebarRow("loop-lab#205"));
 
-    // The gate arrives with the graph round, so the card is awaited.
-    expect(await screen.findByText(/Human gate — human-approval/)).toBeInTheDocument();
+    // The gate arrives with the graph round, so the card is awaited. The banner
+    // says "Human gate" and how long it has waited — never the node: the phase
+    // chip is the one statement of the position (issue-511 R2.1, R2.5).
+    const banner = (await screen.findByText("Human gate")).closest("[role='status']") as HTMLElement;
+    expect(banner.textContent).not.toMatch(/Human gate — /);
+    expect(banner.textContent).not.toContain("human-approval");
+    expect(within(banner).getByText(/waiting/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Approve — advance graph/ })).toBeInTheDocument();
+    // Scenario: the current node is written once — the phase chip.
+    const main = screen.getByRole("main");
+    expect(within(main).getAllByText("human-approval", { selector: "span" })).toHaveLength(1);
   });
 
   it("opens a work item with the rail in the header and one trace tab per PR session", async () => {

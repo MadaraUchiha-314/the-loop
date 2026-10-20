@@ -108,7 +108,6 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
 
   const traceSession = viewed === view.ref ? view.session : (view.pullRequests.find((pr) => pr.ref === viewed)?.session ?? null);
   const traceState = sessionState(traceSession);
-  const tmux = viewed === view.ref ? view.tmuxTarget : (view.pullRequests.find((pr) => pr.ref === viewed)?.tmuxTarget ?? "");
 
   const traceScroll = useRef<HTMLDivElement | null>(null);
   const entryCount = transcript.data?.entries.length ?? 0;
@@ -212,9 +211,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex items-center justify-between border-b border-border px-6 py-2 text-xs text-muted-foreground">
-          <span>
-            Harness trace{traceSession?.harness ? <span className="font-mono"> · {traceSession.harness}</span> : null}
-          </span>
+          <span>Harness trace</span>
           <label
             className="flex cursor-pointer items-center gap-2"
             title="Show the tool calls, the harness bookkeeping and the whole event trail"
@@ -303,7 +300,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
           </div>
         ) : null}
 
-        <ChatBar refFor={viewed} state={traceState} onSent={onChanged} tmuxTarget={tmux} instance={view.instance} />
+        <ChatBar refFor={viewed} state={traceState} onSent={onChanged} instance={view.instance} />
       </div>
     </>
   );
@@ -318,8 +315,9 @@ function fallbackReason(error: Error | null): string {
 }
 
 /**
- * The parked human gate: what it waits for, since when, and the one in-place
- * action — Approve, which posts `POST /graph/complete` for the parked node.
+ * The parked human gate: since when, the reason, and the one in-place action —
+ * Approve, which posts `POST /graph/complete` for the parked node. It does not
+ * name the node: the phase chip is the one statement (issue-511 R2.1).
  */
 function GateBanner({ view, onChanged }: { view: WorkItemView; onChanged: () => void }) {
   const { api } = useApi();
@@ -345,7 +343,7 @@ function GateBanner({ view, onChanged }: { view: WorkItemView; onChanged: () => 
   return (
     <Notice icon={<TriangleAlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />} role="status">
       <div className="flex flex-wrap items-baseline gap-x-2">
-        <span className="font-medium">Human gate — {parked.node}</span>
+        <span className="font-medium">Human gate</span>
         {parked.since ? (
           <span className="font-mono text-[0.68rem] opacity-80" title={parked.since}>
             waiting {relativeTime(parked.since)}
