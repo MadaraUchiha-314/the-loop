@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-511",
-  "currentNode": "test-planning",
+  "currentNode": "design-approval",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -53,8 +53,16 @@
     },
     "test-planning": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-20T16:19:49+00:00",
+      "exitedAt": "2026-10-20T17:10:36+00:00",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-511/testing-plan.md)",
+      "forced": false
+    },
+    "design-approval": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-20T17:10:36+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -266,7 +274,11 @@
     }
   },
   "forced": [],
-  "parked": null,
+  "parked": {
+    "node": "design-approval",
+    "reason": "awaiting a human",
+    "since": "2026-10-20T17:10:36+00:00"
+  },
   "completions": {
     "requirements-definition": {
       "at": "2026-10-20T14:48:31+00:00",
@@ -278,6 +290,10 @@
     },
     "design-critic-review": {
       "at": "2026-10-20T16:19:49+00:00",
+      "by": "cli"
+    },
+    "test-planning": {
+      "at": "2026-10-20T17:10:36+00:00",
       "by": "cli"
     }
   },
