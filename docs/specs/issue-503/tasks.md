@@ -53,7 +53,7 @@ code task reads what it produces. The docs task waits for the behaviour to settl
   - _Depends on:_ 2 (shares `socket_beside_gateway`)
   - _Requirements:_ R4.4, R5.1–R5.3
   - _Test:_ T10, `tests/test_migrations.py -k gateway` (red→green)
-- [ ] 5. Integration scenario through the gateway client's dispatch path
+- [x] 5. Integration scenario through the gateway client's dispatch path
   - With `mode: gateway`, a `block_actions` approval press is handled, and an approval
     notification renders the Approve / Request changes pair.
   - Gherkin docstrings with `Requirement:` links.
