@@ -1,3 +1,9 @@
+## v20.4.0 (2026-10-20)
+
+### Feat
+
+- **issue-503**: read.mode: gateway — a gateway consumer that never opens Socket Mode (#504)
+
 ## v20.3.0 (2026-10-19)
 
 ### Feat
