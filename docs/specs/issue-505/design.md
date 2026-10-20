@@ -89,7 +89,7 @@ both call it. A room has no subject of its own, so every drained event is re-sub
 onto the work item's subject (R3.2: with no claimant it stays held there, and the claim
 routes it later through `_route_held`). Only `routed = 0` rows are selected (R3.3).
 
-**Pruning (R4.5).** `_prune_instances` deletes the pruned instance's `rooms` rows beside
+**Pruning (R4.5).** `_prune` deletes the pruned instance's `rooms` rows beside
 its claims and actors, and the subject pruning's `NOT EXISTS` list gains `rooms`.
 
 ### 2. `gateway/consume.py` — `PUT /api/v1/gateway/rooms`
