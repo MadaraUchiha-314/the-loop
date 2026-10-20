@@ -772,6 +772,10 @@ def process_reply(
         "url": (record.url if record else "") or "",
         "person": (actor.label if actor else "") or f"{reply.channel}:{reply.author}",
     }
+    reply_noted: Optional[Tuple[Tuple[str, str], Tuple[str, str]]] = None
+    if event_type == "work-item.reply" and not parse_standing_ref(reply.work_item):
+        # Before the session can answer, so the answer finds it (issue-507).
+        reply_noted = _note_reply_thread(bot, reply)
     delivered, error = _deliver(
         replace(reply, text=pane_text if kind == "reply" else text),
         cli_config,
@@ -779,6 +783,8 @@ def process_reply(
         kind=kind,
         detail=frame_detail,
     )
+    if reply_noted and not delivered:
+        _restore_reply_thread(bot, reply.work_item, *reply_noted)
     bot.react(reply, "completed" if landed and delivered else "error")
     outcome["delivered"] = delivered
     if error and "error" not in outcome:
@@ -793,6 +799,61 @@ def process_reply(
         link = f" — {record.url}" if record.url else ""
         bot.say(reply.thread, f"{what} on `{reply.work_item}`{link}", reply.channel_id)
     return outcome
+
+
+def _note_reply_thread(
+    bot: SlackBotChannel, reply: InboundReply
+) -> Optional[Tuple[Tuple[str, str], Tuple[str, str]]]:
+    """Remember the thread ``reply`` was typed in as its work item's reply
+    thread, so the agent's next comments are posted there (issue-507 R1.1).
+
+    A mention at the top level — its own thread root — clears it (R2.2), so its
+    answer is top-level, as before. Returns ``(previous, written)`` as
+    ``(channel, thread)`` pairs, so a reply that is then not delivered can put
+    the previous one back (critic C1). Best-effort (R3.1): a lock or save that
+    fails leaves the answer top-level, never fails the reply, and returns
+    ``None``.
+    """
+    in_thread = bool(reply.thread) and reply.thread != reply.ts
+    written = (reply.channel_id, reply.thread) if in_thread else ("", "")
+    try:
+        with ChannelState.locked(bot.state_path, bot.stores) as state:
+            memory = state.delivery_for(reply.work_item)
+            previous = (memory["replyChannel"], memory["replyThread"])
+            state.remember_delivery(
+                reply.work_item, replyChannel=written[0], replyThread=written[1]
+            )
+            state.save(bot.state_path)
+        return previous, written
+    except Exception as exc:  # noqa: BLE001 — never fails the reply
+        logger.debug(
+            "slack: could not note the reply thread for %s (%s)", reply.work_item, exc
+        )
+        return None
+
+
+def _restore_reply_thread(
+    bot: SlackBotChannel,
+    work_item: str,
+    previous: Tuple[str, str],
+    written: Tuple[str, str],
+) -> None:
+    """Undo :func:`_note_reply_thread` for a reply the session never got — only
+    while the record still holds what it wrote, so a newer mention or a clear
+    is never overwritten (critic C1). Best-effort, like the note."""
+    try:
+        with ChannelState.locked(bot.state_path, bot.stores) as state:
+            memory = state.delivery_for(work_item)
+            if (memory["replyChannel"], memory["replyThread"]) != written:
+                return
+            state.remember_delivery(
+                work_item, replyChannel=previous[0], replyThread=previous[1]
+            )
+            state.save(bot.state_path)
+    except Exception as exc:  # noqa: BLE001 — never fails the reply
+        logger.debug(
+            "slack: could not restore the reply thread for %s (%s)", work_item, exc
+        )
 
 
 def _selection_checklist(work_item: str, cli_config: Optional[Mapping]) -> str:

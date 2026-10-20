@@ -662,6 +662,19 @@ flowchart LR
   with `(channel)` in the thread column and `mode` in its JSON, and the inbound pipeline
   is untouched — a reply under any of the-loop's room messages is a message on the work
   item, as issue-375 already attributes it.
+- **A mention in a thread is answered in that thread** (issue-507). WHEN an authorized
+  speaker's mention inside a thread is delivered as a `work-item.reply` THEN the channel
+  SHALL remember that channel and thread as the work item's **reply thread**
+  (`replyChannel` / `replyThread` in its room-delivery memory), and a mention at the top
+  level SHALL clear it. WHEN a `comment.agent` for the work item is posted as a new
+  message in the conversation's channel AND a reply thread is remembered for that channel
+  THEN it SHALL be a reply in that thread, and `channel.posted` SHALL name the thread.
+  WHEN any other event, a within-phase progress event excepted, is handed to the channel
+  THEN the reply thread SHALL be cleared first and that event posted where it always is.
+  RoomPolicy's drops, edits and threaded acks are unchanged. A reply thread in another
+  channel is ignored, and every failure to read or save it degrades to a top-level post.
+  The exception to the issue-378 rule above: this is the one case where a room event is
+  a reply. No setting or verb binds a thread by hand.
 - **A work item can be opened from the slash command** (issue-378).
   `/the-loop new [<repo>:] <title>` (more lines are the body; `create` is an alias) is
   the kickoff with the text in the command: authorized first, judged under the same
@@ -1077,6 +1090,7 @@ ticket, with no Jira work items, ingress or ledger:
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-507 | A Slack mention inside a thread is answered in that thread (2026-10-20): `inbound.process_reply` notes the thread of a delivered `work-item.reply` in the work item's room-delivery memory (`replyChannel` / `replyThread`), `SlackBotChannel.post` posts the next `comment.agent` there, and any non-progress event clears it. No config, grant, scope, schema or event change | [spec](../specs/issue-507/), [guide](../guide/slack.md#a-room-for-one-work-item), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/507) |
 | issue-505 | Behind a gateway, a collaboration channel is published to the gateway as a room (2026-10-20): `CollaborationChannelStore.on_change` lets the hosted gateway client publish a declaration, a move or a clear at once; the client also publishes the whole set at every registration and reconciles every 30 s. The issue-375 promise that every message in the room is about its work item now holds behind a gateway | [spec](../specs/issue-505/), [gateway](gateway.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/505) |
 | issue-503 | `read.mode: gateway` (2026-10-20): a fourth read mode for an instance behind a gateway — no Socket Mode connection, no poll reader, events only from the gateway client; the button, picker, slash-command, mention and shortcut gates key on `push_reachable` (socket, or gateway with a block) instead of `read.mode == socket`; `gateway` without a block resolves to `off` (fail closed); `channels listen` refuses beside any gateway block; `channels status` names the transport and flags both misconfigurations; `migrate-config` rewrites `gateway` + `socket` | [spec](../specs/issue-503/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/503) |
 | issue-496 | The gateway (2026-10-19): with a `gateway` block the Slack listener is the gateway's one Socket Mode connection per app; the listener's classification half is `slack.dispatch_envelope`, called by the gateway-less listener and by the gateway client alike; `ChannelState.bind` publishes the thread binding; the HTTP routes (`/slack/events`, `/slack/interactions`, `/slack/commands`) exist on the gateway behind `slack.http.enabled` | [spec](../specs/issue-496/), [gateway](gateway.md) |

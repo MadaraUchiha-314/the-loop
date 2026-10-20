@@ -481,8 +481,14 @@ not a reply inside a thread nobody opens. Anything a member types in the room **
 mention** — `@the-loop …`, top-level or under one of the-loop's messages — is a message on
 that work item; nothing posted there ever opens a new issue. **A declared room hears only
 mentions by default** ([issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389)):
-the rest of the room's talk is the room's, and never reaches the ticket. A small, focused
-room can be switched back to hearing everything:
+the rest of the room's talk is the room's, and never reaches the ticket. **A mention
+inside a thread is answered in that thread**
+([issue-507](https://github.com/MadaraUchiha-314/the-loop/issues/507)): the agent's next
+comments on the work item are posted as replies there, until the room hears something
+that starts a new conversation (a phase starting or ending, an approval request, a
+comment from the ticket) or a mention somewhere else moves them. A mention at the top
+level is answered at the top level. Nothing needs declaring for this, and no verb binds
+a thread by hand. A small, focused room can be switched back to hearing everything:
 
 ```text
 the-loop add-channel slack@#tmp-issue-378 --listen all
