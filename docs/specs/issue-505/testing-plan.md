@@ -92,4 +92,6 @@ Nothing needs Slack.
 
 ## Verification results
 
+_Not yet executed._
+
 ## Review comments

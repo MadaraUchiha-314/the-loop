@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-505",
-  "currentNode": "design",
+  "currentNode": "test-planning",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -37,10 +37,26 @@
     },
     "design": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-20T02:37:11+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-10-20T02:40:08+00:00",
       "lastBlock": "`validate-artifacts` did not pass:\n- required section is missing: Architecture (docs/specs/issue-505/design.md)",
+      "forced": false
+    },
+    "design-critic-review": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-20T02:40:08+00:00",
+      "exitedAt": "2026-10-20T02:40:08+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "test-planning": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-20T02:40:08+00:00",
+      "exitedAt": "",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required section is empty: Verification results (docs/specs/issue-505/testing-plan.md)",
       "forced": false
     }
   },
@@ -257,7 +273,11 @@
       "by": "cli"
     },
     "design": {
-      "at": "2026-10-20T02:39:35+00:00",
+      "at": "2026-10-20T02:40:08+00:00",
+      "by": "cli"
+    },
+    "test-planning": {
+      "at": "2026-10-20T02:40:14+00:00",
       "by": "cli"
     }
   },
@@ -340,5 +360,5 @@
     }
   ],
   "loop": "pdlc-work-item-loop",
-  "phase": "design"
+  "phase": "test-planning"
 }
