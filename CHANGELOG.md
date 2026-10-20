@@ -1,3 +1,9 @@
+## v20.7.0 (2026-10-20)
+
+### Feat
+
+- **issue-511**: de-clutter the control plane UI (#513)
+
 ## v20.6.0 (2026-10-20)
 
 ### Feat
