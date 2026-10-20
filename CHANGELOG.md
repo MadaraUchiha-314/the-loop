@@ -1,3 +1,9 @@
+## v20.5.0 (2026-10-20)
+
+### Feat
+
+- **issue-505**: the gateway learns a work item's collaboration channel (#506)
+
 ## v20.4.0 (2026-10-20)
 
 ### Feat
