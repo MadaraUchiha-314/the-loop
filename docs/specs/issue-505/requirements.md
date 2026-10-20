@@ -58,8 +58,9 @@ message in it reaches the work item, as it does without a gateway.
    the instance's own process THEN the system SHALL publish the change to the gateway
    without waiting for a reconnect.
 3. WHEN a declaration changes in another process on the same machine (the CLI verb
-   `the-loop channels add`, a graph hook) THEN the system SHALL publish the change within
-   one reconcile interval, which SHALL be no longer than 60 seconds.
+   `the-loop channels add`, a graph hook) THEN the system SHALL publish the change at the
+   first fetch that starts after a 30-second reconcile interval has passed, so the delay
+   is at most that interval plus one long-poll wait (`gateway.longPollSeconds`).
 4. WHEN the gateway client registers, on start and after every outage, THEN it SHALL
    publish its complete set of rooms, so a gateway that restarted or lost its store gets
    them back.
