@@ -53,10 +53,11 @@ describe("the control plane, on demo data", () => {
   it("lists every tracked work item in the sidebar, grouped by what it needs", async () => {
     renderApp();
 
-    // The design's groups (issue-327): Needs you · In flight · Shipped · Idle —
-    // the armed item with no session and the ad-hoc item (issue-230) included.
+    // Two groups (issue-511, Option C): Needs you · Everything else — the
+    // armed item with no session and the ad-hoc item (issue-230) included.
     expect(await screen.findByText("Needs you")).toBeInTheDocument();
-    expect(await screen.findByText("In flight")).toBeInTheDocument();
+    expect(await screen.findByText("Everything else")).toBeInTheDocument();
+    expect(screen.queryByText("In flight")).toBeNull();
     expect(await sidebarRow("loop-lab#214")).toBeInTheDocument();
     expect(await sidebarRow("loop-lab#181")).toBeInTheDocument();
     // Nothing selected: the canvas shows the most recently active item
@@ -111,18 +112,21 @@ describe("the control plane, on demo data", () => {
     // The PRs' sessions are reachable as trace tabs (issue-172/230). They are
     // links on the same hash the sidebar's nested rows use (issue-300), so the
     // two selectors cannot disagree about what the canvas shows.
-    const tab = await screen.findByRole("link", { name: "loop-lab#216" });
+    const tabs = await screen.findByRole("navigation", { name: "Sessions" });
+    const tab = within(tabs).getByRole("link", { name: "loop-lab#216" });
     expect(tab).toHaveAttribute("href", `#/item/${encodeURIComponent("github:octo/loop-lab#216")}`);
-    expect(screen.getByRole("link", { name: "loop-docs#47" })).toBeInTheDocument();
+    expect(within(tabs).getByRole("link", { name: "loop-docs#47" })).toBeInTheDocument();
   });
 
-  it("nests each work item's pull requests under it in the sidebar", async () => {
+  it("nests the selected work item's pull requests under it in the sidebar", async () => {
+    const user = userEvent.setup();
     renderApp();
 
-    // The item's own row still reads the way it did; its PRs hang off it in a
-    // list of their own, named for the item so a screen reader keeps the
-    // nesting the indent shows (issue-300).
-    await sidebarRow("loop-lab#214");
+    // The item's own row still reads the way it did; once it is selected its
+    // PRs hang off it in a list of their own, named for the item so a screen
+    // reader keeps the nesting the indent shows (issue-300, issue-511 R3.2).
+    expect(screen.queryByRole("list", { name: "Pull requests for loop-lab#214" })).toBeNull();
+    await user.click(await sidebarRow("loop-lab#214"));
     const prs = await screen.findByRole("list", { name: "Pull requests for loop-lab#214" });
     const rows = within(prs).getAllByRole("link");
     expect(rows).toHaveLength(2);
@@ -136,7 +140,9 @@ describe("the control plane, on demo data", () => {
   });
 
   it("draws a linked pull request once, under its work item and not beside it", async () => {
+    const user = userEvent.setup();
     renderApp();
+    await user.click(await sidebarRow("loop-lab#214"));
 
     // The fixture gives #216 both identities a real board gives a labeled PR:
     // its own portable record (the poller's ledger) and a session endpoint
@@ -154,6 +160,7 @@ describe("the control plane, on demo data", () => {
     const user = userEvent.setup();
     renderApp();
 
+    await user.click(await sidebarRow("loop-lab#214"));
     const prs = await screen.findByRole("list", { name: "Pull requests for loop-lab#214" });
     await user.click(within(prs).getByRole("link", { name: /#216/ }));
 
@@ -292,11 +299,12 @@ describe("the control plane, on demo data", () => {
     expect(within(screen.getByRole("main")).getAllByText("human-approval", { selector: "span" })).toHaveLength(1);
   });
 
-  it("filters the sidebar by what is typed into the search box", async () => {
+  it("filters the sidebar by what is typed into the search box, behind the search toggle", async () => {
     const user = userEvent.setup();
     renderApp();
     await sidebarRow("loop-lab#214");
 
+    await user.click(screen.getByRole("button", { name: "Search and filter" }));
     await user.type(screen.getByRole("searchbox", { name: "Search work items" }), "webhook replay");
     expect(screen.getAllByRole("link").filter((el) => el.dataset["row"] === "item")).toHaveLength(1);
     expect(await sidebarRow("loop-lab#187")).toBeInTheDocument();

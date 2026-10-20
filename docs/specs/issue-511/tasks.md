@@ -175,7 +175,7 @@ abuse cases of `design.md` § Security design are tests like any other (task 9).
     `Scenario: copy ref and copy attach command write the clipboard` (re-pointed at the
     popover); the existing question + reply, gate approval and theme-toggle scenarios
     still pass (red→green)
-- [ ] 8. The sidebar: two groups, one-line rows, PRs under the selected item, the finder behind an icon
+- [x] 8. The sidebar: two groups, one-line rows, PRs under the selected item, the finder behind an icon
   - `ui/src/components/Sidebar.tsx`: groups from `SIDEBAR_GROUPS_MINIMAL` via task 1's
     mapping; the count renders on **Needs you** only (row 15). A row is one line — dot ·
     `#n` · title (`truncate`) · `InstanceChip` (fleet only) · the flag at the right only

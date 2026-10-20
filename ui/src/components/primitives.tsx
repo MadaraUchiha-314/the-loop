@@ -27,6 +27,8 @@ interface IconButtonProps {
   children: ReactNode;
   active?: boolean;
   disabled?: boolean;
+  /** Set when the button discloses something (the sidebar's finder): rendered as `aria-expanded`. */
+  expanded?: boolean | undefined;
   onClick?: (() => void) | undefined;
   /** Render as a link instead of a button (the footer's Settings, the header's GitHub). */
   href?: string | undefined;
@@ -35,7 +37,7 @@ interface IconButtonProps {
 }
 
 /** The 28 px square icon control: transparent until hovered, named by `aria-label`. */
-export function IconButton({ label, children, active = false, disabled = false, onClick, href, external = false, className = "" }: IconButtonProps) {
+export function IconButton({ label, children, active = false, disabled = false, expanded, onClick, href, external = false, className = "" }: IconButtonProps) {
   const classes = `inline-flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-surface-2 hover:text-foreground disabled:opacity-40 disabled:hover:border-transparent disabled:hover:bg-transparent ${
     active ? "border-border bg-surface-2 text-foreground" : ""
   } ${className}`.trim();
@@ -54,7 +56,7 @@ export function IconButton({ label, children, active = false, disabled = false, 
     );
   }
   return (
-    <button type="button" aria-label={label} title={label} className={classes} disabled={disabled} onClick={onClick}>
+    <button type="button" aria-label={label} title={label} aria-expanded={expanded} className={classes} disabled={disabled} onClick={onClick}>
       {children}
     </button>
   );

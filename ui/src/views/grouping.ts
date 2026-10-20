@@ -19,13 +19,6 @@ import type { DotStatus } from "../components/StatusDot.tsx";
 
 export type SidebarGroup = "needs-you" | "in-flight" | "shipped" | "idle";
 
-export const SIDEBAR_GROUPS: { key: SidebarGroup; title: string }[] = [
-  { key: "needs-you", title: "Needs you" },
-  { key: "in-flight", title: "In flight" },
-  { key: "shipped", title: "Shipped" },
-  { key: "idle", title: "Idle" },
-];
-
 /**
  * Whether the loop has walked every node it kept: all done, or the pointer
  * resting on the last of them (a finished loop's `complete` is its current node).

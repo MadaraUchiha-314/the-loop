@@ -111,7 +111,6 @@ export function Work({
           activeRef={activeRef}
           activeInstance={activeInstance}
           surface={surface}
-          standingSessions={standingSessions.data ?? []}
           daemons={daemons}
           stream={stream}
           instances={instances}
