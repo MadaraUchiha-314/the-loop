@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-511",
-  "currentNode": "self-review",
+  "currentNode": "critic-review",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -109,8 +109,16 @@
     },
     "self-review": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-20T19:33:25+00:00",
+      "exitedAt": "2026-10-20T19:37:22+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "critic-review": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-20T19:37:22+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -361,6 +369,10 @@
     },
     "verification": {
       "at": "2026-10-20T19:33:25+00:00",
+      "by": "cli"
+    },
+    "self-review": {
+      "at": "2026-10-20T19:37:22+00:00",
       "by": "cli"
     }
   },
