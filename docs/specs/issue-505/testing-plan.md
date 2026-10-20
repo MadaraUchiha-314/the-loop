@@ -83,15 +83,26 @@ Nothing needs Slack.
 
 ## Verification activities
 
-- [ ] T1 — `cd cli && uv run python -m pytest -q tests/test_gateway_rooms.py`
-- [ ] T2 — `cd cli && uv run python -m pytest -q tests/test_gateway_rooms_integration.py`
-- [ ] T3 — `cd cli && uv run python -m pytest -q tests/test_api_contract_parity.py`
-- [ ] T8 — `cd cli && uv run python -m pytest -q tests/test_gateway_rooms.py tests/test_gateway_rooms_integration.py -k abuse`
-- [ ] T10 — `cd cli && uv run python -m pytest -q tests/test_gateway_rooms.py -k migration`
-- [ ] T11 — `uv run pre-commit run --all-files`
+- [x] T1 — `cd cli && uv run python -m pytest -q tests/test_gateway_rooms.py`
+- [x] T2 — `cd cli && uv run python -m pytest -q tests/test_gateway_rooms_integration.py`
+- [x] T3 — `cd cli && uv run python -m pytest -q tests/test_api_contract_parity.py`
+- [x] T8 — `cd cli && uv run python -m pytest -q tests/test_gateway_rooms.py tests/test_gateway_rooms_integration.py -k abuse`
+- [x] T10 — `cd cli && uv run python -m pytest -q tests/test_gateway_rooms.py -k migration`
+- [x] T11 — `uv run pre-commit run --all-files`
 
 ## Verification results
 
-_Not yet executed._
+All six activities ran and passed. The two new test files are red on `origin/main`
+(35 failed, 3 passed, 5 errors) and green here. Every command ran with
+`THE_LOOP_CLI_CONFIG` unset (see [unit.md](evidence/unit.md)).
+
+| Activity | Command / procedure | Outcome | Evidence |
+|----------|--------------------|---------|----------|
+| T1 | `cd cli && uv run python -m pytest -q tests/test_gateway_rooms.py` | 39 passed | [unit.md](evidence/unit.md) |
+| T2 | `cd cli && uv run python -m pytest -q tests/test_gateway_rooms_integration.py`; `the-loop scenarios --glob …` | 4 passed; 4 scenarios listed with requirement links | [integration.md](evidence/integration.md) |
+| T3 | `cd cli && uv run python -m pytest -q tests/test_api_contract_parity.py` | 6 passed; `PUT /api/v1/gateway/rooms` in the contract | [contract.md](evidence/contract.md) |
+| T8 | `… tests/test_gateway_rooms.py tests/test_gateway_rooms_integration.py -k abuse` | 11 passed (abuse cases 1, 2, 3, 5, the peer rule, fail closed); abuse case 4 asserted in T2 scenario 1 | [unit.md](evidence/unit.md) |
+| T10 | `… tests/test_gateway_rooms.py -k migration` | 1 passed: a 20.4.0 store reopens and gains `rooms` | [unit.md](evidence/unit.md) |
+| T11 | `uv run pre-commit run --all-files` | all six hooks passed, after fixing five pyright errors from the first run | [lint-and-typecheck.md](evidence/lint-and-typecheck.md) |
 
 ## Review comments
