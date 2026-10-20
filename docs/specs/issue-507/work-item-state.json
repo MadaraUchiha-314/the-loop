@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-507",
-  "currentNode": "verification",
+  "currentNode": "evidence",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -101,10 +101,50 @@
     },
     "verification": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-20T05:16:09+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-10-20T05:32:11+00:00",
       "lastBlock": "`validate-artifacts` did not pass:\n- 5 task(s) still unticked (docs/specs/issue-507/testing-plan.md)",
+      "forced": false
+    },
+    "self-review": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-20T05:32:11+00:00",
+      "exitedAt": "2026-10-20T05:32:11+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "critic-review": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-20T05:32:11+00:00",
+      "exitedAt": "2026-10-20T05:32:11+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "security-review": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-20T05:32:11+00:00",
+      "exitedAt": "2026-10-20T05:32:12+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "code-explainer": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-20T05:32:12+00:00",
+      "exitedAt": "2026-10-20T05:32:12+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "evidence": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-20T05:32:12+00:00",
+      "exitedAt": "",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-507/evidence/final-validation.md)",
       "forced": false
     }
   },
@@ -334,6 +374,22 @@
     },
     "implementation": {
       "at": "2026-10-20T05:16:09+00:00",
+      "by": "cli"
+    },
+    "verification": {
+      "at": "2026-10-20T05:32:11+00:00",
+      "by": "cli"
+    },
+    "critic-review": {
+      "at": "2026-10-20T05:32:11+00:00",
+      "by": "cli"
+    },
+    "security-review": {
+      "at": "2026-10-20T05:32:12+00:00",
+      "by": "cli"
+    },
+    "evidence": {
+      "at": "2026-10-20T05:32:13+00:00",
       "by": "cli"
     }
   },
