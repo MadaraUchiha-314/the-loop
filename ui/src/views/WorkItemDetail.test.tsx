@@ -20,7 +20,7 @@ import { ApiProvider } from "../state/ApiContext.tsx";
 import { buildWorkItemViews } from "../api/model.ts";
 import { DEMO_SESSIONS, DEMO_WORK_ITEMS } from "../demo/fixture.ts";
 import type { Chrome } from "../components/HeaderBar.tsx";
-import { WorkItemDetail, isAtNewest } from "./WorkItemDetail.tsx";
+import { WorkItemDetail, isAtNewest, railNote } from "./WorkItemDetail.tsx";
 
 const chrome: Chrome = { theme: "light", onToggleTheme: () => {}, sidebarOpen: true, onOpenSidebar: () => {} };
 
@@ -87,5 +87,17 @@ describe("the work-item detail page", () => {
     it("is true for a panel too short to scroll at all", () => {
       expect(isAtNewest({ scrollHeight: 300, scrollTop: 0, clientHeight: 300 })).toBe(true);
     });
+  });
+});
+
+describe("railNote (issue-511 R2.1, R2.5)", () => {
+  it("says a parked item awaits a human without naming the node — the phase chip is the one statement", () => {
+    const view = { ...firstView(), parked: { node: "requirements-approval", reason: "approve the requirements", since: "2026-10-15T09:00:00Z" } };
+    expect(railNote(view)).toBe("parked — awaiting a human");
+    expect(railNote(view)).not.toContain("requirements-approval");
+  });
+
+  it("is empty for an item that needs nothing", () => {
+    expect(railNote({ ...firstView(), parked: null, attention: [] })).toBe("");
   });
 });

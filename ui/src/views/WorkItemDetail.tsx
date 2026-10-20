@@ -52,11 +52,12 @@ export function isAtNewest(panel: Pick<HTMLElement, "scrollHeight" | "scrollTop"
 
 /**
  * The one line for "this item is stuck": the parked gate, or the newest
- * wait/error the attention model holds. Shown in the graph strip and the
- * session panel's banner.
+ * wait/error the attention model holds. Shown once, in the header meta beside
+ * the phase chip — which is why it never names the node (issue-511 R2.1,
+ * R2.5: the chip is the one statement of the position).
  */
 export function railNote(view: WorkItemView): string {
-  if (view.parked) return `parked — awaiting a human at ${view.parked.node}`;
+  if (view.parked) return "parked — awaiting a human";
   const entry = attentionEntries([view]).find((candidate) => candidate.tier >= 2);
   if (!entry) return "";
   const detail = entry.detail || entry.kind;

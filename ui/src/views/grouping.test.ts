@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildWorkItemViews, type WorkItemView } from "../api/model.ts";
 import { DEMO_ATTENTION, DEMO_INNER_GRAPHS, DEMO_OUTER_GRAPHS, DEMO_SESSIONS, DEMO_WORK_ITEMS } from "../demo/fixture.ts";
-import { filterViews, itemStatus, sidebarGroup } from "./grouping.ts";
+import { filterViews, itemStatus, minimalGroup, SIDEBAR_GROUPS_MINIMAL, sidebarGroup, sortByActivity } from "./grouping.ts";
 
 const views = buildWorkItemViews({
   workItems: DEMO_WORK_ITEMS,
@@ -85,5 +85,32 @@ describe("sidebarGroup for an ended item (issue-329)", () => {
   it("reads the demo's shipped item from its stamp", () => {
     expect(view("loop-lab#181").ended?.reason).toBe("pr-merged");
     expect(sidebarGroup(view("loop-lab#181"))).toBe("shipped");
+  });
+});
+
+describe("the two-group sidebar (issue-511, R3.3)", () => {
+  it("names Needs you and Everything else, in that order", () => {
+    expect(SIDEBAR_GROUPS_MINIMAL.map((group) => group.key)).toEqual(["needs-you", "everything"]);
+    expect(SIDEBAR_GROUPS_MINIMAL.map((group) => group.title)).toEqual(["Needs you", "Everything else"]);
+  });
+
+  it("folds In flight, Shipped and Idle into Everything else and keeps Needs you — sidebarGroup still answers four ways", () => {
+    expect(minimalGroup(view("loop-lab#205"))).toBe("needs-you");
+    expect(minimalGroup(view("loop-lab#178"))).toBe("needs-you");
+    expect(minimalGroup(view("loop-lab#209"))).toBe("everything");
+    expect(minimalGroup(view("loop-lab#181"))).toBe("everything");
+    expect(minimalGroup(view("loop-lab#198"))).toBe("everything");
+    expect(sidebarGroup(view("loop-lab#209"))).toBe("in-flight");
+    expect(sidebarGroup(view("loop-lab#181"))).toBe("shipped");
+    expect(sidebarGroup(view("loop-lab#198"))).toBe("idle");
+  });
+
+  it("sorts Everything else by last activity, newest first, and leaves the input alone", () => {
+    const everything = views.filter((candidate) => minimalGroup(candidate) === "everything");
+    const shuffled = [...everything].toReversed();
+    const sorted = sortByActivity(shuffled);
+    const stamps = sorted.map((candidate) => candidate.lastActivity);
+    expect(stamps).toEqual([...stamps].toSorted((a, b) => b.localeCompare(a)));
+    expect(shuffled.map((candidate) => candidate.ref)).toEqual([...everything].toReversed().map((candidate) => candidate.ref));
   });
 });

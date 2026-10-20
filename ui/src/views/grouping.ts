@@ -7,6 +7,11 @@
  * node done — or idle, and reads the record's closure stamp first (issue-329).
  * The search filters the rows already loaded, by ref, title, repository and
  * current node; it asks the service for nothing.
+ *
+ * The sidebar draws two groups (issue-511, Option C): **Needs you** and
+ * **Everything else**, the latter by last activity. `sidebarGroup` keeps its
+ * four-way answer — the dot, the tests and any other reader still get it —
+ * and `minimalGroup` folds it for the rows.
  */
 
 import { endedAsShipped, itemGroup, parseRef, type WorkItemView } from "../api/model.ts";
@@ -29,6 +34,24 @@ export function isShipped(view: WorkItemView): boolean {
   const walked = view.rail.filter((node) => node.state !== "skipped");
   const last = walked.at(-1);
   return walked.length > 0 && walked.every((node) => node.state === "done" || (node === last && node.state === "current"));
+}
+
+/** The two groups the sidebar draws (issue-511 R3.3). */
+export type MinimalGroup = "needs-you" | "everything";
+
+export const SIDEBAR_GROUPS_MINIMAL: { key: MinimalGroup; title: string }[] = [
+  { key: "needs-you", title: "Needs you" },
+  { key: "everything", title: "Everything else" },
+];
+
+/** Needs you stays; In flight, Shipped and Idle are one group of things that need nothing. */
+export function minimalGroup(view: WorkItemView): MinimalGroup {
+  return sidebarGroup(view) === "needs-you" ? "needs-you" : "everything";
+}
+
+/** The rows newest first by last activity, ties by ref — a copy, the input untouched. */
+export function sortByActivity<T extends Pick<WorkItemView, "lastActivity" | "ref">>(views: T[]): T[] {
+  return views.toSorted((a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || "") || a.ref.localeCompare(b.ref));
 }
 
 export function sidebarGroup(view: WorkItemView): SidebarGroup {

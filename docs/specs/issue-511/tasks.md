@@ -35,7 +35,7 @@ different work. TDD invariant: **no production code without a failing test that
 motivates it** — write/adjust the test first, watch it go red, then make it green. The
 abuse cases of `design.md` § Security design are tests like any other (task 9).
 
-- [ ] 1. The pure helpers: `railNote` without the node, two sidebar groups
+- [x] 1. The pure helpers: `railNote` without the node, two sidebar groups
   - `ui/src/views/WorkItemDetail.tsx` → `railNote`: a parked item returns
     `parked — awaiting a human` (no `at <node>` suffix); otherwise the attention detail,
     as today (inventory rows 33, 34; § Where the current node is drawn).
