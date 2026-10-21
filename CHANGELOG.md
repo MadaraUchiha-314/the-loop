@@ -1,3 +1,9 @@
+## v20.8.0 (2026-10-21)
+
+### Feat
+
+- **issue-514**: split /init into /init, /init-cli and /init-gateway (#515)
+
 ## v20.7.0 (2026-10-20)
 
 ### Feat
