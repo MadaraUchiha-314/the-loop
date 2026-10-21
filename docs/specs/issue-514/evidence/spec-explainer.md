@@ -15,6 +15,6 @@ workItem: "github:MadaraUchiha-314/the-loop#514"
 | Field | Value |
 |---|---|
 | Depth | standard |
-| Location | <https://claude.ai/artifact/XJufXd9vnefSpctBtj29Zm> |
+| Location | https://claude.ai/artifact/XJufXd9vnefSpctBtj29Zm |
 | Published as | own artifact |
 | Questions | 3 |
