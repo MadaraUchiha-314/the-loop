@@ -19,7 +19,7 @@
         {
           "id": "commands-only",
           "title": "Commands only — the-loop is the slash commands in my editor",
-          "summary": "No daemon, nothing watching a repository, nothing running once you close the session. `/the-loop:work-on`, `/the-loop:new-requirement` and the rest work exactly as documented; events on GitHub reach nobody. These are the shipped defaults, so this rung changes nothing — it is here so that \"not yet\" is an answer rather than a walkthrough to fight. Re-run `/the-loop:init` when you want more.",
+          "summary": "No daemon, nothing watching a repository, nothing running once you close the session. `/the-loop:work-on`, `/the-loop:new-requirement` and the rest work exactly as documented; events on GitHub reach nobody. These are the shipped defaults, so this rung changes nothing — it is here so that \"not yet\" is an answer rather than a walkthrough to fight. Re-run `/the-loop:init-cli` when you want more.",
           "stillHuman": "Everything. You start each work item yourself, in a session you are sitting in front of.",
           "values": {
             "routing.enabled": false,
