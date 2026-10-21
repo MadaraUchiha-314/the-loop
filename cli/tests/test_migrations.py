@@ -969,7 +969,7 @@ def test_migrate_jira_stub_to_0_12():
     # is dropped, and the move says what went and why (self-review R2-1).
     assert "integrations" not in report.config
     moves = " | ".join(report.moves)
-    assert "integrations.jira removed" in moves and "/the-loop:init" in moves
+    assert "integrations.jira removed" in moves and "/the-loop:init-cli" in moves
     assert "integrations.jira.transport" in moves
     assert "integrations.jira.cli" in moves
     assert "integrations.jira.api.baseUrl" in moves and "site" in moves
@@ -1094,7 +1094,7 @@ def test_a_dropped_jira_stub_says_what_went_and_why():
     )
     moves = " | ".join(report.moves)
     assert "integrations.jira removed" in moves
-    assert "inert" in moves and "projects" in moves and "/the-loop:init" in moves
+    assert "inert" in moves and "projects" in moves and "/the-loop:init-cli" in moves
 
 
 def test_a_stub_key_beside_a_working_block_keeps_the_block():

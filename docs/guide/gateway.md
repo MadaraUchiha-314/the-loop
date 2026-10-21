@@ -20,9 +20,10 @@ One instance on one machine gains nothing from a gateway; leave it as it is.
 ## The move
 
 1. **Write `gateway-config.yaml`** beside the CLI config of the machine that will run the
-   gateway. `/the-loop:init` asks *"will this instance read its events from a gateway?"*
-   and, when you say the gateway runs here, scaffolds the file; by hand, start from
-   `templates/gateway-config.yaml` in the plugin. Every secret is an environment-variable
+   gateway. `/the-loop:init-gateway` walks you through it and scaffolds the file; by hand,
+   start from `templates/gateway-config.yaml` in the plugin. (`/the-loop:init-cli` asks
+   *"will this instance read its events from a gateway?"* for each instance's own `gateway`
+   block, and points you at `/the-loop:init-gateway` when you say the gateway runs here.) Every secret is an environment-variable
    **name** (`*Env`) read from `env.file`: the GitHub poll token (read access only), the
    Slack app-level token and bot token. They move to the gateway; the gateway holds no
    posting token and spawns nothing. List the repositories (`repositories`). Slack

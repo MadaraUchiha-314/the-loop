@@ -10,7 +10,7 @@ same detail, up front.
 |-----------|--------|
 | [Workflow](/operating-model/reference/workflow) | The loop, phases, tests-alongside, reviews, the fixed risk tiers, DAG, resumability. |
 | [Context](/operating-model/reference/context) | Context-window management: clearing vs. compaction, the checkpoint-then-reset protocol, per-harness mechanics. |
-| [Onboarding](/operating-model/reference/onboarding) | The guided, schema-driven config onboarding `/the-loop:init` runs. |
+| [Onboarding](/operating-model/reference/onboarding) | The guided, schema-driven config onboarding `/the-loop:init`, `/the-loop:init-cli` and `/the-loop:init-gateway` run. |
 | [Instructions](/operating-model/reference/instructions) | User-provided custom instruction docs: when to read them, precedence, what they can and cannot override. |
 | [Design artifacts](/operating-model/reference/design-artifacts) | UI/UX design artifacts (Figma / HTML prototypes) in the design phase and the designer iteration loop. |
 | [Reviewing](/operating-model/reference/reviewing) | The self/critic review procedure the review counts drive. |

@@ -73,6 +73,18 @@ validating a config, never copied into the projects the-loop is run on.
   presented with ALL possibilities, free-form keys with schema `examples`, and
   sensible defaults resolved as existing answer → detected signal → schema default
   (see the skill's `reference/onboarding.md`).
+- **Each config has its own init command** (issue-514,
+  [decision-149](../decisions/decision-149.md)). `/the-loop:init` SHALL set up the
+  repository only — the harness config, collaborators, manifest, the docs trees, the
+  `loop:<phase>` labels, hooks and CI parity — and SHALL NOT ask a daemon question, check
+  a credential, or create or modify a CLI config, a Slack app manifest or a
+  `gateway-config.yaml`; its report SHALL name `/the-loop:init-cli` and
+  `/the-loop:init-gateway`. `/the-loop:init-cli` SHALL own the CLI config — the posture
+  questions, its walkthrough, Slack, Jira, the `routing.autoExecuteLabels` labels and the
+  credential preflight — and SHALL need no harness config. `/the-loop:init-gateway` SHALL
+  own `gateway-config.yaml` and its own secrets' preflight. All three SHALL take
+  `--dry-run` and `--defaults` and SHALL be idempotent and non-clobbering. Where a bullet
+  below says "init" of the CLI config, it is `/the-loop:init-cli`.
 - **The CLI config is onboarded by the same walkthrough** (issue-415). `cli-config.schema.json`
   SHALL carry its own `x-onboarding` block — ordered groups, ask levels, per-group
   `explain` — and init SHALL walk it after the harness config, **whichever** answer the
@@ -148,6 +160,7 @@ validating a config, never copied into the projects the-loop is run on.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-514 | `/the-loop:init` split three ways: `/init` sets up the repository only (harness config, collaborators, docs trees, phase labels, hooks), `/init-cli` the operator's CLI config (posture, walkthrough, Slack, Jira, arming labels, credentials), `/init-gateway` a gateway host's `gateway-config.yaml`; a repository that only uses the-loop is no longer asked about a daemon | [spec](../specs/issue-514/), [decision-149](../decisions/decision-149.md) |
 | issue-447 | The plugin's `PostToolUse` recorder became trigger-agnostic — a push or any pull-request-creating call runs `sessions link-pr --discover` — and the skill and slash commands send the harness's GitHub acts through `the-loop` verbs instead of `gh` | [spec](../specs/issue-447/), [decision-140](../decisions/decision-140.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/447) |
 | issue-415 | The onboarding covers what people install the-loop for: `cli-config.schema.json` gained its own `x-onboarding` block (seven groups, every block covered), an **autonomy ladder** turns "how much should it do unattended?" into one question with three rungs that provably cannot reach a human gate, init establishes the deployment shape before proposing an ingress, walks and probes the Slack setup, and preflights every credential the configs name — presence only, never a value | [spec](../specs/issue-415/), [onboarding guide](https://madarauchiha-314.github.io/the-loop/guide/onboarding), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/415) |
 | issue-220 | Config schemas made internal to the plugin (`manifest.schemasDir`); init stops copying up to 118 KB of them into each project, upgrade deletes the copies already there, and scaffolded configs carry a `# yaml-language-server: $schema=` modeline instead | [spec](../specs/issue-220/), [decision-080](../decisions/decision-080.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/220) |

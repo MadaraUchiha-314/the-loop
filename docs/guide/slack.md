@@ -38,7 +38,7 @@ because its tokens are what their daemon runs on, so give it a name of your own.
 operators in one workspace then get two distinguishable bots.
 
 **One click** ([issue-464](https://github.com/MadaraUchiha-314/the-loop/issues/464),
-and what `/the-loop:init` walks you through):
+and what `/the-loop:init-cli` walks you through):
 
 ```bash
 the-loop channels manifest --name "the-loop-dana" --write

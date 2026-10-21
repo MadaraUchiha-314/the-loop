@@ -67,6 +67,8 @@ See [installing the CLI](/cli/installation) for install instructions, and
 
 ## Next
 
-Run [`/the-loop:init`](/reference/commands#superset-commands) in your target repo —
-[onboarding](/guide/onboarding) is what it will ask you — then follow the
+Run [`/the-loop:init`](/reference/commands#superset-commands) in your target repo, and —
+once, in the operator repository that runs the daemon —
+[`/the-loop:init-cli`](/reference/commands#superset-commands).
+[Onboarding](/guide/onboarding) is what each will ask you. Then follow the
 [quickstart](/guide/quickstart).

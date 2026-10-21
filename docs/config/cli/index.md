@@ -16,7 +16,7 @@ A commented starting point ships at
 [`skills/the-loop/templates/cli-config.yaml`](https://github.com/MadaraUchiha-314/the-loop/blob/main/skills/the-loop/templates/cli-config.yaml).
 Validated against
 [`cli-config.schema.json`](https://github.com/MadaraUchiha-314/the-loop/blob/main/.the-loop/cli-config.schema.json),
-which ships with the plugin — `/the-loop:init` scaffolds the config alone and never a copy
+which ships with the plugin — `/the-loop:init-cli` scaffolds the config alone and never a copy
 of the schema beside it.
 
 ## Editing it from the dashboard
