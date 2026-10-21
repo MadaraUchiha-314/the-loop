@@ -73,8 +73,11 @@ Cursor, resolve it to the plugin's install directory.)
    `manifest.schemasDir` — never fetched over the network. **If the schema cannot be
    read, stop before writing the file** and report the missing path under **needs-user**.
 
-5. **Preflight its credentials.** Follow `reference/onboarding.md` § The credential
-   preflight exactly. Collect every `*Env` name the file declares — from the file
+5. **Preflight its credentials.** Follow the numbered rules of `reference/onboarding.md`
+   § The credential preflight exactly — but **not** its closing *verify what you can*
+   step: `the-loop channels status` and `the-loop doctor` read an instance's CLI config,
+   not this file, so on a gateway host they would diagnose the wrong configuration or none
+   at all. Run neither. Collect every `*Env` name the file declares — from the file
    itself, not from a hardcoded list — and report **presence only** for each one this
    configuration needs. **Never the value, a prefix of it, its length, or a hash of it.
    Never write a credential into any file.** An unset variable is a **needs-user** line

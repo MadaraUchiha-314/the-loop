@@ -287,7 +287,8 @@ about names:
    that would only exist in the daemon's environment is not absent, it is unseen, and the
    two deserve different lines.
 
-Then **verify what you can**: `the-loop channels status` (and `--probe` where a token is
+Then, **in `/init-cli` only** (these commands read the CLI config, never a gateway's),
+**verify what you can**: `the-loop channels status` (and `--probe` where a token is
 present) for a configured Slack channel, `the-loop doctor slack` for the deployment-wide
 view, and `the-loop doctor jira` for a configured Jira. Where the CLI is not installed
 on this machine, print the command for the user to run and report the channel as
