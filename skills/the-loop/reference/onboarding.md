@@ -51,8 +51,10 @@ the-loop was asked it too.
 Every key gets a proposed value before the user is ever asked. Resolve it in this
 order — first hit wins:
 
-1. **Existing answer** — the value already in the project's `.the-loop/harness-config.yaml`
-   (re-runs never re-ask or overwrite what was already established).
+1. **Existing answer** — the value already in the config being walked: the project's
+   `.the-loop/harness-config.yaml` for `/init`, the CLI config for `/init-cli`,
+   `gateway-config.yaml` for `/init-gateway` (re-runs never re-ask or overwrite what was
+   already established).
 2. **The autonomy profile** the user picked, for the keys that profile covers
    (CLI config only — see *The autonomy ladder* below).
 3. **Detected signal** — what the command's detection step found (lock files,
