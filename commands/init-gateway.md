@@ -69,7 +69,7 @@ Cursor, resolve it to the plugin's install directory.)
    user-owned: never overwrite it — raise only its gaps, and diff and *suggest* any drift.
    Never written under `--defaults` or `--dry-run`.
 
-4. **Validate** it against the plugin's `gateway-config.schema.json`, read from disk under
+4. **Validate** it — the content step 3 composes, before it lands on disk — against the plugin's `gateway-config.schema.json`, read from disk under
    `manifest.schemasDir` — never fetched over the network. **If the schema cannot be
    read, stop before writing the file** and report the missing path under **needs-user**.
 

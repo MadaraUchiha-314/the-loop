@@ -193,7 +193,8 @@ directory; in Cursor, resolve it to the plugin's install directory.)
    printed. Skip any that already exist. The `loop:<phase>` labels are not this
    command's: each repository gets those from `/the-loop:init`.
 
-7. **Validate** the config against the plugin's `cli-config.schema.json`, read from
+7. **Validate** the config — the content step 5 composes, before it lands on disk —
+   against the plugin's `cli-config.schema.json`, read from
    `${CLAUDE_PLUGIN_ROOT}/.the-loop/` (`manifest.schemasDir`) on disk — never fetched over
    the network, never copied into the project. **If the schema cannot be read, stop
    before writing the config** and report the missing path under **needs-user** — never

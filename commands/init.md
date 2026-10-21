@@ -128,7 +128,8 @@ to the plugin's install directory.)
    is chosen on the ticket itself, at the loop's `phase-selection` phase, by an
    authorized user replying to the-loop's checklist — nothing to create per repository.
 
-5. **Validate** every config that was written, against the **plugin's** schemas under
+5. **Validate** every config this command writes — the content step 3 composes, before
+   it lands on disk — against the **plugin's** schemas under
    `${CLAUDE_PLUGIN_ROOT}/.the-loop/` (`manifest.schemasDir`) — read them from there and
    validate locally; never fetch a schema over the network, and never write one into the
    project to validate against:
