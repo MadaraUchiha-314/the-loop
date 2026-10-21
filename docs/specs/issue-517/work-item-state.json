@@ -277,8 +277,8 @@
   "forced": [],
   "parked": {
     "node": "design-approval",
-    "reason": "awaiting a human",
-    "since": "2026-10-21T23:36:51+00:00"
+    "reason": "`classify-feedback` did not pass:\n- no authorized feedback yet",
+    "since": "2026-10-21T23:37:29+00:00"
   },
   "completions": {
     "requirements-definition": {
@@ -287,6 +287,10 @@
     },
     "design": {
       "at": "2026-10-21T23:35:55+00:00",
+      "by": "cli"
+    },
+    "design-approval": {
+      "at": "2026-10-21T23:37:29+00:00",
       "by": "cli"
     }
   },
