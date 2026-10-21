@@ -2,8 +2,8 @@
 type: requirements
 phase: requirements-definition
 workItem: "github:MadaraUchiha-314/the-loop#514"
-status: draft
-approvedBy: []
+status: approved
+approvedBy: ["MadaraUchiha-314"]
 collaborators: [product-manager, engineer, approver]
 riskTier: 3
 overrides: {}
@@ -235,3 +235,9 @@ Assumed defaults, open to change at the requirements gate:
 > comments (issue-109). Append-only and attributed: an approval never silently
 > discards a reviewer's suggestions, and the feedback travels with the document
 > it concerns rather than living in a side-channel tracker.
+
+### 2026-10-20 — approved
+
+**@MadaraUchiha-314** wrote:
+
+approved
