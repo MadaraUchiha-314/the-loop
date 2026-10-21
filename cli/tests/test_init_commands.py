@@ -65,6 +65,15 @@ def _stems() -> List[str]:
     return sorted(p.stem for p in COMMANDS.glob("*.md"))
 
 
+def _lists(text: str, stem: str) -> bool:
+    """Does ``text`` name ``/the-loop:<stem>`` as a whole command?
+
+    A substring test would let ``/the-loop:init-cli`` stand in for ``/the-loop:init``,
+    so the name must not run on into more of a command name (critic round 1).
+    """
+    return re.search(rf"/the-loop:{re.escape(stem)}(?![\w-])", text) is not None
+
+
 def _section(text: str, heading: str) -> str:
     """The body under ``heading``, up to the next heading of the same level."""
     level = heading.split(" ", 1)[0]
@@ -93,7 +102,7 @@ def test_every_command_is_listed_in_the_reference_and_the_skill() -> None:
     reference = REFERENCE.read_text(encoding="utf-8")
     skill = _section(SKILL.read_text(encoding="utf-8"), "## Commands")
     missing = {
-        where: [s for s in _stems() if f"/the-loop:{s}" not in text]
+        where: [s for s in _stems() if not _lists(text, s)]
         for where, text in (
             ("docs/reference/commands.md", reference),
             ("SKILL.md § Commands", skill),
