@@ -110,9 +110,9 @@ to the plugin's install directory.)
    - `docs/learnings/learnings.md` — the learnings index. The doc trees are the loop's
      convention, not a setting (issue-352).
 
-   The manifest's optional daemon and gateway entries are **not** this command's: leave
-   them as they are, present or absent, and list any that exist under *skipped* with the
-   command that owns them (§ Not set up here).
+   The manifest's two optional entries — the CLI config and the Slack app manifest beside
+   it — are **not** this command's: leave them as they are, present or absent, and list
+   any that exist under *skipped* with the command that owns them (§ Not set up here).
 
 4. **Create phase labels/tags** in the ticketing system for the process graph's phases
    — one per phase the shipped work-item loop declares, named `loop:<phase>` (the fixed
