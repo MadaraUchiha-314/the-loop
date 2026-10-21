@@ -120,7 +120,7 @@ can reach: the interview and a real issue.
 
 ## Verification results
 
-_Not yet executed._
+*Not yet executed.*
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
