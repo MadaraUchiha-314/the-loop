@@ -6,7 +6,7 @@ you want is the whole trick:
 | | [Harness config](/config/harness-config) | [CLI config](/config/cli/) |
 |---|---|---|
 | **File** | `.the-loop/harness-config.yaml` | `cli-config.yaml` |
-| **Installed** | **per repository**, by `/the-loop:init` | **per operator**, wherever you keep it |
+| **Installed** | **per repository**, by `/the-loop:init` | **per operator**, wherever you keep it, by `/the-loop:init-cli` |
 | **Read by** | the `/the-loop:*` commands and the operating skill — the agent doing the work. **Never the CLI** ([decision-123](/decisions/decision-123)) | every `the-loop` command and daemon |
 | **Governs** | *how work is done here* — where the specs live, testing conventions, API-spec locations, design artifacts, instruction docs | *how work is triggered, hosted and gated* — ingress, routing, sessions, the spec directory, critics and review rounds, graph hooks, integrations, logging |
 | **Schema** | `harness-config.schema.json` | `cli-config.schema.json` |
@@ -38,7 +38,7 @@ graph TD
   Q -->|"specs layout, testing, API specs,<br/>design artifacts, instruction docs"| H["<b>harness config</b><br/>.the-loop/harness-config.yaml<br/>in the repo — read by the agent"]
   Q -->|"webhook port, polling, who may trigger,<br/>spec directory, critics, review rounds,<br/>graph hooks, event log, GitHub/Slack transport"| C["<b>CLI config</b><br/>cli-config.yaml<br/>on your machine — read by the CLI"]
   H --> H2["written by <code>/the-loop:init</code>"]
-  C --> C2["copied from<br/>skills/the-loop/templates/cli-config.yaml"]
+  C --> C2["written by <code>/the-loop:init-cli</code><br/>from skills/the-loop/templates/cli-config.yaml"]
 ```
 
 The picture is simple since issue-352: **the agent reads one file, the CLI reads the

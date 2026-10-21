@@ -8,12 +8,22 @@ This walks through taking a single GitHub issue through the whole loop.
 /the-loop:init
 ```
 
-A guided, schema-driven onboarding establishes **both** configs with you —
-`.the-loop/harness-config.yaml` (how work is done in this repository) and
-`cli-config.yaml` (what the daemon watches, and how much it does unattended) — then tells
-you which credentials are still missing. Idempotent: safe to re-run, and re-running it is
-how you turn something on later. Pass `--defaults` to skip the interactive walkthrough, or
-`--dry-run` to see what it would do without writing anything.
+A guided, schema-driven onboarding establishes `.the-loop/harness-config.yaml` (how work
+is done in this repository) with you, then scaffolds the `docs/` trees and the phase
+labels. Every repository that uses the-loop runs this. Idempotent: safe to re-run. Pass
+`--defaults` to skip the interactive walkthrough, or `--dry-run` to see what it would do
+without writing anything.
+
+If this is the **operator** repository — the one whose checkout runs the-loop's daemon —
+also set up the daemon, once:
+
+```text
+/the-loop:init-cli
+```
+
+It establishes `cli-config.yaml` (what the daemon watches, and how much it does
+unattended), then tells you which credentials are still missing. Re-running it is how you
+turn something on later.
 
 Two questions in it only you can answer: **where the daemon will run** (a laptop polls;
 an always-on host receives webhooks) and **how much it should do while you are not

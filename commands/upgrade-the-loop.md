@@ -116,7 +116,7 @@ command reconciles them.
      `observability.eventLog` (the pre-split shape), that block configures the running
      webhook receiver/poller and losing it silently would break routing. Extract it,
      rename `observability.eventLog` → the CLI config's top-level `eventLog`, and ask
-     the same yes/no question `/the-loop:init` asks (Requirement 2.4): scaffold it at
+     the same yes/no question `/the-loop:init-cli` asks (Requirement 2.4; the CLI config is that command's since issue-514): scaffold it at
      `.the-loop/cli-config.yaml` (repo-tracked) or print the extracted block for the
      operator to place at `~/.the-loop/cli-config.yaml` themselves. Either way, validate
      it against the plugin's `cli-config.schema.json`, THEN strip `webhooks`/`polling`/
@@ -313,7 +313,7 @@ command reconciles them.
    unprompted).
 
 5. **Regenerate the Slack app manifest** (issue-464). The kept manifest sits beside the
-   CLI config as `slack-app-manifest.json`, written by `/the-loop:init` under the name the
+   CLI config as `slack-app-manifest.json`, written by `/the-loop:init-cli` under the name the
    operator gave their app. A release that adds a scope or an event changes the shipped
    manifest, and this step carries that change to the operator.
    - **A kept manifest exists** → run `the-loop channels manifest --write

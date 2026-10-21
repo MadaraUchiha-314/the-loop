@@ -1,13 +1,15 @@
 # Commands
 
 Names below use Claude Code's `/the-loop:` prefix; in Cursor the same commands appear
-in the slash menu by filename (e.g. `/init`, `/work-on`).
+in the slash menu by filename (e.g. `/init`, `/init-cli`, `/work-on`).
 
 ## Superset commands
 
 | Command | What it does |
 |---------|--------------|
-| `/the-loop:init` | Scaffold the-loop into the current repo (config, docs) via a guided, schema-driven onboarding with sensible defaults (`--defaults` skips the interaction). Idempotent. |
+| `/the-loop:init` | Scaffold the-loop into the current repo — harness config, collaborators, the `docs/` trees, phase labels — via a guided, schema-driven onboarding with sensible defaults (`--defaults` skips the interaction). Every repository that uses the-loop runs it; it sets up **no daemon**. Idempotent. |
+| `/the-loop:init-cli` | Set up the operator's CLI daemon config (`cli-config.yaml`): where it runs, how much runs unattended, ingress, Slack, Jira, the arming labels and their credentials. Run once, in the operator repository or for `~/.the-loop/`. Same flags; idempotent. |
+| `/the-loop:init-gateway` | Set up a the-loop gateway's `gateway-config.yaml` on the machine that runs it. Same flags; idempotent. |
 | `/the-loop:work-on <ticket>` | Run the whole loop (requirements → design → testing plan → tasks → execute → verify) on a GitHub issue / Jira id. Resumable per phase. **Superset of the granular commands below.** |
 | `/the-loop:upgrade-the-loop` | Reconcile a project's the-loop files with the installed plugin version. |
 

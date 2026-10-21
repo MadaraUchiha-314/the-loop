@@ -51,7 +51,7 @@ __all__ = ["RESTART_REQUIRED", "get_config", "get_schema", "update_config"]
 #: The editor directive a config this module *creates* opens with. ``yaml-language-server``
 #: honours it on the first line and nowhere else (issue-220, decision-080), and it points
 #: at the published schema rather than a local copy, so the operator's editor validates a
-#: file this service wrote exactly as it validates one ``/the-loop:init`` wrote.
+#: file this service wrote exactly as it validates one ``/the-loop:init-cli`` wrote.
 MODELINE = (
     "# yaml-language-server: $schema=https://raw.githubusercontent.com/"
     "MadaraUchiha-314/the-loop/main/.the-loop/cli-config.schema.json\n"

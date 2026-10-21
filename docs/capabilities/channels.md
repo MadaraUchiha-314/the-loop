@@ -503,7 +503,7 @@ flowchart LR
   needs its *App Manifest* replaced and a reinstall, and print the link. A kept file it
   cannot read as a manifest SHALL be left untouched unless `--name` is given.
   Regeneration reads only the name back, so it never carries a scope the release does
-  not ship. `/the-loop:init` asks the name and hands over the link (tokens go to the
+  not ship. `/the-loop:init-cli` asks the name and hands over the link (tokens go to the
   environment, never the chat); `/the-loop:upgrade-the-loop` regenerates the kept file.
 - **The service hosts the listener** (issue-334, the owner's review of PR #336). WHEN
   `the-loop start` runs with `channels.slack.enabled` and `read.mode: socket` under

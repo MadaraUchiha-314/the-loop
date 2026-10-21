@@ -14,7 +14,7 @@ NO human intervention, escalating only when a decision/opinion is genuinely requ
 > essence is not lost:
 > - `reference/workflow.md` — the loop, phases, TDD, reviews, risk tiers, DAG, resumability.
 > - `reference/context.md` — context-window management: clearing vs compaction, the checkpoint-then-reset protocol, per-harness mechanics.
-> - `reference/onboarding.md` — the guided, schema-driven config onboarding `/init` runs (groups, ask levels, sensible-defaults precedence).
+> - `reference/onboarding.md` — the guided, schema-driven config onboarding `/init`, `/init-cli` and `/init-gateway` run (groups, ask levels, sensible-defaults precedence).
 > - `reference/instructions.md` — user-provided custom instruction docs (`customInstructions`): when to read them, precedence, what they can and cannot override.
 > - `reference/design-artifacts.md` — UI/UX design artifacts (Figma / HTML prototypes) in the design phase and the designer iteration loop.
 > - `reference/explainer.md` — the explainer page and the two quizzes (spec quiz before code generation, code quiz before review): the depth ladder, the section contract, the quiz rules, publishing.
@@ -518,7 +518,13 @@ the separate **CLI config** described above and nothing of this repository's. Se
 
 ## Commands
 
-- `/the-loop:init` — scaffold the-loop into a repo (config, docs, templates, phase labels).
+- `/the-loop:init` — scaffold the-loop into a repo: harness config, collaborators, the docs
+  trees, phase labels. Every repository that uses the-loop runs it; it sets up no daemon.
+- `/the-loop:init-cli` — set up the operator's CLI daemon config (`cli-config.yaml`):
+  where it runs, how much runs unattended, ingress, Slack, Jira, the arming labels and
+  their credentials. Run once, by the operator (issue-514).
+- `/the-loop:init-gateway` — set up a the-loop gateway's `gateway-config.yaml`, on the
+  machine that runs it.
 - `/the-loop:work-on <ticket>` — run the whole loop on a work item (resumable per phase).
   **Superset** of the granular commands below.
 - `/the-loop:upgrade-the-loop` — reconcile project files with the installed plugin version.
@@ -535,6 +541,8 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
   promote `draft-<slug>/` → `docs/specs/<id>/`.
 - `/the-loop:create-design <id>` — `requirements.md` → `design.md` (Phase 2).
 - `/the-loop:create-testing-plan <id>` — requirements + design → `testing-plan.md`.
+- `/the-loop:explain <id>` — at `spec-explainer` / `code-explainer`: write and publish the
+  explainer page and its quiz (issue-488).
 - `/the-loop:create-tasks-plan <id>` — requirements + design + testing plan → `tasks.md` DAG.
 - `/the-loop:execute-tasks <id>` — implement the DAG, self-check, self/critic-review.
 - `/the-loop:verify-work <id>` — execute the testing plan; record results and evidence.

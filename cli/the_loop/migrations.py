@@ -829,10 +829,10 @@ def _migrate_jira_stub(data: Dict[str, Any], report: MigrationReport) -> None:
             "no `site` or no `projects`, so it cannot be a working 0.12 block, and "
             "left in place it would fail the schema and refuse every config write. "
             "The stub was inert (nothing read it before 0.12), so nothing that ran "
-            "is lost. To work Jira tickets, re-add it with /the-loop:init"
+            "is lost. To work Jira tickets, re-add it with /the-loop:init-cli"
         )
         report.notes.append(
-            "Jira is off until the block is re-added (/the-loop:init): it needs "
+            "Jira is off until the block is re-added (/the-loop:init-cli): it needs "
             "`integrations.jira.site`, `deployment`, `api.tokenEnv`, "
             "`integrations.jira.api.emailEnv` (Cloud only) and "
             "`integrations.jira.projects` (each project key, with the `repository` "
