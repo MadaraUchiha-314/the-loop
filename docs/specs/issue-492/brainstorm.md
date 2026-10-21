@@ -130,12 +130,13 @@ at the end composes one answer from them.
 *Leaning: A3 for the topology below, with A2's per-harness variants of the runner as a
 follow-up. The control plane needs no `tmux`; a runner needs no uvicorn workers.*
 
-> **Decided in review (A2, [thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4296967363)):
-> a base image plus one image per harness.** The base image carries the-loop and no
-> harness, so it *is* A3's control-plane image; `the-loop:claude`, `the-loop:codex` and
-> `the-loop:cursor` layer one harness each on it, and a session pod runs the image of
-> the harness its work item froze at `phase-selection`. A2 therefore subsumes A3 rather
-> than following it.
+> **Decided in review (A1, [thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4300383076), 2026-10-17; it replaces the A2 decision of
+> [the earlier thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4296967363)):
+> one image, every harness.** The author's reason: maintaining several images is hard.
+> The one image carries the-loop, `tmux`, `git`, `ttyd` and all three harness CLIs; the
+> control plane and every session pod run it, differing only by rendered configuration.
+> A1's costs (size, a harness update rebuilds everything) are accepted for one artifact
+> to maintain.
 
 ### B — Topology: how many pods, and what each one is
 
@@ -359,7 +360,7 @@ reach B2; revisit if the control plane grows timers and retries of its own.*
 
 ## Sketches & notes
 
-Target shape as decided in review, A2 + B2 + C3 + D2 + F1 (updated 2026-10-16; the
+Target shape as decided in review, A1 + B2 + C3 + D2 + F1 (updated 2026-10-17; the
 original A3 + C1 + E2 sketch is in this file's history):
 
 ```mermaid
@@ -464,12 +465,12 @@ in sections A–G carry each decision and its thread):
 
 ## Leaning / working hypothesis
 
-**As decided in review: A2 + B2 + C3 + D2 + F1 + G, all three milestones in this work
+**As decided in review: A1 + B2 + C3 + D2 + F1 + G, all three milestones in this work
 item, delivered as a stack of pull requests.** The thesis stands: the-loop's existing
 shape, a per-work-item durable state machine, a named tmux session per work item, an
 instance that is a config file with a lockable scope, and a mountable API with no
-in-app auth, already *is* the session pod. The genuinely new code is (1) a base image
-plus one image per harness, (2) a control plane that owns all ingress and publishes
+in-app auth, already *is* the session pod. The genuinely new code is (1) one image carrying
+the-loop and every harness, (2) a control plane that owns all ingress and publishes
 each event to a durable queue subject named from the work-item ref, (3) a scheduler
 that creates a session pod per work item on arm and reaps it on close, the pod
 consuming its own subject, and (4) a credential store with an API and a portal through
@@ -481,8 +482,8 @@ token per tenant, held by the control plane".
 ## Hand-off → requirements
 
 Carries forward (converged 2026-10-16): all three milestones as the scope; EARS criteria
-around the images (a base image with every non-harness binary of the environment
-contract and one image per harness, `the-loop start` as entry point, config rendered
+around the image (one image with every binary of the environment contract and all
+three harness CLIs, `the-loop start` as entry point, config rendered
 from environment, no credential baked in), the chart (control plane plus one
 StatefulSet per work item, `locked` scope rendered from the ref, ttyd behind the
 gateway, resource limits, network policy with the gateway as the only inbound source),

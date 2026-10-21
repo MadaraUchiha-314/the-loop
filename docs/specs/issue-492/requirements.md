@@ -37,7 +37,7 @@ config file on the machine that runs it.
 of PR #493 settled the shape on one thesis: the-loop's existing shape already is the
 session pod. A work item is a durable state machine on disk, a session is a tmux session
 named from the work-item ref, an instance is a config file with a lockable scope, and the
-API is mountable with no in-app auth. The new code is images, a chart, a control plane
+API is mountable with no in-app auth. The new code is an image, a chart, a control plane
 that publishes every event to a durable queue, a scheduler, and a credential store with a
 portal.
 
@@ -46,14 +46,14 @@ flowchart LR
   U["user: brings harness, Slack, GitHub, Jira tokens"] --> PORTAL["portal + credential API"]
   GH["GitHub / Jira webhooks, pollers"] --> ING["ingress replicas"]
   SL["Slack: one Socket Mode connection per tenant app"] --> ING
-  subgraph CP["control plane: base image, stateless replicas"]
+  subgraph CP["control plane: the one image, stateless replicas"]
     PORTAL --> STORE["credential store, encrypted"]
     ING --> ROUTER["router: event to work-item ref to subject"]
     SCHED["scheduler: pod per work item on arm, reaped on close"]
   end
   ROUTER --> Q["durable queue: one subject per work item"]
   STORE -. "projected per pod" .-> POD
-  SCHED --> POD["session pod loop-SLUG: harness image, tmux, ttyd"]
+  SCHED --> POD["session pod loop-SLUG: the one image, tmux, ttyd"]
   Q -- "consumed by the pod, acked" --> POD
   POD -- "comment, PR, ask with the user's own tokens" --> GH
 ```
@@ -63,14 +63,14 @@ flowchart LR
 | # | Decision | Answer |
 |---|---|---|
 | 1 | Scope | all three milestones in this work item, delivered as a stack of pull requests recorded against #492 ([thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4298617505)) |
-| 2 | Packaging | a base image plus one image per harness; the base image is the control plane's ([thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4296967363)) |
+| 2 | Packaging | one image carrying the-loop and every harness; the control plane and every session pod run it ([thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4300383076), replacing the earlier base-plus-harness choice) |
 | 3 | Routing | a durable queue with one subject per work item; the session pod consumes its own subject ([thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4298570896)) |
 | 4 | Isolation | one pod per work item, the only placement in scope ([thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4298549938), [thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4298639603)) |
 | 5 | Credentials | users bring every credential, through an API and a portal that also maintain them when they expire ([thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4298609618), [thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4298630674)) |
 | 6 | Durability | the harness conversation's survival across a restart is decoupled, a follow-up; event delivery is durable through the queue ([thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4298637719)) |
 | 7 | Scale | one control plane must not become the bottleneck from 1 to 10 to thousands of users ([thread](https://github.com/MadaraUchiha-314/the-loop/pull/493#discussion_r4298464660)) |
 
-**Milestones and delivery.** M1 images and a chart that run an instance in a cluster
+**Milestones and delivery.** M1 the image and a chart that run an instance in a cluster
 (R1, R2, R5); M2 the control plane, the queue and the scheduler (R3, R4, R6, R7, R8); M3
 tenancy, the credential store and the portal (R9, R10). Each milestone is one or more
 pull requests recorded in `evidence/pull-requests.md`; the design fixes the split and the
@@ -78,42 +78,45 @@ order.
 
 ## Requirements
 
-### Requirement 1 — a base image and one image per harness
+### Requirement 1 — one image, every harness
 
-**User story:** As an operator, I want published container images in which a pod is a
-`cli-config.yaml` and nothing else, so that the control plane runs on a base image with
-no vendor CLI and a session pod runs only the harness its work item chose.
+**User story:** As an operator, I want one published container image in which a pod is a
+`cli-config.yaml` and nothing else, so that the control plane and every session pod run
+the same artifact and there is one image to maintain.
 
 #### Acceptance criteria (EARS)
 
-1.1 The system SHALL publish a base image carrying the-loop and the non-harness binaries
-of the environment contract (`tmux`, `git`, `ttyd`) and no harness, and one image per
-harness (`claude`, `codex`, `cursor-agent`) layered on that base, all built from
-Dockerfiles kept in this repository and tagged with the-loop's release version.
+1.1 The system SHALL publish one image carrying the-loop and every binary of the
+environment contract (`claude`, `codex`, `cursor-agent`, `tmux`, `git`, `ttyd`), built
+from a Dockerfile kept in this repository and tagged with the-loop's release version.
 
 1.2 WHEN the SDK's environment check (`the_loop.sdk.check_environment`, the same check
-`the-loop check` runs) is executed inside a harness image THEN it SHALL report that
-harness's binary present together with `tmux`, `git` and `ttyd`; WHEN it is executed
-inside the base image THEN it SHALL report the harness binaries absent as expected for
-the control-plane role rather than as a failure.
+`the-loop check` runs) is executed inside the image THEN it SHALL report every binary of
+the environment contract present.
 
-1.3 WHEN a session pod is created for a work item THEN it SHALL run the image of the
-harness that work item froze at `phase-selection` (the `harness-*` decision, issue-440).
+1.3 WHEN a session pod is created for a work item THEN it SHALL run that image and start
+the harness the work item froze at `phase-selection` (the `harness-*` decision,
+issue-440), with no other harness process started.
 
-1.4 No image SHALL carry a credential, token, harness login or `cli-config.yaml`: every
+1.4 The image SHALL carry no credential, token, harness login or `cli-config.yaml`: every
 secret and the configuration SHALL enter at run time through environment variables or
-mounted files, and a scan of each image's layers for the secret patterns the design names
+mounted files, and a scan of the image's layers for the secret patterns the design names
 SHALL find none.
 
-1.5 Each image SHALL run its process as a non-root user with a writable home directory,
+1.5 The image SHALL run its process as a non-root user with a writable home directory,
 because the harness CLIs keep their state under the user's home.
 
-1.6 The entry point of every image SHALL be `the-loop start`; the role a container plays
+1.6 The entry point of the image SHALL be `the-loop start`; the role a container plays
 (control plane or session) SHALL come from its rendered configuration, with no
 image-specific code path in the CLI.
 
 1.7 The Dockerfile snippet in `docs/sdk/environment.md` SHALL be replaced by, or made
-identical to, the base Dockerfile the images are built from.
+identical to, the Dockerfile the image is built from.
+
+1.8 WHEN a harness CLI releases a new version THEN updating the pinned version in the
+Dockerfile and cutting a release SHALL be the whole procedure; the docs SHALL state the
+image's size as measured at verification, since one image carrying three vendor CLIs is
+the cost accepted for one artifact to maintain.
 
 ### Requirement 2 — a chart that runs the deployment from values
 
@@ -170,7 +173,7 @@ and no user needs their own Slack app.
 
 #### Acceptance criteria (EARS)
 
-3.1 The system SHALL provide a control-plane role, running on the base image, that hosts
+3.1 The system SHALL provide a control-plane role, running on the one image, that hosts
 the webhook receiver, the pollers, the Slack listeners, the registry, the API, the
 dashboard and the portal (R10), and launches no harness session itself.
 
@@ -272,7 +275,7 @@ and nothing lingers holding credentials.
 
 6.1 WHEN an authorized user arms a work item (`the-loop execute`, under the existing
 authorized-actor guard) THEN the control plane SHALL create the subject (R4.1) and a
-StatefulSet named from the ref, running the harness image of R1.3, with a rendered
+StatefulSet named from the ref, running the image and the harness of R1.3, with a rendered
 `cli-config.yaml` locked to that one work item (R2.2) and with only that work item's
 owner's credentials projected (R9.4).
 
@@ -313,14 +316,14 @@ restart, so events acknowledged before it are not replayed after it.
 
 ### Requirement 8 — the deployment is built, tested and published by CI
 
-**User story:** As a maintainer, I want the images and the chart built and smoke-tested
+**User story:** As a maintainer, I want the image and the chart built and smoke-tested
 on every release, so that a release that cannot run in a cluster is caught before it is
 tagged.
 
 #### Acceptance criteria (EARS)
 
-8.1 WHEN a release is cut THEN CI SHALL build every image, run the environment check
-inside each (R1.2) and the secret scan (R1.4), and publish them under the release tag.
+8.1 WHEN a release is cut THEN CI SHALL build the image, run the environment check inside
+it (R1.2) and the secret scan (R1.4), and publish it under the release tag.
 
 8.2 WHEN a pull request changes a Dockerfile, the chart or the start path THEN CI SHALL
 render the chart with its default values and with example values, and SHALL fail on a
@@ -417,7 +420,7 @@ adopter does not re-derive them.
 
 #### Acceptance criteria (EARS)
 
-11.1 The system SHALL add a capability doc for deployment (the images, the chart, the
+11.1 The system SHALL add a capability doc for deployment (the image, the chart, the
 control plane and queue, the scheduler, the credential store and portal, the
 troubleshooting paths, the scaling model with its shard keys) and SHALL update
 `docs/capabilities/instances.md`, `docs/capabilities/control-plane.md`,
@@ -425,8 +428,8 @@ troubleshooting paths, the scaling model with its shard keys) and SHALL update
 `docs/sdk/environment.md` where their statements change, in the same pull requests as the
 change.
 
-11.2 The system SHALL record as decisions under `docs/decisions/`: the base-plus-harness
-images, one pod per work item with a queue subject per work item, the user-owned
+11.2 The system SHALL record as decisions under `docs/decisions/`: one image carrying
+every harness, one pod per work item with a queue subject per work item, the user-owned
 credential model with the posting identity unchanged, and that a durable-execution
 engine (Temporal) is not adopted and why.
 
@@ -444,7 +447,7 @@ that link this spec before this work item completes.
   per-subject backlog (R4.7), per-replica shard assignment (R3.3) and credential expiry
   state (R9.6) on its API and dashboard.
 - **Upgrades.** An image upgrade is a rollout: the control plane by Deployment, a session
-  pod by StatefulSet under R7. The chart version pins the image tags it was tested with.
+  pod by StatefulSet under R7. The chart version pins the image tag it was tested with.
 - **Portability.** The chart assumes an ingress or gateway implementation that can inject
   an identity header, NetworkPolicy enforcement, and one supported queue; a cluster
   without NetworkPolicy enforcement is named unsupported in the docs, and the chart
@@ -481,8 +484,8 @@ that link this spec before this work item completes.
      projection path into pods; the audit log.
   6. The pod's volume and `state.root`: the outbox, the event log (handles, comment
      text), the harness state; per work item, never shared.
-  7. Image build: vendor CLIs downloaded at build time; the images are supply-chain
-     artifacts.
+  7. Image build: three vendor CLIs downloaded at build time; the image is a
+     supply-chain artifact.
   8. `kubectl exec`: cluster RBAC.
 - **Abuse cases (EARS).**
   1. WHEN a webhook delivery has a missing or invalid signature THEN the system SHALL
@@ -510,7 +513,7 @@ that link this spec before this work item completes.
      unauthorized start today.
   10. WHEN a comment carries the-loop's own loop-prevention marker THEN it SHALL NOT be
       published to a subject, so the deployment cannot drive itself.
-  11. WHEN an image is built THEN it SHALL contain no credential (R1.4), and WHEN any
+  11. WHEN the image is built THEN it SHALL contain no credential (R1.4), and WHEN any
       component logs a request, an event, a projection or an error THEN it SHALL NOT log a
       token, an `Authorization` header, a queue credential or a stored value.
   12. WHEN a subject or volume is retained after a work item closes (R6.2) THEN no other
