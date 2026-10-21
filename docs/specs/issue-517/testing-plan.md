@@ -2,8 +2,8 @@
 type: testing-plan
 phase: test-planning
 workItem: "github:MadaraUchiha-314/the-loop#517"
-status: draft
-approvedBy: []
+status: approved
+approvedBy: ["MadaraUchiha-314"]
 overrides: {}
 ---
 
@@ -130,3 +130,9 @@ can reach: the interview and a real issue.
 
 > Appended by the-loop's `record-feedback` hook when a human gate approves with
 > comments (issue-109). Append-only and attributed.
+
+### 2026-10-21 — approved
+
+**@MadaraUchiha-314** wrote:
+
+approved
