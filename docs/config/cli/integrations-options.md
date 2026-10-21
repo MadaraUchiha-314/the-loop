@@ -227,6 +227,36 @@ The transition name that closes a ticket. Unset, the one available transition in
 *Done* status category is used. None, or several, is an error that lists them: the-loop
 never guesses.
 
+### `jira.hydrate`
+
+- **Type:** `boolean`
+- **Default:** `false`
+
+When `true`, the poller writes a Jira ticket's details into the body of a GitHub issue named
+after it. An armed issue (one carrying the polling labels) whose title **starts with** a key
+of a `projects` entry — `PROJ-123` or `PROJ-123: fix login` — gets one
+block above the author's own text, between `<!-- the-loop:jira-context:begin PROJ-123 -->`
+and `<!-- the-loop:jira-context:end -->`:
+
+- the ticket's link and summary
+- its status, type, priority, assignee and labels
+- its description, as Markdown
+
+It is written **once**: an issue whose body already carries a block is left alone, so a
+later Jira edit is not copied over and an author's edit to the block is never overwritten.
+Comments and attachments are not copied. A title naming an unlisted project, or a key
+anywhere but the start, does nothing. Nothing is written to Jira.
+
+A ticket that cannot be read (no credential, not found, Jira down) or an issue that cannot
+be written (the token lacks *Issues: write*) is logged as a warning and skipped; the issue
+is still dispatched, without the block, and the next poll tries again.
+
+```yaml
+integrations:
+  jira:
+    hydrate: true
+```
+
 ### `jira.webhook.secretEnv`
 
 - **Type:** `string` (an environment variable name)

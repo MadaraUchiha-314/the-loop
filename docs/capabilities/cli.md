@@ -272,6 +272,18 @@ self-learning/ML capabilities.
   under `always` its session requires the head branch, and its claim command carries no
   `--pr-repo`; an unplaceable Jira item treats every pull request as cross-repository,
   with a warning (critic C3).
+- A GitHub issue named after a Jira ticket SHALL take the ticket into its body when
+  `integrations.jira.hydrate` is `true` (off by default): the poller SHALL, for an issue
+  that already passed the arming-label filter, whose title **starts with** a key of a
+  configured `integrations.jira.projects` entry (`PROJ-123` or `PROJ-123: fix login`) and
+  whose body carries no `<!-- the-loop:jira-context:begin … -->` block, read the ticket and
+  write one block above the author's text — link, summary, status, type, priority,
+  assignee, labels and description — and dispatch the item with that body
+  (`jirahydrate.JiraHydrator`). It SHALL write once and never rewrite, SHALL re-read the
+  issue's body immediately before writing and write nothing when a block has appeared, and
+  SHALL defang every the-loop marker in the ticket's text. It SHALL be read-only towards
+  Jira, and a missing credential, an unknown ticket or a failed write SHALL be a logged
+  warning that never stops the poll.
 - The ticket verbs SHALL act on a work item's **own** tracker (issue-475, R8.2):
   `core/tickets.tracker_for(ref)` SHALL return the GitHub verbs (`core/github_ops`,
   unchanged) for a `github:` ref and the Jira verbs for a `jira:` ref, and the CLI, the

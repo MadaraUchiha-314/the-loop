@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import (
     Any,
     Callable,
@@ -51,6 +51,7 @@ from ..ghapi import (  # noqa: F401 — re-exported for the poller package
     GitHubApiError,
     GitHubClient,
 )
+from ..jirahydrate import JiraHydrator
 from ..sessions import DEFAULT_GITHUB_HOST, WorkItemRef, is_github_host
 from ..webhook.router import (
     POLL_CLOSURE_DELIVERY_PREFIX,
@@ -266,6 +267,9 @@ class GitHubPollProvider(PollProvider):
         #: daemon, which holds the config and the registry; ``None`` links no
         #: Jira key.
         self.jira_linkage: Optional[JiraLinkage] = None
+        #: Jira-keyed issue hydration (``integrations.jira.hydrate``). Attached
+        #: by the poll daemon; ``None`` hydrates nothing.
+        self.jira_hydrator: Optional[JiraHydrator] = None
 
     @classmethod
     def from_source(
@@ -435,11 +439,29 @@ class GitHubPollProvider(PollProvider):
             del self._issues_off[scope]
             out.recovered.append(scope)
         out.items.extend(
-            self._work_item(spec, gh_item)
+            self._work_item(spec, self._hydrated(spec, gh_item))
             for gh_item in issues
             if self._carries_every_label(gh_item, spec)
         )
         return True
+
+    def _hydrated(self, spec: RepoSpec, gh_item: GhItem) -> GhItem:
+        """``gh_item`` with the body the Jira block was written into, when it was.
+
+        Runs only for an issue that already passed the label filter, so an issue
+        nobody armed is never touched.
+        """
+        if self.jira_hydrator is None:
+            return gh_item
+        body = self.jira_hydrator.hydrate(
+            spec.owner,
+            spec.repo,
+            gh_item.number,
+            gh_item.title,
+            gh_item.body,
+            host=spec.host,
+        )
+        return gh_item if body is None else replace(gh_item, body=body)
 
     @staticmethod
     def _issues_disabled(exc: GhError) -> bool:

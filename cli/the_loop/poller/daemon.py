@@ -414,6 +414,7 @@ def _run_locked(
         Reloader,
     )
 
+    from ..jirahydrate import JiraHydrator
     from ..webhook.router import jira_linkage
     from .github import GitHubPollProvider
 
@@ -433,6 +434,8 @@ def _run_locked(
         for provider in providers:
             if isinstance(provider, GitHubPollProvider):
                 provider.jira_linkage = linkage
+                # An issue titled with a Jira key takes the ticket into its body.
+                provider.jira_hydrator = JiraHydrator.from_config(data, provider.api)
         return PollPlan(
             providers=providers, interval_seconds=cfg.interval_seconds, ci=cfg.ci
         )

@@ -1963,6 +1963,11 @@
               "type": "string",
               "description": "The transition name that closes a ticket (`ticket close`, `finish-tasks`). Unset, the one available transition into the Done status category is used; none or several is an error listing them — never a guess."
             },
+            "hydrate": {
+              "type": "boolean",
+              "default": false,
+              "description": "When true, the poller writes a Jira ticket's details (link, summary, status, type, priority, assignee, labels, description) into the body of an armed GitHub issue whose title starts with a key of a configured `projects` entry (`PROJ-123` or `PROJ-123: fix login`), once, between `the-loop:jira-context` markers. Read-only towards Jira. Off by default."
+            },
             "webhook": {
               "type": "object",
               "additionalProperties": false,
