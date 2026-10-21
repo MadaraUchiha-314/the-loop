@@ -2,8 +2,8 @@
 type: design
 phase: design
 workItem: "github:MadaraUchiha-314/the-loop#517"
-status: draft
-approvedBy: []
+status: approved
+approvedBy: ["MadaraUchiha-314"]
 overrides: {}
 ---
 
@@ -51,7 +51,7 @@ sequenceDiagram
   Dev->>Skill: "hand this to the-loop"
   Skill->>Skill: draft artifacts + interview (preselected)
   Dev->>Skill: confirm summary
-  Skill->>GH: create issue (loop:<phase>) or attach
+  Skill->>GH: create issue (loop label) or attach
   opt Jira selected
     Skill->>Jira: create (type, parent epic, the-loop-mirror label)
   end
@@ -70,7 +70,7 @@ sequenceDiagram
   RT->>S: spawn at import-handoff
   S->>S: materialize files, commit, adopt artifact
   S->>RT: graph complete → import-handoff hook
-  RT->>RT: shape + hash check; un-skip on failure
+  RT->>RT: shape and hash check, un-skip on failure
   RT->>GH: first approval gate asks (e.g. requirements-approval)
 ```
 
@@ -431,3 +431,9 @@ None open. The assumptions this design rests on are listed on PR #518 for the
 
 > Appended by the-loop's `record-feedback` hook when a human gate approves with
 > comments (issue-109). Append-only and attributed.
+
+### 2026-10-21 — approved
+
+**@MadaraUchiha-314** wrote:
+
+approved
