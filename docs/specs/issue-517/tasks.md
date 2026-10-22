@@ -83,7 +83,7 @@ overrides: {}
     - `Scenario: a handoff record from an unauthorized user is ignored`.
     - `Scenario: a record posted or edited after the walk started changes nothing`.
     - `Scenario: arming a Jira mirror is refused`.
-- [ ] 6. Checklist default and skip provenance (C7)
+- [x] 6. Checklist default and skip provenance (C7)
   - `_checklist_body` unticks the nodes before `enter`, adds the handoff line and
     pre-ticks the artifact row.
   - `classify_phase_selection` stamps `handoff: <commentUrl>` on those skips.
