@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-517",
-  "currentNode": "code-quiz",
+  "currentNode": "complete",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -165,8 +165,24 @@
     },
     "code-quiz": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-22T14:48:02+00:00",
+      "exitedAt": "2026-10-22T15:03:11+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "human-approval": {
+      "attempts": 1,
+      "outcome": "approved",
+      "enteredAt": "2026-10-22T15:03:11+00:00",
+      "exitedAt": "2026-10-22T17:22:53+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "complete": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-22T17:22:53+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -383,14 +399,17 @@
       "attestedAt": "2026-10-22T05:55:06Z",
       "comment": "https://github.com/MadaraUchiha-314/the-loop/issues/517#issuecomment-6329239957",
       "via": "tick"
+    },
+    "code-quiz": {
+      "at": "2026-10-22T15:03:11+00:00",
+      "attestedBy": "MadaraUchiha-314",
+      "attestedAt": "2026-10-22T15:02:07Z",
+      "comment": "https://github.com/MadaraUchiha-314/the-loop/pull/518#issuecomment-6343654206",
+      "via": "tick"
     }
   },
   "forced": [],
-  "parked": {
-    "node": "code-quiz",
-    "reason": "awaiting a human",
-    "since": "2026-10-22T14:48:02+00:00"
-  },
+  "parked": null,
   "completions": {
     "requirements-definition": {
       "at": "2026-10-21T23:32:29+00:00",
@@ -493,5 +512,5 @@
     }
   ],
   "loop": "pdlc-work-item-loop",
-  "phase": "needs-review"
+  "phase": "complete"
 }
