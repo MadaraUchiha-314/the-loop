@@ -192,6 +192,125 @@ def test_the_cli_refuses_both_flags():
     assert args.project == "PROJ" and args.repository is None
 
 
+def test_a_jira_copy_is_created_with_issue_type_parent_and_the_mirror_label(
+    jira, tmp_path
+):
+    """
+    Feature: conversation handoff
+      Scenario: a Jira copy is created with issue type, parent and the mirror label
+        Given Jira is configured with project PROJ
+        When a ticket is created in PROJ as a Story under PROJ-1, labelled
+             the-loop-mirror
+        Then Jira is asked for exactly that issue type, parent and label
+
+    Requirement: docs/specs/issue-517/requirements.md R3.4, R3.5
+    """
+    result = tickets.create_ticket(
+        "",
+        "Mirror of github:acme/web#5",
+        "https://github.com/acme/web/issues/5",
+        ["the-loop-mirror"],
+        _config(tmp_path),
+        project="PROJ",
+        issue_type="Story",
+        parent="PROJ-1",
+    )
+    assert result["exitCode"] == 0 and result["ref"] == f"jira:{SITE}/PROJ-101"
+    [call] = [c for c in jira.calls if c["method"] == "create_issue"]
+    assert call["issue_type"] == "Story" and call["parent_key"] == "PROJ-1"
+    assert jira.created[0]["labels"] == ["the-loop-mirror"]
+
+
+def test_ticket_create_without_issue_type_or_parent_asks_for_todays_ticket(
+    jira, tmp_path
+):
+    tickets.create_ticket("", "t", "b", (), _config(tmp_path), project="PROJ")
+    [call] = [c for c in jira.calls if c["method"] == "create_issue"]
+    assert call["issue_type"] == "Task" and call["parent_key"] == ""
+
+
+def test_ticket_create_refuses_issue_type_or_parent_on_a_github_repository(
+    github, tmp_path
+):
+    config = _config(tmp_path)
+    with pytest.raises(ValueError, match="Jira"):
+        tickets.create_ticket("o/r", "t", "b", (), config, issue_type="Story")
+    with pytest.raises(ValueError, match="Jira"):
+        tickets.create_ticket("o/r", "t", "b", (), config, parent="PROJ-1")
+    assert github.calls == []
+
+
+def test_the_cli_takes_issue_type_and_parent():
+    from the_loop.commands.github_cmd import TicketCommand
+
+    parser = argparse.ArgumentParser()
+    TicketCommand().add_arguments(parser)
+    args = parser.parse_args(
+        ["create", "--project", "PROJ", "--title", "t", "--body", "b"]
+        + ["--issue-type", "Story", "--parent", "PROJ-1"]
+    )
+    assert args.issue_type == "Story" and args.parent == "PROJ-1"
+    plain = parser.parse_args(
+        ["create", "--project", "PROJ", "--title", "t"] + ["--body", "b"]
+    )
+    assert plain.issue_type == "" and plain.parent == ""
+
+
+def test_ticket_create_forwards_issue_type_and_parent_to_the_service(monkeypatch):
+    """The harness-routed path posts the two fields only when given."""
+    from the_loop.commands import github_cmd
+
+    sent = []
+
+    def routed(remote, local):
+        class Client:
+            def post(self, path, body):
+                sent.append((path, body))
+                return {"exitCode": 0}
+
+        return remote(Client())
+
+    monkeypatch.setattr(github_cmd, "harness_routed", routed)
+    parser = argparse.ArgumentParser()
+    command = github_cmd.TicketCommand()
+    command.add_arguments(parser)
+    base = ["create", "--project", "PROJ", "--title", "t", "--body", "b"]
+    command._create(parser.parse_args(base))
+    command._create(
+        parser.parse_args(base + ["--issue-type", "Story", "--parent", "PROJ-1"])
+    )
+    assert sent[0] == (
+        "/work-items/tickets",
+        {
+            "repository": "",
+            "project": "PROJ",
+            "title": "t",
+            "body": "b",
+            "labels": [],
+        },
+    )
+    assert sent[1][1] == {**sent[0][1], "issueType": "Story", "parent": "PROJ-1"}
+
+
+def test_ticket_projects_prints_the_configured_jira_projects(
+    tmp_path, monkeypatch, capsys
+):
+    from the_loop.commands import github_cmd
+
+    monkeypatch.setattr(github_cmd, "_cli_config", lambda: _config(tmp_path))
+    parser = argparse.ArgumentParser()
+    command = github_cmd.TicketCommand()
+    command.add_arguments(parser)
+    args = parser.parse_args(["projects"])
+    assert args._action(args) == 0
+    assert json.loads(capsys.readouterr().out) == {"projects": ["OPS", "PROJ"]}
+
+    monkeypatch.setattr(github_cmd, "_cli_config", lambda: {})
+    args = parser.parse_args(["projects"])
+    assert args._action(args) == 0
+    assert json.loads(capsys.readouterr().out) == {"projects": []}
+
+
 # -- ticket close -----------------------------------------------------------------
 
 

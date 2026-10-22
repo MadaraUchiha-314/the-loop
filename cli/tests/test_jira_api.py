@@ -387,6 +387,33 @@ def test_create_issue_sends_the_fields_and_returns_the_key(cloud_env):
     assert fields["description"] == _adf("Body.")
 
 
+def test_create_issue_sends_the_issue_type_and_parent(cloud_env):
+    """issue-517 R3.4: a Jira copy names its issue type and its parent (epic)."""
+    sdk = FakeJiraSDK()
+    _client(cloud_config(), sdk).create_issue(
+        "PROJ", "A title", "Body.", issue_type="Story", parent_key="PROJ-1"
+    )
+    [call] = [c for c in sdk.calls if c["method"] == "create_issue"]
+    assert call["fields"]["issuetype"] == {"name": "Story"}
+    assert call["fields"]["parent"] == {"key": "PROJ-1"}
+
+
+def test_create_issue_without_a_parent_sends_todays_fields(cloud_env):
+    sdk = FakeJiraSDK()
+    _client(cloud_config(), sdk).create_issue("PROJ", "A title")
+    [call] = [c for c in sdk.calls if c["method"] == "create_issue"]
+    assert call["fields"]["issuetype"] == {"name": "Task"}
+    assert "parent" not in call["fields"]
+
+
+@pytest.mark.parametrize("parent", ["proj-1", "PROJ", "PROJ-0", "PROJ-1/../x", " "])
+def test_create_issue_refuses_a_parent_that_is_not_an_issue_key(cloud_env, parent):
+    sdk = FakeJiraSDK()
+    with pytest.raises(JiraApiError, match="parent"):
+        _client(cloud_config(), sdk).create_issue("PROJ", "t", parent_key=parent)
+    assert [c for c in sdk.calls if c["method"] == "create_issue"] == []
+
+
 # -- errors: one type, a status, and no secret ------------------------------------------
 
 

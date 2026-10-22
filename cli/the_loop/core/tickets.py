@@ -189,10 +189,18 @@ class JiraTickets:
     # -- create ----------------------------------------------------------------
 
     def create(
-        self, project: str, title: str, body: str, labels: Sequence[str] = ()
+        self,
+        project: str,
+        title: str,
+        body: str,
+        labels: Sequence[str] = (),
+        issue_type: Optional[str] = None,
+        parent: str = "",
     ) -> Dict[str, Any]:
         """Open an issue in ``project`` — one listed under
-        ``integrations.jira.projects``. Labels are written in their Jira-safe form."""
+        ``integrations.jira.projects``. Labels are written in their Jira-safe form.
+        ``issue_type`` (default *Task*) and ``parent`` — an issue key the new one
+        sits under, such as an epic — are issue-517's (R3.4)."""
         from ..jiralabels import JiraLabelError, jira_label
 
         title = github_ops._text(title, "title")
@@ -213,7 +221,14 @@ class JiraTickets:
             raise ValueError(str(exc)) from None
         data: Dict[str, Any] = {"ref": "", "url": ""}
         try:
-            issue = self.client.create_issue(project, title, str(body or ""), safe)
+            issue = self.client.create_issue(
+                project,
+                title,
+                str(body or ""),
+                safe,
+                issue_type=str(issue_type or "").strip() or "Task",
+                parent_key=str(parent or "").strip(),
+            )
         except JiraApiError as exc:
             return github_ops._failed(data, f"could not open the ticket: {exc}")
         ref = f"jira:{self.api.site}/{issue.key}" if issue.key else ""
@@ -370,10 +385,13 @@ def create_ticket(
     config: Optional[Mapping[str, Any]] = None,
     *,
     project: str = "",
+    issue_type: Optional[str] = None,
+    parent: str = "",
     jira_client: Optional[JiraClient] = None,
 ) -> Dict[str, Any]:
     """``ticket create``: ``repository`` opens a GitHub issue, ``project`` a Jira
-    ticket. Exactly one of the two (R8.2)."""
+    ticket. Exactly one of the two (R8.2). ``issue_type`` and ``parent`` are a
+    Jira ticket's only (issue-517 R3.4)."""
     if bool(str(repository or "").strip()) == bool(str(project or "").strip()):
         raise ValueError(
             "name exactly one of --repository (a GitHub issue) and --project "
@@ -381,9 +399,20 @@ def create_ticket(
         )
     if project:
         return JiraTickets(config, client=jira_client).create(
-            project, title, body, labels
+            project, title, body, labels, issue_type=issue_type, parent=parent
+        )
+    if str(issue_type or "").strip() or str(parent or "").strip():
+        raise ValueError(
+            "--issue-type and --parent are for a Jira ticket (--project); a "
+            "GitHub issue takes neither"
         )
     return github_ops.create_ticket(repository, title, body, labels, config)
+
+
+def jira_projects(config: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+    """``ticket projects``: the keys under ``integrations.jira.projects`` that a
+    ticket can be opened in (issue-517) — read from config, nothing sent."""
+    return github_ops._done({"projects": list(_jira_api(config).projects)})
 
 
 def create_pull_request(

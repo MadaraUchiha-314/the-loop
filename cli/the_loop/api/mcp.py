@@ -235,11 +235,14 @@ def build_server(cli_config: Optional[dict] = None, *, facade: Any = None) -> MC
         labels: Optional[List[str]] = None,
         instance: str = "",
         project: str = "",
+        issue_type: str = "",
+        parent: str = "",
     ) -> Dict[str, Any]:
         """Open a ticket: a GitHub issue in `repository` ([HOST/]OWNER/REPO), or
         a Jira ticket in `project` (a key under integrations.jira.projects) —
         exactly one of the two — with optional labels such as
-        loop:requirements-definition."""
+        loop:requirements-definition. For a Jira ticket only, `issue_type`
+        (default Task) and `parent`, the issue key it sits under (an epic)."""
         return facade.create_ticket(
             repository,
             title,
@@ -247,6 +250,8 @@ def build_server(cli_config: Optional[dict] = None, *, facade: Any = None) -> MC
             labels=labels or [],
             instance=instance,
             project=project,
+            issue_type=issue_type,
+            parent=parent,
         )
 
     def create_pull_request(

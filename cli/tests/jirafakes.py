@@ -180,8 +180,15 @@ class FakeJiraClient(JiraClient):
         description_md: str = "",
         labels: Sequence[str] = (),
         issue_type: str = "Task",
+        parent_key: str = "",
     ) -> JiraIssue:
-        self._enter("create_issue", project=project, summary=summary)
+        self._enter(
+            "create_issue",
+            project=project,
+            summary=summary,
+            issue_type=issue_type,
+            parent_key=parent_key,
+        )
         self.next_issue_number += 1
         key = f"{project}-{self.next_issue_number}"
         issue = JiraIssue(

@@ -146,7 +146,26 @@ class TicketCommand(Command):
             default=[],
             help="A label to apply (repeatable), e.g. loop:requirements-definition.",
         )
+        create.add_argument(
+            "--issue-type",
+            metavar="NAME",
+            default="",
+            help="Jira only: the issue type, e.g. Story (default Task).",
+        )
+        create.add_argument(
+            "--parent",
+            metavar="KEY",
+            default="",
+            help="Jira only: the issue key the ticket sits under, e.g. an epic PROJ-1.",
+        )
         create.set_defaults(_action=self._create)
+
+        projects = actions.add_parser(
+            "projects",
+            help="The Jira projects a ticket can be opened in "
+            "(integrations.jira.projects), as JSON",
+        )
+        projects.set_defaults(_action=self._projects)
 
         close = actions.add_parser(
             "close",
@@ -198,17 +217,20 @@ class TicketCommand(Command):
     def _create(self, args: argparse.Namespace) -> int:
         def call() -> Dict[str, Any]:
             body = _read_body(args)
+            payload: Dict[str, Any] = {
+                "repository": args.repository or "",
+                "project": args.project or "",
+                "title": args.title,
+                "body": body,
+                "labels": list(args.label),
+            }
+            # Only when given, so a request without them is today's (issue-517).
+            if args.issue_type:
+                payload["issueType"] = args.issue_type
+            if args.parent:
+                payload["parent"] = args.parent
             return harness_routed(
-                lambda c: c.post(
-                    "/work-items/tickets",
-                    {
-                        "repository": args.repository or "",
-                        "project": args.project or "",
-                        "title": args.title,
-                        "body": body,
-                        "labels": list(args.label),
-                    },
-                ),
+                lambda c: c.post("/work-items/tickets", payload),
                 lambda: tickets.create_ticket(
                     args.repository or "",
                     args.title,
@@ -216,10 +238,17 @@ class TicketCommand(Command):
                     args.label,
                     _cli_config(),
                     project=args.project or "",
+                    issue_type=args.issue_type or None,
+                    parent=args.parent or "",
                 ),
             )
 
         return _run(call)
+
+    def _projects(self, args: argparse.Namespace) -> int:
+        # Read from this CLI's own config: the projects the skill may name in
+        # `ticket create --project` (issue-517 C4). Nothing is sent.
+        return _run(lambda: tickets.jira_projects(_cli_config()), as_json=True)
 
 
 def _add_pr(parser: argparse.ArgumentParser) -> None:
