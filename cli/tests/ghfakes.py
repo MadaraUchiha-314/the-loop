@@ -147,6 +147,15 @@ class FakeGitHubClient(GitHubClient):
         self.posted.append((owner, repo, int(number), body, self._host(host)))
         return self.comment_url
 
+    def edit_issue_body(self, owner, repo, number, body, host="") -> None:
+        self._enter("edit_issue_body", owner=owner, repo=repo, number=number, host=host)
+        key = (owner, repo, int(number))
+        if key in self.missing:
+            raise not_found()
+        self.states.setdefault(key, {"number": int(number), "state": "open"})[
+            "body"
+        ] = body
+
     def create_issue(
         self, owner, repo, title, body, labels=(), host=""
     ) -> Tuple[int, str]:

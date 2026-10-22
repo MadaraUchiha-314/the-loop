@@ -396,6 +396,12 @@ class JiraIssue:
     #: Set when Jira answered for a different key than asked: the issue moved.
     moved_to: str = ""
     url: str = ""
+    #: The status's display name ("In Progress"), as opposed to its category.
+    status: str = ""
+    issue_type: str = ""
+    priority: str = ""
+    #: The assignee's display name, or "" when unassigned.
+    assignee: str = ""
 
 
 @dataclass(frozen=True)
@@ -576,6 +582,10 @@ class JiraClient:
             description_md=self._markdown(fields.get("description")),
             moved_to=key if asked and key != asked else "",
             url=self.config.browse_url(key),
+            status=str(status.get("name") or ""),
+            issue_type=str((fields.get("issuetype") or {}).get("name") or ""),
+            priority=str((fields.get("priority") or {}).get("name") or ""),
+            assignee=str((fields.get("assignee") or {}).get("displayName") or ""),
         )
 
     def _comment_of(
@@ -598,7 +608,10 @@ class JiraClient:
         key = self._key(key)
         found = self._call(
             "get issue",
-            lambda j: j.issue(key, fields="summary,labels,status,description"),
+            lambda j: j.issue(
+                key,
+                fields="summary,labels,status,description,issuetype,priority,assignee",
+            ),
         )
         return self._issue_of(getattr(found, "raw", {}) or {}, asked=key)
 
