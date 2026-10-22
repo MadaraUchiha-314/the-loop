@@ -118,7 +118,7 @@ overrides: {}
   - _Requirements:_ R1, R2, R3.2, R3.3, R4, R5.1, R5.3
   - _Test:_ T11 (manual procedure); T12 markdownlint. The existing command-listing tests
     gain the new command.
-- [ ] 10. Docs, capability docs, decision
+- [x] 10. Docs, capability docs, decision
   - Capability docs: `docs/capabilities/spec-workflow.md`, `process-graph.md` and
     `webhook-triggers.md`, each with an issue-517 history row.
   - CLI and state docs: `docs/cli/state.md` and the CLI command reference
@@ -129,7 +129,7 @@ overrides: {}
   - _Depends on:_ 4, 5, 6, 7, 8, 9
   - _Requirements:_ affected capability docs
   - _Test:_ T12 (`make check`, markdownlint).
-- [ ] 11. Checkpoint: full checks
+- [x] 11. Checkpoint: full checks
   - _Depends on:_ 1–10
   - _Test:_ T12 — `make check` green; then the `verification` node runs the testing plan.
 
