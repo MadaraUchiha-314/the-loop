@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-517",
-  "currentNode": "spec-quiz",
+  "currentNode": "tasks-breakdown",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -77,8 +77,16 @@
     },
     "spec-quiz": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-21T23:56:55+00:00",
+      "exitedAt": "2026-10-22T05:55:38+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "tasks-breakdown": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-22T05:55:38+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -288,14 +296,17 @@
       "model": "claude-opus-5-5",
       "effort": "medium",
       "claudeArtifact": true
+    },
+    "spec-quiz": {
+      "at": "2026-10-22T05:55:38+00:00",
+      "attestedBy": "MadaraUchiha-314",
+      "attestedAt": "2026-10-22T05:55:06Z",
+      "comment": "https://github.com/MadaraUchiha-314/the-loop/issues/517#issuecomment-6329239957",
+      "via": "tick"
     }
   },
   "forced": [],
-  "parked": {
-    "node": "spec-quiz",
-    "reason": "awaiting a human",
-    "since": "2026-10-21T23:56:55+00:00"
-  },
+  "parked": null,
   "completions": {
     "requirements-definition": {
       "at": "2026-10-21T23:32:29+00:00",
@@ -358,5 +369,5 @@
     }
   ],
   "loop": "pdlc-work-item-loop",
-  "phase": "test-planning"
+  "phase": "tasks-breakdown"
 }
