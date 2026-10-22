@@ -1,3 +1,9 @@
+## v20.9.0 (2026-10-22)
+
+### Feat
+
+- **issue-517**: hand a conversation to the-loop from any surface (#518)
+
 ## v20.8.0 (2026-10-21)
 
 ### Feat
