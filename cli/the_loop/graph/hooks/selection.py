@@ -91,7 +91,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from ...authz import mark_self_authored
 from ...modelchoice import (
@@ -603,11 +603,17 @@ def _phase_rows(ctx: HookContext) -> Tuple[List[str], List[str], List[str]]:
         return [], [], []
     # The explainer's nodes are one SETTING row, not four phase rows (issue-488).
     grouped = set(_explainer_nodes(ctx))
-    opt_in = [n.id for n in graph.ordered() if n.opt_in]
+    # A `requiresHandoff` node is no human's choice (issue-517): the handoff
+    # record decides whether it runs, so it is never a row — and a reply that
+    # names it is neither a skip nor a refusal.
+    opt_in = [n.id for n in graph.ordered() if n.opt_in and not n.requires_handoff]
     skippable = [
         n.id
         for n in graph.ordered()
-        if n.skippable and not n.opt_in and n.id not in grouped
+        if n.skippable
+        and not n.opt_in
+        and not n.requires_handoff
+        and n.id not in grouped
     ]
     # Every non-skippable node the item will actually walk — deliberately NOT
     # filtered by `phase`: most of the review chain (`security-review`,
@@ -639,6 +645,59 @@ def _describe(ctx: HookContext, node_id: str) -> str:
     graph = ctx.graph
     node = graph.nodes.get(node_id) if graph is not None else None
     return " ".join(str(getattr(node, "description", "") or "").split())
+
+
+#: A handoff stage in the words the developer picked it in (issue-517, R6 table).
+HANDOFF_STAGE_WORDS = {
+    "exploring": "still exploring",
+    "brainstorm-settled": "brainstorm settled",
+    "requirements-settled": "requirements settled",
+    "design-settled": "design settled",
+}
+
+#: What may be linked as the record (issue-517): a comment on GitHub, over https,
+#: with nothing in it that could close the markdown link it sits in.
+_HANDOFF_URL = re.compile(r"^https://github\.com/[A-Za-z0-9._/#?=&%-]+$")
+#: A GitHub login — the record's author comes from API metadata, but it is
+#: rendered as a mention, so anything else is not rendered at all.
+_LOGIN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:\[bot\])?$")
+
+
+def _handoff(ctx: HookContext) -> Dict[str, Any]:
+    """The record this item arrived with (issue-517) — ``{}`` for every other."""
+    handoff = getattr(ctx, "handoff", None)
+    return dict(handoff) if isinstance(handoff, Mapping) and handoff else {}
+
+
+def _before_enter(ctx: HookContext, handoff: Dict[str, Any]) -> List[str]:
+    """Node ids declared before the record's ``enter``, in graph order.
+
+    Empty when there is no handoff, no graph, or an ``enter`` this graph does not
+    have — an unknown starting step unticks nothing, failing toward more process.
+    """
+    graph = ctx.graph
+    enter = str(handoff.get("enter") or "")
+    if graph is None or not enter:
+        return []
+    order = [n.id for n in graph.ordered()]
+    if enter not in order:
+        return []
+    return order[: order.index(enter)]
+
+
+def _handoff_url(handoff: Dict[str, Any]) -> str:
+    url = str(handoff.get("commentUrl") or "")
+    return url if _HANDOFF_URL.match(url) else ""
+
+
+def _handoff_line(handoff: Dict[str, Any]) -> str:
+    """The one line a handed-off checklist gains above its phase rows (C7)."""
+    author = str(handoff.get("author") or "").lstrip("@")
+    who = f"@{author}" if _LOGIN.match(author) else "a developer"
+    stage = HANDOFF_STAGE_WORDS.get(str(handoff.get("stage") or ""), "a later stage")
+    url = _handoff_url(handoff)
+    link = f" ([record]({url}))" if url else ""
+    return f"Handed off by {who} at *{stage}*{link} — earlier phases are unticked."
 
 
 def _collapsed(summary: str, *paragraphs: str) -> List[str]:
@@ -697,9 +756,18 @@ def _checklist_body(ctx: HookContext) -> str:
     if skippable or opt_in or protected:
         # No graph in context means no truthful rows, so no empty heading either.
         lines += ["### 🧩 Phases — ticked ones run", ""]
+        # A handoff (issue-517, C7) replaces the default: the phases before its
+        # starting step are unticked and every other one is ticked — including a
+        # default-off brainstorm the record starts at. Still only a proposal:
+        # the replier's `the-loop execute` is what makes it the selection.
+        handoff = _handoff(ctx)
+        unticked = (
+            set(_before_enter(ctx, handoff)) if handoff else set(UNTICKED_BY_DEFAULT)
+        )
+        if handoff:
+            lines += [_handoff_line(handoff), ""]
         lines += [
-            f"- [{' ' if node in UNTICKED_BY_DEFAULT else 'x'}] {node}"
-            for node in skippable
+            f"- [{' ' if node in unticked else 'x'}] {node}" for node in skippable
         ]
         lines += [""]
     if opt_in:
@@ -1129,6 +1197,16 @@ def _confirmation(
             "as *skipped by declaration*, and every other phase still gates this "
             "work item.",
         ]
+        handed = [s for s in skips if s in set(_before_enter(ctx, _handoff(ctx)))]
+        if handed:
+            # issue-517 (R6.3): the ones the handoff unticked say so.
+            lines += [
+                "",
+                "Of these, "
+                + ", ".join(f"`{s}`" for s in handed)
+                + " come before the handoff's starting step and are reported as "
+                "*skipped by handoff* instead.",
+            ]
     else:
         lines.append(
             f"@{actor} kept every phase that runs by default — the full process runs."
@@ -1410,6 +1488,14 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
         node: {"via": "selection", "token": node, "by": f"@{actor}", "reason": ""}
         for node in skips
     }
+    # A skip before the handoff's starting step cites the record (issue-517,
+    # C7) — the replier still signs it: the person who said the keyword owns
+    # the walk (decision-068), the record only says why the box was unticked.
+    handoff = _handoff(ctx)
+    cited = str(handoff.get("commentUrl") or "")
+    if handoff and cited:
+        for node in set(_before_enter(ctx, handoff)) & set(declared):
+            declared[node]["handoff"] = cited
     for node in grouped_skips:
         declared[node] = {
             "via": "selection",

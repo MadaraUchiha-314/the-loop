@@ -455,21 +455,34 @@ class ManagerFacade:
         body: str,
         labels: Optional[Sequence[str]] = None,
         instance: str = "",
+        project: str = "",
+        issue_type: str = "",
+        parent: str = "",
     ) -> Dict[str, Any]:
         member = self._target(instance)
         if self.fleet.is_local(member):
-            return self.core.create_ticket(repository, title, body, labels=labels)
-        return self._proxy(
-            member,
-            "POST",
-            "/api/v1/work-items/tickets",
-            body={
-                "repository": repository,
-                "title": title,
-                "body": body,
-                "labels": list(labels or []),
-            },
-        )
+            return self.core.create_ticket(
+                repository,
+                title,
+                body,
+                labels=labels,
+                project=project,
+                issue_type=issue_type,
+                parent=parent,
+            )
+        sent: Dict[str, Any] = {
+            "repository": repository,
+            "project": project,
+            "title": title,
+            "body": body,
+            "labels": list(labels or []),
+        }
+        # Only when given, so a request without them is today's (issue-517).
+        if issue_type:
+            sent["issueType"] = issue_type
+        if parent:
+            sent["parent"] = parent
+        return self._proxy(member, "POST", "/api/v1/work-items/tickets", body=sent)
 
     def create_pull_request(
         self,

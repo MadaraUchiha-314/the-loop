@@ -34,7 +34,8 @@ that item's own checkout, the same way the repo-scoped commands do.
 | [`instances`](/cli/commands/instances) | The fleet a manager serves: `list` on any instance; `register` / `unregister` on a manager, writing the registry through the same splice as the Settings tab. |
 | [`ask`](/cli/commands/ask) | Post an agent's question on its work item — marker stamped centrally, wait recorded as `session.awaiting_input`. |
 | [`comment`](/cli/commands/comment) | Post the agent's comment on its work item — marked, enveloped, mirrored to subscribed channels. |
-| [`ticket`](/cli/commands/ticket) | `show` a ticket (body, comments, attachment links) as JSON, `create` one, or `close` a registered work item's. |
+| [`ticket`](/cli/commands/ticket) | `show` a ticket (body, comments, attachment links) as JSON, `create` one (on Jira with an issue type and parent epic), `close` a registered work item's, or list the Jira `projects` one can go in. |
+| [`handoff`](/cli/commands/handoff) | A conversation handoff's record: `post` it on the issue, `show` the one frozen in state, `import` the carried files that verify, `note` the committed branch and PR (issue-517). |
 | [`pr`](/cli/commands/pr) | `create` a pull request and link it in one act; `status`, `checks` (each check, with failed jobs' log tails), `threads`, `resolve-thread`, `ready` (a draft → ready for review), and `merge` (gated by `routing.mergeOnApproval`); lifecycle acts need a registered work item. |
 | [`add-collaborator`](/cli/commands/add-collaborator) | Give one GitHub login a voice on **one** work item: their comments become input for its session, and nothing else. |
 | [`remove-collaborator`](/cli/commands/remove-collaborator) | Take that voice back; it lapses on the next event. |

@@ -22,7 +22,18 @@ import uuid
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from string import Template
-from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+)
 
 from .. import archive, envstate, eventlog, lifecycle
 from ..announce import AnnounceConfig, SessionAnnouncer
@@ -33,9 +44,13 @@ from ..instance import (
     decide as decide_scope,
     parse_address,
 )
-from ..authz import is_authorized, is_authorized_on, mark_self_authored
+from ..authz import (
+    is_authorized,
+    is_authorized_on,
+    mark_self_authored,
+)
 from ..quizmarks import UNVERIFIED
-from ..comments import post_issue_comment
+from ..comments import post_issue_comment, resolve_client
 from ..cleanup import CleanupOutcome, cleanup_work_item
 from ..collaborators import CollaboratorStore
 from ..control import (
@@ -146,6 +161,10 @@ from .router import (
     pr_work_item,
 )
 
+
+if TYPE_CHECKING:  # `the_loop.core` imports this module, so only for the checker
+    from ..core.handoff import CommentLike, HandoffRecord
+
 logger = logging.getLogger("the-loop.gh-webhook")
 
 #: The one label every install shipped with. `routing.autoExecuteLabels` is a
@@ -174,6 +193,11 @@ SETTLED_CONTROL_EXECUTED = "control-executed"
 SETTLED_CONTROL_REJECTED = "control-rejected"
 SETTLED_CONTROL_AMBIGUOUS = "control-ambiguous"
 SETTLED_START_GATE = "parked-at-human-start-gate"
+# A Jira copy of a GitHub issue (issue-517, abuse case 7) is refused at arming:
+# GitHub is the tracker, and the copy's label marks it as never to be run.
+SETTLED_MIRROR = "mirror-refused"
+#: The label the handoff puts on the Jira copy it creates (issue-517, design §C4).
+MIRROR_LABEL = "the-loop-mirror"
 # An event this instance refused as out of its scope (issue-322): another
 # instance may own the work item, so the drop is deliberate and final — settled,
 # never retried into a different answer.
@@ -189,6 +213,7 @@ SETTLED_OUTCOMES = (
         SETTLED_CONTROL_REJECTED,
         SETTLED_CONTROL_AMBIGUOUS,
         SETTLED_START_GATE,
+        SETTLED_MIRROR,
     )
     + SETTLED_OUT_OF_SCOPE
     + SETTLED_CI
@@ -799,8 +824,15 @@ class Dispatcher:
         opener: Optional[Callable[[str], None]] = None,
         cli_config: Optional[Dict[str, Any]] = None,
         lifecycle: Optional[Callable[[str, str, str, Mapping[str, str]], None]] = None,
+        comment_lister: Optional[
+            Callable[[WorkItemRef], Sequence["CommentLike"]]
+        ] = None,
     ):
         self.registry = registry
+        # How the arming path reads an issue's comments for a handoff record
+        # (issue-517, design §C5). None (every daemon) reads them through the
+        # CLI's GitHub integration; tests and embedders inject their own.
+        self.comment_lister = comment_lister
         self.adapters = adapters
         self.config = config or RoutingConfig()
         # The three TOP-LEVEL sections a work item's model and effort resolve
@@ -4069,6 +4101,166 @@ class Dispatcher:
             self._release_delivery(routed.delivery_id)
         return False
 
+    # -- the handoff pick-up (issue-517) -----------------------------------------
+
+    def _refuse_mirror(self, work_item: WorkItemRef, routed: RoutedEvent) -> bool:
+        """Refuse to arm a Jira item labelled :data:`MIRROR_LABEL` (abuse case 7).
+
+        The label is read off the event's own payload — the Jira poller carries
+        the ticket's labels on every event it builds — so no API call is made.
+        A refusal is a decision, not a failed delivery: settled, never retried.
+        """
+        if work_item.provider != "jira":
+            return False
+        if not event_carries_labels(routed.payload or {}, [MIRROR_LABEL]):
+            return False
+        logger.info(
+            "not arming %s: it is a Jira copy (%s) — its GitHub issue runs the loop",
+            work_item.ref,
+            MIRROR_LABEL,
+        )
+        eventlog.emit(
+            "arm.refused",
+            work_item=work_item.ref,
+            reason="mirror",
+            gh_event=routed.event,
+            delivery_id=routed.delivery_id or None,
+        )
+        self._settle(routed, SETTLED_MIRROR, acknowledge=False)
+        return True
+
+    def _existing_checkout(
+        self, work_item: WorkItemRef, routed: RoutedEvent
+    ) -> Optional[str]:
+        """The checkout this work item already has, without making one.
+
+        ``spawnWorkdir`` when no workspace is configured (it always exists); the
+        work item's worktree or clone when one is on disk; ``None`` when there
+        is none yet — a fresh item — or the workspace cannot say.
+        """
+        if self.workspace is None:
+            return self.config.spawn_workdir
+        target = self._repo_target(routed.payload)
+        if target is None:
+            return self.config.spawn_workdir
+        try:
+            if self.workspace.strategy == "clone":
+                path = self.workspace.clone_dir(target, work_item.slug)
+            else:
+                path = self.workspace.worktree_dir(target, work_item.slug)
+        except Exception:  # noqa: BLE001 — an embedder's workspace, an odd slug
+            return None
+        return str(path) if (Path(path) / ".git").exists() else None
+
+    def _on_the_graph(self, work_item: WorkItemRef, cwd: str) -> bool:
+        """Whether the work item's walk has begun in ``cwd`` — a pure read."""
+        ctx = self.graphlink.context(work_item, cwd)
+        return ctx is not None and bool(ctx.current_node) and ctx.status != "pending"
+
+    def _list_issue_comments(self, work_item: WorkItemRef) -> Sequence["CommentLike"]:
+        if self.comment_lister is not None:
+            return self.comment_lister(work_item)
+        client = resolve_client(
+            self.config.control.github, None, self.config.dispatch_timeout_seconds
+        )
+        return client.list_issue_comments(
+            work_item.owner, work_item.repo, work_item.number, host=work_item.host
+        )
+
+    def _find_handoff(
+        self, work_item: WorkItemRef, routed: RoutedEvent
+    ) -> Optional["HandoffRecord"]:
+        """The handoff record on a GitHub issue that is not yet on the graph.
+
+        Read only when it can matter: a GitHub **issue** (a pull request's
+        checkout is its own branch), a graph that is driven, and no walk begun.
+        That last check costs no API call when the item already has a checkout
+        — the state lives there — so an item parked at phase-selection, which
+        passes through here on every event, is never listed again. A fresh item
+        has no checkout, so its comments are listed once.
+
+        Admitted only from an authorized author, by
+        :func:`~the_loop.core.handoff.find_record` (abuse case 1). The-loop's
+        own records qualify because on GitHub it posts as the operator; the
+        self-marker alone is never evidence, since anyone can paste it.
+        Any failure to read is "no handoff" (fail closed), with a warning.
+        """
+        from ..core.handoff import find_record, is_valid_branch
+
+        if work_item.provider != "github" or _pr_head_ref(routed) is not None:
+            return None
+        if _item_kind(work_item, routed) == "pull-request":
+            return None
+        config = getattr(self.graphlink, "config", None)
+        if config is not None and not getattr(config, "enabled", True):
+            return None
+        existing = self._existing_checkout(work_item, routed)
+        if existing is not None and self._on_the_graph(work_item, existing):
+            return None
+        try:
+            comments = list(self._list_issue_comments(work_item))
+        except Exception as exc:  # noqa: BLE001 — unreadable is "no handoff"
+            logger.warning(
+                "could not read %s's comments for a handoff record; arming it "
+                "without one: %s",
+                work_item.ref,
+                exc,
+            )
+            eventlog.emit(
+                "handoff.unreadable",
+                level="warning",
+                work_item=work_item.ref,
+                error=str(exc),
+            )
+            return None
+        authorized = list(
+            getattr(self.graphlink, "gate_authorized", None)
+            or self.config.authorized_users
+        )
+        record, reasons = find_record(
+            comments,
+            is_authorized=lambda login: is_authorized(login, authorized),
+        )
+        if record is not None and record.branch and not is_valid_branch(record.branch):
+            reasons.append(f"{record.comment_url}: branch is not a the-loop/ branch")
+            record = None
+        if reasons:
+            eventlog.emit(
+                "handoff.ignored", work_item=work_item.ref, reasons=list(reasons)
+            )
+        return record
+
+    def _confirm_handoff(
+        self, work_item: WorkItemRef, cwd: str, handoff: Optional["HandoffRecord"]
+    ) -> Optional["HandoffRecord"]:
+        """Drop the record when the prepared checkout shows the walk has begun
+        (a spec branch that already carries state), and say which way it went.
+
+        ``Runtime.start`` would ignore it anyway — its guard is the real
+        protection (abuse cases 3 and 6) — but the event must not claim a
+        handoff was honoured when it was not.
+        """
+        if handoff is None:
+            return None
+        if self._on_the_graph(work_item, cwd):
+            eventlog.emit(
+                "handoff.ignored",
+                work_item=work_item.ref,
+                reasons=[f"{handoff.comment_url}: item already on the graph"],
+            )
+            return None
+        eventlog.emit(
+            "handoff.honoured",
+            work_item=work_item.ref,
+            stage=handoff.stage,
+            enter=handoff.enter,
+            author=handoff.author,
+            carried_by=handoff.carried_by,
+            branch=handoff.branch or None,
+            record=handoff.comment_url,
+        )
+        return handoff
+
     def _open_conversations(self, work_item: WorkItemRef) -> None:
         """Ask every configured channel to open ``work_item``'s conversation now
         (issue-317 R1.1). Best-effort twice over: the opener never raises by
@@ -4098,6 +4290,10 @@ class Dispatcher:
                 will_retry=False,
             )
             return False
+        # A Jira COPY of a GitHub issue never runs the loop (issue-517, abuse
+        # case 7): the handoff labels it, and no comment or label on it arms it.
+        if self._refuse_mirror(work_item, routed):
+            return True
         # The operator's lifecycle hooks are asked FIRST (issue-344): a start is
         # accepted, and before a conversation opens or a checkout is made, a
         # `work_item_start` hook may refuse it. Once per arming — the durable
@@ -4111,8 +4307,14 @@ class Dispatcher:
         # spawn that fails below leaves a thread with no replies; the retry
         # reuses it.
         self._open_conversations(work_item)
+        # A handoff record on a GitHub issue not yet on the graph (issue-517,
+        # design §C5): read once, here, BEFORE the checkout — its spec branch is
+        # what the checkout is made on.
+        handoff = self._find_handoff(work_item, routed)
         try:
-            cwd = self._prepare_workspace(work_item, routed)
+            cwd = self._prepare_workspace(
+                work_item, routed, branch=handoff.branch if handoff else None
+            )
         except WorkspaceError as exc:
             logger.error("workspace prep for %s failed: %s", work_item.ref, exc)
             eventlog.emit(
@@ -4141,7 +4343,11 @@ class Dispatcher:
         # was posted, or advanced by this very comment), so the delivery is not
         # released for retry and the work item is followed with `the-loop check`
         # rather than `sessions list`.
-        if self.graphlink.on_arm(work_item, cwd, routed=routed):
+        handoff = self._confirm_handoff(work_item, cwd, handoff)
+        # Handed over only when there is one, so the call is exactly as before
+        # for every item that was not handed off.
+        arm_kwargs: Dict[str, Any] = {"handoff": handoff} if handoff else {}
+        if self.graphlink.on_arm(work_item, cwd, routed=routed, **arm_kwargs):
             logger.info(
                 "not spawning a session for %s yet: it is parked at its first "
                 "human gate, which the daemon services itself — a session starts "
@@ -5146,6 +5352,7 @@ class Dispatcher:
         routed: RoutedEvent,
         *,
         require_branch: bool = False,
+        branch: Optional[str] = None,
     ) -> str:
         """Resolve the cwd a spawned session runs in.
 
@@ -5157,6 +5364,11 @@ class Dispatcher:
         ``require_branch`` (issue-258) makes "the checkout is not on the pull
         request's branch" one of those git failures — see
         :meth:`Workspace.ensure_worktree`.
+
+        ``branch`` (issue-517) is a handoff record's spec branch, used only when
+        the event names no pull request head — a PR's own branch always wins.
+        The caller has already checked it against ``the-loop/`` and
+        ``git check-ref-format``.
         """
         if self.workspace is None:
             return self.config.spawn_workdir
@@ -5167,7 +5379,7 @@ class Dispatcher:
                 work_item.ref,
             )
             return self.config.spawn_workdir
-        branch = _pr_head_ref(routed)
+        branch = _pr_head_ref(routed) or branch
         checkout = self.workspace.prepare(
             target,
             work_item.slug,

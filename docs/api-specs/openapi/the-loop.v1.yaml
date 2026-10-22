@@ -2610,6 +2610,16 @@ components:
           type: array
           title: Labels
           default: []
+        issueType:
+          type: string
+          title: Issuetype
+          default: ''
+          description: Jira only — the issue type, e.g. Story; empty means Task (issue-517).
+        parent:
+          type: string
+          title: Parent
+          default: ''
+          description: Jira only — the issue key the ticket sits under, e.g. an epic PROJ-1 (issue-517).
         instance:
           type: string
           title: Instance

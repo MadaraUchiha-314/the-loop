@@ -293,3 +293,45 @@ def test_link_pull_request_can_discover(mcp, fake_github):
     )["result"]
     assert result.get("isError") is not True
     assert fake_github.calls_to == ["open_pulls_for_head"]
+
+
+def test_create_ticket_tool_passes_issue_type_and_parent(tmp_path, monkeypatch):
+    """
+    Feature: conversation handoff
+      Scenario: the create_ticket tool opens a Jira copy with type and parent
+        Given a service with Jira configured
+        When the host calls create_ticket with issue_type Story and parent PROJ-1
+        Then Jira is asked for exactly those, and a call without them asks
+             for today's Task with no parent
+
+    Requirement: docs/specs/issue-517/requirements.md R3.4
+    """
+    from jirafakes import CLOUD, FakeJiraClient
+    from the_loop.jiraapi import JiraClient
+
+    jira = FakeJiraClient()
+    monkeypatch.setattr(JiraClient, "shared", classmethod(lambda cls, *a, **k: jira))
+    config = {
+        "state": {"root": str(tmp_path / ".the-loop")},
+        "integrations": {"jira": dict(CLOUD)},
+    }
+    with TestClient(create_app(config), base_url=BASE_URL) as http:
+        client = McpClient(http)
+        for arguments in (
+            {
+                "title": "t",
+                "project": "PROJ",
+                "issue_type": "Story",
+                "parent": "PROJ-1",
+            },
+            {"title": "t", "project": "PROJ"},
+        ):
+            result = client.request(
+                "tools/call", {"name": "create_ticket", "arguments": arguments}
+            )["result"]
+            assert result.get("isError") is not True, result
+    calls = [c for c in jira.calls if c["method"] == "create_issue"]
+    assert [(c["issue_type"], c["parent_key"]) for c in calls] == [
+        ("Story", "PROJ-1"),
+        ("Task", ""),
+    ]

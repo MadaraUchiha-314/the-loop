@@ -43,6 +43,7 @@ expect:
   completed: false
   nodes:
     - phase-selection
+    - import-handoff~
     - brainstorming~
     - requirements-definition
     - requirements-approval

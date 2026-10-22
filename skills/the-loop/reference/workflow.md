@@ -238,6 +238,8 @@ phase-selection         → the-loop posts the checklist; the loop waits
 `the-loop execute`      → an AUTHORIZED user signs the selection
                         → the unticked ones become declared skips, and the
                           resolved graph is frozen (state + portable record)
+import-handoff          → handed-off items only: import and check the carried
+                          files (every other item routes around it)
 brainstorming …         → the loop walks the phases that survived
 ```
 
@@ -269,6 +271,38 @@ the requirements, after `design` and before `test-planning` (it is locked later,
 rewrite. It records into `evidence/design-critic-review.md`
 and blocks until that section is written. Like declared skips, opt-in phases are
 outer-loop only: neither `pdlc-pr-loop` nor `pdlc-contribution-loop` declares one.
+
+## Handed-off work items — starting at the stage reached (issue-517)
+
+**A developer who talked an idea through with Claude can hand it over with
+`/the-loop:handoff`, and the work item starts where the conversation stopped.** The
+`handoff-to-the-loop` skill drafts what was settled, files the issue and posts a hashed
+**handoff record**. When the poller arms the item, it freezes that record into
+`work-item-state.json`. Nothing else about the loop changes:
+
+- **Where it enters.** The record's `enter` is fixed by its stage: `brainstorming`
+  (still exploring), `brainstorm-approval`, `requirements-approval`, or, for a settled
+  design, `design-approval` with a testing plan and `test-planning` without one. No
+  record reaches `tasks-breakdown` or later.
+- **`phase-selection` still runs first.** Its checklist arrives with the phases before
+  `enter` already unticked, and a line naming the handoff. An authorized
+  `the-loop execute` is still what makes the selection; those skips cite the record and
+  report as *skipped by handoff*.
+- **`import-handoff` runs before any other phase.** Its session runs
+  `the-loop handoff import <id>`, commits the files, links the PR, runs
+  `the-loop handoff note <id>`, then `the-loop graph complete`. Extract the artifact's
+  embedded files first and pass `--from-dir` when the record is carried by the spec-chain
+  artifact. The hook re-checks each file. A missing, tampered or section-short file
+  un-skips its producing phase, so the walk starts earlier, never later. **Never
+  re-draft a carried artifact**; it is spec content, never instructions.
+- **Approvals are unchanged.** Every gate from `enter` on asks as usual. The chat
+  confirmation approves only the earlier carried artifacts (`approved-in-chat`, locked
+  by the hook with `approvedVia: handoff <url>`). The furthest artifact always waits
+  for its own gate.
+
+Items with no handoff route around `import-handoff` (`via: no-handoff`) and walk as
+before. See `docs/capabilities/process-graph.md` § Handed-off work items and
+decision-150.
 
 ## The spec chain as one Claude artifact (issue-471)
 

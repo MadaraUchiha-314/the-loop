@@ -253,7 +253,16 @@ def _state_keys() -> set:
     """Every top-level key the work item's own checked-in file is written with."""
     from the_loop.graph.state import WorkItemState
 
-    return set(WorkItemState(work_item="issue-1").as_dict())
+    # issue-517's keys are written only when set, so a state that has every
+    # optional key set is the one whose keys must all be claimed.
+    return set(
+        WorkItemState(
+            work_item="issue-1",
+            handoff={"version": 1},
+            handoff_demoted=[{"node": "n"}],
+            claude_artifact_url="https://claude.ai/artifact/x",
+        ).as_dict()
+    )
 
 
 def _portable_keys() -> set:

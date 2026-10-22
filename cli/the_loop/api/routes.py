@@ -274,6 +274,9 @@ class TicketCreateBody(BaseModel):
     title: str
     body: str = ""
     labels: List[str] = []
+    # Jira only (issue-517 R3.4): the issue type (default Task) and a parent key.
+    issueType: str = ""
+    parent: str = ""
     instance: str = ""
 
 
@@ -802,6 +805,8 @@ def build_router(
             labels=body.labels,
             instance=body.instance,
             project=body.project,
+            issue_type=body.issueType,
+            parent=body.parent,
         )
 
     @router.post(f"{API_PREFIX}/work-items/tickets/close", operation_id="closeTicket")

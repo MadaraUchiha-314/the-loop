@@ -10,7 +10,8 @@
 The product-development-lifecycle workflow the-loop runs on every work item, exposed as
 the `/the-loop:work-on` superset command and granular per-step commands
 (`brainstorm`, `new-requirement`, `create-ticket`, `create-design`, `create-tasks-plan`,
-`execute-tasks`, `finish-tasks`, `work-status`).
+`execute-tasks`, `finish-tasks`, `work-status`), plus `handoff`, which starts a work item
+from a conversation at the stage it reached (issue-517).
 
 ## Current behaviour
 
@@ -93,6 +94,35 @@ the `/the-loop:work-on` superset command and granular per-step commands
   in the `brainstorming` phase. WHEN no `brainstorm.md` was written, or `brainstorming`
   was declared skipped, THEN the loop SHALL route past the gate to
   `requirements-definition`.
+- WHEN a developer hands a conversation to the-loop (`/the-loop:handoff`, the
+  `handoff-to-the-loop` skill, issue-517) THEN the skill SHALL draft only the prefix of
+  the chain the conversation settled, interview, and post nothing before the developer
+  confirms. It then files the GitHub issue (plus an optional Jira copy), and in a
+  checkout pushes a `the-loop/` spec branch and a draft PR. It posts a **handoff
+  record** last, and arms the item when asked. The skill SHALL refuse in a
+  daemon-spawned session.
+  - The record names a stage and the node the walk enters:
+
+    | Stage | Carried | `enter` |
+    |---|---|---|
+    | `exploring` | nothing, or a partial `brainstorm.md` | `brainstorming` |
+    | `brainstorm-settled` | `brainstorm.md` | `brainstorm-approval` |
+    | `requirements-settled` | + `requirements.md` or `bugfix.md` | `requirements-approval` |
+    | `design-settled` | + `design.md`, `testing-plan.md` | `design-approval` |
+    | `design-settled` | + `design.md` only | `test-planning` |
+
+  - Each carried file is pinned by a `sha256` of its LF bytes, and travels on the spec
+    branch, inside the ticket comment (`<details>` blocks, overflow in part comments), or
+    in the spec-chain Claude artifact. Before any later phase runs, the `import-handoff`
+    node writes the files into `docs/specs/<id>/` and checks each one. A file that is
+    missing, tampered with or short of a required section **demotes** the walk to the
+    phase that produces it. A carried artifact is never re-drafted.
+  - **The approval rules do not change.** The phase-selection reply still authorizes the
+    walk. The developer's chat confirmation may approve only the *earlier* carried
+    artifacts (`approved-in-chat`, locked with `approvedVia: handoff <url>`). The
+    furthest carried artifact waits for its own gate on the ticket.
+    See [process-graph § Handed-off work items](process-graph.md#handed-off-work-items-issue-517)
+    and [decision-150](../decisions/decision-150.md).
 - The work item's phase SHALL be tracked on the ticket via labels (`loop:<phase>`, a
   fixed vocabulary since issue-352) through the state machine
   `not-started → brainstorming (optional) → requirements-definition → design →
@@ -182,6 +212,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-517 | A conversation can be handed to the-loop at the stage it reached (2026-10-21): `/the-loop:handoff` (the `handoff-to-the-loop` skill) drafts the settled prefix of the chain, interviews, files the issue with a hashed handoff record, and the item enters at `brainstorming`, `brainstorm-approval`, `requirements-approval`, `test-planning` or `design-approval`. The new `import-handoff` node imports and checks the carried files and demotes on a failure; the approval gates are unchanged, and the furthest artifact is never approved in chat | [spec](../specs/issue-517/), [process-graph](process-graph.md), [decision-150](../decisions/decision-150.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/517) |
 | issue-494 | The brainstorm is gated (2026-10-16): a human `brainstorm-approval` node follows `brainstorming`, so the author can comment and ask questions as often as they need and the brainstorm moves to requirements only on their approval, which locks `brainstorm.md`. A brainstorm that was never written, or a declared-skipped `brainstorming`, routes past the gate. Reverses issue-281's "gate-less" rule for `brainstorm.md` only; `tasks.md` stays gate-less | [spec](../specs/issue-494/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/494) |
 | issue-488 | The explainer and the quizzes (2026-10-15): a spec explainer + spec quiz before code generation and an explainer of the change + code quiz before review, sized by a depth ladder (micro / standard / deep, 0 / 3 / 5 questions), each gated by one attributed tick; published into the spec-chain artifact, its own artifact, or a committed HTML file with copy-paste view commands; on by default, one row to switch off | [spec](../specs/issue-488/), [process-graph](process-graph.md), [decision-143](../decisions/decision-143.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/488) |
 | issue-471 | The spec chain can also be read as one Claude artifact (2026-10-06): ticked at `phase-selection` on a `claude` work item, the session publishes one page with a tab per spec file, republishes it to the same URL on every change and links it once from the ticket. The markdown files stay the source of truth and the gates' subject; artifact comments are feedback, never a gate answer. Off by default, and not applied on any other harness | [spec](../specs/issue-471/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/471) |

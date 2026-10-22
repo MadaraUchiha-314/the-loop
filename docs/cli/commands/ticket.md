@@ -1,6 +1,6 @@
 # `ticket`
 
-Read, open or close a work item's ticket, without `gh` — a GitHub issue, or a Jira
+Read, open or close a work item's ticket, or list the Jira projects one can be opened in, without `gh` — a GitHub issue, or a Jira
 ticket when `integrations.jira` is configured.
 
 ```bash
@@ -12,6 +12,11 @@ the-loop ticket close github:OWNER/REPO#N [--reason completed|not_planned]
 # the same verbs on a Jira ticket (issue-475)
 the-loop ticket show jira:acme.atlassian.net/PROJ-7
 the-loop ticket create --project PROJ --title "Add OAuth" --body-file ticket.md
+
+# a Jira Story under an epic, and the projects a ticket may go in (issue-517)
+the-loop ticket create --project PROJ --title "Add OAuth" --body-file ticket.md \
+    --issue-type Story --parent PROJ-1
+the-loop ticket projects
 the-loop ticket close jira:acme.atlassian.net/PROJ-7
 ```
 
@@ -47,6 +52,19 @@ issue body is the request itself, not a comment the loop reads back.
 | `--title` | required | The issue title. |
 | `--body` / `--body-file` | required (one) | The issue body; `--body-file -` reads stdin. |
 | `--label` | none | A label to apply; repeatable. GitHub drops labels silently for a token without triage rights on the repository. |
+| `--issue-type` | `Task` | Jira only: the issue type, such as `Story` (issue-517). |
+| `--parent` | none | Jira only: the issue key the new ticket sits under, such as an epic `PROJ-1`; sets Jira's `parent` field (issue-517). |
+
+`--issue-type` and `--parent` with `--repository` are exit 2: a GitHub issue takes
+neither. `POST /work-items/tickets` and the MCP tool take them as `issueType` and
+`parent`.
+
+## `ticket projects`
+
+Prints the keys under `integrations.jira.projects` as JSON (`{"projects": [...]}`):
+the projects `ticket create --project` accepts. It reads this CLI's config and sends
+nothing. The handoff skill runs it to check a project before creating a Jira copy
+(issue-517).
 
 ## `ticket close`
 

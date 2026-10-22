@@ -402,3 +402,39 @@ def test_the_registered_name_overwrites_a_members_claim(fleet):
         ).status_code
         == 200
     )
+
+
+def test_a_proxied_ticket_create_carries_issue_type_and_parent(fleet, monkeypatch):
+    """
+    Feature: conversation handoff
+      Scenario: a ticket created through the manager on a member keeps its Jira fields
+        Given the fleet above
+        When a client creates a ticket on the manager naming a member, with and
+             without issueType and parent
+        Then the member is sent the two fields only when they were given
+
+    Requirement: docs/specs/issue-517/requirements.md R3.4
+    """
+    facade = fleet["manager"].app.state.facade
+    sent = []
+
+    def call(member, method, path, *, query=None, body=None, **_):
+        sent.append((member.name, path, dict(body or {})))
+        return {"exitCode": 0}
+
+    monkeypatch.setattr(facade.fleet, "call", call)
+    base = {"project": "PROJ", "title": "t", "instance": "laptop-a"}
+    for extra in ({}, {"issueType": "Story", "parent": "PROJ-1"}):
+        response = fleet["manager"].post(
+            "/api/v1/work-items/tickets", json={**base, **extra}
+        )
+        assert response.status_code == 200, response.text
+    plain, typed = (body for _, _, body in sent)
+    assert plain == {
+        "repository": "",
+        "project": "PROJ",
+        "title": "t",
+        "body": "",
+        "labels": [],
+    }
+    assert typed == {**plain, "issueType": "Story", "parent": "PROJ-1"}

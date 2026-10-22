@@ -116,7 +116,7 @@ def test_the_phases_and_the_settings_are_two_groups():
     graph = load_graph()
     grouped = set(graph.skip_sets.get(selection.EXPLAINER_TOKEN, ()))
     for node in graph.ordered():
-        if node.skippable and node.id not in grouped:
+        if node.skippable and node.id not in grouped and not node.requires_handoff:
             row = re.search(rf"^- \[[ x]\] {re.escape(node.id)}( —|$)", body, re.M)
             assert row is not None and row.start() < settings_at, node.id
     assert body.index(f"`{selection.SURFACE_TOKEN}`") > settings_at
@@ -196,7 +196,10 @@ def test_the_rows_read_back_exactly_as_the_graph_lists_them():
     body = _body()
     graph = load_graph()
     grouped = set(graph.skip_sets.get(selection.EXPLAINER_TOKEN, ()))
-    ordered = [n for n in graph.ordered() if n.id not in grouped]
+    # issue-517: a requiresHandoff node is never a row.
+    ordered = [
+        n for n in graph.ordered() if n.id not in grouped and not n.requires_handoff
+    ]
     rows = selection_rows(body)
     assert rows is not None
     assert [r.token for r in rows.phases] == [

@@ -791,6 +791,47 @@ def test_finish_tasks_transitions_the_jira_ticket_to_done(tmp_path, monkeypatch)
     assert "'Closed'" in again["messages"][0]["text"]
 
 
+def test_the_ticket_route_passes_issue_type_and_parent_to_jira(tmp_path, monkeypatch):
+    """
+    Feature: conversation handoff
+      Scenario: a Jira copy is created with issue type, parent and the mirror label
+        Given a running control plane with Jira configured
+        When POST /work-items/tickets names issueType Story and parent PROJ-1
+        Then Jira is asked for a Story under PROJ-1 with the mirror label
+        And a request without the two fields asks for today's Task, no parent
+
+    Requirement: docs/specs/issue-517/requirements.md R3.4, R3.5
+    """
+    client = _client()
+    api, _ = _service(tmp_path, monkeypatch, client)
+    made = api.post(
+        "/api/v1/work-items/tickets",
+        json={
+            "project": "PROJ",
+            "title": "Mirror",
+            "labels": ["the-loop-mirror"],
+            "issueType": "Story",
+            "parent": "PROJ-1",
+        },
+    )
+    assert made.status_code == 200 and made.json()["exitCode"] == 0
+    plain = api.post(
+        "/api/v1/work-items/tickets", json={"project": "PROJ", "title": "Plain"}
+    )
+    assert plain.status_code == 200 and plain.json()["exitCode"] == 0
+    calls = [c for c in client.calls if c["method"] == "create_issue"]
+    assert [(c["issue_type"], c["parent_key"]) for c in calls] == [
+        ("Story", "PROJ-1"),
+        ("Task", ""),
+    ]
+    assert client.created[0]["labels"] == ["the-loop-mirror"]
+    github = api.post(
+        "/api/v1/work-items/tickets",
+        json={"repository": "acme/web", "title": "t", "parent": "PROJ-1"},
+    )
+    assert github.status_code == 400
+
+
 def test_the_loop_comment_on_a_jira_ref_is_recorded_on_the_jira_ticket(
     tmp_path, monkeypatch
 ):

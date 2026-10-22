@@ -161,23 +161,38 @@ one of them runs by default.
 $ the-loop graph show
 graph v1, start: phase-selection
   phase-selection  [required, human]
-      --selected--> brainstorming
+      --selected--> import-handoff
+  import-handoff  [skippable]
+      --pass--> brainstorming
+      --skipped--> brainstorming
   brainstorming  [skippable]
-      --pass--> requirements-definition
+      --pass--> brainstorm-approval
+      --not-entered--> requirements-definition
       --skipped--> requirements-definition
-  requirements-definition
+  brainstorm-approval  [skippable, human]
+      --approved--> requirements-definition
+      --approved-with-comments--> requirements-definition
+      --changes-requested--> brainstorming
+      --skipped--> requirements-definition
+  requirements-definition  [skippable]
       --pass--> requirements-approval
-  requirements-approval  [human]
+      --skipped--> requirements-approval
+  requirements-approval  [skippable, human]
+      --skipped--> design
       --approved--> design
       --approved-with-comments--> design
       --changes-requested--> requirements-definition
-  design
+  design  [skippable]
+      --skipped--> design-critic-review
       --pass--> design-critic-review
   design-critic-review  [opt-in]
-      --pass--> test-planning
       --skipped--> test-planning
+      --pass--> test-planning
   …
 ```
+
+`import-handoff` runs only for a handed-off work item (`requiresHandoff`, issue-517);
+every other item routes around it on `skipped`, as *no handoff*.
 
 Note the human-gate shape: `approved-with-comments` takes the **same** edge as `approved`,
 so a reviewer's suggestions never block the phase — they are recorded and carried forward.

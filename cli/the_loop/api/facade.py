@@ -469,6 +469,8 @@ class CoreFacade:
         labels: Optional[Sequence[str]] = None,
         instance: str = "",
         project: str = "",
+        issue_type: str = "",
+        parent: str = "",
     ) -> Dict[str, Any]:
         self._self(instance)
         return core_tickets.create_ticket(
@@ -478,6 +480,8 @@ class CoreFacade:
             list(labels or []),
             config=self.config,
             project=project,
+            issue_type=issue_type or None,
+            parent=parent,
         )
 
     def create_pull_request(

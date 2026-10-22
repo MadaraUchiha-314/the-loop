@@ -852,15 +852,22 @@ class JiraClient:
         description_md: str = "",
         labels: Sequence[str] = (),
         issue_type: str = "Task",
+        parent_key: str = "",
     ) -> JiraIssue:
+        """Open an issue. ``parent_key`` (issue-517 R3.4) links it under that issue
+        — an epic — as Jira Cloud and Data Center 9+ do, through ``fields.parent``."""
         if not _PROJECT_KEY_RE.match(project or ""):
             raise JiraApiError(f"unusable Jira project key {project!r}")
+        if parent_key and not is_issue_key(parent_key):
+            raise JiraApiError(f"unusable Jira parent issue key {parent_key!r}")
         fields: Dict[str, Any] = {
             "project": {"key": project},
             "summary": summary,
             "issuetype": {"name": issue_type},
             "labels": [str(label) for label in labels],
         }
+        if parent_key:
+            fields["parent"] = {"key": parent_key}
         if description_md:
             fields["description"] = self._body(description_md)
         made = self._call("create issue", lambda j: j.create_issue(fields=fields))

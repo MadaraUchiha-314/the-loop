@@ -75,6 +75,7 @@ path = "hatch_build.py"
 [tool.hatch.build.targets.sdist.force-include]
 "../skills/the-loop" = "the_loop/resources/skills/the-loop"
 "../skills/writing" = "the_loop/resources/skills/writing"
+"../skills/handoff-to-the-loop" = "the_loop/resources/skills/handoff-to-the-loop"
 "../commands" = "the_loop/resources/commands"
 "../hooks" = "the_loop/resources/hooks"
 

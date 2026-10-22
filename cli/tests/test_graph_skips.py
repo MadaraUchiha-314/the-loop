@@ -910,7 +910,10 @@ def test_the_shipped_loop_starts_at_phase_selection():
     assert graph.start == "phase-selection"
     node = graph.node("phase-selection")
     assert node.actor == "human" and node.required and not node.skippable
-    assert graph.next_node("phase-selection", "selected") == "brainstorming"
+    # issue-517: through `import-handoff`, which an item without a handoff
+    # routes around on `skipped`.
+    assert graph.next_node("phase-selection", "selected") == "import-handoff"
+    assert graph.next_node("import-handoff", "skipped") == "brainstorming"
 
 
 # -- M7: the CLI verb — audited, bounded, never retroactive ----------------------
@@ -1105,8 +1108,9 @@ def test_the_shipped_checklist_offers_every_phase_the_item_walks(repo, fake_gith
     assert "- [x] `explainer`" in body
 
     for node in load_graph().ordered():
-        if node.id in grouped:
-            assert f"- [x] {node.id}" not in body, node.id
+        if node.id in grouped or node.requires_handoff:
+            # issue-517: a requiresHandoff node is the record's call, no row.
+            assert f"] {node.id}" not in body, node.id
         elif node.opt_in:
             # issue-188: offered, not planned — the opposite default, and it
             # must never be rendered as a ticked row.

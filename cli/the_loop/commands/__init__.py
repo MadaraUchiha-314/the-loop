@@ -12,6 +12,7 @@ from . import events  # noqa: F401,E402
 from . import gateway_cmd  # noqa: F401,E402  (the-loop gateway … — issue-496)
 from . import github_cmd  # noqa: F401,E402  (comment, ticket, pr — issue-447)
 from . import graph_cmd  # noqa: F401,E402
+from . import handoff_cmd  # noqa: F401,E402  (the-loop handoff — issue-517)
 from . import hooks_cmd  # noqa: F401,E402
 from . import install_cmd  # noqa: F401,E402
 from . import instances_cmd  # noqa: F401,E402

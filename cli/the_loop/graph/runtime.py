@@ -11,6 +11,8 @@ runtime, not a reimplementation of it.
 
 from __future__ import annotations
 
+import re
+
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -79,6 +81,17 @@ def _exclude_spec_root(repo: Path, spec_root: str) -> str:
 #: was offered and not asked for.
 NOT_SELECTED = "not-selected"
 
+#: The ``via`` marker of a ``requiresHandoff`` node on a work item that arrived
+#: with no handoff record (issue-517): nobody declared it, and it is not a
+#: phase anybody declined — there was simply nothing to import.
+NO_HANDOFF = "no-handoff"
+
+#: The only spec-chain artifact URL a handoff record may hand the session
+#: (issue-517 R7.4): a claude.ai artifact link, nothing that renders as markup.
+_CLAUDE_ARTIFACT_URL = re.compile(
+    r"https://claude\.ai/(?:code/)?artifact/[A-Za-z0-9_-]+"
+)
+
 #: The provenance of a skippable node the work item's FROZEN selection never
 #: listed (issue-488): the phase did not exist when its author answered
 #: `phase-selection`, so nobody chose it and nobody declined it. Walking it
@@ -124,6 +137,8 @@ def _skip_provenance(decl: Mapping[str, Any]) -> str:
             "not selected — an opt-in phase, off unless it is ticked at "
             "`phase-selection`"
         )
+    if via == NO_HANDOFF:
+        return "no handoff — this work item arrived without a handoff record"
     if via == NOT_OFFERED:
         return (
             "not offered — the phase did not exist when this work item's "
@@ -132,6 +147,11 @@ def _skip_provenance(decl: Mapping[str, Any]) -> str:
     token = str(decl.get("token") or "")
     by = str(decl.get("by") or "")
     reason = str(decl.get("reason") or "")
+    handoff = str(decl.get("handoff") or "")
+    if handoff:
+        # issue-517 (R6.3): a phase before a handoff's starting step. Still a
+        # declaration — the replier signed it — but the reason is the record.
+        return f"skipped by handoff (declared by {by or 'unknown'}) — record {handoff}"
     parts = [f"skipped by declaration — via {via}"]
     if token:
         parts.append(f"token {token!r}")
@@ -577,6 +597,13 @@ class Runtime:
         for node in self.graph.ordered():
             if node.opt_in and node.id not in out and not self.selected(state, node.id):
                 out[node.id] = {"via": NOT_SELECTED}
+        if not getattr(state, "handoff", None):
+            # issue-517: a node that imports a handoff has nothing to do on an
+            # item that arrived without one, so it is routed around like any
+            # other declared skip — the opt-in rule's twin.
+            for node in self.graph.ordered():
+                if node.requires_handoff and node.id not in out:
+                    out[node.id] = {"via": NO_HANDOFF}
         offered = _frozen_node_ids(state)
         if offered:
             for node in self.graph.ordered():
@@ -756,6 +783,102 @@ class Runtime:
             )
         return True
 
+    @staticmethod
+    def _record_handoff_locks(state: "WorkItemState", outcome: ChainOutcome) -> bool:
+        """Record the sha256 of each lock the ``import-handoff`` hook wrote
+        (self-review round 2), so a re-run recognises its own lock by content
+        rather than by an ``approvedVia`` line anyone could write.
+
+        Only for artifacts the developer approved in chat, and called on the
+        blocked path too: a lock that landed beside one that failed must still
+        be recognised when the gate is retried.
+        """
+        if not state.handoff:
+            return False
+        allowed = set(state.handoff.get("approvedInChat") or ())
+        changed = False
+        for result in outcome.results:
+            if result.hook != "import-handoff":
+                continue
+            for name, sha in (result.data.get("handoffLocked") or {}).items():
+                if str(name) not in allowed or not isinstance(sha, str):
+                    continue
+                locked = state.handoff.setdefault("lockedSha256", {})
+                if isinstance(locked, dict) and locked.get(str(name)) != sha:
+                    locked[str(name)] = sha
+                    changed = True
+        return changed
+
+    def _record_handoff_import(
+        self, state: "WorkItemState", item: WorkItem, outcome: ChainOutcome
+    ) -> bool:
+        """Apply what the ``import-handoff`` hook found (issue-517, design §C8).
+
+        The hook cannot write state, so — like the phase-selection gate's
+        skips — it returns the fact and the runtime, the single writer, records
+        it: each refused artifact appended to ``handoffDemoted``, and the nodes
+        it names removed from ``state.skips``. **Removal only**: un-skipping
+        adds work, so it widens nothing, and a node already walked is left as
+        it is. Read only from the hook's own results.
+        """
+        changed = self._record_handoff_locks(state, outcome)
+        for result in outcome.results:
+            if result.hook != "import-handoff":
+                continue
+            for entry in result.data.get("handoffDemoted") or ():
+                if isinstance(entry, Mapping):
+                    state.handoff_demoted.append(
+                        {
+                            k: str(entry.get(k) or "")
+                            for k in ("node", "artifact", "reason")
+                        }
+                    )
+                    changed = True
+            unskipped = []
+            for node_id in result.data.get("handoffUnskip") or ():
+                rec = state.nodes.get(str(node_id))
+                if str(node_id) in state.skips and not (rec and rec.entered_at):
+                    del state.skips[str(node_id)]
+                    unskipped.append(str(node_id))
+            if unskipped:
+                changed = True
+                eventlog.emit(
+                    "handoff.demoted",
+                    work_item=item.ref,
+                    nodes=unskipped,
+                )
+                logger.info("%s: handoff import un-skipped %s", item.ref, unskipped)
+        return changed
+
+    def _handoff_landing(
+        self,
+        state: "WorkItemState",
+        node_id: str,
+        target: str,
+        skips: Mapping[str, Any],
+    ) -> str:
+        """The handoff's starting step, when a skip edge would jump over it.
+
+        issue-517 (R6 table, R7.3): a handed-off walk starts at the record's
+        ``enter`` node, never later. Some ``on: skipped`` edges bypass a gate on
+        purpose — a skipped ``brainstorming`` goes straight to requirements, as
+        there is no brainstorm to approve — which is wrong for a *brainstorm
+        settled* handoff that carried one. Applied only until ``enter`` is first
+        entered, and never to an ``enter`` that is itself declared skipped.
+        """
+        enter = str((getattr(state, "handoff", None) or {}).get("enter") or "")
+        if not enter or enter == target or enter in skips:
+            return target
+        rec = state.nodes.get(enter)
+        if rec is not None and rec.entered_at:
+            return target
+        order = [n.id for n in self.graph.ordered()]
+        if not {node_id, target, enter} <= set(order):
+            return target
+        if order.index(node_id) < order.index(enter) < order.index(target):
+            return enter
+        return target
+
     def _route_skips(
         self,
         state: "WorkItemState",
@@ -779,6 +902,7 @@ class Runtime:
             target = self.graph.next_node(node_id, "skipped")
             if target is None:
                 break  # fail closed: walk the node rather than guess an exit
+            target = self._handoff_landing(state, node_id, target, skips)
             rec = state.record(node_id)
             rec.entered_at = rec.entered_at or utc_now()
             rec.outcome = "skipped"
@@ -809,6 +933,7 @@ class Runtime:
         decisions: Optional[Mapping[str, Any]] = None,
         surface: str = "",
         visited: FrozenSet[str] = frozenset(),
+        handoff: Optional[Mapping[str, Any]] = None,
     ) -> ChainOutcome:
         """Run one node's **exit** chain. This is what ``check`` calls.
 
@@ -832,6 +957,7 @@ class Runtime:
                 decisions=decisions,
                 surface=surface,
                 visited=visited,
+                handoff=dict(handoff or {}),
             ),
         )
 
@@ -916,7 +1042,9 @@ class Runtime:
 
     # -- advancement ----------------------------------------------------------
 
-    def start(self, work_item_id: str, ref: str = "") -> Optional[NodeReport]:
+    def start(
+        self, work_item_id: str, ref: str = "", handoff: Optional[Any] = None
+    ) -> Optional[NodeReport]:
         """Enter the start node for a work item that has not begun (issue-113).
 
         The counterpart ``advance`` never was: ``advance`` evaluates the *current*
@@ -932,11 +1060,29 @@ class Runtime:
 
         Idempotent: a work item that already has a pointer returns ``None`` and is
         left untouched, so a redelivered spawn can never rewind it.
+
+        ``handoff`` (issue-517, design §C6) is the
+        :class:`~the_loop.core.handoff.HandoffRecord` the poller found on the
+        issue at arming. It is frozen into ``state.handoff`` here and only here —
+        **inside** the no-pointer guard and before the first save — so a record
+        posted or edited after the walk started never reaches state (abuse cases
+        3 and 6). It is written before the declared skips are read, because a
+        ``requiresHandoff`` node is routed around exactly when it is absent.
         """
         item = self.work_item(work_item_id, ref)
         state = WorkItemState.load(self.state_dir(item), work_item_id)
         if state.current_node:
             return None
+        if handoff is not None:
+            state.handoff = {**handoff.as_dict(), "recordedAt": utc_now()}
+            # R7.4 (critic round 1): the developer's spec-chain artifact is
+            # adopted here, once, so the session republishes to that URL
+            # rather than publishing a second artifact. Only a claude.ai link
+            # is taken; whether to publish at all stays the phase-selection
+            # choice (`claudeArtifact`).
+            url = str(getattr(handoff, "spec_artifact", "") or "")
+            if _CLAUDE_ARTIFACT_URL.fullmatch(url):
+                state.claude_artifact_url = url
 
         # A guest loop — a contribution, a review — must not push the-loop's
         # spec tree into a repository it does not own (issue-185, PR #187
@@ -974,7 +1120,15 @@ class Runtime:
         )  # persist BEFORE any dependent side effect (R8.2)
         node = self.graph.node(node_id)
         entered = run_chain(
-            node.entry, self._context(item, node, "entry", surface=self._surface(state))
+            node.entry,
+            self._context(
+                item,
+                node,
+                "entry",
+                surface=self._surface(state),
+                # The phase-selection checklist reads it (issue-517, C7).
+                handoff=state.handoff,
+            ),
         )
         eventlog.emit("graph.started", work_item=item.ref, node=node_id)
         logger.info("%s entered the graph at %s", item.ref, node_id)
@@ -1183,6 +1337,9 @@ class Runtime:
             decisions=state.decisions,
             surface=self._surface(state),
             visited=_visited(state),
+            # Only the walk itself hands the record to a hook (issue-517):
+            # `check` stays a read of the artifacts alone.
+            handoff=state.handoff,
         )
         report = NodeReport(
             node=node_id,
@@ -1203,6 +1360,7 @@ class Runtime:
             return report
 
         if outcome.status == BLOCK:
+            self._record_handoff_locks(state, outcome)
             rendered = outcome.render()
             repeated = state.note_block(node_id, rendered)
             rec = state.record(node_id)
@@ -1230,6 +1388,8 @@ class Runtime:
         # Order matters: the selection gate's own result decides which nodes the
         # very next hop routes around.
         if self._record_selected_skips(state, item, outcome):
+            skips = self.declared_skips(state)
+        if self._record_handoff_import(state, item, outcome):
             skips = self.declared_skips(state)
         # The phase this walk is in, before the pointer moves (issue-378): the
         # node's own, or the one it inherited from the nodes before it.
@@ -1309,7 +1469,13 @@ class Runtime:
             )
         entered = run_chain(
             entry_node.entry,
-            self._context(item, entry_node, "entry", surface=self._surface(state)),
+            self._context(
+                item,
+                entry_node,
+                "entry",
+                surface=self._surface(state),
+                handoff=state.handoff,
+            ),
         )
         eventlog.emit(
             "graph.advanced",
