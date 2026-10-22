@@ -47,7 +47,6 @@ from ..instance import (
 from ..authz import (
     is_authorized,
     is_authorized_on,
-    is_self_authored,
     mark_self_authored,
 )
 from ..quizmarks import UNVERIFIED
@@ -4180,10 +4179,10 @@ class Dispatcher:
         passes through here on every event, is never listed again. A fresh item
         has no checkout, so its comments are listed once.
 
-        Admitted only from an authorized user or the-loop itself, by
+        Admitted only from an authorized author, by
         :func:`~the_loop.core.handoff.find_record` (abuse case 1). The-loop's
-        own comment needs its self-marker **and** an authorized author — on
-        GitHub the-loop posts as the operator — since anyone can paste a marker.
+        own records qualify because on GitHub it posts as the operator; the
+        self-marker alone is never evidence, since anyone can paste it.
         Any failure to read is "no handoff" (fail closed), with a warning.
         """
         from ..core.handoff import find_record, is_valid_branch
@@ -4221,9 +4220,6 @@ class Dispatcher:
         record, reasons = find_record(
             comments,
             is_authorized=lambda login: is_authorized(login, authorized),
-            is_self=lambda c: (
-                is_self_authored(c.body) and is_authorized(c.author, authorized)
-            ),
         )
         if record is not None and record.branch and not is_valid_branch(record.branch):
             reasons.append(f"{record.comment_url}: branch is not a the-loop/ branch")

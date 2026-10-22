@@ -384,3 +384,52 @@ def test_the_hook_reports_under_its_registered_name(repo):
     assert result.hook == NAME == "import-handoff"
     assert result.status == "pass"
     assert _names(result.data["handoffDemoted"]) == []
+
+
+# -- self-review round 1 ----------------------------------------------------------
+
+
+def test_a_rerun_after_the_lock_still_verifies_the_locked_file(repo):
+    """
+    Feature: the hook recognises its own lock
+      Scenario: import-handoff re-runs after it locked an approved-in-chat file
+        Given import-handoff verified brainstorm.md and locked it
+        When the hook runs again on the same record
+        Then brainstorm.md still verifies, and nothing is demoted
+
+    Requirement: R6.5, R7.3 (self-review round 1, finding 2)
+    """
+    files = {"brainstorm.md": BRAINSTORM, "requirements.md": REQUIREMENTS}
+    _write(repo, files)
+    record = _record(files, approved=("brainstorm.md",))
+    _state(repo, record)
+    _walk(repo)
+    assert "approvedVia" in (_spec(repo) / "brainstorm.md").read_text()
+    again = _demote(repo, record)
+    assert again.demoted == []
+    assert again.unskip == []
+    assert again.verified == ["brainstorm.md", "requirements.md"]
+
+
+def test_a_symlinked_carried_file_is_refused_and_its_target_untouched(repo, tmp_path):
+    """
+    Feature: the hook never follows a link out of the spec folder
+      Scenario: a carried file is a symlink to a file elsewhere
+        Given brainstorm.md is a symlink to a file outside the spec directory
+        And the target's content matches the record's sha256
+        When import-handoff runs
+        Then brainstorm.md is refused and the target is not rewritten
+
+    Requirement: security design (self-review round 1, finding 3)
+    """
+    files = {"brainstorm.md": BRAINSTORM, "requirements.md": REQUIREMENTS}
+    outside = tmp_path / "outside.md"
+    outside.write_text(BRAINSTORM)
+    _write(repo, {"requirements.md": REQUIREMENTS})
+    (_spec(repo) / "brainstorm.md").symlink_to(outside)
+    record = _record(files, approved=("brainstorm.md",))
+    found = _demote(repo, record)
+    assert found.verified == []
+    assert found.demoted[0]["artifact"] == "brainstorm.md"
+    assert "symlink" in found.demoted[0]["reason"]
+    assert outside.read_text() == BRAINSTORM

@@ -598,3 +598,31 @@ def test_note_in_a_daemon_spawned_session_supersedes(fake, config, repo, monkeyp
 
 def _local(remote, local, config=None):
     return local()
+
+
+def test_a_reimport_keeps_the_lock_the_hook_wrote(fake, config, repo, capsys):
+    """
+    Feature: the handoff verb
+      Scenario: handoff import runs again after import-handoff locked a file
+        Given a ticket-carried record whose brainstorm.md was imported and locked
+        When `the-loop handoff import` is run again
+        Then brainstorm.md keeps its lock and counts as verified
+
+    Requirement: R6.5 (self-review round 1, finding 2)
+    """
+    record = _record()
+    files = {"brainstorm.md": BRAINSTORM, "requirements.md": REQUIREMENTS}
+    fake.comments[("octo", "repo", 5)] = [_comment(_ticket_comments(record, files)[0])]
+    _write_state(repo, record)
+    assert _cli(config, "handoff", "import", REF, "--repo", str(repo)) == 0
+    _out(capsys)
+    locked = (
+        '---\nstatus: approved\napprovedBy: ["dev"]\n'
+        f'approvedVia: "handoff {RECORD_URL}"\n---\n' + BRAINSTORM
+    )
+    (_spec(repo) / "brainstorm.md").write_text(locked)
+    assert _cli(config, "handoff", "import", REF, "--repo", str(repo)) == 0
+    out = _out(capsys)
+    assert "brainstorm.md" in out["verified"]
+    assert "brainstorm.md" not in out["written"]
+    assert (_spec(repo) / "brainstorm.md").read_text() == locked

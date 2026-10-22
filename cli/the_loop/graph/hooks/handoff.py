@@ -54,6 +54,32 @@ NAME = "import-handoff"
 _VIA_LINE = re.compile(r"^(\s*approvedVia\s*:)([^#]*)(#.*)?$")
 
 
+def via_of(comment_url: str) -> str:
+    """The ``approvedVia`` value a handoff's lock writes."""
+    return f"handoff {comment_url}".strip()
+
+
+def locked_by_handoff(text: str, via: str) -> bool:
+    """Whether ``text`` carries this handoff's own lock (``status: approved``
+    and ``approvedVia: <via>``).
+
+    The lock rewrites the front matter, so the file no longer hashes to the
+    record's ``sha256``. A re-run of the hook, or of ``the-loop handoff
+    import``, must recognise its own lock rather than read it as tampering
+    (self-review round 1). The shape check still runs on such a file.
+    """
+    if not via or via == "handoff":
+        return False
+    try:
+        front, _ = split_front_matter(text)
+    except Exception:  # noqa: BLE001 — unreadable front matter is not a lock
+        return False
+    return (
+        str(front.get("status", "")).strip() == "approved"
+        and str(front.get("approvedVia", "")) == via
+    )
+
+
 @dataclass
 class Demotion:
     """What the check found: the nodes to un-skip, the refusal (at most one —
@@ -127,6 +153,15 @@ def _path_to(graph: Graph, start: str, enter: str) -> List[str]:
     return ids[first:last] if first < last else []
 
 
+def _inside(path: Path, root: Path) -> bool:
+    """Whether ``path`` resolves inside ``root`` (a symlinked folder would not)."""
+    try:
+        path.resolve().relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
+    return True
+
+
 def _ordered(record: HandoffRecord) -> List[Tuple[str, str]]:
     rank = {name: i for i, name in enumerate(CHAIN)}
     named = [(a.name, a.sha256) for a in record.artifacts if a.name in rank]
@@ -142,20 +177,28 @@ def demotion(ctx: HookContext, graph: Graph, record: HandoffRecord) -> Demotion:
     """
     spec_dir = ctx.work_item.spec_dir
     origin = ctx.node_id or NAME
+    via = via_of(record.comment_url)
     found = Demotion()
     failure: Optional[Tuple[Node, str, str]] = None
     for name, sha in _ordered(record):
         node = _producer(graph, name)
         path = spec_dir / name
         reason = ""
-        if not path.is_file():
+        if path.is_symlink() or not _inside(path, spec_dir):
+            # Never follow a link out of the spec folder (self-review round 1).
+            reason = f"{name} is a symlink or lies outside the spec directory"
+        elif not path.is_file():
             reason = f"{name} is missing from the spec directory"
         else:
             try:
                 text = path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError) as exc:
                 text, reason = "", f"{name} could not be read: {exc}"
-            if not reason and sha256_text(text) != sha:
+            if (
+                not reason
+                and sha256_text(text) != sha
+                and not locked_by_handoff(text, via)
+            ):
                 reason = f"{name} does not match the record's sha256"
             if not reason and node is not None:
                 reason = "; ".join(_shape_findings(ctx, node))
@@ -254,7 +297,7 @@ def import_handoff(ctx: HookContext) -> HookResult:
     findings: List[Message] = []
     locked: List[str] = []
     furthest = _furthest(record)
-    via = f"handoff {record.comment_url}".strip()
+    via = via_of(record.comment_url)
     for name in record.approved_in_chat:
         if name not in found.verified or name == furthest or not record.author:
             continue

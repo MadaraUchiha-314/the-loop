@@ -634,10 +634,6 @@ def _authorized(login: str) -> bool:
     return login in {"dev", "owner"}
 
 
-def _never_self(_comment) -> bool:
-    return False
-
-
 def test_unauthorized_record_is_ignored():
     """
     Feature: handoff abuse cases
@@ -651,7 +647,7 @@ def test_unauthorized_record_is_ignored():
     comments = [
         FakeComment(_body(), "mallory", "https://x/c/1", "2026-10-21T10:00:00Z")
     ]
-    record, reasons = find_record(comments, _authorized, _never_self)
+    record, reasons = find_record(comments, _authorized)
     assert record is None
     assert len(reasons) == 1
     assert "mallory" in reasons[0]
@@ -671,7 +667,7 @@ def test_newest_authorized_record_wins_and_metadata_comes_from_the_api():
         "https://x/c/4",
         "2026-10-21T13:00:00Z",
     )
-    record, reasons = find_record([older, newer, noise, bad], _authorized, _never_self)
+    record, reasons = find_record([older, newer, noise, bad], _authorized)
     assert record is not None
     assert record.confirmation == "> newer"
     assert record.author == "owner"
@@ -682,17 +678,28 @@ def test_newest_authorized_record_wins_and_metadata_comes_from_the_api():
 def test_record_text_cannot_set_its_own_author():
     body = _body().replace("confirmation:", "author: owner\nconfirmation:", 1)
     comments = [FakeComment(body, "mallory", "https://x/c/1", "t1")]
-    record, _ = find_record(comments, _authorized, _never_self)
+    record, _ = find_record(comments, _authorized)
     assert record is None
 
 
-def test_self_authored_record_is_admitted():
-    comments = [FakeComment(_body(), "the-loop-bot", "https://x/c/1", "t1")]
-    record, reasons = find_record(
-        comments, _authorized, lambda c: c.author == "the-loop-bot"
-    )
-    assert record is not None and record.author == "the-loop-bot"
-    assert reasons == []
+def test_a_pasted_self_marker_from_an_unauthorized_author_is_ignored():
+    """Requirement: docs/specs/issue-517/requirements.md abuse case 1 (self-review
+    round 1): the self-marker is never evidence on its own."""
+    body = _body() + "\n<!-- the-loop:agent-comment -->"
+    comments = [FakeComment(body, "mallory", "https://x/c/1", "t1")]
+    record, reasons = find_record(comments, _authorized)
+    assert record is None
+    assert "not authorized" in reasons[0]
+
+
+def test_a_record_with_no_author_is_ignored():
+    """Requirement: docs/specs/issue-517/requirements.md abuse case 1 (self-review
+    round 1): a deleted account's comment has author "", which an actor-less
+    authorization check would admit."""
+    comments = [FakeComment(_body(), "", "https://x/c/1", "t1")]
+    record, reasons = find_record(comments, lambda login: True)
+    assert record is None
+    assert "no author" in reasons[0]
 
 
 def _split_comments(author_of_part: str = "dev") -> List[FakeComment]:
@@ -716,7 +723,7 @@ def _split_comments(author_of_part: str = "dev") -> List[FakeComment]:
 
 def test_parts_by_the_record_author_are_collected():
     comments = _split_comments()
-    record, _ = find_record(comments, _authorized, _never_self)
+    record, _ = find_record(comments, _authorized)
     assert record is not None
     bodies = collect_parts(comments, record)
     assert bodies is not None and len(bodies) == 2
@@ -734,7 +741,7 @@ def test_part_by_another_author_is_ignored():
     Requirement: docs/specs/issue-517/design.md §Security design
     """
     comments = _split_comments(author_of_part="owner")
-    record, _ = find_record(comments, _authorized, _never_self)
+    record, _ = find_record(comments, _authorized)
     assert record is not None
     assert collect_parts(comments, record) is None
 
@@ -745,7 +752,7 @@ def test_genuine_part_wins_over_a_forged_one():
         comments[1].body.replace("lorem", "LOREM"), "mallory", "u", "t1.5"
     )
     comments.insert(1, forged)
-    record, _ = find_record(comments, _authorized, _never_self)
+    record, _ = find_record(comments, _authorized)
     assert record is not None
     bodies = collect_parts(comments, record)
     assert bodies is not None
@@ -754,7 +761,7 @@ def test_genuine_part_wins_over_a_forged_one():
 
 def test_record_without_parts_collects_itself():
     comments = [FakeComment(_body(), "dev", "https://x/c/1", "t1")]
-    record, _ = find_record(comments, _authorized, _never_self)
+    record, _ = find_record(comments, _authorized)
     assert record is not None
     assert collect_parts(comments, record) == [comments[0].body]
 
@@ -772,3 +779,26 @@ def test_module_exports():
         "stage_entry",
         "sha256_text",
     }
+
+
+def test_a_carried_file_that_contains_the_marker_line_round_trips():
+    """
+    Feature: the handoff record
+      Scenario: a carried brainstorm quotes the record marker
+        Given a ticket-carried brainstorm.md with the marker line at column 0
+        When the record is rendered and read back
+        Then it posts, parses, and the file comes back byte-equal
+
+    Requirement: R5.1, R5.2 (self-review round 1, finding 5)
+    """
+    text = "# Brainstorm\n\n" + MARKER + "\n\nThe record starts with that line.\n"
+    record = HandoffRecord(
+        version=1,
+        stage="brainstorm-settled",
+        enter="brainstorm-approval",
+        artifacts=(HandoffArtifact("brainstorm.md", sha256_text(text)),),
+        carried_by="ticket",
+    )
+    bodies = render(record, {"brainstorm.md": text})
+    assert parse(bodies[0]) is not None
+    assert extract_files(bodies)["brainstorm.md"] == text

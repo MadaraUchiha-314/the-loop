@@ -57,8 +57,9 @@ confirmation:     > yes, file it
   `design.md`, `testing-plan.md`). No path comes from the record.
 - **`approved-in-chat`** may name only carried artifacts, and never the furthest one.
 - **Who may post one.** The poller admits a record only from a login in
-  `routing.authorizedUsers`. A record `post` wrote carries the-loop's self-marker, and it
-  still needs an authorized author, because on GitHub the-loop posts as the operator.
+  `routing.authorizedUsers`, and never from a comment with no author. The self-marker
+  that `post` stamps grants nothing by itself: the-loop's own records count because on
+  GitHub it posts as the operator, an authorized login.
 
 ## Exit codes
 

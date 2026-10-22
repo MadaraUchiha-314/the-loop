@@ -981,10 +981,11 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   pull request, a disabled graph, or an item already on the graph — a checkout that
   holds a pointer costs no API call.
   - **Who may post one.** A record SHALL be admitted only from a login in
-    `routing.authorizedUsers` (the phase-selection gate's set). A record that carries
-    the-loop's self-marker SHALL also need an authorized author, since on GitHub the-loop
-    posts as the operator and anyone can paste a marker. The author and URL SHALL come
-    from the API's comment metadata, never the record's text.
+    `routing.authorizedUsers` (the phase-selection gate's set). The self-marker SHALL
+    grant nothing, since anyone can paste it: the-loop's own records count because on
+    GitHub it posts as the operator, an authorized login. A comment with no author (a
+    deleted account) SHALL be refused. The author and URL SHALL come from the API's
+    comment metadata, never the record's text.
   - **The checkout.** WHEN the record names a branch THEN the workspace SHALL be
     prepared on it, provided it starts `the-loop/` and passes `git check-ref-format`;
     otherwise the record is dropped. A pull request's own head branch always wins.
@@ -1169,7 +1170,7 @@ provider, the webhook doorbell, the allow-list by provider)
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-517 | Handed-off issues (2026-10-21): on the arming path, for a GitHub issue not yet on the graph, the dispatcher lists comments once and admits the newest v1 handoff record from an authorized author (a self-marked one needs an authorized author too), prepares the workspace on the record's `the-loop/` spec branch, and passes the record to `Runtime.start`. A Jira item labelled `the-loop-mirror` is refused at arming (`arm.refused reason=mirror`, settled `mirror-refused`). New events `handoff.honoured`, `handoff.ignored`, `handoff.unreadable` | [spec](../specs/issue-517/), [process-graph](process-graph.md), [decision-150](../decisions/decision-150.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/517) |
+| issue-517 | Handed-off issues (2026-10-21): on the arming path, for a GitHub issue not yet on the graph, the dispatcher lists comments once and admits the newest v1 handoff record from an authorized, non-empty author (the self-marker grants nothing), prepares the workspace on the record's `the-loop/` spec branch, and passes the record to `Runtime.start`. A Jira item labelled `the-loop-mirror` is refused at arming (`arm.refused reason=mirror`, settled `mirror-refused`). New events `handoff.honoured`, `handoff.ignored`, `handoff.unreadable` | [spec](../specs/issue-517/), [process-graph](process-graph.md), [decision-150](../decisions/decision-150.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/517) |
 | issue-496 | The gateway (2026-10-19): the receiver's `verify_signature` and the poller's providers are reused by the gateway's adapters; the gateway client builds the router and dispatcher once (`webhook/daemon._build_ingress`, which now exposes its router, reload and doorbells) and feeds them from its queue; outcomes commit back; the inferred PR linkage is published as a binding | [spec](../specs/issue-496/), [gateway](gateway.md) |
 | issue-475 | **A PR naming a Jira key routes to it** (2026-10-06, PR 5 of 5): `SOURCE_JIRA_KEY` links a pull request whose head branch or title names a key, only for a registered Jira work item whose project maps to the PR's repository; the body is never read. The delivered prompt names Jira and the origin repository. Before, a Jira item's PR was routed only through a PR-ref registration | [spec](../specs/issue-475/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |
 | issue-475 | **Jira tickets reach their sessions** (2026-10-06, PR 4 of 5): a `jira` poll source (`polling.sources[].projects`) lists each project's armed tickets with one quoted JQL query per cycle and reads every comment against the poll ledger's cursor. A 429 or 5xx degrades the project for the cycle and keeps the cursor. A `done` status category closes the work item. The receiver gains `/jira-webhook`, served only when `integrations.jira.webhook.secretEnv` resolves: signature first (401 before parsing), then a doorbell that re-fetches the issue and the comment and builds the poller's own events, so one comment by both ingresses is delivered once (`jira-comment-<site>-<id>`). Jira comments are authorized on `routing.authorizedUsers[].jira` (exact id; no author is unauthorized), at the router, the poller, the control seam and the human gates (`jira:<id>`). A Jira relay (`[the-loop:relay]` by the service account) is the operator's words | [spec](../specs/issue-475/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |

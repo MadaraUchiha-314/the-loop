@@ -149,6 +149,13 @@ _BLOCK_RE = re.compile(
 _BACKTICKS_RE = re.compile(r"`+")
 
 
+def _without_files(body: str) -> str:
+    """``body`` with its carried-file blocks removed, so a marker line inside a
+    carried file (a brainstorm about this very feature) is never mistaken for
+    the record's own marker."""
+    return _BLOCK_RE.sub("", _lf(body))
+
+
 @dataclass(frozen=True)
 class HandoffArtifact:
     """One carried file: a :data:`CHAIN` name and the sha256 of its LF bytes."""
@@ -366,7 +373,7 @@ def parse_with_reason(body: str) -> Tuple[Optional[HandoffRecord], str]:
     Returns ``(record, "")`` or ``(None, reason)``. ``author`` and
     ``comment_url`` are left empty: only :func:`find_record` fills them.
     """
-    lines = _lf(body or "").split("\n")
+    lines = _without_files(body or "").split("\n")
     markers = _marker_lines(lines)
     if not markers:
         return None, "no handoff marker"
@@ -650,7 +657,9 @@ def _payload(text: str) -> Optional[str]:
     follows the record block or the part marker. ``None`` for anything else."""
     lines = text.split("\n")
     markers = _marker_lines(lines)
-    if len(markers) == 1:
+    if len(_marker_lines(_without_files(text).split("\n"))) == 1 and markers:
+        # The record block precedes every file block, so the first marker is
+        # the record's own; any later one is quoted inside a carried file.
         block, after = _record_block(lines, markers[0][0])
         return None if block is None else "\n".join(lines[after:])
     for i, line in enumerate(lines):
@@ -693,30 +702,37 @@ def _same_login(a: str, b: str) -> bool:
 def find_record(
     comments: Iterable[CommentLike],
     is_authorized: Callable[[str], bool],
-    is_self: Callable[[Any], bool],
 ) -> Tuple[Optional[HandoffRecord], List[str]]:
-    """The newest well-formed v1 record whose author is authorized or the-loop.
+    """The newest well-formed v1 record whose author is authorized.
 
-    ``is_authorized`` takes a login (``routing.authorizedUsers``); ``is_self``
-    takes the comment (the self-marker plus the-loop's identity). The returned
-    record's ``author`` and ``comment_url`` come from the comment's metadata.
-    The second value names each newer record that was rejected and why, for the
-    ``handoff.ignored`` event.
+    ``is_authorized`` takes a login (``routing.authorizedUsers``). It is the
+    only admission rule: the-loop's own records count because on GitHub
+    the-loop posts as the operator, an authorized login. The self-marker is
+    never evidence on its own, since anyone can paste it, and a comment with
+    no author (a deleted account comes back as ``""``) is refused before
+    ``is_authorized`` sees it, because that check admits a missing actor.
+    The returned record's ``author`` and ``comment_url`` come from the
+    comment's metadata. The second value names each newer record that was
+    rejected and why, for the ``handoff.ignored`` event.
     """
     reasons: List[str] = []
     for comment in reversed(_chronological(comments)):
         body = comment.body or ""
-        if not _marker_lines(_lf(body).split("\n")):
+        if not _marker_lines(_without_files(body).split("\n")):
             continue
         where = comment.url or "comment"
-        if not (is_self(comment) or is_authorized(comment.author)):
-            reasons.append(f"{where}: author {comment.author!r} is not authorized")
+        author = str(comment.author or "").strip()
+        if not author:
+            reasons.append(f"{where}: the comment has no author")
+            continue
+        if not is_authorized(author):
+            reasons.append(f"{where}: author {author!r} is not authorized")
             continue
         record, reason = parse_with_reason(body)
         if record is None:
             reasons.append(f"{where}: {reason}")
             continue
-        return replace(record, author=comment.author, comment_url=comment.url), reasons
+        return replace(record, author=author, comment_url=comment.url), reasons
     return None, reasons
 
 

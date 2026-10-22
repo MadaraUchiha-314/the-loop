@@ -275,9 +275,27 @@ def materialize(
     holds a copy that matches (R7.5's fall back to the branch). Nothing outside
     :data:`CHAIN` is ever read or written.
     """
+    from ..graph.hooks.handoff import locked_by_handoff, via_of
+
     written: List[str] = []
     verified: List[str] = []
     refused: List[Dict[str, str]] = []
+    via = via_of(str(handoff.get("commentUrl") or ""))
+    root = spec_dir.resolve() if spec_dir.exists() else None
+    if root is not None and spec_dir.is_symlink():
+        # A symlinked spec folder would let a write land outside the checkout.
+        return {
+            "written": [],
+            "verified": [],
+            "refused": [
+                {
+                    "name": str(e.get("name", "")),
+                    "reason": "the spec folder is a symlink",
+                }
+                for e in handoff.get("artifacts") or ()
+                if isinstance(e, Mapping)
+            ],
+        }
     for entry in handoff.get("artifacts") or ():
         name = str(entry.get("name", "")) if isinstance(entry, Mapping) else ""
         sha = str(entry.get("sha256", "")) if isinstance(entry, Mapping) else ""
@@ -290,6 +308,17 @@ def materialize(
         target = spec_dir / name
         if target.is_symlink():
             refused.append({"name": name, "reason": "the target is a symlink"})
+            continue
+        existing: Optional[str] = None
+        if target.is_file():
+            try:
+                existing = target.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                existing = None
+        if existing is not None and locked_by_handoff(existing, via):
+            # Already imported and locked by this handoff: re-importing would
+            # write the unlocked bytes back over the lock (self-review round 1).
+            verified.append(name)
             continue
         text = carried.get(name) if carried is not None else None
         if text is not None and sha256_text(text) == sha:
