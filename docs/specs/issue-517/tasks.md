@@ -16,7 +16,7 @@ overrides: {}
 
 ## Task list
 
-- [ ] 1. Handoff record model (C2)
+- [x] 1. Handoff record model (C2)
   - New `cli/the_loop/core/handoff.py`:
     - `HandoffArtifact` and `HandoffRecord`;
     - `parse` and `render`, with part splitting at 65,536 characters;
@@ -30,7 +30,7 @@ overrides: {}
     round trips, every rejection reason, the `STAGE_ENTRY` rows, parts rejoined
     byte-equal, record snapshots, an unauthorized author, `enter: implementation`, a part
     by another author, a bad branch, and a bad artifact name. Red → green.
-- [ ] 2. Ticket creation additions (C4)
+- [x] 2. Ticket creation additions (C4)
   - `JiraClient.create_issue(…, issue_type, parent_key)` sets `fields["parent"]`.
   - `JiraTickets.create` and `create_ticket` pass `issue_type` and `parent` through.
   - `the-loop ticket create --issue-type --parent`, both Jira only.
@@ -43,7 +43,7 @@ overrides: {}
     `Scenario: a Jira copy is created with issue type, parent and the mirror label` via
     `jirafakes`, and add route and MCP contract cases. The existing contract tests stay
     green.
-- [ ] 3. State and graph schema (C6, data models)
+- [x] 3. State and graph schema (C6, data models)
   - `WorkItemState` gains `handoff`, `handoffDemoted` and `claudeArtifactUrl`, loaded,
     saved and archived (`archive.py`).
   - The graph node schema gains `requiresHandoff`.
