@@ -1,0 +1,35 @@
+<!-- the-loop:handoff v1 -->
+```text
+stage:            requirements-settled
+enter:            requirements-approval
+artifacts:        brainstorm.md sha256:72972ffd81503af30b265cc19b22c7c9741e4b8fe9f4ec98e5e1a223e035d9b8, requirements.md sha256:b8ad22f1afd1c01d9d6794a06ac9d8a7eb4041d3d6d67dfb7112a2d596134c3d
+carried-by:       ticket
+from:             Claude chat · 2026-10-21
+approved-in-chat: brainstorm.md
+mirror:           jira:acme/PROJ-123
+confirmation:     > yes, file it
+```
+
+<details><summary>brainstorm.md</summary>
+
+````markdown
+# Brainstorm
+
+Options considered: A, B. Rejected: C.
+
+````
+
+</details>
+
+<details><summary>requirements.md</summary>
+
+````markdown
+# Requirements
+
+```python
+print('a fenced block inside a carried file')
+```
+
+````
+
+</details>
