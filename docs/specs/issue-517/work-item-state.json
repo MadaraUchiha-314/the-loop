@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-517",
-  "currentNode": "security-review",
+  "currentNode": "code-explainer",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -125,10 +125,18 @@
     },
     "security-review": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-22T07:41:28+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-10-22T07:44:10+00:00",
       "lastBlock": "",
+      "forced": false
+    },
+    "code-explainer": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-22T07:44:10+00:00",
+      "exitedAt": "",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-517/evidence/explainer.md)",
       "forced": false
     }
   },
@@ -382,6 +390,10 @@
     },
     "critic-review": {
       "at": "2026-10-22T07:41:28+00:00",
+      "by": "cli"
+    },
+    "security-review": {
+      "at": "2026-10-22T07:44:10+00:00",
       "by": "cli"
     }
   },
