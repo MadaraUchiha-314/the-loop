@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-517",
-  "currentNode": "implementation",
+  "currentNode": "verification",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -93,10 +93,18 @@
     },
     "implementation": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-22T05:56:59+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-10-22T06:54:55+00:00",
       "lastBlock": "`validate-artifacts` did not pass:\n- 8 task(s) still unticked (docs/specs/issue-517/tasks.md)",
+      "forced": false
+    },
+    "verification": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-22T06:54:55+00:00",
+      "exitedAt": "",
+      "lastBlock": "",
       "forced": false
     }
   },
@@ -335,6 +343,10 @@
     "tasks-breakdown": {
       "at": "2026-10-22T05:56:59+00:00",
       "by": "cli"
+    },
+    "implementation": {
+      "at": "2026-10-22T06:54:55+00:00",
+      "by": "cli"
     }
   },
   "skips": {
@@ -381,5 +393,5 @@
     }
   ],
   "loop": "pdlc-work-item-loop",
-  "phase": "implementation"
+  "phase": "verification"
 }

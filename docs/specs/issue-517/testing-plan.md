@@ -112,19 +112,30 @@ can reach: the interview and a real issue.
 
 ## Verification activities
 
-- [ ] T1, T2, T3, T6, T8, T10 — `make test`
-- [ ] T10 — `make validate`
-- [ ] T12 — `make check`
-- [ ] T2/T8 scenario table — `uv run the-loop scenarios --format markdown`
+- [x] T1, T2, T3, T6, T8, T10 — `make test`
+- [x] T10 — `make validate`
+- [x] T12 — `make check`
+- [x] T2/T8 scenario table — `uv run the-loop scenarios --format markdown`
 - [ ] T11 — manual handoff procedure above
 
 ## Verification results
 
-*Not yet executed.*
+Run on 2026-10-22 against branch `the-loop/issue-517-handoff`.
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1, T2, T3, T6, T8, T10 | `make test`, plus the issue-517 test files on their own | 321 issue-517 tests pass. The full suite has 6666 passing and 22 failing, all 22 environment-only: they fail identically on `main` on this machine, while CI on `main` is green | [tests.md](evidence/tests.md) |
+| T10 | `make validate` | Pass | [tests.md](evidence/tests.md) |
+| T12 | `make check` | lint, markdownlint, format, pyright (0 errors) and validate pass; tests as above | [tests.md](evidence/tests.md) |
+| T2/T8 scenario table | `uv run the-loop scenarios --root . --format markdown` | All 17 planned `Scenario:` titles present | [scenarios.md](evidence/scenarios.md) |
+| T11 (partial) | `the-loop handoff post` on scratch issue #520, then a read-back through `find_record` / `collect_parts` / `extract_files` | Record and part round-trip byte-equal with hashes verified; honoured for an authorized author, ignored otherwise | [manual-handoff.md](evidence/manual-handoff.md) |
+
+**Not executed:** two parts of T11.
+
+- **The interview.** This daemon-spawned session has no `AskUserQuestion` (issue-426), and the skill refuses to interview in one (R2.10).
+- **The live poller pick-up.** The running daemon is the released 20.8.0, not this branch.
+
+Both are covered in-process by the T2 walk and dispatcher scenarios. A developer still needs to run them with a daemon built from this branch, which is escalated on PR #518.
 
 ## Review comments
 
