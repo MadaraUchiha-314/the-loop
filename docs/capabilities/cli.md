@@ -296,6 +296,25 @@ self-learning/ML capabilities.
   announcements and `add-channel` declarations on a Jira work item SHALL be recorded on
   its ticket as relays (`[the-loop:relay]`), the operator's words, as an unmarked
   comment under the operator's credentials is on GitHub.
+- `ticket create --project KEY` SHALL also take `--issue-type NAME` (default `Task`) and
+  `--parent KEY`, which sets the new ticket's `parent` field (how Jira Cloud and DC 9+
+  link an epic) (issue-517). Both are Jira only: given with `--repository` they SHALL be
+  refused (exit 2). `POST /work-items/tickets`, the facade and the MCP tool take the
+  same two optional fields, `issueType` and `parent`, sent only when set, so a request
+  without them is unchanged. `ticket projects` (read-only, nothing sent) SHALL print the
+  keys under `integrations.jira.projects`, so the handoff skill can check a project
+  before it creates a ticket in it.
+- **`the-loop handoff post|show|import|note` SHALL carry a conversation handoff's
+  record** (issue-517; [`handoff`](../cli/commands/handoff.md)):
+  - `post` renders the record and its part comments and posts them self-marked.
+  - `show` prints the record frozen in `work-item-state.json`.
+  - `import` writes only the carried files whose `sha256` verifies into
+    `docs/specs/<id>/`, and lists the rest as `refused` (exit 0; the `import-handoff`
+    hook demotes). It emits `handoff.imported`.
+  - `note` re-points the record at the committed spec branch and PR. It edits
+    the-loop's own record in place only outside a daemon-spawned session; the control
+    plane has no comment-edit route. Everywhere else, which in a daemon session is
+    always, it posts one comment that supersedes the record.
 - WHEN `the-loop graph complete` or `graph check` builds a runtime outside the daemon on
   a deployment with Jira THEN its human gates SHALL accept the same identities the
   daemon's do: the GitHub logins, each listed Jira id as `jira:<id>`, and
@@ -560,6 +579,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-517 | Conversation handoff (2026-10-21): the `handoff` command (`post`, `show`, `import [--from-dir]`, `note`); `ticket create --issue-type --parent` for a Jira ticket, mirrored in `POST /work-items/tickets` and the MCP tool as `issueType` and `parent`; the read-only `ticket projects` | [spec](../specs/issue-517/), [`handoff`](../cli/commands/handoff.md), [ticket](../cli/commands/ticket.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/517) |
 | issue-496 | The gateway (2026-10-19): the `gateway` command family; the `status`/`start` wording for an instance behind a gateway; the doctor's gateway section | [spec](../specs/issue-496/), [`gateway`](../cli/commands/gateway.md) |
 | issue-482 | Session-side verbs stop needing a token (2026-10-13): in a session the daemon spawned, `comment`, `ticket`, `pr` and `ask` go through the service or fail with a message, never in-process; `ask` gains `POST /api/v1/sessions/ask`. The daemon no longer hands a session any `env.file` value — see [interactive sessions](interactive-sessions.md) | [spec](../specs/issue-482/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/482) |
 | issue-475 | The ticket verbs act on a Jira ref (2026-10-06, PR 5 of 5): `core/tickets.tracker_for` dispatches `ticket show\|create\|close`, `comment`, `ask` and `pr create` by tracker, the GitHub functions unchanged. `ticket create --project` opens a Jira ticket, `ticket close` transitions into Done (refusing an ambiguous choice), `pr create` on a Jira ref opens in the origin repository. Announcements reach a Jira ticket as relays, and the CLI graph path accepts Jira gate authors. Before, every verb refused a Jira ref and `/the-loop:work-on` registered a Jira item against its PR | [spec](../specs/issue-475/), [ticket](../cli/commands/ticket.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |

@@ -119,6 +119,7 @@ const cliSidebar = [
       { text: "ask", link: "/cli/commands/ask" },
       { text: "comment", link: "/cli/commands/comment" },
       { text: "ticket", link: "/cli/commands/ticket" },
+      { text: "handoff", link: "/cli/commands/handoff" },
       { text: "pr", link: "/cli/commands/pr" },
       { text: "add-collaborator", link: "/cli/commands/add-collaborator" },
       { text: "remove-collaborator", link: "/cli/commands/remove-collaborator" },

@@ -532,6 +532,65 @@ The other default, at the same gate and by the same person
   …). There is no expression language: the LLM produces facts, declared edges route on
   them. That split is what makes judgement and determinism coexist.
 
+### Handed-off work items (issue-517)
+
+A work item handed off from a conversation starts at the stage its developer reached,
+and **the graph is the same graph**: the handoff pre-fills `phase-selection`, it never
+moves the pointer itself ([decision-150](../decisions/decision-150.md)).
+
+```mermaid
+flowchart LR
+  ps[phase-selection] -->|selected| ih[import-handoff]
+  ih -->|pass / skipped| bs[brainstorming]
+  bs -.skipped.-> ba[brainstorm-approval]
+  ba -.skipped.-> rd[requirements-definition]
+  rd -.skipped.-> ra[requirements-approval]
+  ra --> d[design]
+```
+
+The dashed edges are the declared skips a *requirements settled* handoff proposes; the
+walk lands on `requirements-approval`, the first gate that still asks.
+
+- A node MAY be declared `requiresHandoff: true`. It SHALL also be skippable (compile
+  error otherwise), and `declared_skips` SHALL skip it with `{"via": "no-handoff"}`
+  whenever `work-item-state.json` carries no `handoff` — the opt-in rule's twin, so no
+  edge is special-cased. `the-loop check` reports it as *no handoff*. A
+  `requiresHandoff` node SHALL NOT be a row on the phase-selection checklist, and a reply
+  naming it is neither a skip nor a refusal: the record decides whether it runs, not a
+  human.
+- The shipped `requiresHandoff` node is **`import-handoff`** (outer loop, agent, no
+  phase). The edge `phase-selection --selected--> import-handoff` replaces the old
+  `phase-selection --selected--> brainstorming`; `import-handoff` reaches `brainstorming`
+  on `pass` and on `skipped`. Every item without a handoff routes around it and walks
+  exactly as before.
+- **The record is frozen once.** `Runtime.start(…, handoff=record)` writes
+  `state.handoff` (the record plus `author`, `commentUrl`, `recordedAt`) inside the
+  no-pointer guard, before the first save. A record posted or edited after the walk
+  began never reaches state. Hooks read it as `HookContext.handoff`; `check` does not.
+- **The checklist proposes; the reply decides.** With `state.handoff` set, the
+  checklist SHALL untick every skippable node declared before the record's `enter`, add
+  one line naming the developer, the stage and the record, and pre-tick the
+  `claude-artifact` row when the record names a spec-chain artifact. The authorized
+  `the-loop execute` reply is still the act that turns those rows into declared skips,
+  and its author signs them. Each such skip carries `handoff: <commentUrl>`, and
+  `the-loop check` reports it as *skipped by handoff (declared by @x)*. A skip edge that
+  would jump past `enter` lands on `enter` instead, until `enter` has been entered.
+- **`import-handoff` checks, then can only demote.** The session writes the carried
+  files with `the-loop handoff import`, commits them, re-points the record with
+  `the-loop handoff note`, and runs `graph complete`. The `import-handoff` exit hook then
+  checks each carried artifact in chain order: the file exists, its LF bytes hash to
+  the record's `sha256`, and it passes the `validate-artifacts` section check of the node
+  that produces it. On the **first** failure it names that producing node and every node
+  after it, in graph declaration order, up to (not including) `enter`. The runtime
+  removes those from `state.skips` and appends `{node, artifact, reason}` to
+  `handoffDemoted` (`handoff.demoted`). When nothing verifies, the walk starts at
+  `brainstorming`. The hook never adds a skip, so it can only make the walk longer.
+- **Approval stays with the gates.** Artifacts named in the record's `approved-in-chat`
+  that verified are locked by the hook (`status: approved`, `approvedBy: [<author>]`,
+  `approvedVia: handoff <commentUrl>`). The furthest carried artifact is never in that
+  list (the parser refuses it, and the hook checks again); its own approval gate locks
+  it.
+
 ### What a node `produces`
 
 - A `produces` entry SHALL name an **artifact**, not a filename. It MAY accept several
@@ -632,7 +691,12 @@ included, however empty the log was.
 
 `validate-artifacts` · `lint-artifacts` · `verify-tests` · `set-phase-label` ·
 `log-entry` · `request-review` · `notify` · `classify-feedback` · `record-feedback` ·
-`lock-artifacts` · `mcp-call`.
+`lock-artifacts` · `mcp-call` · `import-handoff`.
+
+- `import-handoff` (issue-517) SHALL check a handed-off item's carried artifacts —
+  present, hash-matching, section-complete — and on the first failure return the nodes
+  to un-skip, which the runtime applies. It SHALL never add a skip. See § Handed-off work
+  items.
 
 - `validate-artifacts` SHALL check front matter, required sections and the security
   boundary mapping (`enforces-boundaries-from`) — the design's Security design section
@@ -1105,6 +1169,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-517 | A conversation can be handed off at the stage it reached (2026-10-21): a new node flag `requiresHandoff` (skipped `via: no-handoff` when state carries no `handoff`, never a checklist row) and a new first agent node `import-handoff`, so `phase-selection --selected-->` now leads to `import-handoff`, which leads to `brainstorming`. `Runtime.start` freezes the poller's record into state; the checklist unticks the phases before the record's `enter` and stamps `handoff: <url>` on those skips; the `import-handoff` hook checks each carried file and on a failure un-skips from its producing node up to `enter` (`handoffDemoted`). The phase-selection reply still authorizes the walk | [spec](../specs/issue-517/), [decision-150](../decisions/decision-150.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/517) |
 | issue-494 | The brainstorm got a gate (2026-10-16): `brainstorming` passed on shape alone and went straight to `requirements-definition`, so the author's first reply on a brainstorm was the last it received. A human `brainstorm-approval` node now follows it with `requirements-approval`'s hooks — an indecisive comment waits, an approval locks `brainstorm.md`, changes-requested returns to `brainstorming` — and joins `spec-chain` and the checklist. `validate-artifacts` gained `absentOutcome:` (an unwritten brainstorm routes on `not-entered` around the gate) and `classify-feedback` gained `whenPresent:` (so `check --recompute` does not report that gate unmet) | [spec](../specs/issue-494/), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/494) |
 | issue-488 | The explainer and the two quizzes (2026-10-15): four skippable nodes — `spec-explainer` → `spec-quiz` after `design-approval`, `code-explainer` after `security-review`, `code-quiz` before `human-approval` — behind one ticked `explainer` setting row and skip set; `post-quiz-attestation` / `quiz-attested` hooks; the `comment-edits` integration op over GraphQL `userContentEdits`; the poller's tick detection and the webhook's `edited` rewrite into a delivery-only `quiz_attestation` doorbell; `not-offered` skips for nodes a frozen selection never listed; hardened in review: a quiz comment counts only when an authorized login (or Jira's service account) wrote it, every editor in its history must be authorized, ticks are deduplicated per tick, and `explainer-postdates-spec` enforces R5.6 at publish | [spec](../specs/issue-488/), [decision-143](../decisions/decision-143.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/488) |
 | issue-475 | Jira joins the control plane (2026-10-06, PR 2): `jiraapi.JiraClient` on the pycontribs `jira` SDK (REST v3/ADF on Cloud, v2/wiki on Data Center, credentials read from env vars at call time, errors and SDK logs scrubbed), `JiraProvider` with GitHub's operations plus `transition` in the contract suite, a `jira` branch in `resolve()`, the `integrations.jira` block at config `0.12.0` with a migration from the stub (a stub with no `site` or `projects` is dropped whole, with a note — it could never pass the schema), and `the-loop doctor jira` | [spec](../specs/issue-475/), [decision-142](../decisions/decision-142.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |

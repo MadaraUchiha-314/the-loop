@@ -70,7 +70,18 @@ answer to:
   reply's round-trip (Slack thread → work-item mirror → session delivery), and
   `channel.dropped` carries the machine-readable `reason` (`unmapped`,
   `self-authored`, `unauthorized-actor`, `undeliverable`) — issue-245. Payloads
-  name ids, never message text and never tokens.
+  name ids, never message text and never tokens;
+- **did a handoff take, and if not, why?** (issue-517) —
+  `the-loop events --type 'handoff.*' --work-item <ref>`:
+
+  | Event | Meaning |
+  |---|---|
+  | `handoff.honoured` | A GitHub issue not yet on the graph was armed with a handoff record (`work_item`, `stage`, `enter`, `author`, `carried_by`, `branch`, `record`): its checkout is made on the record's spec branch and `Runtime.start` freezes the record into `work-item-state.json`. |
+  | `handoff.ignored` | One or more records were not honoured (`work_item`, `reasons`: each record's URL and why — author not authorized, unknown version, malformed, item already on the graph). The item arms as one with no handoff. |
+  | `handoff.unreadable` | The comments of an item being armed could not be listed, so no record was read (`work_item`, `error`). Warning-level; the item arms with no handoff — fail closed, never a guessed stage. |
+  | `handoff.imported` | `the-loop handoff import` wrote the carried files into the spec folder (`work_item`, `written`, `refused`: counts). Warning-level when any file was refused; the `import-handoff` hook then demotes the walk. |
+  | `handoff.demoted` | The `import-handoff` hook refused a carried artifact (missing, a `sha256` mismatch, or a failed section check), so the runtime un-skipped the nodes from its producing node up to the record's `enter` (`work_item`, `nodes`). The item starts earlier, never later; the refusal is in `handoffDemoted`. |
+  | `arm.refused` | A work item was not armed (`work_item`, `reason`). `reason=mirror`: a Jira copy labelled `the-loop-mirror` — the GitHub issue it mirrors runs the loop. Settled, never retried. |
 
 ### Record shape
 
