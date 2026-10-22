@@ -36,7 +36,9 @@ Spec: docs/specs/issue-517/design.md §C2, §Security design.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
+from pathlib import Path
 from dataclasses import dataclass, replace
 from typing import (
     Any,
@@ -697,6 +699,31 @@ def _chronological(comments: Iterable[CommentLike]) -> List[CommentLike]:
 
 def _same_login(a: str, b: str) -> bool:
     return bool(a) and a.casefold() == b.casefold()
+
+
+def contained(path: Path, start: Path) -> bool:
+    """Whether ``path`` is reached from its repository root without passing
+    through a symlink.
+
+    The root is the nearest ancestor of ``start`` holding ``.git`` (``start``
+    itself when there is none). A symlinked ``docs``, ``docs/specs``, spec
+    folder or file makes the resolved path differ from the literal one below
+    the root, which is how a write would leave the checkout (self-review
+    round 2). Symlinks *above* the root, such as a linked home directory, are
+    the operator's own and are allowed.
+    """
+    absolute = Path(os.path.abspath(path))
+    root = Path(os.path.abspath(start))
+    for candidate in (root, *root.parents):
+        if (candidate / ".git").exists():
+            root = candidate
+            break
+    try:
+        literal = absolute.relative_to(root)
+        resolved = absolute.resolve().relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
+    return literal == resolved
 
 
 def find_record(

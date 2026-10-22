@@ -775,6 +775,32 @@ class Runtime:
             )
         return True
 
+    @staticmethod
+    def _record_handoff_locks(state: "WorkItemState", outcome: ChainOutcome) -> bool:
+        """Record the sha256 of each lock the ``import-handoff`` hook wrote
+        (self-review round 2), so a re-run recognises its own lock by content
+        rather than by an ``approvedVia`` line anyone could write.
+
+        Only for artifacts the developer approved in chat, and called on the
+        blocked path too: a lock that landed beside one that failed must still
+        be recognised when the gate is retried.
+        """
+        if not state.handoff:
+            return False
+        allowed = set(state.handoff.get("approvedInChat") or ())
+        changed = False
+        for result in outcome.results:
+            if result.hook != "import-handoff":
+                continue
+            for name, sha in (result.data.get("handoffLocked") or {}).items():
+                if str(name) not in allowed or not isinstance(sha, str):
+                    continue
+                locked = state.handoff.setdefault("lockedSha256", {})
+                if isinstance(locked, dict) and locked.get(str(name)) != sha:
+                    locked[str(name)] = sha
+                    changed = True
+        return changed
+
     def _record_handoff_import(
         self, state: "WorkItemState", item: WorkItem, outcome: ChainOutcome
     ) -> bool:
@@ -787,7 +813,7 @@ class Runtime:
         adds work, so it widens nothing, and a node already walked is left as
         it is. Read only from the hook's own results.
         """
-        changed = False
+        changed = self._record_handoff_locks(state, outcome)
         for result in outcome.results:
             if result.hook != "import-handoff":
                 continue
@@ -1318,6 +1344,7 @@ class Runtime:
             return report
 
         if outcome.status == BLOCK:
+            self._record_handoff_locks(state, outcome)
             rendered = outcome.render()
             repeated = state.note_block(node_id, rendered)
             rec = state.record(node_id)

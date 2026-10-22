@@ -18,6 +18,8 @@ from typing import Dict, List
 
 import pytest
 
+from dataclasses import replace
+
 from the_loop.core.handoff import HandoffArtifact, HandoffRecord, sha256_text
 from the_loop.graph import hooks  # noqa: F401 — registers the built-ins
 from the_loop.graph.contract import HookContext, WorkItem
@@ -403,9 +405,12 @@ def test_a_rerun_after_the_lock_still_verifies_the_locked_file(repo):
     _write(repo, files)
     record = _record(files, approved=("brainstorm.md",))
     _state(repo, record)
-    _walk(repo)
+    after = _walk(repo)
     assert "approvedVia" in (_spec(repo) / "brainstorm.md").read_text()
-    again = _demote(repo, record)
+    assert set(after.handoff["lockedSha256"]) == {"brainstorm.md"}
+    again = demotion(
+        replace(_ctx(repo, record), handoff=after.handoff), load_graph(), record
+    )
     assert again.demoted == []
     assert again.unskip == []
     assert again.verified == ["brainstorm.md", "requirements.md"]
@@ -433,3 +438,56 @@ def test_a_symlinked_carried_file_is_refused_and_its_target_untouched(repo, tmp_
     assert found.demoted[0]["artifact"] == "brainstorm.md"
     assert "symlink" in found.demoted[0]["reason"]
     assert outside.read_text() == BRAINSTORM
+
+
+def test_a_forged_lock_line_does_not_bypass_the_hash(repo):
+    """
+    Feature: the hook recognises its own lock by content only
+      Scenario: a committed file carries a hand-written approvedVia line
+        Given the furthest artifact, requirements.md, was replaced with other text
+        And that text carries status approved and approvedVia citing the record
+        When import-handoff runs
+        Then requirements.md is refused as a sha256 mismatch and the walk demotes
+
+    Requirement: security design, abuse case 4 (self-review round 2, finding 1)
+    """
+    files = {"brainstorm.md": BRAINSTORM, "requirements.md": REQUIREMENTS}
+    forged = (
+        '---\nstatus: approved\napprovedBy: ["dev"]\n'
+        f'approvedVia: "handoff {COMMENT_URL}"\n---\n# Requirements: other\n'
+    )
+    _write(repo, {"brainstorm.md": BRAINSTORM, "requirements.md": forged})
+    record = _record(files, approved=("brainstorm.md",))
+    found = _demote(repo, record)
+    assert found.demoted[0]["artifact"] == "requirements.md"
+    assert "sha256" in found.demoted[0]["reason"]
+
+
+def test_a_symlinked_spec_folder_is_refused(repo, tmp_path):
+    """
+    Feature: the hook never writes outside the checkout
+      Scenario: docs/specs is a symlink to a folder outside the repository
+        Given a checkout whose docs/specs links elsewhere
+        When import-handoff runs
+        Then every carried file is refused, and nothing outside is locked
+
+    Requirement: security design (self-review round 2, finding 2)
+    """
+    files = {"brainstorm.md": BRAINSTORM, "requirements.md": REQUIREMENTS}
+    (repo / ".git").mkdir()
+    elsewhere = tmp_path.parent / f"{tmp_path.name}-elsewhere"
+    (elsewhere / WORK_ITEM).mkdir(parents=True)
+    for name, text in files.items():
+        (elsewhere / WORK_ITEM / name).write_text(text)
+    specs = repo / "docs" / "specs"
+    for child in specs.iterdir():
+        for f in child.iterdir():
+            f.unlink()
+        child.rmdir()
+    specs.rmdir()
+    specs.symlink_to(elsewhere)
+    record = _record(files, approved=("brainstorm.md",))
+    found = _demote(repo, record)
+    assert found.verified == []
+    assert "symlink" in found.demoted[0]["reason"]
+    assert (elsewhere / WORK_ITEM / "brainstorm.md").read_text() == BRAINSTORM

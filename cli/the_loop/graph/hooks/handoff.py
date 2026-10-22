@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
-from ...core.handoff import CHAIN, HandoffRecord, sha256_text
+from ...core.handoff import CHAIN, HandoffRecord, contained, sha256_text
 from ..contract import HookContext, HookResult, Message
 from ..frontmatter import split_front_matter
 from ..model import Graph, Node, artifact_names
@@ -59,25 +59,25 @@ def via_of(comment_url: str) -> str:
     return f"handoff {comment_url}".strip()
 
 
-def locked_by_handoff(text: str, via: str) -> bool:
-    """Whether ``text`` carries this handoff's own lock (``status: approved``
-    and ``approvedVia: <via>``).
+def locked_by_handoff(text: str, name: str, handoff: Mapping[str, Any]) -> bool:
+    """Whether ``text`` is exactly the lock this handoff's hook wrote on ``name``.
 
-    The lock rewrites the front matter, so the file no longer hashes to the
-    record's ``sha256``. A re-run of the hook, or of ``the-loop handoff
+    The lock rewrites the front matter, so a locked file no longer hashes to the
+    record's ``sha256``; a re-run of the hook, or of ``the-loop handoff
     import``, must recognise its own lock rather than read it as tampering
-    (self-review round 1). The shape check still runs on such a file.
+    (self-review round 1). It is recognised by **content**, never by the
+    ``approvedVia`` line, which anyone can write (self-review round 2): the
+    runtime records the sha256 of the bytes the hook wrote under
+    ``handoff.lockedSha256``, and only for an artifact the developer approved in
+    chat that is not the furthest one.
     """
-    if not via or via == "handoff":
+    record = HandoffRecord.from_dict(handoff)
+    if name not in record.approved_in_chat or name == _furthest(record):
         return False
-    try:
-        front, _ = split_front_matter(text)
-    except Exception:  # noqa: BLE001 — unreadable front matter is not a lock
+    locked = handoff.get("lockedSha256")
+    if not isinstance(locked, Mapping):
         return False
-    return (
-        str(front.get("status", "")).strip() == "approved"
-        and str(front.get("approvedVia", "")) == via
-    )
+    return str(locked.get(name) or "") == sha256_text(text)
 
 
 @dataclass
@@ -154,12 +154,9 @@ def _path_to(graph: Graph, start: str, enter: str) -> List[str]:
 
 
 def _inside(path: Path, root: Path) -> bool:
-    """Whether ``path`` resolves inside ``root`` (a symlinked folder would not)."""
-    try:
-        path.resolve().relative_to(root.resolve())
-    except (OSError, ValueError):
-        return False
-    return True
+    """Whether ``path`` is reached from the repository holding ``root`` without
+    passing through a symlink (self-review rounds 1 and 2)."""
+    return contained(path, root)
 
 
 def _ordered(record: HandoffRecord) -> List[Tuple[str, str]]:
@@ -177,7 +174,6 @@ def demotion(ctx: HookContext, graph: Graph, record: HandoffRecord) -> Demotion:
     """
     spec_dir = ctx.work_item.spec_dir
     origin = ctx.node_id or NAME
-    via = via_of(record.comment_url)
     found = Demotion()
     failure: Optional[Tuple[Node, str, str]] = None
     for name, sha in _ordered(record):
@@ -197,7 +193,7 @@ def demotion(ctx: HookContext, graph: Graph, record: HandoffRecord) -> Demotion:
             if (
                 not reason
                 and sha256_text(text) != sha
-                and not locked_by_handoff(text, via)
+                and not locked_by_handoff(text, name, ctx.handoff or {})
             ):
                 reason = f"{name} does not match the record's sha256"
             if not reason and node is not None:
@@ -296,6 +292,7 @@ def import_handoff(ctx: HookContext) -> HookResult:
 
     findings: List[Message] = []
     locked: List[str] = []
+    locked_sha: Dict[str, str] = {}
     furthest = _furthest(record)
     via = via_of(record.comment_url)
     for name in record.approved_in_chat:
@@ -307,6 +304,10 @@ def import_handoff(ctx: HookContext) -> HookResult:
             findings.append(Message(text=problem, path=name))
         else:
             locked.append(name)
+            try:
+                locked_sha[name] = sha256_text(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError):
+                pass
 
     data: Dict[str, Any] = {
         "handoff": True,
@@ -314,6 +315,7 @@ def import_handoff(ctx: HookContext) -> HookResult:
         "handoffUnskip": list(found.unskip),
         "handoffDemoted": [dict(d) for d in found.demoted],
         "locked": locked,
+        "handoffLocked": locked_sha,
     }
     if findings:
         # Fail closed, as `lock-artifacts` does: an approval this hook cannot

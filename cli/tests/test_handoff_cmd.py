@@ -621,8 +621,67 @@ def test_a_reimport_keeps_the_lock_the_hook_wrote(fake, config, repo, capsys):
         f'approvedVia: "handoff {RECORD_URL}"\n---\n' + BRAINSTORM
     )
     (_spec(repo) / "brainstorm.md").write_text(locked)
+    handoff = dict(
+        record.as_dict(), lockedSha256={"brainstorm.md": sha256_text(locked)}
+    )
+    (_spec(repo) / "work-item-state.json").write_text(
+        json.dumps({"version": 1, "workItem": ITEM, "handoff": handoff})
+    )
     assert _cli(config, "handoff", "import", REF, "--repo", str(repo)) == 0
     out = _out(capsys)
     assert "brainstorm.md" in out["verified"]
     assert "brainstorm.md" not in out["written"]
     assert (_spec(repo) / "brainstorm.md").read_text() == locked
+
+
+def test_a_reimport_ignores_a_hand_written_lock(fake, config, repo, capsys):
+    """
+    Feature: the handoff verb
+      Scenario: a committed file carries a lock the hook never wrote
+        Given brainstorm.md carries status approved and approvedVia citing the record
+        And state records no lock for it
+        When `the-loop handoff import` is run
+        Then the carried bytes are written over it
+
+    Requirement: security design, abuse case 4 (self-review round 2, finding 1)
+    """
+    record = _record()
+    files = {"brainstorm.md": BRAINSTORM, "requirements.md": REQUIREMENTS}
+    fake.comments[("octo", "repo", 5)] = [_comment(_ticket_comments(record, files)[0])]
+    _write_state(repo, record)
+    forged = (
+        '---\nstatus: approved\napprovedVia: "handoff ' + RECORD_URL + '"\n---\nother\n'
+    )
+    (_spec(repo) / "brainstorm.md").write_text(forged)
+    assert _cli(config, "handoff", "import", REF, "--repo", str(repo)) == 0
+    out = _out(capsys)
+    assert "brainstorm.md" in out["written"]
+    assert (_spec(repo) / "brainstorm.md").read_text() == BRAINSTORM
+
+
+def test_import_refuses_a_symlinked_docs_specs(fake, config, repo, tmp_path, capsys):
+    """
+    Feature: the handoff verb
+      Scenario: docs/specs is a symlink out of the checkout
+        Given a checkout whose docs/specs links to a folder outside it
+        When `the-loop handoff import` is run
+        Then every file is refused and nothing is written outside
+
+    Requirement: security design (self-review round 2, finding 2)
+    """
+    record = _record()
+    files = {"brainstorm.md": BRAINSTORM, "requirements.md": REQUIREMENTS}
+    fake.comments[("octo", "repo", 5)] = [_comment(_ticket_comments(record, files)[0])]
+    _write_state(repo, record)
+    (repo / ".git").mkdir()
+    outside = tmp_path / "outside"
+    specs = repo / "docs" / "specs"
+    specs.rename(outside)
+    specs.symlink_to(outside)
+    assert _cli(config, "handoff", "import", REF, "--repo", str(repo)) == 0
+    out = _out(capsys)
+    assert out["written"] == []
+    assert {r["reason"] for r in out["refused"]} == {
+        "the spec folder is reached through a symlink"
+    }
+    assert not (outside / ITEM / "brainstorm.md").exists()
