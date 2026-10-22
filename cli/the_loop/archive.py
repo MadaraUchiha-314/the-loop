@@ -83,6 +83,15 @@ _PLAIN_PATH = re.compile(r"[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*")
 #: A scalar choice (harness, model, effort, …): short and printable, or nothing.
 _PLAIN_VALUE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}")
 
+#: A link (a handoff's comment, a Claude artifact): https, printable, bounded.
+_URL = re.compile(r"https://[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]{1,255}")
+
+#: The scalar handoff fields a terminal record copies (issue-517). The rest of
+#: the record — its free-text ``source``, ``confirmation`` and the like — stays
+#: in the state file; the archive is a report, printed to a terminal.
+_HANDOFF_PLAIN = ("stage", "carriedBy", "branch", "author", "mirror")
+_HANDOFF_URLS = ("commentUrl", "specArtifact")
+
 #: A recorded time: ISO-8601 shaped, or nothing — it is printed too.
 _TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T[0-9:.+Z-]{1,40}")
 
@@ -109,6 +118,51 @@ def _timestamp(value: Any) -> str:
 def _plain(value: Any) -> str:
     text = str(value or "")
     return text if _PLAIN_VALUE.fullmatch(text) else ""
+
+
+def _url(value: Any) -> str:
+    text = str(value or "")
+    return text if _URL.fullmatch(text) else ""
+
+
+def _handoff_fields(state: Any, graph: Any) -> Dict[str, Any]:
+    """issue-517's three keys, filtered — and absent when the state has none.
+
+    Absent rather than empty, so a work item that never had a handoff archives
+    exactly as it did before the keys existed.
+    """
+    out: Dict[str, Any] = {}
+    raw = getattr(state, "handoff", None)
+    if isinstance(raw, Mapping) and raw:
+        handoff: Dict[str, Any] = {}
+        version = raw.get("version")
+        if isinstance(version, int) and not isinstance(version, bool):
+            handoff["version"] = version
+        for key in _HANDOFF_PLAIN:
+            if _plain(raw.get(key)):
+                handoff[key] = _plain(raw.get(key))
+        for key in _HANDOFF_URLS:
+            if _url(raw.get(key)):
+                handoff[key] = _url(raw.get(key))
+        enter = str(raw.get("enter") or "")
+        if enter in graph.nodes:
+            handoff["enter"] = enter
+        pull = raw.get("pullRequest")
+        if isinstance(pull, int) and not isinstance(pull, bool) and pull > 0:
+            handoff["pullRequest"] = pull
+        if _timestamp(raw.get("recordedAt")):
+            handoff["recordedAt"] = _timestamp(raw.get("recordedAt"))
+        out["handoff"] = handoff
+    demoted = [
+        {"node": str(d.get("node")), "artifact": _plain(d.get("artifact"))}
+        for d in getattr(state, "handoff_demoted", None) or []
+        if isinstance(d, Mapping) and str(d.get("node") or "") in graph.nodes
+    ]
+    if demoted:
+        out["handoffDemoted"] = demoted
+    if _url(getattr(state, "claude_artifact_url", "")):
+        out["claudeArtifactUrl"] = _url(state.claude_artifact_url)
+    return out
 
 
 def _completion_node(graph: Any) -> Optional[Any]:
@@ -188,7 +242,7 @@ def terminal_record(rt: Any, item_id: str) -> Optional[Dict[str, Any]]:
     ever armed has no walk to record. A read only: nothing is written, and the
     caller decides where the copy goes.
     """
-    from .graph.runtime import NOT_SELECTED
+    from .graph.runtime import NO_HANDOFF, NOT_SELECTED
     from .graph.state import WorkItemState
 
     item = rt.work_item(item_id)
@@ -215,7 +269,7 @@ def terminal_record(rt: Any, item_id: str) -> Optional[Dict[str, Any]]:
             "skipped": [
                 n
                 for n in (n.id for n in graph.ordered())
-                if n in skips and skips[n].get("via") != NOT_SELECTED
+                if n in skips and skips[n].get("via") not in (NOT_SELECTED, NO_HANDOFF)
             ],
             "optedIn": [n.id for n in graph.ordered() if rt.selected(state, n.id)],
             "surface": _plain(state.surface),
@@ -230,6 +284,7 @@ def terminal_record(rt: Any, item_id: str) -> Optional[Dict[str, Any]]:
         "specDir": f"{rt.spec_root}/{item_id}",
         "evidence": _evidence(item.spec_dir),
         "recordedAt": _utcnow(),
+        **_handoff_fields(state, graph),
     }
 
 

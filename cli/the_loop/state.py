@@ -681,6 +681,27 @@ ATTRIBUTES: Tuple[Attribute, ...] = (
     ),
     Attribute(
         REPOSITORY_FILE,
+        "handoff",
+        "human-decision",
+        "the handoff record the item arrived with, its author and comment "
+        "(issue-517) — written only when there is one",
+    ),
+    Attribute(
+        REPOSITORY_FILE,
+        "handoffDemoted",
+        "pointer",
+        "each carried artifact the import refused, and the node it demoted "
+        "to (issue-517) — written only when there is one",
+    ),
+    Attribute(
+        REPOSITORY_FILE,
+        "claudeArtifactUrl",
+        "pointer",
+        "the published spec-chain Claude artifact's URL (issue-517) — written "
+        "only when there is one",
+    ),
+    Attribute(
+        REPOSITORY_FILE,
         "repos",
         "human-decision",
         "the repositories it contributes to (issue-183, issue-365)",

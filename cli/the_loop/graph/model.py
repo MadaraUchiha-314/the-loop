@@ -341,6 +341,12 @@ class Node:
     #: and declares its own ``on: skipped`` edge like every other member; what
     #: differs is that nobody has to act for it to be skipped.
     opt_in: bool = False
+    #: Does this node run only for a work item that arrived with a handoff
+    #: record (issue-517)? ``declared_skips`` routes around it with
+    #: ``via: no-handoff`` whenever the state carries none, so it stays out of
+    #: every other item's walk with no edge special-casing. Must be skippable:
+    #: the skip is the declared-skip mechanism, ``on: skipped`` edge and all.
+    requires_handoff: bool = False
     #: One line rendered beside this node's row on the phase-selection
     #: checklist (issue-188). Shipped-graph text, never repo-supplied: a phase a
     #: reader has to guess at is a phase they will not choose.
@@ -363,6 +369,7 @@ class Node:
             "optional": self.optional,
             "skippable": self.skippable,
             "optIn": self.opt_in,
+            "requiresHandoff": self.requires_handoff,
             "description": self.description,
             "maxAttempts": self.max_attempts,
             "terminal": self.terminal,
@@ -575,6 +582,15 @@ def _build_node(
             f"node {node_id!r} is both required and skippable — a mandatory "
             "gate cannot also be in the skip vocabulary (issue-177)"
         )
+    requires_handoff = bool(raw.get("requiresHandoff", False))
+    if requires_handoff and not (bool(raw.get("skippable", False)) or opt_in):
+        # The no-handoff skip IS a declared skip, so the node must be in the
+        # skip vocabulary and declare its own `on: skipped` edge (issue-517).
+        raise GraphConfigError(
+            f"node {node_id!r} is requiresHandoff but not skippable — a node "
+            "that runs only with a handoff is skipped without one, so it must "
+            "be in the skip vocabulary (issue-517)"
+        )
     return Node(
         id=node_id,
         phase=str(raw.get("phase", "")),
@@ -590,6 +606,7 @@ def _build_node(
         # authorized at the same gate — only its default differs.
         skippable=bool(raw.get("skippable", False)) or opt_in,
         opt_in=opt_in,
+        requires_handoff=requires_handoff,
         description=str(raw.get("description", "") or "").strip(),
         max_attempts=int(raw.get("maxAttempts", 3)),
         entry=_validate_chain(node_id, "entry", raw.get("entry") or [], known),

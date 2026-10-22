@@ -79,6 +79,11 @@ def _exclude_spec_root(repo: Path, spec_root: str) -> str:
 #: was offered and not asked for.
 NOT_SELECTED = "not-selected"
 
+#: The ``via`` marker of a ``requiresHandoff`` node on a work item that arrived
+#: with no handoff record (issue-517): nobody declared it, and it is not a
+#: phase anybody declined — there was simply nothing to import.
+NO_HANDOFF = "no-handoff"
+
 #: The provenance of a skippable node the work item's FROZEN selection never
 #: listed (issue-488): the phase did not exist when its author answered
 #: `phase-selection`, so nobody chose it and nobody declined it. Walking it
@@ -124,6 +129,8 @@ def _skip_provenance(decl: Mapping[str, Any]) -> str:
             "not selected — an opt-in phase, off unless it is ticked at "
             "`phase-selection`"
         )
+    if via == NO_HANDOFF:
+        return "no handoff — this work item arrived without a handoff record"
     if via == NOT_OFFERED:
         return (
             "not offered — the phase did not exist when this work item's "
@@ -577,6 +584,13 @@ class Runtime:
         for node in self.graph.ordered():
             if node.opt_in and node.id not in out and not self.selected(state, node.id):
                 out[node.id] = {"via": NOT_SELECTED}
+        if not getattr(state, "handoff", None):
+            # issue-517: a node that imports a handoff has nothing to do on an
+            # item that arrived without one, so it is routed around like any
+            # other declared skip — the opt-in rule's twin.
+            for node in self.graph.ordered():
+                if node.requires_handoff and node.id not in out:
+                    out[node.id] = {"via": NO_HANDOFF}
         offered = _frozen_node_ids(state)
         if offered:
             for node in self.graph.ordered():

@@ -111,6 +111,23 @@ def state_lock(spec_dir: Path, timeout: float = 2.0) -> Iterator[None]:
             fcntl.flock(fh, fcntl.LOCK_UN)
 
 
+def _mapping(raw: Any) -> Dict[str, Any]:
+    """A copy of ``raw`` when it is an object, else ``{}``."""
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _mapping_list(raw: Any) -> List[Dict[str, Any]]:
+    """Copies of the objects in a list, or ``[]`` for anything that is not one."""
+    if not isinstance(raw, list):
+        return []
+    return [dict(entry) for entry in raw if isinstance(entry, dict)]
+
+
+def _string(raw: Any) -> str:
+    """``raw`` when it is a string, else ``""`` — never a stringified list."""
+    return raw.strip() if isinstance(raw, str) else ""
+
+
 def _string_list(raw: Any) -> List[str]:
     """Non-empty strings from a list, or ``[]`` for anything that is not one."""
     if not isinstance(raw, (list, tuple)):
@@ -419,6 +436,16 @@ class WorkItemState:
     #: harness. Read with ``is True``: the file is agent-writable, and only the
     #: boolean itself turns it on.
     claude_artifact: bool = False
+    #: The handoff record this work item arrived with (issue-517): the parsed
+    #: record plus ``author``, ``commentUrl`` and ``recordedAt``, written once by
+    #: ``Runtime.start`` before the first save. ``{}`` is *no handoff*, and a
+    #: ``requiresHandoff`` node is then skipped via ``no-handoff``.
+    handoff: Dict[str, Any] = field(default_factory=dict)
+    #: Each carried artifact the ``import-handoff`` hook refused, as
+    #: ``{node, artifact, reason}`` (issue-517) — the node it demoted the walk to.
+    handoff_demoted: List[Dict[str, Any]] = field(default_factory=list)
+    #: The published spec-chain Claude artifact's URL (issue-517, R7.4).
+    claude_artifact_url: str = ""
     #: The pull requests delivering this work item (issue-368, R2.1) — the
     #: repository's own objects, so they are recorded on the work item's branch
     #: rather than only in a machine-local session record that never travels.
@@ -504,6 +531,9 @@ class WorkItemState:
             model=str(data.get("model") or ""),
             effort=str(data.get("effort") or ""),
             claude_artifact=data.get("claudeArtifact") is True,
+            handoff=_mapping(data.get("handoff")),
+            handoff_demoted=_mapping_list(data.get("handoffDemoted")),
+            claude_artifact_url=_string(data.get("claudeArtifactUrl")),
             pull_requests=_pull_requests(
                 data.get("pullRequests"),
                 repository_of(str(data.get("workItem", work_item))),
@@ -527,7 +557,7 @@ class WorkItemState:
         return path
 
     def as_dict(self) -> Dict[str, Any]:
-        return {
+        out: Dict[str, Any] = {
             "version": self.version,
             "workItem": self.work_item,
             "currentNode": self.current_node,
@@ -549,6 +579,15 @@ class WorkItemState:
             "loop": self.loop,
             "phase": self.phase,
         }
+        # issue-517's keys are written only when set, so a work item that never
+        # had a handoff saves byte-identical to the file it was before.
+        if self.handoff:
+            out["handoff"] = self.handoff
+        if self.handoff_demoted:
+            out["handoffDemoted"] = self.handoff_demoted
+        if self.claude_artifact_url:
+            out["claudeArtifactUrl"] = self.claude_artifact_url
+        return out
 
     # -- pull requests (issue-368) --------------------------------------------
 
