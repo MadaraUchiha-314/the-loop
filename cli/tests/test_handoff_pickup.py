@@ -616,9 +616,10 @@ def test_an_imported_spec_chain_artifact_url_is_recorded_and_rendered(repo):
     """
     Feature: a handed-off spec-chain artifact keeps its URL
       Scenario: an imported spec-chain artifact URL is recorded and rendered in graph context
-        Given a work item whose state records claudeArtifactUrl
-        When the graph context is read from that state and rendered
-        Then the Claude artifact line names that URL as the one to republish to
+        Given a handoff record naming a spec-chain artifact
+        When the walk starts with it and phase selection kept the artifact on
+        Then state records claudeArtifactUrl from the record
+        And the Claude artifact line names that URL as the one to republish to
 
     Requirement: docs/specs/issue-517/requirements.md R7.4
     """
@@ -637,8 +638,9 @@ def test_an_imported_spec_chain_artifact_url_is_recorded_and_rendered(repo):
     )
     state_dir = repo / "docs" / "specs" / ITEM
     state = WorkItemState.load(state_dir, ITEM)
-    state.claude_artifact = True
-    state.claude_artifact_url = ARTIFACT_URL
+    # Adopted by Runtime.start itself (critic round 1), not written by hand.
+    assert state.claude_artifact_url == ARTIFACT_URL
+    state.claude_artifact = True  # the phase-selection choice
     state.save(state_dir)
 
     ctx = GraphLink._context_from(rt, ITEM)  # noqa: SLF001
@@ -650,6 +652,26 @@ def test_an_imported_spec_chain_artifact_url_is_recorded_and_rendered(repo):
     assert ARTIFACT_URL in line
     assert "republished to the same URL" not in line
     assert "carried by artifact" in text
+
+
+def test_a_record_artifact_url_that_is_not_claude_ai_is_not_adopted(repo):
+    """Requirement: R7.4, security design (critic round 1): only a claude.ai
+    artifact link is adopted from the untrusted record."""
+    rt = Runtime(repo, graph=_graph())
+    rt.start(
+        ITEM,
+        REF,
+        handoff=_found(
+            _record(
+                carried_by="artifact",
+                branch="",
+                spec_artifact="https://evil.example/artifact/x",
+                spec_artifact_sha256=SHA,
+            )
+        ),
+    )
+    state = WorkItemState.load(repo / "docs" / "specs" / ITEM, ITEM)
+    assert state.claude_artifact_url == ""
 
 
 def test_an_artifact_url_that_is_not_https_is_not_rendered():

@@ -11,6 +11,8 @@ runtime, not a reimplementation of it.
 
 from __future__ import annotations
 
+import re
+
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -83,6 +85,12 @@ NOT_SELECTED = "not-selected"
 #: with no handoff record (issue-517): nobody declared it, and it is not a
 #: phase anybody declined — there was simply nothing to import.
 NO_HANDOFF = "no-handoff"
+
+#: The only spec-chain artifact URL a handoff record may hand the session
+#: (issue-517 R7.4): a claude.ai artifact link, nothing that renders as markup.
+_CLAUDE_ARTIFACT_URL = re.compile(
+    r"https://claude\.ai/(?:code/)?artifact/[A-Za-z0-9_-]+"
+)
 
 #: The provenance of a skippable node the work item's FROZEN selection never
 #: listed (issue-488): the phase did not exist when its author answered
@@ -1067,6 +1075,14 @@ class Runtime:
             return None
         if handoff is not None:
             state.handoff = {**handoff.as_dict(), "recordedAt": utc_now()}
+            # R7.4 (critic round 1): the developer's spec-chain artifact is
+            # adopted here, once, so the session republishes to that URL
+            # rather than publishing a second artifact. Only a claude.ai link
+            # is taken; whether to publish at all stays the phase-selection
+            # choice (`claudeArtifact`).
+            url = str(getattr(handoff, "spec_artifact", "") or "")
+            if _CLAUDE_ARTIFACT_URL.fullmatch(url):
+                state.claude_artifact_url = url
 
         # A guest loop — a contribution, a review — must not push the-loop's
         # spec tree into a repository it does not own (issue-185, PR #187
