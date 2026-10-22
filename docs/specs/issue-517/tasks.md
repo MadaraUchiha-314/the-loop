@@ -53,7 +53,7 @@ overrides: {}
   - _Requirements:_ R6.1, R7.1, R7.4; compatibility NFR
   - _Test:_ T1, T10. Unit tests cover the `declared_skips` rule; a legacy state fixture
     loads, walks and archives unchanged.
-- [ ] 4. `import-handoff` node and hook (C8)
+- [x] 4. `import-handoff` node and hook (C8)
   - Node and edges in `graph/pdlc-work-item-loop.yaml` (phase-selection →
     import-handoff → brainstorming).
   - New `graph/hooks/handoff.py`:
@@ -69,7 +69,7 @@ overrides: {}
     - `Scenario: a carried file whose hash does not match is refused`.
     - Instructions in a body change no state.
     - The graph compiles, and `make validate` passes.
-- [ ] 5. Poller pick-up and runtime start (C5, C6)
+- [x] 5. Poller pick-up and runtime start (C5, C6)
   - In `Dispatcher`, on the arming path for an item with no state:
     - list comments once and run `find_record`;
     - pass `branch` to `_prepare_workspace`;
@@ -94,13 +94,13 @@ overrides: {}
     - A checklist snapshot.
     - The five R6-table walk scenarios, from `Scenario: an exploring handoff walks to brainstorming` to `Scenario: a design-settled handoff without a testing plan walks to test-planning`.
     - `Scenario: an item with no handoff walks exactly as before`.
-- [ ] 7. `$graph_context` and the artifact URL (C9)
+- [x] 7. `$graph_context` and the artifact URL (C9)
   - `render_graph_context` adds the handoff line, and the artifact line names
     `claudeArtifactUrl`.
   - _Depends on:_ 3
   - _Requirements:_ R6.1, R7.4
   - _Test:_ T2. `Scenario: an imported spec-chain artifact URL is recorded and rendered in graph context`.
-- [ ] 8. `the-loop handoff` verb (C3)
+- [x] 8. `the-loop handoff` verb (C3)
   - `post`, `show`, `import [--from-dir]` and `note` in
     `cli/the_loop/commands/handoff_cmd.py`, registered in the CLI.
   - `import` refuses an unverifiable file. `note` falls back to a superseding comment.
