@@ -539,6 +539,9 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
   `brainstorm.md` if one is present).
 - `/the-loop:create-ticket <path>` — create the ticket from a `requirements.md` and
   promote `draft-<slug>/` → `docs/specs/<id>/`.
+- `/the-loop:handoff [title]` — hand a conversation to the-loop from any surface: draft
+  what it settled, interview, file the issue with a handoff record, and start the loop
+  at the stage reached (the `handoff-to-the-loop` skill, issue-517).
 - `/the-loop:create-design <id>` — `requirements.md` → `design.md` (Phase 2).
 - `/the-loop:create-testing-plan <id>` — requirements + design → `testing-plan.md`.
 - `/the-loop:explain <id>` — at `spec-explainer` / `code-explainer`: write and publish the

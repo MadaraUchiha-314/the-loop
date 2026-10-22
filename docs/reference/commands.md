@@ -22,6 +22,7 @@ Run the same flow one step at a time:
 | `/the-loop:brainstorm <title>` | *(Optional Phase 0)* Draft a free-form `brainstorm.md` scratchpad (the root artifact) for a fuzzy idea; iterate, then convert to requirements. |
 | `/the-loop:new-requirement <title>` | Draft a `requirements.md` in a temporary `docs/specs/draft-<slug>/` folder **before a ticket exists** (converts a sibling `brainstorm.md` if present). |
 | `/the-loop:create-ticket <path>` | Create the ticket from a `requirements.md`; promote `draft-<slug>/` → `docs/specs/<id>/`. |
+| `/the-loop:handoff [title]` | Hand a conversation to the-loop from any surface (Claude Code, Cursor, the Claude apps): draft the artifacts it settled, a four-question interview, the GitHub issue (plus an optional Jira copy) and a handoff record, so the loop starts at the stage reached. |
 | `/the-loop:create-design <id>` | Create `design.md` from the approved requirements (Phase 2). |
 | `/the-loop:create-testing-plan <id>` | Create `testing-plan.md` from requirements + design — which kinds of testing apply, the verification environment, the evidence to capture. |
 | `/the-loop:explain <id>` | At `spec-explainer` / `code-explainer` (issue-488): write and publish the explainer page — the spec explainer and spec quiz before code generation, the explainer of the change and the code quiz before review — and record where it lives. |

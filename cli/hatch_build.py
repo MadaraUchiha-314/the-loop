@@ -11,6 +11,7 @@ class CustomBuildHook(BuildHookInterface):
         for source, destination in (
             ("skills/the-loop", "skills/the-loop"),
             ("skills/writing", "skills/writing"),
+            ("skills/handoff-to-the-loop", "skills/handoff-to-the-loop"),
             ("commands", "commands"),
             ("hooks", "hooks"),
         ):
