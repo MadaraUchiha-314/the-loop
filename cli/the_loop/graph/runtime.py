@@ -139,6 +139,11 @@ def _skip_provenance(decl: Mapping[str, Any]) -> str:
     token = str(decl.get("token") or "")
     by = str(decl.get("by") or "")
     reason = str(decl.get("reason") or "")
+    handoff = str(decl.get("handoff") or "")
+    if handoff:
+        # issue-517 (R6.3): a phase before a handoff's starting step. Still a
+        # declaration — the replier signed it — but the reason is the record.
+        return f"skipped by handoff (declared by {by or 'unknown'}) — record {handoff}"
     parts = [f"skipped by declaration — via {via}"]
     if token:
         parts.append(f"token {token!r}")
@@ -811,6 +816,35 @@ class Runtime:
                 logger.info("%s: handoff import un-skipped %s", item.ref, unskipped)
         return changed
 
+    def _handoff_landing(
+        self,
+        state: "WorkItemState",
+        node_id: str,
+        target: str,
+        skips: Mapping[str, Any],
+    ) -> str:
+        """The handoff's starting step, when a skip edge would jump over it.
+
+        issue-517 (R6 table, R7.3): a handed-off walk starts at the record's
+        ``enter`` node, never later. Some ``on: skipped`` edges bypass a gate on
+        purpose — a skipped ``brainstorming`` goes straight to requirements, as
+        there is no brainstorm to approve — which is wrong for a *brainstorm
+        settled* handoff that carried one. Applied only until ``enter`` is first
+        entered, and never to an ``enter`` that is itself declared skipped.
+        """
+        enter = str((getattr(state, "handoff", None) or {}).get("enter") or "")
+        if not enter or enter == target or enter in skips:
+            return target
+        rec = state.nodes.get(enter)
+        if rec is not None and rec.entered_at:
+            return target
+        order = [n.id for n in self.graph.ordered()]
+        if not {node_id, target, enter} <= set(order):
+            return target
+        if order.index(node_id) < order.index(enter) < order.index(target):
+            return enter
+        return target
+
     def _route_skips(
         self,
         state: "WorkItemState",
@@ -834,6 +868,7 @@ class Runtime:
             target = self.graph.next_node(node_id, "skipped")
             if target is None:
                 break  # fail closed: walk the node rather than guess an exit
+            target = self._handoff_landing(state, node_id, target, skips)
             rec = state.record(node_id)
             rec.entered_at = rec.entered_at or utc_now()
             rec.outcome = "skipped"
@@ -1043,7 +1078,15 @@ class Runtime:
         )  # persist BEFORE any dependent side effect (R8.2)
         node = self.graph.node(node_id)
         entered = run_chain(
-            node.entry, self._context(item, node, "entry", surface=self._surface(state))
+            node.entry,
+            self._context(
+                item,
+                node,
+                "entry",
+                surface=self._surface(state),
+                # The phase-selection checklist reads it (issue-517, C7).
+                handoff=state.handoff,
+            ),
         )
         eventlog.emit("graph.started", work_item=item.ref, node=node_id)
         logger.info("%s entered the graph at %s", item.ref, node_id)
@@ -1383,7 +1426,13 @@ class Runtime:
             )
         entered = run_chain(
             entry_node.entry,
-            self._context(item, entry_node, "entry", surface=self._surface(state)),
+            self._context(
+                item,
+                entry_node,
+                "entry",
+                surface=self._surface(state),
+                handoff=state.handoff,
+            ),
         )
         eventlog.emit(
             "graph.advanced",
