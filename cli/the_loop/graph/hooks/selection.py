@@ -603,11 +603,17 @@ def _phase_rows(ctx: HookContext) -> Tuple[List[str], List[str], List[str]]:
         return [], [], []
     # The explainer's nodes are one SETTING row, not four phase rows (issue-488).
     grouped = set(_explainer_nodes(ctx))
-    opt_in = [n.id for n in graph.ordered() if n.opt_in]
+    # A `requiresHandoff` node is no human's choice (issue-517): the handoff
+    # record decides whether it runs, so it is never a row — and a reply that
+    # names it is neither a skip nor a refusal.
+    opt_in = [n.id for n in graph.ordered() if n.opt_in and not n.requires_handoff]
     skippable = [
         n.id
         for n in graph.ordered()
-        if n.skippable and not n.opt_in and n.id not in grouped
+        if n.skippable
+        and not n.opt_in
+        and not n.requires_handoff
+        and n.id not in grouped
     ]
     # Every non-skippable node the item will actually walk — deliberately NOT
     # filtered by `phase`: most of the review chain (`security-review`,

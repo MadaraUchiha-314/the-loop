@@ -770,6 +770,47 @@ class Runtime:
             )
         return True
 
+    def _record_handoff_import(
+        self, state: "WorkItemState", item: WorkItem, outcome: ChainOutcome
+    ) -> bool:
+        """Apply what the ``import-handoff`` hook found (issue-517, design §C8).
+
+        The hook cannot write state, so — like the phase-selection gate's
+        skips — it returns the fact and the runtime, the single writer, records
+        it: each refused artifact appended to ``handoffDemoted``, and the nodes
+        it names removed from ``state.skips``. **Removal only**: un-skipping
+        adds work, so it widens nothing, and a node already walked is left as
+        it is. Read only from the hook's own results.
+        """
+        changed = False
+        for result in outcome.results:
+            if result.hook != "import-handoff":
+                continue
+            for entry in result.data.get("handoffDemoted") or ():
+                if isinstance(entry, Mapping):
+                    state.handoff_demoted.append(
+                        {
+                            k: str(entry.get(k) or "")
+                            for k in ("node", "artifact", "reason")
+                        }
+                    )
+                    changed = True
+            unskipped = []
+            for node_id in result.data.get("handoffUnskip") or ():
+                rec = state.nodes.get(str(node_id))
+                if str(node_id) in state.skips and not (rec and rec.entered_at):
+                    del state.skips[str(node_id)]
+                    unskipped.append(str(node_id))
+            if unskipped:
+                changed = True
+                eventlog.emit(
+                    "handoff.demoted",
+                    work_item=item.ref,
+                    nodes=unskipped,
+                )
+                logger.info("%s: handoff import un-skipped %s", item.ref, unskipped)
+        return changed
+
     def _route_skips(
         self,
         state: "WorkItemState",
@@ -823,6 +864,7 @@ class Runtime:
         decisions: Optional[Mapping[str, Any]] = None,
         surface: str = "",
         visited: FrozenSet[str] = frozenset(),
+        handoff: Optional[Mapping[str, Any]] = None,
     ) -> ChainOutcome:
         """Run one node's **exit** chain. This is what ``check`` calls.
 
@@ -846,6 +888,7 @@ class Runtime:
                 decisions=decisions,
                 surface=surface,
                 visited=visited,
+                handoff=dict(handoff or {}),
             ),
         )
 
@@ -930,7 +973,9 @@ class Runtime:
 
     # -- advancement ----------------------------------------------------------
 
-    def start(self, work_item_id: str, ref: str = "") -> Optional[NodeReport]:
+    def start(
+        self, work_item_id: str, ref: str = "", handoff: Optional[Any] = None
+    ) -> Optional[NodeReport]:
         """Enter the start node for a work item that has not begun (issue-113).
 
         The counterpart ``advance`` never was: ``advance`` evaluates the *current*
@@ -946,11 +991,21 @@ class Runtime:
 
         Idempotent: a work item that already has a pointer returns ``None`` and is
         left untouched, so a redelivered spawn can never rewind it.
+
+        ``handoff`` (issue-517, design §C6) is the
+        :class:`~the_loop.core.handoff.HandoffRecord` the poller found on the
+        issue at arming. It is frozen into ``state.handoff`` here and only here —
+        **inside** the no-pointer guard and before the first save — so a record
+        posted or edited after the walk started never reaches state (abuse cases
+        3 and 6). It is written before the declared skips are read, because a
+        ``requiresHandoff`` node is routed around exactly when it is absent.
         """
         item = self.work_item(work_item_id, ref)
         state = WorkItemState.load(self.state_dir(item), work_item_id)
         if state.current_node:
             return None
+        if handoff is not None:
+            state.handoff = {**handoff.as_dict(), "recordedAt": utc_now()}
 
         # A guest loop — a contribution, a review — must not push the-loop's
         # spec tree into a repository it does not own (issue-185, PR #187
@@ -1197,6 +1252,9 @@ class Runtime:
             decisions=state.decisions,
             surface=self._surface(state),
             visited=_visited(state),
+            # Only the walk itself hands the record to a hook (issue-517):
+            # `check` stays a read of the artifacts alone.
+            handoff=state.handoff,
         )
         report = NodeReport(
             node=node_id,
@@ -1244,6 +1302,8 @@ class Runtime:
         # Order matters: the selection gate's own result decides which nodes the
         # very next hop routes around.
         if self._record_selected_skips(state, item, outcome):
+            skips = self.declared_skips(state)
+        if self._record_handoff_import(state, item, outcome):
             skips = self.declared_skips(state)
         # The phase this walk is in, before the pointer moves (issue-378): the
         # node's own, or the one it inherited from the nodes before it.

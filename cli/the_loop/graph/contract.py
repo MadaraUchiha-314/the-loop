@@ -123,6 +123,11 @@ class HookContext:
     #: from "removed after the gate opened" (fail closed): only the first may
     #: route past a human.
     visited: FrozenSet[str] = frozenset()
+    #: The handoff record this work item arrived with (issue-517) — its
+    #: work-item state's ``handoff``, ``{}`` for an item without one. Read by
+    #: the ``import-handoff`` hook; frozen at ``Runtime.start``, never re-read
+    #: from a comment.
+    handoff: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def node_id(self) -> str:

@@ -127,6 +127,28 @@ nodes:
     entry: [set-phase-label, post-phase-selection, deliver-assignment]
     exit: [classify-phase-selection]
 
+  # The handoff's landing step (issue-517). A developer who talked an idea
+  # through with Claude hands it over at the stage they reached; this node turns
+  # that handoff into checked-in, shape-checked files so the rest of the graph
+  # runs unchanged. The session imports and commits the carried artifacts; the
+  # `import-handoff` hook then re-checks each one — present, its bytes matching
+  # the record's sha256, and the section check of the node that produces it.
+  # A file that fails DEMOTES the walk: the hook un-skips that producing node,
+  # so the item starts earlier, never later, than the record's `enter`. It can
+  # only ever un-skip — un-skipping adds work, so nothing here widens a walk.
+  #
+  # `requiresHandoff`: every item that arrived without a handoff routes around
+  # this node (`via: no-handoff`), so it is not a phase a human chooses and the
+  # phase-selection checklist does not list it. Placed after `phase-selection`
+  # because that reply is still what authorizes the walk (decision-068).
+  - id: import-handoff
+    actor: agent
+    skippable: true
+    requiresHandoff: true
+    command: work-on
+    entry: [deliver-assignment]
+    exit: [import-handoff]
+
   - id: brainstorming
     phase: brainstorming
     actor: agent
@@ -585,7 +607,11 @@ nodes:
     exit: []
 
 edges:
-  - {from: phase-selection, to: brainstorming, on: selected}
+  # issue-517: every selection passes through `import-handoff`, which an item
+  # without a handoff routes around on `skipped`.
+  - {from: phase-selection, to: import-handoff, on: selected}
+  - {from: import-handoff, to: brainstorming, on: pass}
+  - {from: import-handoff, to: brainstorming, on: skipped}
   # issue-494: a written brainstorm waits for its author's approval; one that was
   # never written (`not-entered`) or declared away (`skipped`) has nothing to
   # approve and goes straight on.

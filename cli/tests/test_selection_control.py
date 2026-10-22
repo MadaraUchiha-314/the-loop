@@ -1035,7 +1035,10 @@ def test_the_checklist_copy_neither_threatens_nor_promises_ticking_right_here():
     assert rows is not None
     graph = load_graph()
     grouped = set(graph.skip_sets.get(selection.EXPLAINER_TOKEN, ()))
-    ordered = [n for n in graph.ordered() if n.id not in grouped]
+    # issue-517: a requiresHandoff node is never a row.
+    ordered = [
+        n for n in graph.ordered() if n.id not in grouped and not n.requires_handoff
+    ]
     unticked = selection.UNTICKED_BY_DEFAULT
     assert [r.token for r in rows.phases if r.ticked] == [
         n.id for n in ordered if n.skippable and not n.opt_in and n.id not in unticked

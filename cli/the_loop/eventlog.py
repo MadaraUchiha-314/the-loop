@@ -852,6 +852,42 @@ EVENT_TYPES: Dict[str, str] = {
         "typed into (work_item, harness, tmux_target, ok, error) — "
         "routing.tmux.killHarnessOnClose: false skips it."
     ),
+    # -- the handoff pick-up (issue-517; source: the dispatcher's arming path) ---
+    "handoff.honoured": (
+        "A GitHub issue not yet on the graph was armed with a handoff record "
+        "(work_item, stage, enter, author, carried_by, branch, record): its "
+        "checkout is made on the record's spec branch and Runtime.start freezes "
+        "the record into work-item-state.json."
+    ),
+    "handoff.ignored": (
+        "One or more handoff records on a work item were not honoured "
+        "(work_item, reasons: each record's URL and why — author not authorized, "
+        "unknown version, malformed, item already on the graph). The item arms "
+        "as one with no handoff."
+    ),
+    "handoff.unreadable": (
+        "The comments of a work item being armed could not be listed, so no "
+        "handoff record was read (work_item, error). Warning-level; the item "
+        "arms as one with no handoff — fail closed, never a guessed stage."
+    ),
+    "handoff.imported": (
+        "`the-loop handoff import` materialized a handed-off item's carried "
+        "files into its spec folder (work_item, written, refused: counts). "
+        "Warning-level when any file was refused; the import-handoff hook then "
+        "demotes the walk."
+    ),
+    "handoff.demoted": (
+        "The import-handoff hook refused a carried artifact (missing, a sha256 "
+        "mismatch, or a failed section check), so the runtime un-skipped the "
+        "nodes from its producing node up to the record's enter node "
+        "(work_item, nodes). The item starts earlier, never later; the refusal "
+        "is in work-item-state.json's handoffDemoted."
+    ),
+    "arm.refused": (
+        "A work item was not armed (work_item, reason). reason=mirror: a Jira "
+        "copy labelled the-loop-mirror — the GitHub issue it mirrors runs the "
+        "loop (issue-517). Settled, never retried."
+    ),
     "workspace.prepared": (
         "A per-work-item checkout was made ready for a spawned session "
         "(work_item, strategy: worktree | clone, checkout, branch)."
@@ -950,7 +986,7 @@ EVENT_TYPES: Dict[str, str] = {
         "with its delivery, not because it was delivered (work_item, "
         "comment_id, actor, outcome: awaiting-start | session-paused | "
         "collaborator-no-spawn | control-executed | control-rejected | "
-        "control-ambiguous | parked-at-human-start-gate | "
+        "control-ambiguous | parked-at-human-start-gate | mirror-refused | "
         "addressed-elsewhere | unaddressed | "
         "instance-locked | ambiguous-address | ci-not-actionable | "
         "ci-autofix-exhausted, "
