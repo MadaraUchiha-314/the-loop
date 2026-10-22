@@ -32,7 +32,7 @@ can reach: the interview and a real issue.
 | T8 | Security / abuse case | yes | one negative test per abuse case 1–7 in `design.md` §Security design, plus path/branch-name validation | `make test` |
 | T9 | Accessibility | n/a | no new visual surface | |
 | T10 | Migration / upgrade | yes | a `work-item-state.json` with none of the new keys loads, walks and archives unchanged; the graph compiles with the new node and edges; `make validate` passes | `make test`, `make validate` |
-| T11 | Manual exploratory | yes | the handoff skill in Claude Code on a scratch issue: interview, confirmation, issue, record, draft PR; then the poller picks it up at the right step | procedure below |
+| T11 | Manual exploratory | yes, replanned to partial (owner's call, [comment](https://github.com/MadaraUchiha-314/the-loop/issues/517#issuecomment-6334963165)) | the network half against real GitHub on a scratch issue: post a record with parts, read it back through the branch's parser, verify hashes and authorization. The interview and the live poller pick-up move to the owner's check at `human-approval`: a daemon-spawned session has no question tool, and the running daemon is the released version | procedure below, scratch issue |
 | T12 | Static checks | yes | lint, format, types, markdown lint over the new skill and docs | `make check` |
 
 ## Scenarios & requirement trace
@@ -116,7 +116,7 @@ can reach: the interview and a real issue.
 - [x] T10 — `make validate`
 - [x] T12 — `make check`
 - [x] T2/T8 scenario table — `uv run the-loop scenarios --format markdown`
-- [ ] T11 — manual handoff procedure above
+- [x] T11 (replanned to partial, see the matrix) — scratch-issue round trip
 
 ## Verification results
 
@@ -135,7 +135,7 @@ Run on 2026-10-22 against branch `the-loop/issue-517-handoff`.
 - **The interview.** This daemon-spawned session has no `AskUserQuestion` (issue-426), and the skill refuses to interview in one (R2.10).
 - **The live poller pick-up.** The running daemon is the released 20.8.0, not this branch.
 
-Both are covered in-process by the T2 walk and dispatcher scenarios. A developer still needs to run them with a daemon built from this branch, which is escalated on PR #518.
+Both are covered in-process by the T2 walk and dispatcher scenarios. **Replanned** on the owner's call ([B](https://github.com/MadaraUchiha-314/the-loop/issues/517#issuecomment-6334963165)): T11 is the partial scope that ran, and the interview and live pick-up are the owner's check at `human-approval`.
 
 ## Review comments
 

@@ -60,4 +60,4 @@ ignored otherwise.
   five R6-table walk scenarios and the dispatcher scenarios (`tests.md`).
 
 Both need a developer to run `/the-loop:handoff` against a daemon built from this
-branch. That is escalated on PR #518 for the human-approval gate.
+branch. The owner chose to replan T11 to this partial scope and check the rest at `human-approval` ([comment](https://github.com/MadaraUchiha-314/the-loop/issues/517#issuecomment-6334963165)).
