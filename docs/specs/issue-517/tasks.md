@@ -108,7 +108,7 @@ overrides: {}
   - _Requirements:_ R5.2, R5.4, R7.2, R7.5
   - _Test:_ T2, T8. `Scenario: handoff note points the record at the committed files and PR`,
     plus `import` with a tampered file, a missing part, and `--from-dir`.
-- [ ] 9. Handoff skill and command (C1)
+- [x] 9. Handoff skill and command (C1)
   - New `skills/handoff/SKILL.md`, covering:
     - drafting, the transport order, the interview, the confirmation and posting order;
     - the four next-step choices, and the refusal in `work-item` mode;
