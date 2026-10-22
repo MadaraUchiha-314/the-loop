@@ -16,7 +16,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import pytest
 
@@ -95,7 +95,7 @@ def _golden(name: str, text: str) -> None:
     assert text == path.read_text(encoding="utf-8")
 
 
-def _swap(body: str, key: str, value: str) -> str:
+def _swap(body: str, key: str, value: Optional[str]) -> str:
     """``body`` with the ``key:`` line's value replaced (or the line dropped)."""
     out: List[str] = []
     for line in body.split("\n"):
