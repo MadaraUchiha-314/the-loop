@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-517",
-  "currentNode": "code-explainer",
+  "currentNode": "capability-docs",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -133,10 +133,26 @@
     },
     "code-explainer": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-22T07:44:10+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-10-22T14:45:30+00:00",
       "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-517/evidence/explainer.md)",
+      "forced": false
+    },
+    "evidence": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-22T14:45:30+00:00",
+      "exitedAt": "2026-10-22T14:46:02+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "capability-docs": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-22T14:46:02+00:00",
+      "exitedAt": "",
+      "lastBlock": "",
       "forced": false
     }
   },
@@ -394,6 +410,14 @@
     },
     "security-review": {
       "at": "2026-10-22T07:44:10+00:00",
+      "by": "cli"
+    },
+    "code-explainer": {
+      "at": "2026-10-22T14:45:30+00:00",
+      "by": "cli"
+    },
+    "evidence": {
+      "at": "2026-10-22T14:46:02+00:00",
       "by": "cli"
     }
   },
