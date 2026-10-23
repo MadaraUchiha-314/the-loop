@@ -22,3 +22,11 @@ credential is needed, and sits at risk tier 4. The page is the "Spec explainer" 
 the work item's spec-chain artifact; the quiz is the "Spec quiz" tab beside it. Both were
 written from the approved `requirements.md` (with its post-approval amendment to R5),
 `design.md` and `testing-plan.md`, at their state in commit `84a31473`.
+
+## Republished
+
+The spec changed after approval — the owner's amendment to Requirement 5 at the design
+review and the `chat.getPermalink` row added to R2.2 during implementation — so the page
+was rebuilt from the current files and republished to the same URL on 2026-10-23. The
+"Spec explainer" tab already described the amendment; the "Requirements" tab now carries
+the current text. Same depth, same five questions.
