@@ -252,7 +252,9 @@ The word *gateway*, unqualified, is this process; decision-059's is the
   and emits `channel.posting_unavailable`, then starts anyway; `the-loop status` appends
   `outbound Slack needs <var> on this instance` to the gateway-client row (or `posting
   through the gateway` when that is the path); `channels status` prints a `posting:` line
-  and a `[!]` finding; `doctor slack` an `[ok]` / `[!]` / `[?]` gateway line, and its
+  and a `[!]` finding (the one line of that command that asks something: the gateway
+  client's document from the local service, never Slack; with the service down it says
+  the answer is not yet known); `doctor slack` an `[ok]` / `[!]` / `[?]` gateway line, and its
   heartbeat probe is `unverifiable` with the same reason. Slack disabled prints none of it.
 - When the gateway is unreachable the instance keeps running, records
   `gateway.unreachable` once, retries with back-off (1 s → 60 s), records

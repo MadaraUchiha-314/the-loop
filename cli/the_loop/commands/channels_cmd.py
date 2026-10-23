@@ -73,7 +73,12 @@ def _read_mode_findings(config: dict) -> list:
 
 def _posting_lines(slack: SlackChannelConfig, config: dict) -> list:
     """Where this instance's Slack posts go (issue-519, R1.2, R1.4): its own token,
-    the gateway, or nowhere — the last a `[!]` finding naming the variable."""
+    the gateway, or nowhere — the last a `[!]` finding naming the variable.
+
+    The one line of `channels status` that asks something: with a gateway block it
+    reads the gateway client's document from the local control-plane service (never
+    Slack), because "no posting path" needs the gateway's own answer. With the service
+    down it says the answer is not yet known rather than guessing (self-review 1)."""
     if not slack.enabled:
         return []
     from ..channels.slack import posting_path
