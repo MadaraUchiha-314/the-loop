@@ -49,8 +49,10 @@ operator can turn it off, but neither is authentication; the network stays the b
 as the decision says. Two schema changes (gateway and CLI config) and a widening of the
 OpenAPI contract. Risk tier 4, so the security review waits for a named human.
 
-**What to check.** The abuse cases under *Security considerations*, the decisions listed
-below, and the two-row table in *Requirement 5* that says which channels a post may land in.
+**What to check.** The abuse cases under *Security considerations* and the decisions listed
+below. *Requirement 5* carries the one amendment made after approval: the owner withdrew
+the per-instance channel registration at the design review, so a post may land wherever
+the bot can.
 
 ```mermaid
 flowchart LR
@@ -191,9 +193,9 @@ token to post through the gateway without any new setting on the instance.
    the call SHALL raise a `ChannelError` that names the gateway's answer, so the outbox
    keeps the event and retries on its schedule; the client SHALL NOT fall back to a
    token of its own.
-5. WHEN the gateway refuses a call with `403 channel-not-registered` (R5) THEN the
+5. ~~WHEN the gateway refuses a call with `403 channel-not-registered` (R5) THEN the
    instance SHALL log it at `warning` with the channel and the work item and treat it as
-   a failed post.
+   a failed post.~~ *Withdrawn with R5.1 at the design review: no such refusal exists.*
 6. The gateway client's document (`GET /api/v1/gateway` on the instance, the dashboard's
    Gateway card) SHALL carry `slackPosting: on | off | unknown`, read from the gateway's
    health answer, which SHALL gain that field.
@@ -203,32 +205,29 @@ token to post through the gateway without any new setting on the instance.
    gateway binding the opener itself is left to design; the requirement is that a reply
    in that thread reaches the work item.)
 
-### Requirement 5 — a post lands only where the instance is registered
+### Requirement 5 — the existing consumer guards apply to the new routes
 
-**User story:** As an operator, I want an instance to be able to post only into the
-channels it has told the gateway about, so that one misconfigured or hostile peer
-cannot use the gateway to post into any channel the bot can see.
+> **Amended 2026-10-23 at the design review by @MadaraUchiha-314**
+> ([review](https://github.com/MadaraUchiha-314/the-loop/pull/522#pullrequestreview-5623247964)):
+> "Why can't we just do a passthrough? Doesn't make any sense to store these messages
+> in the gateway." Criteria 5.1 and 5.2 — a per-instance channel registration on the
+> gateway and the `403 channel-not-registered` refusal — are **withdrawn**. The gateway
+> keeps no state for posting; any instance it accepts may post wherever the bot can.
+> Criteria 5.3 and 5.4 stand.
+
+~~1. The gateway SHALL allow a call whose `channel` is one the calling instance registered
+(a bound thread, a published room, its home channel, a static room) and refuse every
+other with `403 channel-not-registered`.~~ *Withdrawn.*
+
+~~2. Methods that name no channel SHALL be allowed without the check.~~ *Withdrawn with 5.1.*
 
 #### Acceptance criteria (EARS)
 
-1. The gateway SHALL allow a call whose `channel` is one of the following for the
-   calling instance, and refuse every other with `403 channel-not-registered`:
-
-   | The channel is… | Known to the gateway from |
-   |---|---|
-   | a thread the instance bound | `POST /bindings` (`slack`, `<channel>:<thread_ts>`) |
-   | a room the instance published | `PUT /rooms` (issue-505) |
-   | the instance's **home** channel | a new registration: the instance publishes `channels.slack.channel` as its home with `PUT /rooms` (an extra field), re-published at every registration like rooms |
-   | a static room in `gateway-config.yaml` | `slack.rooms` |
-
-2. Methods that name no channel (`auth.test`, `users.list`, `conversations.list`) SHALL
-   be allowed without the check; `files.info` and the download route SHALL be allowed
-   for any file, because Slack's own file ACL applies.
-3. The gateway SHALL apply the `instances` allow-list to this route as it does to a
-   claim: an unknown name is `409 unknown-instance`, a stale peer under a live name
-   `409 duplicate-instance`.
-4. The gateway SHALL apply the body limits every consumer route has (each field
-   length-bounded, `params` capped in size) and answer `422` at the door.
+- **5.3** The gateway SHALL apply the `instances` allow-list to this route as it does to a
+  claim: an unknown name is `409 unknown-instance`, a stale peer under a live name
+  `409 duplicate-instance`.
+- **5.4** The gateway SHALL apply the body limits every consumer route has (each field
+  length-bounded, `params` capped in size) and answer `422` at the door.
 
 ### Requirement 6 — the operator can see and switch it
 
@@ -289,10 +288,12 @@ cannot use the gateway to post into any channel the bot can see.
      another instance's message is in the list and is bounded by R5; `admin.*`,
      `users.profile.set`, `conversations.invite` are not) THEN the gateway SHALL refuse
      with `422` and send nothing.
-  2. WHEN a peer posts into a channel no registration of its own names THEN the gateway
-     SHALL refuse with `403 channel-not-registered` (R5.1).
-  3. WHEN a peer registers a home or room another live instance holds THEN the holder's
-     stays and the peer's is reported `refused`, as rooms already behave (issue-505 R5).
+  2. ~~WHEN a peer posts into a channel no registration of its own names THEN the gateway
+     SHALL refuse with `403 channel-not-registered`.~~ *Withdrawn with R5.1 by the owner
+     at the design review: an accepted instance may post wherever the bot can, and the
+     contract and the capability page say so.*
+  3. ~~WHEN a peer registers a home another live instance holds THEN the holder's
+     stays.~~ *Withdrawn with R5.1: there is no home registration.*
   4. WHEN a peer asks the download route for a non-Slack URL, or a file over the cap,
      THEN the gateway SHALL refuse before fetching and never follow the redirect (R3.2).
   5. WHEN `slack.post.enabled` is false THEN every call SHALL be `503` and the token
@@ -340,3 +341,14 @@ them or returns the document.
 **@MadaraUchiha-314** wrote:
 
 approved
+
+### 2026-10-23 — amended after approval, at the design review
+
+**@MadaraUchiha-314** wrote on [PR #522](https://github.com/MadaraUchiha-314/the-loop/pull/522#pullrequestreview-5623247964):
+
+> This design is too complicated. Why can't we just do a passthrough? Doesn't make any
+> sense to store these messages in the gateway etc. If gateway is unavailable, then
+> message sending fails, that's it.
+
+Folded in as the amendment to Requirement 5 (5.1 and 5.2 withdrawn) and to abuse cases
+2–3 above; recorded by the-loop, decided by the owner.
