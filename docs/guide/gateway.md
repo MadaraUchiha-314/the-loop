@@ -25,8 +25,10 @@ One instance on one machine gains nothing from a gateway; leave it as it is.
    *"will this instance read its events from a gateway?"* for each instance's own `gateway`
    block, and points you at `/the-loop:init-gateway` when you say the gateway runs here.) Every secret is an environment-variable
    **name** (`*Env`) read from `env.file`: the GitHub poll token (read access only), the
-   Slack app-level token and bot token. They move to the gateway; the gateway holds no
-   posting token and spawns nothing. List the repositories (`repositories`). Slack
+   Slack app-level token and bot token. They move to the gateway, which spawns nothing
+   and holds no GitHub or Jira posting token; with the bot token it holds it also **posts
+   to Slack for the instances** (`slack.post.enabled`, on by default — issue-519), so an
+   instance behind it needs no Slack token of its own. List the repositories (`repositories`). Slack
    collaboration channels need no entry: each instance publishes the rooms its work
    items declare (`the-loop add-channel`), and keeps them current (issue-505).
    `slack.rooms` is only for a channel that no instance declares. The gateway's own

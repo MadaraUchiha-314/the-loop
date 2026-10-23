@@ -189,6 +189,12 @@ scopes that turn a name into an id — `channels:read`, `groups:read`, `users:re
 [app manifest](/guide/slack#_1-create-the-slack-app-from-the-manifest) declares them all). The config names
 the *variable*, the token is read from the environment **at call time**, and the value
 never appears in config, state files, `channels status` output or the event log.
+
+Behind a [gateway](/config/cli/gateway-options#outbound-slack) that posts for its instances
+(`slack.post.enabled`, the default — issue-519) the token is **optional here**: unset, the
+instance's Slack calls go through the gateway, which holds the app's bot token already.
+Set, it is used first, gateway or not. With neither, `the-loop start` warns once and
+`channels status` prints `posting: unavailable` with the reason.
 The variable can be set in the shell or in a `.env` file the config names
 ([`env.file`](/config/cli/#env-file)), loaded when each process starts.
 

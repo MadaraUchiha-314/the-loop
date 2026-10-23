@@ -107,7 +107,7 @@ the transition. No task touches the gateway's store.
   - _Requirements:_ R1, R2, R3, R4.1, R4.2, R4.4, R4.7
   - _Test:_ T2 + T8 — `tests/test_gateway_slack_proxy_integration.py` (red on the branch
     before tasks 3–6, green after) (red→green)
-- [ ] 8. Docs, decision and the documentation record
+- [x] 8. Docs, decision and the documentation record
   - `docs/capabilities/gateway.md` (behaviour, "what it does not do", history row),
     `docs/capabilities/channels.md` (the outbound path, the doctor line),
     `docs/guide/gateway.md` (step 1), `docs/config/cli/gateway-options.md`,

@@ -48,6 +48,7 @@ gateway: running (pid 842933)
   log:     ~/.the-loop/gateway/logs/gateway.out
   ingresses: gh-webhook=off, github-poll=running, jira-poll=off, jira-webhook=off, slack-http=off, slack-socket=running
   slack socket: up
+  slack posting: on
   instances (lease live): laptop-a
   held on unassigned: 0
   restart required: listen

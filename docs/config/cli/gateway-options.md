@@ -58,6 +58,19 @@ mode reads nothing rather than opening a second socket on the gateway's app. A 2
 config that set `mode: socket` here still works. `the-loop channels status` flags it,
 and `the-loop migrate-config` rewrites it.
 
+## Outbound Slack
+
+Behind a gateway the instance posts to Slack **through it**
+([issue-519](https://github.com/MadaraUchiha-314/the-loop/issues/519)) when it has no bot
+token of its own: its own [`channels.slack.botTokenEnv`](/config/cli/channels-options#slackbottokenenv)
+is used first when set, otherwise every Slack Web API call goes to the gateway's
+`POST /api/v1/gateway/slack/call` and the gateway makes it with the token it holds for
+Socket Mode (`slack.post.enabled` in `gateway-config.yaml`, on by default). A gateway that
+is unreachable or has posting off fails the post — no fallback, no retry of this block's
+own. `the-loop status` reads `connected · long-poll <url> · posting through the gateway`,
+or `… — outbound Slack needs THE_LOOP_SLACK_BOT_TOKEN on this instance` when neither
+path can post; `the-loop start` says the same once, as a warning, and still starts.
+
 ## Options
 
 ### `url`

@@ -8,6 +8,9 @@
 - **Work item:** [issue-496](https://github.com/MadaraUchiha-314/the-loop/issues/496)
 - **Spec:** [`docs/specs/issue-496/requirements.md`](../specs/issue-496/requirements.md) §Security considerations; [`design.md`](../specs/issue-496/design.md) §Security design
 - **Refines:** [decision-059](decision-059.md) (the control-plane service carries no in-app authentication — the auth-terminating gateway owns it)
+- **Amended by:** [decision-151](decision-151.md) (issue-519): "any posting token" below is now
+  "any GitHub or Jira posting token" — the gateway posts to Slack for its instances with the bot
+  token it already held, under this same boundary
 
 ## Context
 

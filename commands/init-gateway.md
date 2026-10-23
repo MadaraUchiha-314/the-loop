@@ -55,7 +55,10 @@ Cursor, resolve it to the plugin's install directory.)
    - `github`, `jira`, `slack` — each transport, offered and skippable. Every secret is an
      environment-variable **name** (`*Env`), never a value. The gateway's own GitHub and
      Jira pollers are **off** unless the user turns them on: instances keep polling as
-     they do today.
+     they do today. Under `slack`, ask `slack.post.enabled` once (issue-519), default on:
+     the gateway makes the Slack Web API calls its instances ask for with the bot token it
+     holds, so an instance behind it needs no Slack token of its own; `false` keeps the
+     token for Socket Mode alone and every instance then needs its own.
    - `consume`, `instances`, `observability`, `env` — `advanced`: default silently and
      summarize, with an offer to tour them.
    For every block: explain what it does and why it matters; for enum keys show ALL the
