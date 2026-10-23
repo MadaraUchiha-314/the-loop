@@ -722,6 +722,11 @@ class GatewayClient:
             "rooms": dict(self._published_rooms or {}),
             "health": health,
             "queue": queue,
+            # whether the gateway posts to Slack for this instance (issue-519, R4.6):
+            # `on`, the reason it does not, or `unknown` while health is unread
+            "slackPosting": str(
+                ((health or {}).get("slack") or {}).get("posting") or "unknown"
+            ),
         }
 
 

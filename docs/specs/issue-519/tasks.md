@@ -86,7 +86,7 @@ the transition. No task touches the gateway's store.
   - _Test:_ T1 — `tests/test_slack_posting_path.py` (the three paths; a `client_factory`
     wins; today's error text plus the gateway hint; directory, doctor and attachments
     through the resolver; a `GatewaySlackClient` never reads the token variable) (red→green)
-- [ ] 6. Saying it: start, status, `channels status`, `doctor slack`, the card
+- [x] 6. Saying it: start, status, `channels status`, `doctor slack`, the card
   - `core/lifecycle.py`: `start_all` logs the warning and emits
     `channel.posting_unavailable` for path `none` with Slack enabled, nothing otherwise;
     `gateway_line(doc)` suffixes from `slackPosting` and the local token;

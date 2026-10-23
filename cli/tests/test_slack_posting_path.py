@@ -265,3 +265,208 @@ def test_slack_attachments_treats_a_custom_fetch_as_a_credential(tmp_path):
     assert out[0].error == "" and out[0].path.endswith("F2-a.png")
     out = attachments.slack_attachments(files, token="", dest_dir=tmp_path / "b")
     assert out[0].error == "no-token"
+
+
+# -- task 6: saying it — start, status, channels status, doctor, the card (R1.1, R1.2,
+#    R1.4, R1.5, R1.6, R4.6) -------------------------------------------------------------------
+
+
+def _emits(monkeypatch, module):
+    seen = []
+    monkeypatch.setattr(
+        module.eventlog,
+        "emit",
+        lambda event, level="info", **f: seen.append((event, level, f)),
+    )
+    return seen
+
+
+def test_start_warns_once_when_nothing_can_post_and_still_succeeds(
+    tmp_path, monkeypatch, caplog
+):
+    import logging
+
+    from the_loop.core import lifecycle
+
+    config = cli_config(tmp_path, gateway=False)
+    config["service"] = {"enabled": False}
+    seen = _emits(monkeypatch, lifecycle)
+    caplog.set_level(logging.WARNING)
+    report = lifecycle.start_all(config)
+    assert report["ok"] is True
+    warnings = [r for r in caplog.records if "outbound" in r.getMessage()]
+    assert len(warnings) == 1 and warnings[0].levelno == logging.WARNING
+    assert BOT_ENV in warnings[0].getMessage()
+    assert "no gateway block" in warnings[0].getMessage()
+    events = [e for e in seen if e[0] == "channel.posting_unavailable"]
+    assert len(events) == 1 and events[0][1] == "warning"
+    assert BOT_ENV in events[0][2]["reason"]
+
+
+def test_start_says_the_gateway_could_not_be_asked_or_reports_posting_off(
+    tmp_path, monkeypatch, caplog
+):
+    import logging
+
+    from the_loop.core import lifecycle
+
+    config = cli_config(tmp_path, gateway=True)
+    config["service"] = {"enabled": False}
+    _emits(monkeypatch, lifecycle)
+    caplog.set_level(logging.WARNING)
+    monkeypatch.setattr(lifecycle, "probe_gateway_posting", lambda config: None)
+    lifecycle.start_all(config)
+    text = " ".join(r.getMessage() for r in caplog.records)
+    assert "could not be asked" in text and BOT_ENV in text and GATEWAY_URL in text
+    caplog.clear()
+    monkeypatch.setattr(lifecycle, "probe_gateway_posting", lambda config: "disabled")
+    lifecycle.start_all(config)
+    text = " ".join(r.getMessage() for r in caplog.records)
+    assert "reports posting disabled" in text and BOT_ENV in text
+    caplog.clear()
+    monkeypatch.setattr(lifecycle, "probe_gateway_posting", lambda config: "on")
+    lifecycle.start_all(config)
+    assert not [r for r in caplog.records if "outbound" in r.getMessage()]
+
+
+def test_start_is_silent_with_slack_disabled_or_a_local_token(
+    tmp_path, monkeypatch, caplog
+):
+    import logging
+
+    from the_loop.core import lifecycle
+
+    caplog.set_level(logging.WARNING)
+    seen = _emits(monkeypatch, lifecycle)
+    config = cli_config(tmp_path, gateway=False, slack_enabled=False)
+    config["service"] = {"enabled": False}
+    lifecycle.start_all(config)
+    monkeypatch.setenv(BOT_ENV, "xoxb-local")
+    config = cli_config(tmp_path, gateway=False)
+    config["service"] = {"enabled": False}
+    lifecycle.start_all(config)
+    assert not [r for r in caplog.records if "outbound" in r.getMessage()]
+    assert not [e for e in seen if e[0] == "channel.posting_unavailable"]
+
+
+def test_gateway_line_carries_the_posting_suffix(tmp_path, monkeypatch):
+    from the_loop.core import lifecycle
+
+    config = cli_config(tmp_path, gateway=True)
+    doc = {
+        "configured": True,
+        "state": "connected",
+        "url": GATEWAY_URL,
+        "mode": {"longPollSeconds": 20},
+    }
+    assert lifecycle.gateway_line(doc) == f"connected · long-poll {GATEWAY_URL}"
+    assert (
+        lifecycle.gateway_line({**doc, "slackPosting": "on"}, config)
+        == f"connected · long-poll {GATEWAY_URL} · posting through the gateway"
+    )
+    line = lifecycle.gateway_line({**doc, "slackPosting": "disabled"}, config)
+    assert line.startswith(
+        f"connected · long-poll {GATEWAY_URL} — outbound Slack needs {BOT_ENV} on this instance"
+    )
+    assert "reports posting disabled" in line
+    monkeypatch.setenv(BOT_ENV, "xoxb-local")
+    assert (
+        lifecycle.gateway_line({**doc, "slackPosting": "disabled"}, config)
+        == f"connected · long-poll {GATEWAY_URL}"
+    )
+    monkeypatch.delenv(BOT_ENV)
+    off = cli_config(tmp_path, gateway=True, slack_enabled=False)
+    assert (
+        lifecycle.gateway_line({**doc, "slackPosting": "disabled"}, off)
+        == f"connected · long-poll {GATEWAY_URL}"
+    )
+
+
+def test_channels_status_prints_the_posting_line(tmp_path, monkeypatch, capsys):
+    from the_loop.commands import channels_cmd
+    from the_loop.core import lifecycle as core_lifecycle
+
+    def doc(config, probe=True):
+        return {
+            "configured": True,
+            "state": "connected",
+            "url": GATEWAY_URL,
+            "slackPosting": "disabled",
+        }
+
+    monkeypatch.setattr(core_lifecycle, "gateway_document", doc)
+    config = cli_config(tmp_path, gateway=True)
+    channels_cmd._status(config)  # noqa: SLF001
+    out = capsys.readouterr().out
+    assert "posting:" in out
+    assert f"[!] outbound Slack needs {BOT_ENV} on this instance" in out
+    assert "reports posting disabled" in out
+    monkeypatch.setattr(
+        core_lifecycle,
+        "gateway_document",
+        lambda c, probe=True: {**doc(c), "slackPosting": "on"},
+    )
+    channels_cmd._status(config)  # noqa: SLF001
+    out = capsys.readouterr().out
+    assert (
+        f"posting:      through the gateway ({GATEWAY_URL})" in out
+        and "[!] outbound" not in out
+    )
+    monkeypatch.setenv(BOT_ENV, "xoxb-local")
+    channels_cmd._status(config)  # noqa: SLF001
+    out = capsys.readouterr().out
+    assert f"posting:      local token ({BOT_ENV})" in out
+    monkeypatch.delenv(BOT_ENV)
+    channels_cmd._status(cli_config(tmp_path, gateway=False))  # noqa: SLF001
+    out = capsys.readouterr().out
+    assert "posting:      unavailable" in out and "no gateway block" in out
+
+
+def test_doctor_gateway_lines_say_whether_the_gateway_posts(tmp_path, monkeypatch):
+    from the_loop.commands import diagnose_cmd
+    from the_loop.core import lifecycle as core_lifecycle
+
+    config = cli_config(tmp_path, gateway=True)
+
+    def doc(posting):
+        return lambda c, probe=True: {
+            "configured": True,
+            "state": "connected",
+            "url": GATEWAY_URL,
+            "slackPosting": posting,
+            "health": {"slack": {"socket": "up", "posting": posting}},
+        }
+
+    monkeypatch.setattr(core_lifecycle, "gateway_document", doc("on"))
+    lines = diagnose_cmd._gateway_lines(config)  # noqa: SLF001
+    assert any(
+        "[ok]" in line and "posts to Slack for this instance" in line for line in lines
+    )
+    monkeypatch.setattr(core_lifecycle, "gateway_document", doc("no-token"))
+    lines = diagnose_cmd._gateway_lines(config)  # noqa: SLF001
+    assert any(
+        "[!]" in line and f"outbound Slack needs {BOT_ENV} on this instance" in line
+        for line in lines
+    )
+    monkeypatch.setenv(BOT_ENV, "xoxb-local")
+    lines = diagnose_cmd._gateway_lines(config)  # noqa: SLF001
+    assert any("[ok]" in line and "own token" in line for line in lines)
+
+
+def test_the_gateway_document_carries_slack_posting(tmp_path):
+    from the_loop.gateway.client import GatewayClient
+
+    config = cli_config(tmp_path, gateway=True)
+    answers = {
+        "/api/v1/gateway/health": (
+            200,
+            {"ok": True, "slack": {"socket": "up", "posting": "on"}},
+        ),
+        "/api/v1/gateway/queues": (200, {"queues": []}),
+    }
+    client = GatewayClient(
+        config, transport=lambda m, path, body, timeout: answers[path]
+    )
+    assert client.document(probe=False)["slackPosting"] == "unknown"
+    client.state = "connected"
+    assert client.document()["slackPosting"] == "on"

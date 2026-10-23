@@ -207,5 +207,12 @@ describe("the Gateway card (issue-496, R10.3)", () => {
     expect(gatewayWords({ configured: false, state: "off" })).toEqual({ words: "not configured", dot: "skipped" });
     expect(gatewayWords({ configured: true, state: "connected", mode: { pollIntervalSeconds: 5, longPollSeconds: 0 } }).words).toBe("connected · polling");
     expect(gatewayWords({ configured: true, state: "unreachable" }).dot).toBe("blocked");
+    // issue-519: the gateway posting for this instance is one more state word
+    expect(gatewayWords({ configured: true, state: "connected", mode: { pollIntervalSeconds: 5, longPollSeconds: 20 }, slackPosting: "on" }).words).toBe(
+      "connected · long-poll · posting via gateway",
+    );
+    expect(gatewayWords({ configured: true, state: "connected", mode: { pollIntervalSeconds: 5, longPollSeconds: 20 }, slackPosting: "disabled" }).words).toBe(
+      "connected · long-poll",
+    );
   });
 });

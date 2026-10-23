@@ -71,6 +71,33 @@ def _read_mode_findings(config: dict) -> list:
     return []
 
 
+def _posting_lines(slack: SlackChannelConfig, config: dict) -> list:
+    """Where this instance's Slack posts go (issue-519, R1.2, R1.4): its own token,
+    the gateway, or nowhere — the last a `[!]` finding naming the variable."""
+    if not slack.enabled:
+        return []
+    from ..channels.slack import posting_path
+    from ..core import lifecycle as core_lifecycle
+
+    reported = None
+    if gateway_block(config) is not None:
+        doc = core_lifecycle.gateway_document(config)
+        reported = doc.get("slackPosting") if isinstance(doc, dict) else None
+    path = posting_path(
+        slack, config, gateway_posting=str(reported) if reported else None
+    )
+    if path.kind == "local":
+        return [f"  posting:      local token ({path.detail})"]
+    if path.kind == "gateway":
+        how = "" if reported == "on" else " — whether it posts is not yet known"
+        return [f"  posting:      through the gateway ({path.detail}){how}"]
+    return [
+        f"  posting:      unavailable — {path.detail}",
+        f"  [!] outbound Slack needs {slack.bot_token_env} on this instance — "
+        f"{path.detail}; a failed post waits in the outbox",
+    ]
+
+
 def _status(config: dict, probe: bool = False) -> int:
     from ..channels.base import ledger_name
     from ..channels.events import PUBLISHABLE_EVENTS
@@ -119,6 +146,8 @@ def _status(config: dict, probe: bool = False) -> int:
         cadence = ""
     print(f"  read:         {slack.read_mode}{cadence}")
     for line in _read_mode_findings(config):
+        print(line)
+    for line in _posting_lines(slack, config):
         print(line)
     for line in _split_check_lines(slack, config):
         print(line)

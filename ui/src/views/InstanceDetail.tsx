@@ -346,7 +346,11 @@ export function gatewayWords(doc: GatewayDocument): { words: string; dot: DotSta
   if (!doc.configured) return { words: "not configured", dot: "skipped" };
   switch (doc.state) {
     case "connected":
-      return { words: `connected · ${(doc.mode?.longPollSeconds ?? 0) > 0 ? "long-poll" : "polling"}`, dot: "active" };
+      return {
+        // `posting via gateway` (issue-519): the gateway makes this instance's Slack calls
+        words: `connected · ${(doc.mode?.longPollSeconds ?? 0) > 0 ? "long-poll" : "polling"}${doc.slackPosting === "on" ? " · posting via gateway" : ""}`,
+        dot: "active",
+      };
     case "connecting":
       return { words: `connecting · attempt ${doc.attempt ?? 1}`, dot: "pending" };
     case "refused":
