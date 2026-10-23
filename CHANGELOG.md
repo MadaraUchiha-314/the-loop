@@ -1,3 +1,9 @@
+## v20.10.0 (2026-10-23)
+
+### Feat
+
+- **issue-519**: outbound Slack through the gateway, loud failure without it (#522)
+
 ## v20.9.0 (2026-10-22)
 
 ### Feat
