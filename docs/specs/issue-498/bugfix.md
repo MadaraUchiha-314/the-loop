@@ -5,7 +5,7 @@ workItem: "github:MadaraUchiha-314/the-loop#498"
 status: draft                # draft | in-review | approved
 approvedBy: []
 severity: medium             # low | medium | high | critical
-riskTier: 3                  # changes what the control trust boundary accepts
+riskTier: 4                  # control trust boundary; touches **/*schema* and .the-loop/** (description text only) — raised per the sensitive-path rule
 collaborators: [engineer]
 overrides: {}
 ---
