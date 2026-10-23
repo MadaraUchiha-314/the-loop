@@ -335,8 +335,13 @@ def _load_slack(config: Mapping[str, Any], client_factory: Optional[Callable]):
     slack_config = SlackChannelConfig.from_mapping(config)
     if not slack_config.enabled:
         return None
+    # the config rides along (issue-519): the channel's posting path reads the
+    # `gateway` block from it, and the attachment directory its state layout
     return SlackBotChannel(
-        slack_config, slack_state_path(config), client_factory=client_factory
+        slack_config,
+        slack_state_path(config),
+        client_factory=client_factory,
+        cli_config=config,
     )
 
 

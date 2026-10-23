@@ -1136,6 +1136,73 @@ def build_client(token: str):
     return WebClient(token=token)
 
 
+# -- where outbound Slack goes (issue-519) ----------------------------------------
+
+
+@dataclass(frozen=True)
+class PostingPath:
+    """Where this instance's Slack calls go (issue-519, R4): ``local`` — its own bot
+    token (``detail`` is the variable's name); ``gateway`` — the gateway makes them
+    (``detail`` is its URL); ``none`` — nothing can post (``detail`` says why, in the
+    words `start`, `status`, `channels status` and `doctor slack` all print)."""
+
+    kind: str
+    detail: str
+
+
+def posting_path(
+    config: "SlackChannelConfig",
+    cli_config: Optional[Mapping[str, Any]],
+    *,
+    gateway_posting: Optional[str] = None,
+) -> PostingPath:
+    """Own token first (R4.1); else the gateway when a usable block is present and the
+    gateway reports posting ``on`` — or could not be asked (``None``/``unknown``), in
+    which case the call itself is the probe (R4.2); else ``none`` with the reason
+    (R4.3). One resolver, so posting and the operator's wording cannot disagree."""
+    if os.environ.get(config.bot_token_env):
+        return PostingPath("local", config.bot_token_env)
+    block = gateway_block(cli_config) if cli_config is not None else None
+    if block is None:
+        return PostingPath(
+            "none",
+            f"{config.bot_token_env} is unset and no gateway block is configured",
+        )
+    if gateway_posting in (None, "on", "unknown"):
+        return PostingPath("gateway", block.url)
+    return PostingPath(
+        "none",
+        f"{config.bot_token_env} is unset and the gateway at {block.url} reports "
+        f"posting {gateway_posting}",
+    )
+
+
+def outbound_client(
+    config: "SlackChannelConfig",
+    cli_config: Optional[Mapping[str, Any]],
+    client_factory: Optional[Callable[[str], Any]] = None,
+) -> Any:
+    """The client every outbound Slack call uses (issue-519, R4.2): the SDK client on
+    the local token, a :class:`~the_loop.channels.slack_gateway.GatewaySlackClient`
+    behind a gateway, else today's :class:`ChannelError` with the gateway hint (R4.3).
+    A ``client_factory`` (a test's fake) is honoured on either live path."""
+    path = posting_path(config, cli_config)
+    if path.kind == "local":
+        factory = client_factory or build_client
+        return factory(os.environ.get(config.bot_token_env) or "")
+    if path.kind == "gateway":
+        if client_factory is not None:
+            return client_factory("")
+        from .slack_gateway import GatewaySlackClient
+
+        return GatewaySlackClient.from_cli_config(cli_config or {})
+    raise ChannelError(
+        f"slack: no bot token — export {config.bot_token_env} "
+        "(an xoxb- bot token with chat:write, and channels.history for reads), "
+        "or point this instance at a gateway with slack.post.enabled"
+    )
+
+
 def slack_state_path(cli_config: Optional[Mapping[str, Any]]) -> Path:
     """Where this channel's bindings live — ``<state.root>/channels/slack.json``."""
     from ..state import layout_from_config
@@ -2158,6 +2225,7 @@ class SlackBotChannel:
         config: SlackChannelConfig,
         state_path: Path,
         client_factory: Optional[Callable[[str], Any]] = None,
+        cli_config: Optional[Mapping[str, Any]] = None,
     ):
         self.config = config
         self.state_path = Path(state_path)
@@ -2172,8 +2240,9 @@ class SlackBotChannel:
         self._central: Optional[str] = None
         #: The CLI config this channel was built from, when a caller handed it
         #: over (issue-416): the state layout the attachment directory derives
-        #: from. Absent, the layout's default root applies.
-        self._cli_config: Optional[Mapping[str, Any]] = None
+        #: from, and (issue-519) the `gateway` block the posting path reads.
+        #: Absent, the layout's default root applies and no gateway is known.
+        self._cli_config: Optional[Mapping[str, Any]] = cli_config
 
     def subscribes(self, event_type: str) -> bool:
         return event_type in self.config.subscribe
@@ -2186,17 +2255,10 @@ class SlackBotChannel:
         return event_type in self.config.publish
 
     def _client(self):
-        token = os.environ.get(self.config.bot_token_env) or ""
-        if not token:
-            raise ChannelError(
-                f"slack: no bot token — export {self.config.bot_token_env} "
-                "(an xoxb- bot token with chat:write, and channels.history "
-                "for reads)"
-            )
-        # Resolved at call time so a test's monkeypatch of ``build_client``
-        # (and an env var set after construction) is always seen.
-        factory = self._client_factory or build_client
-        return factory(token)
+        # Resolved at call time so a test's monkeypatch of ``build_client`` (and an
+        # env var set after construction) is always seen. The posting path (issue-519):
+        # the local token first, else the gateway's client, else today's error.
+        return outbound_client(self.config, self._cli_config, self._client_factory)
 
     def fetch_attachments(
         self, files: Sequence[Mapping[str, Any]], work_item: str
@@ -2213,6 +2275,8 @@ class SlackBotChannel:
         from ..sessions import WorkItemRef
         from ..state import layout_from_config
 
+        from .slack_gateway import GatewaySlackClient
+
         token = os.environ.get(self.config.bot_token_env) or ""
         try:
             slug = WorkItemRef.parse(work_item).slug
@@ -2221,23 +2285,27 @@ class SlackBotChannel:
         layout = layout_from_config(dict(self._cli_config or {}))
         dest = Path(layout.attachments_dir) / slug
         files_info: Optional[Callable[[str], Mapping[str, Any]]] = None
-        if token:
-            try:
-                client = self._client()
-            except ChannelError:
-                client = None
-            method = getattr(client, "files_info", None)
-            if callable(method):
-                read = method
+        fetch: Optional[Callable[..., Tuple[str, bytes]]] = None
+        try:
+            client = self._client()
+        except ChannelError:
+            client = None
+        method = getattr(client, "files_info", None)
+        if callable(method):
+            read = method
 
-                def _info(file_id: str) -> Mapping[str, Any]:
-                    result = read(file=file_id)
-                    return result if isinstance(result, Mapping) else {}
+            def _info(file_id: str) -> Mapping[str, Any]:
+                result = read(file=file_id)
+                return result if isinstance(result, Mapping) else {}
 
-                files_info = _info
+            files_info = _info
+        if isinstance(client, GatewaySlackClient):
+            # behind a gateway with no token of its own (issue-519, R3.3): the gateway
+            # downloads the file, under the same hosts and cap
+            fetch = client.fetch
 
         return attachments.slack_attachments(
-            files, token=token, dest_dir=dest, files_info=files_info
+            files, token=token, dest_dir=dest, files_info=files_info, fetch=fetch
         )
 
     # -- outbound (R3) ---------------------------------------------------------

@@ -377,6 +377,9 @@ def slack_attachments(
     ``sleep(TRANSCRIPT_WAIT_SECONDS)`` apart; a poll read passes none and takes
     the object as it is.
     """
+    # A caller's own fetcher carries its own credential (the gateway's, issue-519),
+    # so it counts as one: `no-token` is for no token AND no fetcher.
+    credentialed = bool(token) or fetch is not None
     # Bound at call time, so a test or an embedder patching ``fetch_url`` on
     # the module is honoured by every caller that passes none.
     fetch = fetch or fetch_url
@@ -404,7 +407,7 @@ def slack_attachments(
         if index >= MAX_FILES:
             out.append(replace(base, error="too-many"))
             continue
-        if not token:
+        if not credentialed:
             out.append(replace(base, error="no-token"))
             continue
         if declared > MAX_BYTES:

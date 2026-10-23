@@ -73,7 +73,7 @@ the transition. No task touches the gateway's store.
   - _Requirements:_ R4.2, R4.4, R3.3
   - _Test:_ T1 — `tests/test_slack_gateway_client.py` (each mapping row; the peer file
     read; no local token read on any failure) (red→green)
-- [ ] 5. Instance resolver: `posting_path`, `outbound_client`, and the call sites
+- [x] 5. Instance resolver: `posting_path`, `outbound_client`, and the call sites
   - `PostingPath`, `posting_path(config, cli_config, gateway_posting=None)`,
     `outbound_client(config, cli_config, client_factory=None)` in `channels/slack.py`;
     `SlackChannel.__init__(…, cli_config=None)` and `_load_slack` passes the config;

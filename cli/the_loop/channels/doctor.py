@@ -49,6 +49,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple
 
 from .. import eventlog
 from . import slack as _slack
+from .base import ChannelError
 from .directory import SlackDirectory, is_conversation_id, normalize_name
 from .slack import (
     SPLIT_CAVEAT,
@@ -163,9 +164,12 @@ def _probe(
 ) -> Dict[str, Any]:
     if not config.enabled:
         return _unverifiable(result, "channels.slack is not enabled")
-    bot_token = os.environ.get(config.bot_token_env) or ""
-    if not bot_token:
-        return _unverifiable(result, f"no bot token — {config.bot_token_env} is unset")
+    # the posting path (issue-519, R1.3): the local token, else the gateway's client;
+    # neither is `unverifiable` with the reason every other surface prints
+    try:
+        client = _slack.outbound_client(config, cli_config, client_factory)
+    except ChannelError:
+        return _unverifiable(result, _slack.posting_path(config, cli_config).detail)
     channel = central_channel(config, cli_config, client_factory)
     if not channel:
         return _unverifiable(
@@ -183,10 +187,6 @@ def _probe(
         if listener_running is not None
         else listener_is_running(cli_config)
     )
-    # Resolved through the module at call time — `slack.build_client` is the one
-    # place a test substitutes the SDK client, and a name bound at import would
-    # slip past it (and reach the network).
-    client = (client_factory or _slack.build_client)(bot_token)
     receiver: _Receiver
     if running:
         path, enabled = _event_log(cli_config, log_path)
@@ -483,11 +483,9 @@ def check_declared_channels(
                 "item declares a room"
             )
             return result
-        if not os.environ.get(config.bot_token_env):
-            result["reason"] = (
-                f"no bot token — {config.bot_token_env} is unset, so nothing can "
-                "be resolved"
-            )
+        path = _slack.posting_path(config, cli_config)
+        if path.kind == "none":
+            result["reason"] = f"{path.detail}, so nothing can be resolved"
             result["channels"] = [
                 {
                     "declared": declared,
