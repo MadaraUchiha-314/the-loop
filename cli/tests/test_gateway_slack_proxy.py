@@ -306,6 +306,17 @@ def test_abuse_1_a_method_outside_the_allow_list_is_422_and_nothing_is_sent(prox
     assert refused and refused[-1]["method"] == "admin.users.remove"
 
 
+def test_proxy_default_web_client_has_no_retry_handler():
+    """Critic review round 1: the SDK's default ConnectionErrorRetryHandler would make
+    one api_call two HTTP attempts and could duplicate a post; the gateway's client has
+    none, so a transport failure is one 502 for the instance (design: no retry)."""
+    from the_loop.gateway import slack_proxy
+
+    client = slack_proxy._default_web_client("xoxb-test")  # noqa: SLF001
+    assert client.retry_handlers == []
+    assert client.token == "xoxb-test"
+
+
 def test_abuse_7_a_token_in_params_is_refused_before_the_sdk_sees_it(proxy_env):
     """Security review (issue-519): slack_sdk pops `token` from the JSON body and uses
     it instead of the client's, so a peer could route a credential of its own through

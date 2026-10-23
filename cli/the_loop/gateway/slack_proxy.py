@@ -72,9 +72,13 @@ class ProxyResult:
 
 
 def _default_web_client(token: str):
-    from ..channels.slack import build_client
+    """The SDK client with **no retry handler** (critic review, round 1): the SDK's
+    default retries a connection error once, which could post a message twice when Slack
+    accepted the first attempt before the connection reset. One call here is one HTTP
+    attempt; a transport failure is `502 slack-unreachable` for the instance to handle."""
+    from slack_sdk import WebClient  # type: ignore[import-not-found]
 
-    return build_client(token)
+    return WebClient(token=token, retry_handlers=[])
 
 
 class SlackProxy:
