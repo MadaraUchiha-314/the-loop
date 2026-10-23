@@ -299,7 +299,7 @@ def test_the_gate_returns_a_fact_never_a_destination(repo):
 
 def test_do_parses_as_a_whole_token():
     config = ControlConfig()
-    assert parse_command("please the-loop do this", config).command == DO
+    assert parse_command("the-loop do this", config).command == DO
 
 
 @pytest.mark.parametrize(
@@ -313,7 +313,7 @@ def test_do_does_not_fire_on_prose(body):
 
 def test_do_plus_another_command_is_refused():
     """Abuse case 2 — a half-`stop` must not be read as a `do`."""
-    result = parse_command("the-loop stop and the-loop do", ControlConfig())
+    result = parse_command("the-loop stop\nthe-loop do", ControlConfig())
     assert result.ambiguous and result.command is None
 
 

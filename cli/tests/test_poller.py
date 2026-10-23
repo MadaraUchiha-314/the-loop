@@ -2678,7 +2678,7 @@ def test_first_sight_baselines_an_ambiguous_control_comment(tmp_path):
     # Two conflicting keywords execute nothing, so there is nothing to hold back.
     provider = FakeProvider(
         items=[_item(15)],
-        comments={15: [_comment("IC_1", f"{START_KEYWORD} then {STOP_KEYWORD}")]},
+        comments={15: [_comment("IC_1", f"{START_KEYWORD}\n{STOP_KEYWORD}")]},
     )
     state = PollState(WorkItemStore(tmp_path / "portable"))
     disp = _started_dispatcher()

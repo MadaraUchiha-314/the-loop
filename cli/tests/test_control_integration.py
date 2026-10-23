@@ -162,7 +162,7 @@ def test_a_labelled_work_item_does_not_spawn_until_it_is_started(setup):
     assert tmux.spawns == []
     assert registry.find_by_work_item(REF) is None
 
-    dispatcher.handle(comment_event(f"let's go: {START_KEYWORD}", delivery="d-start"))
+    dispatcher.handle(comment_event(f"{START_KEYWORD} — let's go", delivery="d-start"))
     # Wait on the REGISTRATION, which is what the next line asserts. Waiting on
     # the spawn instead returns one step early — registration happens after it,
     # on the dispatcher's own thread — so under load the assertion below reads a
@@ -486,18 +486,18 @@ def test_a_control_comment_is_never_forwarded_to_the_harness(setup):
 def test_an_ambiguous_comment_does_nothing_at_all(setup):
     """
     Feature: authorized execution control
-      Scenario: two conflicting keywords execute nothing and forward nothing
-    Requirement: docs/specs/issue-106/requirements.md AC1.4
+      Scenario: two conflicting keywords execute nothing, and the comment is conversation
+    Requirement: docs/specs/issue-106/requirements.md AC1.4,
+      docs/specs/issue-498/bugfix.md R2 (forwarded, not dropped)
     """
     dispatcher, registry, tmux, store = setup
     register(registry)
     dispatcher.handle(
-        comment_event(f"{PAUSE_KEYWORD} then {STOP_KEYWORD}", delivery="d-amb")
+        comment_event(f"{PAUSE_KEYWORD}\n{STOP_KEYWORD}", delivery="d-amb")
     )
-    assert _wait(lambda: True, 0.2)
+    assert _wait(lambda: len(tmux.delivers) == 1)
     session = registry.find_by_work_item(REF)
     assert session is not None and session.status == "active"
-    assert tmux.delivers == []
     assert store.get(REF) is None
 
 

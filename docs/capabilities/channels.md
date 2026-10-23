@@ -100,8 +100,10 @@ flowchart LR
   ids on every channel, timestamp). Four shapes: the ask's record is the question itself
   (marked); a `work-item.reply` record is the marked, quoted, scrubbed, keyword-defanged
   mirror; a `gate.feedback` / `control.command` record is **unmarked**, keywords intact,
-  posted under the operator's credential with a visible attribution — so the ledger's
-  own ingress classifies or executes it through the guards a typed comment goes through;
+  posted under the operator's credential with the person's words **first** and a visible
+  attribution after them (issue-498: a keyword counts only where a comment opens with
+  it) — so the ledger's own ingress classifies or executes it through the guards a typed
+  comment goes through;
   a `work-item.create` record is the issue itself (unmarked, so it is armable; labelled
   from config only). WHEN the ledger's ingress sees an enveloped comment THEN it SHALL
   never re-publish it as a `comment.*` event (loop prevention across channels), and a

@@ -431,14 +431,16 @@ def test_an_execute_press_composes_the_signed_execute_from_the_boxes(
     assert outcome["mirrored"] is True
     ref, body = records[0]
     assert ref == "github:o/r#7"
-    assert f"> {KEYWORD}" in body, "the keyword, quoted as the member's own words"
+    assert body.startswith(KEYWORD), (
+        "the keyword opens the record, as the member's own words"
+    )
     for line in (
-        "> - [x] brainstorming",
-        "> - [ ] requirements-definition",
-        "> - [ ] design",
-        "> - [x] implementation",
-        "> - [x] design-critic-review",
-        f"> - [x] `{SURFACE_TOKEN}`",
+        "- [x] brainstorming",
+        "- [ ] requirements-definition",
+        "- [ ] design",
+        "- [x] implementation",
+        "- [x] design-critic-review",
+        f"- [x] `{SURFACE_TOKEN}`",
     ):
         assert line in body
     assert parse_command(body, ControlConfig()).command == "execute"
@@ -776,8 +778,8 @@ def test_a_typed_execute_without_records_the_checklist_with_those_phases_unticke
     outcome = _typed(config, channel, f"{KEYWORD} without 1, 3", thread=thread)
     assert outcome["outcome"] == "processed" and outcome["event"] == "control.command"
     body = records[0][1]
-    assert "> - [ ] brainstorming" in body and "> - [ ] design" in body
-    assert "> - [x] requirements-definition" in body
+    assert "- [ ] brainstorming" in body and "- [ ] design" in body
+    assert "- [x] requirements-definition" in body
     skips, _, refused = selection._parse_selection(body, DEFAULT_ON, OPT_IN, PROTECTED)
     assert skips == ["brainstorming", "design"] and refused == []
 
@@ -796,8 +798,8 @@ def test_skip_by_mention_is_the_same_signed_execute(tmp_path, monkeypatch):
     )
     assert outcome["outcome"] == "processed" and outcome["event"] == "control.command"
     body = records[0][1]
-    assert f"> {KEYWORD}" in body and "> - [ ] design" in body
-    assert "> - [x] brainstorming" in body
+    assert f"{KEYWORD}" in body and "- [ ] design" in body
+    assert "- [x] brainstorming" in body
     assert "skip" not in body.split(">", 1)[1].lower(), "the shorthand is composed away"
 
 
@@ -898,7 +900,7 @@ def test_a_signed_execute_without_freezes_the_selection(tmp_path, monkeypatch):
     )
     assert outcome["outcome"] == "processed" and outcome["event"] == "control.command"
     body = records[0][1]
-    assert "> - [ ] design" in body and "> - [x] brainstorming" in body
+    assert "- [ ] design" in body and "- [x] brainstorming" in body
     assert "Sent using" not in body
     assert client.ephemeral == []
 

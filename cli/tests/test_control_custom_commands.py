@@ -59,7 +59,7 @@ def test_no_commands_block_is_exactly_the_shipped_vocabulary():
 
 def test_a_new_word_parses_as_start_onto_its_loop():
     """R3.4, R3.5"""
-    result = parse_command("please the-loop triage this", _config())
+    result = parse_command("the-loop triage this", _config())
     assert result.command == START
     assert result.loop == NAME
     assert result.matched == ["triage"]
@@ -119,7 +119,7 @@ def test_a_new_words_own_keyword_is_what_a_person_types():
     commands = {"triage": {"graph": NAME, "keyword": "@acme triage"}}
     config = ControlConfig.from_mapping({"commands": commands}, graphs=GRAPHS)
     assert config.keyword("triage") == "@acme triage"
-    assert parse_command("hey @ACME triage", config).loop == NAME
+    assert parse_command("@ACME triage, please", config).loop == NAME
     assert not parse_command("the-loop triage", config)
 
 

@@ -485,9 +485,7 @@ def parse_command(body: Optional[str], config: ControlConfig) -> ControlResult:
         # around them reaches nothing. Which parser is the command's: a login or a
         # Slack id for the collaborator pair (issue-307, issue-389), a channel ref
         # for the channel pair (issue-375).
-        for match in re.finditer(
-            patterns[command], body, re.IGNORECASE | re.MULTILINE
-        ):
+        for match in re.finditer(patterns[command], body, re.IGNORECASE | re.MULTILINE):
             rest = body[match.end() :]
             if command in COLLABORATOR_COMMANDS:
                 parsed = parse_subjects(rest)

@@ -1907,13 +1907,12 @@ def test_an_ambiguous_comment_on_a_paused_session_is_still_suppressed(tmp_path):
     registry.pause(REF)
 
     dispatcher.handle(
-        routed_labelled_comment(
-            delivery="ctl-5", body="the-loop resume\nthe-loop stop"
-        )
+        routed_labelled_comment(delivery="ctl-5", body="the-loop resume\nthe-loop stop")
     )
     dispatcher.stop()
 
-    assert registry.find_by_work_item(REF).is_paused
+    paused = registry.find_by_work_item(REF)
+    assert paused is not None and paused.is_paused
     assert tmux.delivers == []
     assert dispatcher.delivery_outcome("ctl-5") == "session-paused"
 

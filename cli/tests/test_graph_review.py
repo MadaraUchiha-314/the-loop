@@ -541,7 +541,7 @@ def test_follow_up_routes_on_the_adhoc_outcomes():
 
 def test_review_parses_as_a_whole_token():
     config = ControlConfig()
-    assert parse_command("please the-loop review this PR", config).command == REVIEW
+    assert parse_command("the-loop review this PR", config).command == REVIEW
 
 
 @pytest.mark.parametrize(
@@ -561,7 +561,7 @@ def test_review_does_not_fire_on_prose(body):
 
 def test_review_plus_another_command_is_refused():
     """Abuse case 2 — a half-`stop` must not be read as a `review`."""
-    result = parse_command("the-loop stop and the-loop review", ControlConfig())
+    result = parse_command("the-loop stop\nthe-loop review", ControlConfig())
     assert result.ambiguous and result.command is None
 
 

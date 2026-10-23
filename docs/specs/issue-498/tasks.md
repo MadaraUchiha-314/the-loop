@@ -31,7 +31,7 @@ overrides: {}
   - _Depends on:_ 2, 4
   - _Requirements:_ R3
   - _Test:_ T12 — `make check` (schema copies stay in sync)
-- [ ] 6. Full suite: fix any test that relied on a mid-body keyword
+- [x] 6. Full suite: fix any test that relied on a mid-body keyword
   - _Depends on:_ 2, 4, 5
   - _Requirements:_ R1.5
   - _Test:_ T12 — `make check`

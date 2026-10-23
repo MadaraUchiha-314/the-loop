@@ -428,9 +428,7 @@ def test_accepted_reply_is_mirrored_then_delivered(tmp_path):
 def test_a_control_keyword_without_the_grant_is_dropped_not_delivered(tmp_path):
     """A2 (issue-309): dropped, never downgraded — the keyword reaches neither the
     ticket nor the agent when the channel may not publish `control.command`."""
-    outcome, posts, deliveries = pipeline(
-        tmp_path, a_reply(text="please the-loop start now")
-    )
+    outcome, posts, deliveries = pipeline(tmp_path, a_reply(text="the-loop start now"))
     assert outcome == {"outcome": "unpublishable-event"}
     assert posts == [] and deliveries == []
 
@@ -439,7 +437,7 @@ def test_a_control_keyword_with_the_grant_is_recorded_unmarked_for_ingress(tmp_p
     """R3.5 (issue-309): with the grant the record is a HUMAN comment — no
     self-marker, the keyword intact — so the ledger's ingress executes it through
     the control seam; the pipeline itself delivers nothing."""
-    reply = a_reply(text="please the-loop start now")
+    reply = a_reply(text="the-loop start now")
     posts, deliveries = [], []
 
     def post_comment(item, body, api=None):
@@ -1744,7 +1742,7 @@ def test_a_relayed_gate_answer_completes_on_its_record(tmp_path, monkeypatch):
     client.reactions.clear()
     outcome, posts, deliveries, client = acked_pipeline(
         tmp_path,
-        a_reply(text="please the-loop start now"),
+        a_reply(text="the-loop start now"),
         publish=["work-item.reply", "control.command"],
         post_ok=False,
         client=client,
@@ -1849,7 +1847,7 @@ def test_a_failed_kickoff_is_acknowledged_with_error(tmp_path, monkeypatch):
         (a_reply(), (), None, "unauthorized-actor"),
         (a_reply(author="UEVIL"), ("UHUMAN",), None, "unauthorized-actor"),
         (
-            a_reply(text="please the-loop start now"),
+            a_reply(text="the-loop start now"),
             ("UHUMAN",),
             None,
             "unpublishable-event",

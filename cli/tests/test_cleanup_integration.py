@@ -395,7 +395,7 @@ def test_abuse_two_different_keywords_in_one_comment_do_nothing(harness, target)
     """
     checkout = prepared(harness, target)
 
-    harness.dispatcher.handle(comment("the-loop cleanup then the-loop start"))
+    harness.dispatcher.handle(comment("the-loop cleanup\nthe-loop start"))
 
     assert checkout.exists()
     assert harness.tmux.kills == [] and harness.tmux.delivers == []

@@ -369,7 +369,8 @@ def test_conflicting_keywords_are_delivered_as_conversation(tmp_path, monkeypatc
     dispatcher.stop()
 
     assert tmux.spawns == []
-    assert not dispatcher.registry.find_by_work_item(REF).is_paused
+    session = dispatcher.registry.find_by_work_item(REF)
+    assert session is not None and not session.is_paused
     assert "content=confused" not in contents(runner)
     assert dispatcher.delivery_outcome("k-4") != "control-ambiguous"
 

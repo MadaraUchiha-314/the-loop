@@ -66,7 +66,15 @@ command the body is ambiguous and nothing runs — the fail-closed direction.
 Surfaces: the webhook dispatcher, the poller's first-sight scan and the Slack inbound
 classifier all call `parse_command`; Slack strips the bot's own mention and composes a
 leading verb into the keyword *before* calling it (`channels/verbs.py`), so a Slack
-command already opens its text. No caller changes (R1.5).
+command already opens its text.
+
+One producer did change (found by the full suite at task 6): the bus **relays** a Slack
+`control.command` / `gate.feedback` onto the GitHub ticket as a comment the ledger's own
+ingress then parses (`channels/bodies.py::relay_body`). It used to open with an
+attribution header and quote the words (`> the-loop start`), which the anchored parser
+reads as prose. The relay now puts the person's words **first, unquoted**, and the
+attribution on a trailing line, so a relayed command still opens its comment (R1.5). The
+gate's checklist reader accepts both shapes, so records already on tickets still read.
 
 Docstrings corrected: the module's "one deliberate looseness" paragraph, `ControlResult`
 ("execute nothing, forward nothing" → "execute nothing; the caller routes it as
@@ -95,7 +103,8 @@ carries no command to catch up on, so it is baselined like any other conversatio
 | `cli/the_loop/schemas/cli-config.schema.json` and its copy `.the-loop/cli-config.schema.json` | `routing.control.keywords` description: "matched … at the start of a comment (and of each later line)…; two different commands execute nothing and the comment is forwarded as conversation" |
 | `cli/the_loop/redact.py` | module docstring: drop "matches them anywhere"; defanging stays (out of scope) |
 | `docs/capabilities/webhook-triggers.md` | the keyword EARS bullet states the leading rule and the ambiguous-body routing; changelog row for issue-498 |
-| `docs/learnings/learning-012.md` + index | what shipped versus learning-011's planned action |
+| `docs/capabilities/channels.md` | the relay record's shape (words first) |
+| `docs/learnings/learning-018.md` + index | what shipped versus learning-011's planned action |
 
 ## UI/UX design
 

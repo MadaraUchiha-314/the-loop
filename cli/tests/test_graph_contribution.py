@@ -297,14 +297,12 @@ def test_an_outage_reads_as_no_goal_never_a_guess(runtime, repo, monkeypatch):
 
 def test_contribute_parses_as_a_whole_token():
     config = ControlConfig()
-    assert (
-        parse_command("please the-loop contribute here", config).command == CONTRIBUTE
-    )
+    assert parse_command("the-loop contribute here", config).command == CONTRIBUTE
     assert parse_command("the-loop contributed", config).command is None
 
 
 def test_contribute_plus_another_command_is_refused():
-    result = parse_command("the-loop start and the-loop contribute", ControlConfig())
+    result = parse_command("the-loop start\nthe-loop contribute", ControlConfig())
     assert result.ambiguous and result.command is None
 
 

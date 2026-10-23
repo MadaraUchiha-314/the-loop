@@ -141,9 +141,13 @@ def mirror_body(event: Event, cli_config: Optional[Mapping]) -> str:
 
 
 def relay_body(event: Event) -> str:
-    """The record of a ``gate.feedback`` / ``control.command`` — quoted, scrubbed,
+    """The record of a ``gate.feedback`` / ``control.command`` — scrubbed,
     **unmarked**, keywords intact, so the ledger's ingress reads it as this
-    person's own words. The attribution says which channel it was typed on."""
+    person's own words. The attribution says which channel it was typed on.
+
+    The words come FIRST and unquoted, the attribution after them (issue-498): a
+    control keyword counts only where a comment opens with it, so a header line
+    above the words would turn every relayed command into prose."""
     if event.event_type != "gate.feedback":
         what = "control command"
     elif str(event.detail.get("gate") or "") == "unknown":
@@ -153,9 +157,10 @@ def relay_body(event: Event) -> str:
     else:
         what = "answer to the open gate"
     body = (
-        f"🗣️ **the-loop** — {what} from {_who(event)} on the **{event.source}** "
-        "channel, recorded here so the loop reads it from the work item:\n\n"
-        + _quoted(scrub(event.text))
+        scrub(event.text).strip()
+        + f"\n\n🗣️ _the-loop — {what} from {_who(event)} on the "
+        f"**{event.source}** channel, recorded here so the loop reads it from the "
+        "work item._"
     )
     return stamp(body, _envelope(event))
 
