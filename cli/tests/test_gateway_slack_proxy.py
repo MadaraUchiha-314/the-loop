@@ -92,3 +92,245 @@ def test_config_slack_post_is_not_a_restart_key(tmp_path):
         _write(tmp_path, {**MINIMAL, "slack": {**SLACK, "post": {"enabled": False}}})
     )
     assert restart_required(on, off) == []
+
+
+# -- task 2: the proxy (R2.1–R2.4, R2.6, R3.1, R3.2; abuse cases 1, 4, 5) --------------------
+
+
+class _Resp:
+    def __init__(self, status, data, headers=None):
+        self.status_code = status
+        self.data = data
+        self.headers = headers or {}
+
+
+class FakeWebClient:
+    """The slice of ``slack_sdk.WebClient`` the proxy uses: ``api_call``."""
+
+    def __init__(self, token):
+        self.token = token
+        self.calls = []
+        self.fail = None
+
+    def api_call(self, method, *, http_verb="POST", json=None, params=None, **_):
+        from slack_sdk.errors import SlackApiError, SlackClientError
+
+        self.calls.append((method, json, params))
+        if self.fail == "api":
+            raise SlackApiError(
+                "channel_not_found",
+                _Resp(200, {"ok": False, "error": "channel_not_found"}),
+            )
+        if self.fail == "ratelimit":
+            raise SlackApiError(
+                "ratelimited",
+                _Resp(429, {"ok": False, "error": "ratelimited"}, {"Retry-After": "3"}),
+            )
+        if self.fail == "transport":
+            raise SlackClientError("connection reset")
+        channel = (json or params or {}).get("channel")
+        return _Resp(200, {"ok": True, "ts": "1700.000001", "channel": channel})
+
+
+@pytest.fixture()
+def proxy_env(monkeypatch, tmp_path):
+    from gateway_support import GatewayHarness
+    from the_loop.gateway import slack_proxy
+
+    monkeypatch.setenv(BOT_ENV, "xoxb-test")
+    monkeypatch.setenv(APP_ENV, "xapp-test")
+    gw = GatewayHarness(tmp_path, slack=SLACK)
+    web = {}
+
+    def factory(token):
+        # the proxy builds a client per call (design §2); the fake is kept so a test
+        # can set `fail` once and watch the next call
+        client = web.get("client") or FakeWebClient(token)
+        client.token = token
+        web["client"] = client
+        return client
+
+    proxy = slack_proxy.SlackProxy(gw.state, web_client_factory=factory)
+    yield gw, proxy, web
+    gw.close()
+
+
+def test_proxy_forwards_every_allowed_method_with_a_json_body(proxy_env):
+    from the_loop.gateway import slack_proxy
+
+    gw, proxy, web = proxy_env
+    for method in sorted(slack_proxy.SLACK_METHODS):
+        result = proxy.call("a", method, {"channel": "C1", "text": "hi"})
+        assert result.status == 200 and result.body["ok"] is True, method
+        assert web["client"].calls[-1] == (
+            method,
+            {"channel": "C1", "text": "hi"},
+            None,
+        )
+    assert web["client"].token == "xoxb-test"
+    assert len(slack_proxy.SLACK_METHODS) == 13
+
+
+def test_proxy_returns_slacks_status_and_body_verbatim_when_ok_is_false(proxy_env):
+    gw, proxy, web = proxy_env
+    proxy.call("a", "auth.test", {})
+    web["client"].fail = "api"
+    result = proxy.call("a", "chat.update", {"channel": "C1", "ts": "1", "text": "x"})
+    assert result.status == 200
+    assert result.body == {"ok": False, "error": "channel_not_found"}
+    web["client"].fail = "ratelimit"
+    result = proxy.call("a", "chat.postMessage", {"channel": "C1", "text": "x"})
+    assert result.status == 429 and result.headers["Retry-After"] == "3"
+    assert result.body["error"] == "ratelimited"
+
+
+def test_proxy_transport_failure_is_502_slack_unreachable(proxy_env):
+    gw, proxy, web = proxy_env
+    proxy.call("a", "auth.test", {})
+    web["client"].fail = "transport"
+    result = proxy.call("a", "chat.postMessage", {"channel": "C1", "text": "x"})
+    assert result.status == 502 and result.body["error"] == "slack-unreachable"
+    assert "SlackClientError" in result.body["detail"]
+
+
+def test_proxy_available_names_its_reason(proxy_env, monkeypatch, tmp_path):
+    from gateway_support import GatewayHarness
+    from the_loop.gateway import slack_proxy
+
+    gw, proxy, _ = proxy_env
+    assert proxy.available() == (True, "")
+    monkeypatch.delenv(BOT_ENV)
+    assert proxy.available() == (False, "no-token")
+    monkeypatch.setenv(BOT_ENV, "xoxb-test")
+    off = GatewayHarness(tmp_path / "off", slack={**SLACK, "post": {"enabled": False}})
+    try:
+        assert slack_proxy.SlackProxy(off.state).available() == (False, "disabled")
+    finally:
+        off.close()
+    bare = GatewayHarness(tmp_path / "bare")
+    try:
+        assert slack_proxy.SlackProxy(bare.state).available() == (
+            False,
+            "socket-unconfigured",
+        )
+    finally:
+        bare.close()
+
+
+def test_proxy_available_follows_a_reloaded_config(proxy_env):
+    """R6.3: the flag is read from the live config, so a reload needs no restart."""
+    import dataclasses
+
+    from the_loop.gateway.config import SlackPost
+
+    gw, proxy, _ = proxy_env
+    assert proxy.available()[0] is True
+    gw.state.config = dataclasses.replace(
+        gw.state.config,
+        slack=dataclasses.replace(gw.state.config.slack, post=SlackPost(enabled=False)),
+    )
+    assert proxy.available() == (False, "disabled")
+
+
+def test_proxy_logs_method_channel_and_status_never_text(proxy_env):
+    gw, proxy, web = proxy_env
+    proxy.call("a", "chat.postMessage", {"channel": "C1", "text": "SECRET WORDS"})
+    rows = gw.events("gateway.slack_call")
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["instance"] == "a" and row["method"] == "chat.postMessage"
+    assert row["channel"] == "C1" and row["status"] == 200 and row["ok"] is True
+    line = gw.events_path.read_text()
+    assert "SECRET WORDS" not in line and "xoxb-test" not in line
+
+
+def test_proxy_download_fetches_with_slack_hosts_and_the_cap(proxy_env):
+    from the_loop.channels import attachments
+    from the_loop.gateway import slack_proxy
+
+    gw, _, _ = proxy_env
+    seen = {}
+
+    def fetch(url, *, credential="", allowed_hosts=(), max_bytes=0, **_):
+        seen.update(url=url, credential=credential, hosts=allowed_hosts, cap=max_bytes)
+        return "audio/mp4", b"\x00\x01"
+
+    proxy = slack_proxy.SlackProxy(gw.state, fetch=fetch)
+    result = proxy.download("a", "https://files.slack.com/files-pri/T1-F1/clip.m4a")
+    assert result.status == 200 and result.body == b"\x00\x01"
+    assert result.media_type == "audio/mp4"
+    assert seen["credential"] == "xoxb-test"
+    assert seen["hosts"] == attachments.SLACK_HOSTS
+    assert seen["cap"] == attachments.MAX_BYTES
+    row = gw.events("gateway.slack_download")[0]
+    assert row["instance"] == "a" and row["status"] == 200
+    assert "xoxb" not in gw.events_path.read_text()
+
+
+def test_abuse_1_a_method_outside_the_allow_list_is_422_and_nothing_is_sent(proxy_env):
+    gw, proxy, web = proxy_env
+    result = proxy.call("a", "conversations.invite", {"channel": "C1", "users": "U1"})
+    assert result.status == 422 and result.body["error"] == "method-not-allowed"
+    assert "client" not in web  # the web client was never even built
+    result = proxy.call("a", "admin.users.remove", {})
+    assert result.status == 422 and "client" not in web
+    refused = gw.events("gateway.refused")
+    assert refused and refused[-1]["method"] == "admin.users.remove"
+
+
+def test_abuse_5_posting_disabled_is_503_and_sends_nothing(monkeypatch, tmp_path):
+    from gateway_support import GatewayHarness
+    from the_loop.gateway import slack_proxy
+
+    monkeypatch.setenv(BOT_ENV, "xoxb-test")
+    gw = GatewayHarness(tmp_path, slack={**SLACK, "post": {"enabled": False}})
+    built = []
+    try:
+        proxy = slack_proxy.SlackProxy(
+            gw.state, web_client_factory=lambda t: built.append(t) or FakeWebClient(t)
+        )
+        result = proxy.call("a", "chat.postMessage", {"channel": "C1", "text": "x"})
+        assert result.status == 503
+        assert result.body == {"error": "posting-unavailable", "reason": "disabled"}
+        result = proxy.download("a", "https://files.slack.com/f")
+        assert result.status == 503 and result.body["reason"] == "disabled"
+        assert built == []
+    finally:
+        gw.close()
+
+
+def test_abuse_5b_no_token_on_the_gateway_is_503_no_token(proxy_env, monkeypatch):
+    gw, proxy, web = proxy_env
+    monkeypatch.delenv(BOT_ENV)
+    result = proxy.call("a", "chat.postMessage", {"channel": "C1", "text": "x"})
+    assert result.status == 503 and result.body["reason"] == "no-token"
+    assert "client" not in web
+
+
+def test_abuse_4_download_refuses_off_host_and_over_cap_before_any_fetch(proxy_env):
+    from the_loop.channels.attachments import FetchError
+    from the_loop.gateway import slack_proxy
+
+    gw, _, _ = proxy_env
+    calls = []
+
+    def fetch(url, **kw):
+        calls.append(url)
+        raise FetchError("over-cap", "26 MiB")
+
+    proxy = slack_proxy.SlackProxy(gw.state, fetch=fetch)
+    result = proxy.download("a", "https://evil.example.com/files-pri/x")
+    assert result.status == 422 and result.body["error"] == "off-host"
+    result = proxy.download("a", "http://files.slack.com/not-https")
+    assert result.status == 422 and result.body["error"] == "off-host"
+    assert calls == []  # refused before the fetch
+    result = proxy.download("a", "https://files.slack.com/files-pri/T1-F1/big.bin")
+    assert result.status == 413 and result.body["error"] == "over-cap"
+    assert calls == ["https://files.slack.com/files-pri/T1-F1/big.bin"]
+
+    def failing(url, **kw):
+        raise FetchError("transfer-failed", "HTTP 500")
+
+    proxy = slack_proxy.SlackProxy(gw.state, fetch=failing)
+    result = proxy.download("a", "https://files.slack.com/files-pri/T1-F1/clip.m4a")
+    assert result.status == 502 and result.body["error"] == "transfer-failed"

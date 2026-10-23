@@ -30,7 +30,7 @@ the transition. No task touches the gateway's store.
   - _Test:_ T1 + T10 — `tests/test_gateway_slack_proxy.py -k config` (a file without
     `slack.post` reads `enabled: true`; `false` parses; the schema validates both; the
     description is present) (red→green)
-- [ ] 2. Gateway proxy: `gateway/slack_proxy.py`
+- [x] 2. Gateway proxy: `gateway/slack_proxy.py`
   - `SLACK_METHODS` (the thirteen names), `ProxyResult`, `SlackProxy(state,
     web_client_factory=build_client)`: `available()` → `(ok, reason)` read at call time;
     `call(method, params)` → `503 posting-unavailable` / `422 method-not-allowed` /
