@@ -125,6 +125,31 @@ def _execute_keyword(ctx: HookContext) -> str:
     return configured or EXECUTE_KEYWORD
 
 
+def _says_execute(body: str, ctx: HookContext) -> bool:
+    """Whether ``body`` is an ``execute`` by the control grammar (issue-498).
+
+    The very parser the dispatcher runs, over this deployment's keywords
+    (``controlKeywords``, seeded by the bootstrap): the reply must OPEN with the
+    execute keyword and carry no different command at the start of a line. A
+    substring test here would release the gate on a body the dispatcher read as
+    prose, or as two conflicting commands it acted on neither of.
+    """
+    from ...control import DEFAULT_KEYWORDS, EXECUTE, ControlConfig, parse_command
+
+    keywords = dict(DEFAULT_KEYWORDS)
+    configured = (ctx.config or {}).get("controlKeywords") or {}
+    if isinstance(configured, dict):
+        keywords.update(
+            {
+                str(k): str(v or "").strip()
+                for k, v in configured.items()
+                if k in keywords
+            }
+        )
+    keywords[EXECUTE] = _execute_keyword(ctx)
+    return parse_command(body, ControlConfig(keywords=keywords)).command == EXECUTE
+
+
 #: `- [x] design` / `- [ ] design` — one phase line of the checklist. The token
 #: is a node id, so what the user reads is what the graph routes on.
 #:
@@ -746,8 +771,9 @@ def _checklist_body(ctx: HookContext) -> str:
         "at that moment is frozen and becomes the graph this item walks.",
         "A doc fix usually needs little more than implementation and verification; "
         "a feature usually needs every phase.",
-        f"You can also put the list in the reply itself — a checklist in the "
-        f"`{keyword}` comment wins over the boxes here. Either way the "
+        f"Start your reply with `{keyword}` — a keyword anywhere else is read as "
+        "conversation. You can also put the list in the reply itself, below the "
+        "keyword: a checklist there wins over the boxes here. Either way the "
         "**authorization is your reply**: the tick state is a proposal, and saying "
         "the keyword is what makes it yours.",
         "Only the boxes under **Phases** change what work is done. Everything under "
@@ -1383,7 +1409,7 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
         )
     keyword = _execute_keyword(ctx)
     comments = _authorized_comments(ctx)
-    decisive = [c for c in comments if keyword.lower() in str(c["body"]).lower()]
+    decisive = [c for c in comments if _says_execute(str(c["body"]), ctx)]
     if not decisive:
         return HookResult.waiting(
             name,

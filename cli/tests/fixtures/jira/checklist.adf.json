@@ -131,7 +131,7 @@
       "content": [
         {
           "type": "text",
-          "text": "You can also put the list in the reply itself — a checklist in the "
+          "text": "Start your reply with "
         },
         {
           "type": "text",
@@ -144,7 +144,7 @@
         },
         {
           "type": "text",
-          "text": " comment wins over the boxes here. Either way the "
+          "text": " — a keyword anywhere else is read as conversation. You can also put the list in the reply itself, below the keyword: a checklist there wins over the boxes here. Either way the "
         },
         {
           "type": "text",

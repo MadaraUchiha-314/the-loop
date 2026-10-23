@@ -223,6 +223,13 @@ def build_runtime(
         # control word (issue-177, owner review): the phase-selection gate must
         # look for what THIS deployment declared, not a constant.
         config["executeKeyword"] = str(keywords["execute"])
+    if isinstance(keywords, dict):
+        # Every keyword, so the gate reads a reply with the dispatcher's own
+        # grammar (issue-498): a body opening two different commands is no
+        # execute there either.
+        config["controlKeywords"] = {
+            str(k): str(v or "") for k, v in keywords.items() if isinstance(k, str)
+        }
     # The DEFAULT the same gate offers for "how many sessions do this work
     # item's pull requests get?" (issue-260). The operator states it once,
     # per deployment; the checklist renders it pre-ticked, and the work item

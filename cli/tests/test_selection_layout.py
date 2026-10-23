@@ -172,7 +172,8 @@ def test_no_fact_the_comment_stated_is_lost():
     for fact in (
         "The tick state at that moment is frozen and becomes the graph this item walks",
         "A doc fix usually needs little more than implementation and verification",
-        "a checklist in the `the-loop execute` comment wins over the boxes",
+        "a checklist there wins over the boxes",
+        "Start your reply with `the-loop execute`",
         "the **authorization is your reply**",
         "each repository this work item contributes code to gets its own pull request",
         "On any other harness the-loop ignores this box",

@@ -195,8 +195,8 @@ def test_an_authorized_reply_freezes_the_harness_with_its_model(monkeypatch):
     """
     result, confirmation = _classify(
         monkeypatch,
-        "- [x] `harness-codex`\n- [x] `model-gpt-5.6-sol`\n- [x] `effort-high`\n"
-        "the-loop execute",
+        "the-loop execute\n"
+        "- [x] `harness-codex`\n- [x] `model-gpt-5.6-sol`\n- [x] `effort-high`",
     )
     assert result.status == "pass"
     assert result.data["harness"] == "codex"
@@ -209,7 +209,7 @@ def test_an_authorized_reply_freezes_the_harness_with_its_model(monkeypatch):
 def test_a_model_the_chosen_harness_cannot_run_is_dropped_and_named(monkeypatch):
     """R2.3: the pair is checked, and the human is told which half did not apply."""
     result, confirmation = _classify(
-        monkeypatch, "- [x] `model-gpt-5.6-sol`\n- [x] `effort-high`\nthe-loop execute"
+        monkeypatch, "the-loop execute\n- [x] `model-gpt-5.6-sol`\n- [x] `effort-high`"
     )
     assert result.data["harness"] == ""
     assert result.data["model"] == ""
@@ -231,7 +231,7 @@ def test_a_model_the_chosen_harness_cannot_run_is_dropped_and_named(monkeypatch)
 )
 def test_abuse_anything_but_one_offered_tick_is_no_choice(monkeypatch, rows):
     """Abuse case 2: a reply names a key into the offered set, or nothing."""
-    result, _ = _classify(monkeypatch, rows + "\nthe-loop execute")
+    result, _ = _classify(monkeypatch, "the-loop execute\n" + rows)
     assert result.status == "pass"
     assert result.data["harness"] == ""
 
@@ -244,7 +244,7 @@ def test_abuse_an_unauthorized_reply_freezes_no_harness(monkeypatch):
     ctx = _ctx(
         boundary="exit",
         comments=[
-            {"author": "stranger", "body": "- [x] `harness-codex`\nthe-loop execute"}
+            {"author": "stranger", "body": "the-loop execute\n- [x] `harness-codex`"}
         ],
         **_declared(),
     )

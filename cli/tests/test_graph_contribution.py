@@ -584,11 +584,11 @@ class TestContributionWalk:
             WORK_ITEM,
             ref=REF,
             event=_reply(
+                "the-loop execute\n"
                 "- [ ] context-intake\n- [ ] scoped-plan\n- [ ] plan-approval\n"
                 "- [x] implementation\n- [x] verification\n"
                 "- [ ] self-review\n- [ ] critic-review\n- [ ] security-review\n"
-                "- [ ] reviewer-briefing\n- [x] human-approval\n"
-                "the-loop execute"
+                "- [ ] reviewer-briefing\n- [x] human-approval"
             ),
         )
         state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
@@ -694,7 +694,7 @@ def test_a_ticked_surface_row_in_a_contributions_reply_changes_nothing(
     runtime.advance(
         WORK_ITEM,
         ref=REF,
-        event=_reply("- [x] outer-loop-on-pull-request\nthe-loop execute"),
+        event=_reply("the-loop execute\n- [x] outer-loop-on-pull-request"),
     )
     state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.current_node == "context-intake"
