@@ -303,6 +303,10 @@ other with `403 channel-not-registered`.~~ *Withdrawn.*
      THEN the gateway SHALL refuse to start, as today; the capability page and the
      OpenAPI description SHALL add "post as the bot into registered channels" to what an
      exposed gateway permits.
+  7. WHEN a call's `params` carry a `token` key THEN the gateway SHALL refuse it with
+     `422 param-not-allowed` and send nothing — `slack_sdk` would use that token in place
+     of the gateway's. *Added at the security review (2026-10-23): the gateway posts with
+     its own token or not at all.*
 - **Fail closed.** A missing bot token on the gateway is `503`, never a fallback to an
   instance's token. A missing or malformed `instance`, `method` or `channel` is `422`.
   An instance with no token and no posting gateway raises and queues, never drops.
