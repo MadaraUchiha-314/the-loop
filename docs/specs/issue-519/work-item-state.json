@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-519",
-  "currentNode": "critic-review",
+  "currentNode": "code-quiz",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -117,8 +117,56 @@
     },
     "critic-review": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-23T04:26:38+00:00",
+      "exitedAt": "2026-10-23T04:29:37+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "security-review": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-23T04:29:37+00:00",
+      "exitedAt": "2026-10-23T04:29:37+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "code-explainer": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-23T04:29:37+00:00",
+      "exitedAt": "2026-10-23T04:29:38+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "evidence": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-23T04:29:38+00:00",
+      "exitedAt": "2026-10-23T04:29:38+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "capability-docs": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-23T04:29:38+00:00",
+      "exitedAt": "2026-10-23T04:29:39+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "reviewer-briefing": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-23T04:29:39+00:00",
+      "exitedAt": "2026-10-23T04:30:03+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "code-quiz": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-23T04:30:03+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -338,7 +386,11 @@
     }
   },
   "forced": [],
-  "parked": null,
+  "parked": {
+    "node": "code-quiz",
+    "reason": "awaiting a human",
+    "since": "2026-10-23T04:30:03+00:00"
+  },
   "completions": {
     "requirements-definition": {
       "at": "2026-10-23T01:58:27+00:00",
@@ -370,6 +422,30 @@
     },
     "self-review": {
       "at": "2026-10-23T04:26:38+00:00",
+      "by": "cli"
+    },
+    "critic-review": {
+      "at": "2026-10-23T04:29:37+00:00",
+      "by": "cli"
+    },
+    "security-review": {
+      "at": "2026-10-23T04:29:37+00:00",
+      "by": "cli"
+    },
+    "code-explainer": {
+      "at": "2026-10-23T04:29:38+00:00",
+      "by": "cli"
+    },
+    "evidence": {
+      "at": "2026-10-23T04:29:38+00:00",
+      "by": "cli"
+    },
+    "capability-docs": {
+      "at": "2026-10-23T04:29:39+00:00",
+      "by": "cli"
+    },
+    "reviewer-briefing": {
+      "at": "2026-10-23T04:30:03+00:00",
       "by": "cli"
     }
   },
