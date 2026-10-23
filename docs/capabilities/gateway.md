@@ -126,7 +126,9 @@ The word *gateway*, unqualified, is this process; decision-059's is the
 - **Three checks and the usual guards.** `slack.post.enabled` (default `true`,
   hot-reloaded), the bot token variable set, and the method in a flat allow-list of the
   fourteen Slack methods the instance calls (`422 method-not-allowed`, nothing sent,
-  otherwise) — so the gateway is not a generic bot-token oracle. Posting off or no token
+  otherwise) — so the gateway is not a generic bot-token oracle. A `token` key in `params`
+  is `422 param-not-allowed`: the SDK would use it in place of the gateway's, so the
+  gateway posts with its own token or not at all (the security review's one finding). Posting off or no token
   is `503 posting-unavailable {reason: disabled | no-token | socket-unconfigured}`; a
   transport failure `502 slack-unreachable`. The `instances` allow-list and the peer lease
   apply as on every consumer route (`409`). Bodies are bounded at the door (`method ≤ 64`,

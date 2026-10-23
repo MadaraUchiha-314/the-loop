@@ -149,6 +149,27 @@ class SlackProxy:
                     "detail": "not a Slack Web API method the-loop calls",
                 },
             )
+        if "token" in params:
+            # slack_sdk pops a `token` key out of the JSON body and uses it in place of
+            # the client's: a peer could make this gateway call Slack with a credential of
+            # its own, under this gateway's name in the log (security review, issue-519).
+            # The call is made with the gateway's token or not at all.
+            eventlog.emit(
+                "gateway.refused",
+                level="warning",
+                instance=instance,
+                reason="param-not-allowed",
+                method=method,
+                param="token",
+            )
+            return ProxyResult(
+                422,
+                {
+                    "error": "param-not-allowed",
+                    "param": "token",
+                    "detail": "the gateway posts with its own token only",
+                },
+            )
         channel = params.get("channel")
         channel = str(channel)[:40] if isinstance(channel, str) else None
         status, body, headers = self._api_call(method, dict(params))

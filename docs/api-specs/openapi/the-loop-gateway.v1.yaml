@@ -273,7 +273,8 @@ paths:
       description: 'One Slack Web API call for the instance, made with the bot token this gateway holds for
         Socket Mode (issue-519). A pass-through: Slack''s status, body and Retry-After come back verbatim, `ok:
         false` included. Refused with 422 method-not-allowed for a method outside the fourteen the instance
-        calls (nothing sent), 503 posting-unavailable {reason: disabled | no-token | socket-unconfigured},
+        calls (nothing sent), 422 param-not-allowed for a `token` key in params (the gateway posts with its own
+        token only), 503 posting-unavailable {reason: disabled | no-token | socket-unconfigured},
         502 slack-unreachable on a transport failure, and the consumer guards every route has: 409
         unknown-instance / duplicate-instance. Nothing is stored or retried. Because the boundary carries no
         authentication, any peer this gateway accepts may post as the bot wherever the bot can.'

@@ -306,6 +306,24 @@ def test_abuse_1_a_method_outside_the_allow_list_is_422_and_nothing_is_sent(prox
     assert refused and refused[-1]["method"] == "admin.users.remove"
 
 
+def test_abuse_7_a_token_in_params_is_refused_before_the_sdk_sees_it(proxy_env):
+    """Security review (issue-519): slack_sdk pops `token` from the JSON body and uses
+    it instead of the client's, so a peer could route a credential of its own through
+    the gateway under the gateway's name. Refused at the proxy, nothing sent."""
+    gw, proxy, web = proxy_env
+    result = proxy.call(
+        "a", "chat.postMessage", {"channel": "C1", "text": "x", "token": "xoxb-other"}
+    )
+    assert result.status == 422
+    assert (
+        result.body["error"] == "param-not-allowed" and result.body["param"] == "token"
+    )
+    assert "client" not in web
+    refused = gw.events("gateway.refused")
+    assert refused[-1]["reason"] == "param-not-allowed"
+    assert "xoxb-other" not in gw.events_path.read_text()
+
+
 def test_abuse_5_posting_disabled_is_503_and_sends_nothing(monkeypatch, tmp_path):
     from gateway_support import GatewayHarness
     from the_loop.gateway import slack_proxy
