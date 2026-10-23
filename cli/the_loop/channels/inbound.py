@@ -449,7 +449,9 @@ def process_reply(
         # The Slack-side half of loop prevention (R4.5): a bot — the-loop's own
         # bot included — never speaks *to* the loop.
         return _drop(reply, "self-authored")
-    bot = channel or SlackBotChannel(config, slack_state_path(cli_config))
+    bot = channel or SlackBotChannel(
+        config, slack_state_path(cli_config), cli_config=cli_config
+    )
     # The grammar after the mention (issue-389 R3.1): the bot's own `<@…>`
     # token comes off the text wherever it sits, a leading verb is the act, and
     # a leading control verb is composed into the CONFIGURED keyword exactly as
@@ -1105,7 +1107,9 @@ def process_kickoff(
         return _drop(reply, "unauthorized-actor", level="warning", actor=reply.author)
     if not reply.text.strip():
         return _drop(reply, "unmapped", actor=reply.author)
-    bot = channel or SlackBotChannel(config, slack_state_path(cli_config))
+    bot = channel or SlackBotChannel(
+        config, slack_state_path(cli_config), cli_config=cli_config
+    )
     bot.react(reply, "received")  # issue-325: accepted, about to become an issue
     if reply.files:
         # The issue links what was attached (issue-416 R3.4): names and
@@ -1387,7 +1391,10 @@ def poll_once(
             "replies": 0,
         }
     channel = SlackBotChannel(
-        config, slack_state_path(cli_config), client_factory=client_factory
+        config,
+        slack_state_path(cli_config),
+        client_factory=client_factory,
+        cli_config=cli_config,
     )
     try:
         replies = channel.fetch_replies()
@@ -1492,8 +1499,9 @@ def handle_socket_event(
     """
     config = SlackChannelConfig.from_mapping(cli_config)
     state_path = slack_state_path(cli_config)
-    bot = SlackBotChannel(config, state_path, client_factory=client_factory)
-    bot._cli_config = cli_config
+    bot = SlackBotChannel(
+        config, state_path, client_factory=client_factory, cli_config=cli_config
+    )
     state = ChannelState.load(state_path, bot.stores)
     ts = str(event.get("ts") or "")
     thread = str(event.get("thread_ts") or "")
@@ -1750,7 +1758,9 @@ def handle_message_action(
         return {"outcome": "ignored"}
     config = SlackChannelConfig.from_mapping(cli_config)
     state_path = slack_state_path(cli_config)
-    bot = SlackBotChannel(config, state_path, client_factory=client_factory)
+    bot = SlackBotChannel(
+        config, state_path, client_factory=client_factory, cli_config=cli_config
+    )
     state = ChannelState.load(state_path, bot.stores)
     reply = _shortcut_reply(payload, verb, state, bot)
     trigger = str(payload.get("trigger_id") or "")
@@ -1882,7 +1892,9 @@ def handle_view_submission(
         composed += f" — why: {rationale}"
     config = SlackChannelConfig.from_mapping(cli_config)
     state_path = slack_state_path(cli_config)
-    bot = SlackBotChannel(config, state_path, client_factory=client_factory)
+    bot = SlackBotChannel(
+        config, state_path, client_factory=client_factory, cli_config=cli_config
+    )
     state = ChannelState.load(state_path, bot.stores)
     reply = _shortcut_reply(
         {
@@ -1989,7 +2001,9 @@ def handle_socket_action(
         ),
         channel_id=str((payload.get("channel") or {}).get("id") or ""),
     )
-    bot = SlackBotChannel(config, state_path, client_factory=client_factory)
+    bot = SlackBotChannel(
+        config, state_path, client_factory=client_factory, cli_config=cli_config
+    )
     if is_kickoff_repo_action(action_id):
         # The one press that is an ARGUMENT rather than an answer or a keyword
         # (issue-349): there is no work item yet, so `process_reply` would drop it

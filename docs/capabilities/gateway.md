@@ -13,7 +13,11 @@
 > and committable by any peer on that network — front it with the auth-terminating
 > gateway of [decision-059](../decisions/decision-059.md) or keep it on a private
 > network. Everything that judges a human (the authorized-actor guard, the control
-> grammar, the Slack allow-list and grants, every posting token) stays on the instance.
+> grammar, the Slack allow-list and grants, the GitHub and Jira posting tokens) stays on the
+> instance. Since [issue-519](https://github.com/MadaraUchiha-314/the-loop/issues/519) the gateway also
+> makes the **Slack Web API calls** its instances ask for, with the bot token it already
+> holds for Socket Mode ([decision-151](../decisions/decision-151.md)): an instance behind
+> a posting gateway needs no Slack token of its own.
 
 ## What it is
 
@@ -67,8 +71,10 @@ The word *gateway*, unqualified, is this process; decision-059's is the
   The default port is 8790, beside the
   service's 4114 and the stdlib receiver's 8787, so all three start on one laptop with no
   configuration.
-- The gateway spawns nothing, holds no harness credential and no posting token; its
-  GitHub poll token needs read access only.
+- The gateway spawns nothing and holds no harness credential and no GitHub or Jira
+  posting token; its GitHub poll token needs read access only. It does hold the Slack
+  app's bot token — Socket Mode cannot start without it — and since issue-519 it posts
+  with it for the instances (§ Outbound Slack).
 
 ### The transports
 
@@ -108,6 +114,34 @@ The word *gateway*, unqualified, is this process; decision-059's is the
   presence held with no consumer counts as offered; the instance's commit outcome
   (`spawned`, `dropped:awaiting-start`, …) updates the ledger across the process
   boundary.
+
+### Outbound Slack (issue-519)
+
+- **A pass-through, no state.** `POST /api/v1/gateway/slack/call {instance, peer, method,
+  params}` makes one Slack Web API call with the gateway's bot token and returns Slack's
+  status, body and `Retry-After` verbatim, `ok: false` included; `POST
+  /api/v1/gateway/slack/download {url}` fetches a message's file under the instance's own
+  rules (Slack's hosts only, every redirect re-checked, 25 MiB). Nothing is stored,
+  queued or retried on the gateway; a call it cannot make fails the instance's post.
+- **Three checks and the usual guards.** `slack.post.enabled` (default `true`,
+  hot-reloaded), the bot token variable set, and the method in a flat allow-list of the
+  fourteen Slack methods the instance calls (`422 method-not-allowed`, nothing sent,
+  otherwise) — so the gateway is not a generic bot-token oracle. A `token` key in `params`
+  is `422 param-not-allowed`: the SDK would use it in place of the gateway's, so the
+  gateway posts with its own token or not at all (the security review's one finding). Posting off or no token
+  is `503 posting-unavailable {reason: disabled | no-token | socket-unconfigured}`; a
+  transport failure `502 slack-unreachable`. The `instances` allow-list and the peer lease
+  apply as on every consumer route (`409`). Bodies are bounded at the door (`method ≤ 64`,
+  `params ≤ 256 KiB`, `url ≤ 2048`).
+- **Said, not mitigated.** The owner chose a pass-through over a per-instance channel
+  registration at the design review: any peer the gateway accepts may post as the bot
+  wherever the bot can see (decision-146's posture, now stated for posting too). The
+  token never leaves the gateway process and never reaches a log line:
+  `gateway.slack_call` carries instance, method, channel, status and `ok`;
+  `gateway.slack_download` the host, status and size or reason.
+- **Health says whether it posts.** `GET /api/v1/gateway/health` carries
+  `slack.posting: on | disabled | no-token | socket-unconfigured`; `the-loop gateway
+  status` prints `slack posting:` and carries `slackPosting` in `--format json`.
 
 ### Subjects, queues, consumers
 
@@ -203,6 +237,27 @@ The word *gateway*, unqualified, is this process; decision-059's is the
   room moves events and grants nothing: the instance applies `channels.slack`'s
   principals, the room's listen mode, `routing.authorizedUsers` and the roster to what it
   is handed.
+- **Posting through the gateway** (issue-519). The instance's Slack client comes from one
+  resolver, `outbound_client()`: its own bot token first (`channels.slack.botTokenEnv`,
+  unchanged for every deployment that has one), else — with a `gateway` block — a
+  gateway-backed client with the SDK's method names, each call one `POST /slack/call`;
+  neither is today's `ChannelError`, now with the gateway hint. The channel, the name→id
+  directory, the doctor and the attachment fetcher (through `/slack/download`) all use
+  it, so a thread opens, is bound and is published exactly as with a local token. A
+  gateway that is unreachable or refuses **fails the post** — one error, no fallback to
+  a token, no retry logic of its own; the existing outbox treats it like any failed Slack
+  call. `GET /api/v1/gateway` carries `slackPosting` from the gateway's health and the
+  Gateway card reads `connected · long-poll · posting via gateway`.
+- **The instance says when nothing can post** (issue-519). With Slack enabled and no
+  posting path — no token, and no gateway or a gateway reporting posting off (or one that
+  could not be asked at start) — `the-loop start` logs one warning naming the variable
+  and emits `channel.posting_unavailable`, then starts anyway; `the-loop status` appends
+  `outbound Slack needs <var> on this instance` to the gateway-client row (or `posting
+  through the gateway` when that is the path); `channels status` prints a `posting:` line
+  and a `[!]` finding (the one line of that command that asks something: the gateway
+  client's document from the local service, never Slack; with the service down it says
+  the answer is not yet known); `doctor slack` an `[ok]` / `[!]` / `[?]` gateway line, and its
+  heartbeat probe is `unverifiable` with the same reason. Slack disabled prints none of it.
 - When the gateway is unreachable the instance keeps running, records
   `gateway.unreachable` once, retries with back-off (1 s → 60 s), records
   `gateway.connected` on recovery, and **never** falls back to its own ingresses. A
@@ -250,8 +305,11 @@ The word *gateway*, unqualified, is this process; decision-059's is the
 - No instance authentication (decision-146), no work-item lease over claims (one user's
   subjects on several instances), no multi-replica gateway; the `Store` interface is the
   seam for the last, and the allow-list check is where a bearer token attaches.
-- The gateway runs no control grammar, no authorization and no posting: a forged event
-  through the gateway is a forged event at the instance, judged as it always was.
+- The gateway runs no control grammar and no authorization: a forged event through the
+  gateway is a forged event at the instance, judged as it always was. It does post to
+  Slack for its instances (issue-519), and because the boundary carries no authentication
+  an exposed gateway lets any peer on that network post as the bot; `slack.post.enabled:
+  false` turns that off.
 
 ## Design
 
@@ -270,6 +328,7 @@ The word *gateway*, unqualified, is this process; decision-059's is the
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-519 | **Outbound Slack through the gateway, and a loud failure when it cannot** (2026-10-23): `POST /api/v1/gateway/slack/call` and `/slack/download` make Slack Web API calls and file downloads for an instance with the bot token the gateway already holds — a pass-through behind `slack.post.enabled` (default on), a flat allow-list of the fourteen methods the instance calls and the usual consumer guards, no state, no retry; `health.slack.posting` and `gateway status` say whether it posts. On the instance one resolver picks the posting path (own token first, else the gateway, else today's error with the gateway hint) for the channel, the directory, the doctor and attachments; `start`, `status`, `channels status` and `doctor slack` say which path is in use and name the missing variable when nothing can post. The owner withdrew a per-instance channel registration at the design review: any accepted peer may post wherever the bot can | [spec](../specs/issue-519/), [decision-151](../decisions/decision-151.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/519) |
 | issue-505 | Collaboration channels reach the gateway (2026-10-20): the instance publishes its declared Slack channels as rooms (`PUT /api/v1/gateway/rooms`, a replace-set per instance), the gateway resolves a Slack event through a published room after the thread binding and before `slack.rooms`, a late room drains the channel's held events, a live holder keeps its room, and `GET /instances` lists rooms. A collaborator's top-level message in a declared room is no longer held | [spec](../specs/issue-505/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/505) |
 | issue-503 | The instance side gets `channels.slack.read.mode: gateway` (2026-10-20): the explicit "no Socket Mode here" setting, with interactivity keyed on reachability rather than on `socket`; fail closed without a block; `migrate-config` rewrites 20.3.0's `socket` beside a block | [spec](../specs/issue-503/), [channels](channels.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/503) |
 | issue-496 | The capability, whole (2026-10-19): the gateway process and its verbs, `gateway-config.yaml` and schema, the GitHub/Jira/Slack transports, the SQLite store with subjects and one queue per instance, consumers resolved at ingest by claim then actor, pull with commit and long-poll, at-least-once with dead-letter, the instance's `gateway` block and client, claims and bindings published by the instance, `GET /api/v1/gateway`, the Gateway card, the two event families | [spec](../specs/issue-496/), [decision-144](../decisions/decision-144.md), [decision-145](../decisions/decision-145.md), [decision-146](../decisions/decision-146.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/496) |

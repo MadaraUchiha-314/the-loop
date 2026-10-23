@@ -504,6 +504,11 @@ def start_all(config: Optional[dict] = None) -> Dict[str, Any]:
         row["outcome"] in ("started", "already-running", "hosted", "disabled", "manual")
         for row in rows
     )
+    # one loud line about outbound Slack (issue-519, R1.1); never moves `ok`
+    try:
+        _warn_if_nothing_posts(config)
+    except Exception:  # noqa: BLE001 — a warning never fails a start
+        logger.debug("could not check the Slack posting path", exc_info=True)
     standing = _start_standing(config)
     return {
         "services": rows,
@@ -648,7 +653,7 @@ def status_all(
         )
         gateway_doc = gateway_document(config, probe=running)
         client_row["gateway"] = gateway_doc
-        client_row["detail"] = gateway_line(gateway_doc)
+        client_row["detail"] = gateway_line(gateway_doc, config)
         rows.append(client_row)
     ok = all(row["running"] for row in rows if row["enabled"])
     standing = _standing_status(config)
@@ -737,9 +742,95 @@ def gateway_document(config: Optional[dict], *, probe: bool = True) -> Dict[str,
     }
 
 
-def gateway_line(doc: Mapping[str, Any]) -> str:
+def posting_suffix(doc: Mapping[str, Any], config: Optional[Mapping[str, Any]]) -> str:
+    """What `status` appends to the gateway-client line about outbound Slack
+    (issue-519, R1.2, R1.4): `· posting through the gateway` when the gateway posts
+    for an instance with no token of its own, `— outbound Slack needs <var> on this
+    instance` when nothing can post, nothing when the instance posts with its own
+    token or Slack is off. Read from the document's `slackPosting` (the gateway's
+    health answer) and this instance's posting path."""
+    if not config:
+        return ""
+    from ..channels.slack import SlackChannelConfig, posting_path
+
+    slack = SlackChannelConfig.from_mapping(config)
+    if not slack.enabled:
+        return ""
+    posting = doc.get("slackPosting")
+    path = posting_path(
+        slack, config, gateway_posting=str(posting) if posting else None
+    )
+    if path.kind == "local":
+        return ""
+    if path.kind == "gateway":
+        return " · posting through the gateway" if posting == "on" else ""
+    return (
+        f" — outbound Slack needs {slack.bot_token_env} on this instance "
+        f"(the gateway reports posting {posting})"
+    )
+
+
+def probe_gateway_posting(config: Optional[Mapping[str, Any]]) -> Optional[str]:
+    """Ask the gateway's health directly whether it posts (issue-519, R1.1) — at
+    `start` the hosted client has not connected yet. ``None`` when it cannot be
+    asked; the answer's `slack.posting` otherwise."""
+    block = cli_config.gateway_block(config)
+    if block is None:
+        return None
+    import json
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(  # noqa: S310 — the configured gateway URL
+            block.url + "/api/v1/gateway/health", timeout=3.0
+        ) as response:
+            body = json.loads(response.read(65536) or b"{}")
+    except Exception:  # noqa: BLE001 — unreachable, refused, not JSON: "not asked"
+        return None
+    posting = (
+        (body.get("slack") or {}).get("posting") if isinstance(body, dict) else None
+    )
+    return str(posting) if posting else None
+
+
+def _warn_if_nothing_posts(config: Optional[Mapping[str, Any]]) -> None:
+    """`start`'s one loud line about outbound Slack (issue-519, R1.1, R1.5, R1.6):
+    with Slack enabled and no posting path, a warning naming the variable — and, with
+    a gateway block, what the gateway said or that it could not be asked. The start
+    itself is unaffected: the GitHub ledger and the other channels still run, and the
+    outbox keeps what fails."""
+    from ..channels.slack import SlackChannelConfig, posting_path
+
+    slack = SlackChannelConfig.from_mapping(config)
+    if not slack.enabled or os.environ.get(slack.bot_token_env):
+        return
+    block = cli_config.gateway_block(config)
+    posting = probe_gateway_posting(config) if block is not None else None
+    if block is not None and posting is None:
+        reason = (
+            f"{slack.bot_token_env} is unset and the gateway at {block.url} could not "
+            "be asked whether it posts (slack.post.enabled); if it does not, export "
+            f"{slack.bot_token_env} on this instance"
+        )
+    else:
+        path = posting_path(slack, config, gateway_posting=posting or "unknown")
+        if path.kind != "none":
+            return
+        reason = path.detail
+    logger.warning(
+        "slack: outbound posts cannot be delivered — %s; a failed post waits in the "
+        "outbox",
+        reason,
+    )
+    eventlog.emit("channel.posting_unavailable", level="warning", reason=reason)
+
+
+def gateway_line(
+    doc: Mapping[str, Any], config: Optional[Mapping[str, Any]] = None
+) -> str:
     """One line for `status`: `connected · polling`, `refused · duplicate instance
-    (409)`, `unreachable · retrying`, `connecting · attempt n`, `not configured`."""
+    (409)`, `unreachable · retrying`, `connecting · attempt n`, `not configured` —
+    plus, given the config, the outbound-Slack suffix (issue-519)."""
     if not doc.get("configured"):
         return "not configured"
     state = str(doc.get("state") or "unknown")
@@ -747,7 +838,7 @@ def gateway_line(doc: Mapping[str, Any]) -> str:
     if state == "connected":
         mode = doc.get("mode") or {}
         how = "long-poll" if (mode.get("longPollSeconds") or 0) > 0 else "polling"
-        return f"connected · {how} {url}".rstrip()
+        return f"connected · {how} {url}".rstrip() + posting_suffix(doc, config)
     if state == "refused":
         who = doc.get("refusedBy")
         return f"refused · {doc.get('error') or 'duplicate instance'} (409)" + (

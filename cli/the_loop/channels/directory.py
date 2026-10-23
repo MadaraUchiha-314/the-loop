@@ -525,18 +525,23 @@ class SlackDirectory:
         if self._client is not None:
             return self._client
         try:
-            from .slack import SlackChannelConfig, build_client
+            from .base import ChannelError
+            from .slack import SlackChannelConfig, outbound_client
 
-            env = (
-                self.token_env
-                or SlackChannelConfig.from_mapping(self.cli_config).bot_token_env
-            )
-            token = os.environ.get(env, "")
-            if not token:
-                logger.debug("slack: no bot token (%s); names cannot be resolved", env)
+            config = SlackChannelConfig.from_mapping(self.cli_config)
+            if self.token_env and self.token_env != config.bot_token_env:
+                from dataclasses import replace
+
+                config = replace(config, bot_token_env=self.token_env)
+            try:
+                # the posting path (issue-519): the local token, else the gateway's
+                # client — `conversations.list` is a channel-less call it may make
+                self._client = outbound_client(
+                    config, self.cli_config, self._client_factory
+                )
+            except ChannelError as exc:
+                logger.debug("slack: %s; names cannot be resolved", exc)
                 return None
-            factory = self._client_factory or build_client
-            self._client = factory(token)
         except Exception as exc:  # noqa: BLE001
             logger.warning("slack: could not build a client for name lookup: %s", exc)
             return None

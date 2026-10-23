@@ -155,7 +155,11 @@ directory; in Cursor, resolve it to the plugin's install directory.)
       installed. The user puts it in their environment, or in the `env.file` when one is
       configured, under the name `channels.slack.botTokenEnv` (default
       `THE_LOOP_SLACK_BOT_TOKEN`). **Never ask them to paste a token into this
-      conversation**: step 8 reports only whether it is set.
+      conversation**: step 8 reports only whether it is set. Behind a gateway that
+      posts for its instances (`slack.post.enabled`, the gateway's default — issue-519)
+      the bot token is **optional on this instance**: say so, and that without it the
+      instance posts through the gateway and `the-loop start` warns if the gateway
+      cannot post.
    3. **The app-level token** (`xapp-…`, scope `connections:write`) — *Basic Information →
       App-Level Tokens*. A manifest cannot mint it. It goes in the same place as the bot
       token, under `channels.slack.appTokenEnv` (default `THE_LOOP_SLACK_APP_TOKEN`).

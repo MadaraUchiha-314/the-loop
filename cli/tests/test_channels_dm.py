@@ -407,6 +407,8 @@ def test_status_prints_the_reconcile_cadence(tmp_path, monkeypatch, capsys):
 def test_status_says_nothing_about_a_kind_it_cannot_derive(
     tmp_path, monkeypatch, capsys
 ):
+    # a posting path exists (issue-519), so the only finding in question is the kind's
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
     out = run_status(tmp_path, monkeypatch, capsys, cli_config(tmp_path, channel="X9"))
     assert "channel kind: unrecognised" in out
     assert "[!]" not in out

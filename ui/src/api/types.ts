@@ -42,12 +42,14 @@ export interface GatewayDocument {
   attempt?: number;
   refusedBy?: string | null;
   error?: string | null;
+  /** Whether the gateway posts to Slack for this instance (issue-519): `on`, why not, or `unknown`. */
+  slackPosting?: string;
   mode?: { pollIntervalSeconds: number; longPollSeconds: number };
   claims?: { subject: string; role: string }[];
   health?: {
     ok: boolean;
     ingresses?: Record<string, string>;
-    slack?: { socket: string };
+    slack?: { socket: string; posting?: string };
     store?: { queues?: Record<string, number>; held?: number };
     [key: string]: unknown;
   } | null;

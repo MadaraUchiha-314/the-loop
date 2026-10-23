@@ -47,6 +47,7 @@ __all__ = [
     "SlackIngress",
     "SlackSocket",
     "SlackHttp",
+    "SlackPost",
     "Room",
     "default_gateway_config_path",
     "load_gateway_config",
@@ -173,6 +174,15 @@ class SlackHttp:
 
 
 @dataclass(frozen=True)
+class SlackPost:
+    """Whether the gateway makes Slack Web API calls for its instances with the bot
+    token its Socket Mode ingress already holds (issue-519, R6.1). Hot-reloaded: the
+    route reads the live config at call time (R6.3)."""
+
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
 class Room:
     channel: str
     work_item: str
@@ -182,6 +192,7 @@ class Room:
 class SlackIngress:
     socket: SlackSocket = SlackSocket()
     http: SlackHttp = SlackHttp()
+    post: SlackPost = SlackPost()
     rooms: Tuple[Room, ...] = ()
 
 
@@ -399,7 +410,9 @@ def _jira(block: Mapping[str, Any]) -> JiraIngress:
 def _slack(block: Mapping[str, Any]) -> SlackIngress:
     socket = block.get("socket") or {}
     http = block.get("http") or {}
+    post = block.get("post") or {}
     return SlackIngress(
+        post=SlackPost(enabled=bool(_get(post, "enabled", True))),
         socket=SlackSocket(
             enabled=bool(_get(socket, "enabled", True)),
             app_token_env=str(_get(socket, "appTokenEnv", "THE_LOOP_SLACK_APP_TOKEN")),

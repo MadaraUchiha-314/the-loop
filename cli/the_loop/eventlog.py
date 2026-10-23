@@ -435,6 +435,13 @@ EVENT_TYPES: Dict[str, str] = {
         "which is how three days of agent questions went missing. Ids and counts "
         "only; the message text is in the outbox, never in the log."
     ),
+    "channel.posting_unavailable": (
+        "`the-loop start` found Slack enabled and no way to post to it (reason: the "
+        "unset bot-token variable and, with a gateway block, what the gateway said "
+        "about `slack.post.enabled` or that it could not be asked) — issue-519. "
+        "Warning level, once per start; the start itself succeeds and a failed post "
+        "waits in the outbox."
+    ),
     "channel.delivered_late": (
         "A queued event was accepted by a channel on a later attempt and left the "
         "outbox (event_type, work_item, attempts, waited_seconds) — issue-409."
@@ -1300,6 +1307,17 @@ EVENT_TYPES: Dict[str, str] = {
         "An ingress refused or discarded a delivery before storing it (provider, "
         "reason: bad-signature | replay-window | invalid-payload | unbound | "
         "undeclared-repository | duplicate, delivery_id). Nothing was stored."
+    ),
+    "gateway.slack_call": (
+        "The gateway made one Slack Web API call for an instance (instance, method, "
+        "channel, status, ok) — issue-519. The pass-through: the call's text and the "
+        "bot token never reach a line; a refused method or an unavailable posting is a "
+        "gateway.refused instead."
+    ),
+    "gateway.slack_download": (
+        "The gateway fetched a message's file for an instance with its bot token "
+        "(instance, host, status, size — or reason: off-host | over-cap | "
+        "transfer-failed) — issue-519."
     ),
     "gateway.refused": (
         "The consumer API refused a request (instance, reason: duplicate-instance | "

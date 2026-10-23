@@ -28,6 +28,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 import argparse
+import os
 import sys
 
 from .. import cli_config, eventlog
@@ -338,6 +339,32 @@ def _gateway_lines(config: dict) -> Optional[List[str]]:
         lines.append(
             f"  {_FINDING} the gateway's Socket Mode connection is {socket} — no Slack event reaches any instance"
         )
+    # outbound (issue-519, R1.3): who posts to Slack for this instance
+    slack = SlackChannelConfig.from_mapping(config)
+    if slack.enabled:
+        posting = doc.get("slackPosting") or (
+            (health.get("slack") or {}).get("posting")
+            if isinstance(health, dict)
+            else None
+        )
+        if os.environ.get(slack.bot_token_env):
+            lines.append(
+                f"  {_OK} outbound Slack uses this instance's own token ({slack.bot_token_env})"
+            )
+        elif posting == "on":
+            lines.append(
+                f"  {_OK} the gateway posts to Slack for this instance (slack.post.enabled) — no token needed here"
+            )
+        elif posting in ("disabled", "no-token", "socket-unconfigured"):
+            lines.append(
+                f"  {_FINDING} outbound Slack needs {slack.bot_token_env} on this instance — "
+                f"the gateway reports posting {posting}; a failed post waits in the outbox"
+            )
+        else:
+            lines.append(
+                f"  {_UNKNOWN} whether the gateway posts for this instance is unknown — "
+                f"its health was not read; without {slack.bot_token_env} here, posting depends on it"
+            )
     return lines
 
 

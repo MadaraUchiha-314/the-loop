@@ -514,14 +514,14 @@ def test_a_clip_slack_could_not_transcribe_has_no_transcript(tmp_path):
 def test_a_file_that_cannot_be_fetched_is_still_named_with_its_reason(tmp_path):
     """
     Scenario: a file that cannot be fetched is still named with its reason
-      Given no bot token, a fetch that fails, a file over the cap, and a file off Slack's host
+      Given no bot token and no fetcher, a fetch that fails, a file over the cap, and a file off Slack's host
       When the-loop fetches the message's files
       Then each attachment is returned with its permalink and a fixed reason
       And nothing is saved for it
     """
-    (got,) = slack_attachments(
-        [_image()], token="", dest_dir=tmp_path, fetch=_fetch_recorder()
-    )
+    # no token AND no fetcher of the caller's own: a supplied fetcher carries its own
+    # credential (the gateway's, issue-519) and is not `no-token`
+    (got,) = slack_attachments([_image()], token="", dest_dir=tmp_path)
     assert got.error == "no-token" and got.link == PERMALINK and got.path == ""
     (got,) = slack_attachments(
         [_image()],

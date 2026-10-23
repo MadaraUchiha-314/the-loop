@@ -562,6 +562,25 @@ flowchart LR
   way to test them is to send the bot a mention. This is what would have caught the
   report's B3: a scope probe that said `app_mentions:read` was granted while the event
   itself never arrived.
+- **Behind a gateway, the gateway posts** ([issue-519](https://github.com/MadaraUchiha-314/the-loop/issues/519)).
+  Every outbound Slack call — the thread opener, a reply, an edit in place, a reaction,
+  an ephemeral answer, the picker, the name→id lookups, the `record-context` snapshot, a
+  file download — comes from one resolver, `outbound_client()`: the instance's own bot
+  token first (`channels.slack.botTokenEnv`), else, with a `gateway` block, a
+  gateway-backed client that sends each call to `POST /api/v1/gateway/slack/call` and the
+  gateway makes it with the token it holds for Socket Mode; neither is today's
+  `ChannelError`, now ending "or point this instance at a gateway with
+  `slack.post.enabled`". Slack's `ok: false` comes back as the SDK's own exception, so
+  the stale-`ts` fallback and the best-effort reactions behave as before; a gateway that
+  is unreachable or refuses fails the post, with no fallback and no retry of its own
+  (the outbox keeps the event as for any failed post). WHEN Slack is enabled and nothing
+  can post THEN `the-loop start` SHALL log one warning naming the variable (and what the
+  gateway said, or that it could not be asked) and still start; `the-loop status` SHALL
+  append `outbound Slack needs <var> on this instance` to the gateway-client row;
+  `channels status` SHALL print a `posting:` line and a `[!]` finding; and `doctor
+  slack` SHALL report it as `[!]`, its heartbeat probe `unverifiable` with the same
+  reason. WHEN Slack is disabled THEN none of it prints. See
+  [gateway](gateway.md) § Outbound Slack.
 - **A deployment-wide `the-loop doctor slack`** (issue-393, F2/R2.2–R2.3). WHEN the
   doctor runs THEN it SHALL (1) detect a **second live Socket Mode consumer** on the same
   app token — by posting a nonce heartbeat to the bot's own channel and reading it back
@@ -1090,6 +1109,7 @@ ticket, with no Jira work items, ingress or ledger:
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-519 | **Behind a gateway, the gateway posts** (2026-10-23): one resolver, `outbound_client()` / `posting_path()`, picks the instance's Slack client — own token first, else a gateway-backed client over `POST /api/v1/gateway/slack/call` (and `/slack/download` for files), else today's error with the gateway hint — for the channel, every `SlackBotChannel` construction site, the directory, the doctor and the attachment fetcher (a caller's own fetcher counts as a credential, captions included); a gateway failure fails the post with no fallback. `start` warns once and emits `channel.posting_unavailable` when nothing can post; `status`, `channels status` and `doctor slack` say which posting path is in use | [spec](../specs/issue-519/), [gateway](gateway.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/519) |
 | issue-507 | A Slack mention inside a thread is answered in that thread (2026-10-20): `inbound.process_reply` notes the thread of a delivered `work-item.reply` in the work item's room-delivery memory (`replyChannel` / `replyThread`), `SlackBotChannel.post` posts the next `comment.agent` there, and any non-progress event clears it. No config, grant, scope, schema or event change | [spec](../specs/issue-507/), [guide](../guide/slack.md#a-room-for-one-work-item), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/507) |
 | issue-505 | Behind a gateway, a collaboration channel is published to the gateway as a room (2026-10-20): `CollaborationChannelStore.on_change` lets the hosted gateway client publish a declaration, a move or a clear at once; the client also publishes the whole set at every registration and reconciles every 30 s. The issue-375 promise that every message in the room is about its work item now holds behind a gateway | [spec](../specs/issue-505/), [gateway](gateway.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/505) |
 | issue-503 | `read.mode: gateway` (2026-10-20): a fourth read mode for an instance behind a gateway — no Socket Mode connection, no poll reader, events only from the gateway client; the button, picker, slash-command, mention and shortcut gates key on `push_reachable` (socket, or gateway with a block) instead of `read.mode == socket`; `gateway` without a block resolves to `off` (fail closed); `channels listen` refuses beside any gateway block; `channels status` names the transport and flags both misconfigurations; `migrate-config` rewrites `gateway` + `socket` | [spec](../specs/issue-503/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/503) |

@@ -28,7 +28,9 @@ checks a credential.
 An instance that *reads from* a gateway needs the `gateway` block of its CLI config (the
 `ingress` group), established by `/init-cli` (issue-496). When its Slack channel is
 enabled, it also needs `channels.slack.read.mode: gateway` (issue-503), which keeps every
-button and opens no socket of its own. Never set `socket` beside a gateway block.
+button and opens no socket of its own. Never set `socket` beside a gateway block. Its bot
+token is optional when the gateway posts for its instances (`slack.post.enabled`, the
+gateway's default — issue-519): unset, the instance's Slack calls go through the gateway.
 *Hosting* a gateway is `/init-gateway`'s: when the user tells `/init-cli` the gateway runs
 on this machine, `/init-cli` names that command rather than walking the gateway's file.
 
