@@ -28,6 +28,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 import argparse
+import os
 import sys
 
 from .. import cli_config, eventlog
@@ -339,8 +340,6 @@ def _gateway_lines(config: dict) -> Optional[List[str]]:
             f"  {_FINDING} the gateway's Socket Mode connection is {socket} — no Slack event reaches any instance"
         )
     # outbound (issue-519, R1.3): who posts to Slack for this instance
-    import os
-
     slack = SlackChannelConfig.from_mapping(config)
     if slack.enabled:
         posting = doc.get("slackPosting") or (
