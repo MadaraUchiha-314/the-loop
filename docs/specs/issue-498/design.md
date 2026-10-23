@@ -114,10 +114,10 @@ A body that is `None`/empty still returns `ControlResult()`.
 
 | Boundary (bugfix.md) | Enforcement |
 |----------------------|-------------|
-| Comment text → daemon action | Narrowed: a command must be at body start (`re.match` at 0) and every further command at column 0 of a line. Returned values remain declared constants and validated argument tokens. |
-| Two commands in one body | Still executes neither (`ambiguous`); proved by test. |
-| Ambiguous body → session | Enters the *same* code path as a command-free comment after `control.ambiguous` is logged, so scope, authorization, pause/awaiting-start suppression and the collaborator rules all apply. No new branch to audit. |
-| Upstream guards (self-marker, `authorizedUsers`) | Unchanged; they run before the parser. |
+| **Trust boundary** — comment text → daemon action | Narrowed: a command must be at body start (`re.match` at 0) and every further command at column 0 of a line. Returned values remain declared constants and validated argument tokens. |
+| **Abuse case: half a command executed** — two commands in one body | Still executes neither (`ambiguous`); proved by test. |
+| **Abuse case: forwarding bypasses a gate** — ambiguous body → session | Enters the *same* code path as a command-free comment after `control.ambiguous` is logged, so scope, authorization, pause/awaiting-start suppression and the collaborator rules all apply. No new branch to audit. |
+| **Untrusted actor / input** — upstream guards (self-marker, `authorizedUsers`) | Unchanged; they run before the parser. |
 
 ## Testing strategy
 
