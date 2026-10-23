@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-519",
-  "currentNode": "design-approval",
+  "currentNode": "spec-explainer",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -61,8 +61,16 @@
     },
     "design-approval": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "approved",
       "enteredAt": "2026-10-23T02:20:55+00:00",
+      "exitedAt": "2026-10-23T03:13:46+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "spec-explainer": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-23T03:13:46+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -275,11 +283,7 @@
     }
   },
   "forced": [],
-  "parked": {
-    "node": "design-approval",
-    "reason": "`classify-feedback` did not pass:\n- feedback so far is not decisive; the gate stays open",
-    "since": "2026-10-23T02:34:07+00:00"
-  },
+  "parked": null,
   "completions": {
     "requirements-definition": {
       "at": "2026-10-23T01:58:27+00:00",

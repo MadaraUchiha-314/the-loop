@@ -2,8 +2,8 @@
 type: design
 phase: design
 workItem: "github:MadaraUchiha-314/the-loop#519"
-status: draft
-approvedBy: []
+status: approved
+approvedBy: ["MadaraUchiha-314"]
 requirements: requirements.md
 overrides: {}
 ---
@@ -462,3 +462,9 @@ them is whether the thirteen-name allow-list stays (§ Architecture).
 
 > Appended by the-loop's `record-feedback` hook when a human gate approves with
 > comments (issue-109). Append-only and attributed.
+
+### 2026-10-22 — approved
+
+**@MadaraUchiha-314** wrote:
+
+approved
