@@ -343,7 +343,7 @@
               "type": "string",
               "pattern": "^[A-Z][A-Z0-9_]*$",
               "default": "THE_LOOP_SLACK_BOT_TOKEN",
-              "description": "The bot token, for the heartbeat split check. The NAME of an environment variable, never a value: a pasted token fails validation here (issue-496, abuse case 7)."
+              "description": "The bot token, for the heartbeat split check and for posting on the instances' behalf (issue-519, `slack.post`). The NAME of an environment variable, never a value: a pasted token fails validation here (issue-496, abuse case 7)."
             },
             "splitCheckBeats": {
               "type": "integer",
@@ -369,6 +369,18 @@
               "pattern": "^[A-Z][A-Z0-9_]*$",
               "default": "SLACK_SIGNING_SECRET",
               "description": "The app's signing secret. The NAME of an environment variable, never a value: a pasted token fails validation here (issue-496, abuse case 7)."
+            }
+          }
+        },
+        "post": {
+          "type": "object",
+          "description": "Outbound Slack for the instances (issue-519): the gateway makes the Slack Web API calls an instance asks for — posts, edits, reactions, thread reads, file downloads — with the bot token its Socket Mode ingress already holds, so an instance behind a gateway needs no Slack token of its own. A pass-through: nothing is stored or retried here, and a call the gateway cannot make fails the instance's post.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Make Slack Web API calls for the instances (issue-519). On by default: the token is already here. `false` answers every call with `503 posting-unavailable`, and an instance without a bot token of its own then says at start and in `status` that it cannot post. Hot-reloaded; no restart."
             }
           }
         },

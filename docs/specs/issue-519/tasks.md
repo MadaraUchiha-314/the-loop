@@ -19,7 +19,7 @@ the transition. No task touches the gateway's store.
 
 ## Task list
 
-- [ ] 1. Gateway config: the `slack.post` block
+- [x] 1. Gateway config: the `slack.post` block
   - `SlackPost(enabled: bool = True)` on `SlackIngress`; `_slack()` parses `post.enabled`;
     `gateway-config.schema.json` gains `slack.post` (`additionalProperties: false`, one
     boolean, default `true`, a description the onboarding walk asks from); the template
