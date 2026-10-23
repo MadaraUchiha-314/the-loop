@@ -163,4 +163,6 @@ None.
 
 ## Review comments
 
-None yet.
+| # | Where | Comment | Decision |
+|---|-------|---------|----------|
+| 1 | [PR #523](https://github.com/MadaraUchiha-314/the-loop/pull/523#issuecomment-6371767734) | Checklist-then-keyword replies to the phase-selection gate are now conversation — keep it strict (A) or add a gate-only last-line exception (B)? | **A — keep it strict** (author, "Yes, agreed"). One rule for every command; §1b stands unchanged. |
