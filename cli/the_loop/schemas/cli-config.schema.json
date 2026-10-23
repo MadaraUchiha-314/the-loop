@@ -739,7 +739,7 @@
             },
             "keywords": {
               "type": "object",
-              "description": "The declared vocabulary. Matched as whole tokens, case-insensitively, anywhere in a comment body. Setting one to an empty string disables that command; a comment carrying two DIFFERENT commands is refused outright (nothing executed, nothing forwarded).",
+              "description": "The declared vocabulary. Matched as whole tokens, case-insensitively, only where a comment OPENS with one; a further keyword counts only when it opens a line of its own, so a keyword mentioned in prose, backticks, a quote or a code block is conversation (issue-498). Setting one to an empty string disables that command; a comment that opens lines with two DIFFERENT commands executes neither and is forwarded as conversation.",
               "additionalProperties": false,
               "properties": {
                 "start": {

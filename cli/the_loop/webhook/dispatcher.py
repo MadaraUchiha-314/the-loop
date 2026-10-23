@@ -191,7 +191,6 @@ _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 SETTLED_SUPPRESSED = ("awaiting-start", "session-paused", "collaborator-no-spawn")
 SETTLED_CONTROL_EXECUTED = "control-executed"
 SETTLED_CONTROL_REJECTED = "control-rejected"
-SETTLED_CONTROL_AMBIGUOUS = "control-ambiguous"
 SETTLED_START_GATE = "parked-at-human-start-gate"
 # A Jira copy of a GitHub issue (issue-517, abuse case 7) is refused at arming:
 # GitHub is the tracker, and the copy's label marks it as never to be run.
@@ -211,7 +210,6 @@ SETTLED_OUTCOMES = (
     + (
         SETTLED_CONTROL_EXECUTED,
         SETTLED_CONTROL_REJECTED,
-        SETTLED_CONTROL_AMBIGUOUS,
         SETTLED_START_GATE,
         SETTLED_MIRROR,
     )
@@ -239,7 +237,6 @@ SETTLED_OUTCOMES = (
 ACK_STATES = {
     SETTLED_CONTROL_EXECUTED: STATE_COMPLETED,
     SETTLED_CONTROL_REJECTED: STATE_ERROR,
-    SETTLED_CONTROL_AMBIGUOUS: STATE_ERROR,
     **{outcome: STATE_STARTED for outcome in SETTLED_SUPPRESSED},
 }
 
@@ -1260,10 +1257,10 @@ class Dispatcher:
         )
         if control.ambiguous:
             logger.warning(
-                "ignoring a comment on %s carrying conflicting control keywords "
-                "(%s); re-state the one you meant",
-                ", ".join(item.ref for item in routed.work_items),
+                "executing none of the conflicting control keywords (%s) in a "
+                "comment on %s; it is routed as conversation",
                 ", ".join(control.matched),
+                ", ".join(item.ref for item in routed.work_items),
             )
             eventlog.emit(
                 "control.ambiguous",
@@ -1273,10 +1270,10 @@ class Dispatcher:
                 commands=control.matched,
                 delivery_id=routed.delivery_id or None,
             )
-            # Consumed, not delivered: nothing was executed and nothing was
-            # forwarded, and a retry could only reach the same reading.
-            self._settle(routed, SETTLED_CONTROL_AMBIGUOUS)
-            return
+            # Not consumed (issue-498): no command is acted on, but the comment
+            # is still conversation — `control.command` is None, so everything
+            # below routes it exactly as a comment that named no command (scope,
+            # the paused / awaiting-start suppressions, delivery).
 
         # Scope (issue-322): is this event for a work item THIS instance manages,
         # or one it may claim? After linkage (a branch-invented item must not

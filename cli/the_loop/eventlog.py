@@ -239,13 +239,15 @@ EVENT_TYPES: Dict[str, str] = {
         "actor, or an `add-collaborator` naming no valid `@login`."
     ),
     "control.ambiguous": (
-        "A comment carried two or more different control keywords, so nothing "
-        "was executed and nothing was forwarded (work_items, actor, commands)."
+        "A comment opened lines with two or more different control keywords, so "
+        "none was executed; the comment was routed as conversation (issue-498) "
+        "(work_items, actor, commands)."
     ),
     # A control comment is CONSUMED, never delivered — so on the poll path its
     # delivery is settled rather than counted as an attempt (issue-270). That
-    # applies to all three outcomes above: applied (`control.command`), refused
-    # (`control.rejected`) and ambiguous (`control.ambiguous`).
+    # applies to two outcomes above: applied (`control.command`) and refused
+    # (`control.rejected`). An ambiguous one (`control.ambiguous`) is routed as
+    # conversation instead (issue-498).
     "control.announced": (
         "A CLI control action was mirrored to the work item as a comment "
         "carrying the same keyword (work_item, command)."
@@ -993,7 +995,7 @@ EVENT_TYPES: Dict[str, str] = {
         "with its delivery, not because it was delivered (work_item, "
         "comment_id, actor, outcome: awaiting-start | session-paused | "
         "collaborator-no-spawn | control-executed | control-rejected | "
-        "control-ambiguous | parked-at-human-start-gate | mirror-refused | "
+        "parked-at-human-start-gate | mirror-refused | "
         "addressed-elsewhere | unaddressed | "
         "instance-locked | ambiguous-address | ci-not-actionable | "
         "ci-autofix-exhausted, "

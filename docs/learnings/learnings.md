@@ -6,6 +6,7 @@ are checked in so the user can review and give feedback.
 
 | # | Title | Source | Date |
 |---|-------|--------|------|
+| [018](learning-018.md) | Anchor a command grammar instead of teaching it markdown | user-feedback | 2026-10-23 |
 | [017](learning-017.md) | A the-loop session's own environment skews the-loop's test suite — unset `THE_LOOP_CLI_CONFIG` / `THE_LOOP_WORK_ITEM` | system-feedback | 2026-10-20 |
 | [016](learning-016.md) | A graceful stop must release its own long-polls | system-feedback | 2026-10-19 |
 | [015](learning-015.md) | A hook stored on a class is a bound method when read through the instance | system-feedback | 2026-10-19 |

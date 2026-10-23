@@ -234,9 +234,13 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   `the-loop:start-execution` and its three siblings).
   - WHEN an **authorized** user's comment on the work item or its PR carries one of
     them THEN the-loop SHALL execute that command and SHALL NOT forward the comment to
-    the harness; keywords match as whole tokens, case-insensitively, and a comment
-    carrying **two different** ones SHALL execute nothing and forward nothing
-    (`control.ambiguous`). The control surface is **comments only** — a keyword in the
+    the harness; keywords match as whole tokens, case-insensitively, **only where
+    the comment opens with one** (issue-498): a further keyword counts only when it
+    opens a line of its own. A keyword anywhere else — mid-sentence, in backticks, in a
+    `>` quote, in a list item or a code block — is conversation and is forwarded like
+    any comment, so a review comment that *discusses* `the-loop start` reaches the
+    session. A comment that opens lines with **two different** commands SHALL execute
+    neither (`control.ambiguous`) and SHALL be routed as conversation, never dropped. The control surface is **comments only** — a keyword in the
     work item's own body or a PR description is not a command.
   - A command comment is executed instead of forwarded, so it can never reach a gate as
     an event — which is why a **spawning** one is handed to the graph with the spawn
@@ -1170,6 +1174,7 @@ provider, the webhook doorbell, the allow-list by provider)
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-498 | A control keyword counts only where a comment opens with it (2026-10-23): `parse_command` anchors each keyword to the start of the body, and a further one to the start of a line, so a keyword mentioned in prose, backticks, a quote or a code block is conversation. A comment opening lines with two different commands executes neither, emits `control.ambiguous` and is routed as conversation; the settled outcome `control-ambiguous` is retired | [spec](../specs/issue-498/), [learning-018](../learnings/learning-018.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/498) |
 | issue-517 | Handed-off issues (2026-10-21): on the arming path, for a GitHub issue not yet on the graph, the dispatcher lists comments once and admits the newest v1 handoff record from an authorized, non-empty author (the self-marker grants nothing), prepares the workspace on the record's `the-loop/` spec branch, and passes the record to `Runtime.start`. A Jira item labelled `the-loop-mirror` is refused at arming (`arm.refused reason=mirror`, settled `mirror-refused`). New events `handoff.honoured`, `handoff.ignored`, `handoff.unreadable` | [spec](../specs/issue-517/), [process-graph](process-graph.md), [decision-150](../decisions/decision-150.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/517) |
 | issue-496 | The gateway (2026-10-19): the receiver's `verify_signature` and the poller's providers are reused by the gateway's adapters; the gateway client builds the router and dispatcher once (`webhook/daemon._build_ingress`, which now exposes its router, reload and doorbells) and feeds them from its queue; outcomes commit back; the inferred PR linkage is published as a binding | [spec](../specs/issue-496/), [gateway](gateway.md) |
 | issue-475 | **A PR naming a Jira key routes to it** (2026-10-06, PR 5 of 5): `SOURCE_JIRA_KEY` links a pull request whose head branch or title names a key, only for a registered Jira work item whose project maps to the PR's repository; the body is never read. The delivered prompt names Jira and the origin repository. Before, a Jira item's PR was routed only through a PR-ref registration | [spec](../specs/issue-475/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/475) |

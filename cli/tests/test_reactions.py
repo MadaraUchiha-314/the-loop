@@ -334,7 +334,6 @@ def test_every_settled_outcome_is_classified_or_deliberately_silent():
     assert disp.ACK_STATES == {
         disp.SETTLED_CONTROL_EXECUTED: STATE_COMPLETED,
         disp.SETTLED_CONTROL_REJECTED: STATE_ERROR,
-        disp.SETTLED_CONTROL_AMBIGUOUS: STATE_ERROR,
         "awaiting-start": STATE_STARTED,
         "session-paused": STATE_STARTED,
         "collaborator-no-spawn": STATE_STARTED,

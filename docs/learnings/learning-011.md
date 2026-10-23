@@ -24,8 +24,10 @@ conversation for the session that is waiting on it.
 
 ## Action
 
-- issue-498: strip code spans and fenced blocks before the control grammar runs;
-  forward an ambiguous body to the live session as conversation while recording
-  `control.ambiguous` and acting on no command.
+- issue-498 (shipped): a keyword counts only when it opens the comment (or a later
+  line of a comment that opens with one) — which excludes code, quotes and prose without
+  stripping any markdown — and an ambiguous body is forwarded to the session as
+  conversation while recording `control.ambiguous` and acting on no command. See
+  [learning-018](learning-018.md).
 - Until then, replies to the gate's review request that discuss commands are safest
   without the bare keywords.
