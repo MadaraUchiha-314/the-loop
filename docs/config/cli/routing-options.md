@@ -631,9 +631,12 @@ Each value is a mapping:
   configured is refused. A built-in command's keyword is set under `control.keywords`
   above, not here.
 
-Keywords match as **whole tokens, case-insensitively, anywhere** in a comment body.
-Setting one to an empty string disables that command. A comment carrying **two different**
-keywords is refused outright — nothing executed, nothing forwarded. Commands live in
+Keywords match as **whole tokens, case-insensitively**, and only where a comment **opens**
+with one; a further keyword counts only when it opens a line of its own (issue-498). A
+keyword mid-sentence, in backticks, in a quote or in a code block is conversation and is
+forwarded like any comment. Setting one to an empty string disables that command. A
+comment that opens lines with **two different** keywords executes neither and is forwarded
+as conversation. Commands live in
 **comments**: a keyword in an issue body or a PR description is not one. Opening an issue
 that already carries the label arms it, exactly like labelling an existing one.
 

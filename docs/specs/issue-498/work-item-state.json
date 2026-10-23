@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-498",
-  "currentNode": "critic-review",
+  "currentNode": "capability-docs",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -117,10 +117,42 @@
     },
     "critic-review": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-23T16:39:05+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-10-23T16:52:39+00:00",
       "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-498/evidence/critic-review.md)",
+      "forced": false
+    },
+    "security-review": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-23T16:52:39+00:00",
+      "exitedAt": "2026-10-23T16:53:04+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "code-explainer": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-23T16:53:04+00:00",
+      "exitedAt": "2026-10-23T16:53:04+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "evidence": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-23T16:53:04+00:00",
+      "exitedAt": "2026-10-23T16:53:24+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "capability-docs": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-23T16:53:24+00:00",
+      "exitedAt": "",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-498/evidence/documentation.md)",
       "forced": false
     }
   },
@@ -358,6 +390,22 @@
     },
     "self-review": {
       "at": "2026-10-23T16:39:05+00:00",
+      "by": "cli"
+    },
+    "critic-review": {
+      "at": "2026-10-23T16:52:39+00:00",
+      "by": "cli"
+    },
+    "security-review": {
+      "at": "2026-10-23T16:53:04+00:00",
+      "by": "cli"
+    },
+    "evidence": {
+      "at": "2026-10-23T16:53:24+00:00",
+      "by": "cli"
+    },
+    "capability-docs": {
+      "at": "2026-10-23T16:53:28+00:00",
       "by": "cli"
     }
   },
