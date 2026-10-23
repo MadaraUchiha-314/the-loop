@@ -62,7 +62,7 @@ the transition. No task touches the gateway's store.
     (unknown instance and stale peer → `409`; oversized `params`, `method`, `url` →
     `422` at the door; health carries `posting`; `gateway status` JSON carries it) and
     `tests/test_api_contract_parity.py` (red→green)
-- [ ] 4. Instance proxy client: `channels/slack_gateway.py`
+- [x] 4. Instance proxy client: `channels/slack_gateway.py`
   - `GatewaySlackClient(url, instance, peer, transport=None)` with the thirteen SDK
     method names, `from_cli_config()` (gateway block url, instance name, the peer id from
     `<local_dir>/<PEER_FILE>` or `""`), `_call` over `gateway.client.urllib_transport`;
