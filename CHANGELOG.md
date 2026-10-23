@@ -1,3 +1,9 @@
+## v20.10.1 (2026-10-23)
+
+### Fix
+
+- **issue-498**: a control keyword must open the comment; an ambiguous body is conversation (#523)
+
 ## v20.10.0 (2026-10-23)
 
 ### Feat
