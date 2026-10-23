@@ -80,6 +80,18 @@ Docstrings corrected: the module's "one deliberate looseness" paragraph, `Contro
 ("execute nothing, forward nothing" → "execute nothing; the caller routes it as
 conversation"), and `parse_command`'s own.
 
+### 1b. The phase-selection gate — `cli/the_loop/graph/hooks/selection.py`
+
+Added after the critic round (finding P1). The gate's classifier released on any
+authorized comment **containing** the execute keyword — a substring test the dispatcher
+never applied. With R2 an ambiguous body now reaches the graph, so
+`the-loop pause` + a line `the-loop execute` would have frozen a selection. The
+classifier now asks `parse_command` (`_says_execute`) over the deployment's keywords,
+which the bootstrap seeds as `controlKeywords` beside `executeKeyword`. A reply must open
+with the execute keyword and carry no other command at the start of a line. The
+checklist comment's help text says so ("Start your reply with `the-loop execute`"), and
+a checklist pasted into the reply goes **below** the keyword.
+
 ### 2. Dispatcher — `cli/the_loop/webhook/dispatcher.py`
 
 In `Dispatcher.handle`, the `control.ambiguous` branch keeps its warning log and its

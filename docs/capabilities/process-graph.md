@@ -407,10 +407,13 @@ The author of a work item — never the harness — decides which phases it walk
   phases on the ticket (idempotent — a second entry finds its own marker and does not
   re-post), and its exit SHALL wait until an **authorized** user (`authorizedUsers`, the
   boundary every other human gate uses) says the execute keyword
-  (`routing.control.keywords.execute`, default `the-loop execute`).
+  (`routing.control.keywords.execute`, default `the-loop execute`). The reply is read
+  with the dispatcher's own control grammar (issue-498): it SHALL open with the keyword,
+  and a reply that opens lines with a different command too, or only mentions the
+  keyword in prose, SHALL NOT release the gate.
   - The selection is **ticked in place** on the-loop's own comment; the authorized
     execute comment is what makes that tick state theirs. A checklist inside the execute
-    comment itself SHALL win over the boxes. A selection with nothing unticked SHALL run
+    comment itself (below the keyword) SHALL win over the boxes. A selection with nothing unticked SHALL run
     the full process.
   - Unticked skippable phases become declared skips; a phase the reply never mentions is
     kept; an unticked **protected** phase SHALL be refused and named in the confirmation.
