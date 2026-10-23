@@ -47,6 +47,7 @@ flowchart LR
 | T9 | Accessibility | n/a — no UI | | |
 | T10 | Migration / upgrade | yes | no store change, so no schema migration; a `gateway-config.yaml` without `slack.post` validates and reads `enabled: true`; an instance config unchanged from 20.9.0 behaves as before (local token first, no gateway call) | `cd cli && uv run python -m pytest -q tests/test_gateway_slack_proxy.py -k migration` |
 | T11 | Manual exploratory | yes | the loud failure on real processes with **no credential anywhere**: a gateway started from a config whose Slack token variables are unset, and an instance pointed at it with `channels.slack.enabled: true` and no bot token; `the-loop start` prints the warning, `the-loop status` prints `outbound Slack needs THE_LOOP_SLACK_BOT_TOKEN on this instance` beside the gateway-client row, `channels status` prints the `posting:` line, `doctor slack` reports `unverifiable` with the posting reason, `gateway status` reports posting `no-token`; then `slack.post.enabled: false` is written and `gateway status` follows within the reload cadence | procedure in § Verification environment, evidenced under `evidence/manual.md` |
+| T12 | `uv run pre-commit run --all-files` | run 1 found 15 pyright errors in the new tests and one existing test's assertion (fixed in 64f972ac); run 2 passed every hook's substance (0 errors, 6767 passed) but pre-commit flagged the runtime's state-file writes as modifications; run 3 on a clean export of HEAD passed every hook, exit 0 | [lint-and-typecheck.md](evidence/lint-and-typecheck.md) |
 | T12 | Regression (whole suite) | yes | behaviour preserved for an instance with a local token and for one without a gateway block; the full suite, lint, format, types, markdown and the config validation | `uv run pre-commit run --all-files` |
 
 ## Scenarios & requirement trace
@@ -137,12 +138,11 @@ flowchart LR
 - [x] T8 — `cd cli && uv run python -m pytest -q tests/test_gateway_slack_proxy.py tests/test_gateway_slack_proxy_integration.py -k abuse`
 - [x] T10 — `cd cli && uv run python -m pytest -q tests/test_gateway_slack_proxy.py -k migration`
 - [x] T11 — the manual procedure in § Verification environment
-- [ ] T12 — `uv run pre-commit run --all-files`
+- [x] T12 — `uv run pre-commit run --all-files`
 
 ## Verification results
 
-Six of the seven activities ran and passed on the branch at the commit the table names;
-T12 is recorded below once the full pre-commit run completes. Every pytest command ran
+All seven activities ran and passed on the branch at the commits the table names. Every pytest command ran
 from `cli/` with `THE_LOOP_CLI_CONFIG` unset (the daemon that spawned the session sets it,
 and `test_start_refuses_a_broken_config` then reads the operator's file). T11 ran two real
 processes from this worktree's code with no Slack credential anywhere; a first attempt
