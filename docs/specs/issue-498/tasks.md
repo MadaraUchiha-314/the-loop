@@ -11,11 +11,11 @@ overrides: {}
 
 ## Task list
 
-- [ ] 1. Parser tests (red): placements of R1.1–R1.4 and the #496 body in `cli/tests/test_control.py`
+- [x] 1. Parser tests (red): placements of R1.1–R1.4 and the #496 body in `cli/tests/test_control.py`
   - _Depends on:_ none
   - _Requirements:_ R1.1, R1.2, R1.3, R1.4, R1.6
   - _Test:_ T1 — `uv run pytest cli/tests/test_control.py` (red before task 2)
-- [ ] 2. Anchor `parse_command` to the body start and later line starts; correct the module, `ControlResult` and `parse_command` docstrings
+- [x] 2. Anchor `parse_command` to the body start and later line starts; correct the module, `ControlResult` and `parse_command` docstrings
   - _Depends on:_ 1
   - _Requirements:_ R1, R3.2
   - _Test:_ T1 green; T8 (two leading commands → ambiguous, mid-prose → none)

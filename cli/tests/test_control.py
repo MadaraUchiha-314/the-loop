@@ -99,7 +99,7 @@ def test_an_empty_keyword_disables_only_that_command():
 
 @pytest.mark.parametrize("command", COMMANDS)
 def test_each_declared_keyword_is_recognised(command):
-    body = f"please {DEFAULT_KEYWORDS[command]} when you get a chance"
+    body = f"{DEFAULT_KEYWORDS[command]} when you get a chance"
     assert parse_command(body, ControlConfig()).command == command
 
 
@@ -114,9 +114,8 @@ def test_a_comment_without_a_keyword_is_not_a_command():
     [
         "the-loop start",
         "the-loop start.",
-        "**the-loop start**",
-        "line one\nthe-loop start\nline three",
-        "(the-loop start)",
+        "  \n\n  the-loop start",
+        "the-loop start\nline two",
         "THE-LOOP START",
     ],
 )
@@ -138,17 +137,56 @@ def test_a_keyword_glued_to_other_word_characters_does_not_match(body):
 
 
 def test_the_same_command_twice_is_not_ambiguous():
-    body = "the-loop start — I mean it, the-loop start"
+    body = "the-loop start\nthe-loop start — I mean it"
     assert parse_command(body, ControlConfig()).command == START
 
 
 def test_two_different_commands_are_refused_as_ambiguous():
-    body = "the-loop start ... actually the-loop stop"
+    body = "the-loop start\nthe-loop stop"
     result = parse_command(body, ControlConfig())
     assert result.ambiguous is True
     assert result.command is None
     assert set(result.matched) == {START, STOP}
     assert result  # truthy: the caller must NOT fall through to forwarding
+
+
+# -- issue-498: a command is what a comment OPENS with ---------------------------
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # The #496 comment that was dropped as ambiguous.
+        "one user is the driver of the work item (has done `the-loop start` …) and "
+        "other user is a reviewer (has done `the-loop review`)",
+        "please the-loop start when you get a chance",
+        "ok, the-loop stop",
+        "`the-loop start`",
+        "**the-loop start**",
+        "(the-loop start)",
+        "> the-loop start\n\nI quoted that",
+        "```\nthe-loop start\n```",
+        "intro\n    the-loop start",
+        "- the-loop start",
+        "Thanks!\nthe-loop pause",
+        "line one\nthe-loop start\nline three",
+    ],
+)
+def test_a_keyword_anywhere_but_the_start_is_not_a_command(body):
+    result = parse_command(body, ControlConfig())
+    assert result.command is None and not result.ambiguous
+    assert not result
+
+
+def test_a_mention_of_another_command_after_a_leading_one_is_prose():
+    body = "the-loop pause — we can the-loop resume after the review"
+    assert parse_command(body, ControlConfig()).command == PAUSE
+
+
+def test_a_different_command_opening_a_later_line_is_ambiguous():
+    result = parse_command("the-loop pause\n\nthe-loop resume", ControlConfig())
+    assert result.ambiguous and result.command is None
+    assert set(result.matched) == {PAUSE, RESUME}
 
 
 def test_disabled_control_recognises_nothing():
@@ -290,8 +328,9 @@ def test_a_collaborator_command_carries_the_login_it_named():
 
 def test_several_logins_and_a_repeated_keyword_all_count():
     body = (
-        "please the-loop add-collaborator @a @b — they know this area\n"
-        "and the-loop add-collaborator @c too"
+        "the-loop add-collaborator @a @b — they know this area\n"
+        "the-loop add-collaborator @c too\n"
+        "not the-loop add-collaborator @d, though"
     )
     result = parse_command(body, ControlConfig())
     assert result.command == ADD_COLLABORATOR
@@ -317,13 +356,13 @@ def test_the_keywords_match_as_whole_tokens():
     config = ControlConfig()
     assert parse_command("the-loop add-collaborators @a", config).command is None
     assert parse_command("xthe-loop add-collaborator @a", config).command is None
-    assert parse_command("`the-loop add-collaborator @a`", config).subjects == ["a"]
+    assert parse_command("`the-loop add-collaborator @a`", config).command is None
     assert parse_command("THE-LOOP ADD-COLLABORATOR @A", config).subjects == ["a"]
 
 
 def test_a_collaborator_keyword_beside_another_command_is_ambiguous():
     result = parse_command(
-        "the-loop add-collaborator @dana and the-loop stop", ControlConfig()
+        "the-loop add-collaborator @dana\nthe-loop stop", ControlConfig()
     )
     assert result.ambiguous and result.command is None
 
