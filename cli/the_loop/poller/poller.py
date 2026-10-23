@@ -1662,8 +1662,9 @@ class Poller:
         carries an **unambiguous** command. An ambiguous body (two conflicting
         keywords) is left to the baseline: it carries no command to catch up
         on, and like any other conversation that predates first sight it is
-        not replayed (issue-498 routes it as conversation only when it is new). ``control.enabled: false``
-        yields no commands at all, i.e. the pre-issue-119 behaviour verbatim.
+        not replayed (issue-498 routes it as conversation only when it is
+        new). ``control.enabled: false`` yields no commands at all, i.e. the
+        pre-issue-119 behaviour verbatim.
 
         A work item that **already has a control record** is skipped entirely:
         the record is the-loop's own durable answer to "has this been
