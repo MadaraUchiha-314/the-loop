@@ -59,12 +59,14 @@ The repository checkout with `make install-dev` done. Commands: `uv run pytest â
 
 ## Verification activities
 
-- [ ] T1 unit tests pass (and the new ones failed before the fix)
-- [ ] T2/T8 dispatcher scenarios pass
-- [ ] T12 `make check` passes
+- [x] T1 unit tests pass (and the new ones failed before the fix)
+- [x] T2/T8 dispatcher scenarios pass
+- [x] T12 `make check` passes
 
 ## Verification results
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1 | `uv run pytest cli/tests/test_control.py` | 86 passed; the 13 new placement cases fail on the pre-fix parser | [unit.md](evidence/unit.md) |
+| T2 / T8 | `uv run pytest cli/tests/test_routing.py cli/tests/test_reactions.py cli/tests/test_reactions_integration.py cli/tests/test_control_integration.py` | 291 passed, including the 3 new scenarios | [integration.md](evidence/integration.md) |
+| T12 | `uv run pytest cli/tests`; `make lint format-check typecheck validate` | 6784 passed; all checks clean | [lint-and-typecheck.md](evidence/lint-and-typecheck.md) |
