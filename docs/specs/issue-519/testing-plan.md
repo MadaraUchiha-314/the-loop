@@ -131,21 +131,31 @@ flowchart LR
 
 ## Verification activities
 
-- [ ] T1 — `cd cli && uv run python -m pytest -q tests/test_gateway_slack_proxy.py tests/test_slack_gateway_client.py tests/test_slack_posting_path.py`
-- [ ] T2 — `cd cli && uv run python -m pytest -q tests/test_gateway_slack_proxy_integration.py` and `… --dispatch-lag=0.5`
-- [ ] T3 — `cd cli && uv run python -m pytest -q tests/test_api_contract_parity.py`
-- [ ] T8 — `cd cli && uv run python -m pytest -q tests/test_gateway_slack_proxy.py tests/test_gateway_slack_proxy_integration.py -k abuse`
-- [ ] T10 — `cd cli && uv run python -m pytest -q tests/test_gateway_slack_proxy.py -k migration`
-- [ ] T11 — the manual procedure in § Verification environment
+- [x] T1 — `cd cli && uv run python -m pytest -q tests/test_gateway_slack_proxy.py tests/test_slack_gateway_client.py tests/test_slack_posting_path.py`
+- [x] T2 — `cd cli && uv run python -m pytest -q tests/test_gateway_slack_proxy_integration.py` and `… --dispatch-lag=0.5`
+- [x] T3 — `cd cli && uv run python -m pytest -q tests/test_api_contract_parity.py`
+- [x] T8 — `cd cli && uv run python -m pytest -q tests/test_gateway_slack_proxy.py tests/test_gateway_slack_proxy_integration.py -k abuse`
+- [x] T10 — `cd cli && uv run python -m pytest -q tests/test_gateway_slack_proxy.py -k migration`
+- [x] T11 — the manual procedure in § Verification environment
 - [ ] T12 — `uv run pre-commit run --all-files`
 
 ## Verification results
 
-_Not yet executed._
+Six of the seven activities ran and passed on the branch at the commit the table names;
+T12 is recorded below once the full pre-commit run completes. Every pytest command ran
+from `cli/` with `THE_LOOP_CLI_CONFIG` unset (the daemon that spawned the session sets it,
+and `test_start_refuses_a_broken_config` then reads the operator's file). T11 ran two real
+processes from this worktree's code with no Slack credential anywhere; a first attempt
+used the installed 20.8.0 CLI by mistake and was discarded.
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1 | `cd cli && uv run python -m pytest -q tests/test_gateway_slack_proxy.py tests/test_slack_gateway_client.py tests/test_slack_posting_path.py` | 60 passed; each task's commit message carries its red count | [unit.md](evidence/unit.md) |
+| T2 | `cd cli && uv run python -m pytest -q tests/test_gateway_slack_proxy_integration.py`, then `--dispatch-lag=0.5` | 6 passed, and 6 passed under lag; six scenarios listed with `Requirement:` links; the scenarios found and fixed three gaps (task 7) | [integration.md](evidence/integration.md) |
+| T3 | `cd cli && uv run python -m pytest -q tests/test_api_contract_parity.py` | 6 passed; `gatewaySlackCall` and `gatewaySlackDownload` in the contract | [contract.md](evidence/contract.md) |
+| T8 | `… tests/test_gateway_slack_proxy.py tests/test_gateway_slack_proxy_integration.py -k abuse` | 4 passed (abuse cases 1, 4, 5 and no token on the gateway); abuse 6 is the existing non-loopback test under T12; abuse 2–3 withdrawn by the owner | [unit.md](evidence/unit.md) |
+| T10 | `… tests/test_gateway_slack_proxy.py -k migration` | 2 passed: a 20.9.0 gateway file reads posting on; a 20.9.0 instance config posts with its local token and never calls the gateway | [unit.md](evidence/unit.md) |
+| T11 | the manual procedure in § Verification environment, on real processes with every Slack variable unset | `slack posting: no-token` on the gateway; `start` warned once and started; `status` carried the suffix; `channels status` the `posting:` line and `[!]`; `doctor slack` the `[!]` line; `slack.post.enabled: false` read as `disabled` within the reload cadence with no restart required; both stopped | [manual.md](evidence/manual.md) |
 
 ## Review comments
 
