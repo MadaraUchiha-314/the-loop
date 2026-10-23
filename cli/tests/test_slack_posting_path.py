@@ -9,6 +9,7 @@ Run with: pytest (from the cli/ directory).
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -153,6 +154,7 @@ def test_the_channel_loader_hands_the_channel_its_cli_config(tmp_path):
     from the_loop.channels.base import load_channels
 
     config = cli_config(tmp_path, gateway=True)
+    channel: Any
     (channel,) = load_channels(config)
     assert channel._cli_config == config  # noqa: SLF001
 
@@ -162,9 +164,11 @@ def test_the_channels_client_is_the_gateway_client_without_a_token(tmp_path):
     from the_loop.channels.slack_gateway import GatewaySlackClient
 
     config = cli_config(tmp_path, gateway=True)
+    channel: Any
     (channel,) = load_channels(config)
     assert isinstance(channel._client(), GatewaySlackClient)  # noqa: SLF001
     config = cli_config(tmp_path, gateway=False)
+    channel: Any
     (channel,) = load_channels(config)
     with pytest.raises(ChannelError, match="no bot token"):
         channel._client()  # noqa: SLF001
@@ -208,6 +212,7 @@ def test_fetch_attachments_downloads_through_the_gateway(tmp_path, monkeypatch):
     from the_loop.channels.slack_gateway import GatewaySlackClient
 
     config = cli_config(tmp_path, gateway=True)
+    channel: Any
     (channel,) = load_channels(config)
     asked = []
 
@@ -241,6 +246,7 @@ def test_fetch_attachments_without_any_path_is_todays_no_token(tmp_path):
     from the_loop.channels.base import load_channels
 
     config = cli_config(tmp_path, gateway=False)
+    channel: Any
     (channel,) = load_channels(config)
     files = [{"id": "F1", "name": "a.png", "mimetype": "image/png", "size": 1}]
     (attachment,) = channel.fetch_attachments(files, "github:o/r#14")
@@ -438,18 +444,18 @@ def test_doctor_gateway_lines_say_whether_the_gateway_posts(tmp_path, monkeypatc
         }
 
     monkeypatch.setattr(core_lifecycle, "gateway_document", doc("on"))
-    lines = diagnose_cmd._gateway_lines(config)  # noqa: SLF001
+    lines = diagnose_cmd._gateway_lines(config) or []  # noqa: SLF001
     assert any(
         "[ok]" in line and "posts to Slack for this instance" in line for line in lines
     )
     monkeypatch.setattr(core_lifecycle, "gateway_document", doc("no-token"))
-    lines = diagnose_cmd._gateway_lines(config)  # noqa: SLF001
+    lines = diagnose_cmd._gateway_lines(config) or []  # noqa: SLF001
     assert any(
         "[!]" in line and f"outbound Slack needs {BOT_ENV} on this instance" in line
         for line in lines
     )
     monkeypatch.setenv(BOT_ENV, "xoxb-local")
-    lines = diagnose_cmd._gateway_lines(config)  # noqa: SLF001
+    lines = diagnose_cmd._gateway_lines(config) or []  # noqa: SLF001
     assert any("[ok]" in line and "own token" in line for line in lines)
 
 

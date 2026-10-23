@@ -33,12 +33,40 @@ def _write(tmp_path: Path, body: dict) -> Path:
 # -- task 1: the `slack.post` block (R6.1, R6.3, NFR compatibility) ---------------------------
 
 
-def test_config_without_slack_post_reads_posting_on(tmp_path):
+def test_config_migration_a_20_9_0_file_without_slack_post_reads_posting_on(tmp_path):
     """A 20.9.0 file has no `slack.post`; it validates and posting defaults to on
     (R6.1, T10 migration)."""
     conf = gwconfig.load_gateway_config(_write(tmp_path, {**MINIMAL, "slack": SLACK}))
     assert conf.slack is not None
     assert conf.slack.post.enabled is True
+
+
+def test_config_migration_an_instance_config_from_20_9_0_posts_with_its_local_token(
+    tmp_path, monkeypatch
+):
+    """T10: an instance config unchanged from 20.9.0 — a gateway block and a local bot
+    token — posts with its own token as before and never calls the gateway (R4.1)."""
+    from the_loop.channels import slack as slack_mod
+    from the_loop.channels.slack import SlackChannelConfig
+
+    env = "THE_LOOP_TEST_MIGRATION_BOT_TOKEN"
+    monkeypatch.setenv(env, "xoxb-local")
+    config = {
+        "state": {"root": str(tmp_path / "state")},
+        "gateway": {"url": "http://127.0.0.1:8790"},
+        "channels": {"slack": {"enabled": True, "channel": "C1", "botTokenEnv": env}},
+    }
+    seen = []
+    client = slack_mod.outbound_client(
+        SlackChannelConfig.from_mapping(config),
+        config,
+        lambda token: seen.append(token),
+    )
+    assert client is None and seen == ["xoxb-local"]
+    assert (
+        slack_mod.posting_path(SlackChannelConfig.from_mapping(config), config).kind
+        == "local"
+    )
 
 
 def test_config_slack_post_disabled_parses(tmp_path):

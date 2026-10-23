@@ -16,7 +16,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterator, List
+from typing import Any, Dict, Iterator, List, Tuple
 
 import pytest
 
@@ -125,7 +125,7 @@ class Gateway:
             build_slack_http_router(Ingest(self.harness.state), self.harness.config)
         )
         self.web = FakeSlackWeb()
-        self.fetched: List[str] = []
+        self.fetched: List[Tuple[str, str]] = []
 
         def fetch(url, *, credential="", allowed_hosts=(), max_bytes=0, **_):
             self.fetched.append((url, credential))
@@ -154,6 +154,7 @@ class Gateway:
 
     def disable_posting(self) -> None:
         state = self.harness.state
+        assert state.config.slack is not None
         state.config = dataclasses.replace(
             state.config,
             slack=dataclasses.replace(state.config.slack, post=SlackPost(False)),
@@ -270,6 +271,7 @@ def _event(text="Should I use approach A or B?"):
 
 
 def _thread(config) -> Any:
+    channel: Any
     (channel,) = load_channels(config)
     return ChannelState.load(channel.state_path, channel.stores).thread_for(REF)
 

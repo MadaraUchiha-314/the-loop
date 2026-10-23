@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, Optional, Tuple
 
 import pytest
 
@@ -22,9 +23,12 @@ class FakeTransport:
     """``(method, path, body, timeout) -> (status, json)``, recorded, scripted."""
 
     def __init__(self):
-        self.calls = []
-        self.answer = (200, {"ok": True, "ts": "1700.000001", "channel": "C1"})
-        self.raise_ = None
+        self.calls: list = []
+        self.answer: Tuple[int, Any] = (
+            200,
+            {"ok": True, "ts": "1700.000001", "channel": "C1"},
+        )
+        self.raise_: Optional[BaseException] = None
 
     def __call__(self, method, path, body, timeout):
         self.calls.append((method, path, body, timeout))
