@@ -19,8 +19,8 @@ Two rules shape the implementation:
   and its value is long enough to be one.
 
 ``defang_control_keywords`` is the second half of the issue-242 contract: a
-composed issue body must never carry a control keyword
-(:func:`the_loop.control.parse_command` matches them anywhere in a body), but
+composed issue body must never carry a control keyword (one that opens the
+body or a line is a command to :func:`the_loop.control.parse_command`), but
 the agent's prose may legitimately *mention* one. Defanging visibly breaks the
 token instead of deleting the sentence.
 """

@@ -194,7 +194,7 @@ def test_a_comment_carrying_two_different_keywords_declares_nothing(
     tmux = FakeTmux()
     dispatcher, _ = make_control_dispatcher(tmp_path, tmux, monkeypatch)
 
-    dispatcher.handle(routed_command(f"the-loop add-channel {ROOM} and the-loop start"))
+    dispatcher.handle(routed_command(f"the-loop add-channel {ROOM}\nthe-loop start"))
     dispatcher.stop()
 
     assert declarations(dispatcher) == []

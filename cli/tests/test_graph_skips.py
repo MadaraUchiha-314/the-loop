@@ -521,7 +521,7 @@ def test_an_unauthorized_reply_never_selects(selecting, repo, fake_github):
     report = selecting.advance(
         WORK_ITEM,
         ref="github:o/r#1",
-        event=_reply("- [ ] requirements\nthe-loop execute", author="@drive-by"),
+        event=_reply("the-loop execute\n- [ ] requirements", author="@drive-by"),
     )
     assert report.status == "wait"
     state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
@@ -536,7 +536,7 @@ def test_unticked_phases_become_declared_skips_and_the_loop_starts(
         WORK_ITEM,
         ref="github:o/r#1",
         event=_reply(
-            "- [ ] requirements\n- [ ] approval\n- [x] tasks\n\nthe-loop execute"
+            "the-loop execute\n- [ ] requirements\n- [ ] approval\n- [x] tasks"
         ),
     )
     state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
@@ -565,7 +565,7 @@ def test_unticking_a_protected_phase_is_refused_and_said_so(
     selecting.advance(
         WORK_ITEM,
         ref="github:o/r#1",
-        event=_reply("- [ ] implementation\n- [ ] tasks\nthe-loop execute"),
+        event=_reply("the-loop execute\n- [ ] implementation\n- [ ] tasks"),
     )
     state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert set(state.skips) == {"tasks"}
@@ -634,7 +634,7 @@ def test_a_checklist_in_the_reply_wins_over_the_boxes(selecting, repo, fake_gith
     selecting.advance(
         WORK_ITEM,
         ref="github:o/r#1",
-        event=_reply("- [ ] tasks\n- [x] requirements\nthe-loop execute"),
+        event=_reply("the-loop execute\n- [ ] tasks\n- [x] requirements"),
     )
     state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert set(state.skips) == {"tasks"}
@@ -650,7 +650,7 @@ def test_the_selection_freezes_the_graph_in_the_work_items_own_file(
     selecting.advance(
         WORK_ITEM,
         ref="github:o/r#1",
-        event=_reply("- [ ] requirements\nthe-loop execute"),
+        event=_reply("the-loop execute\n- [ ] requirements"),
     )
     state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     frozen = state.decisions["phase-selection"]["graph"]
@@ -690,7 +690,7 @@ def test_ticking_the_surface_row_moves_the_outer_loop_to_a_pull_request(
     selecting.advance(
         WORK_ITEM,
         ref="github:o/r#1",
-        event=_reply("- [x] outer-loop-on-pull-request\nthe-loop execute"),
+        event=_reply("the-loop execute\n- [x] outer-loop-on-pull-request"),
     )
     state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.surface == "pull-request"
@@ -706,7 +706,7 @@ def test_the_surface_row_is_never_read_as_a_phase(selecting, repo, fake_github):
         WORK_ITEM,
         ref="github:o/r#1",
         event=_reply(
-            "- [ ] outer-loop-on-pull-request\n- [ ] requirements\nthe-loop execute"
+            "the-loop execute\n- [ ] outer-loop-on-pull-request\n- [ ] requirements"
         ),
     )
     state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
@@ -783,7 +783,7 @@ def test_ticking_a_pr_session_row_freezes_that_mode(repo, fake_github):
     runtime.advance(
         WORK_ITEM,
         ref="github:o/r#1",
-        event=_reply("- [x] pr-sessions-always\nthe-loop execute"),
+        event=_reply("the-loop execute\n- [x] pr-sessions-always"),
     )
     state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     decision = state.decisions["phase-selection"]
@@ -799,8 +799,8 @@ def test_ticking_a_pr_session_row_freezes_that_mode(repo, fake_github):
     "reply",
     [
         "the-loop execute",  # nothing ticked, no checklist to read
-        "- [ ] pr-sessions-always\nthe-loop execute",  # asked for none
-        "- [x] pr-sessions-always\n- [x] pr-sessions-never\nthe-loop execute",
+        "the-loop execute\n- [ ] pr-sessions-always",  # asked for none
+        "the-loop execute\n- [x] pr-sessions-always\n- [x] pr-sessions-never",
     ],
 )
 def test_an_unchosen_or_ambiguous_answer_keeps_the_configured_default(
@@ -826,8 +826,8 @@ def test_a_pr_session_row_is_never_read_as_a_phase(selecting, repo, fake_github)
         WORK_ITEM,
         ref="github:o/r#1",
         event=_reply(
-            "- [ ] pr-sessions-never\n- [ ] pr-sessions-always\n"
-            "- [ ] requirements\nthe-loop execute"
+            "the-loop execute\n- [ ] pr-sessions-never\n- [ ] pr-sessions-always\n"
+            "- [ ] requirements"
         ),
     )
     state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
@@ -843,7 +843,7 @@ def test_a_token_outside_the_vocabulary_is_ignored_not_obeyed(
     selecting.advance(
         WORK_ITEM,
         ref="github:o/r#1",
-        event=_reply("- [x] pr-sessions-sometimes\nthe-loop execute"),
+        event=_reply("the-loop execute\n- [x] pr-sessions-sometimes"),
     )
     decision = WorkItemState.load(_spec_dir(repo), WORK_ITEM).decisions[
         "phase-selection"
@@ -858,7 +858,7 @@ def test_an_unauthorized_ticker_cannot_freeze_a_mode(selecting, repo, fake_githu
     report = selecting.advance(
         WORK_ITEM,
         ref="github:o/r#1",
-        event=_reply("- [x] pr-sessions-always\nthe-loop execute", author="@drive-by"),
+        event=_reply("the-loop execute\n- [x] pr-sessions-always", author="@drive-by"),
     )
     assert report.status == "wait"
     assert (
@@ -894,7 +894,7 @@ def test_an_answered_gate_stays_answered_for_check(selecting, repo, fake_github)
     selecting.advance(
         WORK_ITEM,
         ref="github:o/r#1",
-        event=_reply("- [ ] requirements\nthe-loop execute"),
+        event=_reply("the-loop execute\n- [ ] requirements"),
     )
     state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert "phase-selection" in state.decisions
@@ -1390,7 +1390,7 @@ def test_ticking_an_opt_in_row_selects_it(selecting_opt_in, repo, fake_github):
     selecting_opt_in.advance(
         WORK_ITEM,
         ref="github:o/r#1",
-        event=_reply("- [x] requirements\n- [x] deep-review\n\nthe-loop execute"),
+        event=_reply("the-loop execute\n- [x] requirements\n- [x] deep-review"),
     )
     state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert set(state.opt_ins) == {"deep-review"}
@@ -1408,7 +1408,7 @@ def test_leaving_an_opt_in_row_alone_does_not_select_it(
     selecting_opt_in.advance(
         WORK_ITEM,
         ref="github:o/r#1",
-        event=_reply("- [x] requirements\n- [ ] deep-review\n\nthe-loop execute"),
+        event=_reply("the-loop execute\n- [x] requirements\n- [ ] deep-review"),
     )
     state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.opt_ins == {}
@@ -1444,7 +1444,7 @@ def test_an_unauthorized_reply_never_selects_an_opt_in_phase(
         ref="github:o/r#1",
         event={
             "comments": [
-                {"author": "@stranger", "body": "- [x] deep-review\nthe-loop execute"}
+                {"author": "@stranger", "body": "the-loop execute\n- [x] deep-review"}
             ]
         },
     )
@@ -1461,7 +1461,7 @@ def test_the_frozen_graph_distinguishes_unasked_for_from_removed(
     selecting_opt_in.advance(
         WORK_ITEM,
         ref="github:o/r#1",
-        event=_reply("- [ ] requirements\n- [ ] deep-review\n\nthe-loop execute"),
+        event=_reply("the-loop execute\n- [ ] requirements\n- [ ] deep-review"),
     )
     state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     frozen = state.decisions["phase-selection"]["graph"]
@@ -1492,6 +1492,6 @@ def test_a_selection_cannot_add_an_opt_in_node_already_walked(
     selecting_opt_in.advance(
         WORK_ITEM,
         ref="github:o/r#1",
-        event=_reply("- [x] deep-review\nthe-loop execute"),
+        event=_reply("the-loop execute\n- [x] deep-review"),
     )
     assert WorkItemState.load(_spec_dir(repo), WORK_ITEM).opt_ins == {}

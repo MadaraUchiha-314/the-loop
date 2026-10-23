@@ -230,7 +230,7 @@ def test_abuse_an_unauthorized_reply_freezes_nothing(monkeypatch):
         [
             {
                 "author": "a-stranger",
-                "body": "- [x] `model-fable-5.1`\nthe-loop execute",
+                "body": "the-loop execute\n- [x] `model-fable-5.1`",
             }
         ],
         **_declared(),
@@ -276,7 +276,7 @@ def test_an_authorized_reply_freezes_both_choices(monkeypatch):
         [
             {
                 "author": "owner",
-                "body": "- [x] `model-fable-5.1`\n- [x] `effort-high`\nthe-loop execute",
+                "body": "the-loop execute\n- [x] `model-fable-5.1`\n- [x] `effort-high`",
             }
         ],
         **_declared(),
@@ -319,7 +319,7 @@ def test_a_ticked_model_still_wins_over_the_default(monkeypatch):
     harnesses = [{"name": "claude", "default": True, "defaultModel": "opus-5"}]
     result, confirmation = _confirm(
         monkeypatch,
-        "- [x] `model-fable-5.1`\nthe-loop execute",
+        "the-loop execute\n- [x] `model-fable-5.1`",
         **_declared(harnesses=harnesses),
     )
     assert result.data["model"] == "fable-5.1"
@@ -399,3 +399,39 @@ def test_the_confirmation_says_so_when_there_is_none():
 def test_an_unreadable_store_offers_nothing_and_wedges_nothing():
     assert selection._declared_channels(_ctx(portableDir="/nonexistent/nowhere")) == []
     assert selection._declared_channels(_ctx()) == []
+
+
+# -- issue-498: the gate reads the same grammar the dispatcher does ----------------
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # Two commands: the dispatcher forwards this as conversation and executes
+        # neither, so the gate must not read it as an execute either.
+        "the-loop pause\nthe-loop execute",
+        # Prose that mentions the keyword.
+        "once you agree, reply `the-loop execute` and I'll pick it up",
+        "- [ ] design\nthe-loop execute",
+    ],
+)
+def test_a_reply_that_does_not_open_with_execute_releases_nothing(monkeypatch, body):
+    monkeypatch.setattr(
+        selection, "_resolve", lambda ctx: pytest.fail("must not reach GitHub")
+    )
+    ctx = _gate_ctx([{"author": "owner", "body": body}], **_declared())
+    result = selection.classify_phase_selection(ctx)
+    assert result.status == "wait"
+
+
+def test_the_gate_reads_the_deployments_own_keywords(monkeypatch):
+    """A renamed `pause` still makes a body ambiguous at the gate."""
+    monkeypatch.setattr(
+        selection, "_resolve", lambda ctx: pytest.fail("must not reach GitHub")
+    )
+    ctx = _gate_ctx(
+        [{"author": "owner", "body": "the-loop execute\nloop hold"}],
+        controlKeywords={"pause": "loop hold"},
+        **_declared(),
+    )
+    assert selection.classify_phase_selection(ctx).status == "wait"

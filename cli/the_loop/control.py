@@ -43,15 +43,20 @@ The boundary is kept narrow by construction rather than by review:
   exception to that: it is matched against GitHub's login grammar
   (:data:`the_loop.collaborators.LOGIN_RE`) and refused if it does not fit, so
   what reaches a caller is still a fixed-shape token rather than body text;
-* a comment carrying **two different** commands is refused outright rather than
-  resolved by precedence — a half-"stop" must not be read as a "start";
+* a command is what a comment **opens with** (issue-498): the body's first text
+  must be the keyword, and a further command counts only when it opens a line of
+  its own. A keyword mentioned in prose, in backticks, in a quote or in a code
+  block is conversation, never a command;
+* a comment that opens two lines with **two different** commands is refused
+  rather than resolved by precedence — a half-"stop" must not be read as a
+  "start" — and is then routed as conversation, so nothing it said is lost;
 * it is only ever reached **after** the guards that already exist: the
   self-authored marker check (issue-104) and the authorized-actor check
   (issue-63), both upstream in the router/poller.
 
-The one deliberate looseness: fenced code blocks are not stripped, so a keyword
-quoted in a code block still counts. Literal matching is easier to reason about
-than a half-markdown parser, and only an authorized user can reach it at all.
+The anchor is what keeps markdown out of the parser: inline code, a quote, a list
+item or an indented block all put something other than the keyword at the start
+of the line, so no markdown has to be understood to exclude them.
 
 ## The durable record
 
@@ -233,12 +238,12 @@ DEFAULT_KEYWORDS: Dict[str, str] = {
     REMOVE_CHANNEL: "the-loop remove-channel",
 }
 
-# What may NOT sit directly against a keyword for it to count as a whole token.
+# What may NOT sit directly after a keyword for it to count as a whole token.
 # `\w`, `-` and `:` are the characters the keywords themselves are made of (plus
 # the space between the two words), so excluding them means `the-loop start.`
 # (trailing punctuation, end of a sentence, end of a line) matches while
-# `the-loop startlater` and `xthe-loop start` do not.
-_BOUNDARY_BEFORE = r"(?<![\w:-])"
+# `the-loop startlater` does not. Before a keyword there is nothing to exclude:
+# it must open the body or a line (issue-498), which `^` already says.
 _BOUNDARY_AFTER = r"(?![\w:-])"
 
 
@@ -342,8 +347,9 @@ class ControlResult:
     """What a comment body asked for: one command, ambiguity, or nothing.
 
     ``command`` is one of :data:`COMMANDS` or ``None``. ``ambiguous`` is set when
-    the body carried two or more *different* commands — the caller must then do
-    nothing at all (execute nothing, forward nothing).
+    the body opened two lines with two or more *different* commands — the caller
+    must execute none of them, and routes the comment as conversation
+    (issue-498).
 
     ``subjects`` carries the command's argument for the two classes of command that
     have one (:data:`ARGUMENT_COMMANDS`): the ``@login`` tokens that followed a
@@ -437,23 +443,28 @@ def _parse_channels(text: str) -> Tuple[List[str], str, str]:
 def parse_command(body: Optional[str], config: ControlConfig) -> ControlResult:
     """The control command ``body`` carries, if any (pure, side-effect free).
 
-    Whole-token, case-insensitive matching of the configured keywords. A body
-    with the *same* command repeated is that command; a body with two different
-    ones is :attr:`ControlResult.ambiguous` and must not be acted on.
+    Whole-token, case-insensitive matching of the configured keywords, anchored
+    (issue-498): the body must **open** with a keyword, and a further keyword
+    counts only when it opens a line — anything else is prose. A body with the
+    *same* command repeated is that command; a body with two different ones is
+    :attr:`ControlResult.ambiguous` and must not be acted on.
     """
     if not config.enabled or not body:
         return ControlResult()
+    body = body.lstrip()
     found: List[str] = []
     patterns: Dict[str, str] = {}
+    opens = False
     for command in (*COMMANDS, *config.custom_commands):
         keyword = config.keyword(command)
         if not keyword:
             continue
-        pattern = _BOUNDARY_BEFORE + re.escape(keyword) + _BOUNDARY_AFTER
+        pattern = "^" + re.escape(keyword) + _BOUNDARY_AFTER
         patterns[command] = pattern
-        if re.search(pattern, body, re.IGNORECASE):
+        if re.search(pattern, body, re.IGNORECASE | re.MULTILINE):
             found.append(command)
-    if not found:
+            opens = opens or bool(re.match(pattern, body, re.IGNORECASE))
+    if not opens:
         return ControlResult()
     if len(found) > 1:
         return ControlResult(ambiguous=True, matched=found)
@@ -474,7 +485,7 @@ def parse_command(body: Optional[str], config: ControlConfig) -> ControlResult:
         # around them reaches nothing. Which parser is the command's: a login or a
         # Slack id for the collaborator pair (issue-307, issue-389), a channel ref
         # for the channel pair (issue-375).
-        for match in re.finditer(patterns[command], body, re.IGNORECASE):
+        for match in re.finditer(patterns[command], body, re.IGNORECASE | re.MULTILINE):
             rest = body[match.end() :]
             if command in COLLABORATOR_COMMANDS:
                 parsed = parse_subjects(rest)

@@ -297,14 +297,12 @@ def test_an_outage_reads_as_no_goal_never_a_guess(runtime, repo, monkeypatch):
 
 def test_contribute_parses_as_a_whole_token():
     config = ControlConfig()
-    assert (
-        parse_command("please the-loop contribute here", config).command == CONTRIBUTE
-    )
+    assert parse_command("the-loop contribute here", config).command == CONTRIBUTE
     assert parse_command("the-loop contributed", config).command is None
 
 
 def test_contribute_plus_another_command_is_refused():
-    result = parse_command("the-loop start and the-loop contribute", ControlConfig())
+    result = parse_command("the-loop start\nthe-loop contribute", ControlConfig())
     assert result.ambiguous and result.command is None
 
 
@@ -586,11 +584,11 @@ class TestContributionWalk:
             WORK_ITEM,
             ref=REF,
             event=_reply(
+                "the-loop execute\n"
                 "- [ ] context-intake\n- [ ] scoped-plan\n- [ ] plan-approval\n"
                 "- [x] implementation\n- [x] verification\n"
                 "- [ ] self-review\n- [ ] critic-review\n- [ ] security-review\n"
-                "- [ ] reviewer-briefing\n- [x] human-approval\n"
-                "the-loop execute"
+                "- [ ] reviewer-briefing\n- [x] human-approval"
             ),
         )
         state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
@@ -696,7 +694,7 @@ def test_a_ticked_surface_row_in_a_contributions_reply_changes_nothing(
     runtime.advance(
         WORK_ITEM,
         ref=REF,
-        event=_reply("- [x] outer-loop-on-pull-request\nthe-loop execute"),
+        event=_reply("the-loop execute\n- [x] outer-loop-on-pull-request"),
     )
     state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.current_node == "context-intake"

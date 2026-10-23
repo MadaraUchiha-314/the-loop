@@ -145,7 +145,7 @@ def test_a_contribution_is_not_offered_the_row(repo, fake_github):
     checklist = next(p for p in fake_github.posted if selection.SELECTION_MARKER in p)
     assert TOKEN not in checklist
     runtime.advance(
-        WORK_ITEM, ref=REF, event=_reply(f"- [x] {TOKEN}\nthe-loop execute")
+        WORK_ITEM, ref=REF, event=_reply(f"the-loop execute\n- [x] {TOKEN}")
     )
     state = WorkItemState.load(_spec_dir(repo), WORK_ITEM)
     assert state.claude_artifact is False
@@ -155,7 +155,7 @@ def test_a_contribution_is_not_offered_the_row(repo, fake_github):
 @pytest.mark.parametrize("mark", ["x", " "])
 def test_the_row_is_never_read_as_a_phase(repo, fake_github, mark):
     """R1.4 — ticked or not, it is not a skip, an opt-in or a refusal."""
-    state = _select(repo, f"- [{mark}] `{TOKEN}`\nthe-loop execute", harness="claude")
+    state = _select(repo, f"the-loop execute\n- [{mark}] `{TOKEN}`", harness="claude")
     assert TOKEN not in state.skips and TOKEN not in state.opt_ins
     assert "Refused" not in _confirmation(fake_github)
     assert selection._is_non_phase(TOKEN)
@@ -172,7 +172,7 @@ def test_ticked_on_the_claude_harness_publishes(repo, fake_github):
       Then `claudeArtifact` is frozen true
       And the confirmation says the spec chain is published as one Claude artifact
     """
-    state = _select(repo, f"- [x] `{TOKEN}`\nthe-loop execute", harness="claude")
+    state = _select(repo, f"the-loop execute\n- [x] `{TOKEN}`", harness="claude")
     assert state.claude_artifact is True
     decision = state.decisions["phase-selection"]
     assert decision["claudeArtifact"] is True
@@ -190,7 +190,7 @@ def test_ticked_on_another_harness_is_not_applied(repo, fake_github):
     """
     state = _select(
         repo,
-        f"- [x] `{TOKEN}`\n- [x] `harness-codex`\nthe-loop execute",
+        f"the-loop execute\n- [x] `{TOKEN}`\n- [x] `harness-codex`",
         harness="claude",
         offeredHarnesses=["claude", "codex"],
     )
@@ -202,19 +202,19 @@ def test_ticked_on_another_harness_is_not_applied(repo, fake_github):
 
 
 def test_ticked_on_a_non_claude_default_is_not_applied(repo, fake_github):
-    state = _select(repo, f"- [x] `{TOKEN}`\nthe-loop execute", harness="codex")
+    state = _select(repo, f"the-loop execute\n- [x] `{TOKEN}`", harness="codex")
     assert state.claude_artifact is False
     assert f"Not applied: `{TOKEN}`" in _confirmation(fake_github)
 
 
 def test_ticked_with_no_known_harness_is_applied(repo, fake_github):
     """R2.2 — no CLI config seeded a harness; the session's own guard decides."""
-    state = _select(repo, f"- [x] `{TOKEN}`\nthe-loop execute")
+    state = _select(repo, f"the-loop execute\n- [x] `{TOKEN}`")
     assert state.claude_artifact is True
 
 
 @pytest.mark.parametrize(
-    "body", [f"- [ ] `{TOKEN}`\nthe-loop execute", "the-loop execute"]
+    "body", [f"the-loop execute\n- [ ] `{TOKEN}`", "the-loop execute"]
 )
 def test_unticked_or_absent_is_markdown_only(repo, fake_github, body):
     """R2.4, R2.5 — fail closed, and named in the confirmation."""
@@ -299,7 +299,7 @@ def test_the_prompt_reads_the_frozen_state(repo, fake_github):
     runtime = _runtime(repo, harness="claude")
     runtime.start(WORK_ITEM, ref=REF)
     runtime.advance(
-        WORK_ITEM, ref=REF, event=_reply(f"- [x] `{TOKEN}`\nthe-loop execute")
+        WORK_ITEM, ref=REF, event=_reply(f"the-loop execute\n- [x] `{TOKEN}`")
     )
     ctx = GraphLink._context_from(runtime, WORK_ITEM)
     assert ctx is not None and ctx.claude_artifact is True

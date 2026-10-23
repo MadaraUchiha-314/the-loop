@@ -1708,10 +1708,10 @@ def make_control_dispatcher(tmp_path, tmux, **overrides):
     return make_dispatcher(tmp_path, tmux, **overrides)
 
 
-def test_the_settled_vocabulary_is_exactly_the_fourteen_documented_outcomes():
+def test_the_settled_vocabulary_is_exactly_the_thirteen_documented_outcomes():
     """Adding a settlement means adding it here — and to the event catalogue.
 
-    `poll.comment_settled` documents these fourteen as its `outcome` values, and the
+    `poll.comment_settled` documents these thirteen as its `outcome` values, and the
     poller records whatever it is handed without branching on it, so this tuple is
     the only place the vocabulary is stated.
     """
@@ -1721,7 +1721,6 @@ def test_the_settled_vocabulary_is_exactly_the_fourteen_documented_outcomes():
         "collaborator-no-spawn",
         "control-executed",
         "control-rejected",
-        "control-ambiguous",
         "parked-at-human-start-gate",
         # issue-517: a Jira copy labelled the-loop-mirror, refused at arming
         "mirror-refused",
@@ -1846,18 +1845,76 @@ def test_a_rejected_control_command_settles_its_delivery(tmp_path):
     assert dispatcher.delivery_outcome("ctl-2") == "control-rejected"
 
 
-def test_conflicting_control_keywords_settle_the_delivery(tmp_path):
-    registry, dispatcher = make_control_dispatcher(tmp_path, FakeTmux())
+def test_an_ambiguous_comment_reaches_the_live_session_and_executes_nothing(tmp_path):
+    """issue-498 R2: two different commands execute neither, and the comment is
+    routed as conversation instead of being settled unread.
+
+    Given a running session on a labelled work item
+    When an authorized user comments with two lines opening with `pause` and `stop`
+    Then the session is neither paused nor stopped
+    And the comment is delivered to the session
+    """
+    tmux = FakeTmux()
+    registry, dispatcher = make_control_dispatcher(tmp_path, tmux)
+    registry.register(make_session())
+
+    dispatcher.handle(
+        routed_labelled_comment(delivery="ctl-3", body="the-loop pause\nthe-loop stop")
+    )
+    dispatcher.stop()
+
+    entry = registry.find_by_work_item(REF)
+    assert entry is not None and not entry.is_paused
+    assert dispatcher.delivery_outcome("ctl-3") != "control-ambiguous"
+    assert len(tmux.delivers) == 1
+
+
+def test_a_comment_discussing_two_commands_in_prose_reaches_the_session(tmp_path):
+    """issue-498 R1.2: the #496 comment — keywords mentioned mid-prose.
+
+    Given a running session on a labelled work item
+    When an authorized user's comment mentions `the-loop start` and `the-loop review`
+    Then no command is executed and the comment is delivered to the session
+    """
+    tmux = FakeTmux()
+    registry, dispatcher = make_control_dispatcher(tmp_path, tmux)
     registry.register(make_session())
 
     dispatcher.handle(
         routed_labelled_comment(
-            delivery="ctl-3", body="the-loop start, no — the-loop stop"
+            delivery="ctl-4",
+            body="one user has done `the-loop start` and the other has done "
+            "`the-loop review`",
         )
     )
     dispatcher.stop()
 
-    assert dispatcher.delivery_outcome("ctl-3") == "control-ambiguous"
+    assert registry.find_by_work_item(REF) is not None
+    assert dispatcher.delivery_outcome("ctl-4") == ""
+    assert len(tmux.delivers) == 1
+
+
+def test_an_ambiguous_comment_on_a_paused_session_is_still_suppressed(tmp_path):
+    """issue-498 abuse case: forwarding an ambiguous body bypasses no gate.
+
+    Given a paused session
+    When an authorized user comments with two lines opening with `resume` and `stop`
+    Then nothing is executed, nothing is delivered, and the pause suppresses it
+    """
+    tmux = FakeTmux()
+    registry, dispatcher = make_control_dispatcher(tmp_path, tmux)
+    registry.register(make_session())
+    registry.pause(REF)
+
+    dispatcher.handle(
+        routed_labelled_comment(delivery="ctl-5", body="the-loop resume\nthe-loop stop")
+    )
+    dispatcher.stop()
+
+    paused = registry.find_by_work_item(REF)
+    assert paused is not None and paused.is_paused
+    assert tmux.delivers == []
+    assert dispatcher.delivery_outcome("ctl-5") == "session-paused"
 
 
 # -- `the-loop sessions` command (R2.2) ----------------------------------------

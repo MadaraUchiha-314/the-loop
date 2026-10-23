@@ -100,8 +100,10 @@ flowchart LR
   ids on every channel, timestamp). Four shapes: the ask's record is the question itself
   (marked); a `work-item.reply` record is the marked, quoted, scrubbed, keyword-defanged
   mirror; a `gate.feedback` / `control.command` record is **unmarked**, keywords intact,
-  posted under the operator's credential with a visible attribution — so the ledger's
-  own ingress classifies or executes it through the guards a typed comment goes through;
+  posted under the operator's credential with the person's words **first** and a visible
+  attribution after them (issue-498: a keyword counts only where a comment opens with
+  it) — so the ledger's own ingress classifies or executes it through the guards a typed
+  comment goes through;
   a `work-item.create` record is the issue itself (unmarked, so it is armable; labelled
   from config only). WHEN the ledger's ingress sees an enveloped comment THEN it SHALL
   never re-publish it as a `comment.*` event (loop prevention across channels), and a
@@ -1109,6 +1111,7 @@ ticket, with no Jira work items, ingress or ledger:
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-498 | A relayed command still opens its comment (2026-10-23): the ledger's `gate.feedback` / `control.command` relay record puts the person's words first, unquoted, and the attribution after them, because a control keyword now counts only where a comment opens with it | [spec](../specs/issue-498/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/498) |
 | issue-519 | **Behind a gateway, the gateway posts** (2026-10-23): one resolver, `outbound_client()` / `posting_path()`, picks the instance's Slack client — own token first, else a gateway-backed client over `POST /api/v1/gateway/slack/call` (and `/slack/download` for files), else today's error with the gateway hint — for the channel, every `SlackBotChannel` construction site, the directory, the doctor and the attachment fetcher (a caller's own fetcher counts as a credential, captions included); a gateway failure fails the post with no fallback. `start` warns once and emits `channel.posting_unavailable` when nothing can post; `status`, `channels status` and `doctor slack` say which posting path is in use | [spec](../specs/issue-519/), [gateway](gateway.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/519) |
 | issue-507 | A Slack mention inside a thread is answered in that thread (2026-10-20): `inbound.process_reply` notes the thread of a delivered `work-item.reply` in the work item's room-delivery memory (`replyChannel` / `replyThread`), `SlackBotChannel.post` posts the next `comment.agent` there, and any non-progress event clears it. No config, grant, scope, schema or event change | [spec](../specs/issue-507/), [guide](../guide/slack.md#a-room-for-one-work-item), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/507) |
 | issue-505 | Behind a gateway, a collaboration channel is published to the gateway as a room (2026-10-20): `CollaborationChannelStore.on_change` lets the hosted gateway client publish a declaration, a move or a clear at once; the client also publishes the whole set at every registration and reconciles every 30 s. The issue-375 promise that every message in the room is about its work item now holds behind a gateway | [spec](../specs/issue-505/), [gateway](gateway.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/505) |

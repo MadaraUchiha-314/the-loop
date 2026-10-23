@@ -11,7 +11,7 @@ Nothing runs until an authorized user replies `the-loop execute`. The tick state
 
 A doc fix usually needs little more than implementation and verification; a feature usually needs every phase.
 
-You can also put the list in the reply itself — a checklist in the `the-loop execute` comment wins over the boxes here. Either way the **authorization is your reply**: the tick state is a proposal, and saying the keyword is what makes it yours.
+Start your reply with `the-loop execute` — a keyword anywhere else is read as conversation. You can also put the list in the reply itself, below the keyword: a checklist there wins over the boxes here. Either way the **authorization is your reply**: the tick state is a proposal, and saying the keyword is what makes it yours.
 
 Only the boxes under **Phases** change what work is done. Everything under **Settings** is about how and where it is done, and each has a default.
 

@@ -119,13 +119,13 @@ def test_cleanup_neither_arms_nor_spawns_nor_reaches_the_graph_gate():
 
 
 def test_a_comment_carrying_the_keyword_parses_to_cleanup():
-    result = parse_command("please tidy up: the-loop cleanup", ControlConfig())
+    result = parse_command("the-loop cleanup — please tidy up", ControlConfig())
     assert result.command == CLEANUP
 
 
 def test_the_keyword_still_refuses_an_ambiguous_comment():
     """The new word inherits the two-commands-is-a-refusal rule by construction."""
-    result = parse_command("the-loop cleanup and the-loop start", ControlConfig())
+    result = parse_command("the-loop cleanup\nthe-loop start", ControlConfig())
     assert result.ambiguous and result.command is None
 
 

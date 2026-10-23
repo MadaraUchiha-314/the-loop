@@ -348,31 +348,31 @@ def test_a_refused_command_is_acknowledged_with_the_error_reaction(
     assert dispatcher.delivery_outcome("k-3") == "control-rejected"
 
 
-def test_conflicting_keywords_are_acknowledged_with_the_error_reaction(
-    tmp_path, monkeypatch
-):
+def test_conflicting_keywords_are_delivered_as_conversation(tmp_path, monkeypatch):
     """
     Feature: Acknowledging the events the-loop consumes
-    Scenario: One comment carries two different control keywords
-      Given control is enabled
-      When an authorized user comments both the start and the stop keyword
+    Scenario: One comment opens lines with two different control keywords
+      Given control is enabled and a session is running
+      When an authorized user comments a line opening with start and one with pause
       Then neither is executed
-      And the comment receives the error reaction rather than silence
-    Requirement: docs/specs/issue-371/requirements.md#r1--an-event-the-dispatcher-finishes-with-is-acknowledged-on-the-entity-it-arrived-on
+      And the comment is delivered to the session as conversation, not marked an error
+    Requirement: docs/specs/issue-498/bugfix.md#requirement-2--an-ambiguous-body-is-conversation-not-a-dead-letter
     """
     tmux = FakeTmux()
     dispatcher, runner = make_control_dispatcher(tmp_path, tmux, monkeypatch)
     dispatcher.registry.register(make_session())
 
     dispatcher.handle(
-        routed_command("the-loop start", delivery="k-4", body_extra=" the-loop stop")
+        routed_command("the-loop start", delivery="k-4", body_extra="\nthe-loop pause")
     )
-    assert wait_until(lambda: len(runner.commands) == 1)
+    assert wait_until(lambda: len(tmux.delivers) == 1)
     dispatcher.stop()
 
-    assert tmux.delivers == [] and tmux.spawns == []
-    assert contents(runner) == ["content=confused"]
-    assert dispatcher.delivery_outcome("k-4") == "control-ambiguous"
+    assert tmux.spawns == []
+    session = dispatcher.registry.find_by_work_item(REF)
+    assert session is not None and not session.is_paused
+    assert "content=confused" not in contents(runner)
+    assert dispatcher.delivery_outcome("k-4") != "control-ambiguous"
 
 
 def test_a_suppressed_comment_is_acknowledged_as_seen(tmp_path, monkeypatch):

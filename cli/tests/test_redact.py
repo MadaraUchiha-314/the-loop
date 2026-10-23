@@ -89,7 +89,7 @@ def _parses(body: str) -> bool:
 
 
 def test_defanged_start_keyword_no_longer_parses():
-    body = "then run the-loop start to resume"
+    body = "the-loop start, then resume"
     assert _parses(body)  # sanity: the raw body would arm
     out = defang_control_keywords(body, ["the-loop start"])
     assert not _parses(out)
