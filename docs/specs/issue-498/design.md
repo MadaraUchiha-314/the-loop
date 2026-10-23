@@ -9,10 +9,14 @@ overrides: {}
 
 # Design: a control keyword must open the comment; an ambiguous body is conversation
 
+## Overview
+
 Two edits to existing code, no new component: `parse_command` anchors keywords to the
 start of the body (and, for later commands, the start of a line), and the dispatcher stops
 settling an ambiguous body and lets it take the ordinary comment path. The rest is text:
 docstrings, the two schema descriptions, the capability doc and a learning.
+
+## Architecture
 
 ```mermaid
 flowchart TD
@@ -27,7 +31,9 @@ flowchart TD
   N --> F
 ```
 
-## 1. Parser — `cli/the_loop/control.py`
+## Components & interfaces
+
+### 1. Parser — `cli/the_loop/control.py`
 
 `parse_command(body, config)` changes how it finds keywords, and nothing about what it
 returns:
@@ -66,7 +72,7 @@ Docstrings corrected: the module's "one deliberate looseness" paragraph, `Contro
 ("execute nothing, forward nothing" → "execute nothing; the caller routes it as
 conversation"), and `parse_command`'s own.
 
-## 2. Dispatcher — `cli/the_loop/webhook/dispatcher.py`
+### 2. Dispatcher — `cli/the_loop/webhook/dispatcher.py`
 
 In `Dispatcher.handle`, the `control.ambiguous` branch keeps its warning log and its
 `control.ambiguous` event and **drops the `_settle(…)` and `return`**. `control.command`
@@ -82,7 +88,7 @@ routed as conversation. The poller docstring that explains why it does not hold 
 ambiguous comment at first sight is reworded (its behaviour is unchanged: such a comment
 carries no command to catch up on, so it is baselined like any other conversation).
 
-## 3. Text
+### 3. Text
 
 | File | Change |
 |------|--------|
@@ -90,6 +96,14 @@ carries no command to catch up on, so it is baselined like any other conversatio
 | `cli/the_loop/redact.py` | module docstring: drop "matches them anywhere"; defanging stays (out of scope) |
 | `docs/capabilities/webhook-triggers.md` | the keyword EARS bullet states the leading rule and the ambiguous-body routing; changelog row for issue-498 |
 | `docs/learnings/learning-012.md` + index | what shipped versus learning-011's planned action |
+
+## UI/UX design
+
+None — the-loop has no UI, and this change has no user-facing surface beyond comment grammar.
+
+## Data models
+
+None change. `ControlResult` keeps its fields; one settled-outcome constant (`control-ambiguous`) is retired.
 
 ## Error handling
 
@@ -111,8 +125,21 @@ Unit tests in `cli/tests/test_control.py` for every placement; dispatcher tests 
 `cli/tests/test_routing.py` / `test_reactions*.py` updated from "settled as
 control-ambiguous" to "enqueued for the session". Detail in `testing-plan.md`.
 
-## Compatibility
+## Trade-offs & decisions
+
+- **Anchor instead of a markdown stripper** (§1): one regex flag versus a half-markdown parser; the author's ticket comment chose the anchor.
+- **Line-anchored later commands kept**: preserves multi-line argument commands and the two-command guard.
+
+### Compatibility
 
 A comment that relied on a keyword mid-sentence ("ok, the-loop start") stops being a
 command. That is the intended change; the capability doc says so. The CLI's own posted
 comments (`command_comment`) already open with the keyword.
+
+## Open questions
+
+None.
+
+## Review comments
+
+None yet.
