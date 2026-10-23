@@ -25,12 +25,13 @@ import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Set
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, field_validator
 
 from .. import eventlog
 from .config import GatewayConfig
 from .envelope import subject_for_slug, ROLES, PROVIDERS
+from .slack_proxy import SlackProxy
 from .store import Refused, Store, peer_fingerprint
 
 __all__ = ["GatewayState", "build_consume_router", "API_PREFIX"]
@@ -62,6 +63,10 @@ class GatewayState:
         self.max_long_polls = MAX_OPEN_LONG_POLLS
         self._long_polls: Set[str] = set()
         self._long_polls_lock = threading.Lock()
+        #: Outbound Slack for the instances (issue-519): a pass-through over the live
+        #: config, so a reload of `slack.post.enabled` is seen at the next call. A test
+        #: replaces it with one built over a fake web client.
+        self.slack_proxy = SlackProxy(self)
 
     def long_poll_slot(self, instance: str) -> bool:
         with self._long_polls_lock:
@@ -80,11 +85,18 @@ class GatewayState:
     def health(self) -> Dict[str, Any]:
         queues = {q.instance: q.backlog for q in self.store.queues()}
         events, held = self.store.totals()
+        posting_ok, posting_reason = self.slack_proxy.available()
         return {
             "ok": self.store_ok,
             "uptimeSeconds": int(time.time() - self.started_at),
             "ingresses": dict(self.ingresses),
-            "slack": {"socket": self.slack_socket},
+            # `posting` (issue-519, R4.6): whether this gateway makes Slack calls for its
+            # instances — `on`, or why not (`disabled` | `no-token` |
+            # `socket-unconfigured`); the instance's status wording reads it
+            "slack": {
+                "socket": self.slack_socket,
+                "posting": "on" if posting_ok else posting_reason,
+            },
             # no store path and no bind address here (security review SEC-10c): the
             # answer goes to any peer on the network; `gateway status` reads both from
             # the config on the gateway's own host
@@ -115,6 +127,14 @@ ROOMS_MAX = 256
 SLACK_CHANNEL_RE = re.compile(r"^[CGD][A-Z0-9_-]{1,20}$")
 COMMITS_MAX = 1024
 SEQ_MAX = 2**63 - 1
+#: A Slack Web API method name (`chat.postMessage`); the allow-list is the proxy's.
+SLACK_METHOD_MAX = 64
+#: The most a call's `params` may weigh serialised (issue-519, R5.4): Slack refuses a
+#: message over 40 000 characters and 50 blocks, so this is above anything the instance
+#: renders and far below the server's body limit. A 422 at the door writes nothing.
+SLACK_PARAMS_MAX = 256 * 1024
+#: A file URL (`url_private_download`); the host rule is the proxy's.
+SLACK_URL_MAX = 2048
 #: The most long-polls held open at once (SEC-5); the rest answer as plain polls.
 MAX_OPEN_LONG_POLLS = 32
 
@@ -275,6 +295,57 @@ class RoomsBody(BaseModel):
             except Exception as exc:  # noqa: BLE001 — a ref the schemes cannot parse
                 raise ValueError(f"{channel}: {exc}") from exc
         return value
+
+
+class SlackCallBody(BaseModel):
+    """One Slack Web API call the gateway makes for an instance (issue-519, R2.1)."""
+
+    instance: str = Field(
+        ...,
+        min_length=1,
+        max_length=NAME_MAX,
+        description="The calling instance's name: allow-listed like a claim.",
+    )
+    peer: str = Field(
+        "",
+        max_length=NAME_MAX,
+        description="Its persisted peer id; a different peer under a live name is 409.",
+    )
+    method: str = Field(
+        ...,
+        min_length=1,
+        max_length=SLACK_METHOD_MAX,
+        description="The Slack Web API method (`chat.postMessage`); one of the thirteen "
+        "the instance calls, else 422 method-not-allowed and nothing is sent.",
+    )
+    params: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="The method's parameters, passed to Slack as a JSON body; at most "
+        "256 KiB serialised.",
+    )
+
+    @field_validator("params")
+    @classmethod
+    def _bounded(cls, value: Dict[str, Any]) -> Dict[str, Any]:
+        import json
+
+        if len(json.dumps(value, separators=(",", ":"))) > SLACK_PARAMS_MAX:
+            raise ValueError(f"params over {SLACK_PARAMS_MAX} bytes")
+        return value
+
+
+class SlackDownloadBody(BaseModel):
+    """A message's file, fetched with the gateway's bot token (issue-519, R3.1)."""
+
+    instance: str = Field(..., min_length=1, max_length=NAME_MAX)
+    peer: str = Field("", max_length=NAME_MAX)
+    url: str = Field(
+        ...,
+        min_length=1,
+        max_length=SLACK_URL_MAX,
+        description="The file's `url_private_download`: https, on one of Slack's hosts, "
+        "every redirect re-checked, at most 25 MiB — else 422 off-host / 413 over-cap.",
+    )
 
 
 # -- the router -----------------------------------------------------------------------------------
@@ -611,6 +682,51 @@ def build_consume_router(state: GatewayState, **router_kwargs: Any) -> APIRouter
             ],
             "routed": len(result.routed),
         }
+
+    def _guarded(instance: str, peer: str) -> Optional[JSONResponse]:
+        denied = _check_allowed(state, instance)
+        if denied is not None:
+            return denied
+        conflict = store.peer_conflict(instance, peer)
+        if conflict is not None:
+            return _refused(state, conflict, instance=instance, peer=peer)
+        return None
+
+    @router.post(f"{API_PREFIX}/slack/call", operation_id="gatewaySlackCall")
+    def slack_call(body: SlackCallBody) -> Any:
+        """One Slack Web API call for the instance, made with the bot token this gateway
+        holds for Socket Mode (issue-519). A pass-through: Slack's status, body and
+        Retry-After come back verbatim, `ok: false` included. Refused with 422
+        method-not-allowed for a method outside the thirteen the instance calls (nothing
+        sent), 503 posting-unavailable {reason: disabled | no-token | socket-unconfigured},
+        502 slack-unreachable on a transport failure, and the consumer guards every route
+        has: 409 unknown-instance / duplicate-instance. Nothing is stored or retried."""
+        denied = _guarded(body.instance, body.peer)
+        if denied is not None:
+            return denied
+        result = state.slack_proxy.call(body.instance, body.method, body.params)
+        return JSONResponse(
+            status_code=result.status, content=result.body, headers=result.headers
+        )
+
+    @router.post(f"{API_PREFIX}/slack/download", operation_id="gatewaySlackDownload")
+    def slack_download(body: SlackDownloadBody) -> Any:
+        """A message's file for the instance, fetched with the gateway's bot token under
+        the instance's own rules (issue-519): Slack's hosts only, every redirect
+        re-checked, 25 MiB at most. 200 with the bytes and their Content-Type; 422
+        off-host, 413 over-cap, 502 transfer-failed, 503 posting-unavailable, and the
+        consumer guards (409)."""
+        denied = _guarded(body.instance, body.peer)
+        if denied is not None:
+            return denied
+        result = state.slack_proxy.download(body.instance, body.url)
+        if isinstance(result.body, (bytes, bytearray)):
+            return Response(
+                content=bytes(result.body),
+                status_code=result.status,
+                media_type=result.media_type,
+            )
+        return JSONResponse(status_code=result.status, content=result.body)
 
     @router.get(f"{API_PREFIX}/health", operation_id="gatewayHealth")
     def health() -> Dict[str, Any]:

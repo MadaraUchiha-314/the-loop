@@ -47,7 +47,7 @@ the transition. No task touches the gateway's store.
     the fake web client, abuse 1; disabled / no token / no block → `503`, abuse 5; a
     fake `SlackApiError` returned verbatim; off-host and over-cap downloads refused before
     any fetch, abuse 4; the log record carries no message text) (red→green)
-- [ ] 3. Gateway routes, health, contract and `gateway status`
+- [x] 3. Gateway routes, health, contract and `gateway status`
   - `SlackCallBody` / `SlackDownloadBody` with the bounds (`NAME_MAX`, `method ≤ 64`,
     `params ≤ 256 KiB` serialised, `url ≤ 2048` https); `POST /api/v1/gateway/slack/call`
     and `/slack/download` behind `_check_allowed` and `store.peer_conflict`, then the

@@ -334,3 +334,168 @@ def test_abuse_4_download_refuses_off_host_and_over_cap_before_any_fetch(proxy_e
     proxy = slack_proxy.SlackProxy(gw.state, fetch=failing)
     result = proxy.download("a", "https://files.slack.com/files-pri/T1-F1/clip.m4a")
     assert result.status == 502 and result.body["error"] == "transfer-failed"
+
+
+# -- task 3: the routes, health, the contract and `gateway status` (R2.1, R2.5, R4.6,
+#    R5.3, R5.4, R6.2) ------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def route_env(monkeypatch, tmp_path):
+    from gateway_support import GatewayHarness
+    from the_loop.gateway import slack_proxy
+
+    monkeypatch.setenv(BOT_ENV, "xoxb-test")
+    monkeypatch.setenv(APP_ENV, "xapp-test")
+    gw = GatewayHarness(tmp_path, slack=SLACK, instances=["a", "b"])
+    web = {}
+
+    def factory(token):
+        client = web.get("client") or FakeWebClient(token)
+        web["client"] = client
+        return client
+
+    gw.state.slack_proxy = slack_proxy.SlackProxy(gw.state, web_client_factory=factory)
+    yield gw, web
+    gw.close()
+
+
+def _call(gw, instance="a", peer="p", method="chat.postMessage", params=None):
+    return gw.client.post(
+        "/api/v1/gateway/slack/call",
+        json={
+            "instance": instance,
+            "peer": peer,
+            "method": method,
+            "params": params if params is not None else {"channel": "C1", "text": "hi"},
+        },
+    )
+
+
+def test_route_slack_call_forwards_and_returns_slacks_answer(route_env):
+    gw, web = route_env
+    response = _call(gw)
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "ts": "1700.000001", "channel": "C1"}
+    assert web["client"].calls == [
+        ("chat.postMessage", {"channel": "C1", "text": "hi"}, None)
+    ]
+    web["client"].fail = "ratelimit"
+    response = _call(gw)
+    assert response.status_code == 429 and response.headers["Retry-After"] == "3"
+    assert response.json()["error"] == "ratelimited"
+
+
+def test_route_slack_call_unknown_method_is_422(route_env):
+    gw, web = route_env
+    response = _call(gw, method="conversations.invite")
+    assert response.status_code == 422
+    assert response.json()["error"] == "method-not-allowed"
+    assert "client" not in web
+
+
+def test_route_slack_call_applies_the_instance_allow_list_and_the_peer_lease(route_env):
+    """R5.3: the two guards every consumer route has, nothing more."""
+    gw, web = route_env
+    response = _call(gw, instance="stranger")
+    assert response.status_code == 409
+    assert response.json()["error"] == "unknown-instance"
+    gw.fetch("a", peer="holder")  # a live lease under the name
+    response = _call(gw, instance="a", peer="other")
+    assert response.status_code == 409
+    assert response.json()["error"] == "duplicate-instance"
+    assert "client" not in web
+    response = _call(gw, instance="a", peer="holder")
+    assert response.status_code == 200
+
+
+def test_route_slack_call_bounds_are_422_at_the_door(route_env):
+    """R5.4: an oversized method, params or url is refused before anything is read."""
+    gw, web = route_env
+    response = _call(gw, method="x" * 65)
+    assert response.status_code == 422
+    response = _call(gw, params={"channel": "C1", "text": "y" * (256 * 1024 + 1)})
+    assert response.status_code == 422
+    response = gw.client.post(
+        "/api/v1/gateway/slack/download",
+        json={
+            "instance": "a",
+            "peer": "p",
+            "url": "https://files.slack.com/" + "u" * 2050,
+        },
+    )
+    assert response.status_code == 422
+    assert "client" not in web
+
+
+def test_route_slack_download_returns_the_bytes_with_their_type(route_env):
+    from the_loop.gateway import slack_proxy
+
+    gw, _ = route_env
+    gw.state.slack_proxy = slack_proxy.SlackProxy(
+        gw.state, fetch=lambda url, **kw: ("audio/mp4", b"\x00\x01\x02")
+    )
+    response = gw.client.post(
+        "/api/v1/gateway/slack/download",
+        json={
+            "instance": "a",
+            "peer": "p",
+            "url": "https://files.slack.com/f/clip.m4a",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("audio/mp4")
+    assert response.content == b"\x00\x01\x02"
+    response = gw.client.post(
+        "/api/v1/gateway/slack/download",
+        json={"instance": "a", "peer": "p", "url": "https://evil.example/f"},
+    )
+    assert response.status_code == 422 and response.json()["error"] == "off-host"
+
+
+def test_route_slack_call_is_503_when_posting_is_unavailable(route_env, monkeypatch):
+    gw, web = route_env
+    monkeypatch.delenv(BOT_ENV)
+    response = _call(gw)
+    assert response.status_code == 503
+    assert response.json() == {"error": "posting-unavailable", "reason": "no-token"}
+    assert "client" not in web
+
+
+def test_route_health_carries_slack_posting(route_env, monkeypatch):
+    """R4.6: the instance reads whether the gateway posts from health."""
+    gw, _ = route_env
+    health = gw.client.get("/api/v1/gateway/health").json()
+    assert health["slack"]["posting"] == "on"
+    monkeypatch.delenv(BOT_ENV)
+    health = gw.client.get("/api/v1/gateway/health").json()
+    assert health["slack"]["posting"] == "no-token"
+
+
+def test_route_gateway_status_reports_posting(route_env, monkeypatch):
+    """R6.2: `gateway status` prints posting and carries it in --format json."""
+    from the_loop.commands import gateway_cmd
+
+    gw, _ = route_env
+
+    class _HeldLock:
+        def __init__(self, *a, **k):
+            pass
+
+        def is_held(self):
+            return True
+
+        def holder(self):
+            return 4242
+
+    monkeypatch.setattr(gateway_cmd, "RunLock", _HeldLock)
+    health = gw.client.get("/api/v1/gateway/health").json()
+    monkeypatch.setattr(
+        gateway_cmd,
+        "_get",
+        lambda config, what: health if what == "health" else {"instances": []},
+    )
+    report = gateway_cmd.status_report(gw.config)
+    assert report["slackPosting"] == "on"
+    lines = gateway_cmd.status_lines(report)
+    assert any(line.strip() == "slack posting: on" for line in lines)

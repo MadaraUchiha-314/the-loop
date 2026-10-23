@@ -12,7 +12,9 @@ info:
     in `commit`, and may hold the request open (`wait`) until a delivery is appended; /claims, /actors,
     /bindings and /rooms are the registrations the gateway routes on; health, subjects, queues and instances
     are read-only. No streaming route is offered. The instance-to-gateway boundary carries no authentication
-    in this release: the gateway binds loopback unless `listen.exposed: true`. This file is the authored
+    in this release: the gateway binds loopback unless `listen.exposed: true`, and an exposed gateway is readable,
+    claimable, committable — and, with `slack.post.enabled` (issue-519), able to post as the Slack bot — by any
+    peer on that network. This file is the authored
     contract: cli/tests/test_api_contract_parity.py asserts the served schema matches it, and that every
     stored envelope validates against components.schemas.Envelope.'
 paths:
@@ -259,6 +261,63 @@ paths:
             application/json:
               schema:
                 title: Response Gatewaypublishrooms
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/gateway/slack/call:
+    post:
+      summary: Slack Call
+      description: 'One Slack Web API call for the instance, made with the bot token this gateway holds for
+        Socket Mode (issue-519). A pass-through: Slack''s status, body and Retry-After come back verbatim, `ok:
+        false` included. Refused with 422 method-not-allowed for a method outside the thirteen the instance
+        calls (nothing sent), 503 posting-unavailable {reason: disabled | no-token | socket-unconfigured},
+        502 slack-unreachable on a transport failure, and the consumer guards every route has: 409
+        unknown-instance / duplicate-instance. Nothing is stored or retried. Because the boundary carries no
+        authentication, any peer this gateway accepts may post as the bot wherever the bot can.'
+      operationId: gatewaySlackCall
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SlackCallBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                title: Response Gatewayslackcall
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/gateway/slack/download:
+    post:
+      summary: Slack Download
+      description: 'A message''s file for the instance, fetched with the gateway''s bot token under the
+        instance''s own rules (issue-519): Slack''s hosts only, every redirect re-checked, 25 MiB at most.
+        200 with the bytes and their Content-Type; 422 off-host, 413 over-cap, 502 transfer-failed, 503
+        posting-unavailable, and the consumer guards (409).'
+      operationId: gatewaySlackDownload
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SlackDownloadBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                title: Response Gatewayslackdownload
         '422':
           description: Validation Error
           content:
@@ -515,6 +574,52 @@ components:
       required:
       - instance
       title: RoomsBody
+    SlackCallBody:
+      properties:
+        instance:
+          type: string
+          title: Instance
+          description: 'The calling instance''s name: allow-listed like a claim.'
+        peer:
+          type: string
+          title: Peer
+          default: ''
+          description: Its persisted peer id; a different peer under a live name is 409 duplicate-instance.
+        method:
+          type: string
+          title: Method
+          maxLength: 64
+          description: 'The Slack Web API method (`chat.postMessage`); one of the thirteen the instance calls,
+            else 422 method-not-allowed and nothing is sent.'
+        params:
+          type: object
+          title: Params
+          description: The method's parameters, passed to Slack as a JSON body; at most 256 KiB serialised.
+      type: object
+      required:
+      - instance
+      - method
+      title: SlackCallBody
+    SlackDownloadBody:
+      properties:
+        instance:
+          type: string
+          title: Instance
+        peer:
+          type: string
+          title: Peer
+          default: ''
+        url:
+          type: string
+          title: Url
+          maxLength: 2048
+          description: 'The file''s `url_private_download`: https, on one of Slack''s hosts, every redirect
+            re-checked, at most 25 MiB — else 422 off-host / 413 over-cap.'
+      type: object
+      required:
+      - instance
+      - url
+      title: SlackDownloadBody
     ValidationError:
       properties:
         loc:

@@ -81,6 +81,9 @@ def status_report(config: GatewayConfig) -> Dict[str, Any]:
         "reachable": health is not None,
         "ingresses": (health or {}).get("ingresses", {}),
         "slackSocket": ((health or {}).get("slack") or {}).get("socket", "unknown"),
+        # whether this gateway posts to Slack for its instances (issue-519, R6.2):
+        # `on`, or the reason it does not
+        "slackPosting": ((health or {}).get("slack") or {}).get("posting", "unknown"),
         "queues": ((health or {}).get("store") or {}).get("queues", {}),
         "held": ((health or {}).get("store") or {}).get("held", 0),
         "instancesLive": now_live,
@@ -293,6 +296,7 @@ def status_lines(report: Dict[str, Any]) -> List[str]:
         )
         lines.append(f"  ingresses: {ingresses}")
         lines.append(f"  slack socket: {report['slackSocket']}")
+        lines.append(f"  slack posting: {report.get('slackPosting', 'unknown')}")
         lines.append(
             "  instances (lease live): "
             + (", ".join(report["instancesLive"]) or "none")
