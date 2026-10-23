@@ -31,7 +31,7 @@ the transition. No task touches the gateway's store.
     `slack.post` reads `enabled: true`; `false` parses; the schema validates both; the
     description is present) (red→green)
 - [x] 2. Gateway proxy: `gateway/slack_proxy.py`
-  - `SLACK_METHODS` (the thirteen names), `ProxyResult`, `SlackProxy(state,
+  - `SLACK_METHODS` (the fourteen names), `ProxyResult`, `SlackProxy(state,
     web_client_factory=build_client)`: `available()` → `(ok, reason)` read at call time;
     `call(method, params)` → `503 posting-unavailable` / `422 method-not-allowed` /
     `api_call(method, json=params)` with the status, body and `Retry-After` returned as
@@ -63,7 +63,7 @@ the transition. No task touches the gateway's store.
     `422` at the door; health carries `posting`; `gateway status` JSON carries it) and
     `tests/test_api_contract_parity.py` (red→green)
 - [x] 4. Instance proxy client: `channels/slack_gateway.py`
-  - `GatewaySlackClient(url, instance, peer, transport=None)` with the thirteen SDK
+  - `GatewaySlackClient(url, instance, peer, transport=None)` with the fourteen SDK
     method names, `from_cli_config()` (gateway block url, instance name, the peer id from
     `<local_dir>/<PEER_FILE>` or `""`), `_call` over `gateway.client.urllib_transport`;
     `200 ok` → `dict`; Slack `ok: false` → `slack_sdk.errors.SlackApiError`; `409` /
@@ -98,7 +98,7 @@ the transition. No task touches the gateway's store.
   - _Requirements:_ R1.1, R1.2, R1.4, R1.5, R1.6, R4.6
   - _Test:_ T1 — `tests/test_slack_posting_path.py -k "start or status or doctor"` and
     `cd ui && bun run test -- InstanceDetail` (the card renders the word) (red→green)
-- [ ] 7. Integration scenarios
+- [x] 7. Integration scenarios
   - `tests/test_gateway_slack_proxy_integration.py`: the six Gherkin scenarios of the
     testing plan through `GatewayHarness`, a real `SlackBotChannel` on the bus and a
     fake Slack web client on the gateway; each docstring carries `Requirement:` links.

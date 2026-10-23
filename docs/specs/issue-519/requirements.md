@@ -138,6 +138,7 @@ one place.
    | `chat.update` | phase progress edits in place, button-press reports |
    | `chat.postEphemeral` | `help` answers and refusal reasons |
    | `chat.delete` | the doctor's and the split check's heartbeat cleanup |
+   | `chat.getPermalink` | the link to a Slack message on the ticket's record (added at implementation: the first enumeration missed it; the rule stays "exactly the methods the instance calls") |
    | `reactions.add` | received / completed / error acknowledgements |
    | `views.open` | the kickoff repository picker |
    | `conversations.info`, `conversations.list`, `users.list` | the name→id directory and `channels status --probe` |

@@ -99,7 +99,7 @@ stale-`ts` fallback and the best-effort reactions behave exactly as with a local
 ### Why a flat allow-list and nothing else
 
 The gateway checks three things before it calls Slack: posting is on, it has the token,
-and the method is one the instance calls. The third is a `frozenset` of thirteen
+and the method is one the instance calls. The third is a `frozenset` of fourteen
 strings. It is not channel logic and it stores nothing; it only keeps the gateway from
 being a generic bot-token oracle for `admin.*` or `conversations.invite`. The owner may
 strike it; the design loses one line.
@@ -456,7 +456,7 @@ belong to `testing-plan.md`.
 ## Open questions
 
 None open here. The owner's design review is folded in above; the one thing left to
-them is whether the thirteen-name allow-list stays (§ Architecture).
+them is whether the fourteen-name allow-list stays (§ Architecture).
 
 ## Review comments
 

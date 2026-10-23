@@ -728,7 +728,12 @@ def _create_verb(
     # can be received (issue-337). Best-effort: the issue exists either way.
     from .slack import SlackBotChannel, render_reply_blocks
 
-    bot = SlackBotChannel(config, slack_state_path(cli_config), client_factory=factory)
+    bot = SlackBotChannel(
+        config,
+        slack_state_path(cli_config),
+        client_factory=factory,
+        cli_config=cli_config,
+    )
     where = ""
     try:
         bot.open(record.ref, origin="kickoff")

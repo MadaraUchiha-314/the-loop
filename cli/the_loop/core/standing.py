@@ -541,7 +541,9 @@ def _announce(
         slack_config = SlackChannelConfig.from_mapping(config)
         if entry.slack.channel:
             slack_config = _replace(slack_config, channel=entry.slack.channel)
-        channel = SlackBotChannel(slack_config, slack_state_path(config))
+        channel = SlackBotChannel(
+            slack_config, slack_state_path(config), cli_config=config
+        )
         # Through the bus (issue-309) with this one channel and no record: a
         # standing session owns no ticket, and its announcement must reach the
         # channel whether or not `standing.started` is in the subscribe list —

@@ -44,7 +44,7 @@ class GatewayPostingError(ChannelError):
 
 
 class GatewaySlackClient:
-    """The thirteen SDK method names the instance uses, each a call to the gateway."""
+    """The fourteen SDK method names the instance uses, each a call to the gateway."""
 
     def __init__(
         self,
@@ -133,6 +133,9 @@ class GatewaySlackClient:
 
     def chat_delete(self, **params: Any) -> Dict[str, Any]:
         return self._call("chat.delete", params)
+
+    def chat_getPermalink(self, **params: Any) -> Dict[str, Any]:  # noqa: N802
+        return self._call("chat.getPermalink", params)
 
     def reactions_add(self, **params: Any) -> Dict[str, Any]:
         return self._call("reactions.add", params)

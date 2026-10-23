@@ -345,7 +345,9 @@ def _slack_transcript(
     block = file.get("transcription") or {}
     preview = str(((block.get("preview") or {}).get("content")) or "").strip()
     vtt = str(file.get("vtt") or "")
-    if vtt and token:
+    # reached only past `slack_attachments`' credential guard: a token, or a
+    # caller's own fetcher that carries one (the gateway's, issue-519)
+    if vtt:
         try:
             _, data = fetch(
                 vtt, credential=token, allowed_hosts=SLACK_HOSTS, max_bytes=MAX_BYTES

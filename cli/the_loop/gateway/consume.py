@@ -315,7 +315,7 @@ class SlackCallBody(BaseModel):
         ...,
         min_length=1,
         max_length=SLACK_METHOD_MAX,
-        description="The Slack Web API method (`chat.postMessage`); one of the thirteen "
+        description="The Slack Web API method (`chat.postMessage`); one of the fourteen "
         "the instance calls, else 422 method-not-allowed and nothing is sent.",
     )
     params: Dict[str, Any] = Field(
@@ -697,7 +697,7 @@ def build_consume_router(state: GatewayState, **router_kwargs: Any) -> APIRouter
         """One Slack Web API call for the instance, made with the bot token this gateway
         holds for Socket Mode (issue-519). A pass-through: Slack's status, body and
         Retry-After come back verbatim, `ok: false` included. Refused with 422
-        method-not-allowed for a method outside the thirteen the instance calls (nothing
+        method-not-allowed for a method outside the fourteen the instance calls (nothing
         sent), 503 posting-unavailable {reason: disabled | no-token | socket-unconfigured},
         502 slack-unreachable on a transport failure, and the consumer guards every route
         has: 409 unknown-instance / duplicate-instance. Nothing is stored or retried."""

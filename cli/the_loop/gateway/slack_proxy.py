@@ -10,7 +10,7 @@ and the gateway makes the call and returns Slack's answer verbatim.
 
 Three checks, nothing more (the owner's design review: a pass-through, no state):
 posting is on (``slack.post.enabled``), the token is set, and the method is one of the
-thirteen the instance calls. The gateway stores nothing, retries nothing and never falls
+fourteen the instance calls. The gateway stores nothing, retries nothing and never falls
 back to another credential; a call it cannot make is an answer the instance turns into
 one failed post. Message text never reaches the event log — ``gateway.slack_call``
 carries the method, the channel and the outcome.
@@ -30,7 +30,8 @@ __all__ = ["SLACK_METHODS", "ProxyResult", "SlackProxy"]
 
 logger = logging.getLogger("the-loop.gateway.slack-proxy")
 
-#: Exactly the Slack Web API methods the instance calls today (requirements R2.2). A
+#: Exactly the Slack Web API methods the instance calls today (requirements R2.2,
+#: plus `chat.getPermalink`, which the first enumeration missed — the record's link). A
 #: flat set — not channel logic — so the gateway is not a generic bot-token oracle for
 #: ``admin.*`` or ``conversations.invite``. A new call site on the instance is one name
 #: here, reviewed as such. Every one of them accepts a JSON body.
@@ -40,6 +41,7 @@ SLACK_METHODS = frozenset(
         "chat.update",
         "chat.postEphemeral",
         "chat.delete",
+        "chat.getPermalink",
         "reactions.add",
         "views.open",
         "conversations.info",
