@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-519",
-  "currentNode": "test-planning",
+  "currentNode": "design-approval",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -53,8 +53,16 @@
     },
     "test-planning": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-23T02:18:26+00:00",
+      "exitedAt": "2026-10-23T02:20:55+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "design-approval": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-23T02:20:55+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -267,7 +275,11 @@
     }
   },
   "forced": [],
-  "parked": null,
+  "parked": {
+    "node": "design-approval",
+    "reason": "awaiting a human",
+    "since": "2026-10-23T02:20:55+00:00"
+  },
   "completions": {
     "requirements-definition": {
       "at": "2026-10-23T01:58:27+00:00",
@@ -275,6 +287,10 @@
     },
     "design": {
       "at": "2026-10-23T02:18:26+00:00",
+      "by": "cli"
+    },
+    "test-planning": {
+      "at": "2026-10-23T02:20:55+00:00",
       "by": "cli"
     }
   },
