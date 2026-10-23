@@ -30,3 +30,6 @@ review and the `chat.getPermalink` row added to R2.2 during implementation — s
 was rebuilt from the current files and republished to the same URL on 2026-10-23. The
 "Spec explainer" tab already described the amendment; the "Requirements" tab now carries
 the current text. Same depth, same five questions.
+
+Republished again after abuse case 7 was added to the requirements at the security
+review (2026-10-23); the "Requirements" tab carries it.
