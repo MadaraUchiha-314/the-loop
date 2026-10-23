@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-498",
-  "currentNode": "capability-docs",
+  "currentNode": "human-approval",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -149,10 +149,34 @@
     },
     "capability-docs": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-23T16:53:24+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-10-23T16:53:57+00:00",
       "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-498/evidence/documentation.md)",
+      "forced": false
+    },
+    "reviewer-briefing": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-23T16:53:57+00:00",
+      "exitedAt": "2026-10-23T16:54:23+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "code-quiz": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-23T16:54:23+00:00",
+      "exitedAt": "2026-10-23T16:54:23+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "human-approval": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-23T16:54:23+00:00",
+      "exitedAt": "",
+      "lastBlock": "",
       "forced": false
     }
   },
@@ -362,7 +386,11 @@
     }
   },
   "forced": [],
-  "parked": null,
+  "parked": {
+    "node": "human-approval",
+    "reason": "awaiting a human",
+    "since": "2026-10-23T16:54:23+00:00"
+  },
   "completions": {
     "requirements-definition": {
       "at": "2026-10-23T16:15:56+00:00",
@@ -405,7 +433,11 @@
       "by": "cli"
     },
     "capability-docs": {
-      "at": "2026-10-23T16:53:28+00:00",
+      "at": "2026-10-23T16:53:57+00:00",
+      "by": "cli"
+    },
+    "reviewer-briefing": {
+      "at": "2026-10-23T16:54:23+00:00",
       "by": "cli"
     }
   },
