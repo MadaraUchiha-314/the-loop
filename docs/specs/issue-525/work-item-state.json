@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-525",
-  "currentNode": "critic-review",
+  "currentNode": "reviewer-briefing",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -125,8 +125,48 @@
     },
     "critic-review": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-27T16:15:30+00:00",
+      "exitedAt": "2026-10-27T16:23:33+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "security-review": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-27T16:23:33+00:00",
+      "exitedAt": "2026-10-27T16:23:33+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "code-explainer": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-27T16:23:33+00:00",
+      "exitedAt": "2026-10-27T16:23:33+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "evidence": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-27T16:23:33+00:00",
+      "exitedAt": "2026-10-27T16:23:33+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "capability-docs": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-27T16:23:33+00:00",
+      "exitedAt": "2026-10-27T16:23:33+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "reviewer-briefing": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-27T16:23:33+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -353,6 +393,10 @@
     },
     "verification": {
       "at": "2026-10-27T16:15:30+00:00",
+      "by": "cli"
+    },
+    "critic-review": {
+      "at": "2026-10-27T16:23:33+00:00",
       "by": "cli"
     }
   },
