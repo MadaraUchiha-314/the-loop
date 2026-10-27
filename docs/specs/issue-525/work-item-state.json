@@ -403,8 +403,8 @@
   "forced": [],
   "parked": {
     "node": "human-approval",
-    "reason": "awaiting a human",
-    "since": "2026-10-27T16:24:20+00:00"
+    "reason": "`classify-feedback` did not pass:\n- no authorized feedback yet",
+    "since": "2026-10-27T16:30:10+00:00"
   },
   "completions": {
     "implementation": {
