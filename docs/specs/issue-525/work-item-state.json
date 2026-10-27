@@ -522,7 +522,18 @@
   "effort": "medium",
   "claudeArtifact": false,
   "repos": [],
-  "pullRequests": [],
+  "pullRequests": [
+    {
+      "ref": "github:MadaraUchiha-314/the-loop#528",
+      "repository": "MadaraUchiha-314/the-loop",
+      "number": 528,
+      "url": "https://github.com/MadaraUchiha-314/the-loop/issues/528",
+      "stateDir": "pr-loops/MadaraUchiha-314__the-loop/pr-528",
+      "state": "open",
+      "linkedAt": "2026-10-27T16:24:10+00:00",
+      "linkedBy": "session"
+    }
+  ],
   "loop": "pdlc-work-item-loop",
   "phase": "verification"
 }
