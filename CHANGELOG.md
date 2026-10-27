@@ -1,3 +1,9 @@
+## v20.10.3 (2026-10-27)
+
+### Fix
+
+- **issue-524**: the CI gate never tells a review session to heal a check (#527)
+
 ## v20.10.2 (2026-10-27)
 
 ### Fix
