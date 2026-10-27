@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-524",
-  "currentNode": "implementation",
+  "currentNode": "critic-review",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -101,8 +101,32 @@
     },
     "implementation": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-27T14:31:25+00:00",
+      "exitedAt": "2026-10-27T14:49:49+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "verification": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-27T14:49:49+00:00",
+      "exitedAt": "2026-10-27T14:49:57+00:00",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required section is missing: Verification results (docs/specs/issue-524/evidence/verification.md)",
+      "forced": false
+    },
+    "self-review": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-27T14:49:57+00:00",
+      "exitedAt": "2026-10-27T14:49:57+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "critic-review": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-27T14:49:57+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -322,7 +346,16 @@
   },
   "forced": [],
   "parked": null,
-  "completions": {},
+  "completions": {
+    "implementation": {
+      "at": "2026-10-27T14:49:49+00:00",
+      "by": "cli"
+    },
+    "verification": {
+      "at": "2026-10-27T14:49:57+00:00",
+      "by": "cli"
+    }
+  },
   "skips": {
     "brainstorming": {
       "via": "selection",
@@ -433,5 +466,5 @@
   "repos": [],
   "pullRequests": [],
   "loop": "pdlc-work-item-loop",
-  "phase": "implementation"
+  "phase": "verification"
 }

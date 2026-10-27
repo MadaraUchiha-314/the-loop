@@ -8,7 +8,7 @@ workItem: "github:MadaraUchiha-314/the-loop#524"
 The spec chain was skipped by declaration at phase selection, so there is no testing plan;
 this record is the verification for the change as the issue states it.
 
-## What is proved
+## Verification results
 
 | Claim | Proved by |
 |-------|-----------|
