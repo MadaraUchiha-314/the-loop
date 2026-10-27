@@ -725,6 +725,8 @@ class _GateRuntime(_FakeRuntime):
         self.current = start_node if current is None else current
         #: what `advance` moves the pointer to, when the test wants the gate answered
         self.advances_to: str | None = None
+        #: the state's ``parked`` record, when the test parks the pointer
+        self.parked: dict | None = None
         self.graph = _GateGraph(start_node, actor)
 
     def work_item(self, item_id):
@@ -751,9 +753,7 @@ def _pointer(monkeypatch, runtime):
     monkeypatch.setattr(
         "the_loop.graph.state.WorkItemState.load",
         staticmethod(
-            lambda state_dir, item_id: _State(
-                runtime.current, getattr(runtime, "parked", None)
-            )
+            lambda state_dir, item_id: _State(runtime.current, runtime.parked)
         ),
     )
 
