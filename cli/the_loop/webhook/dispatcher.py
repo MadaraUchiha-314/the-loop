@@ -2554,8 +2554,9 @@ class Dispatcher:
         """The loop a work item walks, as far as the control record says: the
         operator's graph the arming command selected, the command's current
         binding, or the shipped loop the command means. The state file is not
-        consulted — at `work_item_start` there is no checkout yet."""
-        command = record.command if record is not None else START
+        consulted — at `work_item_start` there is no checkout yet. A paused or
+        resumed item answers with the command that armed it (issue-524)."""
+        command = (record.armed_by or record.command) if record is not None else START
         if record is not None and record.loop:
             return record.loop
         bound = self.config.control.bindings.get(command, "")

@@ -847,6 +847,10 @@ included, however empty the log was.
   recorded at all — a CLI `sessions start`, a spawn with no start required — so an
   overridden `start` applies however the item was armed. A declared graph that fails to
   load SHALL fail loudly; it SHALL NOT fall back to the default.
+- A `pause` or `resume` selects no loop, so its control record SHALL keep the arming
+  one (issue-524): the spawn command that armed the item as `armedBy`, and its `loop`.
+  The command that answers "which loop" is then `armedBy`, else the record's own
+  command. A `stop`, a teardown or a fresh arming carries nothing forward.
 - `guest: true` SHALL make the runtime a guest (`guestLoop`): the spec tree is kept out of
   git and `publish-artifact` posts the plan to the thread. The session-prompt lines tied to
   the shipped contribution and review loops (no outer loop; change no code) are not
@@ -1188,6 +1192,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-524 | A `pause` or `resume` stopped forgetting the loop (2026-10-27): each overwrote the control record, so a paused or resumed `review`/`contribute`/`do` item, and one armed onto an operator loop, answered "which loop" with the default. Those records now keep `armedBy` (the arming spawn command) and the selected `loop`, and `_loop_for_start` reads `armedBy` first. | [issue-524](https://github.com/MadaraUchiha-314/the-loop/issues/524) |
 | issue-500 | `record-feedback` stopped repeating its own heading (2026-10-26): a gate approved twice on one day appended a second identical `### <date> — <outcome>`, which MD024 rejects, and issue-496's locked requirements had to be silenced by hand. The hook now suffixes a repeat `(2)`, `(3)`, … — a counter rather than a time or a comment id, because only a counter is unique by construction and needs no new input; the first recording reads as it always did | [spec](../specs/issue-500/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/500) |
 | issue-498 | The phase-selection gate reads its reply with the control grammar (2026-10-23): `classify-phase-selection` releases only on a reply that opens with the execute keyword and opens no line with a different command (`parse_command` over the deployment's keywords, seeded as `controlKeywords`), so prose that mentions the keyword, or an ambiguous body the dispatcher now forwards, releases nothing. The checklist's help says to start the reply with the keyword | [spec](../specs/issue-498/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/498) |
 | issue-517 | A conversation can be handed off at the stage it reached (2026-10-21): a new node flag `requiresHandoff` (skipped `via: no-handoff` when state carries no `handoff`, never a checklist row) and a new first agent node `import-handoff`, so `phase-selection --selected-->` now leads to `import-handoff`, which leads to `brainstorming`. `Runtime.start` freezes the poller's record into state; the checklist unticks the phases before the record's `enter` and stamps `handoff: <url>` on those skips; the `import-handoff` hook checks each carried file and on a failure un-skips from its producing node up to `enter` (`handoffDemoted`). An approved-in-chat lock is recognised on re-entry by its recorded sha256 (`handoff.lockedSha256`); carried files reached through a symlink below the repository root fail; a claude.ai `spec-artifact` URL is adopted as `claudeArtifactUrl` at start. The phase-selection reply still authorizes the walk | [spec](../specs/issue-517/), [decision-150](../decisions/decision-150.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/517) |

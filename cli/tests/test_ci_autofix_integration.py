@@ -251,6 +251,28 @@ def test_a_review_session_is_not_told_to_heal_a_check(rig, events):
     assert [n for n, _ in events if n.startswith("ci.")] == []
 
 
+def test_a_paused_then_resumed_reviewer_is_still_a_reviewer(rig, events):
+    """
+    Scenario: pause and resume do not forget the review (issue-524, critic r1)
+      Given a review session on the pull request
+      When it is paused, a check fails, it is resumed, and a check fails again
+      Then neither failure reaches it nor spends an attempt
+      And both are recorded as ci-review-loop
+    """
+    dispatcher, tmux = rig(refs=(PR,))
+    reviewing(dispatcher)
+    dispatcher.control_store.record(PR, "pause", actor="octocat")
+    dispatcher.registry.pause(WorkItemRef.parse(PR))
+    dispatcher.handle(check_run_event(sha="a"))
+    dispatcher.control_store.record(PR, "resume", actor="octocat")
+    dispatcher.registry.resume(WorkItemRef.parse(PR))
+    dispatcher.handle(check_run_event(sha="b"))
+    assert settle(dispatcher, tmux, 0) == []
+    assert len(dropped(events, "ci-review-loop")) == 2
+    assert [n for n, _ in events if n.startswith("ci.")] == []
+    assert dispatcher.control_store.get(PR).armed_by == "review"
+
+
 def test_a_reviewer_beside_the_author_leaves_the_heal_to_the_author(rig, events):
     """
     Scenario: the author heals, the reviewer is left out (issue-524)

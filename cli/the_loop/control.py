@@ -602,6 +602,11 @@ class ControlRecord:
     # Resolved against the operator's CURRENT declaration when read, never
     # trusted as written: a portable record is a file like any other.
     loop: str = ""
+    # The spawn command that armed the work item (issue-524) — `review`,
+    # `contribute`, … — carried through a later `pause` or `resume`, which
+    # would otherwise overwrite the only record of which loop the session
+    # walks. "" on a record its own command armed, and in every older record.
+    armed_by: str = ""
 
     def to_dict(self) -> dict:
         data = {
@@ -615,6 +620,8 @@ class ControlRecord:
         }
         if self.loop:
             data["loop"] = self.loop
+        if self.armed_by:
+            data["armedBy"] = self.armed_by
         return data
 
     @classmethod
@@ -628,6 +635,7 @@ class ControlRecord:
             note=str(data.get("note") or ""),
             instance=str(data.get("instance") or ""),
             loop=str(data.get("loop") or ""),
+            armed_by=str(data.get("armedBy") or ""),
         )
 
 
@@ -744,11 +752,21 @@ class ControlStore:
         """Persist ``command`` as the work item's current control state.
 
         ``loop`` is the operator's own loop an arming command selected
-        (issue-343), carried from :attr:`ControlResult.loop`.
+        (issue-343), carried from :attr:`ControlResult.loop`. A ``pause`` or
+        ``resume`` keeps the loop the item was armed with — its spawn command
+        and selected loop — because neither command selects one (issue-524).
         """
         if command not in COMMANDS:
             raise ValueError(f"unknown control command {command!r}")
         item = _as_ref(work_item)
+        armed_by = ""
+        if command in (PAUSE, RESUME):
+            previous = self.get(item)
+            if previous is not None:
+                armed_by = previous.armed_by or (
+                    previous.command if previous.command in SPAWN_COMMANDS else ""
+                )
+                loop = loop or previous.loop
         record = ControlRecord(
             ref=item.ref,
             command=command,
@@ -758,6 +776,7 @@ class ControlStore:
             note=note,
             instance=instance,
             loop=loop,
+            armed_by=armed_by,
         )
         self.store.write_section(item, CONTROL, record.to_dict())
         logger.info(

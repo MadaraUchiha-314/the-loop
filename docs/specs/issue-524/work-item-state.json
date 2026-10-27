@@ -128,7 +128,7 @@
       "outcome": "",
       "enteredAt": "2026-10-27T14:49:57+00:00",
       "exitedAt": "",
-      "lastBlock": "",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-524/evidence/critic-review.md)",
       "forced": false
     }
   },
@@ -464,7 +464,18 @@
   "effort": "medium",
   "claudeArtifact": false,
   "repos": [],
-  "pullRequests": [],
+  "pullRequests": [
+    {
+      "ref": "github:MadaraUchiha-314/the-loop#527",
+      "repository": "MadaraUchiha-314/the-loop",
+      "number": 527,
+      "url": "https://github.com/MadaraUchiha-314/the-loop/issues/527",
+      "stateDir": "pr-loops/MadaraUchiha-314__the-loop/pr-527",
+      "state": "open",
+      "linkedAt": "2026-10-27T14:50:21+00:00",
+      "linkedBy": "session"
+    }
+  ],
   "loop": "pdlc-work-item-loop",
   "phase": "verification"
 }
