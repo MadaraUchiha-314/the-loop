@@ -428,3 +428,68 @@ def test_a_graph_that_has_started_reports_its_real_node(tmp_path, checkout, gith
 
     assert ctx is not None and ctx.current_node == "phase-selection"
     assert ctx.status != "pending"
+
+
+# -- an event never claims an agent node (issue-525) -----------------------------
+
+
+def _check_failed():
+    return RoutedEvent(
+        event="check_run",
+        action="completed",
+        delivery_id="d-ci",
+        work_items=[REF],
+        payload={"check_run": {"name": "build", "conclusion": "failure"}},
+    )
+
+
+def test_an_unrelated_event_does_not_end_a_review_round(tmp_path, checkout, github):
+    """
+    Feature: Ingress-driven process graph
+    Scenario: A CI event during a review round leaves the round open
+      Given a review-loop work item standing on its `review` step
+      When a CI check fails on the pull request before the reviewer has posted
+      Then the pointer stays on `review`
+      And no "ready for review" comment is posted
+
+    Requirement: issue-525
+    """
+    spec = checkout / "docs" / "specs" / "issue-113"
+    state = WorkItemState.load(spec, "issue-113")
+    state.loop = "pdlc-review-loop"
+    state.enter("review")
+    state.save(spec)
+
+    _dispatcher(tmp_path).graphlink.on_event(REF, str(checkout), _check_failed())
+
+    after = _state(checkout)
+    assert after.current_node == "review"
+    assert after.record("review").outcome == ""
+    assert github.posted == []
+
+
+def test_an_unrelated_event_spends_no_attempt_on_an_agent_node(
+    tmp_path, checkout, github
+):
+    """
+    Feature: Ingress-driven process graph
+    Scenario: An event does not run an agent node's exit chain
+      Given a work item standing on `implementation` with its tasks unticked
+      When a CI check fails on its pull request
+      Then the pointer stays on `implementation` with no block recorded
+
+    Requirement: issue-525
+    """
+    spec = checkout / "docs" / "specs" / "issue-113"
+    (spec / "tasks.md").write_text("# Tasks\n\n## Task list\n\n- [ ] T1\n")
+    state = WorkItemState.load(spec, "issue-113")
+    state.enter("implementation")
+    state.save(spec)
+    attempts = _state(checkout).record("implementation").attempts
+
+    _dispatcher(tmp_path).graphlink.on_event(REF, str(checkout), _check_failed())
+
+    after = _state(checkout)
+    assert after.current_node == "implementation"
+    assert after.record("implementation").attempts == attempts
+    assert after.record("implementation").last_block == ""
