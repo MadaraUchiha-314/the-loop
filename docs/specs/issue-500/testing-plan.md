@@ -54,14 +54,16 @@ credentials.
 
 ## Verification activities
 
-- [ ] T2 — the new scenario fails on the pre-fix hook and passes after
-- [ ] T11 — markdownlint reports 0 issues on a twice-recorded artifact
-- [ ] T12 — `make check` passes
+- [x] T2 — the new scenario fails on the pre-fix hook and passes after
+- [x] T11 — markdownlint reports 0 issues on a twice-recorded artifact
+- [x] T12 — `make check` passes
 
 ## Verification results
 
-_Not yet executed._
-
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T2 | `uv run pytest cli/tests/test_graph_integration.py` | the new scenario failed on the pre-fix hook (second heading repeated the first); after the fix 30 passed | [integration.md](evidence/integration.md) |
+| T11 | the real gate chain records three approvals into a scratch artifact; `npx --yes markdownlint-cli2@0.18.1` with the repository's config | 0 errors; the same artifact with the suffixes removed gives two MD024 errors | [markdownlint.md](evidence/markdownlint.md) |
+| T12 | `make check`, with the daemon's `THE_LOOP_*` variables unset | exit 0: lint clean, 6789 passed | [lint-and-typecheck.md](evidence/lint-and-typecheck.md) |
+
+**Not executed:** none. T12's first run inside the session failed 22 unrelated tests that read the operator's live config through inherited environment variables; the note in the evidence explains it.
