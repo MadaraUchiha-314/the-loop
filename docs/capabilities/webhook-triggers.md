@@ -466,6 +466,14 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   The counts live in the dispatcher's memory (bounded at 1,024 checks), survive a
   `reload` and not a restart. An unmatched CI event takes the unmatched path unchanged,
   and `routing.ci.autofix: false` delivers every CI event as it came, as before.
+- **A reviewer is never told to heal a check** (issue-524). WHILE `routing.ci.autofix`
+  is true, WHEN a CI event matches a session walking the review loop (the loop its
+  work-item state records, else the one its control record selected) THEN the CI gate
+  SHALL NOT deliver it to that session and SHALL record `dispatch.dropped` with reason
+  `ci-review-loop` for it. The gate SHALL judge the event against the remaining
+  (authoring) sessions only; WHEN no session remains THEN the event SHALL be settled as
+  `ci-review-loop` and SHALL spend no attempt of the budget. A paused or resumed review
+  session is still a review session: its control record keeps `armedBy: review`.
 - **The poller reads CI for a poll-only installation** (issue-462). WHILE
   `polling.ci.enabled` is true (the default), WHEN a cycle starts and
   `polling.ci.intervalSeconds` (default 300, at least 60; its own clock, never faster
@@ -1174,6 +1182,7 @@ provider, the webhook doorbell, the allow-list by provider)
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-524 | A reviewer is never told to heal a check (2026-10-27): the CI gate used to attach the "make the smallest fix … then push" section to whichever session a CI event matched, a `the-loop review` session included — one told by its own prompt to change no code — and each red check spent an attempt nobody would use. The gate now leaves every session walking the review loop out of a CI event (`dispatch.dropped` reason `ci-review-loop`) and judges the event against the authoring sessions alone; with none left, the event is settled and the budget untouched. A `pause` or `resume` control record now keeps the command that armed the item (`armedBy`) and its loop, so a paused or resumed reviewer is still known as one (critic round 1). | [issue-524](https://github.com/MadaraUchiha-314/the-loop/issues/524) |
 | issue-498 | A control keyword counts only where a comment opens with it (2026-10-23): `parse_command` anchors each keyword to the start of the body, and a further one to the start of a line, so a keyword mentioned in prose, backticks, a quote or a code block is conversation. A comment opening lines with two different commands executes neither, emits `control.ambiguous` and is routed as conversation; the settled outcome `control-ambiguous` is retired | [spec](../specs/issue-498/), [learning-018](../learnings/learning-018.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/498) |
 | issue-517 | Handed-off issues (2026-10-21): on the arming path, for a GitHub issue not yet on the graph, the dispatcher lists comments once and admits the newest v1 handoff record from an authorized, non-empty author (the self-marker grants nothing), prepares the workspace on the record's `the-loop/` spec branch, and passes the record to `Runtime.start`. A Jira item labelled `the-loop-mirror` is refused at arming (`arm.refused reason=mirror`, settled `mirror-refused`). New events `handoff.honoured`, `handoff.ignored`, `handoff.unreadable` | [spec](../specs/issue-517/), [process-graph](process-graph.md), [decision-150](../decisions/decision-150.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/517) |
 | issue-496 | The gateway (2026-10-19): the receiver's `verify_signature` and the poller's providers are reused by the gateway's adapters; the gateway client builds the router and dispatcher once (`webhook/daemon._build_ingress`, which now exposes its router, reload and doorbells) and feeds them from its queue; outcomes commit back; the inferred PR linkage is published as a binding | [spec](../specs/issue-496/), [gateway](gateway.md) |

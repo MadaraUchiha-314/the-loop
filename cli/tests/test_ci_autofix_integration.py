@@ -48,22 +48,24 @@ def events(monkeypatch):
 
 @pytest.fixture
 def rig(tmp_path):
-    def build(ci: CiConfig = CiConfig()):
+    def build(ci: CiConfig = CiConfig(), refs=(REF,)):
         tmux = FakeTmux()
         registry = SessionRegistry(tmp_path / "sessions.json")
-        registry.register(
-            Session(
-                work_item=WorkItemRef.parse(REF),
-                harness="claude",
-                harness_session_id="sess-1",
-                cwd=str(tmp_path),
+        for n, ref in enumerate(refs, 1):
+            registry.register(
+                Session(
+                    work_item=WorkItemRef.parse(ref),
+                    harness="claude",
+                    harness_session_id=f"sess-{n}",
+                    cwd=str(tmp_path),
+                )
             )
-        )
         dispatcher = Dispatcher(
             registry=registry,
             adapters={"claude": StubInteractiveAdapter()},
             config=RoutingConfig(
                 registry_dir=str(tmp_path),
+                portable_dir=str(tmp_path / "portable"),
                 control=ControlConfig(require_start_command=False),
                 ci=ci,
             ),
@@ -73,8 +75,8 @@ def rig(tmp_path):
 
     built = []
 
-    def make(ci: CiConfig = CiConfig()):
-        pair = build(ci)
+    def make(ci: CiConfig = CiConfig(), refs=(REF,)):
+        pair = build(ci, refs)
         built.append(pair[0])
         return pair
 
@@ -222,6 +224,69 @@ def test_a_pass_resets_the_attempts(rig, events):
     prompts = settle(dispatcher, tmux, 2)
     assert len(prompts) == 2
     assert "attempt 1 of 1" in prompts[0] and "attempt 1 of 1" in prompts[1]
+
+
+def reviewing(dispatcher, ref=PR):
+    """Arm ``ref`` as a review, as `the-loop review` on the PR records it."""
+    dispatcher.control_store.record(ref, "review", actor="octocat")
+
+
+def test_a_review_session_is_not_told_to_heal_a_check(rig, events):
+    """
+    Scenario: a reviewer is never asked to push a fix (issue-524)
+      Given the only session the pull request matches walks the review loop
+      When a check run on that pull request completes as a failure
+      Then nothing reaches the reviewer
+      And the drop is recorded as ci-review-loop and settled
+      And no attempt is spent
+    """
+    dispatcher, tmux = rig(refs=(PR,))
+    reviewing(dispatcher)
+    event = check_run_event()
+    dispatcher.handle(event)
+    assert settle(dispatcher, tmux, 0) == []
+    (drop,) = dropped(events, "ci-review-loop")
+    assert drop["work_item"] == PR and drop["check"] == "test"
+    assert dispatcher.delivery_outcome(event.delivery_id) == "ci-review-loop"
+    assert [n for n, _ in events if n.startswith("ci.")] == []
+
+
+def test_a_paused_then_resumed_reviewer_is_still_a_reviewer(rig, events):
+    """
+    Scenario: pause and resume do not forget the review (issue-524, critic r1)
+      Given a review session on the pull request
+      When it is paused, a check fails, it is resumed, and a check fails again
+      Then neither failure reaches it nor spends an attempt
+      And both are recorded as ci-review-loop
+    """
+    dispatcher, tmux = rig(refs=(PR,))
+    reviewing(dispatcher)
+    dispatcher.control_store.record(PR, "pause", actor="octocat")
+    dispatcher.registry.pause(WorkItemRef.parse(PR))
+    dispatcher.handle(check_run_event(sha="a"))
+    dispatcher.control_store.record(PR, "resume", actor="octocat")
+    dispatcher.registry.resume(WorkItemRef.parse(PR))
+    dispatcher.handle(check_run_event(sha="b"))
+    assert settle(dispatcher, tmux, 0) == []
+    assert len(dropped(events, "ci-review-loop")) == 2
+    assert [n for n, _ in events if n.startswith("ci.")] == []
+    assert dispatcher.control_store.get(PR).armed_by == "review"
+
+
+def test_a_reviewer_beside_the_author_leaves_the_heal_to_the_author(rig, events):
+    """
+    Scenario: the author heals, the reviewer is left out (issue-524)
+      Given the work item's session and a review session on its pull request
+      When a check run on that pull request completes as a failure
+      Then only the work item's session receives it, as attempt 1 of 3
+      And the reviewer's drop is recorded as ci-review-loop
+    """
+    dispatcher, tmux = rig(refs=(REF, PR))
+    reviewing(dispatcher)
+    dispatcher.handle(check_run_event())
+    settle(dispatcher, tmux, 1)
+    assert [(ref, "attempt 1 of 3" in p) for ref, p in tmux.delivers] == [(REF, True)]
+    assert [d["work_item"] for d in dropped(events, "ci-review-loop")] == [PR]
 
 
 def test_with_autofix_off_every_ci_event_is_delivered_as_before(rig, events):

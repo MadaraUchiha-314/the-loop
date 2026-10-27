@@ -239,6 +239,10 @@ with [`the-loop pr checks`](/cli/commands/pr) before it changes anything. Queued
 passing, cancelled and aggregate events (`check_suite`, `workflow_run`) are not delivered;
 each is recorded as `dispatch.dropped` with reason `ci-not-actionable`.
 
+A session started with `the-loop review` never receives a CI event through the gate: a
+reviewer changes no code, so it is not asked to heal a check, and its failures spend no
+attempt. Each is recorded as `dispatch.dropped` with reason `ci-review-loop` (issue-524).
+
 The gate needs `check_run` in the webhook's events, and `status` too for CI that reports
 commit statuses. Both are in the receiver's default
 [`events`](/config/cli/webhook-options). A poll-only installation gets the same events

@@ -578,3 +578,34 @@ def test_the_paper_trail_comment_spells_a_channel_without_an_at_prefix():
     assert body.startswith("the-loop add-channel slack@C0TMP375")
     assert "@slack@" not in body
     assert is_self_authored(body)
+
+
+def _armed(store):
+    record = store.get(REF)
+    assert record is not None
+    return record
+
+
+def test_pause_and_resume_keep_the_command_that_armed_the_item(tmp_path):
+    """issue-524: neither selects a loop, so they carry the arming one forward."""
+    store = ControlStore(tmp_path / "control")
+    store.record(REF, "review", loop="my-review")
+    store.record(REF, "pause")
+    store.record(REF, "resume")
+    record = _armed(store)
+    assert (record.command, record.armed_by, record.loop) == (
+        "resume",
+        "review",
+        "my-review",
+    )
+    assert _armed(ControlStore(tmp_path / "control")).to_dict()["armedBy"] == "review"
+
+
+def test_a_stop_or_a_fresh_arming_carries_nothing_forward(tmp_path):
+    store = ControlStore(tmp_path / "control")
+    store.record(REF, "review")
+    store.record(REF, "stop")
+    assert _armed(store).armed_by == ""
+    store.record(REF, "do")
+    store.record(REF, "start")
+    assert _armed(store).armed_by == "" and "armedBy" not in _armed(store).to_dict()

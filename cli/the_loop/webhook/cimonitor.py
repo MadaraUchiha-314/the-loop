@@ -47,6 +47,7 @@ __all__ = [
     "KIND_SUCCESS",
     "REASON_EXHAUSTED",
     "REASON_NOT_ACTIONABLE",
+    "REASON_REVIEW_LOOP",
     "classify",
     "render_section",
 ]
@@ -58,9 +59,12 @@ KIND_FAILURE = "failure"
 KIND_SUCCESS = "success"
 KIND_IGNORED = "ignored"
 
-#: The two drop reasons, which are also the dispatcher's settled outcomes.
+#: The drop reasons, which are also the dispatcher's settled outcomes.
 REASON_NOT_ACTIONABLE = "ci-not-actionable"
 REASON_EXHAUSTED = "ci-autofix-exhausted"
+#: A CI event kept from a session walking the review loop (issue-524): a reviewer
+#: changes no code, so it is never asked to heal a check.
+REASON_REVIEW_LOOP = "ci-review-loop"
 
 DEFAULT_MAX_ATTEMPTS = 3
 #: The schema's bounds for ``routing.ci.maxAttempts``.
