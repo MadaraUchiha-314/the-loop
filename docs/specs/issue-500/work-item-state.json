@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-500",
-  "currentNode": "security-review",
+  "currentNode": "reviewer-briefing",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -133,8 +133,40 @@
     },
     "security-review": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-27T01:43:07+00:00",
+      "exitedAt": "2026-10-27T01:43:56+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "code-explainer": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-27T01:43:56+00:00",
+      "exitedAt": "2026-10-27T01:43:56+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "evidence": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-27T01:43:56+00:00",
+      "exitedAt": "2026-10-27T01:44:31+00:00",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-500/evidence/final-validation.md)",
+      "forced": false
+    },
+    "capability-docs": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-27T01:44:31+00:00",
+      "exitedAt": "2026-10-27T01:44:31+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "reviewer-briefing": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-27T01:44:31+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -381,6 +413,18 @@
     },
     "self-review": {
       "at": "2026-10-27T01:43:07+00:00",
+      "by": "cli"
+    },
+    "security-review": {
+      "at": "2026-10-27T01:43:56+00:00",
+      "by": "cli"
+    },
+    "evidence": {
+      "at": "2026-10-27T01:44:31+00:00",
+      "by": "cli"
+    },
+    "capability-docs": {
+      "at": "2026-10-27T01:44:31+00:00",
       "by": "cli"
     }
   },
