@@ -1732,6 +1732,8 @@ def test_the_settled_vocabulary_is_exactly_the_thirteen_documented_outcomes():
         # issue-462: a CI event the CI gate kept from the session
         "ci-not-actionable",
         "ci-autofix-exhausted",
+        # issue-524: a CI event whose every matched session is a reviewer
+        "ci-review-loop",
     )
     assert SETTLED_SUPPRESSED == (
         "awaiting-start",

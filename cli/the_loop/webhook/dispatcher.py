@@ -112,7 +112,11 @@ from ..reactions import (
     ReactionConfig,
 )
 from ..runner import SESSION_LIVE, TmuxRunner
-from ..graph.model import LOOP_FOR_CONTROL_COMMAND, PDLC_WORK_ITEM_LOOP
+from ..graph.model import (
+    LOOP_FOR_CONTROL_COMMAND,
+    PDLC_REVIEW_LOOP,
+    PDLC_WORK_ITEM_LOOP,
+)
 from ..graph.state import WorkItemState
 from ..lifecycle import (
     InputReceived,
@@ -139,6 +143,7 @@ from ..workspace import RepoTarget, Workspace, WorkspaceError, repo_target_from_
 from .cimonitor import (
     REASON_EXHAUSTED,
     REASON_NOT_ACTIONABLE,
+    REASON_REVIEW_LOOP,
     CiBudget,
     CiConfig,
     classify,
@@ -202,9 +207,10 @@ MIRROR_LABEL = "the-loop-mirror"
 # never retried into a different answer.
 SETTLED_OUT_OF_SCOPE = SCOPE_REFUSALS
 # A CI event the CI gate kept from the session on purpose (issue-462): one that
-# needs no action, or a failure of a check whose attempts are spent. Final, and
-# silent — a CI event has no comment to react to, so no ACK_STATES entry.
-SETTLED_CI = (REASON_NOT_ACTIONABLE, REASON_EXHAUSTED)
+# needs no action, or a failure of a check whose attempts are spent, or one whose
+# every matched session is a reviewer (issue-524). Final, and silent — a CI
+# event has no comment to react to, so no ACK_STATES entry.
+SETTLED_CI = (REASON_NOT_ACTIONABLE, REASON_EXHAUSTED, REASON_REVIEW_LOOP)
 SETTLED_OUTCOMES = (
     SETTLED_SUPPRESSED
     + (
@@ -1456,7 +1462,7 @@ class Dispatcher:
             gated = self._ci_gate(routed, matched)
             if gated is None:
                 return
-            routed = gated
+            routed, matched = gated
         enqueued = paused = False
         for session in matched:
             if session.is_paused:
@@ -1509,9 +1515,16 @@ class Dispatcher:
 
     def _ci_gate(
         self, routed: RoutedEvent, matched: List[Session]
-    ) -> Optional[RoutedEvent]:
-        """Judge a CI event: the event to enqueue, or ``None`` when it was kept
-        from the session (issue-462). A non-CI event is returned as it is.
+    ) -> Optional[Tuple[RoutedEvent, List[Session]]]:
+        """Judge a CI event: the event to enqueue and the sessions to enqueue it
+        to, or ``None`` when it was kept from every session (issue-462). A
+        non-CI event is returned as it is, with every matched session.
+
+        A session walking the review loop is left out of every CI event
+        (issue-524): it was told to change no code, so the heal section — "make
+        the smallest fix … then push" — is an instruction it must refuse, and a
+        failure observed for it alone would spend an attempt nobody will use.
+        So the budget only sees an event some authoring session will act on.
 
         The budget's scope is the pull request the payload names, resolved
         against the refs the router already built (so it carries the host), or
@@ -1519,7 +1532,29 @@ class Dispatcher:
         """
         signal = classify(routed.event, routed.payload)
         if signal is None:
-            return routed
+            return routed, matched
+        authors = []
+        for session in matched:
+            if not self._reviews(session):
+                authors.append(session)
+                continue
+            logger.info(
+                "not delivering %s to %s: a review session changes no code",
+                routed.event,
+                session.work_item.ref,
+            )
+            eventlog.emit(
+                "dispatch.dropped",
+                reason=REASON_REVIEW_LOOP,
+                work_item=session.work_item.ref,
+                gh_event=routed.event,
+                check=signal.name or None,
+                delivery_id=routed.delivery_id or None,
+            )
+        if not authors:
+            self._settle(routed, REASON_REVIEW_LOOP)
+            return None
+        matched = authors
         repository = str(
             (routed.payload.get("repository") or {}).get("full_name") or ""
         )
@@ -1566,9 +1601,24 @@ class Dispatcher:
             head_sha=signal.head_sha,
             delivery_id=routed.delivery_id or None,
         )
-        return dataclasses.replace(
-            routed, ci_note=render_section(signal, verdict, limit, pull_request)
+        return (
+            dataclasses.replace(
+                routed, ci_note=render_section(signal, verdict, limit, pull_request)
+            ),
+            matched,
         )
+
+    def _reviews(self, session: Session) -> bool:
+        """Whether ``session`` walks the review loop (issue-524).
+
+        The loop its checkout's state records, when it can say; else the one
+        its control record selected — a review is recorded against the pull
+        request it reviews (issue-279), which is the session's own ref.
+        """
+        loop = self._loop_of(session.work_item, session.cwd) or self._loop_for_start(
+            self.control_store.get(session.work_item)
+        )
+        return loop == PDLC_REVIEW_LOOP
 
     # -- scope (issue-322) --------------------------------------------------------
 
