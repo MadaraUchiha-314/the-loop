@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-524",
-  "currentNode": "critic-review",
+  "currentNode": "reviewer-briefing",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -125,10 +125,50 @@
     },
     "critic-review": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-27T14:49:57+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-10-27T14:57:27+00:00",
       "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-524/evidence/critic-review.md)",
+      "forced": false
+    },
+    "security-review": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-27T14:57:27+00:00",
+      "exitedAt": "2026-10-27T14:57:27+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "code-explainer": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-27T14:57:27+00:00",
+      "exitedAt": "2026-10-27T14:57:27+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "evidence": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-27T14:57:27+00:00",
+      "exitedAt": "2026-10-27T14:57:42+00:00",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-524/evidence/final-validation.md)",
+      "forced": false
+    },
+    "capability-docs": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-27T14:57:42+00:00",
+      "exitedAt": "2026-10-27T14:57:43+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "reviewer-briefing": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-27T14:57:43+00:00",
+      "exitedAt": "",
+      "lastBlock": "",
       "forced": false
     }
   },
@@ -353,6 +393,18 @@
     },
     "verification": {
       "at": "2026-10-27T14:49:57+00:00",
+      "by": "cli"
+    },
+    "critic-review": {
+      "at": "2026-10-27T14:57:27+00:00",
+      "by": "cli"
+    },
+    "evidence": {
+      "at": "2026-10-27T14:57:42+00:00",
+      "by": "cli"
+    },
+    "capability-docs": {
+      "at": "2026-10-27T14:57:43+00:00",
       "by": "cli"
     }
   },
