@@ -1055,8 +1055,10 @@ reader.
 - **An event never claims an agent node** (issue-525): WHEN an event reaches a work item
   (or a PR's inner loop) whose pointer stands on a node whose actor is not `human` THEN
   the link SHALL NOT evaluate that node's exit chain; the node's session claims it with
-  `the-loop graph complete`. The event is still delivered. An unplaced pointer, or one
-  the link cannot read, advances as before.
+  `the-loop graph complete`. The event is still delivered. An agent node parked on a
+  wait its own chain returned (a claimed `implementation` held by `await-inner-loops`)
+  is still re-evaluated, since an event may be what it waits on. An unplaced pointer, or
+  one the link cannot read, advances as before.
 - **Advancement fails closed; delivery fails open** (issue-148). No input — comment
   text, completion claim, payload — moves the pointer except through an exit chain over
   checked-in artifacts or `classify-feedback` on an authorized author's text. Any
@@ -1197,7 +1199,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-525 | An unrelated event stopped ending a review round (2026-10-27): `on_event` and `on_pr_event` ran `advance` on every event, so the review loop's `review` step, whose exit chain is empty and always passes, moved to `follow-up` on the first CI check after the spawn, announcing a round nobody had posted. A node with a real chain spent an attempt instead. The link now evaluates only human nodes on an event, the rule the spawn path already kept; agent nodes move only on their session's `graph complete` | [issue](https://github.com/MadaraUchiha-314/the-loop/issues/525) |
+| issue-525 | An unrelated event stopped ending a review round (2026-10-27): `on_event` and `on_pr_event` ran `advance` on every event, so the review loop's `review` step, whose exit chain is empty and always passes, moved to `follow-up` on the first CI check after the spawn, announcing a round nobody had posted. A node with a real chain spent an attempt instead. The link now evaluates only human nodes on an event, the rule the spawn path already kept; an agent node moves on its session's `graph complete`, or on an event once its own chain parked it on a wait | [issue](https://github.com/MadaraUchiha-314/the-loop/issues/525) |
 | issue-524 | A `pause` or `resume` stopped forgetting the loop (2026-10-27): each overwrote the control record, so a paused or resumed `review`/`contribute`/`do` item, and one armed onto an operator loop, answered "which loop" with the default. Those records now keep `armedBy` (the arming spawn command) and the selected `loop`, and `_loop_for_start` reads `armedBy` first. | [issue-524](https://github.com/MadaraUchiha-314/the-loop/issues/524) |
 | issue-500 | `record-feedback` stopped repeating its own heading (2026-10-26): a gate approved twice on one day appended a second identical `### <date> — <outcome>`, which MD024 rejects, and issue-496's locked requirements had to be silenced by hand. The hook now suffixes a repeat `(2)`, `(3)`, … — a counter rather than a time or a comment id, because only a counter is unique by construction and needs no new input; the first recording reads as it always did | [spec](../specs/issue-500/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/500) |
 | issue-498 | The phase-selection gate reads its reply with the control grammar (2026-10-23): `classify-phase-selection` releases only on a reply that opens with the execute keyword and opens no line with a different command (`parse_command` over the deployment's keywords, seeded as `controlKeywords`), so prose that mentions the keyword, or an ambiguous body the dispatcher now forwards, releases nothing. The checklist's help says to start the reply with the keyword | [spec](../specs/issue-498/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/498) |

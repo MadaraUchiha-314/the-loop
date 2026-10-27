@@ -493,3 +493,29 @@ def test_an_unrelated_event_spends_no_attempt_on_an_agent_node(
     assert after.current_node == "implementation"
     assert after.record("implementation").attempts == attempts
     assert after.record("implementation").last_block == ""
+
+
+def test_a_claimed_node_waiting_on_inner_loops_still_hears_events(
+    tmp_path, checkout, github
+):
+    """
+    Feature: Ingress-driven process graph
+    Scenario: An agent node parked by its own chain is re-evaluated on an event
+      Given a work item whose claimed `implementation` was parked by its chain
+      When an event arrives
+      Then the chain is evaluated again
+
+    Requirement: issue-525 (critic review: await-inner-loops keeps unblocking)
+    """
+    spec = checkout / "docs" / "specs" / "issue-113"
+    (spec / "tasks.md").write_text("# Tasks\n\n## Task list\n\n- [ ] T1\n")
+    state = WorkItemState.load(spec, "issue-113")
+    state.enter("implementation")
+    state.park("implementation", "waiting for 1 inner loop(s) to finish: pr-7")
+    state.save(spec)
+
+    _dispatcher(tmp_path).graphlink.on_event(REF, str(checkout), _check_failed())
+
+    assert _state(checkout).record("implementation").last_block != "", (
+        "the chain ran: the unticked task now blocks it"
+    )

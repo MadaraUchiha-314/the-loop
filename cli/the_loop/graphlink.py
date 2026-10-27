@@ -1343,9 +1343,13 @@ class GraphLink:
 
         Any actor but ``human`` counts — an ``agent`` node is claimed by its
         session and a ``code`` node is entered directly by the-loop; neither is
-        answered by an event. Anything unreadable, and a pointer not yet placed,
-        answers ``""``: the advance then runs exactly as it did before
-        issue-525, and the runtime's own lock and chain stay the judges.
+        answered by an event. One exception: an agent node **parked** on a wait
+        its own chain returned. Entering a node clears ``parked``, so a park on
+        it means the chain already ran (a claim, then ``await-inner-loops``
+        waiting on a PR) and is waiting on the world, which an event may have
+        changed. Anything unreadable, and a pointer not yet placed, answers
+        ``""``: the advance then runs exactly as it did before issue-525, and
+        the runtime's own lock and chain stay the judges.
         """
         from .graph.state import WorkItemState
 
@@ -1354,10 +1358,12 @@ class GraphLink:
             state_dir = (
                 rt.state_dir(item) if hasattr(rt, "state_dir") else item.spec_dir
             )
-            current = WorkItemState.load(state_dir, item_id).current_node
-            if not current:
+            state = WorkItemState.load(state_dir, item_id)
+            current = state.current_node
+            if not current or rt.graph.node(current).actor == "human":
                 return ""
-            return "" if rt.graph.node(current).actor == "human" else current
+            parked = state.parked if isinstance(state.parked, dict) else {}
+            return "" if parked.get("node") == current else current
         except Exception as exc:  # noqa: BLE001 — a fake runtime, a vanished node
             logger.debug("could not read %s's current node: %s", item_id, exc)
             return ""

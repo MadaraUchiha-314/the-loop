@@ -744,12 +744,17 @@ def _pointer(monkeypatch, runtime):
     """Make WorkItemState.load report the fake runtime's pointer."""
 
     class _State:
-        def __init__(self, node):
+        def __init__(self, node, parked):
             self.current_node = node
+            self.parked = parked
 
     monkeypatch.setattr(
         "the_loop.graph.state.WorkItemState.load",
-        staticmethod(lambda state_dir, item_id: _State(runtime.current)),
+        staticmethod(
+            lambda state_dir, item_id: _State(
+                runtime.current, getattr(runtime, "parked", None)
+            )
+        ),
     )
 
 
@@ -941,6 +946,23 @@ def test_a_pr_event_does_not_evaluate_an_agent_node(repo, monkeypatch):
     _pointer(monkeypatch, runtime)
     pr = WorkItemRef.parse("github:octo/repo#7")
     _link(repo, runtime).on_pr_event(REF, pr, str(repo), _comment_event())
+    assert runtime.advanced == []
+
+
+def test_an_event_re_evaluates_an_agent_node_its_own_chain_parked(repo, monkeypatch):
+    """A claimed `implementation` that `await-inner-loops` parked waits on the
+    world, not on its session: an event may be what changed it."""
+    runtime = _GateRuntime(actor="agent", current="implementation")
+    runtime.parked = {"node": "implementation", "reason": "waiting for 1 inner loop"}
+    _pointer(monkeypatch, runtime)
+    _link(repo, runtime).on_event(REF, str(repo), _comment_event())
+    assert len(runtime.advanced) == 1
+
+
+def test_a_code_node_is_not_evaluated_on_an_event(repo, monkeypatch):
+    runtime = _GateRuntime(actor="code", current="cleanup")
+    _pointer(monkeypatch, runtime)
+    _link(repo, runtime).on_event(REF, str(repo), _comment_event())
     assert runtime.advanced == []
 
 

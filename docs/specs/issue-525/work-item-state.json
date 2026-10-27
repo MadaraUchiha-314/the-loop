@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-525",
-  "currentNode": "verification",
+  "currentNode": "critic-review",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -109,8 +109,24 @@
     },
     "verification": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-27T16:15:16+00:00",
+      "exitedAt": "2026-10-27T16:15:30+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "self-review": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-27T16:15:30+00:00",
+      "exitedAt": "2026-10-27T16:15:30+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "critic-review": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-27T16:15:30+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -333,6 +349,10 @@
   "completions": {
     "implementation": {
       "at": "2026-10-27T16:15:16+00:00",
+      "by": "cli"
+    },
+    "verification": {
+      "at": "2026-10-27T16:15:30+00:00",
       "by": "cli"
     }
   },
