@@ -1,3 +1,9 @@
+## v20.10.2 (2026-10-27)
+
+### Fix
+
+- **issue-500**: record-feedback suffixes a repeated review heading (#526)
+
 ## v20.10.1 (2026-10-23)
 
 ### Fix
