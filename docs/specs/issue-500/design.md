@@ -17,7 +17,7 @@ overrides: {}
 
 Before appending, `record-feedback` collects the text of every `###` heading already in
 the artifact. If the base heading `<YYYY-MM-DD> — <outcome>` is free, it is written as
-today. If it is taken, the hook appends the smallest ` (n)` with `n ≥ 2` that is also
+today. If it is taken, the hook appends the smallest `(n)` with `n ≥ 2` that is also
 free. One new private helper, one changed line in the hook, no new inputs.
 
 ```mermaid

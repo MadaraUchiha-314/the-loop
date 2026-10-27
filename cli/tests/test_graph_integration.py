@@ -292,6 +292,41 @@ def test_a_comment_with_no_body_is_recorded_without_a_blank_line_pair(repo):
     assert not _emphasis_only_lines(text)
 
 
+def test_a_gate_approved_twice_on_one_day_records_distinct_headings(repo):
+    """
+    Feature: the-loop's process graph
+    Scenario: a gate approved twice on one day records distinct headings
+      Given an artifact whose gate already recorded an approval today
+      When record-feedback records a second and a third approval the same day
+      Then every level-3 heading in the artifact is distinct
+      And the first heading is written and kept exactly as before
+    Requirement: docs/specs/issue-500/bugfix.md#R1.1
+    """
+    first = _record(repo, [{"author": "owner", "body": "approved"}])
+    ctx = HookContext(
+        work_item=WorkItem(ref="github:o/r#1", id="issue-1", spec_dir=_spec(repo)),
+        node={"id": "design-approval"},
+        boundary="exit",
+        repo=repo,
+        config={"authorizedUsers": ["owner"]},
+        event={"comments": [{"author": "owner", "body": "approved"}]},
+    )
+    ctx.results = [classify_feedback(ctx)]
+    ctx.params = {"into": "design.md"}
+    assert record_feedback(ctx).status == "pass"
+    second = (_spec(repo) / "design.md").read_text()
+    assert record_feedback(ctx).status == "pass"
+    text = (_spec(repo) / "design.md").read_text()
+
+    headings = [line[4:] for line in text.split("\n") if line.startswith("### ")]
+    base = headings[0]
+    assert base.endswith(" — approved")  # the first recording is unchanged
+    # MD024 (siblings_only) is what the repeat broke: no two may share a text.
+    assert headings == [base, f"{base} (2)", f"{base} (3)"]
+    # Append-only: each recording leaves everything before it byte-identical.
+    assert second.startswith(first) and text.startswith(second)
+
+
 # -- lock-artifacts: the gate is the locker (issue-281) -------------------------
 
 TEMPLATE_FRONT = (

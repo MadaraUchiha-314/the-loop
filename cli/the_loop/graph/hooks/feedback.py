@@ -159,6 +159,25 @@ def _classify(comments: Sequence[Dict[str, Any]], ctx: HookContext) -> str | Non
     return None
 
 
+def _unique_heading(text: str, base: str) -> str:
+    """``base``, or ``base (n)`` for the smallest free ``n >= 2``.
+
+    A gate re-entered and approved again the same day (a forced re-gate, or
+    changes-requested then approval) would otherwise repeat its ``### <date> —
+    <outcome>`` heading, which markdownlint's MD024 rejects (issue-500). A
+    counter, not a time: two recordings in one minute still get distinct
+    headings, and the first recording reads exactly as it always did. Existing
+    headings are never renumbered — the record stays append-only.
+    """
+    taken = {line[4:].strip() for line in text.split("\n") if line.startswith("### ")}
+    if base not in taken:
+        return base
+    n = 2
+    while f"{base} ({n})" in taken:
+        n += 1
+    return f"{base} ({n})"
+
+
 @hook("record-feedback")
 def record_feedback(ctx: HookContext) -> HookResult:
     """Append the review to the artifact's ``## Review comments`` section.
@@ -185,7 +204,8 @@ def record_feedback(ctx: HookContext) -> HookResult:
         return HookResult.skipped(name, "no feedback to record")
 
     text = path.read_text(encoding="utf-8")
-    entry = [f"\n### {date.today().isoformat()} — {outcome}\n"]
+    heading = _unique_heading(text, f"{date.today().isoformat()} — {outcome}")
+    entry = [f"\n### {heading}\n"]
     for comment in comments:
         # The attribution carries trailing text on purpose (issue-247): a line
         # that is emphasis and nothing else is what markdownlint's MD036 rejects,
