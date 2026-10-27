@@ -320,7 +320,8 @@ def test_a_gate_approved_twice_on_one_day_records_distinct_headings(repo):
 
     headings = [line[4:] for line in text.split("\n") if line.startswith("### ")]
     base = headings[0]
-    assert base.endswith(" — approved")  # the first recording is unchanged
+    # The first recording is written exactly as before the fix (R1.2).
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2} — approved", base)
     # MD024 (siblings_only) is what the repeat broke: no two may share a text.
     assert headings == [base, f"{base} (2)", f"{base} (3)"]
     # Append-only: each recording leaves everything before it byte-identical.

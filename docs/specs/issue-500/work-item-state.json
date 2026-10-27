@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-500",
-  "currentNode": "verification",
+  "currentNode": "self-review",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -109,8 +109,16 @@
     },
     "verification": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-27T01:41:02+00:00",
+      "exitedAt": "2026-10-27T01:41:28+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "self-review": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-27T01:41:28+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -350,6 +358,10 @@
     "implementation": {
       "at": "2026-10-27T01:41:02+00:00",
       "by": "cli"
+    },
+    "verification": {
+      "at": "2026-10-27T01:41:28+00:00",
+      "by": "cli"
     }
   },
   "skips": {
@@ -425,7 +437,18 @@
   "effort": "medium",
   "claudeArtifact": false,
   "repos": [],
-  "pullRequests": [],
+  "pullRequests": [
+    {
+      "ref": "github:MadaraUchiha-314/the-loop#526",
+      "repository": "MadaraUchiha-314/the-loop",
+      "number": 526,
+      "url": "https://github.com/MadaraUchiha-314/the-loop/issues/526",
+      "stateDir": "pr-loops/MadaraUchiha-314__the-loop/pr-526",
+      "state": "open",
+      "linkedAt": "2026-10-27T01:41:53+00:00",
+      "linkedBy": "session"
+    }
+  ],
   "loop": "pdlc-work-item-loop",
-  "phase": "verification"
+  "phase": "needs-review"
 }
