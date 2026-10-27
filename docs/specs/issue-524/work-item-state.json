@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-524",
-  "currentNode": "reviewer-briefing",
+  "currentNode": "human-approval",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -165,8 +165,24 @@
     },
     "reviewer-briefing": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-27T14:57:43+00:00",
+      "exitedAt": "2026-10-27T14:57:57+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "code-quiz": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-27T14:57:57+00:00",
+      "exitedAt": "2026-10-27T14:57:57+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "human-approval": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-27T14:57:57+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -385,7 +401,11 @@
     }
   },
   "forced": [],
-  "parked": null,
+  "parked": {
+    "node": "human-approval",
+    "reason": "awaiting a human",
+    "since": "2026-10-27T14:57:57+00:00"
+  },
   "completions": {
     "implementation": {
       "at": "2026-10-27T14:49:49+00:00",
@@ -405,6 +425,10 @@
     },
     "capability-docs": {
       "at": "2026-10-27T14:57:43+00:00",
+      "by": "cli"
+    },
+    "reviewer-briefing": {
+      "at": "2026-10-27T14:57:57+00:00",
       "by": "cli"
     }
   },
