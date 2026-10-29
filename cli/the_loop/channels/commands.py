@@ -724,9 +724,10 @@ def _create_verb(
     result["url"] = record.url
     link = f" — {record.url}" if record.url else ""
     # The conversation, opened as a start opens it (issue-317) with the
-    # kickoff's origin, then told the link with the Start button where a press
-    # can be received (issue-337). Best-effort: the issue exists either way.
-    from .slack import SlackBotChannel, render_reply_blocks
+    # kickoff's origin, then told the link with the Do / Start buttons where a
+    # press can be received (issue-337, issue-529). Best-effort: the issue
+    # exists either way.
+    from .slack import KICKOFF_COMMANDS, SlackBotChannel, render_reply_blocks
 
     bot = SlackBotChannel(
         config,
@@ -763,7 +764,9 @@ def _create_verb(
             thread,
             said,
             channel_id,
-            blocks=render_reply_blocks(said, config.command_buttons_for("start")),
+            blocks=render_reply_blocks(
+                said, config.command_buttons_for(*KICKOFF_COMMANDS)
+            ),
         )
         eventlog.emit(
             "channel.created",

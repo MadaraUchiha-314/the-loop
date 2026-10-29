@@ -47,7 +47,7 @@ One instance on one machine gains nothing from a gateway; leave it as it is.
    if the instance uses Slack, and `the-loop restart`. Its webhook receiver and its
    poller keep running exactly as `webhooks` and `polling` say; only its Slack listener
    (or poll reader) stops, and `the-loop status` reads `off · gateway configured` for
-   it. With `read.mode: gateway` the Approve, Execute and Start buttons, the kickoff
+   it. With `read.mode: gateway` the Approve, Execute, Do and Start buttons, the kickoff
    picker and the slash command all keep working through the gateway, and the instance
    never opens a Socket Mode connection itself. A 20.3.0 config with `mode: socket` here
    still works, and `the-loop migrate-config` rewrites it to `gateway`

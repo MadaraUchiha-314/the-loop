@@ -610,6 +610,33 @@ def test_a_landed_press_is_reported_and_the_picker_removed(tmp_path):
     ]
 
 
+def test_a_picker_answers_reply_offers_do_and_start(tmp_path):
+    """Scenario: A picker answer's reply offers Do and Start
+
+    Given a kickoff that asked which repository, under the control.command grant
+    When the member picks one and the work item opens
+    Then the "Opened" reply in the thread carries Do then Start, each described
+
+    Requirement: docs/specs/issue-529/requirements.md R1.1, R1.2, R1.3
+    """
+    client = FakeSlackClient()
+    config = cli_config(
+        tmp_path, publish=("work-item.reply", "work-item.create", "control.command")
+    )
+    run_kickoff(tmp_path, client, config=config)
+    press(tmp_path, config, client, a_press("jchou2/devbox"))
+    reply = client.posted[-1]
+    assert "Opened" in reply["text"]
+    assert [
+        element["value"]
+        for block in reply["blocks"]
+        if block.get("type") == "actions"
+        for element in block["elements"]
+    ] == ["the-loop do", "the-loop start"]
+    described = reply["blocks"][1]["text"]["text"]
+    assert described.startswith("*Do* — ") and "\n*Start* — " in described
+
+
 def test_a_failed_create_restores_the_question_and_keeps_the_picker(tmp_path):
     """R3.5 + R4.5: the question stays answerable beside the picker."""
     client = FakeSlackClient()

@@ -71,7 +71,7 @@ settings:
       - message.mpim        # a group direct message (issue-362)
       - app_mention         # @the-loop, in any of them (issue-389)
   interactivity:
-    is_enabled: true        # Approve / Request changes, Execute / Start buttons (read.mode: socket or gateway)
+    is_enabled: true        # Approve / Request changes, Execute / Do / Start buttons (read.mode: socket or gateway)
   org_deploy_enabled: false
   socket_mode_enabled: true # `the-loop channels listen` — an outbound connection, nothing exposed
   token_rotation_enabled: false

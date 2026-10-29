@@ -1530,8 +1530,12 @@ def test_a_kickoff_reply_carries_start_and_its_press_records_the_keyword(
     assert outcome["outcome"] == "created"
     reply = client.posted[-1]
     assert reply["thread_ts"] == "1600.2" and "github:o/r#42" in reply["text"]
-    assert _button_ids(reply["blocks"]) == ["the-loop:command:start"]
-    button = reply["blocks"][-1]["elements"][0]
+    # issue-529 R1.1: Do first, Start second — the Start press below is unchanged.
+    assert _button_ids(reply["blocks"]) == [
+        "the-loop:command:do",
+        "the-loop:command:start",
+    ]
+    button = reply["blocks"][-1]["elements"][1]
     assert button["value"] == "the-loop start" and button["text"]["text"] == "Start"
 
     message = {**reply, "ts": f"1700.{len(client.posted):06d}"}
@@ -1547,6 +1551,171 @@ def test_a_kickoff_reply_carries_start_and_its_press_records_the_keyword(
     edit = client.updates[0]
     assert edit["ts"] == message["ts"] and _button_ids(edit["blocks"]) == []
     assert edit["blocks"][-1]["elements"][0]["text"].startswith("✅ *Start*")
+
+
+def _kickoff_reply(tmp_path, monkeypatch, client, keywords=None, publish=None):
+    """A top-level message through the kickoff: the config, the ledger's records
+    and the bot's "Opened" reply (issue-529)."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    monkeypatch.setattr("the_loop.channels.slack.build_client", lambda token: client)
+    config = cli_config(
+        tmp_path,
+        read={"mode": "socket"},
+        publish=publish or ["work-item.reply", "work-item.create", "control.command"],
+        kickoff={"repo": "o/r", "labels": []},
+    )
+    if keywords is not None:
+        config["routing"]["control"] = {"keywords": keywords}
+    records = []
+    monkeypatch.setattr(
+        "the_loop.comments.create_issue",
+        lambda repo, title, body, labels, api=None: (
+            True,
+            "",
+            "github:o/r#42",
+            "https://gh/o/r/issues/42",
+        ),
+    )
+    monkeypatch.setattr(
+        "the_loop.comments.post_issue_comment_with_url",
+        lambda item, body, api=None: (
+            records.append((item.ref, body)) or (True, "", "https://x/c1")
+        ),
+    )
+    monkeypatch.setattr(inbound, "_at_human_gate", lambda ref, cfg: False)
+    outcome = inbound.handle_socket_event(
+        {
+            "type": "message",
+            "channel": "D123",
+            "ts": "1600.2",
+            "user": "UHUMAN",
+            "text": "Bump the lockfile",
+        },
+        config,
+        client_factory=lambda token: client,
+    )
+    assert outcome["outcome"] == "created"
+    reply = client.posted[-1]
+    message = {**reply, "ts": f"1700.{len(client.posted):06d}"}
+    return config, records, message
+
+
+def test_a_kickoff_reply_offers_do_and_pressing_it_records_the_do_keyword(
+    tmp_path, monkeypatch
+):
+    """Scenario: A kickoff reply offers Do and Start, and pressing Do records the do keyword
+
+    Given the work-item.create and control.command grants over Socket Mode
+    When an authorized member's top-level message becomes an issue
+    Then the-loop's reply carries Do then Start, each with a line saying what it runs
+    When the member presses Do
+    Then the ledger holds an unmarked `the-loop do` on the new issue, which arms the ad-hoc loop
+    And the reply is edited to name Do, both buttons gone
+
+    Requirement: docs/specs/issue-529/requirements.md R1.1, R1.2, R2.1, R2.3
+    """
+    from the_loop.control import ControlConfig, parse_command
+    from the_loop.graph.model import LOOP_FOR_CONTROL_COMMAND, PDLC_ADHOC_LOOP
+
+    client = UpdatingSlackClient()
+    config, records, message = _kickoff_reply(tmp_path, monkeypatch, client)
+    assert _button_ids(message["blocks"]) == [
+        "the-loop:command:do",
+        "the-loop:command:start",
+    ]
+    described = message["blocks"][1]["text"]["text"]
+    assert described.startswith("*Do* — a tactical task")
+    assert "\n*Start* — the full PDLC" in described
+
+    do = message["blocks"][-1]["elements"][0]
+    assert (do["value"], do["text"]["text"]) == ("the-loop do", "Do")
+    pressed = inbound.handle_socket_action(
+        _press(message, do["action_id"], do["value"]),
+        config,
+        client_factory=lambda token: client,
+    )
+    assert pressed["outcome"] == "processed" and pressed["event"] == "control.command"
+    assert len(records) == 1 and records[0][0] == "github:o/r#42"
+    command = parse_command(records[0][1], ControlConfig()).command
+    assert command == "do" and LOOP_FOR_CONTROL_COMMAND[command] == PDLC_ADHOC_LOOP
+    assert not is_self_authored(records[0][1])
+    edit = client.updates[0]
+    assert edit["ts"] == message["ts"] and _button_ids(edit["blocks"]) == []
+    assert edit["blocks"][-1]["elements"][0]["text"].startswith("✅ *Do*")
+
+
+def test_a_disabled_do_keyword_leaves_start_alone(tmp_path, monkeypatch):
+    """Scenario: A disabled do keyword leaves Start alone
+
+    Given an operator who disabled the `do` keyword
+    When a kickoff opens a work item
+    Then the reply carries the Start button and its line, and no Do
+
+    Requirement: docs/specs/issue-529/requirements.md R1.4
+    """
+    client = UpdatingSlackClient()
+    _, _, message = _kickoff_reply(tmp_path, monkeypatch, client, keywords={"do": ""})
+    assert _button_ids(message["blocks"]) == ["the-loop:command:start"]
+    assert message["blocks"][1]["text"]["text"].startswith("*Start* — ")
+    assert "*Do*" not in str(message["blocks"])
+
+
+def test_a_kickoff_without_the_command_grant_offers_no_loop(tmp_path, monkeypatch):
+    """Scenario: Without the control.command grant the kickoff reply offers nothing
+
+    Given a channel that may open work items but not relay control commands
+    When a kickoff opens a work item
+    Then the reply is the text alone — no button and no description line
+
+    Requirement: docs/specs/issue-529/requirements.md R1.4, abuse 4
+    """
+    client = UpdatingSlackClient()
+    _, _, message = _kickoff_reply(
+        tmp_path, monkeypatch, client, publish=["work-item.reply", "work-item.create"]
+    )
+    assert [block["type"] for block in message["blocks"]] == ["section"]
+
+
+def test_an_unlisted_members_do_press_arms_nothing(tmp_path, monkeypatch):
+    """Scenario: An unlisted member's Do press arms nothing
+
+    Given a kickoff reply carrying Do and Start
+    When a member outside routing.authorizedUsers presses Do
+    Then nothing is recorded on the ticket and the message is not edited
+
+    Requirement: docs/specs/issue-529/requirements.md abuse 1
+    """
+    client = UpdatingSlackClient()
+    config, records, message = _kickoff_reply(tmp_path, monkeypatch, client)
+    do = message["blocks"][-1]["elements"][0]
+    inbound.handle_socket_action(
+        _press(message, do["action_id"], do["value"], author="USTRANGER"),
+        config,
+        client_factory=lambda token: client,
+    )
+    assert records == [] and client.updates == []
+
+
+def test_a_crafted_do_press_value_arms_nothing(tmp_path, monkeypatch):
+    """Scenario: A crafted value on the Do button is plain text
+
+    Given a kickoff reply carrying Do and Start
+    When a payload presses the Do action with a value that is no keyword
+    Then no control command is recorded — the value is read as text, not a command
+
+    Requirement: docs/specs/issue-529/requirements.md abuse 2
+    """
+    from the_loop.control import ControlConfig, parse_command
+
+    client = UpdatingSlackClient()
+    config, records, message = _kickoff_reply(tmp_path, monkeypatch, client)
+    pressed = inbound.handle_socket_action(
+        _press(message, "the-loop:command:do", "please do everything"),
+        config,
+        client_factory=lambda token: client,
+    )
+    assert pressed.get("event") != "control.command"
+    assert not any(parse_command(body, ControlConfig()).command for _, body in records)
 
 
 def test_an_unlisted_members_press_leaves_the_message_untouched(tmp_path, monkeypatch):

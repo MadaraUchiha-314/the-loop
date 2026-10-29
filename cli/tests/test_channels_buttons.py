@@ -16,7 +16,9 @@ from the_loop.channels.slack import (
     ACTION_PREFIX,
     BUTTON_NAMES,
     COMMAND_BUTTONS,
+    COMMAND_DESCRIPTIONS,
     DEFAULT_APP_TOKEN_ENV,
+    KICKOFF_COMMANDS,
     DEFAULT_BOT_TOKEN_ENV,
     PHASE_SELECTION_MARKER,
     SlackBotChannel,
@@ -319,16 +321,56 @@ def test_no_defaults_button_without_a_stated_default():
 
 
 def test_reply_blocks_carry_the_start_button():
-    """R1.2: the kickoff reply's blocks — a section and, with a command, one
-    actions block; with none, the section alone."""
+    """R1.2 (issue-337): the kickoff reply's blocks — a section and, with a
+    command, its description line and one actions block; with none, the section
+    alone (issue-529 R1.2, R1.4)."""
     blocks = render_reply_blocks("Opened github:o/r#42", {"start": "the-loop start"})
     assert blocks[0] == {
         "type": "section",
         "text": {"type": "mrkdwn", "text": "Opened github:o/r#42"},
     }
+    assert blocks[1] == {
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": f"*Start* — {COMMAND_DESCRIPTIONS['start']}",
+        },
+    }
     assert buttons(blocks) == [(f"{ACTION_PREFIX}command:start", "the-loop start")]
-    assert blocks[1]["elements"][0]["text"]["text"] == "Start"
+    assert blocks[2]["elements"][0]["text"]["text"] == "Start"
     assert render_reply_blocks("Opened github:o/r#42", {}) == [blocks[0]]
+
+
+def test_reply_blocks_offer_do_then_start_each_described():
+    """issue-529 R1.1, R1.2, R1.5: both kickoff commands render — the text, one
+    line per command saying what it runs, then Do before Start, each valued with
+    its configured keyword."""
+    commands = {"do": "the-loop do", "start": "the-loop start"}
+    blocks = render_reply_blocks("Opened github:o/r#42", commands)
+    assert [b["type"] for b in blocks] == ["section", "section", "actions"]
+    assert blocks[1]["text"]["text"] == (
+        f"*Do* — {COMMAND_DESCRIPTIONS['do']}\n"
+        f"*Start* — {COMMAND_DESCRIPTIONS['start']}"
+    )
+    assert buttons(blocks) == [
+        (f"{ACTION_PREFIX}command:do", "the-loop do"),
+        (f"{ACTION_PREFIX}command:start", "the-loop start"),
+    ]
+    assert [e["text"]["text"] for e in blocks[2]["elements"]] == ["Do", "Start"]
+
+
+def test_kickoff_commands_are_do_then_start():
+    """issue-529 D2: the order a new work item is offered its loops in."""
+    assert KICKOFF_COMMANDS == ("do", "start")
+    assert set(KICKOFF_COMMANDS) <= set(COMMAND_BUTTONS)
+
+
+def test_a_command_without_a_description_renders_no_line():
+    """issue-529: Execute (the phase-selection mirror) is undescribed, so its
+    reply is the text and the button exactly as before."""
+    blocks = render_reply_blocks("Checklist", {"execute": "the-loop execute"})
+    assert [b["type"] for b in blocks] == ["section", "actions"]
+    assert "execute" not in COMMAND_DESCRIPTIONS
 
 
 def test_the_button_tables_agree():
@@ -336,6 +378,7 @@ def test_the_button_tables_agree():
     the labels a member saw."""
     for command, label in COMMAND_BUTTONS.items():
         assert BUTTON_NAMES[f"{ACTION_PREFIX}command:{command}"] == label
+    assert BUTTON_NAMES[f"{ACTION_PREFIX}command:do"] == "Do"
     assert BUTTON_NAMES[f"{ACTION_PREFIX}approve"] == "Approve"
     assert BUTTON_NAMES[f"{ACTION_PREFIX}changes"] == "Request changes"
 
@@ -728,20 +771,25 @@ def test_status_names_both_button_sets_and_the_missing_steps(
     off, and every step printed, with the token's presence and never a value."""
     monkeypatch.delenv(DEFAULT_APP_TOKEN_ENV, raising=False)
     out = _status(tmp_path, monkeypatch, capsys, cli_config(tmp_path))
-    assert "buttons:      Approve / Request changes: off · Execute / Start: off" in out
+    assert (
+        "buttons:      Approve / Request changes: off · Execute / Do / Start: off"
+        in out
+    )
     assert "1. mint an app-level token" in out
     assert "App-Level Tokens" in out and "connections:write" in out
     assert f"export it as {DEFAULT_APP_TOKEN_ENV} (now: unset)" in out
     assert "2. set channels.slack.read.mode: socket (now: poll)" in out
     assert "3. add to channels.slack.publish: gate.feedback" in out
-    assert "control.command (Execute / Start)" in out
+    assert "control.command (Execute / Do / Start)" in out
     assert "4. the-loop restart" in out
 
 
 def test_status_prints_no_steps_when_buttons_are_on(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv(DEFAULT_APP_TOKEN_ENV, "xapp-supersecret")
     out = _status(tmp_path, monkeypatch, capsys, interactive_config(tmp_path))
-    assert "buttons:      Approve / Request changes: on · Execute / Start: on" in out
+    assert (
+        "buttons:      Approve / Request changes: on · Execute / Do / Start: on" in out
+    )
     assert "mint an app-level token" not in out and "the-loop restart" not in out
     assert "xapp-supersecret" not in out
 
@@ -756,13 +804,18 @@ def test_status_prints_only_the_steps_that_apply(tmp_path, monkeypatch, capsys):
         capsys,
         interactive_config(tmp_path, publish=["work-item.reply", "gate.feedback"]),
     )
-    assert "buttons:      Approve / Request changes: on · Execute / Start: off" in out
+    assert (
+        "buttons:      Approve / Request changes: on · Execute / Do / Start: off" in out
+    )
     assert "1. mint an app-level token" in out
     assert "read.mode: socket" not in out.split("buttons:")[1].split("kickoff:")[0]
     # Only the steps that apply, numbered contiguously: token, grant, restart.
-    assert "2. add to channels.slack.publish: control.command (Execute / Start)" in out
+    assert (
+        "2. add to channels.slack.publish: control.command (Execute / Do / Start)"
+        in out
+    )
     assert "gate.feedback (Approve" not in out
     assert "3. the-loop restart" in out and "4." not in out.split("kickoff:")[0]
     monkeypatch.setenv(DEFAULT_APP_TOKEN_ENV, "xapp-set")
     out = _status(tmp_path, monkeypatch, capsys, interactive_config(tmp_path))
-    assert "Execute / Start: on" in out and "1. mint" not in out
+    assert "Execute / Do / Start: on" in out and "1. mint" not in out

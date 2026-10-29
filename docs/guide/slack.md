@@ -14,7 +14,7 @@ where the limits are.
 ```mermaid
 flowchart LR
   subgraph slack["Slack"]
-    TH["the work item's thread<br/>reply · Approve / Execute / Start button · control keyword"]
+    TH["the work item's thread<br/>reply · Approve / Execute / Do / Start button · control keyword"]
     TOP["a top-level message"]
     CMD["/the-loop … (slash command)"]
     ST["a standing session's thread"]
@@ -140,7 +140,7 @@ settings:
       - message.mpim        # a group direct message (issue-362)
       - app_mention         # @the-loop, in any of them (issue-389)
   interactivity:
-    is_enabled: true        # Approve / Request changes, Execute / Start buttons (read.mode: socket or gateway)
+    is_enabled: true        # Approve / Request changes, Execute / Do / Start buttons (read.mode: socket or gateway)
   org_deploy_enabled: false
   socket_mode_enabled: true # `the-loop channels listen` — an outbound connection, nothing exposed
   token_rotation_enabled: false
@@ -616,7 +616,7 @@ work item it already manages — anything else is refused, and nothing is writte
 ([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378)). With the
 `work-item.create` grant the-loop opens the issue exactly as a top-level message would
 (the same prefix rule below, `kickoff.repo` as the fallback, `kickoff.labels`), opens the
-work item's thread in the home channel with the link and the **Start** button, and answers
+work item's thread in the home channel with the link and the **Do** / **Start** buttons, and answers
 you — only you — with the link and where the thread is. A repository it cannot resolve is
 refused with the candidates named and nothing is created: a slash command has no message
 to hang a picker on, so the `<repo>:` prefix is the answer.
@@ -624,9 +624,13 @@ to hang a picker on, so the `<repo>:` prefix is the answer.
 **It does not exist yet, and you are in the channel.** Post a **top-level message** in the channel — the first line is
 the title, the rest the body. With the `work-item.create` grant, the-loop opens the issue
 (labelled from `kickoff.labels`, so list every auto-execute label there to arm it), binds
-the message's thread to it and replies with the link. Then type `the-loop start` **in
-that thread** (with `control.command`), or run `/the-loop start #<n>` — either records
-the start on the new issue.
+the message's thread to it and replies with the link. Then choose how it runs
+([issue-529](https://github.com/MadaraUchiha-314/the-loop/issues/529)): press **Do** for
+a tactical task with no spec chain or phase gates (the [ad-hoc loop](/capabilities/process-graph)),
+or **Start** for the full PDLC. Each button carries one line saying what it runs. You can
+also type `the-loop do` or `the-loop start` **in that thread** (with `control.command`), or
+run `/the-loop do #<n>` or `/the-loop start #<n>`. Any of these records your choice on
+the new issue.
 
 **Which repository?** The message's, if it says so
 ([issue-341](https://github.com/MadaraUchiha-314/the-loop/issues/341)). Start the first
@@ -689,7 +693,7 @@ acted on**
 |--------|------------------|---------------|---------------|
 | **Approve** / **Request changes** | an approval request (`phase-approval-pending`, `pr-review-pending`, `security-sign-off-pending`) | the reply `approved` / `changes requested` | `read.mode: socket` + `gate.feedback` |
 | **Execute** | the phase-selection checklist, mirrored from the ticket (`comment.agent`) | the keyword `the-loop execute` (your configured [`routing.control.keywords.execute`](/config/cli/routing-options#execution-control)) | `read.mode: socket` + `control.command` |
-| **Start** | the-loop's "opened `#N` — this thread is now the conversation" reply to a kickoff | the keyword `the-loop start` | `read.mode: socket` + `control.command` |
+| **Do** / **Start** | the-loop's "opened `#N` — this thread is now the conversation" reply to a kickoff, each with one line saying what it runs ([issue-529](https://github.com/MadaraUchiha-314/the-loop/issues/529)) | the keyword `the-loop do` (the ad-hoc loop) / `the-loop start` (the full PDLC) | `read.mode: socket` + `control.command`; a disabled keyword renders no button |
 | **A repository** | the-loop's "which repository should this go in?" reply to a kickoff that named none it knows ([issue-349](https://github.com/MadaraUchiha-314/the-loop/issues/349)) | *not* a typed reply — the **argument** to the work item the question is holding | `read.mode: socket` + `work-item.create` |
 
 A press is **exactly the typed reply**: the button's value enters the same pipeline a
@@ -717,10 +721,10 @@ can receive is worse than none. `the-loop channels status` prints, under its `bu
 line, only the steps your configuration still needs:
 
 ```text
-  buttons:      Approve / Request changes: off · Execute / Start: off — a press reaches the-loop only over a Socket Mode listener connected with the app-level token. Still needed:
+  buttons:      Approve / Request changes: off · Execute / Do / Start: off — a press reaches the-loop only over a Socket Mode listener connected with the app-level token. Still needed:
                   1. mint an app-level token: api.slack.com/apps → your app → Basic Information → App-Level Tokens → Generate (scope connections:write), and export it as THE_LOOP_SLACK_APP_TOKEN (now: unset)
                   2. set channels.slack.read.mode: socket (now: poll)
-                  3. add to channels.slack.publish: gate.feedback (Approve / Request changes), control.command (Execute / Start)
+                  3. add to channels.slack.publish: gate.feedback (Approve / Request changes), control.command (Execute / Do / Start)
                   4. the-loop restart — the service hosts the listener; `the-loop status` shows the slack-listener row, and this line reads on
 ```
 

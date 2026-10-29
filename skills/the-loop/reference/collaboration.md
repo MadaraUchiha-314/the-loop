@@ -86,7 +86,7 @@ ledger's ingress sees (`comment.agent` — your own marked comments; `comment.hu
 authorized user's or collaborator's). A channel receives the ones its `subscribe` list
 names, renders them natively (Slack: Block Kit, a link button, Approve / Request changes
 buttons where a press can be received — and, under the `control.command` grant, an
-Execute button on the phase-selection checklist and a Start button on a kickoff's reply,
+Execute button on the phase-selection checklist and Do / Start buttons on a kickoff's reply,
 each a press of the configured keyword whose outcome is written back onto the message,
 issue-337; a text longer than `maxChars` arrives as a structural digest — the ask
 first, choices numbered, code and traces as pointers, cut at a sentence, the link for

@@ -278,10 +278,20 @@ flowchart LR
   can reach this instance (`read.mode: socket`, or `gateway` behind a gateway block —
   issue-503) and the `gate.feedback` grant both hold, and — since issue-337 —
   an **Execute** button on the phase-selection checklist mirror (a `comment.agent`
-  carrying the hook's marker) and a **Start** button on the kickoff's "opened" reply,
-  each **only** under the same reachability rule and the `control.command` grant,
-  each carrying the **configured keyword** as its value (a disabled keyword renders no
-  button). A press enters the pipeline as that member's reply carrying the button's
+  carrying the hook's marker) and **Do** and **Start** buttons on the kickoff's "opened"
+  reply (issue-529), each **only** under the same reachability rule and the
+  `control.command` grant, each carrying the **configured keyword** as its value (a
+  disabled keyword renders no button).
+- **A new work item is offered both loops** (issue-529). WHEN any kickoff opens a work
+  item — a top-level message or mention, a repository-picker answer, `/the-loop new` —
+  AND command buttons may render THEN the "opened" reply SHALL carry **Do** then
+  **Start** (`KICKOFF_COMMANDS`), and above them one fixed line per rendered button
+  (`COMMAND_DESCRIPTIONS`): Do is a tactical task with no spec chain or phase gates,
+  worked until the member says it is done (`pdlc-adhoc-loop`); Start is the full PDLC.
+  Neither is styled as the default. A press is the member typing that keyword — the
+  ledger records it, the dispatcher selects the loop — and a landed press removes both
+  buttons. The issue is still created before the choice, so an unanswered reply leaves
+  a filed, unarmed work item. A press enters the pipeline as that member's reply carrying the button's
   text; an unrecognised value is plain text.
 - **A work item's own room reads like a conversation** (issue-393,
   [decision-134](/decisions/decision-134)). WHEN `channels.slack.room.style` is
@@ -705,7 +715,7 @@ flowchart LR
   member's text. WHEN the text resolves THEN the issue SHALL be created through the same
   `work-item.create` event with `kickoff.labels`, the work item's conversation SHALL be
   opened the way a start opens it (a thread in the home channel, origin `kickoff`), told
-  the link with the **Start** button where a press can be received, and the member
+  the link with the **Do** / **Start** buttons where a press can be received, and the member
   answered ephemerally with the link and where the conversation is. WHEN the text
   resolves to no repository, to several, to an undeclared one, or is nothing but a
   prefix THEN it SHALL be refused with the kickoff's own refusal text and nothing
@@ -1112,6 +1122,7 @@ ticket, with no Jira work items, ingress or ledger:
 | Work item | What changed | Links |
 |-----------|--------------|-------|
 | issue-498 | A relayed command still opens its comment (2026-10-23): the ledger's `gate.feedback` / `control.command` relay record puts the person's words first, unquoted, and the attribution after them, because a control keyword now counts only where a comment opens with it | [spec](../specs/issue-498/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/498) |
+| issue-529 | **A Slack kickoff offers Do or Start** (2026-10-29): the kickoff's "opened" reply — on every path, the message, the picker and `/the-loop new` — renders `command_buttons_for(*KICKOFF_COMMANDS)`, so **Do** (`the-loop do`, the ad-hoc loop) sits before **Start**, and `render_reply_blocks` puts one fixed description line per described button between the text and the buttons. Before, only Start was offered, so a tactical request walked the full PDLC unless the member knew to type `the-loop do`. No config, grant, scope, schema or event change | [spec](../specs/issue-529/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/529) |
 | issue-519 | **Behind a gateway, the gateway posts** (2026-10-23): one resolver, `outbound_client()` / `posting_path()`, picks the instance's Slack client — own token first, else a gateway-backed client over `POST /api/v1/gateway/slack/call` (and `/slack/download` for files), else today's error with the gateway hint — for the channel, every `SlackBotChannel` construction site, the directory, the doctor and the attachment fetcher (a caller's own fetcher counts as a credential, captions included); a gateway failure fails the post with no fallback. `start` warns once and emits `channel.posting_unavailable` when nothing can post; `status`, `channels status` and `doctor slack` say which posting path is in use | [spec](../specs/issue-519/), [gateway](gateway.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/519) |
 | issue-507 | A Slack mention inside a thread is answered in that thread (2026-10-20): `inbound.process_reply` notes the thread of a delivered `work-item.reply` in the work item's room-delivery memory (`replyChannel` / `replyThread`), `SlackBotChannel.post` posts the next `comment.agent` there, and any non-progress event clears it. No config, grant, scope, schema or event change | [spec](../specs/issue-507/), [guide](../guide/slack.md#a-room-for-one-work-item), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/507) |
 | issue-505 | Behind a gateway, a collaboration channel is published to the gateway as a room (2026-10-20): `CollaborationChannelStore.on_change` lets the hosted gateway client publish a declaration, a move or a clear at once; the client also publishes the whole set at every registration and reconciles every 30 s. The issue-375 promise that every message in the room is about its work item now holds behind a gateway | [spec](../specs/issue-505/), [gateway](gateway.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/505) |

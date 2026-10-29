@@ -439,7 +439,7 @@ def _button_lines(slack: SlackChannelConfig) -> list:
     commands = slack.command_buttons
     head = (
         f"  buttons:      Approve / Request changes: {'on' if approve else 'off'}"
-        f" · Execute / Start: {'on' if commands else 'off'}"
+        f" · Execute / Do / Start: {'on' if commands else 'off'}"
     )
     app_token = _presence(slack.app_token_env)
     steps: list = []
@@ -458,7 +458,7 @@ def _button_lines(slack: SlackChannelConfig) -> list:
         f"{grant} ({label})"
         for grant, label in (
             ("gate.feedback", "Approve / Request changes"),
-            ("control.command", "Execute / Start"),
+            ("control.command", "Execute / Do / Start"),
         )
         if grant not in slack.publish
     ]
