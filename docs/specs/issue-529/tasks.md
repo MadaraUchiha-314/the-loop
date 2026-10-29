@@ -35,7 +35,7 @@ flowchart LR
   - _Test:_ T1 — `tests/test_channels_buttons.py` (two commands give text, then
     descriptions, then `[Do, Start]`; one command gives one line; none gives text only;
     `execute` has no line; the tables agree) (red→green)
-- [ ] 2. Call sites: every kickoff path offers both
+- [x] 2. Call sites: every kickoff path offers both
   - `inbound._open_work_item` and `commands._create_verb`:
     `command_buttons_for("start")` → `command_buttons_for(*KICKOFF_COMMANDS)`, and their
     comments updated.
@@ -44,7 +44,7 @@ flowchart LR
   - _Test:_ T2 — `tests/test_channels_integration.py` (the existing kickoff reply test
     now expects `[do, start]`), `tests/test_channels_commands.py` (`/the-loop new`),
     `tests/test_channels_kickoff_picker.py` (the picker's opened reply) (red→green)
-- [ ] 3. Scenarios: pressing Do, a disabled keyword, the abuse cases
+- [x] 3. Scenarios: pressing Do, a disabled keyword, the abuse cases
   - Integration tests with Gherkin docstrings and `Requirement:` links: pressing Do
     records an unmarked `the-loop do` that `parse_command` reads as `do`, and the reply
     is edited naming "Do"; `routing.control.keywords.do: ""` renders Start alone; an

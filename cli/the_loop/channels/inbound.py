@@ -52,6 +52,7 @@ from .slack import (
     GITHUB_COMMENT_LIMIT,
     MENTION_SHORTCUTS,
     PHASE_SELECTION_MARKER,
+    KICKOFF_COMMANDS,
     WITHOUT,
     decision_view,
     SlackBotChannel,
@@ -1250,9 +1251,10 @@ def _open_work_item(
         )
     bot.bind(reply.thread, result.ref, reply.channel_id, origin="kickoff")
     link = f" — {result.url}" if result.url else ""
-    # The reply that asks for `the-loop start` typed back carries the Start
-    # button where a press can be received (issue-337 R1.2): the value is the
-    # configured keyword, so the press is exactly the typed keyword.
+    # The reply offers the loops a new work item may run — Do and Start, each
+    # with its line (issue-529) — where a press can be received (issue-337
+    # R1.2): each value is the configured keyword, so a press is that keyword
+    # typed.
     said = (
         f"Opened {result.ref}{link}. This thread is now that work item's "
         "conversation — replies here reach it."
@@ -1261,7 +1263,7 @@ def _open_work_item(
         reply.thread,
         said,
         reply.channel_id,
-        blocks=render_reply_blocks(said, config.command_buttons_for("start")),
+        blocks=render_reply_blocks(said, config.command_buttons_for(*KICKOFF_COMMANDS)),
     )
     eventlog.emit(
         "channel.created",

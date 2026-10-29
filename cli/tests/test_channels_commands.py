@@ -1047,7 +1047,8 @@ def test_new_opens_the_work_item_and_its_thread(tmp_path):
         for e in block["elements"]
         if e.get("value")
     ]
-    assert buttons == ["the-loop start"]
+    # issue-529 R1.3: `/the-loop new` offers the same two loops as a kickoff.
+    assert buttons == ["the-loop do", "the-loop start"]
     state = _state_with_stores(
         Path(config["state"]["root"]) / "channels" / "slack.json"
     )

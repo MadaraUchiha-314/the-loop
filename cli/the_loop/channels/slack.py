@@ -1970,7 +1970,10 @@ def render_reply_blocks(
         ]
         if lines:
             blocks.append(
-                {"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(lines)}}
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": "\n".join(lines)},
+                }
             )
         blocks.append({"type": "actions", "elements": buttons})
     return blocks
