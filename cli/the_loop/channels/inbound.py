@@ -1950,7 +1950,7 @@ def handle_socket_action(
     the repository picker's, whose value is an **argument** to a work item that
     does not exist yet. ``create_issue`` is its injection seam, the same one
     :func:`handle_socket_event` has for the kickoff itself.
-    An Execute / Start button's value is the configured keyword (issue-337), so
+    An Execute / Do / Start button's value is the configured keyword (issue-337), so
     its press is a typed keyword: ``control.command`` under that grant, recorded
     unmarked, executed by the ledger's ingress. The reply's ``ts`` is the
     **pressed message's** — the only message a press has, where the

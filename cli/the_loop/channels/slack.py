@@ -1375,7 +1375,7 @@ class SlackChannelConfig:
 
     @property
     def command_buttons(self) -> bool:
-        """Whether an Execute / Start button can be received AND acted on: a press can
+        """Whether an Execute / Do / Start button can be received AND acted on: a press can
         reach this instance and the ``control.command`` grant (issue-337 R1.4) — the
         same rule :attr:`interactive` applies to the Approve pair."""
         return self.push_reachable and "control.command" in self.publish
@@ -2815,7 +2815,7 @@ class SlackBotChannel:
         blocks: Optional[List[Dict[str, Any]]] = None,
     ) -> bool:
         """A plain reply into ``thread`` — the kickoff's "here is your issue" —
-        with ``blocks`` when the caller rendered any (its Start button, issue-337)."""
+        with ``blocks`` when the caller rendered any (its Do / Start buttons, issue-337, issue-529)."""
         try:
             self._client().chat_postMessage(
                 channel=channel_id or self.central_channel(),

@@ -20,7 +20,7 @@ the-loop channels manifest --name NAME --write  # renamed, kept beside the CLI c
 - **`status`** prints the ledger, the resolved Slack configuration — with token
   **presence** only (`set`/`unset` plus the env var's name), never a value — how many
   people of `routing.authorizedUsers` can speak on it, whether the Approve / Request
-  changes and the Execute / Start buttons can be received — and, while either cannot,
+  changes and the Execute / Do / Start buttons can be received — and, while either cannot,
   the numbered steps that still apply: the app-level token (where to mint it, its
   scope, its variable's name and presence), `read.mode: socket`, the missing grants,
   the restart ([issue-337](https://github.com/MadaraUchiha-314/the-loop/issues/337)) —

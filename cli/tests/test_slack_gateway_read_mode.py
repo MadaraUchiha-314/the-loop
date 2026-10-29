@@ -319,7 +319,7 @@ def test_channels_status_in_gateway_mode(tmp_path, monkeypatch, capsys):
     out = _channels_status(tmp_path, monkeypatch, capsys, config(tmp_path, "gateway"))
     assert "  read:         gateway — events arrive through the gateway client" in out
     assert "https://gateway.example" in out and "no Socket Mode connection" in out
-    assert "Approve / Request changes: on · Execute / Start: on" in out
+    assert "Approve / Request changes: on · Execute / Do / Start: on" in out
     assert "mint an app-level token" not in out
     assert "  commands:     /the-loop through the gateway" in out
     assert "  mentions:     @the-loop is the address" in out

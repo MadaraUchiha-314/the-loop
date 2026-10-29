@@ -53,7 +53,7 @@ flowchart LR
   - _Depends on:_ 2
   - _Requirements:_ R1.4, R2.1, R2.3, R2.4, abuse 1, 2, 4
   - _Test:_ T2 + T8 — `tests/test_channels_integration.py -k "do_press or do_button"`
-- [ ] 4. Docs and visual evidence
+- [x] 4. Docs and visual evidence
   - `docs/capabilities/channels.md`: the rendering bullet (Execute / Start / **Do**,
     each with its line on the kickoff reply) and the kickoff and `/the-loop new`
     bullets, plus a history row for issue-529. The "Opened … Start button" wording in
