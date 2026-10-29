@@ -75,16 +75,22 @@ field.
 
 ## Verification activities
 
-- [ ] T1 — `cd cli && uv run python -m pytest -q tests/test_channels_buttons.py`
-- [ ] T2 — `cd cli && uv run python -m pytest -q tests/test_channels_integration.py tests/test_channels_commands.py tests/test_channels_kickoff_picker.py`
-- [ ] T8 — the abuse-case tests named above
-- [ ] T5 — screenshots of `design/kickoff-reply.html` in both themes
-- [ ] T12 — `uv run pre-commit run --all-files`
+- [x] T1 — `cd cli && uv run python -m pytest -q tests/test_channels_buttons.py`
+- [x] T2 — `cd cli && uv run python -m pytest -q tests/test_channels_integration.py tests/test_channels_commands.py tests/test_channels_kickoff_picker.py`
+- [x] T8 — the abuse-case tests named above
+- [x] T5 — screenshots of `design/kickoff-reply.html` in both themes
+- [x] T12 — `uv run pre-commit run --all-files`
 
 ## Verification results
 
-_Not yet executed._
+Every activity ran on this branch with the session's `THE_LOOP_*` variables unset (see
+`evidence/unit.md` for why) and passed. T4 and T11 stay `n/a` as planned: no live Slack
+workspace is reachable.
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1 | `cd cli && uv run python -m pytest -q tests/test_channels_buttons.py` | 35 passed (red first: ImportError) | [unit.md](evidence/unit.md) |
+| T2 | `cd cli && uv run python -m pytest -q tests/test_channels_integration.py tests/test_channels_commands.py tests/test_channels_kickoff_picker.py` | 173 passed (red first: 4 failed) | [integration.md](evidence/integration.md) |
+| T8 | the issue-529 scenarios and abuse cases, `-v` | 9 passed | [integration.md](evidence/integration.md) |
+| T5 | headless Chromium screenshots of `design/kickoff-reply.html`, light and dark | both render the asserted block order | [ui-visual.md](evidence/ui-visual.md) |
+| T12 | `uv run pre-commit run --all-files` | all hooks pass, 6803 tests | [regression.md](evidence/regression.md) |

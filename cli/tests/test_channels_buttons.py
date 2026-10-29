@@ -771,7 +771,10 @@ def test_status_names_both_button_sets_and_the_missing_steps(
     off, and every step printed, with the token's presence and never a value."""
     monkeypatch.delenv(DEFAULT_APP_TOKEN_ENV, raising=False)
     out = _status(tmp_path, monkeypatch, capsys, cli_config(tmp_path))
-    assert "buttons:      Approve / Request changes: off · Execute / Do / Start: off" in out
+    assert (
+        "buttons:      Approve / Request changes: off · Execute / Do / Start: off"
+        in out
+    )
     assert "1. mint an app-level token" in out
     assert "App-Level Tokens" in out and "connections:write" in out
     assert f"export it as {DEFAULT_APP_TOKEN_ENV} (now: unset)" in out
@@ -784,7 +787,9 @@ def test_status_names_both_button_sets_and_the_missing_steps(
 def test_status_prints_no_steps_when_buttons_are_on(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv(DEFAULT_APP_TOKEN_ENV, "xapp-supersecret")
     out = _status(tmp_path, monkeypatch, capsys, interactive_config(tmp_path))
-    assert "buttons:      Approve / Request changes: on · Execute / Do / Start: on" in out
+    assert (
+        "buttons:      Approve / Request changes: on · Execute / Do / Start: on" in out
+    )
     assert "mint an app-level token" not in out and "the-loop restart" not in out
     assert "xapp-supersecret" not in out
 
@@ -799,11 +804,16 @@ def test_status_prints_only_the_steps_that_apply(tmp_path, monkeypatch, capsys):
         capsys,
         interactive_config(tmp_path, publish=["work-item.reply", "gate.feedback"]),
     )
-    assert "buttons:      Approve / Request changes: on · Execute / Do / Start: off" in out
+    assert (
+        "buttons:      Approve / Request changes: on · Execute / Do / Start: off" in out
+    )
     assert "1. mint an app-level token" in out
     assert "read.mode: socket" not in out.split("buttons:")[1].split("kickoff:")[0]
     # Only the steps that apply, numbered contiguously: token, grant, restart.
-    assert "2. add to channels.slack.publish: control.command (Execute / Do / Start)" in out
+    assert (
+        "2. add to channels.slack.publish: control.command (Execute / Do / Start)"
+        in out
+    )
     assert "gate.feedback (Approve" not in out
     assert "3. the-loop restart" in out and "4." not in out.split("kickoff:")[0]
     monkeypatch.setenv(DEFAULT_APP_TOKEN_ENV, "xapp-set")
