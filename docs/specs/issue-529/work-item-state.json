@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-529",
-  "currentNode": "capability-docs",
+  "currentNode": "human-approval",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -157,8 +157,32 @@
     },
     "capability-docs": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-29T18:48:52+00:00",
+      "exitedAt": "2026-10-29T18:49:01+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "reviewer-briefing": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-29T18:49:01+00:00",
+      "exitedAt": "2026-10-29T18:49:32+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "code-quiz": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-29T18:49:32+00:00",
+      "exitedAt": "2026-10-29T18:49:32+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "human-approval": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-29T18:49:32+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -377,7 +401,11 @@
     }
   },
   "forced": [],
-  "parked": null,
+  "parked": {
+    "node": "human-approval",
+    "reason": "awaiting a human",
+    "since": "2026-10-29T18:49:32+00:00"
+  },
   "completions": {
     "requirements-definition": {
       "at": "2026-10-29T18:20:58+00:00",
@@ -413,6 +441,14 @@
     },
     "evidence": {
       "at": "2026-10-29T18:48:52+00:00",
+      "by": "cli"
+    },
+    "capability-docs": {
+      "at": "2026-10-29T18:49:01+00:00",
+      "by": "cli"
+    },
+    "reviewer-briefing": {
+      "at": "2026-10-29T18:49:32+00:00",
       "by": "cli"
     }
   },
