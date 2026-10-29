@@ -725,6 +725,8 @@ class _GateRuntime(_FakeRuntime):
         self.current = start_node if current is None else current
         #: what `advance` moves the pointer to, when the test wants the gate answered
         self.advances_to: str | None = None
+        #: the state's ``parked`` record, when the test parks the pointer
+        self.parked: dict | None = None
         self.graph = _GateGraph(start_node, actor)
 
     def work_item(self, item_id):
@@ -744,12 +746,15 @@ def _pointer(monkeypatch, runtime):
     """Make WorkItemState.load report the fake runtime's pointer."""
 
     class _State:
-        def __init__(self, node):
+        def __init__(self, node, parked):
             self.current_node = node
+            self.parked = parked
 
     monkeypatch.setattr(
         "the_loop.graph.state.WorkItemState.load",
-        staticmethod(lambda state_dir, item_id: _State(runtime.current)),
+        staticmethod(
+            lambda state_dir, item_id: _State(runtime.current, runtime.parked)
+        ),
     )
 
 
@@ -921,3 +926,56 @@ def test_on_arm_records_the_self_row_only_for_a_pull_request(repo, monkeypatch):
 
     link.on_arm(REF, str(repo), routed=_armed_on_pr())
     assert seen == [REF.ref]
+
+
+# -- an event never claims an agent node (issue-525) -----------------------------
+
+
+def test_an_event_does_not_evaluate_an_agent_node(repo, monkeypatch):
+    """issue-525 — an agent node is its session's to claim (`graph complete`);
+    an unrelated event evaluating it passed the review step's empty chain."""
+    runtime = _GateRuntime(start_node="review-brief", actor="agent", current="review")
+    _pointer(monkeypatch, runtime)
+    assert _link(repo, runtime).on_event(REF, str(repo), _comment_event()) is None
+    assert runtime.advanced == []
+
+
+def test_a_pr_event_does_not_evaluate_an_agent_node(repo, monkeypatch):
+    """The inner loop's agent nodes are claimed with `graph complete --pr`."""
+    runtime = _GateRuntime(actor="agent", current="implementation")
+    _pointer(monkeypatch, runtime)
+    pr = WorkItemRef.parse("github:octo/repo#7")
+    _link(repo, runtime).on_pr_event(REF, pr, str(repo), _comment_event())
+    assert runtime.advanced == []
+
+
+def test_an_event_re_evaluates_an_agent_node_its_own_chain_parked(repo, monkeypatch):
+    """A claimed `implementation` that `await-inner-loops` parked waits on the
+    world, not on its session: an event may be what changed it."""
+    runtime = _GateRuntime(actor="agent", current="implementation")
+    runtime.parked = {"node": "implementation", "reason": "waiting for 1 inner loop"}
+    _pointer(monkeypatch, runtime)
+    _link(repo, runtime).on_event(REF, str(repo), _comment_event())
+    assert len(runtime.advanced) == 1
+
+
+def test_a_code_node_is_not_evaluated_on_an_event(repo, monkeypatch):
+    runtime = _GateRuntime(actor="code", current="cleanup")
+    _pointer(monkeypatch, runtime)
+    _link(repo, runtime).on_event(REF, str(repo), _comment_event())
+    assert runtime.advanced == []
+
+
+def test_an_event_still_reaches_a_human_gate(repo, monkeypatch):
+    runtime = _GateRuntime(actor="human", current="follow-up")
+    _pointer(monkeypatch, runtime)
+    _link(repo, runtime).on_event(REF, str(repo), _comment_event(body="done"))
+    assert len(runtime.advanced) == 1
+
+
+def test_an_event_on_an_unplaced_pointer_still_advances(repo, monkeypatch):
+    """No current node yet: the runtime routes from the start node, as before."""
+    runtime = _GateRuntime(actor="agent", current="")
+    _pointer(monkeypatch, runtime)
+    _link(repo, runtime).on_event(REF, str(repo), _comment_event())
+    assert len(runtime.advanced) == 1

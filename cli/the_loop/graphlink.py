@@ -881,13 +881,22 @@ class GraphLink:
         Returns the runtime's :class:`NodeReport` when the graph ran, ``None``
         on any skip or fault (issue-148, D4) — the consult-first path renders
         the gate's verdict into the prompt it delivers.
+
+        **Only a human node is evaluated here** (issue-525), the same rule the
+        spawn path already keeps. An agent node is claimed by its session with
+        ``the-loop graph complete``; its exit chain gates work the session may
+        not have done yet, so an unrelated event — a CI check, a push — must
+        not run it. Before this, the review loop's ``review`` step (an empty
+        exit chain, which always passes) moved to ``follow-up`` on the first
+        event after the spawn, announcing a review round nobody had posted; a
+        node with a real chain spent an attempt instead.
         """
         event = {"comments": comments_from(routed, self.gate_authorized)}
         return self._guarded(
             "advance",
             work_item,
             cwd,
-            lambda rt, item: rt.advance(item, ref=work_item.ref, event=event),
+            lambda rt, item: self._advance_on_event(rt, item, work_item.ref, event),
         )
 
     def on_close(self, work_item: WorkItemRef, cwd: str) -> None:
@@ -1006,13 +1015,16 @@ class GraphLink:
         ``await-inner-loops`` seam, by reading their checked-in state — not by
         being advanced from a PR's events. That one-way flow is what keeps a PR
         from walking the work item past gates the work item has not earned.
+
+        An agent node is left alone here exactly as in :meth:`on_event`
+        (issue-525): the PR session claims it with ``graph complete --pr``.
         """
         event = {"comments": comments_from(routed, self.gate_authorized)}
         return self._guarded(
             "advance",
             work_item,
             cwd,
-            lambda rt, item: rt.advance(item, ref=pr.ref, event=event),
+            lambda rt, item: self._advance_on_event(rt, item, pr.ref, event),
             pr_number=pr.number,
             pr_repo=_pr_repo(work_item, pr, self.cli_config),
         )
@@ -1304,6 +1316,57 @@ class GraphLink:
                 error=str(exc),
             )
             return None
+
+    def _advance_on_event(
+        self, rt: Any, item_id: str, ref: str, event: Dict[str, Any]
+    ) -> Optional[Any]:
+        """Advance on an inbound event — unless the pointer is on an agent node.
+
+        The node's session claims an agent node (``graph complete``); an event
+        evaluating it instead passes an empty chain on work never done, or
+        spends an attempt on a chain the session has not had a chance to
+        satisfy (issue-525). ``None`` is the same "the graph did not run"
+        answer a skip gives, so no caller renders a verdict that was not
+        reached.
+        """
+        node = self._current_agent_node(rt, item_id)
+        if node:
+            logger.debug(
+                "event for %s not evaluated: %s is an agent node", item_id, node
+            )
+            return None
+        return rt.advance(item_id, ref=ref, event=event)
+
+    @staticmethod
+    def _current_agent_node(rt: Any, item_id: str) -> str:
+        """The current node's id when the session, not a human, finishes it.
+
+        Any actor but ``human`` counts — an ``agent`` node is claimed by its
+        session and a ``code`` node is entered directly by the-loop; neither is
+        answered by an event. One exception: an agent node **parked** on a wait
+        its own chain returned. Entering a node clears ``parked``, so a park on
+        it means the chain already ran (a claim, then ``await-inner-loops``
+        waiting on a PR) and is waiting on the world, which an event may have
+        changed. Anything unreadable, and a pointer not yet placed, answers
+        ``""``: the advance then runs exactly as it did before issue-525, and
+        the runtime's own lock and chain stay the judges.
+        """
+        from .graph.state import WorkItemState
+
+        try:
+            item = rt.work_item(item_id)
+            state_dir = (
+                rt.state_dir(item) if hasattr(rt, "state_dir") else item.spec_dir
+            )
+            state = WorkItemState.load(state_dir, item_id)
+            current = state.current_node
+            if not current or rt.graph.node(current).actor == "human":
+                return ""
+            parked = state.parked if isinstance(state.parked, dict) else {}
+            return "" if parked.get("node") == current else current
+        except Exception as exc:  # noqa: BLE001 — a fake runtime, a vanished node
+            logger.debug("could not read %s's current node: %s", item_id, exc)
+            return ""
 
     @staticmethod
     def _parked_on_a_human_start_gate(rt: Any, item_id: str) -> bool:
