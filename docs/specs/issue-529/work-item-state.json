@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-529",
-  "currentNode": "requirements-definition",
+  "currentNode": "tasks-breakdown",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -29,10 +29,74 @@
     },
     "requirements-definition": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-10-29T18:18:14+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-10-29T18:20:58+00:00",
       "lastBlock": "`lint-artifacts` did not pass:\n- mermaid block 1 line 6: a backtick inside a node label breaks rendering \u2014 use plain text (docs/specs/issue-529/requirements.md)\n- mermaid block 1 line 7: a backtick inside a node label breaks rendering \u2014 use plain text (docs/specs/issue-529/requirements.md)",
+      "forced": false
+    },
+    "requirements-approval": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-29T18:20:58+00:00",
+      "exitedAt": "2026-10-29T18:20:58+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "design": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-29T18:20:58+00:00",
+      "exitedAt": "2026-10-29T18:22:40+00:00",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-529/design.md)",
+      "forced": false
+    },
+    "design-critic-review": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-29T18:22:40+00:00",
+      "exitedAt": "2026-10-29T18:22:40+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "test-planning": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-10-29T18:22:40+00:00",
+      "exitedAt": "2026-10-29T18:22:45+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "design-approval": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-29T18:22:45+00:00",
+      "exitedAt": "2026-10-29T18:22:45+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "spec-explainer": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-29T18:22:45+00:00",
+      "exitedAt": "2026-10-29T18:22:45+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "spec-quiz": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-10-29T18:22:45+00:00",
+      "exitedAt": "2026-10-29T18:22:45+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "tasks-breakdown": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-10-29T18:22:45+00:00",
+      "exitedAt": "",
+      "lastBlock": "",
       "forced": false
     }
   },
@@ -252,7 +316,15 @@
   "parked": null,
   "completions": {
     "requirements-definition": {
-      "at": "2026-10-29T18:20:51+00:00",
+      "at": "2026-10-29T18:20:58+00:00",
+      "by": "cli"
+    },
+    "design": {
+      "at": "2026-10-29T18:22:40+00:00",
+      "by": "cli"
+    },
+    "test-planning": {
+      "at": "2026-10-29T18:22:45+00:00",
       "by": "cli"
     }
   },
@@ -342,5 +414,5 @@
     }
   ],
   "loop": "pdlc-work-item-loop",
-  "phase": "requirements-definition"
+  "phase": "tasks-breakdown"
 }
