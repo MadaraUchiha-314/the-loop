@@ -1,3 +1,9 @@
+## v20.11.0 (2026-10-29)
+
+### Feat
+
+- **issue-529**: Slack kickoff offers Do or Start (#530)
+
 ## v20.10.3 (2026-10-27)
 
 ### Fix
