@@ -24,7 +24,7 @@ flowchart LR
 
 ## Task list
 
-- [ ] 1. Renderer: a Do button and the description lines
+- [x] 1. Renderer: a Do button and the description lines
   - `slack.py`: `COMMAND_BUTTONS` gains `"do": "Do"`. New `KICKOFF_COMMANDS = ("do",
     "start")` and `COMMAND_DESCRIPTIONS` (fixed words, `do` and `start` only), both in
     `__all__`. `render_reply_blocks` inserts a description section (`*<Label>* —

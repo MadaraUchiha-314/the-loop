@@ -16,7 +16,9 @@ from the_loop.channels.slack import (
     ACTION_PREFIX,
     BUTTON_NAMES,
     COMMAND_BUTTONS,
+    COMMAND_DESCRIPTIONS,
     DEFAULT_APP_TOKEN_ENV,
+    KICKOFF_COMMANDS,
     DEFAULT_BOT_TOKEN_ENV,
     PHASE_SELECTION_MARKER,
     SlackBotChannel,
@@ -319,16 +321,56 @@ def test_no_defaults_button_without_a_stated_default():
 
 
 def test_reply_blocks_carry_the_start_button():
-    """R1.2: the kickoff reply's blocks — a section and, with a command, one
-    actions block; with none, the section alone."""
+    """R1.2 (issue-337): the kickoff reply's blocks — a section and, with a
+    command, its description line and one actions block; with none, the section
+    alone (issue-529 R1.2, R1.4)."""
     blocks = render_reply_blocks("Opened github:o/r#42", {"start": "the-loop start"})
     assert blocks[0] == {
         "type": "section",
         "text": {"type": "mrkdwn", "text": "Opened github:o/r#42"},
     }
+    assert blocks[1] == {
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": f"*Start* — {COMMAND_DESCRIPTIONS['start']}",
+        },
+    }
     assert buttons(blocks) == [(f"{ACTION_PREFIX}command:start", "the-loop start")]
-    assert blocks[1]["elements"][0]["text"]["text"] == "Start"
+    assert blocks[2]["elements"][0]["text"]["text"] == "Start"
     assert render_reply_blocks("Opened github:o/r#42", {}) == [blocks[0]]
+
+
+def test_reply_blocks_offer_do_then_start_each_described():
+    """issue-529 R1.1, R1.2, R1.5: both kickoff commands render — the text, one
+    line per command saying what it runs, then Do before Start, each valued with
+    its configured keyword."""
+    commands = {"do": "the-loop do", "start": "the-loop start"}
+    blocks = render_reply_blocks("Opened github:o/r#42", commands)
+    assert [b["type"] for b in blocks] == ["section", "section", "actions"]
+    assert blocks[1]["text"]["text"] == (
+        f"*Do* — {COMMAND_DESCRIPTIONS['do']}\n"
+        f"*Start* — {COMMAND_DESCRIPTIONS['start']}"
+    )
+    assert buttons(blocks) == [
+        (f"{ACTION_PREFIX}command:do", "the-loop do"),
+        (f"{ACTION_PREFIX}command:start", "the-loop start"),
+    ]
+    assert [e["text"]["text"] for e in blocks[2]["elements"]] == ["Do", "Start"]
+
+
+def test_kickoff_commands_are_do_then_start():
+    """issue-529 D2: the order a new work item is offered its loops in."""
+    assert KICKOFF_COMMANDS == ("do", "start")
+    assert set(KICKOFF_COMMANDS) <= set(COMMAND_BUTTONS)
+
+
+def test_a_command_without_a_description_renders_no_line():
+    """issue-529: Execute (the phase-selection mirror) is undescribed, so its
+    reply is the text and the button exactly as before."""
+    blocks = render_reply_blocks("Checklist", {"execute": "the-loop execute"})
+    assert [b["type"] for b in blocks] == ["section", "actions"]
+    assert "execute" not in COMMAND_DESCRIPTIONS
 
 
 def test_the_button_tables_agree():
@@ -336,6 +378,7 @@ def test_the_button_tables_agree():
     the labels a member saw."""
     for command, label in COMMAND_BUTTONS.items():
         assert BUTTON_NAMES[f"{ACTION_PREFIX}command:{command}"] == label
+    assert BUTTON_NAMES[f"{ACTION_PREFIX}command:do"] == "Do"
     assert BUTTON_NAMES[f"{ACTION_PREFIX}approve"] == "Approve"
     assert BUTTON_NAMES[f"{ACTION_PREFIX}changes"] == "Request changes"
 

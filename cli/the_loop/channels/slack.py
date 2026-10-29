@@ -82,6 +82,8 @@ __all__ = [
     "BUTTON_NAMES",
     "CHANGES_VALUE",
     "COMMAND_BUTTONS",
+    "COMMAND_DESCRIPTIONS",
+    "KICKOFF_COMMANDS",
     "KICKOFF_REPO_ACTION",
     "OPTION_LIMIT",
     "DEFAULT_APP_TOKEN_ENV",
@@ -587,7 +589,22 @@ _BUTTON_VALUE_LIMIT = 2000
 #: The command buttons (issue-337): control command → the label a member sees.
 #: Fixed; the button's VALUE is the configured keyword, read from
 #: ``routing.control.keywords`` so a press is exactly a typed keyword.
-COMMAND_BUTTONS: Dict[str, str] = {"execute": "Execute", "start": "Start"}
+COMMAND_BUTTONS: Dict[str, str] = {"execute": "Execute", "do": "Do", "start": "Start"}
+#: The loops a newly opened work item is offered, in render order (issue-529):
+#: the ad-hoc loop first, the full PDLC second, so neither is the default.
+KICKOFF_COMMANDS: Tuple[str, ...] = ("do", "start")
+#: What each offered loop runs, one line under the reply (issue-529 R1.2). Fixed
+#: words, never the member's text; a command without one renders no line.
+COMMAND_DESCRIPTIONS: Dict[str, str] = {
+    "do": (
+        "a tactical task — no spec chain or phase gates; the-loop works it "
+        "until you say it is done."
+    ),
+    "start": (
+        "the full PDLC — phase selection, requirements, design, testing plan, "
+        "reviews and an approval gate."
+    ),
+}
 
 #: The repository picker (issue-349): the one action whose value is an ARGUMENT to
 #: something the-loop has not done yet, rather than an answer to a gate or a
@@ -1938,12 +1955,23 @@ def render_reply_blocks(
 ) -> List[Dict[str, Any]]:
     """A plain reply as Block Kit — one section — plus one actions block of
     command buttons when ``commands`` names any (the kickoff's "opened, this
-    thread is the conversation" reply and its Start button, issue-337 R1.2)."""
+    thread is the conversation" reply and its Do / Start buttons, issue-337
+    R1.2, issue-529). A rendered command with a description gets one line
+    between the two, in button order, so the choice is read before it is made."""
     blocks: List[Dict[str, Any]] = [
         {"type": "section", "text": {"type": "mrkdwn", "text": text}}
     ]
     buttons = _command_buttons(commands)
     if buttons:
+        lines = [
+            f"*{COMMAND_BUTTONS[command]}* — {COMMAND_DESCRIPTIONS[command]}"
+            for command, keyword in (commands or {}).items()
+            if keyword and command in COMMAND_DESCRIPTIONS
+        ]
+        if lines:
+            blocks.append(
+                {"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(lines)}}
+            )
         blocks.append({"type": "actions", "elements": buttons})
     return blocks
 
