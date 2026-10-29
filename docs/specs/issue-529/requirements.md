@@ -48,8 +48,8 @@ flowchart LR
   I --> R["reply: Opened #N …"]
   R -->|today| S1["[Start]"]
   R -->|after| B["[Do] [Start]<br/>+ one line each"]
-  B -->|Do| D["`the-loop do` on the ticket<br/>→ pdlc-adhoc-loop"]
-  B -->|Start| S["`the-loop start` on the ticket<br/>→ pdlc-work-item-loop"]
+  B -->|Do| D["the-loop do on the ticket<br/>→ pdlc-adhoc-loop"]
+  B -->|Start| S["the-loop start on the ticket<br/>→ pdlc-work-item-loop"]
 ```
 
 ### Decisions this document takes, for the approver
