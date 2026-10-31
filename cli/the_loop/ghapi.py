@@ -204,7 +204,7 @@ query($owner: String!, $name: String!, $labels: [String!], $first: Int!, $after:
            orderBy: {field: UPDATED_AT, direction: DESC}) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        number title updatedAt url
+        number title updatedAt url body
         author { login }
         labels(first: 100) { nodes { name } }
       }
@@ -352,7 +352,7 @@ class GhItem:
     is_pr: bool
     author: str = ""  # login that opened the issue/PR (authorization guard)
     head_ref: str = ""  # PRs only (links a PR to its issue-<n> branch)
-    body: str = ""  # PRs only (closing keywords live here)
+    body: str = ""  # PR closing keywords live here; an issue's carries the Jira block
     # PRs only: issue numbers GitHub itself reports the PR as closing (issue-93)
     linked_issues: List[int] = field(default_factory=list)
 
@@ -776,6 +776,14 @@ class GitHubClient:
         if not isinstance(number, int):
             raise GitHubApiError("GitHub returned no issue number")
         return number, str(getattr(issue, "html_url", "") or "")
+
+    def edit_issue_body(
+        self, owner: str, repo: str, number: int, body: str, host: str = ""
+    ) -> None:
+        """``PATCH /repos/{o}/{r}/issues/{n}`` with a new ``body`` — and nothing else."""
+        owner, repo = self._coordinates(owner, repo)
+        issue = self._issue(owner, repo, self._number(number), host)
+        self._call("edit issue body", lambda: issue.edit(body=str(body)))
 
     def add_reaction(
         self, owner: str, repo: str, kind: str, id: Any, content: str, host: str = ""
