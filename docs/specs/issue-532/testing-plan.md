@@ -55,17 +55,18 @@ overrides: {}
 
 ## Verification activities
 
-- [ ] T1 — `cd cli && pytest tests/test_graph_gateway_notify.py`
-- [ ] T2 — `cd cli && pytest tests/test_graph_gateway_notify_integration.py`
-- [ ] T8 — covered by T1's negative cases
-- [ ] T12 — `cd cli && pytest -q`
+- [x] T1 — `cd cli && pytest tests/test_graph_gateway_notify.py`
+- [x] T2 — `cd cli && pytest tests/test_graph_gateway_notify_integration.py`
+- [x] T8 — covered by T1's negative cases
+- [x] T12 — `cd cli && pytest -q`
 
 ## Verification results
 
-_Not yet executed._
-
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1 | `cd cli && pytest tests/test_graph_gateway_notify.py` | pass (6); red on `main` (2 failed) | [unit.md](evidence/unit.md) |
+| T2 | `cd cli && pytest tests/test_graph_gateway_notify_integration.py` | pass (1); red on `main` with the ticket's "no bot token" error | [unit.md](evidence/unit.md) |
+| T8 | covered by T1's four absent/malformed cases | pass — still `none` | [unit.md](evidence/unit.md) |
+| T12 | `cd cli && pytest -q` (session env unset) | 6810 passed | [regression.md](evidence/regression.md) |
 
 ## Review comments
