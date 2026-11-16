@@ -593,6 +593,10 @@ flowchart LR
   slack` SHALL report it as `[!]`, its heartbeat probe `unverifiable` with the same
   reason. WHEN Slack is disabled THEN none of it prints. See
   [gateway](gateway.md) § Outbound Slack.
+  A graph runtime's config carries the `gateway` and `instance` blocks too
+  ([issue-532](https://github.com/MadaraUchiha-314/the-loop/issues/532)), so the
+  `notify` hook and the phase lifecycle events take the gateway path on their first
+  attempt rather than failing and waiting for the outbox.
 - **A deployment-wide `the-loop doctor slack`** (issue-393, F2/R2.2–R2.3). WHEN the
   doctor runs THEN it SHALL (1) detect a **second live Socket Mode consumer** on the same
   app token — by posting a nonce heartbeat to the bot's own channel and reading it back
@@ -1121,6 +1125,7 @@ ticket, with no Jira work items, ingress or ledger:
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-532 | Graph notifications behind a gateway post first time (2026-11-16): `graph/bootstrap.py::build_runtime` copies `gateway` and `instance` into the runtime config, so `posting_path()` resolves `gateway` for the `notify` hook and `publish_lifecycle` instead of `none`, and the gateway call names this instance | [spec](../specs/issue-532/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/532) |
 | issue-498 | A relayed command still opens its comment (2026-10-23): the ledger's `gate.feedback` / `control.command` relay record puts the person's words first, unquoted, and the attribution after them, because a control keyword now counts only where a comment opens with it | [spec](../specs/issue-498/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/498) |
 | issue-529 | **A Slack kickoff offers Do or Start** (2026-10-29): the kickoff's "opened" reply — on every path, the message, the picker and `/the-loop new` — renders `command_buttons_for(*KICKOFF_COMMANDS)`, so **Do** (`the-loop do`, the ad-hoc loop) sits before **Start**, and `render_reply_blocks` puts one fixed description line per described button between the text and the buttons. Before, only Start was offered, so a tactical request walked the full PDLC unless the member knew to type `the-loop do`. No config, grant, scope, schema or event change | [spec](../specs/issue-529/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/529) |
 | issue-519 | **Behind a gateway, the gateway posts** (2026-10-23): one resolver, `outbound_client()` / `posting_path()`, picks the instance's Slack client — own token first, else a gateway-backed client over `POST /api/v1/gateway/slack/call` (and `/slack/download` for files), else today's error with the gateway hint — for the channel, every `SlackBotChannel` construction site, the directory, the doctor and the attachment fetcher (a caller's own fetcher counts as a credential, captions included); a gateway failure fails the post with no fallback. `start` warns once and emits `channel.posting_unavailable` when nothing can post; `status`, `channels status` and `doctor slack` say which posting path is in use | [spec](../specs/issue-519/), [gateway](gateway.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/519) |

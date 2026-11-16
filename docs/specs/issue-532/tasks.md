@@ -13,7 +13,7 @@ overrides: {}
 
 ## Task list
 
-- [ ] 1. Write the failing tests
+- [x] 1. Write the failing tests
   - Unit: `cli/tests/test_graph_gateway_notify.py` — runtime config carries `gateway`
     and `instance`; `posting_path` is `gateway` with no token; no / malformed block → `none`.
   - Integration: `cli/tests/test_graph_gateway_notify_integration.py` — the real
@@ -23,7 +23,7 @@ overrides: {}
   - _Depends on:_ none
   - _Requirements:_ R1.1–R1.4, R2.1
   - _Test:_ T1, T2, T8 (red)
-- [ ] 2. Seed `gateway` and `instance` in `build_runtime`
+- [x] 2. Seed `gateway` and `instance` in `build_runtime`
   - `cli/the_loop/graph/bootstrap.py`, next to `channels` and `state`, with a comment
     naming the readers.
   - _Depends on:_ 1
