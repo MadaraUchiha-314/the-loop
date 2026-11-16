@@ -29,7 +29,7 @@ overrides: {}
   - _Depends on:_ 1
   - _Requirements:_ R1.1–R1.4
   - _Test:_ T1, T2, T8 (green)
-- [ ] 3. Capability doc + full suite
+- [x] 3. Capability doc + full suite
   - Note the seeded keys in the channels / gateway capability doc that describes the
     posting path.
   - _Depends on:_ 2
