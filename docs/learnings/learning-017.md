@@ -30,3 +30,9 @@ records the clean-environment command.
 failures, 22 of them environmental (the poller, status and instances tests read the
 operator's live config and running poller). The clean-environment command made them pass.
 One more occurrence triggers the write-gate: an autouse fixture that unsets the variables.
+
+## Recurrence
+
+- **issue-536 (2026-11-17):** the same 20-odd tests failed locally and passed on a clean
+  run. The session also exports `THE_LOOP_INSTANCE`, so unset all three:
+  `env -u THE_LOOP_CLI_CONFIG -u THE_LOOP_INSTANCE -u THE_LOOP_WORK_ITEM make check`.
