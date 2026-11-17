@@ -10,12 +10,11 @@ workItem: "github:MadaraUchiha-314/the-loop#533"
 
 ## Security review (gate)
 
-- **Mechanism:** the-loop checklist (below), verified against the diff and the tests. A
-  second pass with the built-in `security-review` skill was started and **had not
-  returned** when this record was written. Its result is appended under § Security-review
-  skill round, and any finding from it blocks completion until dispositioned.
-- **Outcome:** pass on the checklist. Every security finding raised earlier was fixed
-  with a negative test, listed below.
+- **Mechanism:** the built-in `security-review` skill (a sub-agent pass over the diff,
+  with false-positive filtering at confidence 8 or above), plus the-loop's checklist
+  (below), verified against the diff and the tests.
+- **Outcome:** escalated. One finding (SEC-1) needs a security decision. Every other
+  finding was fixed with a negative test.
 - **Findings:**
 
   | ID | Finding | Disposition |
@@ -25,6 +24,7 @@ workItem: "github:MadaraUchiha-314/the-loop#533"
   | CR1-1 | a credential named `f` redirected the loader's `rm` (value on argv) | fixed `67447284` + test |
   | CR1-2 | a skipped entry's names were not stripped (fail-open) | fixed `376cce97` + test |
   | CR1-3 | the sweep ran only on writing spawns | fixed `025530d5` + test |
+  | SEC-1 (medium, 8/10) | `repositories` scope limits delivery, not reach: sessions share a Unix user, so an out-of-scope agent can read an in-scope session's `/proc/<pid>/environ` (`envstate.py` `admits`/`for_work_item`) | **documented, escalated**: requirements A7 and residual risk, config doc warning, schema and capability doc now say the scope is not isolation. Real isolation (separate UIDs or a PID sandbox) is out of scope. Accepting this is the sign-off's decision |
 
 - **Human sign-off:** **pending.** Tier 4 requires a named human. Requested on PR #535.
 
@@ -43,6 +43,11 @@ workItem: "github:MadaraUchiha-314/the-loop#533"
 
 ## Residual risk (needs the human's acceptance)
 
+**SEC-1.** A `repositories`-scoped token is reachable by any concurrent session on the
+same host, because sessions share a Unix user and can read each other's `/proc/<pid>/environ`.
+Untrusted text in a public issue could steer that issue's agent to harvest a private
+repository's token.
+
 An agent that holds a token can leak it where no scrubber sees: `gh`/`git push`/`curl`
 with the token itself, a transformed value (base64, split), or a verb run with
 `THE_LOOP_SERVICE_LOCAL=1`. This is inherent in holding a token and is documented in the
@@ -51,4 +56,15 @@ decision.
 
 ## Security-review skill round
 
-*Running. Result to be appended here.*
+One finding survived filtering (SEC-1, above). The skill also checked these, and found
+none exploitable:
+
+- values on argv and in the tmux environment;
+- shell injection through the file or the loader;
+- path traversal through the tmux target;
+- symlink and TOCTOU on the file and its directory;
+- the fail-closed paths and scope matching;
+- logs and fingerprints.
+
+It noted a hardening gap, not counted as a finding: `sayToStandingSession.text` and
+`createStandingSession.prompt` are not scrubbed. That text goes to tmux, not outward.

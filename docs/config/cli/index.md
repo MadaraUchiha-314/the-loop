@@ -350,6 +350,10 @@ declares it, else the daemon's environment. It never reaches a session under its
 Only sessions for GitHub work items in these repositories get the credential. A Jira work
 item or a standing session never does.
 
+::: warning
+**`repositories` limits delivery, not reach.** Every session runs as the same user, so an agent in any session can read another session's environment (`/proc/<pid>/environ`) while both run. A token scoped to a private repository is therefore reachable from a concurrent session on another repository. Do not rely on the scope to isolate a token from an untrusted work item. Isolating it needs sessions under separate users or a PID-isolated sandbox, which the-loop does not provide.
+:::
+
 ## A minimal working config
 
 ```yaml

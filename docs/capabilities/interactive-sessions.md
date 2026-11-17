@@ -291,7 +291,9 @@ still carrying the key is warned about and otherwise ignored).
   `<state.root>/local/session-credentials/`, which the pane reads and deletes before it
   `exec`s the harness. It SHALL NOT appear on any argv, in the tmux client's environment
   or in any tmux environment (global or session). Every entry's `name` and `from` stays
-  removed from any pane it does not admit. Unset: today's boundary, unchanged.
+  removed from any pane it does not admit. Unset: today's boundary, unchanged. The
+  `repositories` scope governs delivery only: sessions share a Unix user, so a
+  concurrent session can read another's `/proc/<pid>/environ`. It is not isolation.
 - WHEN a session sends the service text (ask, reply, comment, ticket or PR title/body,
   force/skip reason) THEN every configured session credential value SHALL be masked as
   `<redacted:session-credential>` before anything is posted or logged. The event log

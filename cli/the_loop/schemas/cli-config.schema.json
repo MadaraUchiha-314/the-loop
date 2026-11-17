@@ -208,7 +208,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "Only sessions for GitHub work items in these `[HOST/]OWNER/REPO`s get it. Unset: every session."
+                "description": "Only sessions for GitHub work items in these `[HOST/]OWNER/REPO`s are GIVEN it. This limits delivery, not reach: every session runs as the same user and can read a concurrent session's /proc/<pid>/environ, so do not rely on it to isolate a token from an untrusted work item. Unset: every session."
               }
             }
           },

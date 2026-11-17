@@ -251,11 +251,16 @@ issues, PRs and the web and can be steered by it; anyone who reads what the agen
 - A6. WHEN an operator points `from` at the daemon's own token THEN the-loop SHALL warn
   (R1.6), so the broad token is never handed over silently.
 - A7. WHEN a credential scoped to `repositories` is configured THEN a session for a
-  different repository SHALL NOT receive it (R1.7).
+  different repository SHALL NOT receive it (R1.7). This holds for **delivery** only.
+  Sessions share a Unix user, so a concurrent session can read another's
+  `/proc/<pid>/environ`. The scope is not isolation (security review SEC-1; see
+  Residual risk).
 
 **Residual risk, stated.** An agent that holds a token can still leak it in ways no
 scrubber sees: `git push` to an attacker's remote, a `curl` to an external host, a
-transformed value (base64, split). This is the trade-off R8 documents; the mitigation is
+transformed value (base64, split). Because every session runs as the same user, an
+agent can also read a concurrent session's environment, so a `repositories`-scoped token
+is reachable from an out-of-scope session (SEC-1). This is the trade-off R8 documents; the mitigation is
 a least-privilege, short-lived token, which `from` exists to make easy.
 
 **Fail closed.** A malformed entry, an unset source or an unmatched repository scope
