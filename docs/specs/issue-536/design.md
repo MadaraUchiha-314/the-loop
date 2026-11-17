@@ -79,9 +79,10 @@ flowchart TD
    `testing-plan.md`, `tasks.md`); add a tab when the next file appears. Never a second
    doc.
 2. **Explainer and quizzes are tabs too** (R4.4): "Spec explainer", "Spec quiz",
-   "Explainer", "Code quiz". A doc runs no script, so the quiz tab lists each question and
-   its options, with the answers under a closing "Answers" heading; the quiz gate is still
-   answered by ticking the box on the-loop's comment.
+   "Explainer", "Code quiz". A doc runs no script and cannot hide text, so a quiz tab
+   lists only the questions and their options, and the answers go in a separate last tab,
+   "Quiz answers" (self-review round 1). The quiz gate is still answered by ticking the
+   box on the-loop's comment.
 3. **Read before rewrite** (R4.5). Before rewriting a tab from its file, read the tab. If
    it differs from what the session last wrote, the difference is a human edit: fold it
    into the file (or reply on the ticket/PR saying why not), commit, then rewrite the tab
