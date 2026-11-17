@@ -599,6 +599,11 @@ def session_environment_and_lines(
     # Every opted-in name and its source stay removed until `for_work_item` admits
     # the name for one session (issue-533, R2): the source never reaches a pane.
     remove |= {c.name for c in credentials} | {c.source for c in credentials}
+    # A skipped entry still names a variable the operator meant as a credential: keep
+    # every syntactically valid name and source out of the pane (critic CR1-2).
+    remove |= {
+        n for n in _session_credential_names(config) if envfile.NAME_RE.fullmatch(n)
+    }
     return (
         SessionEnvironment(
             forward=forward,
