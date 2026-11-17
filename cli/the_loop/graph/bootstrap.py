@@ -194,6 +194,16 @@ def build_runtime(
         # `await-inner-loops` would wait forever (issue-365).
         "repositories": cli_cfg.get("repositories") or [],
         "state": cli_cfg.get("state") or {},
+        # The two keys the issue-519 posting path reads besides `channels` and
+        # `state` (issue-532): `gateway` (`posting_path` → `gateway_block`) and
+        # `instance` (the name `GatewaySlackClient` calls under). Without them a
+        # gateway consumer's first post from a graph hook — `notify`, or the
+        # runtime's lifecycle events — failed "no bot token", and only the
+        # outbox retry, which reloads the full config, reached the gateway.
+        # Copied as-is: `gateway_block` and `instance_name` already type them
+        # and fall back closed when absent or malformed.
+        "gateway": cli_cfg.get("gateway"),
+        "instance": cli_cfg.get("instance") or {},
     }
     # Where THIS machine's session records live (issue-368). `session: inherit`
     # resolves the conversation to inherit from the registry now, rather than

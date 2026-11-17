@@ -248,6 +248,10 @@ The word *gateway*, unqualified, is this process; decision-059's is the
   a token, no retry logic of its own; the existing outbox treats it like any failed Slack
   call. `GET /api/v1/gateway` carries `slackPosting` from the gateway's health and the
   Gateway card reads `connected · long-poll · posting via gateway`.
+  Graph hooks post the same way on the first attempt: the config `build_runtime` hands
+  every graph runtime carries the `gateway` and `instance` blocks next to `channels` and
+  `state` (issue-532), so a `notify` hook or a phase lifecycle event no longer fails
+  "no bot token" and waits for the outbox retry.
 - **The instance says when nothing can post** (issue-519). With Slack enabled and no
   posting path — no token, and no gateway or a gateway reporting posting off (or one that
   could not be asked at start) — `the-loop start` logs one warning naming the variable
@@ -328,6 +332,7 @@ The word *gateway*, unqualified, is this process; decision-059's is the
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-532 | Graph notifications on a gateway consumer post through the gateway on the first attempt (2026-11-16): `build_runtime` seeds `gateway` and `instance` into the graph runtime's config, which the `notify` hook and the lifecycle publisher pass to the bus; before, the first post failed "no bot token" and only the outbox retry (full config) reached the gateway, logged `channel.delivered_late` | [spec](../specs/issue-532/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/532) |
 | issue-519 | **Outbound Slack through the gateway, and a loud failure when it cannot** (2026-10-23): `POST /api/v1/gateway/slack/call` and `/slack/download` make Slack Web API calls and file downloads for an instance with the bot token the gateway already holds — a pass-through behind `slack.post.enabled` (default on), a flat allow-list of the fourteen methods the instance calls and the usual consumer guards, no state, no retry; `health.slack.posting` and `gateway status` say whether it posts. On the instance one resolver picks the posting path (own token first, else the gateway, else today's error with the gateway hint) for the channel, the directory, the doctor and attachments; `start`, `status`, `channels status` and `doctor slack` say which path is in use and name the missing variable when nothing can post. The owner withdrew a per-instance channel registration at the design review: any accepted peer may post wherever the bot can | [spec](../specs/issue-519/), [decision-151](../decisions/decision-151.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/519) |
 | issue-505 | Collaboration channels reach the gateway (2026-10-20): the instance publishes its declared Slack channels as rooms (`PUT /api/v1/gateway/rooms`, a replace-set per instance), the gateway resolves a Slack event through a published room after the thread binding and before `slack.rooms`, a late room drains the channel's held events, a live holder keeps its room, and `GET /instances` lists rooms. A collaborator's top-level message in a declared room is no longer held | [spec](../specs/issue-505/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/505) |
 | issue-503 | The instance side gets `channels.slack.read.mode: gateway` (2026-10-20): the explicit "no Socket Mode here" setting, with interactivity keyed on reachability rather than on `socket`; fail closed without a block; `migrate-config` rewrites 20.3.0's `socket` beside a block | [spec](../specs/issue-503/), [channels](channels.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/503) |
