@@ -154,7 +154,8 @@ Try these in order:
 | Condition | Do this | `Location` in the record |
 |---|---|---|
 | `claudeArtifact: true` (the prompt's graph block says so) and you have an artifact tool | Add tabs "Spec explainer" and "Spec quiz" to the work item's spec-chain artifact, and republish it to **its existing URL**. Later, add "Explainer" and "Code quiz" the same way. | that URL |
-| `claudeArtifact` false, and you have an artifact tool | Publish **one** artifact titled `<id>: explainer` from the filled template. At `code-explainer`, republish the same file to the same URL with the code tabs added. | that URL |
+| `claudeDoc: true` (the prompt's graph block says so) and you have the Claude Docs connector | Add tabs "Spec explainer" and "Spec quiz" to the work item's spec-chain doc, written as prose from the filled template: a doc runs no script, so the quiz tab lists each question and its options, with the answers under a closing "Answers" heading. Later, add "Explainer" and "Code quiz" the same way. | the doc's URL |
+| `claudeArtifact` and `claudeDoc` false, and you have an artifact tool | Publish **one** artifact titled `<id>: explainer` from the filled template. At `code-explainer`, republish the same file to the same URL with the code tabs added. | that URL |
 | No artifact tool (Codex, Cursor, or the tool is unavailable) | Write `docs/specs/<id>/explainer/explainer.html`, run the evidence redaction pass over it (tokens, cookies, personal data, internal hostnames), then commit and push. | the file's GitHub blob URL, e.g. `https://github.com/<owner>/<repo>/blob/<branch>/docs/specs/<id>/explainer/explainer.html` |
 
 **How each case is linked:**

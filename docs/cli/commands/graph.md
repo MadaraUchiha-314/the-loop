@@ -86,9 +86,11 @@ full process.
 - [x] outer-loop-on-pull-request  ← not a phase: where the OUTER loop happens.
                                      Ticked (the default) = on a pull request;
                                      unticked = on the work item.
-- [x] claude-artifact             ← not a phase: also publish the spec chain as
+- [ ] claude-artifact             ← not a phase: also publish the spec chain as
                                      one Claude artifact (`claude` harness only).
-                                     Ticked by default (issue-510).
+- [x] claude-doc                  ← or as one Claude doc instead (issue-536) —
+                                     the default. Tick at most one; both ticked
+                                     publishes neither.
 - [x] explainer                   ← the explainer and two quizzes (issue-488):
                                      ticked (the default) = they run; unticked =
                                      their four nodes are declared skipped.
@@ -114,7 +116,7 @@ the harness from choosing its own workload.
 **The comment is laid out to be skimmed** (issue-472). It opens with a quick start: reply
 `the-loop execute` with the boxes untouched to run the full process. Below it are two
 groups: **🧩 Phases**, and **⚙️ Settings** for everything that is not a phase (where the
-outer loop happens, the Claude artifact, sessions per pull request, the collaboration
+outer loop happens, the Claude artifact or doc, sessions per pull request, the collaboration
 channel, harness, model and effort). Each question is a heading with an emoji of its
 own, states its **Default:** before its rows, and keeps its explanation in a collapsed
 `<details>` block. The rows above are exactly what the comment carries, so a reply with a
@@ -142,6 +144,14 @@ on every change — while the markdown files stay what every gate reads. It appl
 when the work item runs on the `claude` harness: on any other, the confirmation says
 *not applied* and names the harness. Like the surface row, it is absent on a
 contribution, and it is frozen as `claudeArtifact` in `work-item-state.json`.
+
+**`claude-doc` is the same page as a document** (issue-536), and the default. Ticked, the
+session publishes the spec chain as one Claude doc — a tab per spec file, which people
+can edit and comment on — with the Claude Docs connector. An edit made in the doc is
+feedback the session folds into the file; the file is still what every gate reads. The
+two rows are one choice: tick at most one, and both ticked publishes neither. A handoff
+that already published a spec-chain artifact ticks `claude-artifact` instead, so the
+session republishes to it. Frozen as `claudeDoc`, under the same harness rule.
 
 **`explainer` is four nodes behind one row** (issue-488). Ticked by default, it keeps
 `spec-explainer` → `spec-quiz` (before `tasks-breakdown`) and `code-explainer` →

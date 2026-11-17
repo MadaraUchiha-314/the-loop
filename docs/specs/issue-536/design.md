@@ -48,13 +48,13 @@ flowchart TD
 | Component | File | Change |
 |---|---|---|
 | Token | `cli/the_loop/graph/hooks/selection.py` | `CLAUDE_DOC_TOKEN = "claude-doc"`, added to `_NON_PHASE_TOKENS`. |
-| Render | same, the "📄" section | Title becomes "Publish the spec chain as a Claude artifact or a Claude doc too?". Rows: `- [x] claude-artifact` (unchanged), then `- [ ] claude-doc — one Claude doc for this work item, a tab per file, which people can edit and comment on (claude harness only)`. The collapsed note adds: tick at most one; both ticked publishes neither. |
+| Render | same, the "📄" section | Title becomes "Publish the spec chain as a Claude artifact or a Claude doc too?". Rows: `- [ ] claude-artifact`, then `- [x] claude-doc — one Claude doc for this work item, a tab per file, which people can edit and comment on (claude harness only)`. When `ctx.handoff["specArtifact"]` is set (issue-517) the two marks swap. The **Default:** line names whichever is ticked. The collapsed note adds: tick at most one; both ticked publishes neither. |
 | Parse | same | `_parse_claude_doc(body)` — a ticked row only, like `_parse_claude_artifact`. |
 | Resolve | same, the `run` path | `doc_req = _parse_claude_doc(body) if _asks_surface(ctx) else False`. `conflict = artifact_req and doc_req`. `claude_artifact = artifact_req and not conflict and applies(h)`; `claude_doc = doc_req and not conflict and applies(h)`. |
 | Confirmation | `_confirmation` | New kwargs `claude_doc_requested`, `claude_doc`. Order of cases: conflict → "Not applied: `claude-artifact` and `claude-doc` were both ticked — tick at most one. The spec chain stays in markdown files only."; artifact → unchanged; doc → "Spec artifacts: also published as **one Claude doc** (a tab per file) …"; a requested row not applied on the harness → names the token and the harness; else "markdown files only". |
 | Frozen graph / data | `_frozen_graph`, `HookResult.data` | `"claudeDoc": claude_doc` beside `claudeArtifact`. |
 | Runtime freeze | `cli/the_loop/graph/runtime.py` | `if result.data.get("claudeDoc") is True: record["claudeDoc"] = True; state.claude_doc = True`. |
-| State | `cli/the_loop/graph/state.py` | Field `claude_doc: bool = False`. `load`: `claude_doc = data.get("claudeDoc") is True and not claude_artifact` (R3.3). `as_dict`: `"claudeDoc"` beside `"claudeArtifact"`. |
+| State | `cli/the_loop/graph/state.py` | Field `claude_doc: bool = False`. `load`: `claude_doc = data.get("claudeDoc") is True and not claude_artifact` (R3.3). `as_dict`: `"claudeDoc": true` written only when set, like the issue-517 keys, so a legacy file saves byte-identical (R3.2). |
 | State schema doc | `cli/the_loop/state.py` `ATTRIBUTES`, `docs/cli/state.md` | One `claudeDoc` row, `human-decision`. |
 | Prompt | `cli/the_loop/graphlink.py` | `GraphContext.claude_doc: bool`; `CLAUDE_DOC_LINE`; rendered in the same `else` branch as the artifact line (outer loop only), from both context builders. |
 | Archive | `cli/the_loop/archive.py`, `commands/graph_cmd.py` | `selections.claudeDoc`; the `choices` summary appends `claude-doc`. |
@@ -100,8 +100,9 @@ No product UI. The only user-facing surface is checklist markdown, shown above.
 
 ## Data models
 
-`work-item-state.json` gains `"claudeDoc": <bool>`, always written (like `claudeArtifact`),
-read with `is True`. Invariant: never both true — enforced at the hook (conflict) and
+`work-item-state.json` gains `"claudeDoc": true`, written only when chosen (the issue-517
+keys' rule, so a file saved before this change is byte-identical when saved again), read
+with `is True`. Invariant: never both true — enforced at the hook (conflict) and
 again at load (R3.3). The decision record and frozen graph gain the same key. The archive's
 `selections` gains it. No version bump: an absent key reads as `false`.
 
@@ -133,8 +134,10 @@ Each abuse case from the requirements, and what answers it:
 ## Testing strategy
 
 Unit tests in a new `cli/tests/test_claude_doc.py`, mirroring `test_claude_artifact.py`:
-render, resolve (each outcome, both harness cases, conflict), state round-trip and coercion,
-runtime freeze, prompt line, archive. The Slack pin test gains the new token. Rendered
+render (the doc ticked by default), resolve (each outcome, both harness cases, conflict),
+state round-trip and coercion, runtime freeze, prompt line, archive. The handoff tests
+assert the swap when a spec artifact was imported, and the defaults test asserts that an
+untouched checklist freezes `claudeDoc: true`. The Slack pin test gains the new token. Rendered
 checklist fixtures (Jira, handoff) are regenerated because the section gains a row. See
 [`testing-plan.md`](testing-plan.md).
 
@@ -144,9 +147,12 @@ checklist fixtures (Jira, handoff) are regenerated because the section gains a r
   cleaner, but `claudeArtifact` is already read by the runtime, archive, prompt and
   handoff (`claudeArtifactUrl`). A second boolean with an enforced invariant changes no
   existing reader.
-- **Two rows, not a three-row choice.** The issue-471 row keeps its token and its default
-  (ticked), so an untouched reply resolves exactly as today (R1.3). A "none" row would add
-  a token for what unticking already says.
+- **Two rows, not a three-row choice.** The issue-471 row keeps its token and meaning. A
+  "none" row would add a token for what unticking both already says.
+- **The doc is the default** (the owner, on the ticket after the requirements were
+  written). Untouched replies now publish a doc rather than an artifact. The exception is
+  a handoff that already published a spec-chain artifact: switching it to a doc would
+  strand the page the developer was handed, so that checklist keeps the artifact ticked.
 - **Both ticked → neither.** The harness/model sections already say "two ticks are not a
   choice". Choosing either silently would publish where the author may not have meant.
   The selection is frozen once, so a conflict costs only the page: the spec chain stays

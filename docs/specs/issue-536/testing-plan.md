@@ -21,9 +21,9 @@ overrides: {}
 
 | # | Type | Applies? | Scope / what it proves | Where it runs |
 |---|------|----------|------------------------|---------------|
-| T1 | Unit (gate render) | yes | the outer loop's checklist carries `- [x] claude-artifact` and `- [ ] claude-doc` in one section with the "at most one" note; a contribution's carries neither | `cli/tests/test_claude_doc.py` |
+| T1 | Unit (gate render) | yes | the outer loop's checklist carries `- [ ] claude-artifact` and `- [x] claude-doc` in one section with the "at most one" note; a handoff that imported a spec artifact swaps the two; an untouched checklist freezes `claudeDoc: true`; a contribution's carries neither | `cli/tests/test_claude_doc.py`, `test_handoff_selection.py`, `test_selection_defaults.py` |
 | T2 | Unit (gate resolve) | yes | doc ticked alone + harness `claude`/unknown → `claudeDoc: true`, `claudeArtifact: false`; doc ticked + harness `codex` → `false`, confirmation names `codex`; both ticked → both `false`, confirmation names the conflict; artifact-only unchanged; untouched default reply resolves as before; never a skip, opt-in or refusal; a contribution's reply carrying the row → `false` | same |
-| T3 | Unit (state) | yes | `claudeDoc` round-trips; absent, `"true"`, `1` read `false`; both `true` on disk reads `claudeDoc: false`, `claudeArtifact: true` | same |
+| T3 | Unit (state) | yes | `claudeDoc` round-trips; absent, `"true"`, `1` read `false`; both `true` on disk reads `claudeDoc: false`, `claudeArtifact: true`; a legacy file saves byte-identical | same, `test_handoff_state.py` |
 | T4 | Unit (runtime freeze) | yes | a selection through `Runtime` records `claudeDoc` in state, the decision record and the frozen graph | same |
 | T5 | Unit (prompt) | yes | the graph block carries the doc line for an outer-loop item with `claude_doc`, and not for a PR, contribution, ad-hoc, review item or `false` | same |
 | T6 | Unit (archive) | yes | `selections.claudeDoc` is written; the `choices` summary lists `claude-doc` | same |
@@ -38,7 +38,7 @@ overrides: {}
 
 | Row | Requirement(s) | Scenario / case |
 |-----|----------------|-----------------|
-| T1 | R1.1–R1.4 | render, outer loop vs contribution |
+| T1 | R1.1–R1.4 | render, default, handoff swap, outer loop vs contribution |
 | T2 | R1.5, R2.1–R2.7 | each resolve outcome |
 | T3 | R3.2, R3.3 | load coercion |
 | T4 | R3.1 | freeze |
@@ -67,7 +67,7 @@ overrides: {}
 
 ## Verification activities
 
-- [ ] T1–T6 — `cd cli && uv run python -m pytest -q tests/test_claude_doc.py`
+- [ ] T1–T6 — `cd cli && uv run python -m pytest -q tests/test_claude_doc.py tests/test_handoff_selection.py tests/test_selection_defaults.py tests/test_handoff_state.py`
 - [ ] T7 — `cd cli && uv run python -m pytest -q tests/test_selection_control.py`
 - [ ] T8 — `make check` and `make pre-commit`
 - [ ] T9 — security review recorded in `evidence/security-review.md`

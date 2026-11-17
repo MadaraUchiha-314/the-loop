@@ -68,7 +68,7 @@ def test_an_untouched_checklist_freezes_the_owners_defaults(repo, fake_github):
     Scenario: the author replies without touching a box
       Given the shipped outer loop and a deployment offering two harnesses
       When the checklist is posted and `the-loop execute` is replied
-      Then the outer loop is on a pull request, the Claude artifact is on,
+      Then the outer loop is on a pull request, the Claude doc is on (issue-536),
         the harness, model and effort are the ticked defaults,
         and brainstorming and its approval are declared skipped
     """
@@ -80,7 +80,8 @@ def test_an_untouched_checklist_freezes_the_owners_defaults(repo, fake_github):
         "- [ ] brainstorm-approval",
         "- [x] requirements-definition",
         "- [x] `outer-loop-on-pull-request`",
-        "- [x] `claude-artifact`",
+        "- [ ] `claude-artifact`",
+        "- [x] `claude-doc`",
         "- [x] `harness-claude`",
         "- [ ] `harness-codex`",
         "- [x] `model-opus-5`",
@@ -94,7 +95,8 @@ def test_an_untouched_checklist_freezes_the_owners_defaults(repo, fake_github):
     runtime.advance(WORK_ITEM, ref=REF, event={"comments": list(fake_github.comments)})
     state = WorkItemState.load(repo / "docs" / "specs" / WORK_ITEM, WORK_ITEM)
     assert state.surface == "pull-request"
-    assert state.claude_artifact is True
+    assert state.claude_doc is True
+    assert state.claude_artifact is False
     assert (state.harness, state.model, state.effort) == ("claude", "opus-5", "medium")
     assert {"brainstorming", "brainstorm-approval"} <= set(state.skips)
     assert "requirements-definition" not in state.skips

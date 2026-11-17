@@ -278,6 +278,7 @@ def terminal_record(rt: Any, item_id: str) -> Optional[Dict[str, Any]]:
             "effort": _plain(state.effort),
             "sessionPerPr": _plain(state.session_per_pr),
             "claudeArtifact": state.claude_artifact is True,
+            "claudeDoc": getattr(state, "claude_doc", False) is True,
             "repos": [r for r in (_plain(r) for r in state.repos) if r],
         },
         "pullRequests": _pull_requests(state),

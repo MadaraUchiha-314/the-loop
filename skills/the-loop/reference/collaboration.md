@@ -177,6 +177,10 @@ author at `phase-selection` (issue-183) — and it applies to the **outer** loop
   beside these two, not a third place to decide: its comments are feedback folded into
   the files, and a gate is never answered there. See `workflow.md` § The spec chain as
   one Claude artifact.
+- A **Claude doc** (issue-536, the `claude-doc` box, the default) is the same kind of
+  surface, but editable: an edit made there is feedback the session folds into the file,
+  reviewed on the PR like any other change — never an approval. See `workflow.md` § The
+  spec chain as one Claude doc.
 - This is the *reference, don't duplicate* rule (`SKILL.md`) reaching its conclusion: the
   artifact is a checked-in file, and the file, the discussion and the approval belong in
   one place.

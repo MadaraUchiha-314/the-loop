@@ -688,7 +688,7 @@
       "content": [
         {
           "type": "text",
-          "text": "📄 Publish the spec chain as a Claude artifact too?"
+          "text": "📄 Publish the spec chain as a Claude artifact or a Claude doc too?"
         }
       ]
     },
@@ -706,7 +706,20 @@
         },
         {
           "type": "text",
-          "text": " yes — already ticked. Untick it for the markdown files only. Only the "
+          "text": " a Claude doc — already ticked. "
+        },
+        {
+          "type": "text",
+          "text": "Tick at most one",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ": untick it and tick the artifact to change it, or untick both for the markdown files only. Only the "
         },
         {
           "type": "text",
@@ -719,7 +732,7 @@
         },
         {
           "type": "text",
-          "text": " harness can publish one."
+          "text": " harness can publish either."
         }
       ]
     },
@@ -733,7 +746,7 @@
           "type": "taskItem",
           "attrs": {
             "localId": "the-loop-task-20",
-            "state": "DONE"
+            "state": "TODO"
           },
           "content": [
             {
@@ -748,6 +761,41 @@
             {
               "type": "text",
               "text": " — one Claude artifact for this work item ("
+            },
+            {
+              "type": "text",
+              "text": "claude",
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " harness only)."
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-21",
+            "state": "DONE"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "claude-doc",
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " — one Claude doc for this work item, a tab per file, which people can edit and comment on ("
             },
             {
               "type": "text",
@@ -785,7 +833,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Not a phase, and on unless you untick it. The requirements, design, testing plan and task list become one page with a tab per file, which you can read and comment on in Claude."
+          "text": "Not phases. The requirements, design, testing plan and task list become one page (an artifact you read and comment on) or one document (a doc you and others edit and comment on), with a tab per file."
         }
       ]
     },
@@ -794,7 +842,7 @@
       "content": [
         {
           "type": "text",
-          "text": "On any other harness the-loop ignores this box. The markdown files stay the source of truth either way, and every gate still reads them."
+          "text": "Ticking both publishes neither — two ticks are not a choice. On any other harness the-loop ignores these boxes. The markdown files stay the source of truth either way, every gate still reads them, and an edit made in the doc is feedback the session folds into the file."
         }
       ]
     },
@@ -837,7 +885,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-21",
+            "localId": "the-loop-task-22",
             "state": "DONE"
           },
           "content": [
@@ -1007,7 +1055,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-22",
+            "localId": "the-loop-task-23",
             "state": "TODO"
           },
           "content": [
@@ -1042,7 +1090,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-23",
+            "localId": "the-loop-task-24",
             "state": "DONE"
           },
           "content": [
@@ -1077,7 +1125,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-24",
+            "localId": "the-loop-task-25",
             "state": "TODO"
           },
           "content": [
@@ -1366,7 +1414,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-25",
+            "localId": "the-loop-task-26",
             "state": "DONE"
           },
           "content": [
@@ -1384,7 +1432,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-26",
+            "localId": "the-loop-task-27",
             "state": "TODO"
           },
           "content": [
@@ -1498,7 +1546,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-27",
+            "localId": "the-loop-task-28",
             "state": "TODO"
           },
           "content": [
@@ -1520,7 +1568,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-28",
+            "localId": "the-loop-task-29",
             "state": "DONE"
           },
           "content": [
@@ -1621,7 +1669,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-29",
+            "localId": "the-loop-task-30",
             "state": "TODO"
           },
           "content": [
@@ -1639,7 +1687,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-30",
+            "localId": "the-loop-task-31",
             "state": "TODO"
           },
           "content": [

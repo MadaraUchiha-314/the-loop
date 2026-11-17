@@ -371,6 +371,9 @@ class GraphContext:
     #: (issue-471), frozen at `phase-selection` and already resolved against
     #: the harness. Rendered for the outer loop only — the one with a spec chain.
     claude_artifact: bool = False
+    #: Whether it is published as one Claude doc instead (issue-536) — the
+    #: same reading, never true beside :attr:`claude_artifact`.
+    claude_doc: bool = False
     #: The handoff record this work item arrived with (issue-517, design §C9):
     #: ``state.handoff`` as the runtime froze it at start — validated closed
     #: values (stage, entry, carrier) plus the record's URL from the API's
@@ -434,6 +437,19 @@ CLAUDE_ARTIFACT_LINE = (
     "files stay the source of truth, and a comment on the artifact is feedback, "
     "never a gate answer (Claude Code only: with no artifact tool, say so once on "
     "the work item and carry on)"
+)
+
+
+#: The prompt line for a work item whose spec chain is one Claude doc instead
+#: (issue-536). Fixed text, like the artifact line: the doc is a tool of the
+#: session (the Claude Docs connector), and the skill carries the procedure.
+CLAUDE_DOC_LINE = (
+    "  also publish the spec chain as ONE Claude doc, chosen at phase-selection: "
+    "one tab per spec file, each tab rewritten from its file whenever the file "
+    "changes, linked once from the work item — the markdown files stay the source "
+    "of truth; read a tab before rewriting it and treat any human edit or comment "
+    "there as feedback, never a gate answer (Claude Code with the Claude Docs "
+    "connector only: without it, say so once on the work item and carry on)"
 )
 
 
@@ -627,6 +643,9 @@ def render_graph_context(
             # Fixed text and one boolean (issue-471): no payload enters it. A
             # handed-off artifact's URL (issue-517) is checked before it is named.
             lines.append(_claude_artifact_line(ctx.claude_artifact_url))
+        elif ctx.claude_doc:
+            # The same rule for the doc (issue-536): fixed text, one boolean.
+            lines.append(CLAUDE_DOC_LINE)
     lines.append(
         "  when this node's work is done, run: "
         f"`the-loop graph complete {item_id}{claim_suffix}`"
@@ -1388,6 +1407,7 @@ class GraphLink:
             surface=str(getattr(state, "surface", "") or ""),
             loop=str(getattr(state, "loop", "") or ""),
             claude_artifact=getattr(state, "claude_artifact", False) is True,
+            claude_doc=getattr(state, "claude_doc", False) is True,
             handoff=dict(getattr(state, "handoff", None) or {}),
             claude_artifact_url=str(getattr(state, "claude_artifact_url", "") or ""),
         )
@@ -1442,6 +1462,7 @@ class GraphLink:
                 for pr in getattr(state, "pull_requests", []) or []
             ),
             claude_artifact=getattr(state, "claude_artifact", False) is True,
+            claude_doc=getattr(state, "claude_doc", False) is True,
             handoff=dict(getattr(state, "handoff", None) or {}),
             claude_artifact_url=str(getattr(state, "claude_artifact_url", "") or ""),
         )

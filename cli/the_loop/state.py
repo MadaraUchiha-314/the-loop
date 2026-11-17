@@ -702,6 +702,13 @@ ATTRIBUTES: Tuple[Attribute, ...] = (
     ),
     Attribute(
         REPOSITORY_FILE,
+        "claudeDoc",
+        "human-decision",
+        "whether the spec chain is one Claude doc instead (issue-536) — written "
+        "only when true",
+    ),
+    Attribute(
+        REPOSITORY_FILE,
         "handoff",
         "human-decision",
         "the handoff record the item arrived with, its author and comment "

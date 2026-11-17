@@ -261,6 +261,7 @@ def _state_keys() -> set:
             handoff={"version": 1},
             handoff_demoted=[{"node": "n"}],
             claude_artifact_url="https://claude.ai/artifact/x",
+            claude_doc=True,  # issue-536: also written only when set
         ).as_dict()
     )
 

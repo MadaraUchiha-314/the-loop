@@ -275,6 +275,15 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   comment on the artifact is untrusted feedback to fold into the file, **never a gate
   answer**. With no artifact tool, ignore the choice and say so once on the ticket. See
   `reference/workflow.md` § The spec chain as one Claude artifact.
+- **…or one Claude doc instead** (issue-536). The same section offers a `claude-doc` box,
+  **ticked by default** (the artifact box is then unticked; both ticked publishes
+  neither). WHEN `work-item-state.json` says `claudeDoc: true` THEN publish the spec
+  chain as **one** Claude doc with the Claude Docs connector — a tab per spec file (and
+  per explainer/quiz page), each rewritten from its file on every change, linked once
+  from the ticket. **Read a tab before rewriting it**: a human edit there is feedback to
+  fold into the file (or decline on the PR), never discarded and never a gate answer.
+  With no docs connector, ignore the choice and say so once on the ticket. See
+  `reference/workflow.md` § The spec chain as one Claude doc.
 - **Explain the change, and quiz the author** (issue-488). On by default in the outer
   loop; one ticked `explainer` row at `phase-selection` switches it off. Four nodes:
   `spec-explainer` (you write a spec-level explainer and quiz) → `spec-quiz` (the author

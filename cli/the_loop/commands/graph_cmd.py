@@ -609,6 +609,8 @@ def _archived_lines(report: Dict[str, Any]) -> List[str]:
     ]
     if selections.get("claudeArtifact") is True:
         chosen.append("claude-artifact")  # issue-471
+    if selections.get("claudeDoc") is True:
+        chosen.append("claude-doc")  # issue-536
     if chosen:
         lines.append(f"  choices: {', '.join(chosen)}")
     for pr in terminal.get("pullRequests") or []:

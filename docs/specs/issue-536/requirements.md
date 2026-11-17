@@ -36,7 +36,9 @@ as tabs, and to let the author choose between an artifact and a doc.
 
 **What this changes.**
 
-- The checklist section that offers `claude-artifact` offers a second row, `claude-doc`.
+- The checklist section that offers `claude-artifact` offers a second row, `claude-doc`,
+  **ticked by default in the artifact's place** (the owner's decision on the ticket,
+  [comment](https://github.com/MadaraUchiha-314/the-loop/issues/536#issuecomment-6939409940)).
   The author ticks at most one of the two.
 - Ticked, signed by the same authorized `the-loop execute`, and resolved to the `claude`
   harness, the doc choice is frozen into `work-item-state.json` as `claudeDoc: true`.
@@ -68,15 +70,17 @@ between a page I read and comment on and a document I edit with others.
 #### Acceptance criteria (EARS)
 
 1.1 WHEN the `phase-selection` checklist is posted for a loop that owns an outer loop THEN
-the system SHALL render, in the same section as the `claude-artifact` row, one unticked
-row `claude-doc`.
+the system SHALL render, in the same section as the `claude-artifact` row, one row
+`claude-doc`, **ticked**, and SHALL render the `claude-artifact` row **unticked**.
 
 1.2 The section SHALL state that its rows are not phases, that at most one may be ticked,
 that ticking both publishes neither, and that both apply only when the work item runs on
 the `claude` harness.
 
-1.3 The `claude-artifact` row SHALL keep its current default (ticked) and meaning, so a
-reply that leaves the section alone resolves exactly as before this change.
+1.3 WHEN the work item's handoff record names a spec-chain artifact (issue-517) THEN the
+system SHALL instead render `claude-artifact` ticked and `claude-doc` unticked, so the
+session republishes to the artifact it was handed. The `claude-artifact` row SHALL keep
+its meaning either way: ticked alone, it resolves exactly as before this change.
 
 1.4 WHEN the loop owns no outer loop (`pdlc-contribution-loop`) THEN the system SHALL NOT
 render the `claude-doc` row, and SHALL NOT read it from a reply.
@@ -133,7 +137,8 @@ is, so a respawned session and `the-loop check` read the same fact.
 `claudeArtifact`.
 
 3.2 WHEN a state file carries no `claudeDoc` key, or a value other than the boolean `true`,
-THEN the system SHALL read it as `false`.
+THEN the system SHALL read it as `false`. The key SHALL be written only when `true`, so a
+state file saved before this change stays byte-identical when it is saved again.
 
 3.3 WHEN a hand-edited state file carries both `claudeDoc: true` and `claudeArtifact:
 true` THEN the system SHALL read `claudeDoc` as `false`, keeping the choice that existed

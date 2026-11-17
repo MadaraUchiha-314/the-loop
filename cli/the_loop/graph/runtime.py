@@ -707,6 +707,10 @@ class Runtime:
                     # the boolean itself turns it on.
                     record["claudeArtifact"] = True
                     state.claude_artifact = True
+                if result.data.get("claudeDoc") is True:
+                    # Or as one Claude doc (issue-536); the hook never sets both.
+                    record["claudeDoc"] = True
+                    state.claude_doc = True
                 goal = result.data.get("goal")
                 if goal:
                     # The contribution loop's goal gate (issue-185): the goal
