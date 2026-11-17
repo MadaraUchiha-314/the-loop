@@ -1,3 +1,9 @@
+## v20.11.1 (2026-11-17)
+
+### Fix
+
+- **issue-532**: graph notifications on a gateway consumer post through the gateway first time (#534)
+
 ## v20.11.0 (2026-10-29)
 
 ### Feat
