@@ -268,7 +268,63 @@ env:
   session's environment — even when the tmux server holds it, because the daemon that
   started the server loaded the file.
 - A listed value reaches the session through `tmux -e`, so it is visible in `ps`. That is
-  why only non-secret names belong here.
+  why only non-secret names belong here. A credential a session needs goes in
+  [`env.sessionCredentials`](/config/cli/#env-sessioncredentials) instead.
+
+### `env.sessionCredentials`
+
+- **Type:** list of `{name, from?, repositories?}`
+- **Default:** `[]` (a session holds no credential)
+
+The credentials a spawned agent session **may** hold, by name
+([issue-533](https://github.com/MadaraUchiha-314/the-loop/issues/533)). Use it when an
+agent needs `gh` or `git` beyond the verbs the service wraps: `gh api` on an endpoint
+the-loop does not wrap, a private release asset, a second private repository.
+
+```yaml
+env:
+  file: .env
+  sessionCredentials:
+    - name: GH_TOKEN             # the variable the session sees
+      from: SESSION_GH_TOKEN     # the daemon-side variable it comes from (default: name)
+      repositories: [octo/app]   # optional: only sessions for these work items
+```
+
+- **`from` is for a narrower token.** Give sessions a fine-grained, read-mostly,
+  short-lived token of their own, not the daemon's
+  `integrations.github.api.tokenEnv`. Pointing `from` at one of the daemon's own
+  credential names works, with a warning.
+- **The value is never on an argv.** It is written to a per-spawn file of mode `0600`
+  under `<state.root>/local/session-credentials/`. The pane reads it, deletes it and
+  then starts the harness; only the file's path is on a command line. The value is never
+  in the tmux client's environment, the tmux server's global environment or any tmux
+  session's environment, so the web-terminal hub and other sessions never inherit it.
+- **Read per spawn.** The value comes from `env.file` when the file declares `from`, else
+  from the daemon's environment. A rotation shows up as a `stale` session in
+  [`the-loop status`](/cli/commands/status), and
+  [`sessions restart`](/cli/commands/sessions#restart) relaunches onto the new value.
+- **Fail closed.** An entry whose `name` or `from` is not a variable name, or whose source
+  is unset, is skipped with a warning that names the variable, never its value. A
+  `repositories` list that matches nothing means the session does not get it. Either
+  way the name stays stripped from the pane. `repositories` matches GitHub work items
+  only, as `[HOST/]OWNER/REPO`.
+- **Masked on the way out.** The service replaces every configured value with
+  `<redacted:session-credential>` in the text a session sends it: comments, questions,
+  replies, ticket and PR titles and bodies, and `graph force`/`skip` reasons. That
+  covers everything the service then posts to GitHub, Jira or Slack. The event log
+  masks the values its process has seen.
+- **Visible.** `status` names the credentials running sessions hold, and `sessions list`
+  shows them as `NAME@fingerprint`. Every spawn that hands one over logs a
+  warning-level `session.credentials_inherited` event naming them.
+
+::: danger An unattended agent holding a token can leak it
+It can leak it through `env`, `set -x`, a debug dump, its transcript or a pasted log.
+Masking covers text that passes through the service. It does not cover a `gh`, `git push`
+or `curl` the agent runs with the token itself, or a value it has transformed (base64,
+split). Masking reduces the risk; it does not remove it. Use a dedicated,
+least-privilege, short-lived token. `env.sessionPassthrough` still refuses credential
+names: this list is the only way a credential reaches a session.
+:::
 
 ## A minimal working config
 

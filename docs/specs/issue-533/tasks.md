@@ -47,7 +47,7 @@ overrides: {}
   - _Depends on:_ 1
   - _Requirements:_ R7.1
   - _Test:_ T1 — `tests/test_session_environment.py` new cases
-- [ ] 5. Schema, operator docs, capability doc, changelog
+- [x] 5. Schema, operator docs, capability doc, changelog
   - `env.sessionCredentials` in `cli-config.schema.json` (with the trade-off);
     `docs/config/cli/index.md`, `docs/cli/commands/status.md`,
     `docs/cli/commands/sessions.md`, `docs/capabilities/interactive-sessions.md`,
