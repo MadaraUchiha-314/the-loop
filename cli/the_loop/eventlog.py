@@ -379,6 +379,12 @@ EVENT_TYPES: Dict[str, str] = {
         "unverified, and `stale` names the variables that STILL differ afterwards, "
         "never their values."
     ),
+    "session.credentials_inherited": (
+        "A spawned or respawned session was handed opted-in credentials from "
+        "`env.sessionCredentials` (work_item, tmux_target, names) — issue-533. "
+        "Warning level on purpose: an unattended agent now holds a token. Names "
+        "only, never a value."
+    ),
     "session.restart_failed": (
         "A relaunch did not produce a running harness (work_item, harness, "
         "tmux_target, error): tmux refused the respawn, or the resumed harness "
@@ -1441,6 +1447,11 @@ class EventLog:
             if tagged:
                 for key, value in tagged.items():
                     record.setdefault(key, value)
+        # A session credential value never reaches a log line (issue-533, R5.1): the
+        # values this process has handed over or resolved, masked; free when none.
+        from . import sessioncreds
+
+        record = sessioncreds.scrub_tree(record)
         line = json.dumps(record, separators=(",", ":"), default=str) + "\n"
         try:
             with self._lock:

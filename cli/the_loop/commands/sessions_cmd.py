@@ -664,6 +664,18 @@ class SessionsCommand(Command):
                     s["lastEventAt"] or "-",
                 )
             )
+        # issue-533, R7.1: a column only when some session holds an opted-in
+        # credential, so a deployment that configures none sees today's table.
+        held = [
+            ", ".join(
+                f"{name}@{fp}" for name, fp in sorted((s.get("credentials") or {}).items())
+            )
+            for s in sessions
+        ]
+        if any(held):
+            rows = [rows[0] + ("Credentials",)] + [
+                row + (cell or "-",) for row, cell in zip(rows[1:], held)
+            ]
         widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
         for row in rows:
             print("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)))

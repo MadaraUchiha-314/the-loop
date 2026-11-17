@@ -51,6 +51,7 @@ from ..control import DEFAULT_KEYWORDS
 from ..ghapi import GitHubApiConfig, GitHubClient
 from ..redact import defang_control_keywords, scrub
 from ..runlock import RunLock
+from .. import sessioncreds
 from ..state import layout_from_config
 
 logger = logging.getLogger("the-loop.selfdiagnosis")
@@ -289,7 +290,10 @@ def compose_issue(
     keywords = list(DEFAULT_KEYWORDS.values()) + list(config.control_keywords)
 
     def clean(text: object) -> str:
-        return defang_control_keywords(scrub(str(text)), keywords)
+        # issue-533: a session credential this process handed over is masked even
+        # when its variable's name does not look like a credential to `scrub`.
+        masked = sessioncreds.scrub(scrub(str(text))) or ""
+        return defang_control_keywords(masked, keywords)
 
     raw_title = clean(findings.get("title", "")).splitlines()[0].strip()
     title = f"[self-diagnosed] {raw_title}"[:TITLE_MAX_CHARS]

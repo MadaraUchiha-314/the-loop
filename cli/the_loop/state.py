@@ -101,6 +101,12 @@ class StateLayout:
         return str(self.root_path / "local")
 
     @property
+    def session_credentials_dir(self) -> str:
+        """Where a session credential's ``0600`` delivery file lives for the
+        milliseconds before its pane reads and deletes it (issue-533)."""
+        return str(self.root_path / "local" / "session-credentials")
+
+    @property
     def verdict_cache(self) -> str:
         """Availability verdicts: which models and effort levels each harness on
         THIS machine will actually accept (issue-358). Machine-local by

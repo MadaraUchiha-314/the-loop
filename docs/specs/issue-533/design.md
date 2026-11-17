@@ -207,8 +207,10 @@ the GitHub/Jira clients, `session.awaiting_input`) then sees masked text.
 
 `EventLog.emit` runs `scrub_tree` over the record before `json.dumps` — defence in depth
 for a value that reaches a log line by any other path (a hook's reason, an error
-string). It uses the cached values, so its cost is one `stat` per emit when configured,
-and nothing when not.
+string). It masks the values this process has **remembered** — resolved by a route's
+scrub, or handed to a pane by the runner — so it reads no disk and costs nothing when
+none is known. The daemon remembers every value it spawns with; the service, every
+value it has scrubbed with.
 
 Self-diagnosis already runs `redact.scrub` over its composed issue; that scrub masks the
 value of any environment variable whose name contains `TOKEN`/`SECRET`/…, which covers
@@ -301,7 +303,7 @@ How each requirements-phase trust boundary is enforced:
   |---|---|---|
   | A1 `ps` shows the value | loader argv carries only a path | T2 `ps -eo args` scan |
   | A2 server keeps it globally | client env drops `remove ∪ inherit` | T2 `show-environment -g` |
-  | A3 another user reads the file | `0600`/`0700`, `O_EXCL|O_NOFOLLOW`, deleted before `exec` | T1 mode/symlink, T2 file gone |
+  | A3 another user reads the file | `0600`/`0700`, `O_EXCL` + `O_NOFOLLOW`, deleted before `exec` | T1 mode/symlink, T2 file gone |
   | A4 agent pastes the token | route-layer scrub + event-log scrub | T1 route + event-log tests |
   | A5 `sessionPassthrough` forwards it | `passthrough_names` unchanged | T1 existing + new case |
   | A6 `from` is the daemon's token | warning at resolution | T1 caplog |

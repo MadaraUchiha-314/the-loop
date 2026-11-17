@@ -262,6 +262,10 @@ class StatusCommand(Command):
             # told something is wrong and should not have to go and look up what
             # to do about it.
             print(f"{'sessions':<11} {drift}")
+        held = lifecycle.credentials_line(report)
+        if held:
+            # Names only, and only when a session holds one (issue-533, R7.1).
+            print(f"{'credentials':<11} {held}")
         standing = report.get("standingSessions") or []
         if standing:
             print("standing sessions:")

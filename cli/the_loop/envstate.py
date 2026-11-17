@@ -60,6 +60,7 @@ __all__ = [
     "declared",
     "environ_matches_declared",
     "fingerprint",
+    "held_credentials",
     "passthrough_names",
     "process_environ",
     "session_credentials",
@@ -144,6 +145,16 @@ class SessionEnvironment:
     remove: Tuple[str, ...] = ()
     credentials: Tuple[SessionCredential, ...] = ()
     inherit: Dict[str, str] = field(default_factory=dict, repr=False)
+
+    def without_inherit(self) -> "SessionEnvironment":
+        """This boundary with nothing inherited: every opted-in name stripped again."""
+        if not self.inherit:
+            return self
+        return SessionEnvironment(
+            forward=dict(self.forward),
+            remove=tuple(sorted(set(self.remove) | set(self.inherit))),
+            credentials=self.credentials,
+        )
 
     def for_work_item(self, ref: str) -> "SessionEnvironment":
         """This boundary for a session on ``ref``: the admitted credentials inherited.
@@ -329,6 +340,21 @@ def compare(wanted: Wanted, actual: Mapping[str, str]) -> Tuple[str, ...]:
     )
     differing.update(name for name in env.remove if name in actual)
     return tuple(sorted(differing))
+
+
+def held_credentials(
+    env: SessionEnvironment, actual: Mapping[str, str]
+) -> Dict[str, str]:
+    """``{name: fingerprint}`` for each configured credential name ``actual`` holds.
+
+    Fingerprints only (issue-533, R7.1): what a session holds is sayable without
+    saying it.
+    """
+    return {
+        c.name: fingerprint(actual[c.name])
+        for c in env.credentials
+        if c.name in actual
+    }
 
 
 def environ_matches_declared(

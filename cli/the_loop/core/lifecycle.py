@@ -964,6 +964,24 @@ def environment_line(doc: Mapping[str, Any]) -> str:
     )
 
 
+def credentials_line(doc: Mapping[str, Any]) -> str:
+    """Which opted-in credentials running sessions hold; ``""`` when none do.
+
+    Names and a count only (issue-533, R7.1) — the fingerprints are in the JSON
+    document and in ``sessions list``.
+    """
+    env = (doc.get("sessionEnvironment") or {}) if isinstance(doc, Mapping) else {}
+    rows = [
+        row
+        for row in env.get("sessions") or []
+        if isinstance(row, Mapping) and row.get("credentials")
+    ]
+    if not rows:
+        return ""
+    names = sorted({name for row in rows for name in row["credentials"]})
+    return f"{len(rows)} session(s) hold {', '.join(names)} (env.sessionCredentials)"
+
+
 def undelivered_line(doc: Mapping[str, Any]) -> str:
     """The one line a channel backlog earns in `status`; ``""`` when there is none.
 

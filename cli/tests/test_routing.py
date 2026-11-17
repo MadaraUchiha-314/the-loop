@@ -3141,3 +3141,33 @@ def test_a_jira_items_same_repository_pr_session_requires_its_head_branch(
     finally:
         dispatcher.stop()
     assert asked == [required]
+
+
+def test_issue_533_sessions_list_shows_a_credentials_column_only_when_held(
+    tmp_path, capsys, monkeypatch
+):
+    """R7.1: a held credential is listed by name and fingerprint; none → today's table."""
+    from the_loop.commands import sessions_cmd
+
+    registry_dir = str(tmp_path / "sessions")
+    base = {
+        "workItem": {"ref": REF},
+        "harness": "claude",
+        "model": "",
+        "effort": "",
+        "harnessSessionId": "s1",
+        "tmuxTarget": "loop-x",
+        "status": "active",
+        "control": None,
+        "lastEventAt": "",
+    }
+    listed = [dict(base, credentials={"GH_TOKEN": "ab12cd34"})]
+    monkeypatch.setattr(
+        sessions_cmd.core_sessions, "list_sessions", lambda **_: listed
+    )
+    assert run_cli(["sessions", "list", "--registry-dir", registry_dir]) == 0
+    out = capsys.readouterr().out
+    assert "Credentials" in out and "GH_TOKEN@ab12cd34" in out
+    listed[:] = [dict(base, credentials={})]
+    assert run_cli(["sessions", "list", "--registry-dir", registry_dir]) == 0
+    assert "Credentials" not in capsys.readouterr().out
