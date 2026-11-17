@@ -660,6 +660,12 @@ class TmuxRunner:
         its names stay stripped (issue-533, fail closed) — never a value on an argv.
         """
         env = self.spawn_environment().for_work_item(work_item)
+        # Every spawn sweeps, not only one that writes (critic CR1-3): a file a crash
+        # left behind must go even after credentials are switched off or scoped away.
+        if self.credentials_dir:
+            directory = Path(self.credentials_dir)
+            if directory.is_dir() and not directory.is_symlink():
+                _sweep_credential_files(directory)
         if not env.inherit:
             return (env, None)
         # Whatever a pane is handed is masked in this process's event log (R5.1).
