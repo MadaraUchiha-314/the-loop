@@ -44,7 +44,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
 
-from .. import eventlog
+from .. import eventlog, sessioncreds
 from ..cli_config import ConfigHolder
 from ..core.github_ops import DEFAULT_LOG_LINES
 from ..workitem import WorkItemRef
@@ -478,6 +478,15 @@ def build_router(
         facade = CoreFacade(holder)
     router = APIRouter(route_class=_core_route_class(holder), **router_kwargs)
 
+    def scrubbed(body: Any, *fields: str) -> Any:
+        """``body`` with each caller-text field masked of every session credential
+        value (issue-533, R5.1) — before anything is posted, mirrored or logged."""
+        updates = {
+            name: sessioncreds.scrub(getattr(body, name), holder.current, holder.path)
+            for name in fields
+        }
+        return body.model_copy(update=updates)
+
     @router.get(f"{API_PREFIX}/health", operation_id="health")
     def health(instance: str = Query("")) -> Dict[str, Any]:
         return facade.health(instance=instance)
@@ -642,6 +651,7 @@ def build_router(
         operation_id="graphForce",
     )
     def graph_force(body: GraphForceBody) -> Dict[str, Any]:
+        body = scrubbed(body, "reason")
         return facade.graph_force(
             body.repo,
             body.workItem,
@@ -660,6 +670,7 @@ def build_router(
         operation_id="graphSkip",
     )
     def graph_skip(body: GraphSkipBody) -> Dict[str, Any]:
+        body = scrubbed(body, "reason")
         return facade.graph_skip(
             body.repo,
             body.workItem,
@@ -724,6 +735,7 @@ def build_router(
         operation_id="askSession",
     )
     def ask_session(body: SessionAskBody) -> Dict[str, Any]:
+        body = scrubbed(body, "question", "summary", "default")
         # Served so a session the daemon spawned, which holds no credential, asks
         # through the process that does (issue-482, R3.1).
         return facade.ask_session(
@@ -740,6 +752,7 @@ def build_router(
         operation_id="replySession",
     )
     def reply_session(body: SessionReplyBody) -> Dict[str, Any]:
+        body = scrubbed(body, "text")
         return facade.reply_session(
             body.ref,
             body.text,
@@ -788,6 +801,7 @@ def build_router(
         operation_id="postWorkItemComment",
     )
     def post_work_item_comment(body: WorkItemCommentBody) -> Dict[str, Any]:
+        body = scrubbed(body, "body")
         return facade.post_work_item_comment(
             body.ref, body.body, instance=body.instance
         )
@@ -798,6 +812,7 @@ def build_router(
 
     @router.post(f"{API_PREFIX}/work-items/tickets", operation_id="createTicket")
     def create_ticket(body: TicketCreateBody) -> Dict[str, Any]:
+        body = scrubbed(body, "title", "body")
         return facade.create_ticket(
             body.repository,
             body.title,
@@ -829,6 +844,7 @@ def build_router(
         operation_id="createPullRequest",
     )
     def create_pull_request(body: PullRequestCreateBody) -> Dict[str, Any]:
+        body = scrubbed(body, "title", "body")
         return facade.create_pull_request(
             body.ref,
             body.title,

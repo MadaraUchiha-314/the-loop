@@ -10,6 +10,10 @@ Spec: docs/specs/issue-32/design.md.
 import logging
 import os
 import signal
+import stat
+import subprocess
+import time
+from pathlib import Path
 
 import pytest
 
@@ -28,6 +32,10 @@ from the_loop.runner import (
 )
 from the_loop.sessions import Session, WorkItemRef, tmux_session_name
 from the_loop.webhook.dispatcher import RoutingConfig, TmuxConfig
+
+# The real one: the fake tmux patches `subprocess.run` module-wide, and a test that
+# runs the loader under `sh` after a spawn must not reach the fake.
+_REAL_RUN = subprocess.run
 
 REF = "github:octo/repo#15"
 # A work item whose slug carries a dot — a repo with one in its name (the same
@@ -2181,3 +2189,313 @@ class TestNoSecretReachesASession:
         cmd, _ = self._spawn(monkeypatch, TmuxRunner(env_provider=boom))
         tail = cmd[cmd.index("--") + 1 :]
         assert tail[0] == "env" and "GH_TOKEN" in tail
+
+
+class TestSessionCredentialDelivery:
+    """issue-533: an opted-in credential reaches the pane through a 0600 file.
+
+    Spec: docs/specs/issue-533/design.md § runner · testing plan rows T1, T8.
+    """
+
+    VALUE = "session-credential-dummy-533"
+    DAEMON = "daemon-own-token-dummy-533"
+
+    @staticmethod
+    def _boundary():
+        from the_loop.envstate import SessionCredential, SessionEnvironment
+
+        return SessionEnvironment(
+            remove=("GH_TOKEN", "JIRA_API_TOKEN", "SESSION_GH_TOKEN"),
+            credentials=(
+                SessionCredential(
+                    name="GH_TOKEN",
+                    source="SESSION_GH_TOKEN",
+                    value=TestSessionCredentialDelivery.VALUE,
+                ),
+            ),
+        )
+
+    def _spawn(self, monkeypatch, runner, per_verb=None):
+        fake = TestEnvironmentRefresh._fake(
+            monkeypatch, per_verb={"has-session": 1, **(per_verb or {})}
+        )
+        result = runner.spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=ClaudeCodeAdapter(),
+            prompt="go",
+            cwd="/work",
+            session_id="uuid-1",
+        )
+        index = next(i for i, c in enumerate(fake.calls) if c[1] == "new-session")
+        return result, fake.calls[index], fake.envs[index]
+
+    @staticmethod
+    def _path_in(cmd):
+        tail = cmd[cmd.index("--") + 1 :]
+        assert tail[0] == "sh" and tail[1] == "-c" and tail[3] == "sh"
+        return tail[4], tail
+
+    def test_abuse_533_a1_the_value_is_on_no_argv(self, monkeypatch, tmp_path):
+        """
+        Feature: opt-in session credentials, never on argv
+          Scenario: a session is spawned with an opted-in credential
+            Given env.sessionCredentials hands GH_TOKEN to sessions
+            When the daemon spawns a session
+            Then no argv element carries the value
+            And the pane command is the fixed loader, the file's path, then env -u
+            And the file holds the value with mode 0600 in a 0700 directory
+
+        Requirement: docs/specs/issue-533/requirements.md R3.1, R3.2
+        """
+        creds = tmp_path / "creds"
+        runner = TmuxRunner(env_provider=self._boundary, credentials_dir=str(creds))
+        result, cmd, _ = self._spawn(monkeypatch, runner)
+        assert result.ok, result.error
+        assert not any(self.VALUE in arg for arg in cmd)
+        path, tail = self._path_in(cmd)
+        assert tail[2] == runner_mod.CREDENTIAL_LOADER
+        assert Path(path).parent == creds
+        assert tail[5:7] == ["env", "-u"]
+        # The inherited name is not stripped; its source and the rest are.
+        assert "GH_TOKEN" not in tail[5 : tail.index("claude")]
+        assert "SESSION_GH_TOKEN" in tail and "JIRA_API_TOKEN" in tail
+        assert stat.S_IMODE(Path(path).stat().st_mode) == 0o600
+        assert stat.S_IMODE(creds.stat().st_mode) == 0o700
+        assert Path(path).read_text() == f"GH_TOKEN='{self.VALUE}'\n"
+
+    def test_abuse_533_a2_the_client_never_carries_the_name(
+        self, monkeypatch, tmp_path
+    ):
+        """R3.5: neither the value nor the daemon's same-named token reaches a server
+        this spawn starts."""
+        monkeypatch.setenv("GH_TOKEN", self.DAEMON)
+        monkeypatch.setenv("SESSION_GH_TOKEN", self.VALUE)
+        runner = TmuxRunner(
+            env_provider=self._boundary, credentials_dir=str(tmp_path / "c")
+        )
+        _, _, env = self._spawn(monkeypatch, runner)
+        assert env is not None
+        assert "GH_TOKEN" not in env and "SESSION_GH_TOKEN" not in env
+        assert self.VALUE not in env.values() and self.DAEMON not in env.values()
+
+    def test_a_value_with_quotes_is_escaped(self, monkeypatch, tmp_path):
+        from the_loop.envstate import SessionCredential, SessionEnvironment
+
+        tricky = "a'b\"c$(rm -rf /)`x`\nline2"
+        runner = TmuxRunner(
+            env_provider=lambda: SessionEnvironment(
+                remove=("T",),
+                credentials=(SessionCredential(name="T", source="T", value=tricky),),
+            ),
+            credentials_dir=str(tmp_path / "c"),
+        )
+        _, cmd, _ = self._spawn(monkeypatch, runner)
+        path, _ = self._path_in(cmd)
+        out = _REAL_RUN(
+            ["sh", "-c", f'. "{path}"; printf %s "$T"'], capture_output=True, text=True
+        )
+        assert out.stdout == tricky
+
+    def test_the_loader_reads_deletes_and_execs(self, tmp_path):
+        """R3.3: the file is gone before the harness runs, and the harness holds it."""
+        path = tmp_path / "f.env"
+        path.write_text("GH_TOKEN='loaded-value-1234'\n")
+        out = _REAL_RUN(
+            [
+                "sh",
+                "-c",
+                runner_mod.CREDENTIAL_LOADER,
+                "sh",
+                str(path),
+                "sh",
+                "-c",
+                f'printf "%s|" "$GH_TOKEN"; test -e "{path}" && echo present || echo gone',
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert out.stdout.strip() == "loaded-value-1234|gone"
+
+    def test_no_credentials_is_todays_command(self, monkeypatch, tmp_path):
+        """R1.2: nothing configured — no file, no loader, nothing different."""
+        from the_loop.envstate import SessionEnvironment
+
+        creds = tmp_path / "c"
+        runner = TmuxRunner(
+            env_provider=lambda: SessionEnvironment(remove=("GH_TOKEN",)),
+            credentials_dir=str(creds),
+        )
+        _, cmd, _ = self._spawn(monkeypatch, runner)
+        assert cmd[cmd.index("--") + 1 :][:3] == ["env", "-u", "GH_TOKEN"]
+        assert not creds.exists()
+
+    def test_out_of_scope_work_item_gets_nothing(self, monkeypatch, tmp_path):
+        from the_loop.envstate import SessionCredential, SessionEnvironment
+
+        runner = TmuxRunner(
+            env_provider=lambda: SessionEnvironment(
+                remove=("GH_TOKEN",),
+                credentials=(
+                    SessionCredential(
+                        name="GH_TOKEN",
+                        source="GH_TOKEN",
+                        value=self.VALUE,
+                        repositories=("github.com/other/repo",),
+                    ),
+                ),
+            ),
+            credentials_dir=str(tmp_path / "c"),
+        )
+        _, cmd, _ = self._spawn(monkeypatch, runner)
+        assert cmd[cmd.index("--") + 1 :][:3] == ["env", "-u", "GH_TOKEN"]
+
+    def test_abuse_533_a3_a_planted_symlink_is_not_followed(
+        self, monkeypatch, tmp_path, caplog
+    ):
+        """A directory that is not ours (a symlink) is refused: no credentials,
+        names stripped, a warning naming the names only."""
+        real = tmp_path / "elsewhere"
+        real.mkdir()
+        link = tmp_path / "c"
+        link.symlink_to(real)
+        runner = TmuxRunner(env_provider=self._boundary, credentials_dir=str(link))
+        with caplog.at_level("WARNING", logger="the-loop.runner"):
+            result, cmd, _ = self._spawn(monkeypatch, runner)
+        assert result.ok
+        tail = cmd[cmd.index("--") + 1 :]
+        assert tail[0] == "env" and "GH_TOKEN" in tail
+        assert list(real.iterdir()) == []
+        assert "GH_TOKEN" in caplog.text and self.VALUE not in caplog.text
+
+    def test_no_credentials_dir_fails_closed(self, monkeypatch, caplog):
+        runner = TmuxRunner(env_provider=self._boundary)
+        with caplog.at_level("WARNING", logger="the-loop.runner"):
+            _, cmd, _ = self._spawn(monkeypatch, runner)
+        tail = cmd[cmd.index("--") + 1 :]
+        assert tail[0] == "env" and "GH_TOKEN" in tail
+        assert "GH_TOKEN" in caplog.text
+
+    def test_a_failed_spawn_deletes_the_file(self, monkeypatch, tmp_path):
+        """R3.4."""
+        creds = tmp_path / "c"
+        runner = TmuxRunner(env_provider=self._boundary, credentials_dir=str(creds))
+        result, _, _ = self._spawn(monkeypatch, runner, per_verb={"new-session": 1})
+        assert not result.ok
+        assert list(creds.iterdir()) == []
+
+    def test_the_sweep_removes_only_old_files(self, monkeypatch, tmp_path):
+        """R3.4: a crash leaves no value on disk past the bound."""
+        creds = tmp_path / "c"
+        creds.mkdir(mode=0o700)
+        old = creds / "loop-x.deadbeef.env"
+        fresh = creds / "loop-y.cafebabe.env"
+        old.write_text("T='x'\n")
+        fresh.write_text("T='y'\n")
+        past = time.time() - runner_mod.CREDENTIAL_FILE_MAX_AGE_SECONDS - 5
+        os.utime(old, (past, past))
+        runner = TmuxRunner(env_provider=self._boundary, credentials_dir=str(creds))
+        self._spawn(monkeypatch, runner)
+        assert not old.exists() and fresh.exists()
+
+    def test_one_warning_event_names_the_names(self, monkeypatch, tmp_path):
+        """R7.2."""
+        events = []
+        monkeypatch.setattr(
+            runner_mod.eventlog,
+            "emit",
+            lambda event, **fields: events.append((event, fields)),
+        )
+        runner = TmuxRunner(
+            env_provider=self._boundary, credentials_dir=str(tmp_path / "c")
+        )
+        self._spawn(monkeypatch, runner)
+        inherited = [e for e in events if e[0] == "session.credentials_inherited"]
+        assert len(inherited) == 1
+        fields = inherited[0][1]
+        assert fields["level"] == "warning"
+        assert fields["names"] == ["GH_TOKEN"]
+        assert fields["work_item"] == REF
+        assert self.VALUE not in repr(events)
+
+    def test_a_respawn_delivers_the_same_way(self, monkeypatch, tmp_path):
+        """R4.2: a restart relaunches through the file too."""
+        fake = TestEnvironmentRefresh._fake(
+            monkeypatch,
+            per_verb={"has-session": 0},
+            stdout_per_verb={"list-panes": "0\n"},
+        )
+        runner = TmuxRunner(
+            env_provider=self._boundary, credentials_dir=str(tmp_path / "c")
+        )
+        result = runner.respawn_in(
+            "loop-github-octo-repo-15",
+            ClaudeCodeAdapter(),
+            "relaunched",
+            cwd="/work",
+            session_id="uuid-1",
+            work_item=REF,
+        )
+        assert result.ok, result.error
+        index = next(i for i, c in enumerate(fake.calls) if c[1] == "respawn-pane")
+        cmd = fake.calls[index]
+        assert not any(self.VALUE in arg for arg in cmd)
+        path, _ = self._path_in(cmd)
+        assert Path(path).read_text() == f"GH_TOKEN='{self.VALUE}'\n"
+        assert "GH_TOKEN" not in fake.envs[index]
+
+
+def test_issue_533_sr2_1_a_failed_write_leaves_no_file(monkeypatch, tmp_path):
+    """Self-review SR2-1: a write that fails after the file exists deletes it."""
+    creds = tmp_path / "c"
+
+    def broken_fsync(fd):
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(runner_mod.os, "fsync", broken_fsync)
+    runner = TmuxRunner(
+        env_provider=TestSessionCredentialDelivery._boundary,
+        credentials_dir=str(creds),
+    )
+    path = runner._write_credential_file("loop-x", {"GH_TOKEN": "a-value-123456789"})
+    assert path is None
+    assert list(creds.iterdir()) == []
+
+
+def test_issue_533_cr1_1_a_credential_named_like_a_loader_variable(tmp_path):
+    """Critic CR1-1: a credential named `f` must not hijack the loader's path."""
+    path = tmp_path / "f.env"
+    path.write_text("f='the-secret-value-1234'\n")
+    out = _REAL_RUN(
+        [
+            "sh",
+            "-c",
+            runner_mod.CREDENTIAL_LOADER,
+            "sh",
+            str(path),
+            "sh",
+            "-c",
+            f'printf "%s|" "$f"; test -e "{path}" && echo present || echo gone',
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert out.stdout.strip() == "the-secret-value-1234|gone"
+    assert "f=" not in runner_mod.CREDENTIAL_LOADER
+
+
+def test_issue_533_cr1_3_every_spawn_sweeps(monkeypatch, tmp_path):
+    """Critic CR1-3: a leftover is swept even by a spawn that hands nothing over."""
+    from the_loop.envstate import SessionEnvironment
+
+    creds = tmp_path / "c"
+    creds.mkdir(mode=0o700)
+    old = creds / "loop-x.deadbeef.env"
+    old.write_text("T='x'\n")
+    past = time.time() - runner_mod.CREDENTIAL_FILE_MAX_AGE_SECONDS - 5
+    os.utime(old, (past, past))
+    runner = TmuxRunner(
+        env_provider=lambda: SessionEnvironment(remove=("GH_TOKEN",)),
+        credentials_dir=str(creds),
+    )
+    TestSessionCredentialDelivery()._spawn(monkeypatch, runner)
+    assert not old.exists()

@@ -165,17 +165,43 @@ def list_sessions(
     """
     registry = SessionRegistry(_registry_dir(config, registry_dir))
     control = _control_store(config, portable_dir)
+    boundary, live_pids = _credential_view(config)
     sessions = []
     for session in registry.list_sessions(status=status):
         record = control.get(session.work_item)
+        target = session.tmux_target
         sessions.append(
             {
                 "ref": session.work_item.ref,
                 **session.to_dict(),
                 "control": record.to_dict() if record else None,
+                # issue-533, R7.1: name → fingerprint, only for a live session.
+                "credentials": (
+                    _held_credentials(boundary, live_pids.get(target, []))
+                    if boundary is not None and target
+                    else {}
+                ),
             }
         )
     return sessions
+
+
+def _credential_view(
+    config: Optional[dict],
+) -> Tuple[Optional[envstate.SessionEnvironment], Mapping[str, List[int]]]:
+    """The configured credentials and the live panes, or ``(None, {})`` when no
+    credential is configured — so an unconfigured ``list`` reads no process."""
+    env_block = (config or {}).get("env")
+    if not isinstance(env_block, Mapping) or not env_block.get("sessionCredentials"):
+        return (None, {})
+    try:
+        declared = _declared_environment(config)
+        if declared is None or not declared[0].credentials:
+            return (None, {})
+        return (declared[0], TmuxRunner().live_pane_pids_by_session())
+    except Exception:  # noqa: BLE001 — a listing never fails on this decoration
+        logger.debug("could not read the sessions' credentials", exc_info=True)
+        return (None, {})
 
 
 def get_session(
@@ -1680,7 +1706,12 @@ def _environment_row(
     with several live panes is ``stale`` when **any** of them is: they all belong
     to the same work item, and one pane on a retired credential is the whole
     session broken.
+
+    ``credentials`` (issue-533, R7.1) names each opted-in credential the first live
+    pane holds, by fingerprint only.
     """
+    # Each session is held to its own boundary: what its work item may inherit.
+    declared_values = declared_values.for_work_item(session.work_item.ref)
     target = session.tmux_target
     pids = list(live_pids.get(target, [])) if target else []
     if not pids:
@@ -1690,6 +1721,7 @@ def _environment_row(
             "verdict": "not-running",
             "stale": [],
             "pids": [],
+            "credentials": {},
         }
     verdicts: List[str] = []
     differing: List[str] = []
@@ -1712,7 +1744,21 @@ def _environment_row(
         "verdict": overall,
         "stale": sorted(differing),
         "pids": pids,
+        "credentials": _held_credentials(declared_values, pids),
     }
+
+
+def _held_credentials(
+    declared_values: envstate.SessionEnvironment, pids: Sequence[int]
+) -> Dict[str, str]:
+    """``{name: fingerprint}`` of the opted-in credentials a session's pane holds.
+
+    Empty, with no ``/proc`` read, when no credential is configured (issue-533).
+    """
+    if not declared_values.credentials or not pids:
+        return {}
+    actual = envstate.process_environ(pids[0]) or {}
+    return envstate.held_credentials(declared_values, actual)
 
 
 def environment_drift(
@@ -1797,6 +1843,9 @@ def _restart_one(
     blank one (R1.5 — losing twenty conversations is worse than a stale token), and
     only then is the pane respawned, probed and verified.
     """
+    # Verified against this session's own boundary (issue-533): the runner resolves
+    # the same one when it respawns, from the unresolved `declared_values`.
+    resolved = declared_values.for_work_item(session.work_item.ref)
     row: Dict[str, Any] = {
         "ref": session.work_item.ref,
         "tmuxTarget": session.tmux_target,
@@ -1876,7 +1925,7 @@ def _restart_one(
         )
         return row
     verdicts = [
-        envstate.environ_matches_declared(declared_values, pid)
+        envstate.environ_matches_declared(resolved, pid)
         for pid in runner.live_pane_pids(target)
     ]
     differing = sorted({name for _, names in verdicts for name in names})
@@ -1976,7 +2025,10 @@ def restart_sessions(
     # The values the respawned panes are handed — the whole point of the verb, and
     # the one parse of the file the whole run uses, so every session in a roll lands
     # on the same bytes even if the file is rewritten underneath it.
-    runner = TmuxRunner(env_provider=lambda: declared_values)
+    runner = TmuxRunner(
+        env_provider=lambda: declared_values,
+        credentials_dir=_layout(config).session_credentials_dir,
+    )
     forward = declared_values.forward
     messages.append(
         {
@@ -1987,6 +2039,13 @@ def restart_sessions(
                 f"[{', '.join(sorted(forward))}], keeping out "
                 f"{len(declared_values.remove)} "
                 f"[{', '.join(declared_values.remove)}]"
+                + (
+                    ", handing over "
+                    + ", ".join(c.name for c in declared_values.credentials)
+                    + " where in scope"
+                    if declared_values.credentials
+                    else ""
+                )
             ),
         }
     )
@@ -2036,6 +2095,8 @@ def _restart_line(
 ) -> str:
     """One rendered row. Names a differing variable; never prints its value."""
     line = f"{row['ref']:<40} {row['outcome']}"
+    if row.get("ref"):
+        declared_values = declared_values.for_work_item(row["ref"])
     if row.get("stale"):
         line += " — still differing: " + ", ".join(
             _wanted(name, declared_values) for name in row["stale"]
@@ -2049,4 +2110,6 @@ def _wanted(name: str, declared_values: envstate.SessionEnvironment) -> str:
     """How a differing name is rendered: a fingerprint, or "must be absent"."""
     if name in declared_values.forward:
         return f"{name} (wanted {envstate.fingerprint(declared_values.forward[name])})"
+    if name in declared_values.inherit:
+        return f"{name} (wanted {envstate.fingerprint(declared_values.inherit[name])})"
     return f"{name} (held; a session must not hold it)"

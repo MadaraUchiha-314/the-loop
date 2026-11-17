@@ -285,6 +285,19 @@ still carrying the key is warned about and otherwise ignored).
   tmux client run without them), so a pane inherits none of them from a tmux server the
   daemon started. No credential value reaches any argv, including the argv a tmux server
   keeps as its name when a spawn starts it (issue-485).
+- WHEN `env.sessionCredentials` names a credential (issue-533) THEN a session whose
+  work item it admits SHALL hold it. The value comes from its `from` source, read at
+  spawn. It is delivered through a per-spawn `0600` file under
+  `<state.root>/local/session-credentials/`, which the pane reads and deletes before it
+  `exec`s the harness. It SHALL NOT appear on any argv, in the tmux client's environment
+  or in any tmux environment (global or session). Every entry's `name` and `from` stays
+  removed from any pane it does not admit. Unset: today's boundary, unchanged. The
+  `repositories` scope governs delivery only: sessions share a Unix user, so a
+  concurrent session can read another's `/proc/<pid>/environ`. It is not isolation.
+- WHEN a session sends the service text (ask, reply, comment, ticket or PR title/body,
+  force/skip reason) THEN every configured session credential value SHALL be masked as
+  `<redacted:session-credential>` before anything is posted or logged. The event log
+  SHALL mask every value its process has handed over or resolved.
 - WHEN a session is spawned THEN each passthrough value SHALL be read **at spawn time**
   (issue-410) — from `env.file` when it declares the name, else the daemon's
   environment — rather than inherited from the tmux server's long-frozen copy. A tmux
@@ -409,6 +422,7 @@ belongs to does not.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-533 | **Opt-in session credentials, never on argv** (2026-11-17): `env.sessionCredentials` lets an operator hand sessions named credentials, each from its own daemon-side source (`from`, for a narrower token) and optionally scoped to `repositories`. The value reaches the pane through a `0600` file a fixed `sh` loader reads, deletes and `exec`s past, so it is on no argv and in no tmux environment. The drift check treats an inherited name as expected, so a rotation reads `stale`. The service masks every value in session text, the event log masks it too, and `status`/`sessions list` show who holds what by fingerprint | [spec](../specs/issue-533/), [config](../config/cli/index.md#env-sessioncredentials), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/533) |
 | issue-482 | **A spawned session receives no secret** (2026-10-13, with [issue-485](https://github.com/MadaraUchiha-314/the-loop/issues/485)): `env.file` is the daemon's environment, not a session's. A pane gets the-loop's three identifiers plus the non-secret names `env.sessionPassthrough` lists (a credential name is refused); every other `env.file` name and every credential name is stripped with `env -u` and kept out of the tmux client's environment, so neither `ps` nor a tmux server a spawn started shows a token — before this, `-e GH_TOKEN=…` sat in the server's process name for days. Session-side verbs in a daemon-spawned session never fall back in-process, and `ask` got a service route (`POST /api/v1/sessions/ask`). `status` and `sessions restart` compare a pane against the boundary, so a pane an earlier version handed a token reads as stale until it is relaunched | [spec](../specs/issue-482/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/482) |
 | issue-451 | **A default model per harness** (2026-10-02): `harnesses[].defaultModel` is the model a work item's session is launched on when it has none of its own — `do`, `contribute`, `review`, an unticked gate. `Dispatcher._resolved_choice` falls back to `modelchoice.default_model`, so the argv, record, spawn event and hooks carry it; the gate names it on the checklist and in the confirmation; `models check` probes it | [spec](../specs/issue-451/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/451) |
 | issue-442 | The session announcement posts through the daemon's GitHub client on PyGithub under `integrations.github.api.tokenEnv` (2026-09-30), no longer through the operator's `gh`; a missing token is one warning per process | [spec](../specs/issue-442/), [decision-139](../decisions/decision-139.md) |

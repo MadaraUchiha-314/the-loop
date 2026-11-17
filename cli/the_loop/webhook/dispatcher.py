@@ -905,6 +905,10 @@ class Dispatcher:
                 env_provider=lambda: envstate.spawn_environment(
                     lambda: self.cli_config
                 ),
+                # issue-533: where an opted-in session credential is handed over.
+                credentials_dir=layout_from_config(
+                    self.cli_config or {}
+                ).session_credentials_dir,
             )
         )
         # An injected runner (tests / embedding) still learns the instance's name:

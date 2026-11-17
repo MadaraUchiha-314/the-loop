@@ -123,6 +123,8 @@ def _runner(config: Optional[dict]) -> TmuxRunner:
         # …and the environment its `env.file` declares *now* (issue-410), rather
         # than whatever the tmux server captured when it started.
         env_provider=lambda: envstate.spawn_environment(lambda: config or {}),
+        # issue-533: where an opted-in session credential is handed over.
+        credentials_dir=layout_from_config(config or {}).session_credentials_dir,
     )
 
 

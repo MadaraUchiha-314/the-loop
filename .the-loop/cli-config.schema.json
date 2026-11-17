@@ -170,7 +170,7 @@
         "sessionPassthrough": {
           "type": "array",
           "default": [],
-          "description": "The non-secret environment variables a spawned agent session is given (issue-482) — a proxy, a locale. the-loop never sends a secret to a session: by default a session gets only THE_LOOP_INSTANCE, THE_LOOP_WORK_ITEM and THE_LOOP_CLI_CONFIG, and every name `env.file` declares, plus every credential name, is removed from its environment. A listed name takes its value from `env.file` when the file declares it (re-read per spawn), else from the daemon's environment; a name in neither is skipped. A credential name — any variable a `*tokenEnv`/`*secretEnv` key names, or a default such as GH_TOKEN — is refused with a warning, never forwarded.",
+          "description": "The non-secret environment variables a spawned agent session is given (issue-482) — a proxy, a locale. the-loop never sends a secret to a session: by default a session gets only THE_LOOP_INSTANCE, THE_LOOP_WORK_ITEM and THE_LOOP_CLI_CONFIG, and every name `env.file` declares, plus every credential name, is removed from its environment. A listed name takes its value from `env.file` when the file declares it (re-read per spawn), else from the daemon's environment; a name in neither is skipped. A credential name — any variable a `*tokenEnv`/`*secretEnv` key names, or a default such as GH_TOKEN — is refused with a warning, never forwarded. A credential a session needs goes in `sessionCredentials` instead.",
           "items": {
             "type": "string",
             "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
@@ -179,6 +179,45 @@
             [
               "HTTPS_PROXY",
               "NO_PROXY"
+            ]
+          ]
+        },
+        "sessionCredentials": {
+          "type": "array",
+          "default": [],
+          "description": "Credentials a spawned agent session MAY hold, by name (issue-533). Default off: a session holds no credential. Each entry hands the session `name`, with its value read per spawn from `from` (default: `name`): from `env.file` when the file declares it, else from the daemon's environment. Use `from` to give sessions a separate, least-privilege, short-lived token rather than the daemon's own (pointing it at one of the daemon's credential names works, with a warning). `repositories` limits it to sessions whose work item is a GitHub item in one of those `[HOST/]OWNER/REPO`s. The value never appears on an argv or in any tmux environment: it reaches the pane through a per-spawn mode-0600 file under `<state.root>/local/session-credentials/` that the pane reads and deletes before starting the harness. A malformed entry or an unset source is skipped with a warning naming the variable, never its value, and its name stays stripped from the pane. The service masks every value in text a session sends it (comments, questions, ticket and PR bodies) before posting it; `status` and `sessions list` show who holds what by fingerprint. TRADE-OFF: an unattended agent holding a token can still leak it through `env`, `set -x`, a debug dump, its transcript, a pasted log, or a `gh`/`git`/`curl` call it makes with the token itself. Masking reduces that risk; it does not remove it.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                "description": "The variable the session sees."
+              },
+              "from": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                "description": "The daemon-side variable the value is read from. Default: `name`. Never reaches a session under its own name."
+              },
+              "repositories": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Only sessions for GitHub work items in these `[HOST/]OWNER/REPO`s are GIVEN it. This limits delivery, not reach: every session runs as the same user and can read a concurrent session's /proc/<pid>/environ, so do not rely on it to isolate a token from an untrusted work item. Unset: every session."
+              }
+            }
+          },
+          "examples": [
+            [
+              {
+                "name": "GH_TOKEN",
+                "from": "SESSION_GH_TOKEN"
+              }
             ]
           ]
         }

@@ -30,6 +30,7 @@ you say otherwise, never relative to whatever directory a command was run from
 ├── local/
 │   ├── github-octo-repo-15.json   # that item's session handle(s) — never tracked
 │   ├── model-verdicts.json        # which models this box's harnesses accept — never tracked
+│   ├── session-credentials/       # transient 0600 credential files for spawns — never tracked
 │   ├── poll-clocks.json           # when this box's poller last looked at each item — never tracked
 │   ├── control-deliveries.json    # the control comments this box already executed (+ its .lock) — never tracked
 │   ├── slack-split.json           # what this listener's own split check last measured — never tracked
@@ -220,6 +221,7 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 | `<root>/portable/index.json` | the same store, derived | one entry per record: ref, url, file, sections | **portable** |
 | `<root>/local/<slug>.json` | the session registry | one entry per ref this machine holds a session for — the work item's own and one per pull request — each with its conversation id, `cwd`, tmux target and status; plus what this deployment has already mirrored of the item's channel threads | **local** |
 | `<root>/local/model-verdicts.json` | `the-loop models check` (issue-358) | one verdict per harness × model-or-effort name: `ok`, `refused` or `unknown`, the argv it was taken against, and when — re-measured every 24h | **local** |
+| `<root>/local/session-credentials/` | the tmux runner, per spawn (issue-533) | one mode-`0600` file per spawn that hands a session a credential from [`env.sessionCredentials`](/config/cli/#env-sessioncredentials); the pane reads and deletes it before the harness starts, and any file left by a crash is swept after ten minutes. Holds a secret — never commit it | **local** |
 | `<root>/local/poll-clocks.json` | the poller, as it finishes each item (issue-382) | per work-item ref — and per pull request delivering one — `lastPolledAt` and `closureCheckedAt`: when a cycle on **this** machine last listed it, and last asked whether an unlisted item had ended | **local** |
 | `<root>/local/control-deliveries.json` | the dispatcher, before it executes a Jira control comment (issue-475) | the delivery ids of the newest control comments this machine executed (bounded), shared by the receiver and the poller under a `flock` on `control-deliveries.json.lock` — so a Jira comment both ingresses see is executed once | **local** |
 | `<root>/local/slack-split.json` | the Socket Mode listener, after every split check (issue-413) | what this listener last measured of its own share of the traffic: the verdict, the beats posted and echoed, the window, the channel id, the rolling window of recent verdicts and the consecutive-short count the warning ladder reads | **local** |

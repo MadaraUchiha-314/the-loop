@@ -142,7 +142,12 @@ record for the work item.
 | `--status` | all | `active`, `paused` or `closed`. |
 | `--format` | `table` | `table` or `json`. |
 
-Shows each session's status — `paused` included — and its last control command. Retained
+Shows each session's status — `paused` included — and its last control command. When
+any running session holds a credential from
+[`env.sessionCredentials`](/config/cli/#env-sessioncredentials), a **Credentials** column
+lists it as `NAME@fingerprint`, never the value
+([issue-533](https://github.com/MadaraUchiha-314/the-loop/issues/533)). JSON output
+carries the same map as `credentials`. Retained
 tmux sessions accumulate after their work items close; `--status closed` is how you find
 them.
 
@@ -251,8 +256,10 @@ one bad ref in a list resets none of them. Nothing is posted to the ticket — t
 
 Relaunch running sessions on the **session environment** the config declares **now**: the
 names [`env.sessionPassthrough`](/config/cli/#env-sessionpassthrough) forwards, with their
-current values, and every other name [`env.file`](/config/cli/#env-file) declares, plus
-every credential name, kept out
+current values, the credentials
+[`env.sessionCredentials`](/config/cli/#env-sessioncredentials) admits for each session
+(delivered through a `0600` file, never an argv), and every other name
+[`env.file`](/config/cli/#env-file) declares, plus every credential name, kept out
 ([#482](https://github.com/MadaraUchiha-314/the-loop/issues/482)). The command
 [#410](https://github.com/MadaraUchiha-314/the-loop/issues/410) asked for: a session's
 environment is whatever tmux handed its pane when the pane was forked, and nothing re-reads

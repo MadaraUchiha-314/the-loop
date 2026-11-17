@@ -25,3 +25,8 @@ in the evidence rather than "fixing" a test. A test that resolves the CLI config
 
 None in code yet. This is the first occurrence (rule of three). The issue-503 evidence
 records the clean-environment command.
+
+**Second occurrence (issue-533, 2026-11-17).** A full-suite run inside the session showed 25
+failures, 22 of them environmental (the poller, status and instances tests read the
+operator's live config and running poller). The clean-environment command made them pass.
+One more occurrence triggers the write-gate: an autouse fixture that unsets the variables.

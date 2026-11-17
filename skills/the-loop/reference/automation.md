@@ -343,7 +343,12 @@ runs `gh`; these verbs close the last hop, the agent's own session.
   control-plane service, so the token stays in the daemon's environment and the session
   holds none — the daemon hands a session no credential at all (issue-482). In a session
   the daemon spawned, a verb with no service to answer it **fails** with a message
-  saying so; tell the ticket and wait, do not look for a token. With no daemon at all (a
+  saying so; tell the ticket and wait, do not look for a token. The one exception is
+  opt-in: an operator may hand sessions named credentials through
+  `env.sessionCredentials` (issue-533), so `gh` works for what the verbs do not wrap.
+  The verbs still go through the service. Never print, echo or paste such a token. The
+  service masks it in text you send through the verbs, but nothing masks what you send
+  with `gh`, `git` or `curl` yourself. With no daemon at all (a
   cloud checkout), the verb runs in-process on the token
   `integrations.github.api.tokenEnv` names (default `GH_TOKEN`), prints a note on
   stderr saying so, and never starts a service. The same operations are tools on the

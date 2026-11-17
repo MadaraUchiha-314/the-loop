@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import secrets
 import shutil
 import signal
 import subprocess
@@ -37,7 +38,7 @@ from typing import (
 )
 
 from .cli_config import CLI_CONFIG_ENV
-from . import envstate
+from . import envstate, eventlog, sessioncreds
 from .envstate import SessionEnvironment
 from .harness.base import UnsupportedRunnerError
 from .sessions import Session, WorkItemRef, tmux_session_name
@@ -98,6 +99,21 @@ _CLEAR_BUFFER = "the-loop-clear"
 # Shared hub session the web terminal (ttyd) drops browser clients into; the
 # loop-* sessions are one `switch-client`/`choose-tree` away from it.
 HUB_SESSION = "the-loop-hub"
+
+#: The pane command that admits a session credential (issue-533, R3). A constant:
+#: the file's path arrives as ``$1`` and is never interpolated, and stays there — no
+#: shell variable holds it, so a credential the file assigns (even one named ``f``)
+#: cannot redirect the ``rm`` (critic CR1-1). The values are
+#: in the file, never on an argv. ``set -a`` exports what the file assigns; the file
+#: is deleted before ``exec``, so it is gone once the harness runs.
+CREDENTIAL_LOADER = (
+    'set -a; [ -r "$1" ] && . "$1"; set +a; rm -f -- "$1"; shift; exec "$@"'
+)
+
+#: A delivery file older than this is a leftover (a crash between the write and the
+#: pane's read) and is swept at the next spawn (issue-533, R3.4). The file normally
+#: lives for the milliseconds between ``new-session`` and the pane's ``rm``.
+CREDENTIAL_FILE_MAX_AGE_SECONDS = 600
 # How often `terminate_harness` re-reads pane liveness while waiting out its
 # SIGTERM grace period. Stepped (not wall-clock) so an injected sleeper in tests
 # cannot spin.
@@ -278,6 +294,41 @@ def stop_web_terminal(proc: Optional[subprocess.Popen]) -> None:
         proc.kill()
 
 
+def _shell_quote(value: str) -> str:
+    """``value`` single-quoted for ``sh``: nothing inside is expanded."""
+    return "'" + value.replace("'", "'\\''") + "'"
+
+
+def _discard(path: Optional[str]) -> None:
+    if not path:
+        return
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        logger.warning("could not delete a session credential file %s", path)
+
+
+def _sweep_credential_files(directory: Path) -> None:
+    """Remove delivery files older than the bound (issue-533, R3.4)."""
+    cutoff = time.time() - CREDENTIAL_FILE_MAX_AGE_SECONDS
+    try:
+        entries = list(directory.iterdir())
+    except OSError:
+        return
+    for entry in entries:
+        try:
+            if (
+                entry.name.endswith(".env")
+                and not entry.is_symlink()
+                and entry.stat().st_mtime < cutoff
+            ):
+                entry.unlink()
+        except OSError:
+            continue
+
+
 class TmuxRunner:
     """Spawn / deliver-to / kill harness TUIs hosted in named tmux sessions.
 
@@ -294,6 +345,7 @@ class TmuxRunner:
         env_provider: Optional[
             Callable[[], Union[SessionEnvironment, Mapping[str, str]]]
         ] = None,
+        credentials_dir: str = "",
     ):
         self.binary = binary
         self.remain_on_exit = remain_on_exit
@@ -307,6 +359,10 @@ class TmuxRunner:
         # mapping is read as `forward` alone. `None` (the default, and every
         # construction site that spawns nothing) means "carry nothing extra".
         self.env_provider = env_provider
+        # Where a session credential's delivery file is written (issue-533):
+        # `<state.root>/local/session-credentials`. Empty means nowhere, so a
+        # configured credential is not handed over (fail closed).
+        self.credentials_dir = credentials_dir
         self._env_support: Optional[bool] = None
 
     def _supports_env(self, timeout: Optional[float] = None) -> bool:
@@ -461,17 +517,21 @@ class TmuxRunner:
             )
         except UnsupportedRunnerError as exc:
             return TmuxResult(ok=False, error=str(exc))
-        env = self.spawn_environment()
+        env, cred_path = self._admit_credentials(target, work_item)
         argv = ["new-session", "-d", "-s", target, "-c", cwd]
         argv += self._env_flags(self._session_environment(work_item, env), timeout)
-        argv += ["--"] + self._harness_command(adapter, harness_argv, env)
+        argv += ["--"] + self._harness_command(adapter, harness_argv, env, cred_path)
         blocked = self._clear_target(target, timeout)
         if blocked is not None:
+            _discard(cred_path)
             return blocked
         # The tmux client runs without the names the pane must not hold: when this
         # call starts the server, the server's own environment — which every later
-        # pane inherits — carries none of them either (issue-482, R2.3).
-        result = self._run(argv, timeout, remove=env.remove)
+        # pane inherits — carries none of them either (issue-482, R2.3). Nor an
+        # inherited name (issue-533, R3.5): the value reaches the pane through the
+        # file alone, and a same-named daemon token must not reach the server.
+        client_remove = env.remove + tuple(env.inherit)
+        result = self._run(argv, timeout, remove=client_remove)
         if not result.ok and _DUPLICATE_SESSION_RE.search(result.error):
             # tmux is the authority on the collision, and it disagrees with the
             # pre-flight probe — which can time out on a busy server and read as
@@ -486,10 +546,12 @@ class TmuxRunner:
             )
             blocked = self._clear_target(target, timeout, present=True)
             if blocked is not None:
+                _discard(cred_path)
                 return blocked
-            result = self._run(argv, timeout, remove=env.remove)
+            result = self._run(argv, timeout, remove=client_remove)
         if result.ok and self.remain_on_exit:
             self._set_remain_on_exit(target, timeout)
+        self._settle_credentials(result, env, cred_path, target, work_item)
         return result
 
     def spawn_environment(self) -> SessionEnvironment:
@@ -567,7 +629,10 @@ class TmuxRunner:
 
     @staticmethod
     def _harness_command(
-        adapter: "HarnessAdapter", harness_argv: List[str], env: SessionEnvironment
+        adapter: "HarnessAdapter",
+        harness_argv: List[str],
+        env: SessionEnvironment,
+        cred_path: Optional[str] = None,
     ) -> List[str]:
         """The pane's command: the harness, behind ``env -u NAME …`` when needed.
 
@@ -578,9 +643,110 @@ class TmuxRunner:
         value; and no prefix at all when there is nothing to remove.
         """
         prefix: List[str] = []
+        if cred_path:
+            # issue-533: the fixed loader sources the 0600 file, deletes it and execs
+            # the rest. Only the path is on the argv.
+            prefix = ["sh", "-c", CREDENTIAL_LOADER, "sh", cred_path]
         if env.remove:
-            prefix = ["env"] + [flag for name in env.remove for flag in ("-u", name)]
+            prefix += ["env"] + [flag for name in env.remove for flag in ("-u", name)]
         return prefix + [adapter.binary] + list(harness_argv)
+
+    def _admit_credentials(
+        self, target: str, work_item: str
+    ) -> Tuple[SessionEnvironment, Optional[str]]:
+        """The boundary for this pane, and the delivery file when it inherits any.
+
+        A file that cannot be written safely means the session gets no credential and
+        its names stay stripped (issue-533, fail closed) — never a value on an argv.
+        """
+        env = self.spawn_environment().for_work_item(work_item)
+        # Every spawn sweeps, not only one that writes (critic CR1-3): a file a crash
+        # left behind must go even after credentials are switched off or scoped away.
+        if self.credentials_dir:
+            directory = Path(self.credentials_dir)
+            if directory.is_dir() and not directory.is_symlink():
+                _sweep_credential_files(directory)
+        if not env.inherit:
+            return (env, None)
+        # Whatever a pane is handed is masked in this process's event log (R5.1).
+        sessioncreds.remember(env.inherit.values())
+        path = self._write_credential_file(target, env.inherit)
+        if path is None:
+            return (env.without_inherit(), None)
+        return (env, path)
+
+    def _write_credential_file(
+        self, target: str, inherit: Mapping[str, str]
+    ) -> Optional[str]:
+        names = ", ".join(sorted(inherit))
+        if not self.credentials_dir:
+            logger.warning(
+                "no state directory for session credentials; spawning without %s",
+                names,
+            )
+            return None
+        directory = Path(self.credentials_dir)
+        try:
+            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+            if directory.is_symlink() or not directory.is_dir():
+                raise OSError("not a directory of our own")
+            if directory.stat().st_uid != os.getuid():
+                raise OSError("owned by another user")
+            directory.chmod(0o700)
+            _sweep_credential_files(directory)
+            path = directory / f"{target}.{secrets.token_hex(8)}.env"
+            fd = os.open(
+                path,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+            )
+            try:
+                body = "".join(
+                    f"{name}={_shell_quote(value)}\n"
+                    for name, value in sorted(inherit.items())
+                ).encode("utf-8", "surrogateescape")
+                while body:
+                    body = body[os.write(fd, body) :]
+                os.fsync(fd)
+            except OSError:
+                # A partial file still holds a value: never leave it for the sweep.
+                _discard(str(path))
+                raise
+            finally:
+                os.close(fd)
+        except OSError as exc:
+            logger.warning(
+                "could not write the session credential file under %s (%s); "
+                "spawning without %s",
+                directory,
+                type(exc).__name__ if not str(exc) else exc.strerror or str(exc),
+                names,
+            )
+            return None
+        return str(path)
+
+    def _settle_credentials(
+        self,
+        result: "TmuxResult",
+        env: SessionEnvironment,
+        cred_path: Optional[str],
+        target: str,
+        work_item: str,
+    ) -> None:
+        """Delete the file of a spawn that failed; record one that handed any over."""
+        if cred_path is None:
+            return
+        if not result.ok:
+            # The pane never ran, so nothing will read and delete it (R3.4).
+            _discard(cred_path)
+            return
+        eventlog.emit(
+            "session.credentials_inherited",
+            level="warning",
+            work_item=work_item or None,
+            tmux_target=target,
+            names=sorted(env.inherit),
+        )
 
     def respawn_in(
         self,
@@ -639,11 +805,13 @@ class TmuxRunner:
                     "running harness and will not start a stopped one"
                 ),
             )
-        env = self.spawn_environment()
+        env, cred_path = self._admit_credentials(target, work_item)
         argv = ["respawn-pane", "-k", "-t", target, "-c", cwd]
         argv += self._env_flags(self._session_environment(work_item, env), timeout)
-        argv += ["--"] + self._harness_command(adapter, harness_argv, env)
-        return self._run(argv, timeout, remove=env.remove)
+        argv += ["--"] + self._harness_command(adapter, harness_argv, env, cred_path)
+        result = self._run(argv, timeout, remove=env.remove + tuple(env.inherit))
+        self._settle_credentials(result, env, cred_path, target, work_item)
+        return result
 
     def _clear_target(
         self, target: str, timeout: Optional[float], present: bool = False

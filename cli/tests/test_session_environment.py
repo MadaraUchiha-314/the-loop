@@ -148,3 +148,100 @@ def test_a_credential_key_holding_something_that_is_not_a_name_is_ignored():
     names = envstate.credential_names({"x": {"tokenEnv": ["A=B", "-i", "GOOD"]}})
     assert "GOOD" in names
     assert "A=B" not in names and "-i" not in names
+
+
+# -- issue-533: what each session holds, by name and fingerprint (R7.1) --------
+
+import os  # noqa: E402
+import subprocess  # noqa: E402
+import sys  # noqa: E402
+
+from the_loop.core import lifecycle as core_lifecycle  # noqa: E402
+from the_loop.core import sessions as core_sessions  # noqa: E402
+from the_loop.envstate import SessionCredential  # noqa: E402
+from the_loop.sessions import Session, WorkItemRef  # noqa: E402
+
+HELD = "session-credential-held-533"
+
+
+@pytest.fixture
+def holder():
+    """A process started holding GH_TOKEN, as an inheriting pane would."""
+    proc = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        env={**os.environ, "GH_TOKEN": HELD},
+    )
+    try:
+        yield proc.pid
+    finally:
+        proc.kill()
+        proc.wait()
+
+
+def _credentialed(ref_scope=()):
+    return SessionEnvironment(
+        remove=("GH_TOKEN", "SRC"),
+        credentials=(
+            SessionCredential(
+                name="GH_TOKEN", source="SRC", value=HELD, repositories=ref_scope
+            ),
+        ),
+    )
+
+
+def _session(ref="github:octo/repo#1", target="loop-github-octo-repo-1"):
+    return Session(
+        work_item=WorkItemRef.parse(ref),
+        harness="claude",
+        harness_session_id="s1",
+        tmux_target=target,
+        cwd="/work",
+    )
+
+
+def test_issue_533_a_drift_row_names_the_held_credential(holder):
+    row = core_sessions._environment_row(
+        _session(), _credentialed(), {"loop-github-octo-repo-1": [holder]}
+    )
+    assert row["verdict"] == "fresh"
+    assert row["credentials"] == {"GH_TOKEN": envstate.fingerprint(HELD)}
+    assert HELD not in repr(row)
+
+
+def test_issue_533_an_out_of_scope_session_holding_it_is_stale(holder):
+    """A session whose work item may not hold it, but does, is drift (R2.2)."""
+    row = core_sessions._environment_row(
+        _session(),
+        _credentialed(ref_scope=("github.com/other/repo",)),
+        {"loop-github-octo-repo-1": [holder]},
+    )
+    assert row["verdict"] == "stale" and row["stale"] == ["GH_TOKEN"]
+
+
+def test_issue_533_nothing_configured_reads_no_process():
+    row = core_sessions._environment_row(
+        _session(), SessionEnvironment(), {"loop-github-octo-repo-1": [1]}
+    )
+    assert row["credentials"] == {}
+
+
+def test_issue_533_the_status_line_names_names_only():
+    doc = {
+        "sessionEnvironment": {
+            "sessions": [
+                {"ref": "a", "credentials": {"GH_TOKEN": "ab12cd34"}},
+                {"ref": "b", "credentials": {}},
+            ]
+        }
+    }
+    line = core_lifecycle.credentials_line(doc)
+    assert line == "1 session(s) hold GH_TOKEN (env.sessionCredentials)"
+    assert "ab12cd34" not in line
+    assert core_lifecycle.credentials_line({"sessionEnvironment": {}}) == ""
+
+
+def test_issue_533_restart_renders_an_inherited_name_by_fingerprint():
+    row = {"ref": "github:octo/repo#1", "outcome": "stale", "stale": ["GH_TOKEN"]}
+    line = core_sessions._restart_line(row, _credentialed())
+    assert f"GH_TOKEN (wanted {envstate.fingerprint(HELD)})" in line
+    assert HELD not in line

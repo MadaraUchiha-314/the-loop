@@ -102,6 +102,17 @@ $ the-loop status
 sessions    2 of 6 running with a stale environment — `the-loop sessions restart --all`
 ```
 
+A **`credentials`** line appears when running sessions hold a credential that
+[`env.sessionCredentials`](/config/cli/#env-sessioncredentials) handed them
+([issue-533](https://github.com/MadaraUchiha-314/the-loop/issues/533)). It shows names
+only; `status --format json` carries each one's fingerprint under
+`sessionEnvironment.sessions[].credentials`. A rotated session credential shows up as a
+stale session on the `sessions` line, like any other drift:
+
+```console
+credentials 2 session(s) hold GH_TOKEN (env.sessionCredentials)
+```
+
 A session's environment is frozen when its pane is forked, so rotating a credential leaves
 the service on the new value and every session already running on the old one. The line
 exists because that state is otherwise invisible: the reporter's deployment looked healthy
