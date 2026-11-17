@@ -3162,9 +3162,7 @@ def test_issue_533_sessions_list_shows_a_credentials_column_only_when_held(
         "lastEventAt": "",
     }
     listed = [dict(base, credentials={"GH_TOKEN": "ab12cd34"})]
-    monkeypatch.setattr(
-        sessions_cmd.core_sessions, "list_sessions", lambda **_: listed
-    )
+    monkeypatch.setattr(sessions_cmd.core_sessions, "list_sessions", lambda **_: listed)
     assert run_cli(["sessions", "list", "--registry-dir", registry_dir]) == 0
     out = capsys.readouterr().out
     assert "Credentials" in out and "GH_TOKEN@ab12cd34" in out

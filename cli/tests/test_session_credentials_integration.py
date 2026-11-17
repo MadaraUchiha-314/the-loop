@@ -103,6 +103,12 @@ def _environ(pid: int) -> dict:
     )
 
 
+def _wanted(config: dict, config_path: Path) -> envstate.SessionEnvironment:
+    env = envstate.session_environment(config, config_path)
+    assert env is not None
+    return env.for_work_item(REF)
+
+
 def _config(tmp_path, value: str) -> dict:
     env_file = tmp_path / ".env"
     env_file.write_text(f"SESSION_GH_TOKEN={value}\n")
@@ -216,11 +222,11 @@ def test_issue_533_rotating_the_source_marks_the_session_stale(
         TARGET, _SleepAdapter(), "go", cwd=str(tmp_path), session_id="s1", work_item=REF
     ).ok
     pane = _harness_pid(TARGET)
-    wanted = envstate.session_environment(config, config_path).for_work_item(REF)
+    wanted = _wanted(config, config_path)
     assert envstate.environ_matches_declared(wanted, pane) == ("fresh", ())
 
     (tmp_path / ".env").write_text(f"SESSION_GH_TOKEN={ROTATED}\n")
-    wanted = envstate.session_environment(config, config_path).for_work_item(REF)
+    wanted = _wanted(config, config_path)
     assert envstate.environ_matches_declared(wanted, pane) == ("stale", ("GH_TOKEN",))
     assert envstate.held_credentials(wanted, _environ(pane)) == {
         "GH_TOKEN": envstate.fingerprint(VALUE)

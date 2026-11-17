@@ -18,10 +18,6 @@ from pathlib import Path
 import pytest
 
 from the_loop import runner as runner_mod
-
-# The real one: the fake tmux patches `subprocess.run` module-wide, and a test that
-# runs the loader under `sh` after a spawn must not reach the fake.
-_REAL_RUN = subprocess.run
 from the_loop.commands import sessions_cmd
 from the_loop.core import sessions as core_sessions
 from the_loop.harness import ClaudeCodeAdapter, CursorAgentAdapter
@@ -36,6 +32,10 @@ from the_loop.runner import (
 )
 from the_loop.sessions import Session, WorkItemRef, tmux_session_name
 from the_loop.webhook.dispatcher import RoutingConfig, TmuxConfig
+
+# The real one: the fake tmux patches `subprocess.run` module-wide, and a test that
+# runs the loader under `sh` after a spawn must not reach the fake.
+_REAL_RUN = subprocess.run
 
 REF = "github:octo/repo#15"
 # A work item whose slug carries a dot — a repo with one in its name (the same

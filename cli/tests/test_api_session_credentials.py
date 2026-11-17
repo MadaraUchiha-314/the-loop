@@ -36,7 +36,9 @@ def client(tmp_path, monkeypatch):
     sessioncreds._forget_all()
     monkeypatch.setenv("SESSION_GH_TOKEN", VALUE)
     config = {
-        "env": {"sessionCredentials": [{"name": "GH_TOKEN", "from": "SESSION_GH_TOKEN"}]}
+        "env": {
+            "sessionCredentials": [{"name": "GH_TOKEN", "from": "SESSION_GH_TOKEN"}]
+        }
     }
     holder = ConfigHolder(config, tmp_path / "cli-config.yaml")
     facade = _Recorder()
@@ -52,7 +54,10 @@ PASTED = f"my env says GH_TOKEN={VALUE}"
 @pytest.mark.parametrize(
     "path, body",
     [
-        ("/sessions/ask", {"ref": "github:o/r#1", "question": PASTED, "summary": PASTED}),
+        (
+            "/sessions/ask",
+            {"ref": "github:o/r#1", "question": PASTED, "summary": PASTED},
+        ),
         ("/sessions/reply", {"ref": "github:o/r#1", "text": PASTED}),
         ("/work-items/comments", {"ref": "github:o/r#1", "body": PASTED}),
         ("/work-items/tickets", {"repository": "o/r", "title": PASTED, "body": PASTED}),

@@ -28,7 +28,9 @@ def _config(tmp_path, text):
         {
             "env": {
                 "file": ".env",
-                "sessionCredentials": [{"name": "GH_TOKEN", "from": "SESSION_GH_TOKEN"}],
+                "sessionCredentials": [
+                    {"name": "GH_TOKEN", "from": "SESSION_GH_TOKEN"}
+                ],
             }
         },
         tmp_path / "cli-config.yaml",
@@ -54,12 +56,17 @@ def test_a_rotated_value_is_masked_and_the_old_one_remembered(tmp_path):
 
 def test_the_source_may_come_from_the_environment(monkeypatch):
     monkeypatch.setenv("SESSION_GH_TOKEN", VALUE)
-    config = {"env": {"sessionCredentials": [{"name": "GH_TOKEN", "from": "SESSION_GH_TOKEN"}]}}
+    config = {
+        "env": {
+            "sessionCredentials": [{"name": "GH_TOKEN", "from": "SESSION_GH_TOKEN"}]
+        }
+    }
     assert VALUE not in sessioncreds.scrub(f"x {VALUE} y", config)
 
 
 def test_nothing_configured_is_the_identity_without_disk(monkeypatch):
     """R5.3."""
+
     def boom(*_a, **_k):
         raise AssertionError("read the disk")
 

@@ -668,7 +668,8 @@ class SessionsCommand(Command):
         # credential, so a deployment that configures none sees today's table.
         held = [
             ", ".join(
-                f"{name}@{fp}" for name, fp in sorted((s.get("credentials") or {}).items())
+                f"{name}@{fp}"
+                for name, fp in sorted((s.get("credentials") or {}).items())
             )
             for s in sessions
         ]

@@ -278,8 +278,10 @@ def _creds_config(tmp_path, entries, file_text=None, **env_extra):
     return {"env": env, **env_extra}
 
 
-def _boundary(config, tmp_path):
-    return envstate.session_environment(config, tmp_path / "cli-config.yaml")
+def _boundary(config, tmp_path) -> envstate.SessionEnvironment:
+    env = envstate.session_environment(config, tmp_path / "cli-config.yaml")
+    assert env is not None
+    return env
 
 
 def test_issue_533_no_session_credentials_is_todays_boundary(tmp_path, monkeypatch):
@@ -289,6 +291,7 @@ def test_issue_533_no_session_credentials_is_todays_boundary(tmp_path, monkeypat
     path.write_text("JIRA_API_TOKEN=x\n")
     config = {"env": {"file": str(path)}}
     before = envstate.session_environment(config, tmp_path / "c.yaml")
+    assert before is not None
     assert before.credentials == ()
     assert before.inherit == {}
     assert before.for_work_item("github:octo/repo#1") == before
@@ -317,7 +320,9 @@ def test_issue_533_from_defaults_to_name_and_the_file_wins(tmp_path, monkeypatch
     """R1.5: the env file (re-read now) wins over the daemon's environment."""
     monkeypatch.setenv("SESSION_TOKEN_X", "from-the-environment-123")
     config = _creds_config(
-        tmp_path, [{"name": "SESSION_TOKEN_X"}], file_text="SESSION_TOKEN_X=from-file-1\n"
+        tmp_path,
+        [{"name": "SESSION_TOKEN_X"}],
+        file_text="SESSION_TOKEN_X=from-file-1\n",
     )
     resolved = _boundary(config, tmp_path).for_work_item("")
     assert resolved.inherit == {"SESSION_TOKEN_X": "from-file-1"}
@@ -354,7 +359,9 @@ def test_issue_533_a_malformed_entry_is_skipped(tmp_path, monkeypatch, caplog, e
     """R1.3: a bad entry warns and is skipped; the others still apply."""
     monkeypatch.setenv("SESSION_GH_TOKEN", SESSION_TOKEN)
     monkeypatch.setenv("OTHER_TOKEN_SRC", "another-value-123456")
-    config = _creds_config(tmp_path, [entry, {"name": "OTHER", "from": "OTHER_TOKEN_SRC"}])
+    config = _creds_config(
+        tmp_path, [entry, {"name": "OTHER", "from": "OTHER_TOKEN_SRC"}]
+    )
     with caplog.at_level("WARNING", logger="the-loop.envstate"):
         resolved = _boundary(config, tmp_path).for_work_item("")
     assert resolved.inherit == {"OTHER": "another-value-123456"}
@@ -408,7 +415,13 @@ def test_issue_533_repositories_scope_the_credential(
     monkeypatch.setenv("SESSION_GH_TOKEN", SESSION_TOKEN)
     config = _creds_config(
         tmp_path,
-        [{"name": "GH_TOKEN", "from": "SESSION_GH_TOKEN", "repositories": ["octo/repo"]}],
+        [
+            {
+                "name": "GH_TOKEN",
+                "from": "SESSION_GH_TOKEN",
+                "repositories": ["octo/repo"],
+            }
+        ],
     )
     resolved = _boundary(config, tmp_path).for_work_item(ref)
     assert (resolved.inherit == {"GH_TOKEN": SESSION_TOKEN}) is inherited
@@ -418,10 +431,13 @@ def test_issue_533_repositories_scope_the_credential(
 def test_issue_533_repositories_with_a_host(tmp_path, monkeypatch):
     monkeypatch.setenv("SRC", SESSION_TOKEN)
     config = _creds_config(
-        tmp_path, [{"name": "T", "from": "SRC", "repositories": ["ghe.example/octo/repo"]}]
+        tmp_path,
+        [{"name": "T", "from": "SRC", "repositories": ["ghe.example/octo/repo"]}],
     )
     env = _boundary(config, tmp_path)
-    assert env.for_work_item("github:ghe.example/octo/repo#2").inherit == {"T": SESSION_TOKEN}
+    assert env.for_work_item("github:ghe.example/octo/repo#2").inherit == {
+        "T": SESSION_TOKEN
+    }
     assert env.for_work_item("github:octo/repo#2").inherit == {}
 
 

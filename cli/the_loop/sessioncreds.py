@@ -28,13 +28,20 @@ import logging
 import os
 import threading
 from pathlib import Path
-from typing import Any, FrozenSet, Iterable, Mapping, Optional, Tuple
+from typing import Any, FrozenSet, Iterable, Mapping, Optional, Tuple, overload
 
 from . import envfile
 
 logger = logging.getLogger("the-loop.sessioncreds")
 
-__all__ = ["MASK", "MIN_VALUE_CHARS", "current_values", "remember", "scrub", "scrub_tree"]
+__all__ = [
+    "MASK",
+    "MIN_VALUE_CHARS",
+    "current_values",
+    "remember",
+    "scrub",
+    "scrub_tree",
+]
 
 MASK = "<redacted:session-credential>"
 
@@ -148,6 +155,14 @@ def _mask(text: str, values: Tuple[str, ...]) -> str:
     return text
 
 
+@overload
+def scrub(
+    text: str, config: Optional[Mapping] = None, config_path: Optional[Path] = None
+) -> str: ...
+@overload
+def scrub(
+    text: None, config: Optional[Mapping] = None, config_path: Optional[Path] = None
+) -> None: ...
 def scrub(
     text: Optional[str],
     config: Optional[Mapping] = None,

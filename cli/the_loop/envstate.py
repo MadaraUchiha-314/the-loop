@@ -351,9 +351,7 @@ def held_credentials(
     saying it.
     """
     return {
-        c.name: fingerprint(actual[c.name])
-        for c in env.credentials
-        if c.name in actual
+        c.name: fingerprint(actual[c.name]) for c in env.credentials if c.name in actual
     }
 
 
