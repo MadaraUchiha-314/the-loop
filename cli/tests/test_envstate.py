@@ -261,3 +261,199 @@ class TestSpawnEnvironment:
         env = envstate.spawn_environment(boom)
         assert env.forward == {}
         assert "GH_TOKEN" in env.remove
+
+
+# -- issue-533: env.sessionCredentials -----------------------------------------
+
+SESSION_TOKEN = "session-scoped-token-0123456789"
+DAEMON_TOKEN = "daemon-own-token-9876543210"
+
+
+def _creds_config(tmp_path, entries, file_text=None, **env_extra):
+    env: dict = {"sessionCredentials": entries}
+    if file_text is not None:
+        path = tmp_path / ".env"
+        path.write_text(file_text)
+        env["file"] = str(path)
+    return {"env": env, **env_extra}
+
+
+def _boundary(config, tmp_path):
+    return envstate.session_environment(config, tmp_path / "cli-config.yaml")
+
+
+def test_issue_533_no_session_credentials_is_todays_boundary(tmp_path, monkeypatch):
+    """R1.2: without the key, the boundary is exactly what issue-482 built."""
+    monkeypatch.setenv("SESSION_GH_TOKEN", SESSION_TOKEN)
+    path = tmp_path / ".env"
+    path.write_text("JIRA_API_TOKEN=x\n")
+    config = {"env": {"file": str(path)}}
+    before = envstate.session_environment(config, tmp_path / "c.yaml")
+    assert before.credentials == ()
+    assert before.inherit == {}
+    assert before.for_work_item("github:octo/repo#1") == before
+    assert "SESSION_GH_TOKEN" not in before.remove
+
+
+def test_issue_533_an_entry_is_inherited_from_its_source(tmp_path, monkeypatch):
+    """R1.1, R1.5, R2.1: `from` is read daemon-side, `name` is what the pane sees."""
+    monkeypatch.setenv("SESSION_GH_TOKEN", SESSION_TOKEN)
+    monkeypatch.setenv("GH_TOKEN", DAEMON_TOKEN)
+    config = _creds_config(tmp_path, [{"name": "GH_TOKEN", "from": "SESSION_GH_TOKEN"}])
+    env = _boundary(config, tmp_path)
+    assert env is not None
+    # Before a work item is resolved nothing is inherited: fail closed.
+    assert env.inherit == {}
+    assert {"GH_TOKEN", "SESSION_GH_TOKEN"} <= set(env.remove)
+    resolved = env.for_work_item("github:octo/repo#1")
+    assert resolved.inherit == {"GH_TOKEN": SESSION_TOKEN}
+    assert "GH_TOKEN" not in resolved.remove
+    # The source variable never reaches a pane under its own name.
+    assert "SESSION_GH_TOKEN" in resolved.remove
+    assert SESSION_TOKEN not in repr(resolved)
+
+
+def test_issue_533_from_defaults_to_name_and_the_file_wins(tmp_path, monkeypatch):
+    """R1.5: the env file (re-read now) wins over the daemon's environment."""
+    monkeypatch.setenv("SESSION_TOKEN_X", "from-the-environment-123")
+    config = _creds_config(
+        tmp_path, [{"name": "SESSION_TOKEN_X"}], file_text="SESSION_TOKEN_X=from-file-1\n"
+    )
+    resolved = _boundary(config, tmp_path).for_work_item("")
+    assert resolved.inherit == {"SESSION_TOKEN_X": "from-file-1"}
+    (tmp_path / ".env").write_text("SESSION_TOKEN_X=from-file-2\n")
+    assert _boundary(config, tmp_path).for_work_item("").inherit == {
+        "SESSION_TOKEN_X": "from-file-2"
+    }
+
+
+def test_issue_533_an_unset_source_is_skipped_with_a_warning(
+    tmp_path, monkeypatch, caplog
+):
+    """R1.4, R2.2: the spawn proceeds without it, and the name stays stripped."""
+    monkeypatch.delenv("SESSION_GH_TOKEN", raising=False)
+    config = _creds_config(tmp_path, [{"name": "GH_TOKEN", "from": "SESSION_GH_TOKEN"}])
+    with caplog.at_level("WARNING", logger="the-loop.envstate"):
+        resolved = _boundary(config, tmp_path).for_work_item("github:octo/repo#1")
+    assert resolved.inherit == {}
+    assert "GH_TOKEN" in resolved.remove
+    assert "SESSION_GH_TOKEN" in caplog.text and "GH_TOKEN" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {"name": "1BAD"},
+        {"name": "GH_TOKEN", "from": "not a name"},
+        {"from": "SESSION_GH_TOKEN"},
+        "GH_TOKEN",
+        {"name": "THE_LOOP_INSTANCE"},
+    ],
+)
+def test_issue_533_a_malformed_entry_is_skipped(tmp_path, monkeypatch, caplog, entry):
+    """R1.3: a bad entry warns and is skipped; the others still apply."""
+    monkeypatch.setenv("SESSION_GH_TOKEN", SESSION_TOKEN)
+    monkeypatch.setenv("OTHER_TOKEN_SRC", "another-value-123456")
+    config = _creds_config(tmp_path, [entry, {"name": "OTHER", "from": "OTHER_TOKEN_SRC"}])
+    with caplog.at_level("WARNING", logger="the-loop.envstate"):
+        resolved = _boundary(config, tmp_path).for_work_item("")
+    assert resolved.inherit == {"OTHER": "another-value-123456"}
+    assert "env.sessionCredentials" in caplog.text
+    assert SESSION_TOKEN not in caplog.text
+
+
+def test_issue_533_a_duplicate_name_keeps_the_first(tmp_path, monkeypatch, caplog):
+    """R1.8."""
+    monkeypatch.setenv("SRC_A", "first-value-1234567")
+    monkeypatch.setenv("SRC_B", "second-value-1234567")
+    config = _creds_config(
+        tmp_path, [{"name": "TOK", "from": "SRC_A"}, {"name": "TOK", "from": "SRC_B"}]
+    )
+    with caplog.at_level("WARNING", logger="the-loop.envstate"):
+        resolved = _boundary(config, tmp_path).for_work_item("")
+    assert resolved.inherit == {"TOK": "first-value-1234567"}
+    assert "TOK" in caplog.text and "second-value" not in caplog.text
+
+
+def test_issue_533_a_daemon_credential_source_warns(tmp_path, monkeypatch, caplog):
+    """R1.6, A6: honoured, but the operator is told to use a narrower token."""
+    monkeypatch.setenv("THE_LOOP_GH_TOKEN", DAEMON_TOKEN)
+    config = _creds_config(
+        tmp_path,
+        [{"name": "GH_TOKEN", "from": "THE_LOOP_GH_TOKEN"}],
+        integrations={"github": {"api": {"tokenEnv": "THE_LOOP_GH_TOKEN"}}},
+    )
+    with caplog.at_level("WARNING", logger="the-loop.envstate"):
+        resolved = _boundary(config, tmp_path).for_work_item("")
+    assert resolved.inherit == {"GH_TOKEN": DAEMON_TOKEN}
+    assert "THE_LOOP_GH_TOKEN" in caplog.text and "least-privilege" in caplog.text
+    assert DAEMON_TOKEN not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "ref, inherited",
+    [
+        ("github:octo/repo#1", True),
+        ("github:OCTO/Repo#9", True),
+        ("github:octo/other#1", False),
+        ("github:ghe.example/octo/repo#1", False),
+        ("jira:example.atlassian.net/ABC-1", False),
+        ("", False),
+    ],
+)
+def test_issue_533_repositories_scope_the_credential(
+    tmp_path, monkeypatch, ref, inherited
+):
+    """R1.7, A7: out of scope, the name stays removed."""
+    monkeypatch.setenv("SESSION_GH_TOKEN", SESSION_TOKEN)
+    config = _creds_config(
+        tmp_path,
+        [{"name": "GH_TOKEN", "from": "SESSION_GH_TOKEN", "repositories": ["octo/repo"]}],
+    )
+    resolved = _boundary(config, tmp_path).for_work_item(ref)
+    assert (resolved.inherit == {"GH_TOKEN": SESSION_TOKEN}) is inherited
+    assert ("GH_TOKEN" in resolved.remove) is not inherited
+
+
+def test_issue_533_repositories_with_a_host(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRC", SESSION_TOKEN)
+    config = _creds_config(
+        tmp_path, [{"name": "T", "from": "SRC", "repositories": ["ghe.example/octo/repo"]}]
+    )
+    env = _boundary(config, tmp_path)
+    assert env.for_work_item("github:ghe.example/octo/repo#2").inherit == {"T": SESSION_TOKEN}
+    assert env.for_work_item("github:octo/repo#2").inherit == {}
+
+
+def test_issue_533_passthrough_still_refuses_a_credential(tmp_path, monkeypatch):
+    """R1.9, A5: sessionCredentials is the only way in."""
+    monkeypatch.setenv("GH_TOKEN", DAEMON_TOKEN)
+    monkeypatch.setenv("SESSION_GH_TOKEN", SESSION_TOKEN)
+    config = _creds_config(tmp_path, [{"name": "GH_TOKEN", "from": "SESSION_GH_TOKEN"}])
+    config["env"]["sessionPassthrough"] = ["GH_TOKEN"]
+    resolved = _boundary(config, tmp_path).for_work_item("")
+    assert "GH_TOKEN" not in resolved.forward
+    assert resolved.inherit == {"GH_TOKEN": SESSION_TOKEN}
+
+
+def test_issue_533_compare_checks_an_inherited_value(tmp_path, monkeypatch):
+    """R4.1: missing or different reads as drift; the current value is clean."""
+    monkeypatch.setenv("SESSION_GH_TOKEN", SESSION_TOKEN)
+    config = _creds_config(tmp_path, [{"name": "GH_TOKEN", "from": "SESSION_GH_TOKEN"}])
+    wanted = _boundary(config, tmp_path).for_work_item("")
+    assert envstate.compare(wanted, {"GH_TOKEN": SESSION_TOKEN}) == ()
+    assert envstate.compare(wanted, {"GH_TOKEN": "old-value"}) == ("GH_TOKEN",)
+    assert envstate.compare(wanted, {}) == ("GH_TOKEN",)
+    # The source name held by the pane is itself a defect.
+    assert envstate.compare(
+        wanted, {"GH_TOKEN": SESSION_TOKEN, "SESSION_GH_TOKEN": SESSION_TOKEN}
+    ) == ("SESSION_GH_TOKEN",)
+
+
+def test_issue_533_session_credentials_alone_configure_the_boundary(
+    tmp_path, monkeypatch
+):
+    """Drift is "configured" with only sessionCredentials set."""
+    monkeypatch.setenv("SRC", SESSION_TOKEN)
+    config = {"env": {"sessionCredentials": [{"name": "T", "from": "SRC"}]}}
+    assert envstate.session_environment(config, tmp_path / "c.yaml") is not None

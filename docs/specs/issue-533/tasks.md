@@ -16,7 +16,7 @@ overrides: {}
 
 ## Task list
 
-- [ ] 1. Parse `env.sessionCredentials` and resolve the boundary per work item
+- [x] 1. Parse `env.sessionCredentials` and resolve the boundary per work item
   - `SessionCredential`, `session_credentials()`, `SessionEnvironment.credentials` /
     `.inherit` / `.for_work_item()`; `remove` gains every `name`/`from`; `compare()`
     and `_wanted()` read `inherit`; `session_environment_and_lines` returns non-`None`

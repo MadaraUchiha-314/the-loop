@@ -26,7 +26,14 @@ the-loop's own identifiers plus the names the operator lists in ``env.sessionPas
 :class:`SessionEnvironment` is that boundary, and :func:`compare` checks a running pane
 against it.
 
-Spec: docs/specs/issue-410/design.md, docs/specs/issue-482/design.md.
+Since issue-533 an operator may opt a session **into** a credential, by name:
+``env.sessionCredentials`` lists the variables a pane may hold and the daemon-side
+variable each value comes from. The value is never on an argv (the runner delivers it
+through a ``0600`` file); this module only decides who gets what —
+:meth:`SessionEnvironment.for_work_item` is the one place a value is admitted.
+
+Spec: docs/specs/issue-410/design.md, docs/specs/issue-482/design.md,
+docs/specs/issue-533/design.md.
 """
 
 from __future__ import annotations
@@ -46,6 +53,7 @@ logger = logging.getLogger("the-loop.envstate")
 
 __all__ = [
     "FINGERPRINT_LENGTH",
+    "SessionCredential",
     "SessionEnvironment",
     "compare",
     "credential_names",
@@ -54,6 +62,7 @@ __all__ = [
     "fingerprint",
     "passthrough_names",
     "process_environ",
+    "session_credentials",
     "session_environment",
     "session_environment_and_lines",
     "spawn_environment",
@@ -85,11 +94,36 @@ _DEFAULT_CREDENTIAL_NAMES: FrozenSet[str] = frozenset(
     }
 )
 
+#: The host a ``[HOST/]OWNER/REPO`` without one names (issue-533, R1.7).
+_DEFAULT_GITHUB_HOST = "github.com"
+
 #: the-loop's own identifiers a pane is always given (issue-322, issue-370, issue-393).
 #: Never removed, whatever the env file says: the runner sets them last.
 _OWN_NAMES: FrozenSet[str] = frozenset(
     {"THE_LOOP_INSTANCE", "THE_LOOP_WORK_ITEM", "THE_LOOP_CLI_CONFIG"}
 )
+
+
+@dataclass(frozen=True)
+class SessionCredential:
+    """One ``env.sessionCredentials`` entry, resolved now (issue-533).
+
+    ``value`` is ``None`` when the source is unset (R1.4). ``repositories`` holds
+    normalised ``host/owner/repo`` keys, lowercase; empty means any work item. The
+    value is kept out of ``repr`` so a logged object never speaks it.
+    """
+
+    name: str
+    source: str
+    value: Optional[str] = field(default=None, repr=False)
+    repositories: Tuple[str, ...] = ()
+
+    def admits(self, ref: str) -> bool:
+        """Whether a session for ``ref`` may hold this credential (R1.7)."""
+        if not self.repositories:
+            return True
+        key = _repository_key_of_ref(ref)
+        return key is not None and key in self.repositories
 
 
 @dataclass(frozen=True)
@@ -99,10 +133,37 @@ class SessionEnvironment:
     ``forward`` is the operator's non-secret passthrough, with values. ``remove`` is
     every name ``env.file`` declares and every credential name, minus ``forward``: the
     runner strips them from the pane whatever the tmux server holds.
+
+    ``credentials`` (issue-533) are the opted-in entries, every ``name`` and ``source``
+    of which is in ``remove``; ``inherit`` is empty until :meth:`for_work_item`
+    admits the ones a given session may hold. So a caller that never resolves a work
+    item hands over nothing — fail closed. ``inherit`` never reaches an argv.
     """
 
     forward: Dict[str, str] = field(default_factory=dict)
     remove: Tuple[str, ...] = ()
+    credentials: Tuple[SessionCredential, ...] = ()
+    inherit: Dict[str, str] = field(default_factory=dict, repr=False)
+
+    def for_work_item(self, ref: str) -> "SessionEnvironment":
+        """This boundary for a session on ``ref``: the admitted credentials inherited.
+
+        Idempotent, and the identity when nothing is configured (R1.2).
+        """
+        if not self.credentials:
+            return self
+        inherit = {
+            c.name: c.value
+            for c in self.credentials
+            if c.value is not None and c.admits(ref)
+        }
+        remove = tuple(sorted(set(self.remove) - set(inherit)))
+        return SessionEnvironment(
+            forward=dict(self.forward),
+            remove=remove,
+            credentials=self.credentials,
+            inherit=inherit,
+        )
 
 
 def fingerprint(value: str) -> str:
@@ -261,6 +322,11 @@ def compare(wanted: Wanted, actual: Mapping[str, str]) -> Tuple[str, ...]:
     differing = {
         name for name, value in env.forward.items() if actual.get(name) != value
     }
+    # An inherited credential is expected exactly as a forwarded name is (issue-533,
+    # R4.1): missing or rotated, it is drift the same relaunch fixes.
+    differing.update(
+        name for name, value in env.inherit.items() if actual.get(name) != value
+    )
     differing.update(name for name in env.remove if name in actual)
     return tuple(sorted(differing))
 
@@ -334,6 +400,141 @@ def passthrough_names(config: Mapping) -> Tuple[str, ...]:
     return tuple(kept)
 
 
+def _normalise_repository(text: str) -> Optional[str]:
+    """``[HOST/]OWNER/REPO`` as ``host/owner/repo``, lowercase; ``None`` if malformed."""
+    parts = [p for p in text.strip().strip("/").split("/")]
+    if len(parts) == 2:
+        parts = [_DEFAULT_GITHUB_HOST] + parts
+    if len(parts) != 3 or not all(parts):
+        return None
+    return "/".join(parts).lower()
+
+
+def _repository_key_of_ref(ref: str) -> Optional[str]:
+    """A GitHub work item's ``host/owner/repo``; ``None`` for anything else."""
+    if not ref:
+        return None
+    from .sessions import WorkItemRef
+
+    try:
+        parsed = WorkItemRef.parse(ref)
+    except Exception:  # noqa: BLE001 — an unparseable ref is in no scope
+        return None
+    if parsed.provider != "github" or not parsed.repo:
+        return None
+    return f"{parsed.host or _DEFAULT_GITHUB_HOST}/{parsed.owner}/{parsed.repo}".lower()
+
+
+def session_credentials(
+    config: Mapping, file_values: Optional[Mapping[str, str]] = None
+) -> Tuple[SessionCredential, ...]:
+    """``env.sessionCredentials``, each entry resolved now (issue-533, R1).
+
+    A malformed entry (R1.3), a later duplicate of a name (R1.8) or a name that is one
+    of the-loop's own identifiers is skipped with a warning naming the text. The value
+    comes from ``file_values`` (the env file, re-read for this spawn) else this
+    process's environment (R1.5); an unset source is kept with ``value=None`` and
+    warned about (R1.4) so its names stay removed. A source that is one of the daemon's
+    own credentials is honoured with a warning (R1.6). No message carries a value.
+    """
+    block = config.get("env") if isinstance(config, Mapping) else None
+    listed = block.get("sessionCredentials") if isinstance(block, Mapping) else None
+    if not isinstance(listed, (list, tuple)):
+        return ()
+    file_values = file_values or {}
+    daemon_names: Optional[FrozenSet[str]] = None
+    found: list = []
+    seen: set = set()
+    for entry in listed:
+        if not isinstance(entry, Mapping):
+            logger.warning(
+                "env.sessionCredentials: an entry must be a mapping with `name`; "
+                "skipping %r",
+                type(entry).__name__,
+            )
+            continue
+        name = entry.get("name")
+        source = entry.get("from", name)
+        if not isinstance(name, str) or not envfile.NAME_RE.fullmatch(name):
+            logger.warning(
+                "env.sessionCredentials: name %r is not a variable name; skipping it",
+                name,
+            )
+            continue
+        if not isinstance(source, str) or not envfile.NAME_RE.fullmatch(source):
+            logger.warning(
+                "env.sessionCredentials: %s: from %r is not a variable name; "
+                "skipping it",
+                name,
+                source,
+            )
+            continue
+        if name in _OWN_NAMES:
+            logger.warning(
+                "env.sessionCredentials: %s is one of the-loop's own identifiers; "
+                "skipping it",
+                name,
+            )
+            continue
+        if name in seen:
+            logger.warning(
+                "env.sessionCredentials: %s is listed twice; the first entry applies",
+                name,
+            )
+            continue
+        seen.add(name)
+        repositories: list = []
+        for repo in entry.get("repositories") or ():
+            key = _normalise_repository(repo) if isinstance(repo, str) else None
+            if key is None:
+                logger.warning(
+                    "env.sessionCredentials: %s: repository %r is not "
+                    "[HOST/]OWNER/REPO; ignoring it",
+                    name,
+                    repo,
+                )
+            else:
+                repositories.append(key)
+        if entry.get("repositories") and not repositories:
+            # Every scope entry was malformed: an empty scope would mean "any work
+            # item", the opposite of what the operator wrote. Fail closed.
+            logger.warning(
+                "env.sessionCredentials: %s has no valid repository; it is given "
+                "to no session",
+                name,
+            )
+            repositories = ["-/-/-"]
+        if source in file_values:
+            value: Optional[str] = file_values[source]
+        else:
+            value = os.environ.get(source)
+        if value is None:
+            logger.warning(
+                "env.sessionCredentials: %s: its source %s is not set; sessions are "
+                "spawned without it",
+                name,
+                source,
+            )
+        if daemon_names is None:
+            daemon_names = credential_names(config)
+        if source in daemon_names:
+            logger.warning(
+                "env.sessionCredentials: %s comes from %s, one of the daemon's own "
+                "credentials; prefer a separate least-privilege token for sessions",
+                name,
+                source,
+            )
+        found.append(
+            SessionCredential(
+                name=name,
+                source=source,
+                value=value,
+                repositories=tuple(repositories),
+            )
+        )
+    return tuple(found)
+
+
 def session_environment(
     config: Mapping, config_path: Path
 ) -> Optional[SessionEnvironment]:
@@ -357,7 +558,8 @@ def session_environment_and_lines(
     """:func:`session_environment`, plus the env file's malformed line numbers."""
     passthrough = passthrough_names(config)
     result = declared(config, config_path)
-    if result is None and not passthrough:
+    configured_credentials = _lists_session_credentials(config)
+    if result is None and not passthrough and not configured_credentials:
         return None
     file_values, invalid_lines = result if result is not None else ({}, ())
     forward: Dict[str, str] = {}
@@ -366,11 +568,25 @@ def session_environment_and_lines(
             forward[name] = file_values[name]
         elif name in os.environ:
             forward[name] = os.environ[name]
+    credentials = session_credentials(config, file_values)
     remove = (set(file_values) | credential_names(config)) - set(forward) - _OWN_NAMES
+    # Every opted-in name and its source stay removed until `for_work_item` admits
+    # the name for one session (issue-533, R2): the source never reaches a pane.
+    remove |= {c.name for c in credentials} | {c.source for c in credentials}
     return (
-        SessionEnvironment(forward=forward, remove=tuple(sorted(remove))),
+        SessionEnvironment(
+            forward=forward,
+            remove=tuple(sorted(remove - _OWN_NAMES)),
+            credentials=credentials,
+        ),
         invalid_lines,
     )
+
+
+def _lists_session_credentials(config: Mapping) -> bool:
+    block = config.get("env") if isinstance(config, Mapping) else None
+    listed = block.get("sessionCredentials") if isinstance(block, Mapping) else None
+    return bool(listed)
 
 
 def spawn_environment(config_getter) -> SessionEnvironment:
