@@ -299,6 +299,16 @@ There are exactly **two** runtime concepts and **one** contract between them.
     outer loop's graph-context block SHALL then carry one fixed line telling the session
     to publish the spec chain as one Claude artifact. It SHALL NOT route the pointer,
     declare a skip or answer a gate.
+  - The same reply SHALL resolve a second row of that section, `claude-doc`
+    (issue-536), rendered ticked while `claude-artifact` is rendered unticked — unless
+    the handoff record names a spec-chain artifact, which swaps the two. At most one may
+    apply: both ticked SHALL resolve to the row rendered ticked (the default) before the
+    harness rule, and the confirmation SHALL name it.
+    Ticked alone, it SHALL freeze `claudeDoc: true` under the same harness rule. The
+    value SHALL be written only when `true`, read back only as the boolean `true` and
+    never beside `claudeArtifact: true`, and the outer loop's graph-context block SHALL
+    then carry one fixed line telling the session to publish the spec chain as one
+    Claude doc. It SHALL NOT route the pointer, declare a skip or answer a gate.
   - The same reply SHALL resolve one more non-phase row, `explainer` (issue-488),
     rendered **ticked** wherever the graph defines the `explainer` skip set (only
     `pdlc-work-item-loop`). A row present and unticked SHALL declare `spec-explainer`,
@@ -604,6 +614,11 @@ walk lands on `requirements-approval`, the first gate that still asks.
   `spec-artifact` that is a `https://claude.ai/artifact/…` link THEN `Runtime.start`
   SHALL record it as `claudeArtifactUrl`, so the session republishes the spec chain to
   that URL. Whether to publish at all is still the phase-selection choice.
+- **The developer's doc is kept, not duplicated** (issue-536). WHEN the record names a
+  `spec-doc` that is a claude.ai link THEN `Runtime.start` SHALL record it as
+  `claudeDocUrl`, and the Claude doc line SHALL name it as the doc to keep. A record
+  SHALL NOT name both `spec-artifact` and `spec-doc`. A `spec-doc` carries no files and
+  no hash (a doc is edited in place), so the carrier is still the branch or the ticket.
 
 ### What a node `produces`
 
@@ -1193,6 +1208,7 @@ reader.
 | Work item | What changed | Links |
 |-----------|--------------|-------|
 | issue-524 | A `pause` or `resume` stopped forgetting the loop (2026-10-27): each overwrote the control record, so a paused or resumed `review`/`contribute`/`do` item, and one armed onto an operator loop, answered "which loop" with the default. Those records now keep `armedBy` (the arming spawn command) and the selected `loop`, and `_loop_for_start` reads `armedBy` first. | [issue-524](https://github.com/MadaraUchiha-314/the-loop/issues/524) |
+| issue-536 | `phase-selection` offers the spec chain as one Claude doc (2026-11-17): a non-phase `claude-doc` row beside `claude-artifact` and ticked by default in its place (a handoff naming a spec-chain artifact keeps the artifact ticked). Both ticked resolves to the default. The signed reply freezes `claudeDoc` into `work-item-state.json` (written only when `true`), the decision record, the frozen graph and the archive's `selections`, and the outer loop's prompt carries one fixed line | [spec](../specs/issue-536/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/536) |
 | issue-500 | `record-feedback` stopped repeating its own heading (2026-10-26): a gate approved twice on one day appended a second identical `### <date> — <outcome>`, which MD024 rejects, and issue-496's locked requirements had to be silenced by hand. The hook now suffixes a repeat `(2)`, `(3)`, … — a counter rather than a time or a comment id, because only a counter is unique by construction and needs no new input; the first recording reads as it always did | [spec](../specs/issue-500/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/500) |
 | issue-498 | The phase-selection gate reads its reply with the control grammar (2026-10-23): `classify-phase-selection` releases only on a reply that opens with the execute keyword and opens no line with a different command (`parse_command` over the deployment's keywords, seeded as `controlKeywords`), so prose that mentions the keyword, or an ambiguous body the dispatcher now forwards, releases nothing. The checklist's help says to start the reply with the keyword | [spec](../specs/issue-498/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/498) |
 | issue-517 | A conversation can be handed off at the stage it reached (2026-10-21): a new node flag `requiresHandoff` (skipped `via: no-handoff` when state carries no `handoff`, never a checklist row) and a new first agent node `import-handoff`, so `phase-selection --selected-->` now leads to `import-handoff`, which leads to `brainstorming`. `Runtime.start` freezes the poller's record into state; the checklist unticks the phases before the record's `enter` and stamps `handoff: <url>` on those skips; the `import-handoff` hook checks each carried file and on a failure un-skips from its producing node up to `enter` (`handoffDemoted`). An approved-in-chat lock is recognised on re-entry by its recorded sha256 (`handoff.lockedSha256`); carried files reached through a symlink below the repository root fail; a claude.ai `spec-artifact` URL is adopted as `claudeArtifactUrl` at start. The phase-selection reply still authorizes the walk | [spec](../specs/issue-517/), [decision-150](../decisions/decision-150.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/517) |

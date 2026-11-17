@@ -702,6 +702,13 @@ ATTRIBUTES: Tuple[Attribute, ...] = (
     ),
     Attribute(
         REPOSITORY_FILE,
+        "claudeDoc",
+        "human-decision",
+        "whether the spec chain is one Claude doc instead (issue-536) — written "
+        "only when true",
+    ),
+    Attribute(
+        REPOSITORY_FILE,
         "handoff",
         "human-decision",
         "the handoff record the item arrived with, its author and comment "
@@ -719,6 +726,13 @@ ATTRIBUTES: Tuple[Attribute, ...] = (
         "claudeArtifactUrl",
         "pointer",
         "the published spec-chain Claude artifact's URL (issue-517) — written "
+        "only when there is one",
+    ),
+    Attribute(
+        REPOSITORY_FILE,
+        "claudeDocUrl",
+        "pointer",
+        "the spec-chain Claude doc's URL a handoff imported (issue-536) — written "
         "only when there is one",
     ),
     Attribute(

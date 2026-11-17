@@ -220,11 +220,33 @@ def test_an_author_that_is_not_a_login_is_not_rendered_as_a_mention():
     assert "*bold*" not in body
 
 
-def test_a_named_spec_artifact_leaves_the_claude_artifact_row_ticked():
+def test_a_named_spec_artifact_ticks_the_claude_artifact_row_instead_of_the_doc():
+    """issue-536: the doc is the default, but a handoff that already published a
+    spec-chain artifact keeps the artifact, so the session republishes to it."""
     files, _ = ROWS["requirements-settled"]
     record = _record("requirements-settled", files, spec_artifact=SPEC_ARTIFACT)
     body = selection._checklist_body(_ctx(record))
     assert f"- [x] `{selection.CLAUDE_ARTIFACT_TOKEN}`" in body
+    assert f"- [ ] `{selection.CLAUDE_DOC_TOKEN}`" in body
+
+
+def test_a_named_spec_doc_keeps_the_doc_row_ticked():
+    """issue-536: a handoff that published a spec-chain doc keeps the doc."""
+    files, _ = ROWS["requirements-settled"]
+    record = _record("requirements-settled", files)
+    from dataclasses import replace
+
+    record = replace(record, spec_doc="https://claude.ai/artifact/doc1")
+    body = selection._checklist_body(_ctx(record))
+    assert f"- [ ] `{selection.CLAUDE_ARTIFACT_TOKEN}`" in body
+    assert f"- [x] `{selection.CLAUDE_DOC_TOKEN}`" in body
+
+
+def test_a_handoff_with_no_spec_artifact_keeps_the_doc_default():
+    files, _ = ROWS["requirements-settled"]
+    body = selection._checklist_body(_ctx(_record("requirements-settled", files)))
+    assert f"- [ ] `{selection.CLAUDE_ARTIFACT_TOKEN}`" in body
+    assert f"- [x] `{selection.CLAUDE_DOC_TOKEN}`" in body
 
 
 def test_an_item_with_no_handoff_gets_todays_checklist_byte_for_byte():

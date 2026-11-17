@@ -436,6 +436,10 @@ class WorkItemState:
     #: harness. Read with ``is True``: the file is agent-writable, and only the
     #: boolean itself turns it on.
     claude_artifact: bool = False
+    #: Whether it is published as one Claude doc instead (issue-536). Read with
+    #: ``is True`` and never true beside :attr:`claude_artifact`: a hand-edited
+    #: file that sets both keeps the artifact, the choice that existed first.
+    claude_doc: bool = False
     #: The handoff record this work item arrived with (issue-517): the parsed
     #: record plus ``author``, ``commentUrl`` and ``recordedAt``, written once by
     #: ``Runtime.start`` before the first save. ``{}`` is *no handoff*, and a
@@ -446,6 +450,9 @@ class WorkItemState:
     handoff_demoted: List[Dict[str, Any]] = field(default_factory=list)
     #: The published spec-chain Claude artifact's URL (issue-517, R7.4).
     claude_artifact_url: str = ""
+    #: The spec-chain Claude doc the handoff imported (issue-536) — the doc the
+    #: session keeps in step rather than creating a second one.
+    claude_doc_url: str = ""
     #: The pull requests delivering this work item (issue-368, R2.1) — the
     #: repository's own objects, so they are recorded on the work item's branch
     #: rather than only in a machine-local session record that never travels.
@@ -531,9 +538,12 @@ class WorkItemState:
             model=str(data.get("model") or ""),
             effort=str(data.get("effort") or ""),
             claude_artifact=data.get("claudeArtifact") is True,
+            claude_doc=data.get("claudeDoc") is True
+            and data.get("claudeArtifact") is not True,
             handoff=_mapping(data.get("handoff")),
             handoff_demoted=_mapping_list(data.get("handoffDemoted")),
             claude_artifact_url=_string(data.get("claudeArtifactUrl")),
+            claude_doc_url=_string(data.get("claudeDocUrl")),
             pull_requests=_pull_requests(
                 data.get("pullRequests"),
                 repository_of(str(data.get("workItem", work_item))),
@@ -587,6 +597,12 @@ class WorkItemState:
             out["handoffDemoted"] = self.handoff_demoted
         if self.claude_artifact_url:
             out["claudeArtifactUrl"] = self.claude_artifact_url
+        # issue-536: written only when chosen, for the same reason — a file
+        # saved before the doc existed stays byte-identical.
+        if self.claude_doc:
+            out["claudeDoc"] = True
+        if self.claude_doc_url:
+            out["claudeDocUrl"] = self.claude_doc_url
         return out
 
     # -- pull requests (issue-368) --------------------------------------------

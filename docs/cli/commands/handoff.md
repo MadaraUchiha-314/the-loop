@@ -44,7 +44,8 @@ confirmation:     > yes, file it
 
 - **Keys** are `stage`, `enter`, `artifacts`, `carried-by` (all required),
   `spec-artifact` (`<https URL> sha256:<hex>`, stored as `specArtifact` and
-  `specArtifactSha256`), `from`, `approved-in-chat`, `mirror` (`jira:<site>/<KEY-N>`),
+  `specArtifactSha256`), `spec-doc` (`<https URL>`, a spec-chain Claude doc, stored as
+  `specDoc` — never beside `spec-artifact`, and never a carrier), `from`, `approved-in-chat`, `mirror` (`jira:<site>/<KEY-N>`),
   `confirmation` and `parts`. An unknown key or version rejects the record.
 - **`parts`** is the **number** of part comments. A file body past GitHub's
   65,536-character limit continues in comments that open with

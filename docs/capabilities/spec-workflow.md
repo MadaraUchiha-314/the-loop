@@ -77,6 +77,16 @@ from a conversation at the stage it reached (issue-517).
   once from the ticket (issue-471). The files SHALL stay the source of truth, and a
   comment on the artifact SHALL NOT answer a gate. On any other harness the tick SHALL
   NOT be applied, and the confirmation SHALL say so.
+- WHEN an authorized `the-loop execute` ticks the `claude-doc` row (ticked by default) AND
+  leaves `claude-artifact` unticked AND the work item resolves to the `claude` harness
+  THEN `work-item-state.json` SHALL record `claudeDoc: true`, and the session SHALL
+  publish the spec chain as **one** Claude doc with the Claude Docs connector — a tab per
+  spec file, each rewritten from its file on every change, linked once from the ticket
+  (issue-536). Before rewriting a tab the session SHALL read it, and a human edit found
+  there SHALL be folded into the file as feedback, never discarded and never a gate
+  answer. WHEN both rows are ticked THEN the default row SHALL apply, and the
+  confirmation SHALL say so. A handoff that already published a spec-chain artifact pre-ticks
+  `claude-artifact` instead.
 - WHEN the `explainer` row is left ticked at `phase-selection` (the default) THEN the
   outer loop SHALL teach and check understanding twice (issue-488): after
   `design-approval` the session SHALL write a spec explainer and spec quiz
@@ -84,7 +94,8 @@ from a conversation at the stage it reached (issue-517).
   the-loop's checkbox on the ticket; after `security-review` it SHALL write the
   explainer of the change — the reviewer's starting point — and the code quiz, and the
   review request SHALL wait for a tick on the pull request. The page SHALL be a tab of
-  the spec-chain artifact when `claudeArtifact` is true, its own Claude artifact
+  the spec-chain artifact when `claudeArtifact` is true, a tab of the spec-chain doc when
+  `claudeDoc` is true, its own Claude artifact
   otherwise, and a committed self-contained HTML file on a harness with no artifact
   tool; the files SHALL stay the gates' subject. See `skills/the-loop/reference/explainer.md`.
 - WHEN a work item starts as a fuzzy idea THEN the loop SHALL begin with a
@@ -113,7 +124,9 @@ from a conversation at the stage it reached (issue-517).
 
   - Each carried file is pinned by a `sha256` of its LF bytes, and travels on the spec
     branch, inside the ticket comment (`<details>` blocks, overflow in part comments), or
-    in the spec-chain Claude artifact. Before any later phase runs, the `import-handoff`
+    in the spec-chain Claude artifact. A record may instead name a spec-chain Claude
+    **doc** (`spec-doc`, issue-536), which the session keeps rather than creating a new
+    one; a doc carries no files. Before any later phase runs, the `import-handoff`
     node writes the files into `docs/specs/<id>/` and checks each one. A file that is
     missing, tampered with or short of a required section **demotes** the walk to the
     phase that produces it. A carried artifact is never re-drafted.
@@ -212,6 +225,7 @@ from a conversation at the stage it reached (issue-517).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-536 | The spec chain can be one Claude doc instead (2026-11-17): a `claude-doc` row beside `claude-artifact`, ticked by default (the artifact row now unticked, except after a handoff that published one); tick at most one, both ticked uses the default. Frozen as `claudeDoc`; the session keeps one doc with a tab per spec file (and the explainer and quizzes), reads each tab before rewriting it and folds any human edit into the file as feedback. The files stay the source of truth and the gates' subject | [spec](../specs/issue-536/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/536) |
 | issue-517 | A conversation can be handed to the-loop at the stage it reached (2026-10-21): `/the-loop:handoff` (the `handoff-to-the-loop` skill) drafts the settled prefix of the chain, interviews, files the issue with a hashed handoff record, and the item enters at `brainstorming`, `brainstorm-approval`, `requirements-approval`, `test-planning` or `design-approval`. The new `import-handoff` node imports and checks the carried files and demotes on a failure; the approval gates are unchanged, and the furthest artifact is never approved in chat | [spec](../specs/issue-517/), [process-graph](process-graph.md), [decision-150](../decisions/decision-150.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/517) |
 | issue-494 | The brainstorm is gated (2026-10-16): a human `brainstorm-approval` node follows `brainstorming`, so the author can comment and ask questions as often as they need and the brainstorm moves to requirements only on their approval, which locks `brainstorm.md`. A brainstorm that was never written, or a declared-skipped `brainstorming`, routes past the gate. Reverses issue-281's "gate-less" rule for `brainstorm.md` only; `tasks.md` stays gate-less | [spec](../specs/issue-494/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/494) |
 | issue-488 | The explainer and the quizzes (2026-10-15): a spec explainer + spec quiz before code generation and an explainer of the change + code quiz before review, sized by a depth ladder (micro / standard / deep, 0 / 3 / 5 questions), each gated by one attributed tick; published into the spec-chain artifact, its own artifact, or a committed HTML file with copy-paste view commands; on by default, one row to switch off | [spec](../specs/issue-488/), [process-graph](process-graph.md), [decision-143](../decisions/decision-143.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/488) |

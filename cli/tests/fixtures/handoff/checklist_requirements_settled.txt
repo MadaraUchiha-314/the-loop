@@ -71,18 +71,19 @@ Either way the artifacts are committed files linked from here, and each reposito
 
 </details>
 
-#### 📄 Publish the spec chain as a Claude artifact too?
+#### 📄 Publish the spec chain as a Claude artifact or a Claude doc too?
 
-**Default:** yes — already ticked. Untick it for the markdown files only. Only the `claude` harness can publish one.
+**Default:** a Claude doc — already ticked. **Tick at most one**: untick it and tick the artifact to change it, or untick both for the markdown files only. Only the `claude` harness can publish either.
 
-- [x] `claude-artifact` — one Claude artifact for this work item (`claude` harness only).
+- [ ] `claude-artifact` — one Claude artifact for this work item (`claude` harness only).
+- [x] `claude-doc` — one Claude doc for this work item, a tab per file, which people can edit and comment on (`claude` harness only).
 
 <details>
 <summary>ℹ️ What this means</summary>
 
-Not a phase, and on unless you untick it. The requirements, design, testing plan and task list become one page with a tab per file, which you can read and comment on in Claude.
+Not phases. The requirements, design, testing plan and task list become one page (an artifact you read and comment on) or one document (a doc you and others edit and comment on), with a tab per file.
 
-On any other harness the-loop ignores this box. The markdown files stay the source of truth either way, and every gate still reads them.
+Ticking both uses the default — the ticked one above. On any other harness the-loop ignores these boxes. The markdown files stay the source of truth either way, every gate still reads them, and an edit made in the doc is feedback the session folds into the file.
 
 </details>
 

@@ -154,8 +154,9 @@ Try these in order:
 | Condition | Do this | `Location` in the record |
 |---|---|---|
 | `claudeArtifact: true` (the prompt's graph block says so) and you have an artifact tool | Add tabs "Spec explainer" and "Spec quiz" to the work item's spec-chain artifact, and republish it to **its existing URL**. Later, add "Explainer" and "Code quiz" the same way. | that URL |
-| `claudeArtifact` false, and you have an artifact tool | Publish **one** artifact titled `<id>: explainer` from the filled template. At `code-explainer`, republish the same file to the same URL with the code tabs added. | that URL |
-| No artifact tool (Codex, Cursor, or the tool is unavailable) | Write `docs/specs/<id>/explainer/explainer.html`, run the evidence redaction pass over it (tokens, cookies, personal data, internal hostnames), then commit and push. | the file's GitHub blob URL, e.g. `https://github.com/<owner>/<repo>/blob/<branch>/docs/specs/<id>/explainer/explainer.html` |
+| `claudeDoc: true` (the prompt's graph block says so) and you have the Claude Docs connector | Add tabs "Spec explainer" and "Spec quiz" to the work item's spec-chain doc, written as prose from the filled template. A doc runs no script and cannot hide text, so the quiz tab lists only the questions and their options, and the answers go in a separate last tab, "Quiz answers", read after answering. Later, add "Explainer" and "Code quiz" the same way, with their answers appended to "Quiz answers". | the doc's URL |
+| No row above applied — `claudeArtifact` and `claudeDoc` false, or the chosen page's tool is missing (e.g. `claudeDoc: true` without the Docs connector) — and you have an artifact tool | Publish **one** artifact titled `<id>: explainer` from the filled template. At `code-explainer`, republish the same file to the same URL with the code tabs added. | that URL |
+| No row above applied and no artifact tool (Codex, Cursor, or the tool is unavailable) | Write `docs/specs/<id>/explainer/explainer.html`, run the evidence redaction pass over it (tokens, cookies, personal data, internal hostnames), then commit and push. | the file's GitHub blob URL, e.g. `https://github.com/<owner>/<repo>/blob/<branch>/docs/specs/<id>/explainer/explainer.html` |
 
 **How each case is linked:**
 

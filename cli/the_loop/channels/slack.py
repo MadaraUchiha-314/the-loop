@@ -667,11 +667,13 @@ _PLAIN_ROW = re.compile(
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,74}$")
 
 #: The checklist's rows that are NOT phases: the hook's ``SURFACE_TOKEN`` and
-#: ``CLAUDE_ARTIFACT_TOKEN`` (issue-471), ``EXPLAINER_TOKEN`` (issue-488), and the prefixes of its
+#: ``CLAUDE_ARTIFACT_TOKEN`` (issue-471), ``CLAUDE_DOC_TOKEN`` (issue-536),
+#: ``EXPLAINER_TOKEN`` (issue-488), and the prefixes of its
 #: ``PR_SESSIONS_TOKENS`` / ``HARNESS_PREFIX`` / ``MODEL_PREFIX`` / ``EFFORT_PREFIX``
 #: rows. Pinned to the hook's by a test, like the marker.
 SURFACE_TOKEN = "outer-loop-on-pull-request"
 CLAUDE_ARTIFACT_TOKEN = "claude-artifact"
+CLAUDE_DOC_TOKEN = "claude-doc"
 EXPLAINER_TOKEN = "explainer"
 _NON_PHASE_PREFIXES = ("pr-sessions-", "harness-", "model-", "effort-")
 
@@ -770,9 +772,11 @@ def selection_rows(text: str) -> Optional[SelectionRows]:
         )
         if token == SURFACE_TOKEN:
             surface = row
-        elif token in (CLAUDE_ARTIFACT_TOKEN, EXPLAINER_TOKEN) or token.startswith(
-            _NON_PHASE_PREFIXES
-        ):
+        elif token in (
+            CLAUDE_ARTIFACT_TOKEN,
+            CLAUDE_DOC_TOKEN,
+            EXPLAINER_TOKEN,
+        ) or token.startswith(_NON_PHASE_PREFIXES):
             others.append(row)
         else:
             phases.append(row)
@@ -894,6 +898,7 @@ def selection_control_blocks(rows: SelectionRows, keyword: str) -> List[Dict[str
         )
     notes.append(
         "Sessions per pull request, harness, model, effort and the Claude artifact "
+        "or doc "
         "keep this deployment's defaults from here — to choose them, tick them on "
         "GitHub and reply "
         f"`{keyword}` there instead."

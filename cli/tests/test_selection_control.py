@@ -21,6 +21,7 @@ from the_loop.channels.slack import (
     ACTION_PREFIX,
     CHECKBOX_LIMIT,
     CLAUDE_ARTIFACT_TOKEN,
+    CLAUDE_DOC_TOKEN,
     DEFAULT_BOT_TOKEN_ENV,
     EXECUTE_ACTION,
     PHASE_BOX_ACTION,
@@ -250,6 +251,16 @@ def test_the_row_grammar_and_the_non_phase_tokens_are_the_hooks():
     assert rows is not None
     assert [r.token for r in rows.phases] == ["design"]
     assert [r.token for r in rows.others] == [CLAUDE_ARTIFACT_TOKEN]
+    # issue-536: the Claude-doc row likewise.
+    assert CLAUDE_DOC_TOKEN == selection.CLAUDE_DOC_TOKEN
+    assert selection._is_non_phase(CLAUDE_DOC_TOKEN)
+    rows = selection_rows(
+        f"{PHASE_SELECTION_MARKER}\n- [x] design\n- [ ] `{CLAUDE_ARTIFACT_TOKEN}` — x\n"
+        f"- [x] `{CLAUDE_DOC_TOKEN}` — y\n"
+    )
+    assert rows is not None
+    assert [r.token for r in rows.phases] == ["design"]
+    assert [r.token for r in rows.others] == [CLAUDE_ARTIFACT_TOKEN, CLAUDE_DOC_TOKEN]
 
 
 # -- R9.1, R9.2: the control ----------------------------------------------------------

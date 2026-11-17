@@ -371,6 +371,9 @@ class GraphContext:
     #: (issue-471), frozen at `phase-selection` and already resolved against
     #: the harness. Rendered for the outer loop only — the one with a spec chain.
     claude_artifact: bool = False
+    #: Whether it is published as one Claude doc instead (issue-536) — the
+    #: same reading, never true beside :attr:`claude_artifact`.
+    claude_doc: bool = False
     #: The handoff record this work item arrived with (issue-517, design §C9):
     #: ``state.handoff`` as the runtime froze it at start — validated closed
     #: values (stage, entry, carrier) plus the record's URL from the API's
@@ -379,6 +382,9 @@ class GraphContext:
     #: The spec-chain Claude artifact the handoff imported (issue-517, R7.4):
     #: the URL the session republishes to rather than publishing a new one.
     claude_artifact_url: str = ""
+    #: The spec-chain Claude doc the handoff imported (issue-536): the doc the
+    #: session keeps in step rather than creating a second one.
+    claude_doc_url: str = ""
 
     @property
     def at_human_gate(self) -> bool:
@@ -437,6 +443,19 @@ CLAUDE_ARTIFACT_LINE = (
 )
 
 
+#: The prompt line for a work item whose spec chain is one Claude doc instead
+#: (issue-536). Fixed text, like the artifact line: the doc is a tool of the
+#: session (the Claude Docs connector), and the skill carries the procedure.
+CLAUDE_DOC_LINE = (
+    "  also publish the spec chain as ONE Claude doc, chosen at phase-selection: "
+    "one tab per spec file, each tab rewritten from its file whenever the file "
+    "changes, linked once from the work item — the markdown files stay the source "
+    "of truth; read a tab before rewriting it and treat any human edit or comment "
+    "there as feedback, never a gate answer (Claude Code with the Claude Docs "
+    "connector only: without it, say so once on the work item and carry on)"
+)
+
+
 def _claude_artifact_line(url: str) -> str:
     """The Claude artifact line, naming ``url`` when the handoff imported one
     (issue-517, R7.4). Only an ``https://`` URL with no whitespace is named — the
@@ -448,6 +467,18 @@ def _claude_artifact_line(url: str) -> str:
         "republished to the same URL whenever a file changes",
         f"republished to {url} — the artifact this work item was handed off "
         "with: republish there, never publish a new one — whenever a file changes",
+    )
+
+
+def _claude_doc_line(url: str) -> str:
+    """The Claude doc line, naming ``url`` when the handoff imported one
+    (issue-536) — under the same check as :func:`_claude_artifact_line`."""
+    if not _is_https_url(url):
+        return CLAUDE_DOC_LINE
+    return CLAUDE_DOC_LINE.replace(
+        "linked once from the work item",
+        f"kept at {url} — the doc this work item was handed off with: keep that "
+        "one, never create a new one — and linked once from the work item",
     )
 
 
@@ -627,6 +658,9 @@ def render_graph_context(
             # Fixed text and one boolean (issue-471): no payload enters it. A
             # handed-off artifact's URL (issue-517) is checked before it is named.
             lines.append(_claude_artifact_line(ctx.claude_artifact_url))
+        elif ctx.claude_doc:
+            # The same rule for the doc (issue-536): fixed text, one boolean.
+            lines.append(_claude_doc_line(ctx.claude_doc_url))
     lines.append(
         "  when this node's work is done, run: "
         f"`the-loop graph complete {item_id}{claim_suffix}`"
@@ -1388,8 +1422,10 @@ class GraphLink:
             surface=str(getattr(state, "surface", "") or ""),
             loop=str(getattr(state, "loop", "") or ""),
             claude_artifact=getattr(state, "claude_artifact", False) is True,
+            claude_doc=getattr(state, "claude_doc", False) is True,
             handoff=dict(getattr(state, "handoff", None) or {}),
             claude_artifact_url=str(getattr(state, "claude_artifact_url", "") or ""),
+            claude_doc_url=str(getattr(state, "claude_doc_url", "") or ""),
         )
 
     @staticmethod
@@ -1442,8 +1478,10 @@ class GraphLink:
                 for pr in getattr(state, "pull_requests", []) or []
             ),
             claude_artifact=getattr(state, "claude_artifact", False) is True,
+            claude_doc=getattr(state, "claude_doc", False) is True,
             handoff=dict(getattr(state, "handoff", None) or {}),
             claude_artifact_url=str(getattr(state, "claude_artifact_url", "") or ""),
+            claude_doc_url=str(getattr(state, "claude_doc_url", "") or ""),
         )
 
     @staticmethod

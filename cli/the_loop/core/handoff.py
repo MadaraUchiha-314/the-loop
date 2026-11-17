@@ -125,6 +125,7 @@ _KEYS: Tuple[str, ...] = (
     "artifacts",
     "carried-by",
     "spec-artifact",
+    "spec-doc",
     "from",
     "approved-in-chat",
     "mirror",
@@ -142,6 +143,10 @@ _FENCE_RE = re.compile(r"(`{3,})[A-Za-z0-9_-]*")
 _SHA_RE = re.compile(r"[0-9a-f]{64}")
 _BRANCH_RE = re.compile(r"branch (\S+)(?: · PR #([1-9][0-9]*))?")
 _SPEC_ARTIFACT_RE = re.compile(r"(https://\S+) sha256:(\S*)")
+#: A spec-chain Claude doc (issue-536): a link only. A doc is edited in place,
+#: so a hash of it would be stale the moment someone typed — and it carries no
+#: files: the record's carrier is still the branch or the ticket.
+_SPEC_DOC_RE = re.compile(r"https://[^\s`<>\"]+")
 _MIRROR_RE = re.compile(r"jira:[A-Za-z0-9][A-Za-z0-9.-]*/[A-Z][A-Z0-9_]*-[0-9]+")
 _BLOCK_RE = re.compile(
     r"<details><summary>(?P<name>[^<\n]*)</summary>\n\n"
@@ -180,6 +185,7 @@ class HandoffRecord:
     pull_request: int = 0
     spec_artifact: str = ""
     spec_artifact_sha256: str = ""
+    spec_doc: str = ""
     source: str = ""
     approved_in_chat: Tuple[str, ...] = ()
     mirror: str = ""
@@ -200,6 +206,7 @@ class HandoffRecord:
             "pullRequest": self.pull_request,
             "specArtifact": self.spec_artifact,
             "specArtifactSha256": self.spec_artifact_sha256,
+            "specDoc": self.spec_doc,
             "source": self.source,
             "approvedInChat": list(self.approved_in_chat),
             "mirror": self.mirror,
@@ -227,6 +234,7 @@ class HandoffRecord:
             pull_request=int(data.get("pullRequest") or 0),
             spec_artifact=str(data.get("specArtifact", "")),
             spec_artifact_sha256=str(data.get("specArtifactSha256", "")),
+            spec_doc=str(data.get("specDoc", "")),
             source=str(data.get("source", "")),
             approved_in_chat=tuple(str(n) for n in data.get("approvedInChat") or ()),
             mirror=str(data.get("mirror", "")),
@@ -473,6 +481,14 @@ def parse_with_reason(body: str) -> Tuple[Optional[HandoffRecord], str]:
         spec_artifact, spec_sha = match.group(1), match.group(2)
     if carried_by == "artifact" and not spec_artifact:
         return None, "carried-by artifact names no spec-artifact"
+    spec_doc = ""
+    if "spec-doc" in values:
+        if not _SPEC_DOC_RE.fullmatch(values["spec-doc"]):
+            return None, "spec-doc must be '<https URL>'"
+        spec_doc = values["spec-doc"]
+    if spec_doc and spec_artifact:
+        # issue-536: one spec-chain page per work item, as at phase-selection.
+        return None, "spec-artifact and spec-doc are mutually exclusive"
 
     approved: List[str] = []
     if values.get("approved-in-chat"):
@@ -511,6 +527,7 @@ def parse_with_reason(body: str) -> Tuple[Optional[HandoffRecord], str]:
         pull_request=pull_request,
         spec_artifact=spec_artifact,
         spec_artifact_sha256=spec_sha,
+        spec_doc=spec_doc,
         source=values.get("from", ""),
         approved_in_chat=tuple(approved),
         mirror=mirror,
@@ -561,6 +578,8 @@ def _render_head(record: HandoffRecord) -> str:
                 f"{record.spec_artifact} sha256:{record.spec_artifact_sha256}",
             )
         )
+    if record.spec_doc:
+        lines.append(_line("spec-doc", record.spec_doc))
     if record.source:
         lines.append(_line("from", record.source))
     if record.approved_in_chat:

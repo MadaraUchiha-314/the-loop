@@ -802,3 +802,48 @@ def test_a_carried_file_that_contains_the_marker_line_round_trips():
     bodies = render(record, {"brainstorm.md": text})
     assert parse(bodies[0]) is not None
     assert extract_files(bodies)["brainstorm.md"] == text
+
+
+# -- a spec-chain doc (issue-536) -----------------------------------------------
+
+
+def test_a_record_naming_a_spec_doc_round_trips():
+    """
+    Feature: the handoff record
+      Scenario: a branch-carried record that names a spec-chain Claude doc
+        Given a record carried by a spec branch with a `spec-doc` link
+        When it is rendered and the comment is parsed
+        Then the parsed record equals the original, `specDoc` included
+
+    Requirement: docs/specs/issue-536/requirements.md R5.1
+    """
+    record = _record(spec_doc="https://claude.ai/artifact/doc123")
+    body = render(record)[0]
+    assert "spec-doc:         https://claude.ai/artifact/doc123" in body
+    assert parse(body) == record
+    assert record.as_dict()["specDoc"] == "https://claude.ai/artifact/doc123"
+    assert HandoffRecord.from_dict(record.as_dict()) == record
+
+
+def test_a_spec_doc_that_is_not_an_https_link_is_rejected():
+    """R5.2 — a malformed `spec-doc` rejects the whole record, like any key."""
+    body = _body(spec_doc="https://claude.ai/artifact/doc123")
+    assert parse(_swap(body, "spec-doc", "javascript:alert(1)")) is None
+    assert parse(_swap(body, "spec-doc", "https://x y")) is None
+
+
+def test_a_spec_doc_beside_a_spec_artifact_is_rejected():
+    """R5.3 — one spec-chain page per work item."""
+    body = _body(
+        carried_by="artifact",
+        branch="",
+        pull_request=0,
+        spec_artifact="https://claude.ai/artifact/abc123",
+        spec_artifact_sha256="d" * 64,
+    )
+    assert parse(body) is not None  # control
+    both = body.replace(
+        "\nfrom:", "\nspec-doc:         https://claude.ai/artifact/doc123\nfrom:", 1
+    )
+    assert "spec-doc:" in both
+    assert parse(both) is None

@@ -36,6 +36,7 @@ is only the procedure.
 
 3. **Publish** per the reference's table:
    - a tab of the spec-chain artifact when `claudeArtifact` is true;
+   - a tab of the spec-chain doc when `claudeDoc` is true (issue-536);
    - otherwise its own artifact;
    - with no artifact tool, `docs/specs/<id>/explainer/explainer.html`, redacted,
      committed and pushed.

@@ -90,7 +90,7 @@ def test_every_question_is_a_heading_with_an_emoji_of_its_own():
         "Optional phases — off unless you tick them",
         "Settings — not phases; each has a default",
         "Where should the outer loop happen?",
-        "Publish the spec chain as a Claude artifact too?",
+        "Publish the spec chain as a Claude artifact or a Claude doc too?",
         "How many sessions should this work item's pull requests get?",
         "Is this work item worked in a channel of its own?",
         "Which harness should this work item run on?",
@@ -176,7 +176,8 @@ def test_no_fact_the_comment_stated_is_lost():
         "Start your reply with `the-loop execute`",
         "the **authorization is your reply**",
         "each repository this work item contributes code to gets its own pull request",
-        "On any other harness the-loop ignores this box",
+        "On any other harness the-loop ignores these boxes",
+        "Ticking both uses the default",
         "The markdown files stay the source of truth either way",
         "the operator's `routing.tmux.sessionPerPr`",
         "`session.pr_session_declined`",
@@ -209,6 +210,7 @@ def test_the_rows_read_back_exactly_as_the_graph_lists_them():
     assert rows.surface is not None and rows.surface.ticked
     assert [r.token for r in rows.others] == [
         selection.CLAUDE_ARTIFACT_TOKEN,
+        selection.CLAUDE_DOC_TOKEN,
         selection.EXPLAINER_TOKEN,
         *selection.PR_SESSIONS_TOKENS,
         "harness-claude",
