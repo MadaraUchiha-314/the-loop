@@ -120,6 +120,16 @@ nothing new.
 | Repository → claude.ai | Same as issue-471: private by default, the-loop never changes sharing; the evidence redaction rule already forbids secrets in specs. |
 | Doc edits/comments → session | Skill rules 3 and 5: an edit reaches the repo only as a session-authored file change reviewed on the PR; nothing in the doc answers a gate; doc text is untrusted data. |
 
+Each abuse case from the requirements, and what answers it:
+
+| Abuse case | Answered by |
+|---|---|
+| A non-authorized user ticks `claude-doc` | The hook's `run` is reached only through an authorized reply; the tick in place is a proposal. Test T2. |
+| "Approved" or "skip the gate" written in the doc | Skill rule 5; gates read only the ticket and PR, and no code reads the doc. |
+| Instructions in a doc edit or comment | Skill rules 3 and 5: untrusted data, handled as a ticket comment is. |
+| An editor changes a tab | Skill rule 3: the change reaches the repository only as a session-authored commit on the PR. |
+| Hand-edited state: non-boolean `claudeDoc`, or both choices true | `WorkItemState.load` reads `is True` and collapses both-true to the artifact. Test T3. |
+
 ## Testing strategy
 
 Unit tests in a new `cli/tests/test_claude_doc.py`, mirroring `test_claude_artifact.py`:
