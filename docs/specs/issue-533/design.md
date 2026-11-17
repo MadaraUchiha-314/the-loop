@@ -294,6 +294,19 @@ How each requirements-phase trust boundary is enforced:
 - **Session → outside world.** The service scrubs every caller-text field of the
   session routes before any side effect, and the event log scrubs every string it
   writes (R5). Masks are visible (`<redacted:session-credential>`), never silent.
+- **Abuse cases → enforcement.** Each abuse case in the requirements maps to one control
+  and one negative test:
+
+  | Abuse case | Control | Test (testing plan) |
+  |---|---|---|
+  | A1 `ps` shows the value | loader argv carries only a path | T2 `ps -eo args` scan |
+  | A2 server keeps it globally | client env drops `remove ∪ inherit` | T2 `show-environment -g` |
+  | A3 another user reads the file | `0600`/`0700`, `O_EXCL|O_NOFOLLOW`, deleted before `exec` | T1 mode/symlink, T2 file gone |
+  | A4 agent pastes the token | route-layer scrub + event-log scrub | T1 route + event-log tests |
+  | A5 `sessionPassthrough` forwards it | `passthrough_names` unchanged | T1 existing + new case |
+  | A6 `from` is the daemon's token | warning at resolution | T1 caplog |
+  | A7 scope mismatch | `for_work_item` leaves the name removed | T1 |
+
 - **Residual.** Text the agent sends with the token itself (`gh`, `git push`, `curl`)
   and a session that sets `THE_LOOP_SERVICE_LOCAL=1` to run a verb in-process with the
   token it holds bypass the service, and with it the scrub. Both are what holding a
