@@ -101,11 +101,13 @@ _CLEAR_BUFFER = "the-loop-clear"
 HUB_SESSION = "the-loop-hub"
 
 #: The pane command that admits a session credential (issue-533, R3). A constant:
-#: the file's path arrives as ``$1`` and is never interpolated, and the values are
+#: the file's path arrives as ``$1`` and is never interpolated, and stays there — no
+#: shell variable holds it, so a credential the file assigns (even one named ``f``)
+#: cannot redirect the ``rm`` (critic CR1-1). The values are
 #: in the file, never on an argv. ``set -a`` exports what the file assigns; the file
 #: is deleted before ``exec``, so it is gone once the harness runs.
 CREDENTIAL_LOADER = (
-    'f=$1; shift; set -a; [ -r "$f" ] && . "$f"; set +a; rm -f -- "$f"; exec "$@"'
+    'set -a; [ -r "$1" ] && . "$1"; set +a; rm -f -- "$1"; shift; exec "$@"'
 )
 
 #: A delivery file older than this is a leftover (a crash between the write and the

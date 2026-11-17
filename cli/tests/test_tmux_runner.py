@@ -2459,3 +2459,43 @@ def test_issue_533_sr2_1_a_failed_write_leaves_no_file(monkeypatch, tmp_path):
     path = runner._write_credential_file("loop-x", {"GH_TOKEN": "a-value-123456789"})
     assert path is None
     assert list(creds.iterdir()) == []
+
+
+def test_issue_533_cr1_1_a_credential_named_like_a_loader_variable(tmp_path):
+    """Critic CR1-1: a credential named `f` must not hijack the loader's path."""
+    path = tmp_path / "f.env"
+    path.write_text("f='the-secret-value-1234'\n")
+    out = _REAL_RUN(
+        [
+            "sh",
+            "-c",
+            runner_mod.CREDENTIAL_LOADER,
+            "sh",
+            str(path),
+            "sh",
+            "-c",
+            f'printf "%s|" "$f"; test -e "{path}" && echo present || echo gone',
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert out.stdout.strip() == "the-secret-value-1234|gone"
+    assert "f=" not in runner_mod.CREDENTIAL_LOADER
+
+
+def test_issue_533_cr1_3_every_spawn_sweeps(monkeypatch, tmp_path):
+    """Critic CR1-3: a leftover is swept even by a spawn that hands nothing over."""
+    from the_loop.envstate import SessionEnvironment
+
+    creds = tmp_path / "c"
+    creds.mkdir(mode=0o700)
+    old = creds / "loop-x.deadbeef.env"
+    old.write_text("T='x'\n")
+    past = time.time() - runner_mod.CREDENTIAL_FILE_MAX_AGE_SECONDS - 5
+    os.utime(old, (past, past))
+    runner = TmuxRunner(
+        env_provider=lambda: SessionEnvironment(remove=("GH_TOKEN",)),
+        credentials_dir=str(creds),
+    )
+    TestSessionCredentialDelivery()._spawn(monkeypatch, runner)
+    assert not old.exists()

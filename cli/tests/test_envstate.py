@@ -490,3 +490,11 @@ def test_issue_533_sr1_1_passthrough_refuses_a_session_credential_name(
         env = _boundary(config, tmp_path)
     assert env.forward == {"HTTPS_PROXY": "http://proxy"}
     assert "NPM_TOKEN" in caplog.text and SESSION_TOKEN not in caplog.text
+
+
+def test_issue_533_cr1_2_a_skipped_entry_still_strips_its_names(tmp_path, monkeypatch):
+    """Critic CR1-2: a malformed entry hands nothing over AND keeps its name out."""
+    config = _creds_config(tmp_path, [{"name": "CUSTOM_AUTH", "from": "bad name"}])
+    env = _boundary(config, tmp_path).for_work_item("github:octo/repo#1")
+    assert env.inherit == {}
+    assert "CUSTOM_AUTH" in env.remove
