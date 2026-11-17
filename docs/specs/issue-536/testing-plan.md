@@ -21,7 +21,7 @@ overrides: {}
 
 | # | Type | Applies? | Scope / what it proves | Where it runs |
 |---|------|----------|------------------------|---------------|
-| T1 | Unit (gate render) | yes | the outer loop's checklist carries `- [ ] claude-artifact` and `- [x] claude-doc` in one section with the "at most one" note; a handoff that imported a spec artifact swaps the two; an untouched checklist freezes `claudeDoc: true`; a contribution's carries neither | `cli/tests/test_claude_doc.py`, `test_handoff_selection.py`, `test_selection_defaults.py` |
+| T1 | Unit (gate render) | yes | the outer loop's checklist carries `claude-artifact` unticked and `claude-doc` ticked in one section with the "at most one" note; a handoff that imported a spec artifact swaps the two; an untouched checklist freezes `claudeDoc: true`; a contribution's carries neither | `cli/tests/test_claude_doc.py`, `test_handoff_selection.py`, `test_selection_defaults.py` |
 | T2 | Unit (gate resolve) | yes | doc ticked alone + harness `claude`/unknown → `claudeDoc: true`, `claudeArtifact: false`; doc ticked + harness `codex` → `false`, confirmation names `codex`; both ticked → both `false`, confirmation names the conflict; artifact-only unchanged; untouched default reply resolves as before; never a skip, opt-in or refusal; a contribution's reply carrying the row → `false` | same |
 | T3 | Unit (state) | yes | `claudeDoc` round-trips; absent, `"true"`, `1` read `false`; both `true` on disk reads `claudeDoc: false`, `claudeArtifact: true`; a legacy file saves byte-identical | same, `test_handoff_state.py` |
 | T4 | Unit (runtime freeze) | yes | a selection through `Runtime` records `claudeDoc` in state, the decision record and the frozen graph | same |

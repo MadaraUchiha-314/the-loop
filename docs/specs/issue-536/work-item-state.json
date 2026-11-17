@@ -112,7 +112,7 @@
       "outcome": "",
       "enteredAt": "2026-11-17T05:50:20+00:00",
       "exitedAt": "",
-      "lastBlock": "",
+      "lastBlock": "`validate-artifacts` did not pass:\n- 1 task(s) still unticked (docs/specs/issue-536/testing-plan.md)",
       "forced": false
     }
   },
@@ -349,6 +349,10 @@
     },
     "implementation": {
       "at": "2026-11-17T05:50:20+00:00",
+      "by": "cli"
+    },
+    "verification": {
+      "at": "2026-11-17T05:50:56+00:00",
       "by": "cli"
     }
   },
