@@ -696,9 +696,14 @@ class TmuxRunner:
                 body = "".join(
                     f"{name}={_shell_quote(value)}\n"
                     for name, value in sorted(inherit.items())
-                )
-                os.write(fd, body.encode("utf-8", "surrogateescape"))
+                ).encode("utf-8", "surrogateescape")
+                while body:
+                    body = body[os.write(fd, body) :]
                 os.fsync(fd)
+            except OSError:
+                # A partial file still holds a value: never leave it for the sweep.
+                _discard(str(path))
+                raise
             finally:
                 os.close(fd)
         except OSError as exc:

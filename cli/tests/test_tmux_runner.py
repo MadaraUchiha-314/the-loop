@@ -2442,3 +2442,20 @@ class TestSessionCredentialDelivery:
         path, _ = self._path_in(cmd)
         assert Path(path).read_text() == f"GH_TOKEN='{self.VALUE}'\n"
         assert "GH_TOKEN" not in fake.envs[index]
+
+
+def test_issue_533_sr2_1_a_failed_write_leaves_no_file(monkeypatch, tmp_path):
+    """Self-review SR2-1: a write that fails after the file exists deletes it."""
+    creds = tmp_path / "c"
+
+    def broken_fsync(fd):
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(runner_mod.os, "fsync", broken_fsync)
+    runner = TmuxRunner(
+        env_provider=TestSessionCredentialDelivery._boundary,
+        credentials_dir=str(creds),
+    )
+    path = runner._write_credential_file("loop-x", {"GH_TOKEN": "a-value-123456789"})
+    assert path is None
+    assert list(creds.iterdir()) == []
