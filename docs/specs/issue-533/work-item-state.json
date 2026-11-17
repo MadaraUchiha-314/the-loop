@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-533",
-  "currentNode": "test-planning",
+  "currentNode": "tasks-breakdown",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -61,8 +61,40 @@
     },
     "test-planning": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-11-17T01:54:13+00:00",
+      "exitedAt": "2026-11-17T01:54:51+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "design-approval": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-11-17T01:54:51+00:00",
+      "exitedAt": "2026-11-17T01:54:51+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "spec-explainer": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-11-17T01:54:51+00:00",
+      "exitedAt": "2026-11-17T01:54:51+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "spec-quiz": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-11-17T01:54:51+00:00",
+      "exitedAt": "2026-11-17T01:54:51+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "tasks-breakdown": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-11-17T01:54:51+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -290,6 +322,10 @@
     "design": {
       "at": "2026-11-17T01:54:13+00:00",
       "by": "cli"
+    },
+    "test-planning": {
+      "at": "2026-11-17T01:54:51+00:00",
+      "by": "cli"
     }
   },
   "skips": {
@@ -371,5 +407,5 @@
     }
   ],
   "loop": "pdlc-work-item-loop",
-  "phase": "test-planning"
+  "phase": "tasks-breakdown"
 }
