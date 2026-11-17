@@ -67,18 +67,24 @@ overrides: {}
 
 ## Verification activities
 
-- [ ] T1–T6 — `cd cli && uv run python -m pytest -q tests/test_claude_doc.py tests/test_handoff_selection.py tests/test_selection_defaults.py tests/test_handoff_state.py`
-- [ ] T7 — `cd cli && uv run python -m pytest -q tests/test_selection_control.py`
-- [ ] T8 — `make check` and `make pre-commit`
-- [ ] T9 — security review recorded in `evidence/security-review.md`
+- [x] T1–T6 — `cd cli && uv run python -m pytest -q tests/test_claude_doc.py tests/test_handoff_selection.py tests/test_selection_defaults.py tests/test_handoff_state.py`
+- [x] T7 — `cd cli && uv run python -m pytest -q tests/test_selection_control.py`
+- [x] T8 — `make check` and `make pre-commit`
+- [x] T9 — the abuse-case tests inside the T1–T6 run. Replanned from "security review
+  recorded": that record belongs to the later `security-review` node, so verification
+  runs the negative tests and the review records its own verdict.
 
 ## Verification results
 
-_Not yet executed._
+Run on 2026-11-17 at `23efe118`, with the daemon's `THE_LOOP_*` variables unset (see
+the evidence for why).
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1–T6 | targeted pytest, listed above | 62 passed (red first: `GraphContext` had no `claude_doc`) | [verification.md](evidence/verification.md) |
+| T7 | `pytest tests/test_selection_control.py` | 43 passed | [verification.md](evidence/verification.md) |
+| T8 | `make check`, `make pre-commit` | 6902 passed; ruff, pyright, validation and hooks clean | [verification.md](evidence/verification.md) |
+| T9 | abuse-case tests | pass | [verification.md](evidence/verification.md#t9-abuse-cases) |
 
 ## Review comments
 
