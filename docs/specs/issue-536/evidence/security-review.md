@@ -5,6 +5,8 @@ workItem: "github:MadaraUchiha-314/the-loop#536"
 
 # Security review: the spec chain as one Claude doc (issue-536)
 
+## Security review (gate)
+
 - **Mechanism:** the-loop checklist (`reference/security.md`), checked against
   `git diff origin/main...HEAD`.
 - **Outcome:** pass.
@@ -26,5 +28,5 @@ shares it with, which is wider than an artifact's comment-only surface. The miti
 procedural (read before rewrite, fold edits in as feedback, review on the PR), not a code
 check, because the-loop never reads the doc.
 
-- **Sign-off:** tier 3, so no named security sign-off is required; the PR approval is the
+- **Human sign-off:** n/a — tier 3, so no named security sign-off is required; the PR approval is the
   human gate.

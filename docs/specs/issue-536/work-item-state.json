@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-536",
-  "currentNode": "critic-review",
+  "currentNode": "security-review",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -125,10 +125,18 @@
     },
     "critic-review": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-11-17T05:51:39+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-11-17T05:54:07+00:00",
       "lastBlock": "",
+      "forced": false
+    },
+    "security-review": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-11-17T05:54:07+00:00",
+      "exitedAt": "",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required section is missing: Security review (gate) (docs/specs/issue-536/evidence/security-review.md)",
       "forced": false
     }
   },
@@ -373,6 +381,14 @@
     },
     "self-review": {
       "at": "2026-11-17T05:51:39+00:00",
+      "by": "cli"
+    },
+    "critic-review": {
+      "at": "2026-11-17T05:54:07+00:00",
+      "by": "cli"
+    },
+    "security-review": {
+      "at": "2026-11-17T05:54:27+00:00",
       "by": "cli"
     }
   },
