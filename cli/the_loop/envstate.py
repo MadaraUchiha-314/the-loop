@@ -408,7 +408,9 @@ def passthrough_names(config: Mapping) -> Tuple[str, ...]:
     listed = block.get("sessionPassthrough") if isinstance(block, Mapping) else None
     if not isinstance(listed, (list, tuple)):
         return ()
-    secrets = credential_names(config)
+    # A name `env.sessionCredentials` lists (or reads from) is a credential too
+    # (issue-533, SR1-1): forwarded here it would ride `tmux -e`, on an argv.
+    secrets = credential_names(config) | _session_credential_names(config)
     kept: list = []
     for name in listed:
         if not isinstance(name, str) or not envfile.NAME_RE.fullmatch(name):
@@ -605,6 +607,20 @@ def session_environment_and_lines(
         ),
         invalid_lines,
     )
+
+
+def _session_credential_names(config: Mapping) -> FrozenSet[str]:
+    """Every ``name`` and ``from`` ``env.sessionCredentials`` lists, unresolved."""
+    block = config.get("env") if isinstance(config, Mapping) else None
+    listed = block.get("sessionCredentials") if isinstance(block, Mapping) else None
+    found: set = set()
+    for entry in listed if isinstance(listed, (list, tuple)) else ():
+        if isinstance(entry, Mapping):
+            for key in ("name", "from"):
+                value = entry.get(key)
+                if isinstance(value, str):
+                    found.add(value)
+    return frozenset(found)
 
 
 def _lists_session_credentials(config: Mapping) -> bool:

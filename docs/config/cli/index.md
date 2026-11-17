@@ -263,7 +263,8 @@ env:
 - **A credential name is refused**, with a warning naming the variable: any name a
   `*tokenEnv` or `*secretEnv` key holds anywhere in this config, and the defaults
   (`GH_TOKEN`, `GITHUB_TOKEN`, `THE_LOOP_GH_WEBHOOK_SECRET`,
-  `THE_LOOP_SLACK_BOT_TOKEN`, `THE_LOOP_SLACK_APP_TOKEN`).
+  `THE_LOOP_SLACK_BOT_TOKEN`, `THE_LOOP_SLACK_APP_TOKEN`), plus every `name` and `from`
+  listed in [`env.sessionCredentials`](/config/cli/#env-sessioncredentials).
 - Every other name `env.file` declares, and every credential name, is **removed** from the
   session's environment — even when the tmux server holds it, because the daemon that
   started the server loaded the file.

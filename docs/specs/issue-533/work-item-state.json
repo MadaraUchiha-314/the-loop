@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-533",
-  "currentNode": "verification",
+  "currentNode": "self-review",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -109,10 +109,18 @@
     },
     "verification": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-11-17T02:08:45+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-11-17T02:20:50+00:00",
       "lastBlock": "`validate-artifacts` did not pass:\n- 4 task(s) still unticked (docs/specs/issue-533/testing-plan.md)",
+      "forced": false
+    },
+    "self-review": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-11-17T02:20:50+00:00",
+      "exitedAt": "",
+      "lastBlock": "",
       "forced": false
     }
   },
@@ -346,6 +354,10 @@
     "tasks-breakdown": {
       "at": "2026-11-17T01:55:10+00:00",
       "by": "cli"
+    },
+    "verification": {
+      "at": "2026-11-17T02:20:50+00:00",
+      "by": "cli"
     }
   },
   "skips": {
@@ -427,5 +439,5 @@
     }
   ],
   "loop": "pdlc-work-item-loop",
-  "phase": "verification"
+  "phase": "needs-review"
 }

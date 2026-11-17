@@ -473,3 +473,20 @@ def test_issue_533_session_credentials_alone_configure_the_boundary(
     monkeypatch.setenv("SRC", SESSION_TOKEN)
     config = {"env": {"sessionCredentials": [{"name": "T", "from": "SRC"}]}}
     assert envstate.session_environment(config, tmp_path / "c.yaml") is not None
+
+
+def test_issue_533_sr1_1_passthrough_refuses_a_session_credential_name(
+    tmp_path, monkeypatch, caplog
+):
+    """Self-review SR1-1: a name in both lists must not reach `tmux -e` (R3.1)."""
+    monkeypatch.setenv("NPM_TOKEN", SESSION_TOKEN)
+    monkeypatch.setenv("NPM_SRC", SESSION_TOKEN)
+    config = _creds_config(
+        tmp_path, [{"name": "NPM_TOKEN"}, {"name": "OTHER", "from": "NPM_SRC"}]
+    )
+    config["env"]["sessionPassthrough"] = ["NPM_TOKEN", "NPM_SRC", "HTTPS_PROXY"]
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy")
+    with caplog.at_level("WARNING", logger="the-loop.envstate"):
+        env = _boundary(config, tmp_path)
+    assert env.forward == {"HTTPS_PROXY": "http://proxy"}
+    assert "NPM_TOKEN" in caplog.text and SESSION_TOKEN not in caplog.text
