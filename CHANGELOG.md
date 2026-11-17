@@ -1,3 +1,9 @@
+## v20.13.0 (2026-11-17)
+
+### Feat
+
+- **issue-536**: publish the spec chain as a Claude doc (#537)
+
 ## v20.12.0 (2026-11-17)
 
 ### Feat
