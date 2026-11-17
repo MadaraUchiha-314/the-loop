@@ -192,8 +192,8 @@ SURFACE_TOKEN = "outer-loop-on-pull-request"
 CLAUDE_ARTIFACT_TOKEN = "claude-artifact"
 
 #: The checklist token that asks for the spec chain as one Claude doc instead
-#: (issue-536) — the second row of the same section. At most one of the two
-#: applies: both ticked is not a choice, and publishes neither.
+#: (issue-536) — the second row of the same section, and its default. At most
+#: one of the two applies: both ticked resolves to the section's default.
 CLAUDE_DOC_TOKEN = "claude-doc"
 
 #: Selectable phases rendered UNTICKED on the checklist (issue-510): still
@@ -874,7 +874,7 @@ def _checklist_body(ctx: HookContext) -> str:
         # exactly where the surface question is asked. The doc is the default
         # (issue-536) — unless the handoff already published a spec-chain
         # artifact (issue-517), which the session then republishes to.
-        artifact_default = bool(str(_handoff(ctx).get("specArtifact") or ""))
+        artifact_default = _artifact_is_default(ctx)
         default_name = "a Claude artifact" if artifact_default else "a Claude doc"
         other_name = "the doc" if artifact_default else "the artifact"
         lines += [
@@ -898,7 +898,7 @@ def _checklist_body(ctx: HookContext) -> str:
             "Not phases. The requirements, design, testing plan and task list "
             "become one page (an artifact you read and comment on) or one document "
             "(a doc you and others edit and comment on), with a tab per file.",
-            "Ticking both publishes neither — two ticks are not a choice. On any "
+            "Ticking both uses the default — the ticked one above. On any "
             "other harness the-loop ignores these boxes. The markdown files stay "
             "the source of truth either way, every gate still reads them, and an "
             "edit made in the doc is feedback the session folds into the file.",
@@ -1179,6 +1179,16 @@ def _parse_claude_doc(body: str) -> bool:
     return False
 
 
+def _artifact_is_default(ctx: HookContext) -> bool:
+    """Whether the publishing section's default is the artifact (issue-536).
+
+    The doc is the default, unless the handoff record names a spec-chain
+    artifact it already published (issue-517): the session republishes to that
+    page, so switching the item to a doc would strand it.
+    """
+    return bool(str(_handoff(ctx).get("specArtifact") or ""))
+
+
 def _parse_explainer(body: str) -> bool:
     """Whether one reply keeps the explainer and its quizzes (issue-488).
 
@@ -1247,6 +1257,7 @@ def _confirmation(
     claude_artifact: bool = False,
     claude_doc_requested: bool = False,
     claude_doc: bool = False,
+    both_ticked: bool = False,
     explainer: Optional[bool] = None,
 ) -> str:
     lines = ["🤖 _the-loop_ — **phase selection recorded**", ""]
@@ -1311,19 +1322,12 @@ def _confirmation(
     # the surface question and this one are asked of the same loops.
     if surface:
         resolved_harness = harness or default_harness
-        not_applied = (
+        chosen_row = (
             CLAUDE_DOC_TOKEN
             if claude_doc_requested and not claude_artifact_requested
             else CLAUDE_ARTIFACT_TOKEN
         )
-        if claude_artifact_requested and claude_doc_requested:
-            # issue-536 (R2.3): two ticks are not a choice.
-            line = (
-                f"Not applied: `{CLAUDE_ARTIFACT_TOKEN}` and `{CLAUDE_DOC_TOKEN}` "
-                "were both ticked — tick at most one. The spec chain stays in "
-                "markdown files only."
-            )
-        elif claude_doc:
+        if claude_doc:
             line = (
                 "Spec artifacts: also published as **one Claude doc** (a tab per "
                 f"file), as @{actor} chose. The markdown files stay the source of "
@@ -1336,14 +1340,21 @@ def _confirmation(
                 "of truth."
             )
         elif claude_artifact_requested or claude_doc_requested:
-            kind = "doc" if not_applied == CLAUDE_DOC_TOKEN else "artifact"
+            kind = "doc" if chosen_row == CLAUDE_DOC_TOKEN else "artifact"
             line = (
-                f"Not applied: `{not_applied}` — this work item runs on "
+                f"Not applied: `{chosen_row}` — this work item runs on "
                 f"`{resolved_harness}`, which cannot publish a Claude {kind}. The "
                 "spec chain stays in markdown files only."
             )
         else:
             line = "Spec artifacts: markdown files only."
+        if both_ticked:
+            # issue-536 (R2.3): two ticks are not a choice — the default stands,
+            # and the reply is told which one that was.
+            line = (
+                f"`{CLAUDE_ARTIFACT_TOKEN}` and `{CLAUDE_DOC_TOKEN}` were both "
+                f"ticked, so the default, `{chosen_row}`, is used. " + line
+            )
         lines += ["", line]
     # The explainer row, in both directions (issue-488, R1.5).
     if explainer is True:
@@ -1519,12 +1530,18 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
         _parse_claude_artifact(body) if _asks_surface(ctx) else False
     )
     claude_doc_requested = _parse_claude_doc(body) if _asks_surface(ctx) else False
-    # At most one of the two (issue-536, R2.3): two ticks are not a choice, and
-    # resolve to neither — the fail-closed outcome, named in the confirmation.
-    conflict = claude_artifact_requested and claude_doc_requested
+    # At most one of the two (issue-536, R2.3): two ticks are not a choice, so
+    # they resolve to the section's default — the row the checklist rendered
+    # ticked — before the harness rule runs. The confirmation names it.
+    both_ticked = claude_artifact_requested and claude_doc_requested
+    if both_ticked:
+        if _artifact_is_default(ctx):
+            claude_doc_requested = False
+        else:
+            claude_artifact_requested = False
     applies = _claude_artifact_applies(resolved_harness)
-    claude_artifact = claude_artifact_requested and not conflict and applies
-    claude_doc = claude_doc_requested and not conflict and applies
+    claude_artifact = claude_artifact_requested and applies
+    claude_doc = claude_doc_requested and applies
     actor = str(reply["author"]).lstrip("@")
     # One row, four declared skips (issue-488) — each carrying the row's token,
     # so `the-loop check` names the choice rather than four separate phases.
@@ -1559,6 +1576,7 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
                 claude_artifact=claude_artifact,
                 claude_doc_requested=claude_doc_requested,
                 claude_doc=claude_doc,
+                both_ticked=both_ticked,
                 explainer=explainer,
             ),
         )

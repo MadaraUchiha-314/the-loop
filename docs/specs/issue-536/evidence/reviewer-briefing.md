@@ -10,7 +10,7 @@ workItem: "github:MadaraUchiha-314/the-loop#536"
 `phase-selection` now offers **`claude-doc`** beside issue-471's `claude-artifact`, and it
 is **ticked by default in the artifact's place** (your comment on #536). A Claude doc is
 an editable, commentable document with a tab per spec file. Tick at most one; ticking
-both publishes neither. On the `claude` harness the choice is frozen as `claudeDoc: true`,
+both uses the default (your decision on this PR). On the `claude` harness the choice is frozen as `claudeDoc: true`,
 and the session prompt tells the session to keep one doc in step with the files. **The
 files stay the source of truth**: no gate, lock or `check` changed. Risk tier 3.
 
@@ -21,8 +21,9 @@ artifact (issue-517), which keeps the artifact ticked so its URL is reused.
 ## Where to focus (in this order)
 
 1. **The resolve rule** — `cli/the_loop/graph/hooks/selection.py`, `classify_phase_selection`
-   (`conflict = artifact and doc`). Both ticked is refused before the harness rule, and
-   `_confirmation` names each outcome. Is "both → neither" the right fail-closed choice?
+   (`both_ticked`). Both ticked keeps only the default row (`_artifact_is_default`,
+   shared with the render), the harness rule runs after it, and `_confirmation` names the
+   default used.
 2. **The default and the handoff swap** — the same file, `_checklist_body`
    (`artifact_default` comes from `ctx.handoff["specArtifact"]`).
 3. **State compatibility** — `cli/the_loop/graph/state.py`. `claudeDoc` is written **only
@@ -55,10 +56,10 @@ flowchart LR
   archive, prompt, handoff's `claudeArtifactUrl`). Adding `claudeDoc` with an enforced
   "never both" invariant changes none of them. A `specPublication` enum would be cleaner,
   but it would be a migration.
-- **Both ticked → neither.** The harness/model sections already treat two ticks as no
-  choice. Picking one silently could publish somewhere the author didn't mean, and the
-  selection is frozen once, so the safe outcome is markdown plus a confirmation that says
-  why.
+- **Both ticked → the default** (your decision on this PR; the first draft published
+  neither). This matches the harness/model sections' "fall back to the default". The
+  default is chosen first and the harness rule applies after it, so a `codex` item still
+  gets "not applied".
 - **Handoff keeps the artifact.** A developer handed off with a published artifact would
   otherwise have that page stranded, because the session republishes to
   `claudeArtifactUrl` only when `claudeArtifact` is true.
@@ -72,7 +73,7 @@ flowchart LR
 
 ## Evidence
 
-- `make check`: **6902 passed**; ruff, ruff format, pyright, config validation clean;
+- `make check`: **6907 passed**; ruff, ruff format, pyright, config validation clean;
   `make pre-commit` clean. See [verification.md](verification.md).
 - Requirement-by-requirement: [final-validation.md](final-validation.md).
 - Reviews: [self-review.md](self-review.md) (2 rounds, converged),
@@ -83,7 +84,6 @@ flowchart LR
 
 ## Open questions for the reviewer
 
-1. Is **both ticked → neither** what you want, or should two ticks fall back to the
-   default (the doc)?
+1. ~~Both ticked~~ — answered: use the default. Done.
 2. Importing a **doc** URL through a handoff (as `claudeArtifactUrl` does for artifacts)
    is left out of scope. Should it be a follow-up issue?

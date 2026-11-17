@@ -14,17 +14,17 @@ workItem: "github:MadaraUchiha-314/the-loop#536"
 | Acceptance criterion | How it was proved | Where |
 |----------------------|-------------------|-------|
 | R1.1 doc row ticked, artifact unticked | `test_the_checklist_offers_the_doc_row_ticked_by_default`, `test_an_untouched_checklist_freezes_the_owners_defaults` | [verification.md](verification.md) T1–T6 |
-| R1.2 section note | the same render test (at most one, publishes neither); `test_no_fact_the_comment_stated_is_lost` | T1, T8 |
+| R1.2 section note | the same render test (at most one, both ticked uses the default); `test_no_fact_the_comment_stated_is_lost` | T1, T8 |
 | R1.3 handoff with a spec artifact keeps the artifact ticked | `test_a_named_spec_artifact_ticks_the_claude_artifact_row_instead_of_the_doc`, `test_a_handoff_with_no_spec_artifact_keeps_the_doc_default` | T1 |
 | R1.4 absent on a contribution | `test_a_contribution_is_not_offered_the_doc_row` | T1 |
 | R1.5 never a phase | `test_the_doc_row_is_never_read_as_a_phase` | T2 |
 | R1.6 Slack mirror | `test_selection_control.py` pin | T7 |
 | R2.1–R2.2 doc on `claude` or an unknown harness | `test_the_doc_ticked_alone_on_claude_publishes_a_doc`, `test_the_doc_with_no_known_harness_is_applied` | T2 |
-| R2.3 both ticked → neither | `test_both_ticked_publishes_neither` | T2 |
+| R2.3 both ticked → the default | `test_both_ticked_uses_the_default_doc`, `test_both_ticked_after_an_artifact_handoff_uses_the_artifact`, `test_both_ticked_on_another_harness_is_not_applied`, `test_the_default_follows_the_handoff` | T2 (re-verification) |
 | R2.4 another harness → not applied | `test_the_doc_on_another_harness_is_not_applied` | T2 |
 | R2.5 unticked/absent → false | `test_unticked_or_absent_is_not_a_doc` | T2 |
 | R2.6 confirmation in every direction | the assertions on the confirmation text in each R2 test | T2 |
-| R2.7 never both true | conflict test + `test_both_true_on_disk_keeps_the_artifact` | T2, T3 |
+| R2.7 never both true | the both-ticked tests + `test_both_true_on_disk_keeps_the_artifact` | T2, T3 |
 | R3.1 frozen in state, decision, graph | `test_the_doc_ticked_alone_on_claude_publishes_a_doc` (decision + graph keys) | T4 |
 | R3.2 boolean only; written only when true | `test_anything_but_the_boolean_true_reads_as_false`, `test_a_legacy_state_saves_byte_identical` | T3 |
 | R3.3 both true on disk | `test_both_true_on_disk_keeps_the_artifact` | T3 |
@@ -34,4 +34,4 @@ workItem: "github:MadaraUchiha-314/the-loop#536"
 | R4.3–R4.7 skill procedure | review of the skill text | [self-review.md](self-review.md), [critic-review.md](critic-review.md) |
 | R4.8 capability docs | the docs listed in [documentation.md](documentation.md) | — |
 | Abuse cases | negative tests, plus the checklist review | [security-review.md](security-review.md) |
-| Regression | `make check`: 6902 passed; ruff, pyright, validation and pre-commit clean | T8 |
+| Regression | `make check`: 6907 passed after the both-ticked change; ruff, pyright, validation and pre-commit clean | T8 |

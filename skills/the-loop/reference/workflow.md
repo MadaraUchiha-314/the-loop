@@ -358,7 +358,8 @@ are living documents with tabs, edited and commented on together. The section th
 |---|---|---|
 | `claude-doc` only (the default) | `claudeDoc: true` | the files **and** one Claude doc |
 | `claude-artifact` only | `claudeArtifact: true` | the files **and** one Claude artifact (above) |
-| neither, or both | both `false` | the files only — two ticks are not a choice |
+| both | the default's key (see below) | as for that row alone — two ticks fall back to the default |
+| neither | both `false` | the files only |
 
 `claude-doc` is rendered ticked and `claude-artifact` unticked, except when the handoff
 record names a spec-chain artifact (issue-517): then the artifact is ticked, so the

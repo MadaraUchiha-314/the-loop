@@ -52,7 +52,10 @@ flowchart LR
   R["authorized<br/>the-loop execute"] --> G{"rows ticked<br/>in the section"}
   G -- "claude-artifact only" --> A["claudeArtifact: true"]
   G -- "claude-doc only" --> D["claudeDoc: true"]
-  G -- "none, or both" --> M["markdown files only"]
+  G -- "both" --> F["the default<br/>(doc, or artifact<br/>after an artifact handoff)"]
+  F --> A
+  F --> D
+  G -- "none" --> M["markdown files only"]
   A --> H{"harness is claude<br/>or unknown?"}
   D --> H
   H -- no --> M
@@ -74,7 +77,7 @@ the system SHALL render, in the same section as the `claude-artifact` row, one r
 `claude-doc`, **ticked**, and SHALL render the `claude-artifact` row **unticked**.
 
 1.2 The section SHALL state that its rows are not phases, that at most one may be ticked,
-that ticking both publishes neither, and that both apply only when the work item runs on
+that ticking both uses the default, and that both apply only when the work item runs on
 the `claude` harness.
 
 1.3 WHEN the work item's handoff record names a spec-chain artifact (issue-517) THEN the
@@ -108,9 +111,11 @@ is `claude` or unknown THEN the system SHALL record `claudeDoc: true` and
 the harness the same reply chose, else this deployment's default harness, and an unknown
 harness does not rule the choice out.
 
-2.3 WHEN both rows are ticked THEN the system SHALL record `claudeDoc: false` and
-`claudeArtifact: false`, and the confirmation comment SHALL say that two rows were ticked
-and the spec chain stays in markdown files only.
+2.3 WHEN both rows are ticked THEN the system SHALL resolve the reply as if only the
+section's default row were ticked — `claude-doc`, or `claude-artifact` when R1.3 made it
+the default — and then apply the harness rule (R2.2, R2.4). The confirmation comment SHALL
+say that two rows were ticked and name the default used. (The owner's decision on the PR,
+[comment](https://github.com/MadaraUchiha-314/the-loop/pull/537#issuecomment-6940400943); the first draft published neither.)
 
 2.4 WHEN the `claude-doc` row is ticked alone AND the resolved harness is known and is not
 `claude` THEN the system SHALL record `claudeDoc: false`, and the confirmation comment
@@ -232,8 +237,10 @@ because an editor can change the text the session reads back.
   both choices true, THEN the system SHALL read `claudeDoc` as `false`.
 
 **Fail closed.** Every unreadable, ambiguous or unknown case resolves to *not published as
-a doc*: an unreadable checklist, an absent row, both rows ticked, a non-boolean value, a
-harness known not to be `claude`, a session without the docs tool.
+a doc*: an unreadable checklist, an absent row, a non-boolean value, a harness known not
+to be `claude`, a session without the docs tool. Both rows ticked is not ambiguous by this
+rule: it resolves to the default the checklist showed, which is what an author who left
+the section alone would get (R2.3).
 
 **Disclosure.** The doc is private by default and the-loop never changes its sharing. A
 spec chain must not hold secrets in any case (the evidence redaction rule); publishing it

@@ -5,8 +5,8 @@ is also published as one Claude artifact (issue-471) or as one Claude doc.
 
 The doc row sits beside the artifact row and rides the same path: read from the
 authorized reply, frozen into `work-item-state.json` as `claudeDoc`, and read back
-into the session prompt. At most one of the two applies: both ticked publishes
-neither, and the confirmation says why.
+into the session prompt. At most one of the two applies: both ticked resolves to
+the section's default, and the confirmation says so.
 
 Requirement: docs/specs/issue-536/requirements.md
 """
@@ -130,7 +130,7 @@ def test_the_checklist_offers_the_doc_row_ticked_by_default(repo, fake_github):
       Given an outer loop with a phase-selection gate
       When the gate is entered
       Then the publishing section carries `claude-doc` ticked and `claude-artifact` unticked
-      And says at most one may be ticked, and both ticked publishes neither
+      And says at most one may be ticked, and both ticked uses the default
     """
     _runtime(repo).start(WORK_ITEM, ref=REF)
     posted = fake_github.posted[0]
@@ -140,7 +140,7 @@ def test_the_checklist_offers_the_doc_row_ticked_by_default(repo, fake_github):
     assert posted.index(f"`{ARTIFACT}`") < posted.index(f"`{TOKEN}`")
     assert "Claude artifact or a Claude doc" in posted
     assert "at most one" in posted.lower()
-    assert "publishes neither" in posted
+    assert "Ticking both uses the default" in posted
 
 
 def test_a_contribution_is_not_offered_the_doc_row(repo, fake_github):
@@ -219,20 +219,66 @@ def test_the_doc_on_another_harness_is_not_applied(repo, fake_github):
     assert "`codex`" in confirmation
 
 
-def test_both_ticked_publishes_neither(repo, fake_github):
+def test_both_ticked_uses_the_default_doc(repo, fake_github):
     """
     Scenario: the author ticks both rows
-      Given an outer loop on the claude harness
+      Given an outer loop on the claude harness, with no handoff
       When an authorized user ticks `claude-artifact` and `claude-doc` and executes
-      Then neither `claudeArtifact` nor `claudeDoc` is frozen true
-      And the confirmation says two rows were ticked and the files stay markdown only
+      Then the section's default, the doc, is frozen and the artifact is not
+      And the confirmation says both were ticked and the default was used
+
+    The owner's decision on PR #537: two ticks fall back to the default.
     """
     state = _select(repo, BOTH, harness="claude")
-    assert state.claude_doc is False
-    assert state.claude_artifact is False
+    assert (state.claude_doc, state.claude_artifact) == (True, False)
     confirmation = _confirmation(fake_github)
-    assert f"`{ARTIFACT}` and `{TOKEN}` were both ticked" in confirmation
-    assert "markdown files only" in confirmation
+    assert (
+        f"`{ARTIFACT}` and `{TOKEN}` were both ticked, so the default, `{TOKEN}`, "
+        "is used" in confirmation
+    )
+    assert "one Claude doc" in confirmation
+
+
+def test_both_ticked_after_an_artifact_handoff_uses_the_artifact(
+    repo, fake_github, monkeypatch
+):
+    """When a handoff brought a spec artifact, the artifact is the default."""
+    monkeypatch.setattr(selection, "_artifact_is_default", lambda ctx: True)
+    state = _select(repo, BOTH, harness="claude")
+    assert (state.claude_doc, state.claude_artifact) == (False, True)
+    assert f"so the default, `{ARTIFACT}`, is used" in _confirmation(fake_github)
+
+
+def test_both_ticked_on_another_harness_is_not_applied(repo, fake_github):
+    """The default is chosen first, then the harness rule rules it out."""
+    state = _select(
+        repo,
+        BOTH + "\n- [x] `harness-codex`",
+        harness="claude",
+        offeredHarnesses=["claude", "codex"],
+    )
+    assert (state.claude_doc, state.claude_artifact) == (False, False)
+    assert f"Not applied: `{TOKEN}`" in _confirmation(fake_github)
+
+
+@pytest.mark.parametrize(
+    "handoff, expected",
+    [({}, False), ({"specArtifact": ""}, False), ({"specArtifact": "https://x"}, True)],
+)
+def test_the_default_follows_the_handoff(handoff, expected):
+    from pathlib import Path
+
+    from the_loop.graph.contract import HookContext, WorkItem
+
+    ctx = HookContext(
+        work_item=WorkItem(ref=REF, id=WORK_ITEM, spec_dir=Path(".")),
+        node={"id": "phase-selection"},
+        boundary="entry",
+        repo=Path("."),
+        config={},
+        handoff=handoff,
+    )
+    assert selection._artifact_is_default(ctx) is expected
 
 
 def test_the_artifact_picked_alone_is_unchanged(repo, fake_github):

@@ -23,7 +23,8 @@ prompt by `GraphLink`, archived, and mirrored by Slack. The CLI publishes nothin
 session publishes the doc with the Claude Docs connector, under rules the skill states.
 
 The one new piece of logic is **mutual exclusion**: the section resolves to one of three
-outcomes (artifact, doc, markdown only), and two ticks resolve to markdown only.
+outcomes (artifact, doc, markdown only), and two ticks resolve to the section's default
+(the doc, or the artifact after an artifact handoff) before the harness rule runs.
 
 ## Architecture
 
@@ -31,10 +32,10 @@ outcomes (artifact, doc, markdown only), and two ticks resolve to markdown only.
 flowchart TD
   CL["checklist<br/>(selection.py render)"] -->|reply| P["_parse_publish(body)<br/>→ artifact? doc?"]
   P --> X{"both ticked?"}
-  X -- yes --> N["both false<br/>conflict=true"]
+  X -- yes --> N["keep only the default row<br/>(_artifact_is_default)"]
   X -- no --> H{"_claude_artifact_applies<br/>(resolved harness)"}
+  N --> H
   H --> HR["HookResult.data<br/>claudeArtifact, claudeDoc"]
-  N --> HR
   HR --> RT["Runtime: record + state<br/>(is True only)"]
   RT --> ST["work-item-state.json<br/>claudeDoc"]
   ST --> GL["GraphLink → GraphContext.claude_doc"]
@@ -48,10 +49,10 @@ flowchart TD
 | Component | File | Change |
 |---|---|---|
 | Token | `cli/the_loop/graph/hooks/selection.py` | `CLAUDE_DOC_TOKEN = "claude-doc"`, added to `_NON_PHASE_TOKENS`. |
-| Render | same, the "📄" section | Title becomes "Publish the spec chain as a Claude artifact or a Claude doc too?". Rows: `- [ ] claude-artifact`, then `- [x] claude-doc — one Claude doc for this work item, a tab per file, which people can edit and comment on (claude harness only)`. When `ctx.handoff["specArtifact"]` is set (issue-517) the two marks swap. The **Default:** line names whichever is ticked. The collapsed note adds: tick at most one; both ticked publishes neither. |
+| Render | same, the "📄" section | Title becomes "Publish the spec chain as a Claude artifact or a Claude doc too?". Rows: `- [ ] claude-artifact`, then `- [x] claude-doc — one Claude doc for this work item, a tab per file, which people can edit and comment on (claude harness only)`. When `ctx.handoff["specArtifact"]` is set (issue-517) the two marks swap. The **Default:** line names whichever is ticked. The collapsed note adds: tick at most one; both ticked uses the default. |
 | Parse | same | `_parse_claude_doc(body)` — a ticked row only, like `_parse_claude_artifact`. |
-| Resolve | same, the `run` path | `doc_req = _parse_claude_doc(body) if _asks_surface(ctx) else False`. `conflict = artifact_req and doc_req`. `claude_artifact = artifact_req and not conflict and applies(h)`; `claude_doc = doc_req and not conflict and applies(h)`. |
-| Confirmation | `_confirmation` | New kwargs `claude_doc_requested`, `claude_doc`. Order of cases: conflict → "Not applied: `claude-artifact` and `claude-doc` were both ticked — tick at most one. The spec chain stays in markdown files only."; artifact → unchanged; doc → "Spec artifacts: also published as **one Claude doc** (a tab per file) …"; a requested row not applied on the harness → names the token and the harness; else "markdown files only". |
+| Resolve | same, the `run` path | `doc_req = _parse_claude_doc(body) if _asks_surface(ctx) else False`. `both_ticked = artifact_req and doc_req`; when true, the non-default row's request is dropped (`_artifact_is_default(ctx)`, shared with the render). Then `claude_artifact = artifact_req and applies(h)`; `claude_doc = doc_req and applies(h)`. |
+| Confirmation | `_confirmation` | New kwargs `claude_doc_requested`, `claude_doc`, `both_ticked`. With `both_ticked`, the outcome line is prefixed "`claude-artifact` and `claude-doc` were both ticked, so the default, `<row>`, is used." Cases: artifact → unchanged; doc → "Spec artifacts: also published as **one Claude doc** (a tab per file) …"; a requested row not applied on the harness → names the token and the harness; else "markdown files only". |
 | Frozen graph / data | `_frozen_graph`, `HookResult.data` | `"claudeDoc": claude_doc` beside `claudeArtifact`. |
 | Runtime freeze | `cli/the_loop/graph/runtime.py` | `if result.data.get("claudeDoc") is True: record["claudeDoc"] = True; state.claude_doc = True`. |
 | State | `cli/the_loop/graph/state.py` | Field `claude_doc: bool = False`. `load`: `claude_doc = data.get("claudeDoc") is True and not claude_artifact` (R3.3). `as_dict`: `"claudeDoc": true` written only when set, like the issue-517 keys, so a legacy file saves byte-identical (R3.2). |
@@ -103,7 +104,7 @@ No product UI. The only user-facing surface is checklist markdown, shown above.
 
 `work-item-state.json` gains `"claudeDoc": true`, written only when chosen (the issue-517
 keys' rule, so a file saved before this change is byte-identical when saved again), read
-with `is True`. Invariant: never both true — enforced at the hook (conflict) and
+with `is True`. Invariant: never both true — enforced at the hook (both ticked keeps one) and
 again at load (R3.3). The decision record and frozen graph gain the same key. The archive's
 `selections` gains it. No version bump: an absent key reads as `false`.
 
@@ -154,11 +155,11 @@ checklist fixtures (Jira, handoff) are regenerated because the section gains a r
   written). Untouched replies now publish a doc rather than an artifact. The exception is
   a handoff that already published a spec-chain artifact: switching it to a doc would
   strand the page the developer was handed, so that checklist keeps the artifact ticked.
-- **Both ticked → neither.** The harness/model sections already say "two ticks are not a
-  choice". Choosing either silently would publish where the author may not have meant.
-  The selection is frozen once, so a conflict costs only the page: the spec chain stays
-  in markdown, the fail-closed outcome the security section asks for, and the
-  confirmation says why.
+- **Both ticked → the default** (the owner's decision on the PR,
+  [comment](https://github.com/MadaraUchiha-314/the-loop/pull/537#issuecomment-6940400943)). The first draft published neither. The harness and model sections
+  already treat two ticks as "fall back to the default", so this matches them, and the
+  confirmation names the row that was used. It is not a widening: the default is what
+  an untouched reply gets anyway, and the harness rule still applies after it.
 - **Read-before-rewrite instead of two-way sync.** Docs are editable; an automatic merge
   would let an editor change a gated file without review. Reading edits as feedback keeps
   every repository change on the PR.

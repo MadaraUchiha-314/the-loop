@@ -77,3 +77,29 @@ Part of the T1–T6 run above:
   reads as the artifact only.
 - `test_both_ticked_publishes_neither`: two ticks are refused, and the confirmation says
   why.
+
+## Re-verification after the both-ticked decision (PR #537)
+
+The owner decided on the PR that two ticks fall back to the default
+([comment](https://github.com/MadaraUchiha-314/the-loop/pull/537#issuecomment-6940400943)).
+`test_both_ticked_publishes_neither` was replaced by:
+
+- `test_both_ticked_uses_the_default_doc`: doc frozen, artifact not; the confirmation
+  names the default.
+- `test_both_ticked_after_an_artifact_handoff_uses_the_artifact`: the artifact is the
+  default after a handoff that brought one.
+- `test_both_ticked_on_another_harness_is_not_applied`: the default is picked first,
+  then the harness rule rules it out.
+- `test_the_default_follows_the_handoff`: the shared `_artifact_is_default` helper, used
+  by both the render and the resolve.
+
+The checklist snapshots were regenerated; only the note line changed ("Ticking both uses
+the default").
+
+```text
+$ env -u THE_LOOP_CLI_CONFIG -u THE_LOOP_INSTANCE -u THE_LOOP_WORK_ITEM make check
+All checks passed!                       # ruff
+Summary: 0 error(s)                      # config validation
+0 errors, 0 warnings, 0 informations     # pyright
+6907 passed, 4 warnings in 233.47s       # full CLI suite
+```

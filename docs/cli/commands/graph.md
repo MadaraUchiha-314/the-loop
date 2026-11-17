@@ -90,7 +90,7 @@ full process.
                                      one Claude artifact (`claude` harness only).
 - [x] claude-doc                  ← or as one Claude doc instead (issue-536) —
                                      the default. Tick at most one; both ticked
-                                     publishes neither.
+                                     uses the default.
 - [x] explainer                   ← the explainer and two quizzes (issue-488):
                                      ticked (the default) = they run; unticked =
                                      their four nodes are declared skipped.
@@ -149,7 +149,7 @@ contribution, and it is frozen as `claudeArtifact` in `work-item-state.json`.
 session publishes the spec chain as one Claude doc — a tab per spec file, which people
 can edit and comment on — with the Claude Docs connector. An edit made in the doc is
 feedback the session folds into the file; the file is still what every gate reads. The
-two rows are one choice: tick at most one, and both ticked publishes neither. A handoff
+two rows are one choice: tick at most one, and both ticked uses the default. A handoff
 that already published a spec-chain artifact ticks `claude-artifact` instead, so the
 session republishes to it. Frozen as `claudeDoc`, under the same harness rule.
 

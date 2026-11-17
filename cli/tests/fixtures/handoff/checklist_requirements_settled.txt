@@ -83,7 +83,7 @@ Either way the artifacts are committed files linked from here, and each reposito
 
 Not phases. The requirements, design, testing plan and task list become one page (an artifact you read and comment on) or one document (a doc you and others edit and comment on), with a tab per file.
 
-Ticking both publishes neither — two ticks are not a choice. On any other harness the-loop ignores these boxes. The markdown files stay the source of truth either way, every gate still reads them, and an edit made in the doc is feedback the session folds into the file.
+Ticking both uses the default — the ticked one above. On any other harness the-loop ignores these boxes. The markdown files stay the source of truth either way, every gate still reads them, and an edit made in the doc is feedback the session folds into the file.
 
 </details>
 

@@ -177,7 +177,7 @@ def test_no_fact_the_comment_stated_is_lost():
         "the **authorization is your reply**",
         "each repository this work item contributes code to gets its own pull request",
         "On any other harness the-loop ignores these boxes",
-        "Ticking both publishes neither",
+        "Ticking both uses the default",
         "The markdown files stay the source of truth either way",
         "the operator's `routing.tmux.sessionPerPr`",
         "`session.pr_session_declined`",
