@@ -194,6 +194,36 @@ says so once on the ticket.
 `docs/capabilities/process-graph.md`) and the `graph` command doc SHALL describe the
 `claude-doc` row in the same PR.
 
+### Requirement 5 — a handoff can bring its spec-chain doc
+
+**User story:** As a developer handing a conversation to the-loop (issue-517), I want to
+point at the spec-chain doc I already made, so the work item keeps that doc instead of
+creating a second one. (Added at the owner's request on the PR,
+[comment](https://github.com/MadaraUchiha-314/the-loop/pull/537#issuecomment-6940754632); first drafted as out of scope.)
+
+#### Acceptance criteria (EARS)
+
+5.1 The handoff record SHALL accept one optional key, `spec-doc: <https URL>`, stored as
+`specDoc`, and SHALL render and parse it back unchanged.
+
+5.2 WHEN `spec-doc` is not a single `https://` URL without whitespace, backticks, angle
+brackets or quotes THEN the record SHALL be rejected.
+
+5.3 WHEN a record names both `spec-artifact` and `spec-doc` THEN it SHALL be rejected. A
+`spec-doc` SHALL NOT be a carrier: `carried-by` stays `branch`, `ticket` or `artifact`.
+
+5.4 WHEN the walk starts with a record whose `spec-doc` is a claude.ai artifact-shaped link
+THEN the system SHALL record it once as `claudeDocUrl` in `work-item-state.json` (written
+only when set). Any other URL SHALL NOT be recorded.
+
+5.5 WHEN state records `claudeDocUrl` AND `claudeDoc` is true THEN the prompt's doc line
+SHALL name that URL as the doc to keep, after the same `https://` check the artifact URL
+gets. The checklist SHALL keep `claude-doc` as the default for such a handoff.
+
+5.6 The archive's terminal record SHALL carry `claudeDocUrl` and the handoff's `specDoc`
+under the same URL filter as `claudeArtifactUrl`. The handoff skill SHALL offer the doc
+as an alternative to the artifact, and the CLI and capability docs SHALL describe the key.
+
 ## Out of scope
 
 - **A Codex or Cursor equivalent.** As for issue-471, the choice applies only on the
@@ -202,8 +232,8 @@ says so once on the ticket.
   matter; moving the source of truth into the doc would change every gate.
 - **Two-way sync.** The doc is rewritten from the files. Edits flow back only through the
   session reading them as feedback (R4.5); nothing merges them automatically.
-- **Handoff import of a doc URL.** A handoff can import a spec-chain artifact URL
-  (`claudeArtifactUrl`, issue-517). Importing a doc URL the same way is a later change.
+- **A doc as a handoff carrier.** A doc is edited in place, so it cannot pin the bytes a
+  record hashes. The files still travel on the branch or in the ticket (R5.3).
 - **Routing doc comments.** Claude already delivers a doc comment addressed to Claude to
   the session; the-loop adds no ingress for them.
 - **Sharing the doc.** It is created private, under the operator's account. Who may open or
@@ -233,6 +263,9 @@ because an editor can change the text the session reads back.
 - WHEN an editor changes a tab of the doc THEN the change SHALL reach the repository only
   as an edit the session chose to make to the file, committed and reviewed on the pull
   request like any other.
+- WHEN a handoff record's `spec-doc` names a non-claude.ai URL, or text crafted to read as
+  instructions, THEN the system SHALL NOT record it, and the prompt SHALL NOT name it
+  (R5.2, R5.4, R5.5).
 - WHEN a hand-edited `work-item-state.json` sets `claudeDoc` to a string or number, or sets
   both choices true, THEN the system SHALL read `claudeDoc` as `false`.
 

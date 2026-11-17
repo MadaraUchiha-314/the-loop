@@ -124,7 +124,9 @@ from a conversation at the stage it reached (issue-517).
 
   - Each carried file is pinned by a `sha256` of its LF bytes, and travels on the spec
     branch, inside the ticket comment (`<details>` blocks, overflow in part comments), or
-    in the spec-chain Claude artifact. Before any later phase runs, the `import-handoff`
+    in the spec-chain Claude artifact. A record may instead name a spec-chain Claude
+    **doc** (`spec-doc`, issue-536), which the session keeps rather than creating a new
+    one; a doc carries no files. Before any later phase runs, the `import-handoff`
     node writes the files into `docs/specs/<id>/` and checks each one. A file that is
     missing, tampered with or short of a required section **demotes** the walk to the
     phase that produces it. A carried artifact is never re-drafted.

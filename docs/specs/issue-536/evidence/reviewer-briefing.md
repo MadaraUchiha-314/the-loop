@@ -33,7 +33,9 @@ artifact (issue-517), which keeps the artifact ticked so its URL is reused.
    as one Claude doc. A doc is *editable*, so the rule is: read a tab before rewriting it,
    and fold any human edit into the file as feedback. Edits never sync back
    automatically.
-5. **Skim** — the prompt line (`graphlink.py`, a constant), archive/`graph` summary, the
+5. **Handoff doc import** — `cli/the_loop/core/handoff.py` (`spec-doc`, mutual exclusion)
+   and `graph/runtime.py` `start` (adoption allow-list).
+6. **Skim** — the prompt line (`graphlink.py`, a constant), archive/`graph` summary, the
    Slack non-phase token, regenerated checklist fixtures, docs.
 
 ## What changed (map)
@@ -67,13 +69,18 @@ flowchart LR
   files keep their bytes. `claudeArtifact` is still always written, unchanged.
 - **Quiz answers in their own tab.** A doc runs no script and cannot hide text, so the
   answers go in a separate last tab, not under the questions (self-review F1).
+- **Handoff doc import** (Requirement 5, your request on this PR). A handoff record may
+  name `spec-doc: <https URL>` instead of `spec-artifact`, never beside it. A doc is
+  edited in place, so it carries **no hash and no files**: the branch or ticket still
+  carries them. `Runtime.start` adopts only a claude.ai link as `claudeDocUrl`, and the
+  prompt's doc line names it after the same https re-check the artifact URL gets.
 - **Explainer fall-through** (critic C1). If `claudeDoc` is true but the session has no
   Docs connector, the explainer falls back to its own artifact or the committed HTML
   file instead of going unpublished.
 
 ## Evidence
 
-- `make check`: **6907 passed**; ruff, ruff format, pyright, config validation clean;
+- `make check`: **6914 passed**; ruff, ruff format, pyright, config validation clean;
   `make pre-commit` clean. See [verification.md](verification.md).
 - Requirement-by-requirement: [final-validation.md](final-validation.md).
 - Reviews: [self-review.md](self-review.md) (2 rounds, converged),
@@ -84,6 +91,5 @@ flowchart LR
 
 ## Open questions for the reviewer
 
-1. ~~Both ticked~~ — answered: use the default. Done.
-2. Importing a **doc** URL through a handoff (as `claudeArtifactUrl` does for artifacts)
-   is left out of scope. Should it be a follow-up issue?
+None open. Both earlier questions were answered on this PR: two ticks use the default,
+and the handoff doc import is in this PR (Requirement 5).

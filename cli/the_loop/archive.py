@@ -90,7 +90,7 @@ _URL = re.compile(r"https://[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]{1,255}")
 #: the record — its free-text ``source``, ``confirmation`` and the like — stays
 #: in the state file; the archive is a report, printed to a terminal.
 _HANDOFF_PLAIN = ("stage", "carriedBy", "branch", "author", "mirror")
-_HANDOFF_URLS = ("commentUrl", "specArtifact")
+_HANDOFF_URLS = ("commentUrl", "specArtifact", "specDoc")
 
 #: A recorded time: ISO-8601 shaped, or nothing — it is printed too.
 _TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T[0-9:.+Z-]{1,40}")
@@ -162,6 +162,8 @@ def _handoff_fields(state: Any, graph: Any) -> Dict[str, Any]:
         out["handoffDemoted"] = demoted
     if _url(getattr(state, "claude_artifact_url", "")):
         out["claudeArtifactUrl"] = _url(state.claude_artifact_url)
+    if _url(getattr(state, "claude_doc_url", "")):
+        out["claudeDocUrl"] = _url(state.claude_doc_url)
     return out
 
 

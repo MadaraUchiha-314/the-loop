@@ -157,7 +157,8 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   instructions. Only values the parser checked against a closed set appear there, plus
   the record's URL from API metadata, so no record text reaches the prompt. WHEN state
   records `claudeArtifactUrl` THEN the Claude artifact line SHALL name that `https://`
-  URL as the one to republish to.
+  URL as the one to republish to. WHEN state records `claudeDocUrl` (issue-536) THEN the
+  Claude doc line SHALL name that `https://` URL as the doc to keep.
 - **Every rendered prompt states where the session takes its answers from** (issue-134,
   `routing.interaction.mode`, [decision-051](../decisions/decision-051.md)).
   - WHEN a prompt is rendered — an event prompt or a spawn prompt, either

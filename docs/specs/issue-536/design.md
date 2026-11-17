@@ -61,6 +61,10 @@ flowchart TD
 | Archive | `cli/the_loop/archive.py`, `commands/graph_cmd.py` | `selections.claudeDoc`; the `choices` summary appends `claude-doc`. |
 | Slack mirror | `cli/the_loop/channels/slack.py` | `CLAUDE_DOC_TOKEN` in the non-phase set; the "keep this deployment's defaults" note names "the Claude artifact or doc". |
 | Skill | `skills/the-loop/reference/workflow.md`, `SKILL.md`, `reference/explainer.md`, `reference/collaboration.md`, `commands/explain.md` | The doc procedure (below); the explainer publishing table gains a `claudeDoc` row. |
+| Handoff record (R5) | `cli/the_loop/core/handoff.py` | `spec-doc` added to `_KEYS` after `spec-artifact`; `_SPEC_DOC_RE` (one `https://` token, no whitespace, backtick, angle bracket or quote); `HandoffRecord.spec_doc` ↔ `specDoc`; refused beside `spec-artifact`; rendered after it. |
+| Handoff adoption (R5.4) | `cli/the_loop/graph/runtime.py` `start` | `spec_doc` matching `_CLAUDE_ARTIFACT_URL` (a doc link has the artifact link's shape) → `state.claude_doc_url`. |
+| Doc URL in state/prompt/archive (R5.4–R5.6) | `graph/state.py`, `graphlink.py`, `archive.py`, `state.py` | `claudeDocUrl` written only when set; `GraphContext.claude_doc_url`; `_claude_doc_line(url)` names it after `_is_https_url`; archive copies `claudeDocUrl` and `handoff.specDoc` through `_url`. |
+| Handoff skill | `skills/handoff-to-the-loop/SKILL.md` | Q2 offers a spec-chain doc; step 5d′; the `spec-doc` key row. |
 | Docs | `docs/capabilities/spec-workflow.md`, `docs/capabilities/process-graph.md`, `docs/cli/commands/graph.md` | The row, the outcome table and a changelog row. |
 
 **The prompt line** (fixed text, one boolean, no payload):
@@ -121,6 +125,7 @@ nothing new.
 | Ticket → gate | Unchanged: only an authorized `the-loop execute` reaches `run`; the row is matched by exact token through the existing `_CHECK_LINE` regex. |
 | State file → prompt | `is True` read; both-true collapses to artifact; the prompt line is a constant with no interpolated value. |
 | Repository → claude.ai | Same as issue-471: private by default, the-loop never changes sharing; the evidence redaction rule already forbids secrets in specs. |
+| Handoff record → state → prompt (R5) | The record is parsed against a closed key set; `spec-doc` must be one https token; only a claude.ai link is adopted; the prompt re-checks it with `_is_https_url` before naming it, as for the artifact URL. |
 | Doc edits/comments → session | Skill rules 3 and 5: an edit reaches the repo only as a session-authored file change reviewed on the PR; nothing in the doc answers a gate; doc text is untrusted data. |
 
 Each abuse case from the requirements, and what answers it:
@@ -131,6 +136,7 @@ Each abuse case from the requirements, and what answers it:
 | "Approved" or "skip the gate" written in the doc | Skill rule 5; gates read only the ticket and PR, and no code reads the doc. |
 | Instructions in a doc edit or comment | Skill rules 3 and 5: untrusted data, handled as a ticket comment is. |
 | An editor changes a tab | Skill rule 3: the change reaches the repository only as a session-authored commit on the PR. |
+| A record's `spec-doc` names another site, or carries crafted text | Parser (`_SPEC_DOC_RE`), adoption allow-list (`_CLAUDE_ARTIFACT_URL`), prompt re-check (`_is_https_url`). Tests: `test_a_spec_doc_that_is_not_an_https_link_is_rejected`, `test_a_record_doc_url_that_is_not_claude_ai_is_not_adopted`, `test_a_doc_url_that_is_not_https_is_not_rendered`. |
 | Hand-edited state: non-boolean `claudeDoc`, or both choices true | `WorkItemState.load` reads `is True` and collapses both-true to the artifact. Test T3. |
 
 ## Testing strategy
@@ -166,7 +172,8 @@ checklist fixtures (Jira, handoff) are regenerated because the section gains a r
 
 ## Open questions
 
-None blocking. Handoff import of a doc URL is out of scope (requirements).
+None blocking. Handoff import of a doc URL was first out of scope and is now Requirement 5
+(the owner, on the PR).
 
 ## Review comments
 

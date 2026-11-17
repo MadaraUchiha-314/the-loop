@@ -1087,6 +1087,11 @@ class Runtime:
             url = str(getattr(handoff, "spec_artifact", "") or "")
             if _CLAUDE_ARTIFACT_URL.fullmatch(url):
                 state.claude_artifact_url = url
+            # issue-536: the same for a spec-chain doc. A Claude doc's link has
+            # the artifact link's shape, so the same allow-list applies.
+            doc = str(getattr(handoff, "spec_doc", "") or "")
+            if _CLAUDE_ARTIFACT_URL.fullmatch(doc):
+                state.claude_doc_url = doc
 
         # A guest loop — a contribution, a review — must not push the-loop's
         # spec tree into a repository it does not own (issue-185, PR #187

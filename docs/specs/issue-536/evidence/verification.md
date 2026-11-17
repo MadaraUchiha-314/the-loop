@@ -103,3 +103,27 @@ Summary: 0 error(s)                      # config validation
 0 errors, 0 warnings, 0 informations     # pyright
 6907 passed, 4 warnings in 233.47s       # full CLI suite
 ```
+
+## Re-verification: handoff doc import (PR #537)
+
+The owner asked for this in the PR
+([comment](https://github.com/MadaraUchiha-314/the-loop/pull/537#issuecomment-6940754632)).
+It is Requirement 5 and testing-plan row T13.
+
+- `test_handoff_record.py`: `test_a_record_naming_a_spec_doc_round_trips`,
+  `test_a_spec_doc_that_is_not_an_https_link_is_rejected`,
+  `test_a_spec_doc_beside_a_spec_artifact_is_rejected`.
+- `test_handoff_pickup.py`: `test_an_imported_spec_chain_doc_url_is_recorded_and_rendered`,
+  `test_a_record_doc_url_that_is_not_claude_ai_is_not_adopted`,
+  `test_a_doc_url_that_is_not_https_is_not_rendered`.
+- `test_handoff_selection.py`: `test_a_named_spec_doc_keeps_the_doc_row_ticked`.
+- `test_claude_doc.py`: the archive test now also asserts `claudeDocUrl` and
+  `handoff.specDoc`.
+
+```text
+$ env -u THE_LOOP_CLI_CONFIG -u THE_LOOP_INSTANCE -u THE_LOOP_WORK_ITEM make check
+All checks passed!                       # ruff
+Summary: 0 error(s)                      # markdownlint, config validation
+0 errors, 0 warnings, 0 informations     # pyright
+6914 passed, 3 warnings in 238.81s       # full CLI suite
+```

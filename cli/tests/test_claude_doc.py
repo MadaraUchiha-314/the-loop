@@ -361,13 +361,22 @@ def test_the_archive_records_and_summarises_the_doc(tmp_path):
     spec.mkdir(parents=True)
     (spec / "work-item-state.json").write_text(
         json.dumps(
-            {"workItem": "issue-3", "currentNode": "", "nodes": {}, "claudeDoc": True}
+            {
+                "workItem": "issue-3",
+                "currentNode": "",
+                "nodes": {},
+                "claudeDoc": True,
+                "claudeDocUrl": "https://claude.ai/artifact/doc1",
+                "handoff": {"version": 1, "specDoc": "https://claude.ai/artifact/doc1"},
+            }
         )
     )
     runtime = build_runtime(tmp_path, spec_root="docs/specs", origin_repo="octo/repo")
     record = archive.terminal_record(runtime, "issue-3")
     assert record is not None
     assert record["selections"]["claudeDoc"] is True
+    assert record["claudeDocUrl"] == "https://claude.ai/artifact/doc1"
+    assert record["handoff"]["specDoc"] == "https://claude.ai/artifact/doc1"
     lines = _archived_lines(
         {
             "workItem": "issue-3",

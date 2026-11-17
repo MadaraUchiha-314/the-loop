@@ -97,7 +97,7 @@ answer marked, and wait for the reply.
 | # | Question | Options (preselect one) |
 |---|---|---|
 | 1 | **How far did we get?** | *Still exploring* · *Brainstorm settled* · *Requirements settled* · *Design settled* |
-| 2 | **Where should it go?** (multi-select) | *GitHub issue*, always selected: new, or an existing issue to attach to · *Jira copy*, offered only when the-loop CLI is present · *Spec-chain artifact*, offered only where an artifact tool exists |
+| 2 | **Where should it go?** (multi-select) | *GitHub issue*, always selected: new, or an existing issue to attach to · *Jira copy*, offered only when the-loop CLI is present · *Spec-chain artifact*, offered only where an artifact tool exists · *Spec-chain doc*, offered only where the Claude Docs connector exists (pick at most one of the two) |
 | 3 | **Details** | `OWNER/REPO`, or the existing issue's number or URL; with Jira: project key, issue type (*Story* · *Bug* · *Task*), optional epic key |
 | 4 | **What next?** | *Run now* · *Continue in this session* (checkout only) · *Queue it* · *Just file it* |
 
@@ -131,7 +131,7 @@ Show one summary and wait for an explicit yes. It lists everything the next step
   label;
 - in a checkout: the files under `docs/specs/<id>/`, the branch `the-loop/<id>-<slug>`,
   and the draft PR title;
-- the spec-chain artifact, when chosen: its title and one tab per file;
+- the spec-chain artifact or doc, when chosen: its title and one tab per file;
 - the handoff record: stage, starting step, artifacts, carrier, and which earlier
   artifacts this confirmation approves (§ Approved in chat);
 - the next step, with the exact arming labels.
@@ -211,6 +211,15 @@ handoff can extract the bytes the record hashed:
   in the ticket, and say so in the record's `from` line, e.g.
   `Cursor · 2026-10-21 · no artifact tool`.
 
+### 5d′. The spec-chain doc (when chosen instead)
+
+Create **one** Claude doc with the Claude Docs connector, titled `<id>: <title>`, one tab
+per carried file in chain order. A doc is a reading and editing surface, **not a
+carrier**: carry the files on the branch or in the ticket as usual. The record's
+`spec-doc` line is the doc's URL alone — no hash, because the doc is edited in place.
+The-loop then keeps that doc (`claudeDocUrl`) instead of creating a second one, and its
+checklist leaves `claude-doc` ticked. Never name both a `spec-artifact` and a `spec-doc`.
+
 ### 5e. The handoff record
 
 Post it on the GitHub issue, last but for the arming (§ The handoff record).
@@ -243,7 +252,7 @@ The-loop CLI has no verb that labels an existing issue; add the labels through t
 connector or `gh issue edit OWNER/REPO#N --add-label "…"`. With neither, tell the
 developer the exact labels to add.
 
-Then report, in a few lines: the issue URL, the Jira copy, the PR, the artifact, the
+Then report, in a few lines: the issue URL, the Jira copy, the PR, the artifact or doc, the
 record, and what happens next. With *run now* or *queue it*, that is the phase-selection
 checklist on the ticket, where the earlier phases arrive unticked and the developer
 replies `the-loop execute`.
@@ -282,6 +291,7 @@ with `carried-by: ticket`, one `<details>` block per carried file.
 | `artifacts` | yes | `<name> sha256:<64 hex>` per file, comma-separated, chain order; empty for an exploring handoff with no file |
 | `carried-by` | yes | `branch the-loop/<id>-<slug> · PR #<n>`, `ticket`, or `artifact` |
 | `spec-artifact` | with an artifact | `<https URL> sha256:<64 hex>` |
+| `spec-doc` | with a doc | `<https URL>` — never beside `spec-artifact` |
 | `from` | no | `<surface> · <YYYY-MM-DD>` |
 | `approved-in-chat` | no | earlier carried names, comma-separated |
 | `mirror` | with a Jira copy | `jira:<site>/<KEY-N>` |
@@ -316,7 +326,8 @@ When nothing on the surface can compute a hash, post no record and say so.
 ```
 
 For a branch carrier, set `"carriedBy": "branch", "branch": "the-loop/issue-42-csv",
-"pullRequest": 43`. For an artifact, add `"specArtifact"` and `"specArtifactSha256"`.
+"pullRequest": 43`. For an artifact, add `"specArtifact"` and `"specArtifactSha256"`;
+for a doc, add `"specDoc"` instead.
 For a Jira copy, add `"mirror": "jira:acme/PROJ-123"`.
 
 **The same record written by hand.** Keep every byte of the layout: the marker alone on

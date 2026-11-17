@@ -131,10 +131,11 @@ from the artifacts alone.
 | `handoff` | human decision | the handoff record the item arrived with — the parsed record plus `author`, `commentUrl` and `recordedAt`, read once at the walk's start, and `lockedSha256` (`{artifact: sha256}`, the bytes each approved-in-chat lock wrote, so a re-run recognises its own lock by content); a `requiresHandoff` node is skipped `via: no-handoff` without it ([issue-517](https://github.com/MadaraUchiha-314/the-loop/issues/517)) |
 | `handoffDemoted` | pointer | each carried artifact the `import-handoff` check refused, as `{node, artifact, reason}` ([issue-517](https://github.com/MadaraUchiha-314/the-loop/issues/517)) |
 | `claudeArtifactUrl` | pointer | the published spec-chain Claude artifact's URL ([issue-517](https://github.com/MadaraUchiha-314/the-loop/issues/517)) |
+| `claudeDocUrl` | pointer | the spec-chain Claude doc's URL a handoff imported ([issue-536](https://github.com/MadaraUchiha-314/the-loop/issues/536)) |
 | `repos` | human decision | the repositories it contributes to |
 | `pullRequests` | repository entity | each pull request delivering it |
 
-`handoff`, `handoffDemoted`, `claudeArtifactUrl` and `claudeDoc` are written only when set, so a
+`handoff`, `handoffDemoted`, `claudeArtifactUrl`, `claudeDoc` and `claudeDocUrl` are written only when set, so a
 work item that never had a handoff or a doc saves byte-identical to a file from before they existed.
 Each is a filtered copy in the terminal record (`archive.py`): `handoff` keeps only its
 scalar fields and links, `handoffDemoted` only the node and artifact names.

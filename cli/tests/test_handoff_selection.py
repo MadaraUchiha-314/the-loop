@@ -230,6 +230,18 @@ def test_a_named_spec_artifact_ticks_the_claude_artifact_row_instead_of_the_doc(
     assert f"- [ ] `{selection.CLAUDE_DOC_TOKEN}`" in body
 
 
+def test_a_named_spec_doc_keeps_the_doc_row_ticked():
+    """issue-536: a handoff that published a spec-chain doc keeps the doc."""
+    files, _ = ROWS["requirements-settled"]
+    record = _record("requirements-settled", files)
+    from dataclasses import replace
+
+    record = replace(record, spec_doc="https://claude.ai/artifact/doc1")
+    body = selection._checklist_body(_ctx(record))
+    assert f"- [ ] `{selection.CLAUDE_ARTIFACT_TOKEN}`" in body
+    assert f"- [x] `{selection.CLAUDE_DOC_TOKEN}`" in body
+
+
 def test_a_handoff_with_no_spec_artifact_keeps_the_doc_default():
     files, _ = ROWS["requirements-settled"]
     body = selection._checklist_body(_ctx(_record("requirements-settled", files)))

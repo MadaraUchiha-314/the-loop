@@ -450,6 +450,9 @@ class WorkItemState:
     handoff_demoted: List[Dict[str, Any]] = field(default_factory=list)
     #: The published spec-chain Claude artifact's URL (issue-517, R7.4).
     claude_artifact_url: str = ""
+    #: The spec-chain Claude doc the handoff imported (issue-536) — the doc the
+    #: session keeps in step rather than creating a second one.
+    claude_doc_url: str = ""
     #: The pull requests delivering this work item (issue-368, R2.1) — the
     #: repository's own objects, so they are recorded on the work item's branch
     #: rather than only in a machine-local session record that never travels.
@@ -540,6 +543,7 @@ class WorkItemState:
             handoff=_mapping(data.get("handoff")),
             handoff_demoted=_mapping_list(data.get("handoffDemoted")),
             claude_artifact_url=_string(data.get("claudeArtifactUrl")),
+            claude_doc_url=_string(data.get("claudeDocUrl")),
             pull_requests=_pull_requests(
                 data.get("pullRequests"),
                 repository_of(str(data.get("workItem", work_item))),
@@ -597,6 +601,8 @@ class WorkItemState:
         # saved before the doc existed stays byte-identical.
         if self.claude_doc:
             out["claudeDoc"] = True
+        if self.claude_doc_url:
+            out["claudeDocUrl"] = self.claude_doc_url
         return out
 
     # -- pull requests (issue-368) --------------------------------------------

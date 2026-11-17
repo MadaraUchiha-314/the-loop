@@ -614,6 +614,11 @@ walk lands on `requirements-approval`, the first gate that still asks.
   `spec-artifact` that is a `https://claude.ai/artifact/…` link THEN `Runtime.start`
   SHALL record it as `claudeArtifactUrl`, so the session republishes the spec chain to
   that URL. Whether to publish at all is still the phase-selection choice.
+- **The developer's doc is kept, not duplicated** (issue-536). WHEN the record names a
+  `spec-doc` that is a claude.ai link THEN `Runtime.start` SHALL record it as
+  `claudeDocUrl`, and the Claude doc line SHALL name it as the doc to keep. A record
+  SHALL NOT name both `spec-artifact` and `spec-doc`. A `spec-doc` carries no files and
+  no hash (a doc is edited in place), so the carrier is still the branch or the ticket.
 
 ### What a node `produces`
 

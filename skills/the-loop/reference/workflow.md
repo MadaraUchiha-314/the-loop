@@ -363,13 +363,16 @@ are living documents with tabs, edited and commented on together. The section th
 
 `claude-doc` is rendered ticked and `claude-artifact` unticked, except when the handoff
 record names a spec-chain artifact (issue-517): then the artifact is ticked, so the
-session republishes to it. The harness rule is the artifact's. `claudeDoc` is written only
+session republishes to it. A handoff record may instead name a spec-chain doc
+(`spec-doc`): it is recorded as `claudeDocUrl`, the prompt names it, and the session keeps
+that doc rather than creating one (rule 1). The harness rule is the artifact's. `claudeDoc` is written only
 when `true` and never beside `claudeArtifact: true`.
 
 **When `claudeDoc` is true, the session does this:**
 
 1. **One doc per work item**, titled `<id>: <work item title>`, created with the Claude
-   Docs connector after the first spec file is written. One tab per spec file present, in
+   Docs connector after the first spec file is written — or, when the prompt names a doc
+   the work item was handed off with, that doc: keep it, never create a second. One tab per spec file present, in
    chain order; add a tab when the next file appears. Never a second doc.
 2. **The explainer and quizzes are tabs too** — see `explainer.md` § Publishing.
 3. **Read before rewrite.** Before rewriting a tab from its file, read the tab. Anything

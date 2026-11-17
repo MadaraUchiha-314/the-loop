@@ -28,6 +28,7 @@ overrides: {}
 | T5 | Unit (prompt) | yes | the graph block carries the doc line for an outer-loop item with `claude_doc`, and not for a PR, contribution, ad-hoc, review item or `false` | same |
 | T6 | Unit (archive) | yes | `selections.claudeDoc` is written; the `choices` summary lists `claude-doc` | same |
 | T7 | Unit (Slack mirror) | yes | `selection_rows` puts `claude-doc` in `others`; the pin test asserts the hook's and Slack's constants agree | `cli/tests/test_selection_control.py` |
+| T13 | Unit (handoff doc, R5) | yes | `spec-doc` round-trips, is refused when malformed or beside `spec-artifact`; `Runtime.start` adopts only a claude.ai link as `claudeDocUrl`; the prompt names it, and never a non-https value; the checklist keeps the doc ticked; the archive carries it | `test_handoff_record.py`, `test_handoff_pickup.py`, `test_handoff_selection.py`, `test_claude_doc.py` |
 | T8 | Regression (full suite + hooks) | yes | ruff, ruff format, pyright, config validation, the whole CLI suite including regenerated checklist fixtures, markdownlint via pre-commit | `make check`, `make pre-commit` |
 | T9 | Security / abuse case | yes | the abuse cases in `design.md` § Security design: unauthorized tick (T2), state coercion (T3); the skill-text cases by review | T2, T3 + `evidence/security-review.md` |
 | T10 | Integration (Gherkin) | n/a — no new ingress or seam; the gate's existing integration tests run unchanged in T8 | | |
@@ -46,6 +47,7 @@ overrides: {}
 | T6 | R3.4 | archive |
 | T7 | R1.6 | Slack rows |
 | T8 | R3.5, R4.8 | docs and fixtures present; suite green |
+| T13 | R5.1–R5.6 | handoff doc import |
 | review | R4.3–R4.7 | skill text, in `evidence/self-review.md` |
 
 ## Verification environment
@@ -70,6 +72,7 @@ overrides: {}
 - [x] T1–T6 — `cd cli && uv run python -m pytest -q tests/test_claude_doc.py tests/test_handoff_selection.py tests/test_selection_defaults.py tests/test_handoff_state.py`
 - [x] T7 — `cd cli && uv run python -m pytest -q tests/test_selection_control.py`
 - [x] T8 — `make check` and `make pre-commit`
+- [x] T13 — `cd cli && uv run python -m pytest -q tests/test_handoff_record.py tests/test_handoff_pickup.py tests/test_handoff_selection.py tests/test_claude_doc.py`
 - [x] T9 — the abuse-case tests inside the T1–T6 run. Replanned from "security review
   recorded": that record belongs to the later `security-review` node, so verification
   runs the negative tests and the review records its own verdict.
@@ -84,6 +87,7 @@ the evidence for why).
 | T1–T6 | targeted pytest, listed above | 62 passed (red first: `GraphContext` had no `claude_doc`) | [verification.md](evidence/verification.md) |
 | T7 | `pytest tests/test_selection_control.py` | 43 passed | [verification.md](evidence/verification.md) |
 | T8 | `make check`, `make pre-commit` | 6902 passed; ruff, pyright, validation and hooks clean | [verification.md](evidence/verification.md) |
+| T13 | handoff doc import tests (re-verification) | pass | [verification.md](evidence/verification.md#re-verification-handoff-doc-import-pr-537) |
 | T9 | abuse-case tests | pass | [verification.md](evidence/verification.md#t9-abuse-cases) |
 
 ## Review comments

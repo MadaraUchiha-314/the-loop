@@ -730,6 +730,13 @@ ATTRIBUTES: Tuple[Attribute, ...] = (
     ),
     Attribute(
         REPOSITORY_FILE,
+        "claudeDocUrl",
+        "pointer",
+        "the spec-chain Claude doc's URL a handoff imported (issue-536) — written "
+        "only when there is one",
+    ),
+    Attribute(
+        REPOSITORY_FILE,
         "repos",
         "human-decision",
         "the repositories it contributes to (issue-183, issue-365)",

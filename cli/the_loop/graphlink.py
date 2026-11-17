@@ -382,6 +382,9 @@ class GraphContext:
     #: The spec-chain Claude artifact the handoff imported (issue-517, R7.4):
     #: the URL the session republishes to rather than publishing a new one.
     claude_artifact_url: str = ""
+    #: The spec-chain Claude doc the handoff imported (issue-536): the doc the
+    #: session keeps in step rather than creating a second one.
+    claude_doc_url: str = ""
 
     @property
     def at_human_gate(self) -> bool:
@@ -464,6 +467,18 @@ def _claude_artifact_line(url: str) -> str:
         "republished to the same URL whenever a file changes",
         f"republished to {url} — the artifact this work item was handed off "
         "with: republish there, never publish a new one — whenever a file changes",
+    )
+
+
+def _claude_doc_line(url: str) -> str:
+    """The Claude doc line, naming ``url`` when the handoff imported one
+    (issue-536) — under the same check as :func:`_claude_artifact_line`."""
+    if not _is_https_url(url):
+        return CLAUDE_DOC_LINE
+    return CLAUDE_DOC_LINE.replace(
+        "linked once from the work item",
+        f"kept at {url} — the doc this work item was handed off with: keep that "
+        "one, never create a new one — and linked once from the work item",
     )
 
 
@@ -645,7 +660,7 @@ def render_graph_context(
             lines.append(_claude_artifact_line(ctx.claude_artifact_url))
         elif ctx.claude_doc:
             # The same rule for the doc (issue-536): fixed text, one boolean.
-            lines.append(CLAUDE_DOC_LINE)
+            lines.append(_claude_doc_line(ctx.claude_doc_url))
     lines.append(
         "  when this node's work is done, run: "
         f"`the-loop graph complete {item_id}{claim_suffix}`"
@@ -1410,6 +1425,7 @@ class GraphLink:
             claude_doc=getattr(state, "claude_doc", False) is True,
             handoff=dict(getattr(state, "handoff", None) or {}),
             claude_artifact_url=str(getattr(state, "claude_artifact_url", "") or ""),
+            claude_doc_url=str(getattr(state, "claude_doc_url", "") or ""),
         )
 
     @staticmethod
@@ -1465,6 +1481,7 @@ class GraphLink:
             claude_doc=getattr(state, "claude_doc", False) is True,
             handoff=dict(getattr(state, "handoff", None) or {}),
             claude_artifact_url=str(getattr(state, "claude_artifact_url", "") or ""),
+            claude_doc_url=str(getattr(state, "claude_doc_url", "") or ""),
         )
 
     @staticmethod

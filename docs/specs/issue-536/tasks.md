@@ -54,6 +54,13 @@ overrides: {}
   - _Requirements:_ R3.5, R4.8
   - _Test:_ T8 (markdownlint)
 
+- [x] 9. **Handoff doc import** (Requirement 5, added on the PR). `spec-doc` in the
+      record, `claudeDocUrl` adopted at start, named in the prompt, archived; the handoff
+      skill and the CLI/capability docs.
+  - _Depends on:_ 4
+  - _Requirements:_ R5
+  - _Test:_ T13 — the non-claude.ai and non-https cases are the negative tests
+
 ## Dependency graph (DAG)
 
 ```mermaid
@@ -61,6 +68,7 @@ flowchart LR
     1 --> 2 --> 3 --> 4 --> 7 --> 8
     2 --> 5
     2 --> 6
+    4 --> 9
 ```
 
 ## Checkpoints

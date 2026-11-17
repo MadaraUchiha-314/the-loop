@@ -33,5 +33,8 @@ workItem: "github:MadaraUchiha-314/the-loop#536"
 | R4.1–R4.2 prompt line | `test_the_outer_loop_prompt_tells_the_session_to_publish_a_doc`, `test_no_other_prompt_carries_the_doc_line`, `test_the_prompt_reads_the_frozen_state` | T5 |
 | R4.3–R4.7 skill procedure | review of the skill text | [self-review.md](self-review.md), [critic-review.md](critic-review.md) |
 | R4.8 capability docs | the docs listed in [documentation.md](documentation.md) | — |
+| R5.1–R5.3 `spec-doc` in the record | `test_a_record_naming_a_spec_doc_round_trips`, `test_a_spec_doc_that_is_not_an_https_link_is_rejected`, `test_a_spec_doc_beside_a_spec_artifact_is_rejected` | T13 |
+| R5.4–R5.5 adopted and named | `test_an_imported_spec_chain_doc_url_is_recorded_and_rendered`, `test_a_record_doc_url_that_is_not_claude_ai_is_not_adopted`, `test_a_doc_url_that_is_not_https_is_not_rendered`, `test_a_named_spec_doc_keeps_the_doc_row_ticked` | T13 |
+| R5.6 archive, skill, docs | the archive test; [documentation.md](documentation.md) | T13 |
 | Abuse cases | negative tests, plus the checklist review | [security-review.md](security-review.md) |
-| Regression | `make check`: 6907 passed after the both-ticked change; ruff, pyright, validation and pre-commit clean | T8 |
+| Regression | `make check`: 6914 passed after the handoff doc import; ruff, pyright, validation and pre-commit clean | T8 |

@@ -10,12 +10,15 @@ workItem: "github:MadaraUchiha-314/the-loop#536"
 | Capability doc | What changed | History row |
 |----------------|--------------|-------------|
 | `docs/capabilities/spec-workflow.md` | The `claude-doc` requirement (default, conflict, read-before-rewrite, handoff exception); the explainer page can be a tab of the spec-chain doc | issue-536 |
-| `docs/capabilities/process-graph.md` | The `claude-doc` row's resolution, the swap after a handoff, and the `claudeDoc` freeze (written only when true) | issue-536 |
+| `docs/capabilities/webhook-triggers.md` | The prompt names an imported `claudeDocUrl` | — |
+| `docs/capabilities/process-graph.md` | A handoff's `spec-doc` adopted as `claudeDocUrl`; the `claude-doc` row's resolution, the swap after a handoff, and the `claudeDoc` freeze (written only when true) | issue-536 |
 
 ## Documentation
 
 | Document | What changed |
 |----------|--------------|
+| `docs/cli/commands/handoff.md` | The `spec-doc` key |
+| `skills/handoff-to-the-loop/SKILL.md` | Q2 offers a spec-chain doc; step 5d′; the `spec-doc` key row and JSON shape |
 | `docs/cli/commands/graph.md` | The checklist example and a `claude-doc` paragraph |
 | `docs/cli/state.md` | The `claudeDoc` row; the "written only when set" sentence |
 | `skills/the-loop/SKILL.md` | The doc bullet |
