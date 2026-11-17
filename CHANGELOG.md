@@ -1,3 +1,9 @@
+## v20.12.0 (2026-11-17)
+
+### Feat
+
+- **issue-533**: opt-in session credentials, never on argv (#535)
+
 ## v20.11.1 (2026-11-17)
 
 ### Fix
