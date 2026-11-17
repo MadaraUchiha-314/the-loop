@@ -84,15 +84,16 @@ overrides: {}
 
 ## Verification activities
 
-- [ ] T1/T8 — `cd cli && uv run python -m pytest -q tests/test_envstate.py tests/test_tmux_runner.py tests/test_sessioncreds.py tests/test_session_environment.py tests/test_api_session_credentials.py`
-- [ ] T2 — `cd cli && uv run python -m pytest -q -rs tests/test_session_credentials_integration.py tests/test_session_secrets_integration.py` (no skips)
-- [ ] T10 — `make test` and `make validate`
-- [ ] T12 — `make lint format-check typecheck`
+- [x] T1/T8 — `cd cli && uv run python -m pytest -q tests/test_envstate.py tests/test_tmux_runner.py tests/test_sessioncreds.py tests/test_session_environment.py tests/test_api_session_credentials.py`
+- [x] T2 — `cd cli && uv run python -m pytest -q -rs tests/test_session_credentials_integration.py tests/test_session_secrets_integration.py` (no skips)
+- [x] T10 — `make test` and `make validate`
+- [x] T12 — `make lint format-check typecheck`
 
 ## Verification results
 
-*Not yet executed.*
-
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1/T8 | targeted unit tests (five files) | pass — 235 passed | [`evidence/verification.md` § Unit](evidence/verification.md#unit-t1-t8) |
+| T2 | real-tmux integration, `-rs` (no skips) | pass — 4 passed, 0 skipped | [`evidence/verification.md` § Integration](evidence/verification.md#integration-t2) |
+| T10 | full suite (CI environment) + `make validate` | pass — 6867 passed; every config VALID | [`evidence/verification.md` § Regression](evidence/verification.md#regression-t10) |
+| T12 | `make lint format-check typecheck` | pass — ruff, markdownlint, format, pyright clean | [`evidence/verification.md` § Static checks](evidence/verification.md#static-checks-t12) |

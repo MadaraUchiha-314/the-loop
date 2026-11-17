@@ -290,6 +290,21 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
         ),
     ),
     GeneratedPath(
+        name="session credential delivery files",
+        attr="session_credentials_dir",
+        default="<root>/local/session-credentials/",
+        portable=False,
+        holds=(
+            "one mode-0600 file per spawn that hands a session a credential from "
+            "env.sessionCredentials, deleted by the pane before the harness starts "
+            "and swept after ten minutes (issue-533)"
+        ),
+        why=(
+            "a secret, written for one pane on THIS machine and gone within "
+            "milliseconds. It means nothing elsewhere, and a copy is a leaked token."
+        ),
+    ),
+    GeneratedPath(
         name="model availability verdicts",
         attr="verdict_cache",
         default="<root>/local/model-verdicts.json",

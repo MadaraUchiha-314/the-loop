@@ -271,10 +271,10 @@ env:
   why only non-secret names belong here. A credential a session needs goes in
   [`env.sessionCredentials`](/config/cli/#env-sessioncredentials) instead.
 
-### `env.sessionCredentials`
+### Session credentials {#env-sessioncredentials}
 
-- **Type:** list of `{name, from?, repositories?}`
-- **Default:** `[]` (a session holds no credential)
+`env.sessionCredentials` is a list of `{name, from?, repositories?}`. The default is `[]`:
+a session holds no credential.
 
 The credentials a spawned agent session **may** hold, by name
 ([issue-533](https://github.com/MadaraUchiha-314/the-loop/issues/533)). Use it when an
@@ -325,6 +325,29 @@ split). Masking reduces the risk; it does not remove it. Use a dedicated,
 least-privilege, short-lived token. `env.sessionPassthrough` still refuses credential
 names: this list is the only way a credential reaches a session.
 :::
+
+### `env.sessionCredentials[].name`
+
+- **Type:** `string` (a variable name)
+- **Default:** none — required
+
+The variable the session sees.
+
+### `env.sessionCredentials[].from`
+
+- **Type:** `string` (a variable name)
+- **Default:** the entry's `name`
+
+The daemon-side variable the value is read from, per spawn: from `env.file` when the file
+declares it, else the daemon's environment. It never reaches a session under its own name.
+
+### `env.sessionCredentials[].repositories`
+
+- **Type:** `string[]` (`[HOST/]OWNER/REPO`)
+- **Default:** unset — every session
+
+Only sessions for GitHub work items in these repositories get the credential. A Jira work
+item or a standing session never does.
 
 ## A minimal working config
 
