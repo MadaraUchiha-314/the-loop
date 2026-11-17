@@ -136,10 +136,12 @@ result = self._run(argv, timeout, remove=env.remove + tuple(env.inherit))
 - **The loader.** `_harness_command` prefixes, when `cred_path` is set:
 
   ```
-  sh -c 'f=$1; shift; set -a; [ -r "$f" ] && . "$f"; set +a; rm -f -- "$f"; exec "$@"' sh <path>
+  sh -c 'set -a; [ -r "$1" ] && . "$1"; set +a; rm -f -- "$1"; shift; exec "$@"' sh <path>
   ```
 
-  then the unchanged `env -u <remove…> <binary> <argv…>`. The script is a constant;
+  then the unchanged `env -u <remove…> <binary> <argv…>`. The path stays in `$1`, which
+  an assignment in the sourced file cannot change (critic CR1-1: an earlier `f=$1` let a
+  credential named `f` redirect the `rm`). The script is a constant;
   the path is the only variable on argv (R3.1, R3.2). `.` runs in the shell itself,
   so the values become exported variables of the process that `exec`s `env`, which
   then `exec`s the harness — the pane's pid becomes the harness's, as today. The file
