@@ -176,6 +176,8 @@ def test_every_key_the_code_looks_up_exists_with_matching_placeholders():
 def test_every_catalog_entry_is_used():
     keys, prefixes = _lookups()
     for key in strings.catalog("en"):
+        if key.startswith("ui."):
+            continue  # the UI's own test (ui/src/i18n.test.ts) owns ui.* keys
         assert key in keys or any(key.startswith(p + ".") for p in prefixes), (
             f"{key} is in en.json but nothing looks it up"
         )
