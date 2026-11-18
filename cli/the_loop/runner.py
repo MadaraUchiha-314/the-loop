@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
+import uuid
 import re
 import secrets
 import shutil
@@ -1220,6 +1221,15 @@ class TmuxRunner:
         # Written inside the `try` so the first file is cleaned up even if the
         # second one cannot be created.
         paths: List[str] = []
+        # One set of buffer names per delivery (issue-538, critic C1). tmux paste
+        # buffers are server-global, so with fixed names two deliveries in
+        # flight at once — two work items' workers, or a notice beside an event
+        # — could each load before either pasted, and one conversation would
+        # receive the other's text. A suffix the caller never supplies.
+        tag = uuid.uuid4().hex[:12]
+        clear_buf = f"{_CLEAR_BUFFER}-{tag}"
+        event_buf = f"{_EVENT_BUFFER}-{tag}"
+        submit_buf = f"{_SUBMIT_BUFFER}-{tag}"
         try:
             paths.append(self._buffer_file(_CLEAR_BYTES))
             paths.append(self._buffer_file(prompt))
@@ -1228,12 +1238,12 @@ class TmuxRunner:
                 # Clear any leftover line first (issue O7) — unbracketed, so the
                 # control bytes act rather than paste as text — THEN the event
                 # (bracketed, one message) and the submit.
-                ["load-buffer", "-b", _CLEAR_BUFFER, paths[0]],
-                ["paste-buffer", "-d", "-b", _CLEAR_BUFFER, "-t", target],
-                ["load-buffer", "-b", _EVENT_BUFFER, paths[1]],
-                ["paste-buffer", "-p", "-d", "-b", _EVENT_BUFFER, "-t", target],
-                ["load-buffer", "-b", _SUBMIT_BUFFER, paths[2]],
-                ["paste-buffer", "-d", "-b", _SUBMIT_BUFFER, "-t", target],
+                ["load-buffer", "-b", clear_buf, paths[0]],
+                ["paste-buffer", "-d", "-b", clear_buf, "-t", target],
+                ["load-buffer", "-b", event_buf, paths[1]],
+                ["paste-buffer", "-p", "-d", "-b", event_buf, "-t", target],
+                ["load-buffer", "-b", submit_buf, paths[2]],
+                ["paste-buffer", "-d", "-b", submit_buf, "-t", target],
             ):
                 result = self._run(argv, timeout)
                 if not result.ok:
