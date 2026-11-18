@@ -271,5 +271,209 @@ def test_an_unlinked_pull_request_closing_tells_nobody(
     assert "graph.outer_reevaluated" not in [e for e, _ in events]
 
 
-# re-exported so pytest collects the fixture's dependents from this module too
-_ = (CROSS_PR_REF, TmuxConfig, pr_comment_payload)
+# -- the spawn path (T3) ---------------------------------------------------------
+
+CROSS_TARGET = "loop-github-octo-other-16"
+
+
+class SplitTmux(FakeTmux):
+    """A FakeTmux whose pull request's own tmux session can be missing, or whose
+    spawns fail, while the work item's own session stays healthy."""
+
+    def __init__(self, missing=(), spawn_ok=True):
+        super().__init__()
+        self.missing = set(missing)
+        self.spawn_ok = spawn_ok
+
+    def deliver(self, session, prompt, timeout=None):
+        from the_loop.runner import TmuxResult
+
+        if session.tmux_target in self.missing:
+            return TmuxResult(ok=False, session_missing=True, error="gone")
+        return super().deliver(session, prompt, timeout=timeout)
+
+    def spawn(self, work_item, adapter, prompt, cwd, session_id, **kwargs):
+        from the_loop.runner import TmuxResult
+
+        result = super().spawn(work_item, adapter, prompt, cwd, session_id, **kwargs)
+        return result if self.spawn_ok else TmuxResult(ok=False, error="no tmux")
+
+
+def cross_repo_daemon(server_factory, tmp_path, tmux=None, workspace=True):
+    port, registry, tmux = server_factory(
+        tmux=tmux, tmux_config=TmuxConfig(session_per_pr="cross-repository")
+    )
+    register(registry, tmp_path)
+    assert registry.link_pull_request(REF, CROSS_PR_REF) is not None
+    if workspace:
+        from the_loop.workspace import Workspace
+
+        dispatcher = server_factory.dispatcher
+        checkout = tmp_path / "pr-checkout"
+        checkout.mkdir()
+        dispatcher.workspace = Workspace(tmp_path / "ws")
+        dispatcher._prepare_workspace = (  # type: ignore[assignment]
+            lambda *a, **k: str(checkout)
+        )
+    return port, registry, tmux
+
+
+def comment_on_cross_pr(port, delivery):
+    payload = pr_comment_payload(
+        "please rebase", pr_body="Closes octo/repo#15", repo="octo/other"
+    )
+    return post_webhook(port, "issue_comment", payload, delivery)
+
+
+def test_a_spawned_pull_request_session_is_reported(server_factory, tmp_path, events):
+    """
+    Feature: pull-request session notices
+      Scenario: a cross-repository pull request gets a session of its own
+        Given issue 15's live session and a workspace that can check out octo/other
+        When the first comment arrives on octo/other#16
+        Then a session is spawned for the pull request
+        And issue 15's session receives one `spawned` notice naming its tmux target
+
+    Requirement: docs/specs/issue-538/requirements.md R1.1, R1.9
+    """
+    port, registry, tmux = cross_repo_daemon(server_factory, tmp_path)
+
+    assert comment_on_cross_pr(port, "sp-1") == 202
+    assert wait_until(lambda: tmux.spawns and notices(events))
+
+    ((ref, _, _, _),) = tmux.spawns
+    assert ref == CROSS_PR_REF
+    ((ref, text),) = tmux.delivers
+    assert ref == REF and "Transition: spawned" in text and CROSS_TARGET in text
+    ((event, fields),) = notices(events)
+    assert event == "session.pr_notice_delivered" and fields["via"] == "paste"
+
+
+def test_a_declined_pull_request_session_rides_with_the_event(
+    server_factory, tmp_path, events
+):
+    """
+    Feature: pull-request session notices
+      Scenario: no checkout, so the work item's session takes the pull request's event
+        Given issue 15's live session and no routing.workspace.root
+        When a comment arrives on octo/other#16
+        Then issue 15's session receives ONE paste
+        And it opens with a `declined` notice naming the reason, then the event
+
+    Requirement: docs/specs/issue-538/requirements.md R1.2, R1.4, R1.9
+    """
+    port, registry, tmux = cross_repo_daemon(server_factory, tmp_path, workspace=False)
+
+    assert comment_on_cross_pr(port, "dc-1") == 202
+    assert wait_until(lambda: tmux.delivers and notices(events))
+
+    ((ref, text),) = tmux.delivers
+    assert ref == REF and tmux.spawns == []
+    assert text.index("Transition: declined") < text.index("please rebase")
+    assert "no routing.workspace.root" in text
+    ((event, fields),) = notices(events)
+    assert event == "session.pr_notice_delivered" and fields["via"] == "with-event"
+
+
+def test_a_failed_spawn_rides_with_the_event(server_factory, tmp_path, events):
+    """
+    Feature: pull-request session notices
+      Scenario: spawning the pull request's session fails
+        Given issue 15's live session and a workspace for octo/other
+        And tmux refuses to start the pull request's session
+        When a comment arrives on octo/other#16
+        Then issue 15's session receives one paste: a `spawn-failed` notice, then
+             the event
+
+    Requirement: docs/specs/issue-538/requirements.md R1.3, R1.4
+    """
+    port, registry, tmux = cross_repo_daemon(
+        server_factory, tmp_path, tmux=SplitTmux(spawn_ok=False)
+    )
+
+    assert comment_on_cross_pr(port, "sf-1") == 202
+    assert wait_until(lambda: tmux.delivers and notices(events))
+
+    ((ref, text),) = tmux.delivers
+    assert ref == REF
+    assert text.index("Transition: spawn-failed") < text.index("please rebase")
+
+
+# -- the respawn path (T7) -------------------------------------------------------
+
+
+def worked_cross_pr(registry, tmp_path):
+    checkout = tmp_path / "pr-checkout"
+    checkout.mkdir(exist_ok=True)
+    record = registry.find_by_work_item(REF)
+    endpoint = record.endpoint_for(CROSS_PR_REF)
+    endpoint.tmux_target = CROSS_TARGET
+    endpoint.harness_session_id = "pr-sess"
+    endpoint.cwd = str(checkout)
+    registry.save_endpoint(REF, endpoint)
+
+
+def test_a_respawned_pull_request_session_is_reported(
+    server_factory, tmp_path, events
+):
+    """
+    Feature: pull-request session notices
+      Scenario: the pull request's session died and is respawned
+        Given issue 15's live session and octo/other#16's session found dead
+        When a comment arrives on octo/other#16
+        Then the pull request's session is respawned
+        And issue 15's session receives one `respawned` notice
+
+    Requirement: docs/specs/issue-538/requirements.md R1.8
+    """
+    tmux = SplitTmux(missing={CROSS_TARGET})
+    port, registry, tmux = cross_repo_daemon(server_factory, tmp_path, tmux=tmux)
+    worked_cross_pr(registry, tmp_path)
+
+    assert comment_on_cross_pr(port, "rs-1") == 202
+    assert wait_until(lambda: tmux.spawns and notices(events))
+    ((ref, text),) = [(r, t) for r, t in tmux.delivers if r == REF]
+    assert "Transition: respawned" in text
+
+
+def test_a_failed_respawn_is_reported(server_factory, tmp_path, events):
+    """
+    Feature: pull-request session notices
+      Scenario: the pull request's dead session cannot be respawned
+        Given issue 15's live session and octo/other#16's session found dead
+        And tmux refuses to start a new one
+        When a comment arrives on octo/other#16
+        Then issue 15's session receives one `respawn-failed` notice
+
+    Requirement: docs/specs/issue-538/requirements.md R1.8
+    """
+    tmux = SplitTmux(missing={CROSS_TARGET}, spawn_ok=False)
+    port, registry, tmux = cross_repo_daemon(server_factory, tmp_path, tmux=tmux)
+    worked_cross_pr(registry, tmp_path)
+
+    assert comment_on_cross_pr(port, "rf-1") == 202
+    assert wait_until(lambda: notices(events))
+    texts = [t for r, t in tmux.delivers if r == REF]
+    assert len(texts) == 1 and "Transition: respawn-failed" in texts[0]
+
+
+def test_the_work_items_own_respawn_sends_no_notice(server_factory, tmp_path, events):
+    """
+    Feature: pull-request session notices
+      Scenario: the work item's own session is respawned
+        Given issue 15's session found dead
+        When a comment arrives on issue 15
+        Then it is respawned and no pull-request notice is sent
+
+    Requirement: docs/specs/issue-538/requirements.md R1.8
+    """
+    from test_webhook_routing_integration import issue_comment_payload
+
+    tmux = SplitTmux(missing={"loop-github-octo-repo-15"})
+    port, registry, tmux = server_factory(tmux=tmux)
+    register(registry, tmp_path)
+
+    payload = issue_comment_payload("hello")
+    assert post_webhook(port, "issue_comment", payload, "own-1") == 202
+    assert wait_until(lambda: tmux.spawns)
+    assert notices(events) == []

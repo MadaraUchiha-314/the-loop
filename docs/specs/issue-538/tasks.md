@@ -38,7 +38,7 @@ overrides: {}
   - _Depends on:_ 1, 2
   - _Requirements:_ R1.5, R1.6, R1.9, R2.1, R2.6, R3.1–R3.4, R4.3, abuse cases 2–4
   - _Test:_ T4, T8, T9 — `pytest tests/test_pr_notices_integration.py tests/test_webhook_routing_integration.py` (red→green)
-- [ ] 4. Spawn and respawn paths
+- [x] 4. Spawn and respawn paths
   - `_endpoint_cwd` → `EndpointCheckout(cwd, reason)`; `_decline_into` prepends the notice
     to the event for the four fallbacks; `spawned` after a successful spawn;
     `respawned`/`respawn-failed` in `_respawn_tmux` when `owner` is not the endpoint.

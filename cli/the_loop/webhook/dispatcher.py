@@ -29,6 +29,7 @@ from typing import (
     Dict,
     List,
     Mapping,
+    NamedTuple,
     Optional,
     Sequence,
     Set,
@@ -681,6 +682,18 @@ def _pr_head_ref(routed: RoutedEvent) -> Optional[str]:
         return None
     ref = ((routed.payload.get("pull_request") or {}).get("head") or {}).get("ref")
     return ref or None
+
+
+class EndpointCheckout(NamedTuple):
+    """Where a pull request's own session would run, or why it gets none.
+
+    ``cwd`` is ``None`` when the endpoint is declined, and ``reason`` is then the
+    decline code ``session.pr_session_declined`` recorded — one of
+    :data:`the_loop.prnotice.DECLINE_REASONS` (issue-538).
+    """
+
+    cwd: Optional[str]
+    reason: str
 
 
 def _same_path(one: str, other: str) -> bool:
@@ -4710,8 +4723,10 @@ class Dispatcher:
 
     def _endpoint_cwd(
         self, record: Session, endpoint: Session, routed: RoutedEvent
-    ) -> Optional[str]:
-        """The checkout a PR endpoint's own session would run in — ``None`` if none.
+    ) -> "EndpointCheckout":
+        """The checkout a PR endpoint's own session would run in — and, when there
+        is none, the decline code it emitted (issue-538: the work item's session is
+        told which). ``cwd`` is ``None`` for a decline.
 
         ``None`` is the refusal that keeps the ownership rule true at the spawn
         seam (issue-253): a session is worth having only when it has a working
@@ -4749,7 +4764,7 @@ class Dispatcher:
                 gh_event=routed.event,
                 delivery_id=routed.delivery_id or None,
             )
-            return None
+            return EndpointCheckout(None, "no-separate-checkout")
         try:
             prepared = self._prepare_workspace(
                 endpoint.work_item,
@@ -4776,7 +4791,7 @@ class Dispatcher:
                 gh_event=routed.event,
                 delivery_id=routed.delivery_id or None,
             )
-            return None
+            return EndpointCheckout(None, "workspace-failed")
         if _same_path(prepared, record.cwd):
             # `_prepare_workspace` falls back to `spawnWorkdir` for a payload
             # naming no repository, which can land on the record's own tree. The
@@ -4799,8 +4814,8 @@ class Dispatcher:
                 gh_event=routed.event,
                 delivery_id=routed.delivery_id or None,
             )
-            return None
-        return prepared
+            return EndpointCheckout(None, "shared-worktree")
+        return EndpointCheckout(prepared, "")
 
     def _spawn_endpoint(
         self,
@@ -4840,10 +4855,15 @@ class Dispatcher:
                 record.harness,
                 record.work_item.ref,
             )
-            return self._deliver_into(record, record, routed, prompt)
-        cwd = self._endpoint_cwd(record, endpoint, routed)
-        if cwd is None:
-            return self._deliver_into(record, record, routed, prompt)
+            return self._decline_into(
+                record, endpoint, routed, prompt, "declined", "harness-unavailable"
+            )
+        checkout = self._endpoint_cwd(record, endpoint, routed)
+        if checkout.cwd is None:
+            return self._decline_into(
+                record, endpoint, routed, prompt, "declined", checkout.reason
+            )
+        cwd = checkout.cwd
         self._prepare_environment(adapter, endpoint.work_item, cwd)
         launch = self._before_launch(
             record.work_item,
@@ -4858,7 +4878,9 @@ class Dispatcher:
             # goes where it goes when the PR has no checkout: the work item's own
             # session (issue-253's fallback, issue-344 R2.6).
             self._record_refusal(SessionSpawn.POINT, record.work_item, launch.reason)
-            return self._deliver_into(record, record, routed, prompt)
+            return self._decline_into(
+                record, endpoint, routed, prompt, "declined", "hook-refused"
+            )
         prompt = launch.prompt
         session_id = str(uuid.uuid4())
         result = self.tmux.spawn(
@@ -4886,7 +4908,7 @@ class Dispatcher:
                 error=result.error,
                 will_retry=False,
             )
-            return self._deliver_into(record, record, routed, prompt)
+            return self._decline_into(record, endpoint, routed, prompt, "spawn-failed")
         endpoint.harness_session_id = session_id
         endpoint.tmux_target = self.tmux.target_for(endpoint.work_item)
         endpoint.cwd = cwd
@@ -4928,7 +4950,61 @@ class Dispatcher:
         )
         if self._after_launch(record.work_item, endpoint).announce:
             self.announcer.announce(endpoint)
+        # The work item's own session learns who now owns this PR's work
+        # (issue-538, R1.1).
+        self._notify_owner(
+            record.work_item,
+            endpoint.work_item,
+            "spawned",
+            tmux_target=endpoint.tmux_target or "",
+        )
         return True
+
+    def _decline_into(
+        self,
+        record: Session,
+        endpoint: Session,
+        routed: RoutedEvent,
+        prompt: str,
+        transition: str,
+        reason: str = "",
+    ) -> bool:
+        """Deliver an event for ``endpoint`` into the work item's own session,
+        with the notice saying why, in ONE paste (issue-538, R1.2–R1.4).
+
+        The event is being pasted into that session anyway — the pull request got
+        no session of its own — so the notice goes ahead of it rather than as a
+        second paste racing the first. A failed paste is the EVENT's failure and
+        is handled by :meth:`_deliver_into` exactly as before (released for
+        redelivery); the notice records its own outcome beside it.
+        """
+        fields = {
+            "work_item": record.work_item.ref,
+            "pull_request": endpoint.work_item.ref,
+            "transition": transition,
+        }
+        try:
+            notice = prnotice.render(
+                transition, record.work_item, endpoint.work_item, reason=reason
+            )
+        except Exception as exc:  # noqa: BLE001 — the event still lands
+            eventlog.emit(
+                "session.pr_notice_failed", level="warning", error=str(exc), **fields
+            )
+            return self._deliver_into(record, record, routed, prompt)
+        ok = self._deliver_into(
+            record, record, routed, f"{notice}\n\n---\n\n{prompt}"
+        )
+        if ok:
+            eventlog.emit("session.pr_notice_delivered", via="with-event", **fields)
+        else:
+            eventlog.emit(
+                "session.pr_notice_failed",
+                level="warning",
+                error="the event it rode with was not delivered",
+                **fields,
+            )
+        return ok
 
     def _deliver_into(
         self,
@@ -4999,6 +5075,11 @@ class Dispatcher:
         later event. A live occupant is delivered into instead.
         """
         work_item = session.work_item
+        # A pull request's endpoint is respawned on behalf of its work item: the
+        # work item's own session hears how that went (issue-538, R1.8).
+        endpoint_owner = (
+            owner if owner is not None and owner.ref != work_item.ref else None
+        )
         target = self.tmux.target_for(work_item)
         if self.tmux.session_state(target) == SESSION_LIVE:
             return self._deliver_into_occupant(
@@ -5033,6 +5114,8 @@ class Dispatcher:
             )
             if routed.delivery_id:
                 self._release_delivery(routed.delivery_id)
+            if endpoint_owner is not None:
+                self._notify_owner(endpoint_owner, work_item, "respawn-failed")
             return False
         # Before EITHER respawn path starts a harness process — the resume
         # attempt below included — give it the same pre-flight a first spawn
@@ -5052,6 +5135,8 @@ class Dispatcher:
             harness=session.harness,
         )
         if not launch.proceed:
+            if endpoint_owner is not None:
+                self._notify_owner(endpoint_owner, work_item, "respawn-failed")
             return self._refuse_launch(work_item, routed, launch)
         prompt = launch.prompt
         resumed_id = self._try_resume(session, adapter, prompt)
@@ -5094,6 +5179,8 @@ class Dispatcher:
                 )
                 if routed.delivery_id:
                     self._release_delivery(routed.delivery_id)
+                if endpoint_owner is not None:
+                    self._notify_owner(endpoint_owner, work_item, "respawn-failed")
                 return False
         respawned = Session(
             work_item=work_item,
@@ -5163,6 +5250,13 @@ class Dispatcher:
         # still told a session exists (issue-344); their `announce` has nothing
         # to gate here.
         self._after_launch(owner_ref, respawned, respawn=True)
+        if endpoint_owner is not None:
+            self._notify_owner(
+                endpoint_owner,
+                work_item,
+                "respawned",
+                tmux_target=respawned.tmux_target or "",
+            )
         return True
 
     def _deliver_into_occupant(
