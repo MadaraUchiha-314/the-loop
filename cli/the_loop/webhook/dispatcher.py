@@ -2347,6 +2347,39 @@ class Dispatcher:
         eventlog.emit("session.pr_notice_delivered", via="paste", **fields)
         return "delivered"
 
+    def _after_inner_advance(
+        self,
+        record: Session,
+        endpoint: Session,
+        before: str,
+        report: Optional[Any],
+        after: Optional[GraphContext],
+    ) -> None:
+        """What an inner advance means for the work item's own session (issue-538).
+
+        At most one notice: ``completed`` when the inner pointer moved to
+        ``complete`` (its review approved) — then the outer gate that may be
+        waiting on it is re-run (R2.2) — else ``escalated`` when the runtime
+        reported the inner node escalated (R1.7). Anything else — a step
+        between inner nodes, a wait, a block — is the PR session's own business.
+        """
+        if report is None:
+            return
+        from ..graph.hooks.loops import INNER_COMPLETE_NODE
+
+        now = str(getattr(after, "current_node", "") or "")
+        if now == INNER_COMPLETE_NODE and before != INNER_COMPLETE_NODE:
+            self._notify_owner(record.work_item, endpoint.work_item, "completed")
+            self.graphlink.on_inner_loop_finished(record.work_item, record.cwd)
+            return
+        if str(getattr(report, "status", "") or "") == "escalated":
+            self._notify_owner(
+                record.work_item,
+                endpoint.work_item,
+                "escalated",
+                inner_node=str(getattr(report, "node", "") or ""),
+            )
+
     def _notify_closed(self, record: Session, endpoint: Session, merged: bool) -> None:
         """The ``merged`` / ``closed`` notice for one of ``record``'s pull requests.
 
@@ -4136,6 +4169,7 @@ class Dispatcher:
         routed = received
         gate_report = None
         if ctx is not None and ctx.at_human_gate:
+            before = str(getattr(ctx, "current_node", "") or "")
             gate_report = (
                 self.graphlink.on_pr_event(
                     session.work_item, endpoint.work_item, session.cwd, routed
@@ -4151,6 +4185,8 @@ class Dispatcher:
                 else self.graphlink.context(session.work_item, session.cwd)
             )
             ctx = refreshed or ctx
+            if inner:
+                self._after_inner_advance(session, endpoint, before, gate_report, ctx)
         prompt = self._render_prompt(
             routed,
             endpoint.work_item,
@@ -4244,9 +4280,17 @@ class Dispatcher:
             # advances ITS loop, never the work item's (issue-172).
             if gate_report is None:
                 if inner:
-                    self.graphlink.on_pr_event(
+                    before = str(getattr(ctx, "current_node", "") or "")
+                    report = self.graphlink.on_pr_event(
                         session.work_item, endpoint.work_item, session.cwd, routed
                     )
+                    if report is not None:
+                        after = self.graphlink.pr_context(
+                            session.work_item, endpoint.work_item, session.cwd
+                        )
+                        self._after_inner_advance(
+                            session, endpoint, before, report, after
+                        )
                 else:
                     self.graphlink.on_event(session.work_item, session.cwd, routed)
             return True
@@ -4992,9 +5036,7 @@ class Dispatcher:
                 "session.pr_notice_failed", level="warning", error=str(exc), **fields
             )
             return self._deliver_into(record, record, routed, prompt)
-        ok = self._deliver_into(
-            record, record, routed, f"{notice}\n\n---\n\n{prompt}"
-        )
+        ok = self._deliver_into(record, record, routed, f"{notice}\n\n---\n\n{prompt}")
         if ok:
             eventlog.emit("session.pr_notice_delivered", via="with-event", **fields)
         else:

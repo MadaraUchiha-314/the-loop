@@ -91,9 +91,7 @@ def render(
     target = _identifier(tmux_target)
     outer = _identifier(outer_node)
     inner = _identifier(inner_node)
-    owns_events = (
-        "This session now receives this pull request's events; work it here."
-    )
+    owns_events = "This session now receives this pull request's events; work it here."
     if transition == "spawned":
         what = f"{pr} was given a session of its own ({_code(target)})."
         means = (

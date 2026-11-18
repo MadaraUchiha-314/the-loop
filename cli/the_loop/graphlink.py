@@ -1188,9 +1188,7 @@ class GraphLink:
             pr_repo=_pr_repo(work_item, pr, self.cli_config),
         )
 
-    def on_inner_loop_finished(
-        self, work_item: WorkItemRef, cwd: str
-    ) -> Optional[Any]:
+    def on_inner_loop_finished(self, work_item: WorkItemRef, cwd: str) -> Optional[Any]:
         """An inner loop finished — re-run the OUTER node's exit chain (issue-538).
 
         Until issue-538 nothing re-evaluated ``await-inner-loops`` when an inner

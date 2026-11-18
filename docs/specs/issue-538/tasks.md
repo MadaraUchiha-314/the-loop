@@ -45,7 +45,7 @@ overrides: {}
   - _Depends on:_ 3
   - _Requirements:_ R1.1–R1.4, R1.8, R1.9
   - _Test:_ T3, T7 — `pytest tests/test_pr_notices_integration.py -k "spawn or declin or respawn"` (red→green)
-- [ ] 5. Inner-advance path
+- [x] 5. Inner-advance path
   - `_after_inner_advance` at both inner-advance sites of `_dispatch_one`: `completed` +
     `on_inner_loop_finished` when the inner pointer reached `complete`, else `escalated`.
   - _Depends on:_ 3
