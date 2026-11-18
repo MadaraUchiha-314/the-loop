@@ -177,6 +177,13 @@ catalog-style message inline again, so that the migration does not erode.
 - **Translations.** This work item ships `en` only. The fallback path is tested with a
   fixture locale.
 - **The skill and command Markdown** (`skills/`, `commands/`) — already Markdown.
+- **Prompt text the design leaves inline, each with a stated reason** (`design.md` §
+  *Left inline*): MCP tool docstrings (pinned by the API/SDK parity tests),
+  `hooks/the-loop-gate.py` (runs without the package installed), the Codex
+  conversation marker (a machine token, not prose), graph hook messages and CLI
+  envelopes (CLI output), and prompts the caller supplies. The first two are in
+  follow-up [#542](https://github.com/MadaraUchiha-314/the-loop/issues/542), along with
+  the string long tail and the UI.
 
 ## Open questions
 

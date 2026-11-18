@@ -255,7 +255,18 @@ ACK_STATES = {
 # (or `spawn-policy`, whose text `_reject_control` already composes) posts no
 # extra comment, so the reaction remains the whole acknowledgement.
 # The words live in the string catalog (issue-540): the_loop/strings/en.json,
-# under `dispatcher.refusal.`.
+# under `dispatcher.refusal.`. What each code means:
+#
+# * ``hook-refused`` — a lifecycle hook the operator declared said no (issue-344):
+#   the hook's own reason is the detail appended below, and the item is disarmed
+#   — an authorized `the-loop start` asks the hooks again.
+# * ``input-refused`` — a lifecycle hook refused a person's INPUT (issue-344,
+#   `input_received`): the comment was not delivered, or the command was not
+#   run; nothing else changed.
+# * ``missing-channel`` / ``channel-taken`` — an `add-channel` that names no
+#   resolvable Slack channel, or one that already backs another work item.
+# * ``missing-collaborator`` / ``unknown-listen-mode`` / ``nothing-to-resume`` —
+#   the remaining control-keyword arguments a person can get wrong.
 CONTROL_REFUSAL_REMEDIES = strings.section("dispatcher.refusal")
 
 # Fallback when routing.promptTemplate / routing.spawnTemplate does not exist.
