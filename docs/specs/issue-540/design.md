@@ -48,7 +48,7 @@ flowchart TB
   PL --> A["graph/hooks/assignment.py<br/>assignment lines"]
   PL --> MP["modelprobe.py<br/>probe prompt"]
   PL --> O["…every other site in the inventory"]
-  SL --> M["refusal remedies · decline reasons ·<br/>kickoff refusals · Slack titles/buttons ·<br/>command descriptions · attachment reasons ·<br/>mirror lines · digest pointers"]
+  SL --> M["refusal remedies ·<br/>kickoff refusals · Slack titles/buttons ·<br/>command descriptions · attachment reasons ·<br/>mirror lines · digest pointers"]
   SK["skills/the-loop/templates/webhook-*-prompt.md"] -. "test: identical to" .-> PF
 ```
 
@@ -85,12 +85,11 @@ def names() -> list[str]
 - **Composition.** Where one prompt embeds another (both interaction directives end with
   the artifact rule), the shared fragment is its own file and the Python composes it, as
   the f-string did. No include syntax is invented.
-- **Markdown lint.** `prompts/**/*.md` is linted like every other Markdown file in the repo.
-  A prompt whose exact bytes would trip a rule (a first line that is not a heading, a
-  long line, a bare `$`) gets a file-level `<!-- markdownlint-disable -->` that the loader
-  strips. Prompts are byte-for-byte contracts; the linter does not get to reflow them.
-  The loader removes exactly one leading line matching
-  `^<!-- markdownlint-disable[^>]*-->\n` and nothing else.
+- **Markdown lint.** `cli/the_loop/prompts/**` is added to `.markdownlint-cli2.jsonc`
+  `ignores`, the same treatment as the signed-off design exports. A prompt is a
+  byte-for-byte contract (R1.4), and a linter that wants a leading heading or a trailing
+  blank line must not get to change what the agent reads. The loader returns the file
+  verbatim, with no header-stripping magic.
 
 ### `the_loop.strings`
 
@@ -152,8 +151,40 @@ locale active at import; changing locale at runtime is out of scope.
 | `core/selfdiagnosis.py` `_PROMPT` | `selfdiagnosis/diagnose.md` | `str.format` |
 | `core/sessions.py` `RESTART_NOTICE` | `sessions/restart-notice.md` | none |
 | `modelprobe.py` `PROBE_PROMPT` | `modelprobe/probe.md` | none |
-| `graph/hooks/assignment.py` `render_assignment`, `_surface` lines | `assignment/*.md` (one per line kind) | `str.format` |
-| any further site the inventory sweep (task T1) finds: graph-context block, PR-session notices, CI-heal block, inbound channel wrappers | `<module>/<name>.md` | as at the site |
+| `graph/hooks/assignment.py` `render_assignment`, `_surface` | `assignment/*.md` (one file per line kind) | `str.format` |
+| `graphlink.py` `render_graph_context`, `CLAUDE_ARTIFACT_LINE`, `CLAUDE_DOC_LINE`, `_handoff_lines`, `_surface_line` | `graph-context/*.md` | `str.format`; the two Claude lines keep their exact-substring `.replace()` splice |
+| `prnotice.py` `render`, `DECLINE_REASONS` | `prnotice/*.md`, `prnotice/decline/<code>.md` (the notice is pasted into a session, so its phrases are prompt text) | `str.format` |
+| `webhook/cimonitor.py` `render_section` | `cimonitor/*.md` | `str.format` |
+| `webhook/excerpt.py` `_TRUNCATED` | `webhook/truncated.md` | none |
+| `channels/attachments.py` `_SECTION_FRAME`, `render_section` lines | `attachments/*.md` | `str.format` |
+| `core/sessions.py` `FRAMES`, `framed_record`, `_framed_reply` | `sessions/frame-*.md` | `str.format` |
+| `core/standing.py` `_surfaces` phrases, `_framed` | `standing/*.md` | `str.format` |
+| `core/selfdiagnosis.py` `build_dossier` prose lines | `selfdiagnosis/dossier-*.md` | `str.format` |
+| `graph/hooks/mcp.py` inline `mcp-call` prompt | `mcp/call.md` | `str.format` |
+| `codex_support.py` `conversation_marker`, the AGENTS.md managed block | `codex/*.md` | `str.format` |
+| `api/mcp.py` server `instructions` | `mcp/server-instructions.md` | none |
+
+Composition glue stays in code: `"\n".join`, the `---` separators between a notice and a
+prompt, and the `event_source`/`event_origin` words (`"GitHub"`/`"Jira"`), which are
+vocabulary. Each fragment file holds one line or paragraph of prose with its `{slots}`.
+A fragment file ends with exactly one newline, which the loader keeps. `load` has an
+`inline=True` form that drops that one trailing newline, for fragments joined into a
+line.
+
+**Left inline, with reasons** (recorded in the capability doc):
+
+- **MCP tool docstrings** (`api/mcp.py`, about 35 tools). The SDK reads them as tool
+  descriptions. They are also the Python API's documentation, and
+  `test_api_contract_parity.py` / `test_sdk_docs_parity.py` pin them to the REST
+  contract. Moving them belongs in a follow-up that changes the parity source too.
+- **`hooks/the-loop-gate.py` `feedback_text`.** A standalone hook script that ships in the
+  plugin's `hooks/` directory and must run without the `the_loop` package installed, so
+  it cannot import the loader. Follow-up.
+- **Graph hook `Message` texts and CLI envelopes** that reach an agent through
+  `the-loop graph complete`/`check` stdout. These are CLI output: the agent reads them
+  the way a person would.
+- **Prompts the caller supplies**: critic prompts, the standing-session brief, API
+  `prompt` fields.
 
 `skills/the-loop/templates/webhook-event-prompt.md` and `webhook-autoexecute-prompt.md`
 stay where they are: the CLI config schema names them as the documented
@@ -172,7 +203,6 @@ from `prompts.load(...)`, so the tests and callers that import them are unchange
 | Today (module · name) | Key prefix |
 |---|---|
 | `webhook/dispatcher.py` · `CONTROL_REFUSAL_REMEDIES` | `dispatcher.refusal.` |
-| `prnotice.py` · `DECLINE_REASONS` | `prnotice.decline.` |
 | `channels/slack.py` · `KICKOFF_REFUSALS` | `slack.kickoff-refusal.` |
 | `channels/slack.py` · `COMMAND_DESCRIPTIONS` | `slack.command-description.` |
 | `channels/slack.py` · `BUTTON_NAMES` (labels only; keys are computed action ids) | `slack.button.` |
@@ -188,8 +218,7 @@ retirements.
 
 ## Data models
 
-- `prompts/**/*.md`: UTF-8 text. Optional first line `<!-- markdownlint-disable … -->`,
-  stripped by the loader.
+- `prompts/**/*.md`: UTF-8 text, returned verbatim.
 - `strings/<locale>.json`: one JSON object, `{ "<dotted.key>": "<text>" }`, string values
   only, keys matching `^[a-z0-9-]+(\.[a-z0-9_-]+)+$`.
 

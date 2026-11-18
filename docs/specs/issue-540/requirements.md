@@ -110,7 +110,7 @@ editing code.
 4. IF a key is absent from the `en` catalog THEN the system SHALL raise an error naming
    the key — a missing string is a bug, not a blank message.
 5. The system SHALL move the CLI's keyed human-message dictionaries named in the design
-   (refusal remedies, decline reasons, kickoff refusals, Slack titles and button names,
+   (refusal remedies, kickoff refusals, Slack titles and button names,
    command descriptions, attachment reasons, mirror lines, digest pointers) into the
    catalog, rendering the same text as today.
 6. A test SHALL verify that every key the code looks up exists in `en.json`, that the
