@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-544",
-  "currentNode": "brainstorming",
+  "currentNode": "brainstorm-approval",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -21,8 +21,16 @@
     },
     "brainstorming": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-11-18T23:33:22+00:00",
+      "exitedAt": "2026-11-18T23:39:12+00:00",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required section is missing: Problem / opportunity (docs/specs/issue-544/brainstorm.md)",
+      "forced": false
+    },
+    "brainstorm-approval": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-11-18T23:39:12+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -243,8 +251,17 @@
     }
   },
   "forced": [],
-  "parked": null,
-  "completions": {},
+  "parked": {
+    "node": "brainstorm-approval",
+    "reason": "awaiting a human",
+    "since": "2026-11-18T23:39:12+00:00"
+  },
+  "completions": {
+    "brainstorming": {
+      "at": "2026-11-18T23:39:12+00:00",
+      "by": "cli"
+    }
+  },
   "skips": {
     "spec-explainer": {
       "via": "selection",
@@ -283,7 +300,18 @@
   "effort": "high",
   "claudeArtifact": false,
   "repos": [],
-  "pullRequests": [],
+  "pullRequests": [
+    {
+      "ref": "github:MadaraUchiha-314/the-loop#545",
+      "repository": "MadaraUchiha-314/the-loop",
+      "number": 545,
+      "url": "https://github.com/MadaraUchiha-314/the-loop/issues/545",
+      "stateDir": "pr-loops/MadaraUchiha-314__the-loop/pr-545",
+      "state": "open",
+      "linkedAt": "2026-11-18T23:37:50+00:00",
+      "linkedBy": "session"
+    }
+  ],
   "loop": "pdlc-work-item-loop",
   "phase": "brainstorming",
   "claudeDoc": true
