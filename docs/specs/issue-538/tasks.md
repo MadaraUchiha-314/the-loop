@@ -25,7 +25,7 @@ overrides: {}
   - _Depends on:_ none
   - _Requirements:_ R1.1–R1.8 (text), R2.3, R4.1, abuse case 1
   - _Test:_ T1, T2 — `pytest tests/test_prnotice.py` (red→green)
-- [ ] 2. `GraphLink.on_inner_loop_finished` and `GraphLink.inner_loop_gate`
+- [x] 2. `GraphLink.on_inner_loop_finished` and `GraphLink.inner_loop_gate`
   - Re-run the outer exit chain only when parked on a node whose exit has
     `await-inner-loops`; emit `graph.outer_reevaluated`.
   - _Depends on:_ 1
