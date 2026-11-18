@@ -1,3 +1,9 @@
+## v20.14.0 (2026-11-18)
+
+### Feat
+
+- **issue-538**: tell the work item's session what happens to its pull-request sessions (#539)
+
 ## v20.13.0 (2026-11-17)
 
 ### Feat
