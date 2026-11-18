@@ -231,4 +231,3 @@ design against; the choices made where it was silent (prepend on declined/failed
 parked-and-waits precondition, no sweep) are stated above and in `design.md`.
 
 ## Review comments
-
