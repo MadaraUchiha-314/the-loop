@@ -638,14 +638,40 @@ class TestTmuxRunner:
         clear_paste_i = next(
             i
             for i, c in enumerate(pastes)
-            if c[1] == "paste-buffer" and runner_mod._CLEAR_BUFFER in c
+            if c[1] == "paste-buffer"
+            and any(a.startswith(runner_mod._CLEAR_BUFFER) for a in c)
         )
         event_load_i = next(
             i
             for i, c in enumerate(pastes)
-            if c[1] == "load-buffer" and runner_mod._EVENT_BUFFER in c
+            if c[1] == "load-buffer"
+            and any(a.startswith(runner_mod._EVENT_BUFFER) for a in c)
         )
         assert clear_paste_i < event_load_i
+
+    def test_two_deliveries_never_share_a_paste_buffer(self, monkeypatch):
+        """issue-538 critic C1: the buffer names were module constants, so two
+        deliveries running at once (two work items' workers, or a notice beside
+        an event) could load into the same buffer and paste each other's text
+        into the wrong conversation. Each delivery now names its own buffers,
+        and loads and pastes the same ones."""
+        fake = FakeRun()
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        runner = TmuxRunner()
+        assert runner.deliver(make_session(tmux_target="loop-a"), "one").ok
+        first = len(fake.calls)
+        assert runner.deliver(make_session(tmux_target="loop-b"), "two").ok
+
+        def names(calls):
+            return [c[c.index("-b") + 1] for c in calls if "-b" in c]
+
+        one, two = names(fake.calls[:first]), names(fake.calls[first:])
+        assert len(set(one)) == 3 and len(set(two)) == 3
+        assert not set(one) & set(two)
+        for batch in (one, two):  # each buffer is loaded, then pasted by name
+            assert batch[0] == batch[1] and batch[2] == batch[3]
+            assert batch[4] == batch[5]
 
     def test_deliver_removes_both_temporary_files(self, monkeypatch):
         # R3.3: the prompt file was always unlinked; the submit file must be too,

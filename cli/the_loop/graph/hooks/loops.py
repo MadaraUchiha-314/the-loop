@@ -51,6 +51,7 @@ __all__ = [
     "PR_LOOPS_DIRNAME",
     "await_inner_loops",
     "declared_repos",
+    "waits_on_inner_loops",
     "inner_loop_state_dir",
     "repo_state_key",
 ]
@@ -189,6 +190,21 @@ def _repos_without_a_loop(
         if not found:
             missing.append(repo)
     return missing, origin_unknown
+
+
+def waits_on_inner_loops(node) -> bool:
+    """Does ``node``'s exit chain contain ``await-inner-loops`` (issue-538)?
+
+    Matched by hook name, not by node id, so a graph that puts the gate on a
+    different node gets the same daemon-side re-evaluation as the shipped
+    ``implementation`` node. A chain entry is a hook name or a
+    ``{hook: name, with: {...}}`` mapping (``graph.model._validate_chain``).
+    """
+    for spec in getattr(node, "exit", ()) or ():
+        name = spec if isinstance(spec, str) else (spec or {}).get("hook")
+        if name == "await-inner-loops":
+            return True
+    return False
 
 
 @hook("await-inner-loops")

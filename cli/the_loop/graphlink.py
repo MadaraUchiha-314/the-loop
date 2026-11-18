@@ -1188,6 +1188,83 @@ class GraphLink:
             pr_repo=_pr_repo(work_item, pr, self.cli_config),
         )
 
+    def on_inner_loop_finished(self, work_item: WorkItemRef, cwd: str) -> Optional[Any]:
+        """An inner loop finished — re-run the OUTER node's exit chain (issue-538).
+
+        Until issue-538 nothing re-evaluated ``await-inner-loops`` when an inner
+        loop reached ``complete``, so a work item sat at ``implementation`` after
+        its last pull request merged. The dispatcher calls this right after it
+        drove (or saw) an inner loop to ``complete``.
+
+        Only when the outer pointer is **parked** on its current node — a
+        previous evaluation answered ``wait`` — and that node's exit chain
+        contains ``await-inner-loops``. Anything else is left untouched: this is
+        a re-run of a gate that was waiting on inner loops, never a way for an
+        inner event to walk the work item. A pass advances through the runtime's
+        ordinary ``advance``, so the entered node's ``deliver-assignment`` hook
+        reaches the work item's session (the one-way rule holds: the pointer
+        moves only on the outer node's own chain).
+
+        Returns the runtime's :class:`NodeReport` when the chain ran, ``None``
+        otherwise (skipped, not parked, no inner gate, or a fault).
+        """
+
+        def call(rt, item):
+            from .graph.hooks.loops import waits_on_inner_loops
+            from .graph.state import WorkItemState
+
+            state = WorkItemState.load(rt.state_dir(rt.work_item(item)), item)
+            node_id = state.current_node
+            parked = state.parked or {}
+            if not node_id or parked.get("node") != node_id:
+                eventlog.emit(
+                    "graph.outer_reevaluated",
+                    work_item=work_item.ref,
+                    node=node_id or None,
+                    outcome="not-parked",
+                )
+                return None
+            if not waits_on_inner_loops(rt.graph.node(node_id)):
+                eventlog.emit(
+                    "graph.outer_reevaluated",
+                    work_item=work_item.ref,
+                    node=node_id,
+                    outcome="no-inner-gate",
+                )
+                return None
+            report = rt.advance(item, ref=work_item.ref, event={"comments": []})
+            eventlog.emit(
+                "graph.outer_reevaluated",
+                work_item=work_item.ref,
+                node=node_id,
+                status=report.status,
+                outcome=report.outcome or None,
+            )
+            return report
+
+        return self._guarded("advance", work_item, cwd, call)
+
+    def inner_loop_gate(
+        self, work_item: WorkItemRef, cwd: str
+    ) -> Optional[Tuple[str, bool]]:
+        """``(outer current node, does it wait on await-inner-loops)``, read-only.
+
+        What a ``closed`` notice says about the gate a pull request closed
+        without merging is now holding (issue-538, R1.6). ``None`` on any skip.
+        """
+
+        def call(rt, item):
+            from .graph.hooks.loops import waits_on_inner_loops
+            from .graph.state import WorkItemState
+
+            state = WorkItemState.load(rt.state_dir(rt.work_item(item)), item)
+            node_id = state.current_node
+            if not node_id:
+                return None
+            return node_id, waits_on_inner_loops(rt.graph.node(node_id))
+
+        return self._guarded("context", work_item, cwd, call)
+
     # -- internals --------------------------------------------------------------
 
     def _guarded(

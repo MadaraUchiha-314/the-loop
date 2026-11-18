@@ -29,13 +29,14 @@ from typing import (
     Dict,
     List,
     Mapping,
+    NamedTuple,
     Optional,
     Sequence,
     Set,
     Tuple,
 )
 
-from .. import archive, envstate, eventlog, lifecycle
+from .. import archive, envstate, eventlog, lifecycle, prnotice
 from ..announce import AnnounceConfig, SessionAnnouncer
 from ..instance import (
     REFUSALS as SCOPE_REFUSALS,
@@ -681,6 +682,18 @@ def _pr_head_ref(routed: RoutedEvent) -> Optional[str]:
         return None
     ref = ((routed.payload.get("pull_request") or {}).get("head") or {}).get("ref")
     return ref or None
+
+
+class EndpointCheckout(NamedTuple):
+    """Where a pull request's own session would run, or why it gets none.
+
+    ``cwd`` is ``None`` when the endpoint is declined, and ``reason`` is then the
+    decline code ``session.pr_session_declined`` recorded — one of
+    :data:`the_loop.prnotice.DECLINE_REASONS` (issue-538).
+    """
+
+    cwd: Optional[str]
+    reason: str
 
 
 def _same_path(one: str, other: str) -> bool:
@@ -1384,6 +1397,9 @@ class Dispatcher:
                         )
                         if endpoint is None:
                             continue
+                        # Captured before teardown: did this pull request have a
+                        # session of its own to report on (issue-538)?
+                        had_session = bool(endpoint.tmux_target)
                         # A merge is the PR's approval: drive its inner loop to
                         # `complete` (audited as a forced move) so the outer
                         # `await-inner-loops` gate sees it finished (issue-172).
@@ -1407,6 +1423,15 @@ class Dispatcher:
                         self._drop_pr_ledger(session.work_item, endpoint.work_item)
                         if endpoint.tmux_target:
                             self._close_tmux(endpoint)
+                        # Tell the work item's own session (issue-538) — after
+                        # the state above is written, so the notice describes it.
+                        if had_session:
+                            self._notify_closed(session, endpoint, merged)
+                        # A merge finished an inner loop: re-run the outer gate
+                        # that may be waiting on it (issue-538, R2.1). A close
+                        # without a merge changed no inner state (R2.6).
+                        if merged:
+                            self._reevaluate_outer(session)
                     logger.info(
                         "%s (%s) is linked to %s, which is still open; leaving "
                         "its session active — a work item may be delivered by "
@@ -2254,6 +2279,146 @@ class Dispatcher:
             error=(None if result.ok else result.error),
         )
         return bool(result.ok)
+
+    def _notify_owner(
+        self,
+        owner: WorkItemRef,
+        pull_request: WorkItemRef,
+        transition: str,
+        **facts: Any,
+    ) -> str:
+        """Tell the work item's own session that a pull request's session changed
+        state (issue-538). ``delivered`` | ``skipped`` | ``failed``.
+
+        A nudge, like an assignment: it moves no graph pointer and writes no
+        state file, and it never fails the path it rides on — no raise, no
+        retry, no released delivery. The text comes from
+        :func:`the_loop.prnotice.render`, which takes no payload text at all.
+        """
+        fields = {
+            "work_item": owner.ref,
+            "pull_request": pull_request.ref,
+            "transition": transition,
+        }
+        try:
+            record = self.registry.find_by_work_item(owner)
+            if record is None or not record.is_live or not record.tmux_target:
+                eventlog.emit(
+                    "session.pr_notice_skipped", reason="no-live-session", **fields
+                )
+                return "skipped"
+            if record.is_paused:
+                eventlog.emit("session.pr_notice_skipped", reason="paused", **fields)
+                return "skipped"
+            text = prnotice.render(transition, owner, pull_request, **facts)
+            result = self.tmux.deliver(
+                record, text, timeout=self.config.dispatch_timeout_seconds
+            )
+        except Exception as exc:  # noqa: BLE001 — a notice never breaks its path
+            logger.warning(
+                "could not tell %s that %s is %s: %s",
+                owner.ref,
+                pull_request.ref,
+                transition,
+                exc,
+            )
+            eventlog.emit(
+                "session.pr_notice_failed", level="warning", error=str(exc), **fields
+            )
+            return "failed"
+        if not result.ok:
+            logger.warning(
+                "could not tell %s that %s is %s: %s",
+                owner.ref,
+                pull_request.ref,
+                transition,
+                result.error,
+            )
+            eventlog.emit(
+                "session.pr_notice_failed",
+                level="warning",
+                error=result.error,
+                **fields,
+            )
+            return "failed"
+        logger.info("told %s that %s is %s", owner.ref, pull_request.ref, transition)
+        eventlog.emit("session.pr_notice_delivered", via="paste", **fields)
+        return "delivered"
+
+    def _after_inner_advance(
+        self,
+        record: Session,
+        endpoint: Session,
+        before: str,
+        report: Optional[Any],
+        after: Optional[GraphContext],
+    ) -> None:
+        """What an inner advance means for the work item's own session (issue-538).
+
+        At most one notice: ``completed`` when the inner pointer moved to
+        ``complete`` (its review approved) — then the outer gate that may be
+        waiting on it is re-run (R2.2) — else ``escalated`` when the runtime
+        reported the inner node escalated (R1.7). Anything else — a step
+        between inner nodes, a wait, a block — is the PR session's own business.
+        """
+        if report is None:
+            return
+        from ..graph.hooks.loops import INNER_COMPLETE_NODE
+
+        now = str(getattr(after, "current_node", "") or "")
+        if now == INNER_COMPLETE_NODE and before != INNER_COMPLETE_NODE:
+            self._notify_owner(record.work_item, endpoint.work_item, "completed")
+            self._reevaluate_outer(record)
+            return
+        if str(getattr(report, "status", "") or "") == "escalated":
+            self._notify_owner(
+                record.work_item,
+                endpoint.work_item,
+                "escalated",
+                inner_node=str(getattr(report, "node", "") or ""),
+            )
+
+    def _reevaluate_outer(self, record: Session) -> None:
+        """Re-run the outer gate an inner loop may have released (issue-538, R2),
+        off the calling thread.
+
+        The close path runs inside :meth:`handle`, which the receiver calls
+        before it answers the webhook. A passing re-run enters the next node,
+        whose entry chain labels the ticket and pastes an assignment, and an
+        operator's graph may bind a ``verify-tests`` command there. None of that
+        belongs in front of a webhook's ``202``. The graph lock serialises this
+        thread against the session's own claims, and
+        :meth:`GraphLink.on_inner_loop_finished` never raises.
+        """
+        work_item, cwd = record.work_item, record.cwd
+        thread = threading.Thread(
+            target=self.graphlink.on_inner_loop_finished,
+            args=(work_item, cwd),
+            name=f"outer-reevaluate-{work_item.slug}",
+            daemon=True,
+        )
+        thread.start()
+
+    def _notify_closed(self, record: Session, endpoint: Session, merged: bool) -> None:
+        """The ``merged`` / ``closed`` notice for one of ``record``'s pull requests.
+
+        A close without a merge names the outer node and whether it waits on
+        ``await-inner-loops``: the inner loop it holds on will not finish by
+        itself, and the session is the one that can reopen, replace or escalate
+        (issue-538, R1.6).
+        """
+        if merged:
+            self._notify_owner(record.work_item, endpoint.work_item, "merged")
+            return
+        gate = self.graphlink.inner_loop_gate(record.work_item, record.cwd)
+        outer_node, waits = gate if gate else ("", False)
+        self._notify_owner(
+            record.work_item,
+            endpoint.work_item,
+            "closed",
+            outer_node=outer_node,
+            outer_waits=waits,
+        )
 
     def _record_pr_binding(self, routed: RoutedEvent, target: WorkItemRef) -> None:
         """Persist the **machine handle** "this PR's events reach ``target``".
@@ -4023,6 +4188,7 @@ class Dispatcher:
         routed = received
         gate_report = None
         if ctx is not None and ctx.at_human_gate:
+            before = str(getattr(ctx, "current_node", "") or "")
             gate_report = (
                 self.graphlink.on_pr_event(
                     session.work_item, endpoint.work_item, session.cwd, routed
@@ -4038,6 +4204,8 @@ class Dispatcher:
                 else self.graphlink.context(session.work_item, session.cwd)
             )
             ctx = refreshed or ctx
+            if inner:
+                self._after_inner_advance(session, endpoint, before, gate_report, ctx)
         prompt = self._render_prompt(
             routed,
             endpoint.work_item,
@@ -4131,9 +4299,17 @@ class Dispatcher:
             # advances ITS loop, never the work item's (issue-172).
             if gate_report is None:
                 if inner:
-                    self.graphlink.on_pr_event(
+                    before = str(getattr(ctx, "current_node", "") or "")
+                    report = self.graphlink.on_pr_event(
                         session.work_item, endpoint.work_item, session.cwd, routed
                     )
+                    if report is not None:
+                        after = self.graphlink.pr_context(
+                            session.work_item, endpoint.work_item, session.cwd
+                        )
+                        self._after_inner_advance(
+                            session, endpoint, before, report, after
+                        )
                 else:
                     self.graphlink.on_event(session.work_item, session.cwd, routed)
             return True
@@ -4610,8 +4786,10 @@ class Dispatcher:
 
     def _endpoint_cwd(
         self, record: Session, endpoint: Session, routed: RoutedEvent
-    ) -> Optional[str]:
-        """The checkout a PR endpoint's own session would run in — ``None`` if none.
+    ) -> "EndpointCheckout":
+        """The checkout a PR endpoint's own session would run in — and, when there
+        is none, the decline code it emitted (issue-538: the work item's session is
+        told which). ``cwd`` is ``None`` for a decline.
 
         ``None`` is the refusal that keeps the ownership rule true at the spawn
         seam (issue-253): a session is worth having only when it has a working
@@ -4649,7 +4827,7 @@ class Dispatcher:
                 gh_event=routed.event,
                 delivery_id=routed.delivery_id or None,
             )
-            return None
+            return EndpointCheckout(None, "no-separate-checkout")
         try:
             prepared = self._prepare_workspace(
                 endpoint.work_item,
@@ -4676,7 +4854,7 @@ class Dispatcher:
                 gh_event=routed.event,
                 delivery_id=routed.delivery_id or None,
             )
-            return None
+            return EndpointCheckout(None, "workspace-failed")
         if _same_path(prepared, record.cwd):
             # `_prepare_workspace` falls back to `spawnWorkdir` for a payload
             # naming no repository, which can land on the record's own tree. The
@@ -4699,8 +4877,8 @@ class Dispatcher:
                 gh_event=routed.event,
                 delivery_id=routed.delivery_id or None,
             )
-            return None
-        return prepared
+            return EndpointCheckout(None, "shared-worktree")
+        return EndpointCheckout(prepared, "")
 
     def _spawn_endpoint(
         self,
@@ -4740,10 +4918,15 @@ class Dispatcher:
                 record.harness,
                 record.work_item.ref,
             )
-            return self._deliver_into(record, record, routed, prompt)
-        cwd = self._endpoint_cwd(record, endpoint, routed)
-        if cwd is None:
-            return self._deliver_into(record, record, routed, prompt)
+            return self._decline_into(
+                record, endpoint, routed, prompt, "declined", "harness-unavailable"
+            )
+        checkout = self._endpoint_cwd(record, endpoint, routed)
+        if checkout.cwd is None:
+            return self._decline_into(
+                record, endpoint, routed, prompt, "declined", checkout.reason
+            )
+        cwd = checkout.cwd
         self._prepare_environment(adapter, endpoint.work_item, cwd)
         launch = self._before_launch(
             record.work_item,
@@ -4758,7 +4941,9 @@ class Dispatcher:
             # goes where it goes when the PR has no checkout: the work item's own
             # session (issue-253's fallback, issue-344 R2.6).
             self._record_refusal(SessionSpawn.POINT, record.work_item, launch.reason)
-            return self._deliver_into(record, record, routed, prompt)
+            return self._decline_into(
+                record, endpoint, routed, prompt, "declined", "hook-refused"
+            )
         prompt = launch.prompt
         session_id = str(uuid.uuid4())
         result = self.tmux.spawn(
@@ -4786,7 +4971,7 @@ class Dispatcher:
                 error=result.error,
                 will_retry=False,
             )
-            return self._deliver_into(record, record, routed, prompt)
+            return self._decline_into(record, endpoint, routed, prompt, "spawn-failed")
         endpoint.harness_session_id = session_id
         endpoint.tmux_target = self.tmux.target_for(endpoint.work_item)
         endpoint.cwd = cwd
@@ -4828,7 +5013,59 @@ class Dispatcher:
         )
         if self._after_launch(record.work_item, endpoint).announce:
             self.announcer.announce(endpoint)
+        # The work item's own session learns who now owns this PR's work
+        # (issue-538, R1.1).
+        self._notify_owner(
+            record.work_item,
+            endpoint.work_item,
+            "spawned",
+            tmux_target=endpoint.tmux_target or "",
+        )
         return True
+
+    def _decline_into(
+        self,
+        record: Session,
+        endpoint: Session,
+        routed: RoutedEvent,
+        prompt: str,
+        transition: str,
+        reason: str = "",
+    ) -> bool:
+        """Deliver an event for ``endpoint`` into the work item's own session,
+        with the notice saying why, in ONE paste (issue-538, R1.2–R1.4).
+
+        The event is being pasted into that session anyway — the pull request got
+        no session of its own — so the notice goes ahead of it rather than as a
+        second paste racing the first. A failed paste is the EVENT's failure and
+        is handled by :meth:`_deliver_into` exactly as before (released for
+        redelivery); the notice records its own outcome beside it.
+        """
+        fields = {
+            "work_item": record.work_item.ref,
+            "pull_request": endpoint.work_item.ref,
+            "transition": transition,
+        }
+        try:
+            notice = prnotice.render(
+                transition, record.work_item, endpoint.work_item, reason=reason
+            )
+        except Exception as exc:  # noqa: BLE001 — the event still lands
+            eventlog.emit(
+                "session.pr_notice_failed", level="warning", error=str(exc), **fields
+            )
+            return self._deliver_into(record, record, routed, prompt)
+        ok = self._deliver_into(record, record, routed, f"{notice}\n\n---\n\n{prompt}")
+        if ok:
+            eventlog.emit("session.pr_notice_delivered", via="with-event", **fields)
+        else:
+            eventlog.emit(
+                "session.pr_notice_failed",
+                level="warning",
+                error="the event it rode with was not delivered",
+                **fields,
+            )
+        return ok
 
     def _deliver_into(
         self,
@@ -4899,6 +5136,11 @@ class Dispatcher:
         later event. A live occupant is delivered into instead.
         """
         work_item = session.work_item
+        # A pull request's endpoint is respawned on behalf of its work item: the
+        # work item's own session hears how that went (issue-538, R1.8).
+        endpoint_owner = (
+            owner if owner is not None and owner.ref != work_item.ref else None
+        )
         target = self.tmux.target_for(work_item)
         if self.tmux.session_state(target) == SESSION_LIVE:
             return self._deliver_into_occupant(
@@ -4933,6 +5175,8 @@ class Dispatcher:
             )
             if routed.delivery_id:
                 self._release_delivery(routed.delivery_id)
+            if endpoint_owner is not None:
+                self._notify_owner(endpoint_owner, work_item, "respawn-failed")
             return False
         # Before EITHER respawn path starts a harness process — the resume
         # attempt below included — give it the same pre-flight a first spawn
@@ -4952,6 +5196,8 @@ class Dispatcher:
             harness=session.harness,
         )
         if not launch.proceed:
+            if endpoint_owner is not None:
+                self._notify_owner(endpoint_owner, work_item, "respawn-failed")
             return self._refuse_launch(work_item, routed, launch)
         prompt = launch.prompt
         resumed_id = self._try_resume(session, adapter, prompt)
@@ -4974,6 +5220,8 @@ class Dispatcher:
                     return self._deliver_into_occupant(
                         session, routed, prompt, target, advance_after=advance_after
                     )
+                if endpoint_owner is not None:
+                    self._notify_owner(endpoint_owner, work_item, "respawn-failed")
                 return self._skip_occupied(session, routed, target, result.error)
             if not result.ok:
                 logger.error(
@@ -4994,6 +5242,8 @@ class Dispatcher:
                 )
                 if routed.delivery_id:
                     self._release_delivery(routed.delivery_id)
+                if endpoint_owner is not None:
+                    self._notify_owner(endpoint_owner, work_item, "respawn-failed")
                 return False
         respawned = Session(
             work_item=work_item,
@@ -5063,6 +5313,13 @@ class Dispatcher:
         # still told a session exists (issue-344); their `announce` has nothing
         # to gate here.
         self._after_launch(owner_ref, respawned, respawn=True)
+        if endpoint_owner is not None:
+            self._notify_owner(
+                endpoint_owner,
+                work_item,
+                "respawned",
+                tmux_target=respawned.tmux_target or "",
+            )
         return True
 
     def _deliver_into_occupant(

@@ -771,6 +771,29 @@ EVENT_TYPES: Dict[str, str] = {
         "A held closure was dropped because the work item was reopened during "
         "the hold (work_item, source); the session stays live (issue-405 P2)."
     ),
+    "session.pr_notice_delivered": (
+        "The work item's own session was told that one of its pull requests' "
+        "sessions changed state (work_item, pull_request, transition, via: paste "
+        "| with-event) — spawned, declined, spawn-failed, respawned, "
+        "respawn-failed, completed, merged, closed or escalated (issue-538)."
+    ),
+    "session.pr_notice_skipped": (
+        "A pull-request session notice was not delivered because the work item "
+        "has no session to tell (work_item, pull_request, transition, reason: "
+        "paused | no-live-session). The inner state files still hold the fact "
+        "(issue-538)."
+    ),
+    "session.pr_notice_failed": (
+        "Pasting a pull-request session notice into the work item's session "
+        "failed (work_item, pull_request, transition, error). Not retried; the "
+        "path it rode on carried on (issue-538)."
+    ),
+    "graph.outer_reevaluated": (
+        "The daemon re-ran the outer node's exit chain after an inner loop "
+        "finished (work_item, node, status, outcome) — or declined to: outcome "
+        "not-parked | no-inner-gate. A pass advances the work item exactly as a "
+        "claim would (issue-538)."
+    ),
     "session.kept_open": (
         "A close event matched a session only through linkage — one of the "
         "work item's PRs closed, the work item itself did not — so the session "

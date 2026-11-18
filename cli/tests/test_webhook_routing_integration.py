@@ -951,7 +951,9 @@ def test_a_pr_close_matched_through_a_binding_leaves_the_session_open(
         Then the PR's own endpoint is closed
         And issue 15's session is left active, because a work item may be
              delivered by several PRs
-    Requirement: docs/specs/issue-172/bugfix.md#R3 (R3.1)
+        And issue 15's session is told, once, that PR 16 merged
+    Requirement: docs/specs/issue-172/bugfix.md#R3 (R3.1),
+        docs/specs/issue-538/requirements.md#R1 (R1.5)
     """
     port, registry, tmux = server_factory(events=["pull_request"])
     register(registry, tmp_path)
@@ -975,7 +977,12 @@ def test_a_pr_close_matched_through_a_binding_leaves_the_session_open(
     assert wait_until(endpoint_closed)  # the PR's own session ended with it...
     session = registry.find_by_work_item(REF)
     assert session is not None and session.is_live  # issue-101, unchanged
-    assert tmux.delivers == [] and tmux.spawns == []
+    # …and the work item's session is told, once (issue-538, R1.5): the PR had a
+    # session of its own, so its merge is news to the session that owns the work.
+    assert wait_until(lambda: len(tmux.delivers) == 1)
+    ((ref, notice),) = tmux.delivers
+    assert ref == REF and "Transition: merged" in notice
+    assert tmux.spawns == []
 
 
 def test_a_pr_with_its_own_session_is_still_auto_closed(server_factory, tmp_path):
