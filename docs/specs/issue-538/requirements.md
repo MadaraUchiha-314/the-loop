@@ -206,9 +206,13 @@ hole the inner/outer split closed.
   4. WHEN close events for the same pull request are redelivered THEN the system SHALL NOT
      deliver a second `merged` or `closed` notice, because the endpoint is already closed
      and the close path reports nothing for a closed endpoint.
-- **Fail closed:** when the owning record, its session or the outer state cannot be read,
-  no notice is sent and the outer pointer is not moved. The notice is a nudge; the durable
-  record is the inner state file, unchanged.
+- **Fail closed:** when the owning record or its session cannot be read, no notice is
+  sent. When the outer state cannot be read, the outer pointer is not moved and nothing is
+  re-evaluated. A notice built from the registry alone (`spawned`, `declined`, `merged`) is
+  still sent, because it states a fact that holds whatever the outer state says, and a
+  `closed` notice then names the outer node as unknown. The notice is a nudge; the durable
+  record is the inner state file, unchanged. (Corrected after critic finding C3, which
+  showed the earlier wording overstated what fails closed.)
 
 ## Out of scope
 
