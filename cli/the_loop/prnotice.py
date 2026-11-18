@@ -26,6 +26,7 @@ from __future__ import annotations
 import string
 from typing import Dict, Tuple
 
+from . import prompts
 from .sessions import WorkItemRef
 
 __all__ = ["DECLINE_REASONS", "TRANSITIONS", "render"]
@@ -46,14 +47,21 @@ TRANSITIONS: Tuple[str, ...] = (
 #: Why a pull request was not given a session of its own — the codes the
 #: dispatcher itself chose, each with the one phrase a notice may say about it.
 DECLINE_REASONS: Dict[str, str] = {
-    "no-separate-checkout": (
-        "there is no routing.workspace.root, so it has no checkout of its own"
-    ),
-    "workspace-failed": "its checkout could not be prepared",
-    "shared-worktree": "its checkout resolved to this session's own working tree",
-    "harness-unavailable": "the harness could not be started for it",
-    "hook-refused": "a session_spawn lifecycle hook refused it",
+    code: prompts.load(f"prnotice/decline/{code}", inline=True)
+    for code in (
+        "no-separate-checkout",
+        "workspace-failed",
+        "shared-worktree",
+        "harness-unavailable",
+        "hook-refused",
+    )
 }
+
+
+def _text(name: str, /, **slots: object) -> str:
+    """One sentence of a notice, from ``prompts/prnotice/`` (issue-540)."""
+    return prompts.render(f"prnotice/{name}", inline=True, **slots)
+
 
 _IDENTIFIER_CHARS = string.ascii_letters + string.digits + "._:/#-"
 _IDENTIFIER_MAX = 120
@@ -91,71 +99,43 @@ def render(
     target = _identifier(tmux_target)
     outer = _identifier(outer_node)
     inner = _identifier(inner_node)
-    owns_events = "This session now receives this pull request's events; work it here."
+    owns_events = _text("owns-events")
     if transition == "spawned":
-        what = f"{pr} was given a session of its own ({_code(target)})."
-        means = (
-            "Its events and its inner loop (pdlc-pr-loop) run there from now on; "
-            "you are told here when it finishes, closes or escalates."
-        )
+        what = _text("what-spawned", pr=pr, target=_code(target))
+        means = _text("means-spawned")
     elif transition == "declined":
-        phrase = DECLINE_REASONS.get(reason, "unspecified")
-        what = f"{pr} was not given a session of its own: {phrase}."
+        phrase = DECLINE_REASONS.get(reason) or _text("decline/unspecified")
+        what = _text("what-declined", pr=pr, phrase=phrase)
         means = owns_events
     elif transition == "spawn-failed":
-        what = f"Starting a session for {pr} failed."
+        what = _text("what-spawn-failed", pr=pr)
         means = owns_events
     elif transition == "respawned":
-        what = f"{pr}'s session had died and was respawned ({_code(target)})."
-        means = "It carries on with its inner loop; nothing is needed from you."
+        what = _text("what-respawned", pr=pr, target=_code(target))
+        means = _text("means-respawned")
     elif transition == "respawn-failed":
-        what = f"{pr}'s session had died and could not be respawned."
-        means = (
-            "Its events will be retried; if this repeats, look at the session or "
-            "escalate on the work item."
-        )
+        what = _text("what-respawn-failed", pr=pr)
+        means = _text("means-respawn-failed")
     elif transition == "completed":
-        what = f"{pr}'s inner loop (pdlc-pr-loop) reached `complete` at its review."
-        means = (
-            "The daemon is re-checking `await-inner-loops` on your current node; "
-            "if it passes you will receive the next node's assignment."
-        )
+        what = _text("what-completed", pr=pr)
+        means = _text("means-rechecking")
     elif transition == "merged":
-        what = f"{pr} merged. Its inner loop (pdlc-pr-loop) is complete."
-        means = (
-            "The daemon is re-checking `await-inner-loops` on your current node; "
-            "if it passes you will receive the next node's assignment."
-        )
+        what = _text("what-merged", pr=pr)
+        means = _text("means-rechecking")
     elif transition == "closed":
-        what = f"{pr} was closed without merging. Its inner loop did not finish."
+        what = _text("what-closed", pr=pr)
         if outer_waits:
-            means = (
-                f"Your current node, {_code(outer)}, waits on `await-inner-loops` "
-                "and will keep waiting on this pull request until you reopen it, "
-                "replace it, or escalate on the work item."
-            )
+            means = _text("means-closed-waiting", outer=_code(outer))
         else:
-            means = (
-                f"Your current node is {_code(outer)}. Decide whether this pull "
-                "request's work is still needed."
-            )
+            means = _text("means-closed", outer=_code(outer))
     else:  # escalated
-        what = f"{pr}'s inner loop escalated at {_code(inner)}."
-        means = (
-            "Its session needs a decision it could not make; read the pull "
-            "request's thread and escalate on the work item if it needs a person."
-        )
-    return "\n".join(
-        [
-            "## the-loop: pull-request session notice",
-            "",
-            f"Work item: {work_item.ref} · Pull request: {pr} · "
-            f"Transition: {transition}",
-            "",
-            what,
-            means,
-            "",
-            "This notice is informational. It moves no graph pointer; "
-            "`the-loop graph status` shows where the work item stands.",
-        ]
+        what = _text("what-escalated", pr=pr, inner=_code(inner))
+        means = _text("means-escalated")
+    return _text(
+        "notice",
+        work_item=work_item.ref,
+        pr=pr,
+        transition=transition,
+        what=what,
+        means=means,
     )

@@ -39,7 +39,7 @@ logger = logging.getLogger("the-loop.graph")
 __all__ = ["deliver_assignment", "render_assignment"]
 
 
-def _text(name: str, **slots: object) -> str:
+def _text(name: str, /, **slots: object) -> str:
     """One sentence of the assignment, from ``prompts/assignment/`` (issue-540)."""
     return prompts.render(f"assignment/{name}", inline=True, **slots)
 

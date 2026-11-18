@@ -1,0 +1,1 @@
+- Check: `{name}` — `{conclusion}` on `{sha}`

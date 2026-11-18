@@ -137,12 +137,15 @@ def _adapter(entry: StandingSession, config: Optional[dict]) -> HarnessAdapter:
 def _surfaces(entry: StandingSession, config: Optional[dict]) -> str:
     """Where this session's operator can reach it — rendered into the directive."""
     where = [
-        f"the control plane (`the-loop standing say {entry.name} --text …`, or "
-        "`POST /api/v1/standing-sessions/say`)",
-        f"an attached terminal (`tmux attach -t {entry.tmux_target}`)",
+        prompts.render(
+            "standing/surface-control-plane", inline=True, name=entry.name
+        ),
+        prompts.render(
+            "standing/surface-terminal", inline=True, tmux_target=entry.tmux_target
+        ),
     ]
     if entry.slack.enabled and _slack_enabled(config):
-        where.append("the Slack thread this session was announced in")
+        where.append(prompts.load("standing/surface-slack", inline=True))
     return "; ".join(where)
 
 
@@ -863,7 +866,8 @@ def control_standing(
 
 def _framed(name: str, text: str, actor: str) -> str:
     who = f" ({actor})" if actor else ""
-    return f"Message from your operator{who} to standing session `{name}`:\n\n{text}"
+    head = prompts.render("standing/message", inline=True, who=who, name=name)
+    return f"{head}\n\n{text}"
 
 
 def say_standing(

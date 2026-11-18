@@ -430,7 +430,7 @@ def _is_review(loop: str) -> bool:
     return loop == PDLC_REVIEW_LOOP
 
 
-def _line(name: str, **slots: object) -> str:
+def _line(name: str, /, **slots: object) -> str:
     """One indented line of the ``$graph_context`` block, from its prompt file.
 
     The prose lives in ``the_loop/prompts/graph-context/`` (issue-540); this module
