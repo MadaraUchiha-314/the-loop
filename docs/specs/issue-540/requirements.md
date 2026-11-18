@@ -56,12 +56,12 @@ flowchart LR
    Python module keeps a copy.
 2. **One string catalog.** `strings/en.json` is the single source of human-facing
    message text, read through one lookup with named placeholders and a locale fallback.
-3. **A first migration slice, plus a rule that holds the line.** This work item moves
-   every prompt and the CLI's keyed human-message catalogs (the dictionaries of reasons,
-   titles and phrases listed in the design). Tests keep new prompts and new catalog
-   entries from being written inline again. The long tail — free-form f-strings across
-   the CLI, CLI stdout, and the UI — is migrated in follow-up work items (see *Out of
-   scope*), because doing it in one pull request would make it unreviewable.
+3. **The whole application, in this pull request.** Every prompt, every message the-loop
+   posts to people (GitHub, Slack and Jira comments, notices, checklists), every
+   user-facing CLI message (stdout and stderr output, `argparse` help), and every UI
+   string moves. The owner rejected an earlier split into follow-up items ([PR #541
+   comment](https://github.com/MadaraUchiha-314/the-loop/pull/541#issuecomment-6994696692)).
+   Tests keep new prompts and catalog entries from being written inline again.
 
 ## Requirements
 
@@ -76,7 +76,10 @@ rather than as Python string literals.
 1. The system SHALL keep every prompt and prompt fragment that the CLI sends to an agent
    harness — spawn and event prompts, interaction directives, the standing-session boot
    prompt, self-diagnosis and critic prompts, and the notices and nudges pasted into a
-   live session — as a `.md` file under `cli/the_loop/prompts/`.
+   live session, and the MCP server's tool descriptions — as a `.md` file under
+   `cli/the_loop/prompts/`. The plugin's stop hook (`hooks/the-loop-gate.py`), which runs
+   without the package installed, SHALL read its feedback text from a `.md` file shipped
+   beside it.
 2. WHEN the CLI composes a prompt THEN the system SHALL read its text through a single
    loader module, never from a Python string literal holding the prompt's prose.
 3. WHEN a prompt has variable parts THEN the system SHALL fill them through named
@@ -109,13 +112,21 @@ editing code.
    the system SHALL fall back to the `en` text for that key.
 4. IF a key is absent from the `en` catalog THEN the system SHALL raise an error naming
    the key — a missing string is a bug, not a blank message.
-5. The system SHALL move the CLI's keyed human-message dictionaries named in the design
-   (refusal remedies, kickoff refusals, Slack titles and button names,
-   command descriptions, attachment reasons, mirror lines, digest pointers) into the
-   catalog, rendering the same text as today.
+5. The system SHALL take from the catalog every human-facing string of the application,
+   rendering the same text as today:
+   - every comment, reply, notice, checklist and message body the CLI posts to GitHub,
+     Slack or Jira;
+   - every user-facing CLI message: `print` and stderr output, `argparse`
+     help/description/epilog, `parser.error` text and `SystemExit` messages;
+   - every user-visible string in the UI (`ui/src`), which reads the same `en.json`
+     under `ui.*` keys.
 6. A test SHALL verify that every key the code looks up exists in `en.json`, that the
    catalog is valid JSON with string values only, and that each entry's placeholders
    match the variables its call sites pass.
+7. The system SHALL keep in code, and only in code: machine vocabulary (markers,
+   keywords, labels, event names, JSON field names, regular expressions, URLs), `logger`
+   lines, and messages of exceptions raised for operators and developers. These are
+   diagnostics, not application strings, and they stay greppable.
 
 ### Requirement 3 — The rule holds for new code
 
@@ -127,7 +138,9 @@ catalog-style message inline again, so that the migration does not erode.
 1. WHEN a Python module under `cli/the_loop` defines a multi-line string literal that
    the guard recognises as prompt prose THEN the test suite SHALL fail, naming the
    module and line.
-2. The system SHALL document both conventions — where prompts live and how strings are
+2. WHEN the UI's catalog lookup is given a key absent from `en.json` THEN the UI test
+   suite SHALL fail, and every `ui.*` key in `en.json` SHALL be used by the UI.
+3. The system SHALL document both conventions — where prompts live and how strings are
    looked up — in the capability docs and in the contributor guidance read by agents
    working on this repository.
 
@@ -167,31 +180,26 @@ catalog-style message inline again, so that the migration does not erode.
 
 ## Out of scope
 
-- **Free-form strings elsewhere in the CLI** — f-strings composed inline in comment
-  builders, CLI `print` output, `argparse` help, log lines and exception messages. Log
-  lines and exceptions stay in English by design (they are for operators debugging, and
-  are grepped). The rest is a follow-up work item that migrates module by module onto
-  the catalog this one creates.
-- **The UI (`ui/src`).** It gets its own follow-up; the catalog's dotted-key shape lets
-  it share the file (`ui.*` keys) when it does.
 - **Translations.** This work item ships `en` only. The fallback path is tested with a
   fixture locale.
 - **The skill and command Markdown** (`skills/`, `commands/`) — already Markdown.
-- **Prompt text the design leaves inline, each with a stated reason** (`design.md` §
-  *Left inline*): MCP tool docstrings (pinned by the API/SDK parity tests),
-  `hooks/the-loop-gate.py` (runs without the package installed), the Codex
-  conversation marker (a machine token, not prose), graph hook messages and CLI
-  envelopes (CLI output), and prompts the caller supplies. The first two are in
-  follow-up [#542](https://github.com/MadaraUchiha-314/the-loop/issues/542), along with
-  the string long tail and the UI.
+- **Log lines and developer-facing exception messages** — kept in English by
+  R2.7. The owner was told and invited to object
+  ([PR #541](https://github.com/MadaraUchiha-314/the-loop/pull/541#issuecomment-6994716945)).
+- **Agent-facing text that is not prose:** the Codex conversation marker (a machine
+  token), graph hook messages and CLI JSON envelopes (CLI output an agent reads like a
+  person would, and which carry machine vocabulary), and prompts the caller supplies.
 
 ## Open questions
 
-None blocking. The scope split above (foundation + every prompt + keyed message
-catalogs now; long-tail strings and the UI later) is this item's main judgement call and
-is called out in the pull request for the reviewer.
+None blocking. The exception-message boundary (R2.7) was raised on the PR.
 
 ## Review comments
 
 > Appended by the-loop's `record-feedback` hook when a human gate approves with
 > comments (issue-109).
+
+- **2026-11-18, @MadaraUchiha-314 on [PR #541](https://github.com/MadaraUchiha-314/the-loop/pull/541#issuecomment-6994696692):**
+  "no. do it in this PR itself. don't create more backlog unnecessarily", in answer to
+  whether the scope split was acceptable. Applied: R2.5 now covers the whole
+  application, and follow-up #542 was withdrawn.

@@ -30,10 +30,11 @@ overrides: {}
 | T7 | Static checks | yes | lint, format, typecheck and config validation stay green | `make check` (ruff, markdownlint, pyright, validate, pytest) |
 | T8 | Integration (scenario) | n/a | no new routing behaviour; the existing webhook→session scenarios run in T2 and render through the new loader | — |
 | T9 | End-to-end | n/a | the daemon's behaviour does not change; T2 + T5 cover the render path end to end without a live GitHub | — |
-| T10 | UI / visual | n/a | the UI is out of scope (requirements § Out of scope) | — |
+| T10 | UI unit | yes | the UI suite still asserts today's English text after every string moves to `t()`; `i18n.test.ts` checks used keys ↔ `ui.*` catalog keys and the missing-key throw | `cd ui && npm test` + `npm run typecheck` + `npm run lint` |
 | T11 | Performance | n/a | one cached file read per prompt per process; nothing measurable | — |
 | T12 | Accessibility | n/a | no UI change | — |
 | T13 | Migration / upgrade | n/a | no config, schema or state-file change; `promptTemplate`/`spawnTemplate` overrides keep working (covered by existing tests in T2) | — |
+| T16 | Stop-hook feedback | yes | `hooks/the-loop-gate.py` renders its feedback from `hooks/prompts/gate-feedback.md` byte-identically | `make test` (`tests/test_harness_gate.py`) |
 | T14 | i18n fallback | yes | a fixture locale with one translated key and one missing key: translated key returns the translation, missing key returns `en`, invalid locale file warns and falls back | `make test` |
 | T15 | Manual exploratory | n/a | nothing user-visible changes | — |
 
@@ -49,6 +50,9 @@ overrides: {}
 | T6 | Security abuse 1–2, fail-closed | payload `$work_item {name}` stays literal in the rendered spawn prompt; `prompts.load('../x')` raises `ValueError` |
 | T7 | R3.2 (docs lint), NFR no new dependency | `make check` green; `cli/pyproject.toml` dependencies unchanged |
 | T14 | R2.3 | fixture `xx.json` via `THE_LOOP_LOCALE=xx` |
+| T10 | R2.5 (UI), R3.2 | UI tests unchanged and green; `i18n.test.ts` |
+| T16 | R1.1 (stop hook) | gate feedback text unchanged |
+| T2 | R2.5 (CLI messages and comment bodies) | every existing CLI/comment test unchanged and green after the move |
 
 ## Verification environment
 
@@ -74,6 +78,9 @@ overrides: {}
 - [x] T2 — `cd cli && uv run python -m pytest -q` (full suite)
 - [x] T5 — `uv build --wheel cli -o <tmp>` then `unzip -l <wheel> | grep -E 'the_loop/(prompts|strings)/'` and a smoke import from a fresh venv
 - [x] T7 — `make check`
+- [ ] T2 (scope extension) — `cd cli && uv run python -m pytest -q`, full suite after the whole-application migration, CI-equivalent env
+- [ ] T10 — `cd ui && npm ci && npm test && npm run typecheck && npm run lint && npm run build`
+- [ ] T7 (scope extension) — `make check` after the migration
 
 ## Verification results
 

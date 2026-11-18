@@ -173,16 +173,8 @@ line.
 
 **Left inline, with reasons** (recorded in the capability doc):
 
-- **MCP tool docstrings** (`api/mcp.py`, about 35 tools). The SDK reads them as tool
-  descriptions. They are also the Python API's documentation, and
-  `test_api_contract_parity.py` / `test_sdk_docs_parity.py` pin them to the REST
-  contract. Moving them belongs in a follow-up that changes the parity source too.
-- **`hooks/the-loop-gate.py` `feedback_text`.** A standalone hook script that ships in the
-  plugin's `hooks/` directory and must run without the `the_loop` package installed, so
-  it cannot import the loader. Follow-up.
-- **Graph hook `Message` texts and CLI envelopes** that reach an agent through
-  `the-loop graph complete`/`check` stdout. These are CLI output: the agent reads them
-  the way a person would.
+- *(The MCP tool descriptions and the stop hook's feedback text were on this list in the
+  first slice. They move now; see § Scope extension.)*
 - **`codex_support.conversation_marker`** (`[the-loop conversation: <id>]`). A machine token
   that `codex_support` matches back against Codex rollout files to find a conversation.
   It is protocol, not prose.
@@ -218,6 +210,76 @@ Every dictionary in this table maps a fixed code to the words a person reads on 
 Slack or Jira. The others the survey found are machine vocabulary and stay in code:
 `EVENT_TYPES`, `DEFAULT_KEYWORDS`, `REACTION_CONTENTS`, emoji maps and schema
 retirements.
+
+## Scope extension — the whole application (owner feedback on PR #541)
+
+The owner rejected the split into follow-up items. Everything below lands in this pull
+request, under the same byte-identical bar as the first slice.
+
+### What a "string" is here (requirements R2.5, R2.7)
+
+```mermaid
+flowchart TD
+  L["a string literal or f-string in cli/the_loop or ui/src"] --> Q1{"sent to an agent?"}
+  Q1 -- yes --> P["prompts/&lt;area&gt;/&lt;name&gt;.md"]
+  Q1 -- no --> Q2{"read by a person as the-loop's own words?<br/>(comment/notice body, CLI output, argparse help,<br/>parser.error / SystemExit text, UI text)"}
+  Q2 -- yes --> S["strings/en.json → strings.t / UI t()"]
+  Q2 -- no --> K["stays in code:<br/>machine vocabulary, logger lines,<br/>developer-facing exception messages"]
+```
+
+- **Machine vocabulary stays.** Markers (`<!-- the-loop:… -->`), control keywords, label
+  names, event types, JSON field names, regexes, URLs, file names, emoji used as
+  protocol, and anything another program parses. Moving it would make the protocol depend
+  on a translation.
+- **A sentence assembled from pieces** becomes one catalog entry with named fields when
+  the pieces are words. Logic-driven joins stay in code, and each prose piece gets its own
+  key, as with the prompt fragments.
+- **Markdown bodies.** Multi-line comment bodies (for example the phase-selection
+  checklist) become one entry per paragraph or line group. The code keeps the structure
+  (loops over phases, ticked boxes, markers), so a body still renders byte for byte.
+
+### Key convention
+
+`<area>.<module>.<what>`: lowercase, dotted, hyphens inside a segment, and the first
+segment free of underscores (the catalog test's pattern). Areas: `cli.` (commands and
+their argparse help: `cli.<command>.<…>`), `channels.`, `core.`, `graph.`, `webhook.`,
+`poller.`, `gateway.`, `api.`, `manager.`, `sdk.`, `lifecycle.`, `sessions.`, `harness.`,
+top-level modules by module name, and `ui.`. The keys already shipped
+(`dispatcher.refusal.*`, `slack.*`, …) keep their names.
+
+### The remaining prompts
+
+- **MCP tool descriptions.** Each tool's description is `prompts/mcp/tools/<tool>.md`,
+  passed as `server.add_tool(fn, name=…, description=prompts.load(…, inline=True))`. The
+  function keeps a one-line docstring for Python readers. The description the MCP client
+  sees is the file's text, byte-identical to the old docstring as the SDK cleaned it. The
+  parity tests that read docstrings are pointed at the same files.
+- **The stop hook.** `hooks/the-loop-gate.py` reads its feedback lines from
+  `hooks/prompts/gate-feedback.md`, beside the script, with `str.format` slots. The
+  `hooks/` directory ships whole in the plugin and in the wheel's `the_loop/resources/hooks`,
+  so the file is always there. A missing file falls back to nothing silently: the hook is
+  the harness's clock and must never crash a stop (its existing contract). A test pins
+  the rendered text.
+
+### The UI
+
+- `ui/src/i18n.ts` imports `../../cli/the_loop/strings/en.json` at build time (Vite
+  bundles it, so there is no runtime fetch) and exports `t(key, vars?)` with the same
+  `{name}` semantics: single-pass, a missing key throws. Only `ui.*` keys are read.
+- Components call `t("ui.<view>.<what>")`. Test files keep asserting the rendered English
+  text, which is the byte-identical check for the UI.
+- `ui/src/i18n.test.ts` checks that every key the UI's source passes to `t()` exists and
+  that every `ui.*` key is used (R3.2).
+- The Python catalog test's "every entry is used" rule skips the `ui.` prefix, which the
+  UI test owns.
+
+### How the work is split
+
+The migration is mechanical and wide (about 285 `print` calls, 221 `argparse` help
+strings, the comment builders, and the UI). It is done in disjoint module groups. During
+the work, each group adds its keys to `en.json` through one locked merge script kept
+outside the repository, so concurrent edits never lose a key. Each group runs its own
+tests, then the full suite runs once at the end.
 
 ## Data models
 
@@ -268,14 +330,11 @@ cases.
 
 ## Trade-offs & decisions
 
-- **Scope split.** Every prompt moves now. For strings, the foundation plus the keyed
-  catalogs move now, and the long tail goes to follow-up items. About 300 `print` calls
-  and hundreds of inline f-strings in comment builders cannot be byte-checked in one
-  reviewable diff. The keyed dictionaries already have the shape a catalog needs, so
-  they prove the mechanism end to end. A follow-up issue is filed for the rest (CLI
-  comment builders module by module, CLI stdout, the UI).
+- **Scope.** First proposed as a split (prompts and keyed dictionaries now, the long tail
+  later). The owner rejected that on the PR, so the whole application moves in this pull
+  request (§ Scope extension).
 - **Catalog location.** `cli/the_loop/strings/en.json` ships in the wheel with no build
-  step. The UI can import the same file at build time when its follow-up lands; a
+  step, and the UI imports the same file at build time. A
   repo-root location would need a hatch `force-include` and a second copy in the wheel.
 - **No i18n library** (`gettext`, `babel`). The requirement is one JSON file. `gettext`
   wants `.po`/`.mo`, and a 40-line lookup keeps the CLI's dependency list unchanged.
