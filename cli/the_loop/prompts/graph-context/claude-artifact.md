@@ -1,0 +1,1 @@
+also publish the spec chain as ONE Claude artifact, chosen at phase-selection: one tab per spec file, republished to the same URL whenever a file changes, linked once from the work item — the markdown files stay the source of truth, and a comment on the artifact is feedback, never a gate answer (Claude Code only: with no artifact tool, say so once on the work item and carry on)
