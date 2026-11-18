@@ -30,7 +30,7 @@ My leaning is to **fix how much we write before fixing how we write it**. That m
 I want your call on the six questions under [Open questions](#open-questions) before I
 write requirements.
 
-## Problem
+## Problem / opportunity
 
 A reviewer at a gate has one job: to say yes or no. Today the-loop makes that job slow.
 
