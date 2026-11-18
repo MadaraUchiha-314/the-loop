@@ -16,7 +16,7 @@ overrides: {}
 
 ## Task list
 
-- [ ] 1. Notice renderer and gate predicate
+- [x] 1. Notice renderer and gate predicate
   - `cli/the_loop/prnotice.py`: `TRANSITIONS`, `DECLINE_REASONS`, `_identifier()`,
     `render(...)`.
   - `waits_on_inner_loops(node)` in `cli/the_loop/graph/hooks/loops.py`.
