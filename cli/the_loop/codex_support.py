@@ -14,6 +14,7 @@ from itertools import islice
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+from . import prompts
 from .gitexclude import exclude_from_git
 from .trust import TrustResult, _lock_for, update_json
 
@@ -293,16 +294,12 @@ def prepare_instructions(
             )
         block = (
             f"{BEGIN}\n"
-            "This session runs the-loop. Read and follow the operating skill at\n"
-            f"{resources / 'skills/the-loop/SKILL.md'} and its relevant references.\n"
-            "Read .the-loop/harness-config.yaml and custom instructions when present.\n"
-            "Use the-loop ticket show, graph status, graph complete, check, comment,\n"
-            "ask, and pr create for the work item in THE_LOOP_WORK_ITEM.\n"
-            "A graph command such as /the-loop:work-on names a procedure; read the\n"
-            f"corresponding Markdown under {resources / 'commands'} and perform it.\n"
-            "Use the-loop ask for human decisions; advance the graph after completing\n"
-            "the current node. Honor frozen selections and human gates.\n"
-            f"{END}"
+            + prompts.render(
+                "codex/agents-block",
+                skill=resources / "skills/the-loop/SKILL.md",
+                commands=resources / "commands",
+            )
+            + f"{END}"
         )
         if BEGIN in original:
             start, finish = original.index(BEGIN), original.index(END) + len(END)

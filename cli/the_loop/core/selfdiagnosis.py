@@ -210,15 +210,14 @@ def build_dossier(records: Sequence[Mapping]) -> str:
         lines.append(json.dumps(entry, separators=(", ", ": "), default=str))
 
     def render(entries: List[str]) -> str:
-        return (
-            "# Self-diagnosis dossier\n\n"
-            f"- the-loop version: {__version__}\n"
-            f"- python: {platform.python_version()}\n"
-            f"- os: {platform.system()}\n"
-            f"- matching records in this log: {len(records)}"
-            f" (showing the last {len(entries)})\n\n"
-            "## Trigger records (allow-listed fields only, free text scrubbed)\n\n"
-            "```json\n" + "\n".join(entries) + "\n```\n"
+        return prompts.render(
+            "selfdiagnosis/dossier",
+            version=__version__,
+            python=platform.python_version(),
+            os=platform.system(),
+            matching=len(records),
+            shown=len(entries),
+            entries="\n".join(entries),
         )
 
     dossier = render(lines)

@@ -51,6 +51,7 @@ from typing import Any, Dict, List, Optional
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
+from .. import prompts
 from ..cli_config import ConfigHolder, default_cli_config_path
 from .config import service_config
 from .facade import CoreFacade
@@ -72,11 +73,7 @@ def build_server(cli_config: Optional[dict] = None, *, facade: Any = None) -> MC
         name="the-loop",
         title="the-loop control plane",
         version="1",
-        instructions=(
-            "Inspect and steer the-loop's work items: read portable records, "
-            "evaluate process-graph gates, control harness sessions and the "
-            "ingress daemons, and query the structured event log."
-        ),
+        instructions=prompts.load("mcp/server-instructions", inline=True),
     )
 
     def list_work_items() -> List[Dict[str, Any]]:

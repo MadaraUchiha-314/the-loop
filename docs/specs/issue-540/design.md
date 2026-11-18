@@ -161,7 +161,7 @@ locale active at import; changing locale at runtime is out of scope.
 | `core/standing.py` `_surfaces` phrases, `_framed` | `standing/*.md` | `str.format` |
 | `core/selfdiagnosis.py` `build_dossier` prose lines | `selfdiagnosis/dossier-*.md` | `str.format` |
 | `graph/hooks/mcp.py` inline `mcp-call` prompt | `mcp/call.md` | `str.format` |
-| `codex_support.py` `conversation_marker`, the AGENTS.md managed block | `codex/*.md` | `str.format` |
+| `codex_support.py` the AGENTS.md managed block | `codex/agents-block.md` | `str.format` |
 | `api/mcp.py` server `instructions` | `mcp/server-instructions.md` | none |
 
 Composition glue stays in code: `"\n".join`, the `---` separators between a notice and a
@@ -183,6 +183,9 @@ line.
 - **Graph hook `Message` texts and CLI envelopes** that reach an agent through
   `the-loop graph complete`/`check` stdout. These are CLI output: the agent reads them
   the way a person would.
+- **`codex_support.conversation_marker`** (`[the-loop conversation: <id>]`). A machine token
+  that `codex_support` matches back against Codex rollout files to find a conversation.
+  It is protocol, not prose.
 - **Prompts the caller supplies**: critic prompts, the standing-session brief, API
   `prompt` fields.
 

@@ -22,6 +22,7 @@ from typing import Any, Dict, List
 
 from ..contract import HookContext, HookResult, Message
 from ..registry import hook
+from ... import prompts
 from ...harness import ADAPTER_TYPES
 from ...harness.base import output_text
 from ...modelchoice import default_harness
@@ -83,10 +84,12 @@ def mcp_call(ctx: HookContext) -> HookResult:
             retriable=False,
         )
 
-    prompt = (
-        f"Call the MCP tool `{tool}` with these arguments and return ONLY the "
-        f"structured result.\n\nArguments: {json.dumps(ctx.params.get('arguments') or {})}\n\n"
-        f"Respond as JSON matching: {json.dumps(_SCHEMA)}"
+    prompt = prompts.render(
+        "mcp/call",
+        inline=True,
+        tool=tool,
+        arguments=json.dumps(ctx.params.get("arguments") or {}),
+        schema=json.dumps(_SCHEMA),
     )
     try:
         proc = subprocess.run(
