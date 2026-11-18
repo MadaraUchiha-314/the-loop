@@ -1431,9 +1431,7 @@ class Dispatcher:
                         # that may be waiting on it (issue-538, R2.1). A close
                         # without a merge changed no inner state (R2.6).
                         if merged:
-                            self.graphlink.on_inner_loop_finished(
-                                session.work_item, session.cwd
-                            )
+                            self._reevaluate_outer(session)
                     logger.info(
                         "%s (%s) is linked to %s, which is still open; leaving "
                         "its session active — a work item may be delivered by "
@@ -2370,7 +2368,7 @@ class Dispatcher:
         now = str(getattr(after, "current_node", "") or "")
         if now == INNER_COMPLETE_NODE and before != INNER_COMPLETE_NODE:
             self._notify_owner(record.work_item, endpoint.work_item, "completed")
-            self.graphlink.on_inner_loop_finished(record.work_item, record.cwd)
+            self._reevaluate_outer(record)
             return
         if str(getattr(report, "status", "") or "") == "escalated":
             self._notify_owner(
@@ -2379,6 +2377,27 @@ class Dispatcher:
                 "escalated",
                 inner_node=str(getattr(report, "node", "") or ""),
             )
+
+    def _reevaluate_outer(self, record: Session) -> None:
+        """Re-run the outer gate an inner loop may have released (issue-538, R2),
+        off the calling thread.
+
+        The close path runs inside :meth:`handle`, which the receiver calls
+        before it answers the webhook. A passing re-run enters the next node,
+        whose entry chain labels the ticket and pastes an assignment, and an
+        operator's graph may bind a ``verify-tests`` command there. None of that
+        belongs in front of a webhook's ``202``. The graph lock serialises this
+        thread against the session's own claims, and
+        :meth:`GraphLink.on_inner_loop_finished` never raises.
+        """
+        work_item, cwd = record.work_item, record.cwd
+        thread = threading.Thread(
+            target=self.graphlink.on_inner_loop_finished,
+            args=(work_item, cwd),
+            name=f"outer-reevaluate-{work_item.slug}",
+            daemon=True,
+        )
+        thread.start()
 
     def _notify_closed(self, record: Session, endpoint: Session, merged: bool) -> None:
         """The ``merged`` / ``closed`` notice for one of ``record``'s pull requests.

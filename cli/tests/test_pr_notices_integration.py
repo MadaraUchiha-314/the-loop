@@ -595,3 +595,43 @@ def test_an_escalated_inner_loop_is_reported(
     texts = [t for r, t in tmux.delivers if r == REF]
     assert len(texts) == 1 and "Transition: escalated" in texts[0]
     assert "`self-review`" in texts[0] and reevaluated == []
+
+
+def test_a_slow_outer_reevaluation_does_not_hold_the_webhook(
+    server_factory, tmp_path, events, monkeypatch
+):
+    """
+    Feature: pull-request session notices
+      Scenario: the re-run outer gate is slow
+        Given issue 15's live session and PR 16 with a session of its own
+        And an outer re-evaluation that does not return until released
+        When PR 16 is merged
+        Then the webhook is answered without waiting for the re-evaluation
+        And the re-evaluation still runs, for issue 15
+
+    Requirement: docs/specs/issue-538/requirements.md R3 (a notice never fails the
+    path it rides on) — self-review F1
+    """
+    import threading
+    import time
+
+    port, registry, tmux = server_factory(events=["pull_request"])
+    with_pr_session(registry, tmp_path)
+    release = threading.Event()
+    ran = []
+
+    def slow(work_item, cwd):
+        release.wait(timeout=10)
+        ran.append(work_item.ref)
+
+    monkeypatch.setattr(
+        server_factory.dispatcher.graphlink, "on_inner_loop_finished", slow
+    )
+    try:
+        started = time.monotonic()
+        assert post_webhook(port, "pull_request", close_payload(), "slow-1") == 202
+        assert time.monotonic() - started < 5
+        assert ran == []
+    finally:
+        release.set()
+    assert wait_until(lambda: ran == [REF])

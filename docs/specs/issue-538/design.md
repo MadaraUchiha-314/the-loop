@@ -179,7 +179,12 @@ threaded, and that would be shared mutable state.
 
 In the close path the endpoint's `tmux_target` is read **before** `_close_tmux`, and the
 notice is sent after `on_pr_close`/`on_pr_state`, so it describes the state already
-written. Then, for a merge only, `graphlink.on_inner_loop_finished` runs (R2.1, R2.6).
+written. Then, for a merge only, `graphlink.on_inner_loop_finished` runs (R2.1, R2.6), on
+a short-lived daemon thread (`Dispatcher._reevaluate_outer`). The close path runs inside
+`handle`, before the receiver answers the webhook, and a passing re-run enters the next
+node, whose entry chain makes a GitHub call and may run an operator's `verify-tests`
+command. The graph's state lock serialises that thread against the session's own claims
+(self-review F1).
 
 In `_dispatch_one` the inner node is read from the context resolved before the advance and
 from `pr_context` after it. A helper `_after_inner_advance(session, endpoint, before,
