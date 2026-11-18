@@ -70,17 +70,20 @@ overrides: {}
 
 ## Verification activities
 
-- [ ] T1, T3, T4, T6, T14 — `cd cli && uv run python -m pytest -q tests/test_prompts.py tests/test_strings_catalog.py tests/test_prompts_guard.py`
-- [ ] T2 — `cd cli && uv run python -m pytest -q` (full suite)
-- [ ] T5 — `uv build --wheel cli -o <tmp>` then `unzip -l <wheel> | grep -E 'the_loop/(prompts|strings)/'` and a smoke import from a fresh venv
-- [ ] T7 — `make check`
+- [x] T1, T3, T4, T6, T14 — `cd cli && uv run python -m pytest -q tests/test_prompts.py tests/test_strings_catalog.py tests/test_prompts_guard.py`
+- [x] T2 — `cd cli && uv run python -m pytest -q` (full suite)
+- [x] T5 — `uv build --wheel cli -o <tmp>` then `unzip -l <wheel> | grep -E 'the_loop/(prompts|strings)/'` and a smoke import from a fresh venv
+- [x] T7 — `make check`
 
 ## Verification results
 
-_Not yet executed._
+Executed 2026-11-18 at `d0470779`. Raw output: [`evidence/verification.md`](evidence/verification.md).
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1, T3, T4, T6, T14 | `pytest tests/test_prompts.py tests/test_strings_catalog.py tests/test_prompts_guard.py` | 36 passed; guard reports the 6 inline prompts on `origin/main` | [V1](evidence/verification.md#v1--new-tests-t1-t3-t4-t6-t14) |
+| T2 | full suite, daemon env vars unset as in CI | 6992 passed. Old-vs-new render hashes identical over 66,174 cases | [V2](evidence/verification.md#v2--full-suite-t2-existing-tests-pin-todays-text) |
+| T5 | `uv build --wheel cli`; `unzip -l`; fresh-venv smoke import | 101 prompt files + `en.json` ship; installed wheel renders | [V3](evidence/verification.md#v3--packaging-t5) |
+| T7 | ruff format/check, pyright, markdownlint, `validate_config.py` | all green; dependencies unchanged | [V4](evidence/verification.md#v4--static-checks-t7) |
 
 ## Review comments
