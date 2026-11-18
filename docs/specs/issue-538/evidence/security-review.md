@@ -9,8 +9,9 @@ workItem: "github:MadaraUchiha-314/the-loop#538"
 
 - **Mechanisms:** (1) the-loop checklist (`reference/security.md`), checked against
   `git diff origin/main -- cli/`. (2) The harness's built-in `/security-review`, run as a
-  separate pass. **Its result is pending, and this record is updated with it before review
-  is requested.**
+  separate pass: a sub-agent reviewed `git diff origin/main -- cli/` against the
+  vulnerability categories and false-positive exclusions, and only findings at confidence 8
+  or above were kept.
 - **Risk tier:** 3. No sensitive path is touched (no schema, `.the-loop/**`, workflow,
   auth, secret or credential path), so no named human security sign-off is required.
 - **Checklist outcome:** pass, with no findings. The one security-relevant defect found in
@@ -30,4 +31,14 @@ workItem: "github:MadaraUchiha-314/the-loop#538"
 
 ## Built-in `/security-review`
 
-_Pending: appended when the pass returns._
+**Outcome:** no findings at confidence 8 or above. Six candidates were considered and
+rejected:
+
+| Candidate | Confidence | Why rejected |
+|---|---|---|
+| Prompt injection through the notice text | 1 | No parameter of `prnotice.render` can carry payload text: the transition is checked against a fixed tuple, the reason is a key into a fixed table, identifiers are filtered to a class without backtick or newline, and refs are parsed `WorkItemRef`s |
+| `_decline_into` prepending the notice to the event | 1 | That event was already pasted into this session before the change; only the fixed notice is new |
+| An outsider forcing the outer graph forward | 2 | Triggered only by a merge (a write-access act) or by an inner `complete` reached through the unchanged authorization path. It needs the parked-on-`await-inner-loops` precondition and advances with no event comments |
+| tmux buffer names | 1 | The `uuid4` suffix is never caller-supplied and is passed as an argv element with no shell; the change closes a cross-session leak |
+| Thread name and new event fields | 1 | Identifiers only (refs, node ids, transition codes); no secret or payload content |
+| `waits_on_inner_loops` | 1 | Reads the daemon's own compiled graph, which webhook input cannot change |
