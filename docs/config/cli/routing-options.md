@@ -1017,8 +1017,16 @@ really is on the pull request's code.
 
 A decline is not a lost event: it is delivered into the work item's session and recorded as
 `session.pr_session_declined`. If you set `always` and see one session, `the-loop events`
-says which of `no-separate-checkout`, `workspace-failed` or `shared-worktree` it was.
+says which of `no-separate-checkout`, `workspace-failed` or `shared-worktree` it was. The
+work item's session is told too: the event arrives behind a short notice naming the pull
+request and the reason (issue-538).
 :::
+
+Whatever the mode, the work item's own session gets one short notice each time one of its
+pull requests' sessions is spawned, declined, respawned, merges, closes, completes or
+escalates, and a merge re-checks the `await-inner-loops` gate the work item may be parked
+on. No setting governs this; `session.pr_notice_*` in `the-loop events` records each
+notice.
 
 A cross-repository endpoint has the same requirement, and it is why
 [`workspace.root`](#workspaceroot) must be set for any mode but `never` to produce a second

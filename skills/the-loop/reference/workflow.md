@@ -455,7 +455,13 @@ discussion-only pull request in the repository holding the spec chain.
   growing it; `--clear` declares none, and no flags prints what is declared. The
   declaration lands in `work-item-state.json`; `await-inner-loops` then holds the outer
   `implementation` node until each declared repository has an inner loop *and* every
-  started loop has finished. Without the declaration, a pull request that was planned and
+  started loop has finished. You are **told** when that happens (issue-538): the daemon
+  pastes a short notice into your session whenever one of your pull requests' sessions is
+  spawned, declined, merges, closes, completes, escalates or is respawned, and after an
+  inner loop finishes it re-runs the gate you were parked on. A pass delivers the next
+  node's assignment, so there is no need to poll. A `closed` notice means that pull
+  request's loop will never finish by itself: reopen it, replace it, or escalate. A notice
+  is information, never an approval, and it moves no pointer. Without the declaration, a pull request that was planned and
   never opened is indistinguishable from a work item that needed none.
 - **Verification spans the repositories.** The testing plan's **Verification environment**
   section names the checkouts and refs it needs; the-loop facilitates verification, it does

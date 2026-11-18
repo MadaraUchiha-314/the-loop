@@ -51,7 +51,7 @@ overrides: {}
   - _Depends on:_ 3
   - _Requirements:_ R1.5, R1.7, R2.2
   - _Test:_ T6 — `pytest tests/test_pr_notices_integration.py -k "completed or escalat"` (red→green)
-- [ ] 6. Capability and user-facing docs
+- [x] 6. Capability and user-facing docs
   - `docs/capabilities/process-graph.md` (the one-way rule now has a daemon-side re-run) and
     the capability doc covering pull-request sessions; the skill's `reference/workflow.md`
     § Several repositories, if it states the old behaviour; `evidence/documentation.md`.
