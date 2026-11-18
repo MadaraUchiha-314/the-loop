@@ -89,7 +89,9 @@ prompting me.
    work item's session THEN the system SHALL deliver the notice in the same paste as that
    event, ahead of it, rather than as a second paste.
 5. WHEN a pull request that had a session of its own is merged THEN the system SHALL
-   deliver one `merged` notice naming the pull request and stating that its inner loop is complete.
+   deliver one `merged` notice naming the pull request and stating that its inner loop is
+   complete; WHEN an event delivered to its endpoint moves its inner loop to `complete`
+   through its approval gate THEN the system SHALL deliver one `completed` notice.
 6. WHEN a pull request that had a session of its own is closed without merging THEN the
    system SHALL deliver one `closed` notice naming the pull request, the outer node the work item
    is on, and — when that node waits on `await-inner-loops` — that the gate will keep
