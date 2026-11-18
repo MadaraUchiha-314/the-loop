@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-540",
-  "currentNode": "self-review",
+  "currentNode": "critic-review",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -117,10 +117,18 @@
     },
     "self-review": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-11-18T23:03:40+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-11-18T23:04:29+00:00",
       "lastBlock": "",
+      "forced": false
+    },
+    "critic-review": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-11-18T23:04:29+00:00",
+      "exitedAt": "",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-540/evidence/critic-review.md)",
       "forced": false
     }
   },
@@ -362,6 +370,10 @@
     },
     "verification": {
       "at": "2026-11-18T23:03:40+00:00",
+      "by": "cli"
+    },
+    "self-review": {
+      "at": "2026-11-18T23:04:29+00:00",
       "by": "cli"
     }
   },
