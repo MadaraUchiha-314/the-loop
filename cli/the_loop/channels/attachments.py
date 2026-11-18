@@ -38,7 +38,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-from .. import prompts
+from .. import prompts, strings
 
 logger = logging.getLogger("the-loop.channels")
 
@@ -89,11 +89,8 @@ GITHUB_HOSTS: Tuple[str, ...] = (
 
 #: A fixed reason per failure — the words the section and the record print.
 _REASONS = {
-    "no-token": "the-loop holds no token for it",
-    "off-host": "its URL is not on the file host",
-    "over-cap": f"over the {MAX_BYTES // (1024 * 1024)} MiB cap",
-    "transfer-failed": "the transfer failed",
-    "too-many": f"past the cap of {MAX_FILES} files per message",
+    code: text.format(mib=MAX_BYTES // (1024 * 1024), max_files=MAX_FILES)
+    for code, text in strings.section("attachments.reason").items()
 }
 
 _EXTENSIONS = {
@@ -617,6 +614,7 @@ def github_attachments(
 
 
 # -- the two renderings ----------------------------------------------------------------
+
 
 def _prose(name: str, /, **slots: object) -> str:
     """One piece of the section the session reads, from ``prompts/attachments/``

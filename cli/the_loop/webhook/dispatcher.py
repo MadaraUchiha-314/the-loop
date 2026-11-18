@@ -36,7 +36,7 @@ from typing import (
     Tuple,
 )
 
-from .. import archive, envstate, eventlog, lifecycle, prnotice, prompts
+from .. import archive, envstate, eventlog, lifecycle, prnotice, prompts, strings
 from ..announce import AnnounceConfig, SessionAnnouncer
 from ..instance import (
     REFUSALS as SCOPE_REFUSALS,
@@ -254,41 +254,9 @@ ACK_STATES = {
 # posted as a marked reply where the command was typed; a reason not listed here
 # (or `spawn-policy`, whose text `_reject_control` already composes) posts no
 # extra comment, so the reaction remains the whole acknowledgement.
-CONTROL_REFUSAL_REMEDIES = {
-    # A lifecycle hook the operator declared said no (issue-344): the hook's own
-    # reason is the detail appended below, and the item is disarmed — an
-    # authorized `the-loop start` asks the hooks again.
-    "hook-refused": (
-        "A lifecycle hook declined this. The work item is disarmed; fix what the "
-        "hook names and start it again."
-    ),
-    # A lifecycle hook refused a person's INPUT (issue-344, `input_received`): the
-    # comment was not delivered, or the command was not run; nothing else changed.
-    "input-refused": (
-        "A lifecycle hook declined this input — it was not delivered to the session "
-        "and nothing was run. The reason follows."
-    ),
-    "missing-channel": (
-        "I couldn't find that Slack channel. Check the spelling, invite me to "
-        "the channel (once I'm a member its name resolves), or use its "
-        "conversation id — that always works."
-    ),
-    "channel-taken": (
-        "That Slack channel already backs another work item. One room backs one "
-        "work item, so declare a different channel or free the current one first."
-    ),
-    "missing-collaborator": (
-        "I couldn't resolve that collaborator. Use a GitHub login (or a Slack id "
-        "the roster already knows), and check the spelling."
-    ),
-    "unknown-listen-mode": (
-        "I don't know that `--listen` mode. Use `all` or `mentions`."
-    ),
-    "nothing-to-resume": (
-        "There's nothing paused to resume here — the work item is not in a paused "
-        "state."
-    ),
-}
+# The words live in the string catalog (issue-540): the_loop/strings/en.json,
+# under `dispatcher.refusal.`.
+CONTROL_REFUSAL_REMEDIES = strings.section("dispatcher.refusal")
 
 # Fallback when routing.promptTemplate / routing.spawnTemplate does not exist.
 # Templates are internal to the-loop and ship with the package, not the project

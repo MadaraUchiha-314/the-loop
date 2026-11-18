@@ -585,9 +585,7 @@ def render_graph_context(
         from .graph.model import slash_command
 
         lines.append(
-            _line(
-                "resume", command=slash_command(ctx.next_command), item_id=item_id
-            )
+            _line("resume", command=slash_command(ctx.next_command), item_id=item_id)
         )
     claim_suffix = f" --pr {pr_number}" if pr_number is not None else ""
     if pr_number is not None and pr_repo:

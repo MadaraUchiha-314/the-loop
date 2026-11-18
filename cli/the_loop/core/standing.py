@@ -137,9 +137,7 @@ def _adapter(entry: StandingSession, config: Optional[dict]) -> HarnessAdapter:
 def _surfaces(entry: StandingSession, config: Optional[dict]) -> str:
     """Where this session's operator can reach it — rendered into the directive."""
     where = [
-        prompts.render(
-            "standing/surface-control-plane", inline=True, name=entry.name
-        ),
+        prompts.render("standing/surface-control-plane", inline=True, name=entry.name),
         prompts.render(
             "standing/surface-terminal", inline=True, tmux_target=entry.tmux_target
         ),

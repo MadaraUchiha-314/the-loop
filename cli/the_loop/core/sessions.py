@@ -1142,9 +1142,7 @@ def framed_record(
             else ""
         ),
         rationale=(
-            prompts.render(
-                "sessions/frame-rationale", inline=True, rationale=rationale
-            )
+            prompts.render("sessions/frame-rationale", inline=True, rationale=rationale)
             if rationale
             else ""
         ),

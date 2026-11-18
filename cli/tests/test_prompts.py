@@ -40,7 +40,8 @@ def test_missing_prompt_names_the_file():
 
 
 @pytest.mark.parametrize(
-    "name", ["../cli_config", "webhook/../../x", "/etc/passwd", "Webhook/Event", "", "a//b"]
+    "name",
+    ["../cli_config", "webhook/../../x", "/etc/passwd", "Webhook/Event", "", "a//b"],
 )
 def test_names_outside_the_directory_are_refused(name):
     with pytest.raises(ValueError):

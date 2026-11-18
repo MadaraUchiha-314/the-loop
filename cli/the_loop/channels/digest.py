@@ -30,6 +30,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Tuple
 
+from .. import strings
 from ..redact import neutralise_broadcasts, strip_html_comments
 
 __all__ = [
@@ -210,11 +211,7 @@ _ABBREVIATIONS = ("e.g", "i.e", "vs", "etc", "cf", "no", "fig", "approx")
 _CLAUSE_END = re.compile(r"[,;:]|\s—|\s–")
 _REPLY_WORD = re.compile(r"\breply\b", re.I)
 
-_POINTERS = {
-    "code": "code: {n} lines",
-    "table": "table: {n} rows",
-    "trace": "stack trace: {n} lines",
-}
+_POINTERS = strings.section("digest.pointer")
 
 
 @dataclass

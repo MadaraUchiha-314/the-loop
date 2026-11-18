@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Mapping, Optional, Tuple
 
+from .. import strings
 from ..authz import mark_self_authored
 from ..redact import (
     defang_control_keywords,
@@ -50,15 +51,7 @@ _RELAYED = ("gate.feedback", "control.command")
 _MIRRORED = ("work-item.reply", "context.added", "decision.recorded")
 
 #: What the visible line of each mirrored record says it is.
-_MIRROR_LINES = {
-    "work-item.reply": "reply from {who} on the **{source}** channel, recorded "
-    "here as the answer of record",
-    "context.added": "📎 context from {who} on the **{source}** channel — "
-    "{count} message(s) from {thread}, recorded here and appended to "
-    "`context.md` by the session",
-    "decision.recorded": "📌 decision from {who} on the **{source}** channel"
-    "{kind} — recorded here and written up as a decision record by the session",
-}
+_MIRROR_LINES = strings.section("bodies.mirror")
 
 
 def control_keywords(cli_config: Optional[Mapping]) -> Tuple[str, ...]:

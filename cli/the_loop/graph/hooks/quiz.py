@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import urlparse
 
-from ... import eventlog
+from ... import eventlog, strings
 from ...authz import is_authorized, is_self_authored, mark_self_authored
 from ...quizmarks import (
     ATTESTATIONS,
@@ -59,7 +59,7 @@ __all__ = [
     "spec_digest",
 ]
 
-_TITLES = {"spec-quiz": "Spec quiz", "code-quiz": "Code quiz"}
+_TITLES = strings.section("quiz.title")  # issue-540: the string catalog
 
 _LOCATION = re.compile(r"^\|\s*Location\s*\|\s*(?P<value>[^|]+?)\s*\|\s*$", re.M)
 

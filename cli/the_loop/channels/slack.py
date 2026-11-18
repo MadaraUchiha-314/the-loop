@@ -36,7 +36,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from .. import eventlog
+from .. import eventlog, strings
 from ..cli_config import gateway_block
 from ..identity import Principal, ids_for, parse_authorized_users
 from .directory import is_conversation_id
@@ -589,22 +589,13 @@ _BUTTON_VALUE_LIMIT = 2000
 #: The command buttons (issue-337): control command → the label a member sees.
 #: Fixed; the button's VALUE is the configured keyword, read from
 #: ``routing.control.keywords`` so a press is exactly a typed keyword.
-COMMAND_BUTTONS: Dict[str, str] = {"execute": "Execute", "do": "Do", "start": "Start"}
+COMMAND_BUTTONS: Dict[str, str] = strings.section("slack.command-button")
 #: The loops a newly opened work item is offered, in render order (issue-529):
 #: the ad-hoc loop first, the full PDLC second, so neither is the default.
 KICKOFF_COMMANDS: Tuple[str, ...] = ("do", "start")
 #: What each offered loop runs, one line under the reply (issue-529 R1.2). Fixed
 #: words, never the member's text; a command without one renders no line.
-COMMAND_DESCRIPTIONS: Dict[str, str] = {
-    "do": (
-        "a tactical task — no spec chain or phase gates; the-loop works it "
-        "until you say it is done."
-    ),
-    "start": (
-        "the full PDLC — phase selection, requirements, design, testing plan, "
-        "reviews and an approval gate."
-    ),
-}
+COMMAND_DESCRIPTIONS: Dict[str, str] = strings.section("slack.command-description")
 
 #: The repository picker (issue-349): the one action whose value is an ARGUMENT to
 #: something the-loop has not done yet, rather than an answer to a gate or a
@@ -623,9 +614,9 @@ _OPTION_TEXT_LIMIT = 75
 #: action_id → the name the press outcome line uses — never the payload's own
 #: button text (R2.6).
 BUTTON_NAMES: Dict[str, str] = {
-    f"{ACTION_PREFIX}approve": "Approve",
-    f"{ACTION_PREFIX}changes": "Request changes",
-    KICKOFF_REPO_ACTION: "Repository",
+    f"{ACTION_PREFIX}approve": strings.t("slack.button.approve"),
+    f"{ACTION_PREFIX}changes": strings.t("slack.button.changes"),
+    KICKOFF_REPO_ACTION: strings.t("slack.button.kickoff-repo"),
     **{
         f"{ACTION_PREFIX}command:{command}": label
         for command, label in COMMAND_BUTTONS.items()
@@ -1730,18 +1721,7 @@ def _publish_list(raw: Any) -> Tuple[str, ...]:
 
 # -- rendering (R4) --------------------------------------------------------------
 
-_TITLES: Dict[str, str] = {
-    "session.awaiting_input": "Question from the agent",
-    "decision-pending": "Decision needed",
-    "phase-approval-pending": "Approval needed",
-    "pr-review-pending": "Pull request ready for review",
-    "security-sign-off-pending": "Security sign-off needed",
-    "conflict-escalated": "Escalated",
-    "work-item-complete": "Done",
-    "comment.agent": "The agent commented",
-    "comment.human": "New comment",
-    "standing.started": "Standing session up",
-}
+_TITLES: Dict[str, str] = strings.section("slack.title")
 
 
 #: 13.10.0's cut, kept for the verbose context lines (a detail value is a label,
@@ -3454,24 +3434,7 @@ def _press_line(
 #: Why a repository pick did nothing — fixed words per drop reason (R2.6), and
 #: never a repository name: a refused pick names nothing the member did not
 #: already see on the question above it.
-KICKOFF_REFUSALS: Dict[str, str] = {
-    "no-pending-kickoff": (
-        "this question is no longer open — it was already answered, or it "
-        "expired. Post the message again to file it"
-    ),
-    "not-your-kickoff": (
-        "this question belongs to the member who posted the message, so only "
-        "they can answer it"
-    ),
-    "undeclared-repository": (
-        "that is not one of the repositories this question offered, so nothing "
-        "was created"
-    ),
-    "unpublishable-event": (
-        "this channel is no longer set up to open work items, so nothing was "
-        "created — ask whoever configured the-loop"
-    ),
-}
+KICKOFF_REFUSALS: Dict[str, str] = strings.section("slack.kickoff-refusal")
 
 
 def _kickoff_press_line(
