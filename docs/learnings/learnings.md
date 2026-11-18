@@ -6,6 +6,7 @@ are checked in so the user can review and give feedback.
 
 | # | Title | Source | Date |
 |---|-------|--------|------|
+| [020](learning-020.md) | Run a critic with absolute `--root`/`--cwd`, and scope its prompt to fit its timeout | system-feedback | 2026-11-18 |
 | [019](learning-019.md) | A CLI config schema change goes in both copies (authored `.the-loop/` + packaged) | system-feedback | 2026-11-17 |
 | [018](learning-018.md) | Anchor a command grammar instead of teaching it markdown | user-feedback | 2026-10-23 |
 | [017](learning-017.md) | A the-loop session's own environment skews the-loop's test suite — unset `THE_LOOP_CLI_CONFIG` / `THE_LOOP_WORK_ITEM` | system-feedback | 2026-10-20 |
