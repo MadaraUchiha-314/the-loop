@@ -35,7 +35,7 @@ from typing import (
     Tuple,
 )
 
-from .. import archive, envstate, eventlog, lifecycle
+from .. import archive, envstate, eventlog, lifecycle, prnotice
 from ..announce import AnnounceConfig, SessionAnnouncer
 from ..instance import (
     REFUSALS as SCOPE_REFUSALS,
@@ -1384,6 +1384,9 @@ class Dispatcher:
                         )
                         if endpoint is None:
                             continue
+                        # Captured before teardown: did this pull request have a
+                        # session of its own to report on (issue-538)?
+                        had_session = bool(endpoint.tmux_target)
                         # A merge is the PR's approval: drive its inner loop to
                         # `complete` (audited as a forced move) so the outer
                         # `await-inner-loops` gate sees it finished (issue-172).
@@ -1407,6 +1410,17 @@ class Dispatcher:
                         self._drop_pr_ledger(session.work_item, endpoint.work_item)
                         if endpoint.tmux_target:
                             self._close_tmux(endpoint)
+                        # Tell the work item's own session (issue-538) — after
+                        # the state above is written, so the notice describes it.
+                        if had_session:
+                            self._notify_closed(session, endpoint, merged)
+                        # A merge finished an inner loop: re-run the outer gate
+                        # that may be waiting on it (issue-538, R2.1). A close
+                        # without a merge changed no inner state (R2.6).
+                        if merged:
+                            self.graphlink.on_inner_loop_finished(
+                                session.work_item, session.cwd
+                            )
                     logger.info(
                         "%s (%s) is linked to %s, which is still open; leaving "
                         "its session active — a work item may be delivered by "
@@ -2254,6 +2268,92 @@ class Dispatcher:
             error=(None if result.ok else result.error),
         )
         return bool(result.ok)
+
+    def _notify_owner(
+        self,
+        owner: WorkItemRef,
+        pull_request: WorkItemRef,
+        transition: str,
+        **facts: Any,
+    ) -> str:
+        """Tell the work item's own session that a pull request's session changed
+        state (issue-538). ``delivered`` | ``skipped`` | ``failed``.
+
+        A nudge, like an assignment: it moves no graph pointer and writes no
+        state file, and it never fails the path it rides on — no raise, no
+        retry, no released delivery. The text comes from
+        :func:`the_loop.prnotice.render`, which takes no payload text at all.
+        """
+        fields = {
+            "work_item": owner.ref,
+            "pull_request": pull_request.ref,
+            "transition": transition,
+        }
+        try:
+            record = self.registry.find_by_work_item(owner)
+            if record is None or not record.is_live or not record.tmux_target:
+                eventlog.emit(
+                    "session.pr_notice_skipped", reason="no-live-session", **fields
+                )
+                return "skipped"
+            if record.is_paused:
+                eventlog.emit("session.pr_notice_skipped", reason="paused", **fields)
+                return "skipped"
+            text = prnotice.render(transition, owner, pull_request, **facts)
+            result = self.tmux.deliver(
+                record, text, timeout=self.config.dispatch_timeout_seconds
+            )
+        except Exception as exc:  # noqa: BLE001 — a notice never breaks its path
+            logger.warning(
+                "could not tell %s that %s is %s: %s",
+                owner.ref,
+                pull_request.ref,
+                transition,
+                exc,
+            )
+            eventlog.emit(
+                "session.pr_notice_failed", level="warning", error=str(exc), **fields
+            )
+            return "failed"
+        if not result.ok:
+            logger.warning(
+                "could not tell %s that %s is %s: %s",
+                owner.ref,
+                pull_request.ref,
+                transition,
+                result.error,
+            )
+            eventlog.emit(
+                "session.pr_notice_failed",
+                level="warning",
+                error=result.error,
+                **fields,
+            )
+            return "failed"
+        logger.info("told %s that %s is %s", owner.ref, pull_request.ref, transition)
+        eventlog.emit("session.pr_notice_delivered", via="paste", **fields)
+        return "delivered"
+
+    def _notify_closed(self, record: Session, endpoint: Session, merged: bool) -> None:
+        """The ``merged`` / ``closed`` notice for one of ``record``'s pull requests.
+
+        A close without a merge names the outer node and whether it waits on
+        ``await-inner-loops``: the inner loop it holds on will not finish by
+        itself, and the session is the one that can reopen, replace or escalate
+        (issue-538, R1.6).
+        """
+        if merged:
+            self._notify_owner(record.work_item, endpoint.work_item, "merged")
+            return
+        gate = self.graphlink.inner_loop_gate(record.work_item, record.cwd)
+        outer_node, waits = gate if gate else ("", False)
+        self._notify_owner(
+            record.work_item,
+            endpoint.work_item,
+            "closed",
+            outer_node=outer_node,
+            outer_waits=waits,
+        )
 
     def _record_pr_binding(self, routed: RoutedEvent, target: WorkItemRef) -> None:
         """Persist the **machine handle** "this PR's events reach ``target``".

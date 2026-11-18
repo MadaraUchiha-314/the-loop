@@ -31,7 +31,7 @@ overrides: {}
   - _Depends on:_ 1
   - _Requirements:_ R2.1–R2.6, R3.5, R4.2
   - _Test:_ T5 — `pytest tests/test_pr_notices_integration.py -k reevaluat` (red→green)
-- [ ] 3. Dispatcher notice channel and the close path
+- [x] 3. Dispatcher notice channel and the close path
   - `Dispatcher._notify_owner`; in the close path, read the endpoint's `tmux_target` before
     `_close_tmux`, notify `merged`/`closed`, then `on_inner_loop_finished` on a merge.
   - Update the issue-172 regression test that asserted no delivery on a linked PR's merge.
