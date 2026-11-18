@@ -26,7 +26,7 @@ overrides: {}
 | T2 | Unit (gate predicate) | yes | `waits_on_inner_loops` is true for a string spec and a `{hook: …}` mapping, false otherwise; the shipped outer `implementation` node answers true | `cli/tests/test_prnotice.py` |
 | T3 | Integration (spawn path) | yes | a spawned endpoint pastes one `spawned` notice into the record's session; each decline (no workspace, workspace failure, shared tree, harness unavailable, hook refusal) and a failed spawn deliver the notice **in the same paste as the event**, ahead of it; each emits exactly one `session.pr_notice_*` | `cli/tests/test_pr_notices_integration.py` |
 | T4 | Integration (close path) | yes | a merged endpoint that had a session → one `merged` notice; closed unmerged → one `closed` notice naming the outer node and, when it waits on `await-inner-loops`, that it will keep waiting; an endpoint with no `tmux_target` → no notice; a paused record → `skipped(paused)`; no record session → `skipped(no-live-session)`; a failing paste → `failed`, and the close path still closes the endpoint | same |
-| T5 | Integration (outer re-evaluation) | yes | a real outer graph parked at `implementation` (all tasks ticked, one inner loop) advances to `verification` when its pull request merges, with no claim and no further event; not parked → untouched; parked on a node without the gate → untouched; a second pending inner loop → still waits; closed-unmerged → no re-evaluation; `graph.outer_reevaluated` recorded each time | same, plus `cli/tests/test_graph_multirepo_integration.py` style fixture |
+| T5 | Integration (outer re-evaluation) | yes | a real outer graph parked at `implementation` (all tasks ticked, one inner loop) advances to `verification` when its pull request merges, with no claim and no further event; not parked → untouched; parked on a node without the gate → untouched; a second pending inner loop → still waits; closed-unmerged → no re-evaluation; `graph.outer_reevaluated` recorded each time | `cli/tests/test_outer_reevaluation_integration.py` (a real outer graph in a throwaway checkout) |
 | T6 | Integration (inner advance) | yes | an approval classified on the endpoint's `pr-approval` gate moves the inner loop to `complete` → one `completed` notice and an outer re-evaluation; an inner advance reporting `escalated` → one `escalated` notice naming the inner node | `cli/tests/test_pr_notices_integration.py` |
 | T7 | Integration (respawn path) | yes | a dead endpoint respawned → `respawned` notice; a respawn whose harness is unavailable → `respawn-failed` notice; the record's own respawn sends none | same |
 | T8 | Security / abuse case | yes | abuse 1: a merge whose PR title, body and branch carry an instruction string → absent from every paste; abuse 2: closed-unmerged leaves the outer `work-item-state.json` byte-identical; abuse 3: an unlinked PR's close → no paste, no re-evaluation; abuse 4: the same merge delivered twice → one notice | same |
@@ -85,14 +85,38 @@ overrides: {}
 
 ## Verification activities
 
-- [ ] V1 — `cd cli && uv run python -m pytest -q tests/test_prnotice.py tests/test_pr_notices_integration.py` (T1–T8)
-- [ ] V2 — `cd cli && uv run python -m pytest -q tests/test_webhook_routing_integration.py tests/test_graph_multirepo_integration.py tests/test_graph_loops.py` (T9 and neighbours)
-- [ ] V3 — `make test` (full suite, T9)
-- [ ] V4 — `make lint && make format-check && make typecheck` (T10)
-- [ ] V5 — `uv run the-loop scenarios --glob 'cli/tests/test_pr_notices_integration.py'` lists every new scenario with its requirement link
+- [x] V1 — `cd cli && uv run python -m pytest -q tests/test_prnotice.py tests/test_pr_notices_integration.py tests/test_outer_reevaluation_integration.py` (T1–T8)
+- [x] V2 — `cd cli && uv run python -m pytest -q tests/test_webhook_routing_integration.py tests/test_graph_multirepo_integration.py tests/test_graph_loops.py` (T9 and neighbours)
+- [x] V3 — `make test` (full suite, T9)
+- [x] V4 — `make lint && make format-check && make typecheck` (T10)
+- [x] V5 — `uv run the-loop scenarios --root . --glob 'cli/tests/test_pr_notices_integration.py' --glob 'cli/tests/test_outer_reevaluation_integration.py'` lists every new scenario with its requirement link
 
 ## Verification results
 
-_Filled in at `verification`._
+Run on 2026-11-18 on `the-loop/issue-538-pr-session-notices`, with this session's
+`THE_LOOP_INSTANCE`, `THE_LOOP_WORK_ITEM` and `THE_LOOP_CLI_CONFIG` unset, as in CI. Raw output:
+[`evidence/verification.md`](evidence/verification.md).
+
+| Activity | Command | Outcome |
+|---|---|---|
+| V1 | `pytest tests/test_prnotice.py tests/test_pr_notices_integration.py tests/test_outer_reevaluation_integration.py` | 39 passed |
+| V2 | `pytest tests/test_webhook_routing_integration.py tests/test_graph_multirepo_integration.py tests/test_graph_loops.py` | 94 passed |
+| V3 | `make test` | 6952 passed, 1 failed: `test_session_secrets_integration.py::test_issue_485_a_spawned_server_and_its_pane_hold_no_secret`, which spawns a real tmux server. It passed on two reruns, alone and in its module, with and without session credentials. It touches no code in this diff, and CI's `pytest` job passed on `4d0659a` |
+| V4 | `make lint && make format-check && make typecheck` | ruff clean, markdownlint 0 errors in 1915 files, 522 files formatted, pyright 0 errors |
+| V5 | `the-loop scenarios --root . --glob …` | 21 scenarios, each with a `Requirement:` link |
+
+Red before green: tasks 1 and 2 failed on import/attribute (module and methods absent); task 3's
+8 close-path scenarios and the updated issue-172 scenario failed without the dispatcher
+change; task 4 had 5 failures and task 5 had 2 with the dispatcher change reverted.
+
+Two rows are proven more narrowly than the plan wrote them:
+
+- **Abuse case 2** (an unauthorized close leaves the outer state untouched): the dispatcher
+  scenario proves that a close without a merge triggers no re-evaluation
+  (`graph.outer_reevaluated` absent). The byte-identical state-file assertion is in
+  `test_an_unparked_work_item_is_left_untouched`, at the graphlink seam.
+- **R4.3** (never posted to a thread): no notice path calls a GitHub client, and the suite's
+  autouse `_github_is_never_ambient` fixture fails any GitHub call. No scenario asserts it
+  on its own.
 
 ## Review comments
