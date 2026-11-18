@@ -26,7 +26,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from .. import cli_config, envstate, eventlog, lifecycle
+from .. import cli_config, envstate, eventlog, lifecycle, prompts
 from ..authz import mark_self_authored
 from ..cleanup import SESSION, TMUX, WORKSPACE
 from ..comments import post_issue_comment, post_issue_comment_with_url
@@ -1642,11 +1642,7 @@ def _announce(
 #: session's whole context survives the respawn, so this says only what changed —
 #: and says it plainly, because an agent that cannot tell a relaunch from a crash
 #: will spend a turn working out which one it was.
-RESTART_NOTICE = (
-    "[the-loop] This session was relaunched in place to pick up a refreshed "
-    "environment (an operator rotated a credential). Your conversation, working "
-    "directory and work item are unchanged — carry on where you left off."
-)
+RESTART_NOTICE = prompts.load("sessions/restart-notice", inline=True)
 
 #: The harness conversation ids the-loop itself writes (a uuid4). Validated before
 #: it reaches an argv, the rule the dispatcher's resume path already applies.

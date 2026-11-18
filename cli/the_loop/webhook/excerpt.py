@@ -34,6 +34,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Mapping, Optional, Tuple
 
+from .. import prompts
 from .router import event_actor
 
 #: Per-field cap on free text (a body, a description, a check-run summary). The
@@ -44,7 +45,7 @@ TEXT_MAX_CHARS = 3_500
 #: pathological payload (hundreds of labels) can reach it.
 EXCERPT_MAX_CHARS = 4_000
 
-_TRUNCATED = "… (truncated)"
+_TRUNCATED = prompts.load("webhook/truncated", inline=True)  # issue-540
 
 #: Fields carried per container, **in emission order**. Order is a guarantee, not
 #: cosmetics: an inline comment's ``path``/``line`` precede its ``body`` so the
