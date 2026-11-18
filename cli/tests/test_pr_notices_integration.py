@@ -291,10 +291,11 @@ class SplitTmux(FakeTmux):
     """A FakeTmux whose pull request's own tmux session can be missing, or whose
     spawns fail, while the work item's own session stays healthy."""
 
-    def __init__(self, missing=(), spawn_ok=True):
+    def __init__(self, missing=(), spawn_ok=True, occupied=False):
         super().__init__()
         self.missing = set(missing)
         self.spawn_ok = spawn_ok
+        self.occupied = occupied
 
     def deliver(self, session, prompt, timeout=None):
         from the_loop.runner import TmuxResult
@@ -318,6 +319,10 @@ class SplitTmux(FakeTmux):
         result = super().spawn(
             work_item, adapter, prompt, cwd, session_id, timeout=timeout, resume=resume
         )
+        if self.occupied:
+            return TmuxResult(
+                ok=False, session_exists=True, session_live=False, error="dead pane"
+            )
         return result if self.spawn_ok else TmuxResult(ok=False, error="no tmux")
 
 
@@ -472,6 +477,29 @@ def test_a_failed_respawn_is_reported(server_factory, tmp_path, events):
     worked_cross_pr(registry, tmp_path)
 
     assert comment_on_cross_pr(port, "rf-1") == 202
+    assert wait_until(lambda: notices(events))
+    texts = [t for r, t in tmux.delivers if r == REF]
+    assert len(texts) == 1 and "Transition: respawn-failed" in texts[0]
+
+
+def test_a_respawn_blocked_by_a_dead_occupant_is_reported(
+    server_factory, tmp_path, events
+):
+    """
+    Feature: pull-request session notices
+      Scenario: a dead tmux session holds the pull request's session name
+        Given issue 15's live session and octo/other#16's session found dead
+        And tmux reports its name still held by a dead session
+        When a comment arrives on octo/other#16
+        Then issue 15's session receives one `respawn-failed` notice
+
+    Requirement: docs/specs/issue-538/requirements.md R1.8 — critic C2
+    """
+    tmux = SplitTmux(missing={CROSS_TARGET}, occupied=True)
+    port, registry, tmux = cross_repo_daemon(server_factory, tmp_path, tmux=tmux)
+    worked_cross_pr(registry, tmp_path)
+
+    assert comment_on_cross_pr(port, "oc-1") == 202
     assert wait_until(lambda: notices(events))
     texts = [t for r, t in tmux.delivers if r == REF]
     assert len(texts) == 1 and "Transition: respawn-failed" in texts[0]

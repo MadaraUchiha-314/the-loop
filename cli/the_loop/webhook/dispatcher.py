@@ -5220,6 +5220,8 @@ class Dispatcher:
                     return self._deliver_into_occupant(
                         session, routed, prompt, target, advance_after=advance_after
                     )
+                if endpoint_owner is not None:
+                    self._notify_owner(endpoint_owner, work_item, "respawn-failed")
                 return self._skip_occupied(session, routed, target, result.error)
             if not result.ok:
                 logger.error(
