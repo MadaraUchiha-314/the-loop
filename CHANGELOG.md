@@ -1,3 +1,9 @@
+## v20.15.0 (2026-11-19)
+
+### Feat
+
+- **issue-540**: prompts as Markdown files, application strings in one JSON catalog (#541)
+
 ## v20.14.0 (2026-11-18)
 
 ### Feat
