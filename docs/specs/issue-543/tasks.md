@@ -176,7 +176,7 @@ All code lands in this repository, so no repository is declared beyond the origi
 
 ### Layer 4 — integration, docs, dogfood
 
-- [ ] 12. Integration scenarios
+- [x] 12. Integration scenarios
   - Create `tests/test_pr_spec_integration.py` with the five Gherkin scenarios from
     design § Testing strategy. Each is driven through the real graph runtime and the
     CLI, against a temp PR checkout and a stubbed GitHub client.
