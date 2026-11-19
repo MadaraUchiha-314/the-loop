@@ -94,7 +94,7 @@ they explain the code, and cite no issue, decision or requirement.
     live counter. Tabs are hidden when their block is empty.
   - Every string is set as text. The data-block `<` rule covers the new blocks.
   - Describe the tabs, the doc layout (Slides tab, Flashcards questions, answers in
-    Quiz answers) and the evidence *Experiments* line in `reference/explainer.md`.
+    Quiz answers) and the evidence _Experiments_ line in `reference/explainer.md`.
   - _Depends on:_ 6
   - _Requirements:_ R8 AC 3–4
   - _Test:_ T5, T9 and T8 abuse case 2 — a unit check that the template's script never
