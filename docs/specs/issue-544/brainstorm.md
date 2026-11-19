@@ -2,8 +2,8 @@
 type: brainstorm
 phase: brainstorming
 workItem: "issue-544"
-status: draft                # the brainstorm-approval gate locks it (issue-494)
-approvedBy: []
+status: approved             # the brainstorm-approval gate locks it (issue-494)
+approvedBy: ["MadaraUchiha-314"]
 collaborators: [product-manager, architect, engineer]
 overrides: {}
 ---
@@ -253,3 +253,11 @@ If the leaning holds, `requirements.md` will cover:
 
 > Appended by the-loop's `record-feedback` hook when a human gate approves with
 > comments (issue-109). Append-only and attributed.
+
+### 2026-11-18 — approved
+
+**@MadaraUchiha-314** wrote:
+
+answered open questions on artifacts
+
+approved
