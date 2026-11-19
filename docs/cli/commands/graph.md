@@ -455,6 +455,51 @@ away, and the declaration is a checked-in diff a reviewer reads in the pull requ
 
 Exit `0` when the declaration landed (or was read back), `2` when any entry was refused.
 
+## `pr-spec`
+
+Verify one delivery pull request's **PR spec** and record it
+([issue-543](https://github.com/MadaraUchiha-314/the-loop/issues/543),
+[decision-153](/decisions/decision-153)). The agent's verb, run at the inner loop's
+`pr-spec` node from the **origin** checkout, after the PR spec is committed and pushed in
+the pull request's branch. Unlike the other graph verbs it is **online**: it reads the pull
+request, both repositories' visibility and any comment URL it is given.
+
+```bash
+the-loop graph pr-spec issue-543 --pr 12 --pr-repo octo/api --checkout ../api
+the-loop graph pr-spec issue-543 --pr 12 --pr-repo octo/api --checkout ../api \
+  --disclosure-approval https://github.com/octo/origin/issues/543#issuecomment-1
+the-loop graph pr-spec issue-543 --pr 12 --pr-repo octo/api --checkout ../api \
+  --still-valid https://github.com/octo/api/pull/12#issuecomment-2
+```
+
+| Flag | Required | Meaning |
+|------|----------|---------|
+| `--pr` | yes | The delivery pull request's number. |
+| `--pr-repo` | no | Its repository, when that is not the origin. |
+| `--checkout` | yes | The pull request's working tree. Its `origin` remote and branch must be the pull request's. |
+| `--disclosure-approval` | no | A comment on the work item, by an authorized user, saying `allow-disclosure <owner>/<repo>`. Needed when the pull request's repository is more visible than the origin, or either visibility cannot be read. |
+| `--still-valid` | no | A comment on this pull request, by an authorized user, declaring that the changed chain does not affect it. Re-records the current chain digest without re-deriving. |
+| `--json` | no | Print the record, or the findings, as JSON. |
+
+It checks, and reports every finding at once:
+
+1. the checkout is the pull request's;
+2. whether a PR spec is required (`single-pr` and `spec-only` record `required: false`);
+3. the chain is approved, or its gate was declared skipped;
+4. the PR-spec path is safe and stays inside the checkout;
+5. the four files exist, name this work item, this pull request and the current
+   `chainDigest`, carry no `status`, and have their required sections;
+6. every `[wi:…]` citation resolves, and every requirement entry, task line and in-scope
+   test row has one;
+7. no token, cookie, authorization header or email address;
+8. the disclosure is allowed.
+
+On success it writes exactly one file, `pr-spec.json`, in the pull request's inner-loop
+directory under `docs/specs/<id>/pr-loops/`. Commit it with the work item. The offline
+`pr-spec-current` hook gates on that record.
+
+Exit `0` when recorded, `1` when there are findings, `2` when the verb could not run.
+
 ## `force`
 
 The authorized-operator escape hatch: move a work item's pointer to a node **regardless of

@@ -246,6 +246,19 @@ There are exactly **two** runtime concepts and **one** contract between them.
     repository name THEN the gate SHALL **block** — waiting on it would wait forever. IF no
     repositories are declared THEN the gate SHALL behave exactly as it did before
     issue-183.
+  - WHEN a work item is **multi-PR** — two or more delivering pull requests recorded, or
+    any pull request or declared repository outside the origin — THEN each delivery PR
+    SHALL carry a **PR spec** (issue-543, [decision-153](../decisions/decision-153.md)):
+    four files at `docs/specs/<id>/pr-<n>/` in its branch (`<owner>__<repo>__<id>` of the
+    origin when the PR is elsewhere), derived from the approved chain and citing it.
+    `the-loop graph pr-spec` verifies them once (online: the PR checkout, both
+    repositories' visibility, any comment URL) and writes `pr-spec.json` beside the PR's
+    inner-loop state. The inner loop SHALL start at `pr-spec`, its one skippable node;
+    the offline `pr-spec-current` hook SHALL gate leaving `pr-spec`, leaving
+    `reviewer-briefing`, and leaving the outer `implementation`. It re-derives
+    applicability and recomputes the chain digest (front matter stripped) on every
+    evaluation, never trusting the record's own claims. A single-PR work item SHALL pass
+    vacuously.
   - Which **model** a work item's sessions run on, and at what **effort**, SHALL be
     declared per work item at `phase-selection` too (issue-358,
     [decision-124](../decisions/decision-124.md)) — two independent row groups
@@ -1230,6 +1243,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-543 | PR-scoped specs (2026-11-19): the inner loop starts at `pr-spec`, its first and only skippable node, and `pr-spec-current` gates three places — leaving `pr-spec`, leaving `reviewer-briefing`, leaving the outer `implementation`. `the-loop graph pr-spec` (and `POST /api/v1/graph/pr-spec`) checks a delivery PR's PR spec online and writes `pr-spec.json` beside its inner state; the hook re-derives applicability and recomputes the chain digest offline, so a forged record or a changed chain blocks. Events `graph.pr_spec_recorded` and `graph.pr_spec_refused` | [spec](../specs/issue-543/), [decision-153](../decisions/decision-153.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/543) |
 | issue-524 | A `pause` or `resume` stopped forgetting the loop (2026-10-27): each overwrote the control record, so a paused or resumed `review`/`contribute`/`do` item, and one armed onto an operator loop, answered "which loop" with the default. Those records now keep `armedBy` (the arming spawn command) and the selected `loop`, and `_loop_for_start` reads `armedBy` first. | [issue-524](https://github.com/MadaraUchiha-314/the-loop/issues/524) |
 | issue-544 | Two opt-in explainer experiments at `phase-selection` (2026-11-18): unticked `explainer-slides` / `explainer-flashcards` rows under `explainer`, frozen as `explainerExperiments` only when the explainer runs, named in the prompt of the two explainer nodes; the `request-review` hook takes an optional `focus` (`with: {focus: <name>}`, text from the string catalog), set at `design-approval` to point the reviewer at `design.md` § Interfaces first | [spec](../specs/issue-544/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/544) |
 | issue-536 | `phase-selection` offers the spec chain as one Claude doc (2026-11-17): a non-phase `claude-doc` row beside `claude-artifact` and ticked by default in its place (a handoff naming a spec-chain artifact keeps the artifact ticked). Both ticked resolves to the default. The signed reply freezes `claudeDoc` into `work-item-state.json` (written only when `true`), the decision record, the frozen graph and the archive's `selections`, and the outer loop's prompt carries one fixed line | [spec](../specs/issue-536/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/536) |

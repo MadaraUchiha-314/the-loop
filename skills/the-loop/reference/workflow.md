@@ -483,6 +483,51 @@ discussion-only pull request in the repository holding the spec chain.
   section names the checkouts and refs it needs; the-loop facilitates verification, it does
   not own the environment (`reference/testing.md`).
 
+### PR specs — each pull request says what it is for (issue-543)
+
+When a work item is delivered by more than one pull request, or by any pull request or
+declared repository outside the origin, **each delivery PR carries a PR spec**: four short
+files in its own branch, so its reviewer need not leave it. This includes the origin
+repository's own delivery PR. A work item with a single PR needs none, and neither does the
+outer surface's spec-only PR.
+
+- **Where.** `docs/specs/<id>/pr-<n>/` in the origin repository, or
+  `docs/specs/<owner>__<repo>__<id>/pr-<n>/` elsewhere (qualified by the **origin**). The
+  files merge with the PR.
+- **What.** `requirements.md`, `design.md`, `testing-plan.md` and `tasks.md` from
+  `templates/pr-spec/`, each opening with a Context section that names the work item, the
+  source revision and the sibling PRs. There is no `status`: a PR spec is derived and is
+  never approved on its own.
+- **Derived, not forked.** Every requirement entry, task line and in-scope test row cites
+  the work-item item it comes from: `[wi:R2]`, `[wi:R2.3]`, `[wi:design#<slug>]`,
+  `[wi:TP-T2]` or `[wi:task-4]`. Derive from the approved chain only, never from comments.
+- **Recorded once, gated offline.** The inner loop starts at `pr-spec`, worked with
+  `/the-loop:derive-pr-spec`. Write and push the files, then record them from the origin
+  checkout:
+
+  ```bash
+  the-loop graph pr-spec <id> --pr <n> [--pr-repo <owner>/<repo>] --checkout <PR checkout>
+  ```
+
+  It reports every finding at once. On success it writes `pr-spec.json` beside the PR's
+  inner-loop state; commit it with the work item. `pr-spec-current` then gates leaving
+  `pr-spec`, leaving `reviewer-briefing`, and leaving the outer `implementation`, which
+  covers PRs that walk no inner loop. `pr-spec` is the inner loop's one skippable node:
+  `the-loop graph skip <id> --pr <n> --node pr-spec`.
+- **Stale.** When the chain changes, `reviewer-briefing` blocks with *stale: chain changed
+  since `<rev>`*. Re-derive the PR spec, or, when an authorized person says on the PR that
+  it still holds, re-run the verb with `--still-valid <comment URL>`. A lock (front matter
+  only) does not make a PR spec stale.
+- **Disclosure.** Recording into a repository more visible than the origin, or one whose
+  visibility cannot be read, needs `--disclosure-approval <URL>`. The URL must point to a
+  comment on the **work item** by an authorized user saying `allow-disclosure
+  <owner>/<repo>`. Ask for it with `the-loop ask`, naming both visibilities. Never write
+  the grant yourself.
+- **Feedback on a PR spec.** Within the PR's scope: fix the PR spec on that PR, replying
+  first. If it would change the work item: raise it on the work item with `the-loop
+  comment`, say so on the PR, and let the chain change through its own gates. Nothing in
+  the inner loop writes the chain.
+
 ### Where the outer loop is iterated — the work item's own choice
 
 The artifacts are always checked-in files linked from the ticket. What varies is where

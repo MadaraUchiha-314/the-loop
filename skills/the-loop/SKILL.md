@@ -247,6 +247,13 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   one of them has finished. The flags are the full set, so re-running corrects the
   declaration; declaring none is what a single-repository work item wants. See `reference/workflow.md`
   § Several repositories, one work item.
+- **Several pull requests, one PR spec each.** When a work item is delivered by more than
+  one pull request, or by any outside the origin, each delivery PR carries a **PR spec**:
+  four short files in its own branch, derived from the approved chain and citing it, with
+  no `status`. The inner loop starts at `pr-spec` (`/the-loop:derive-pr-spec`); record the
+  files with `the-loop graph pr-spec`. A changed chain blocks the PR's review until the PR
+  spec is re-derived. Feedback that would change the work item goes to the work item,
+  never into the PR spec. See `reference/workflow.md` § PR specs.
 - **Ask on the declared channel; iterate artifacts on a durable surface.** A session the CLI daemon
   drives is *told* where its answers come from (`routing.interaction.mode`, rendered into
   the prompt): `work-item` (the default) means every question is a **comment on the ticket

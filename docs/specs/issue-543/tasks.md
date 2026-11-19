@@ -183,7 +183,7 @@ All code lands in this repository, so no repository is declared beyond the origi
   - _Depends on:_ 7, 9, 10
   - _Requirements:_ R1.1, R1.2, R1.4, R1.6, R4.1, R4.5, R5.1–R5.3, AC1, AC2
   - _Test:_ T2 — `cd cli && uv run python -m pytest -q tests/test_pr_spec_integration.py`
-- [ ] 13. Docs and decision
+- [x] 13. Docs and decision
   - Write `docs/decisions/decision-153-*.md`, which refines decision-065 D2/D4.
   - Update `docs/capabilities/process-graph.md` and `spec-workflow.md`.
   - Update `skills/the-loop/SKILL.md` and `reference/workflow.md`, including feedback

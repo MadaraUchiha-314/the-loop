@@ -60,6 +60,14 @@ from a conversation at the stage it reached (issue-517).
   design and the task DAG say what the change spans**, which records them in
   `work-item-state.json` and turns them into a gate at `implementation` rather than a
   note.
+- WHEN a work item is delivered by several pull requests THEN each delivery PR SHALL carry
+  a **PR spec**: `requirements.md`, `design.md`, `testing-plan.md` and `tasks.md` scoped
+  to that PR, in its own branch, derived from the approved chain and citing it item by
+  item (`[wi:R2.3]`, `[wi:design#<slug>]`, `[wi:TP-T2]`, `[wi:task-4]`). A PR spec SHALL
+  carry no `status` — it is never approved on its own — and SHALL merge with its PR. It is
+  written with `/the-loop:derive-pr-spec` and recorded with `the-loop graph pr-spec`; a
+  changed chain blocks the PR's review until it is re-derived or an authorized person
+  declares it still valid (issue-543, [decision-153](../decisions/decision-153.md)).
 - Where each artifact is **iterated with humans** SHALL be a durable, reviewable surface —
   never a terminal. For the outer loop the **work item** declares which, at
   `phase-selection`: the work item itself (the default — comments on the ticket, so an
@@ -234,6 +242,7 @@ from a conversation at the stage it reached (issue-517).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-543 | PR specs (2026-11-19): a pull request of a multi-PR work item carries a scoped, derived copy of the chain in its own branch, citing it item by item, with no `status`; written with `/the-loop:derive-pr-spec` from `templates/pr-spec/`, recorded with `the-loop graph pr-spec`, re-derived (or declared still valid) when the chain changes, and never published to a more visible repository without an authorized `allow-disclosure` comment. See [process-graph](process-graph.md) | [spec](../specs/issue-543/), [decision-153](../decisions/decision-153.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/543) |
 | issue-544 | Readable artifacts (2026-11-18): every spec template and the PR briefing opens with a `## The short version` card; `design.md` reshaped to Interfaces, Architecture and Technology choices with no code-level detail; the briefing gains review effort and a guided tour; the artifact and doc tabs become reading views; archify recommended when present; opt-in slides and flashcards in the explainer. See [writing-style](writing-style.md) | [spec](../specs/issue-544/), [decision-152](../decisions/decision-152.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/544) |
 | issue-536 | The spec chain can be one Claude doc instead (2026-11-17): a `claude-doc` row beside `claude-artifact`, ticked by default (the artifact row now unticked, except after a handoff that published one); tick at most one, both ticked uses the default. Frozen as `claudeDoc`; the session keeps one doc with a tab per spec file (and the explainer and quizzes), reads each tab before rewriting it and folds any human edit into the file as feedback. The files stay the source of truth and the gates' subject | [spec](../specs/issue-536/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/536) |
 | issue-517 | A conversation can be handed to the-loop at the stage it reached (2026-10-21): `/the-loop:handoff` (the `handoff-to-the-loop` skill) drafts the settled prefix of the chain, interviews, files the issue with a hashed handoff record, and the item enters at `brainstorming`, `brainstorm-approval`, `requirements-approval`, `test-planning` or `design-approval`. The new `import-handoff` node imports and checks the carried files and demotes on a failure; the approval gates are unchanged, and the furthest artifact is never approved in chat | [spec](../specs/issue-517/), [process-graph](process-graph.md), [decision-150](../decisions/decision-150.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/517) |

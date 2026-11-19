@@ -1171,3 +1171,16 @@ def test_required_sections_match_the_templates():
         ).split_front_matter(text)
         assert "status" not in front
         assert front["type"] == dict(prspec.PR_SPEC_FILES)[name]
+
+
+def test_the_pr_briefing_links_the_pr_spec_first():
+    """issue-543 R4.6: the PR spec is the first thing a reviewer is pointed at."""
+    root = Path(__file__).resolve().parents[2] / "skills" / "the-loop" / "templates"
+    text = (root / "pr-briefing.md").read_text(encoding="utf-8")
+    card = text.split("## The short version", 1)[1].split("\n## ", 1)[0]
+    first = next(
+        line
+        for line in card.splitlines()
+        if line.strip() and not line.startswith(("<!--", "     "))
+    )
+    assert first.startswith("**This PR's spec:**")

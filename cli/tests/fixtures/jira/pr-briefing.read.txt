@@ -2,6 +2,10 @@
 
 ## The short version
 
+**This PR's spec:** [`docs/specs/<key>/pr-<n>/`](link%20to%20the%20folder%20in%20this%20PR's%20branch)
+— what this pull request delivers of <work item ref>. (Drop this line when the work item
+has a single pull request: its `pr-spec.json` records `required: false`.)
+
 What this PR does and why, in a few plain sentences.
 
 **Start here:** the explainer of this change — `<Location from evidence/explainer.md>`.
