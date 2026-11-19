@@ -1209,15 +1209,15 @@ def _parse_explainer_experiments(body: str) -> List[str]:
     """The experiments one reply ticks, in :data:`EXPLAINER_EXPERIMENTS` order.
 
     Only a ticked row of a known format counts: unticked, absent, unreadable and
-    unknown all mean off, as for any offered addition.
+    unknown all mean off, as for any offered addition. A row given more than once
+    counts only when every copy is ticked, so a contradictory reply means off.
     """
-    ticked = {
-        EXPLAINER_EXPERIMENT_TOKENS[match.group("token")]
-        for match in _CHECK_LINE.finditer(body)
-        if match.group("token") in EXPLAINER_EXPERIMENT_TOKENS
-        and match.group("mark").strip()
-    }
-    return [name for name in EXPLAINER_EXPERIMENTS if name in ticked]
+    marks: Dict[str, List[bool]] = {}
+    for match in _CHECK_LINE.finditer(body):
+        name = EXPLAINER_EXPERIMENT_TOKENS.get(match.group("token"))
+        if name:
+            marks.setdefault(name, []).append(bool(match.group("mark").strip()))
+    return [name for name in EXPLAINER_EXPERIMENTS if all(marks.get(name) or [False])]
 
 
 def _claude_artifact_applies(harness: str) -> bool:

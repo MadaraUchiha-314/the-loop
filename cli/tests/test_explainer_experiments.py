@@ -193,6 +193,20 @@ def test_unticked_absent_unreadable_or_unknown_rows_mean_off(repo, fake_github, 
     assert "explainer-reels" not in state.skips
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        f"the-loop execute\n- [x] `explainer`\n- [x] `{SLIDES}`\n- [ ] `{SLIDES}`\n",
+        f"the-loop execute\n- [x] `explainer`\n- [ ] `{SLIDES}`\n- [x] `{SLIDES}`\n",
+    ],
+    ids=["ticked-then-unticked", "unticked-then-ticked"],
+)
+def test_a_row_given_twice_with_different_marks_means_off(repo, fake_github, body):
+    """Fail closed: an ambiguous experiment row is not a choice."""
+    _, state = _select(repo, body)
+    assert state.explainer_experiments == []
+
+
 @pytest.mark.parametrize("token", [SLIDES, CARDS, "explainer-reels"])
 def test_experiment_tokens_are_never_phases(token):
     assert selection._is_non_phase(token)
