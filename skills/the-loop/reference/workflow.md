@@ -98,8 +98,8 @@ approval from the session.
    actors, trust boundaries, abuse cases, fail-closed expectations) captured with the
    requirements, always; an empty section fails the gate, "no new attack surface" is
    written and justified. See `reference/security.md`.
-2. **`design.md`** — overview, architecture, components/interfaces, data models, error
-   handling, testing strategy. Derived from approved requirements. Phase: `design`.
+2. **`design.md`** — the card, interfaces, architecture, technology choices and testing
+   strategy, with no code-level detail (the `the-loop:writing` skill). Derived from approved requirements. Phase: `design`.
    Includes the **Security design** section — how each requirements-phase trust
    boundary is enforced (authn/authz, input validation, secrets, least privilege,
    injection surfaces, fail-closed behaviour), always; a boundary left unenforced

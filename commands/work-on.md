@@ -131,8 +131,8 @@ a gate (`tasks.md`) advances on shape alone.
    The human review per phase is always on and is delivered by that gate.
 
 5. **Phase 2 — Design** (`design`). Create `docs/specs/<id>/design.md` derived from the
-   approved requirements: architecture, components/interfaces, data models, error
-   handling, testing strategy — **including the Security design section** stating how
+   approved requirements: the card, interfaces, architecture, technology choices and
+   testing strategy, with no code-level detail — **including the Security design section** stating how
    each requirements-phase trust boundary is enforced (a boundary left unenforced
    fails the gate). **If the work item has a user-facing
    surface**, also
