@@ -404,8 +404,8 @@
   "forced": [],
   "parked": {
     "node": "human-approval",
-    "reason": "`classify-feedback` did not pass:\n- feedback so far is not decisive; the gate stays open",
-    "since": "2026-11-19T01:09:56+00:00"
+    "reason": "`classify-feedback` did not pass:\n- no authorized feedback yet",
+    "since": "2026-11-19T01:16:24+00:00"
   },
   "completions": {
     "requirements-definition": {
@@ -457,7 +457,7 @@
       "by": "cli"
     },
     "human-approval": {
-      "at": "2026-11-18T23:09:48+00:00",
+      "at": "2026-11-19T01:16:24+00:00",
       "by": "cli"
     }
   },

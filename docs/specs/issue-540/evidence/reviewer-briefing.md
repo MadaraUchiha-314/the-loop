@@ -2,22 +2,25 @@
 
 ## TL;DR
 
-Every prompt and prompt fragment the CLI sends to an agent now lives in a Markdown file
-under `cli/the_loop/prompts/` (101 files, one loader). The human-facing message
-dictionaries now come from one JSON catalog, `cli/the_loop/strings/en.json` (42 keys, one
-lookup, locale fallback). Rendered output is byte-identical to `main`, and the
-remaining strings are left to follow-up [#542](https://github.com/MadaraUchiha-314/the-loop/issues/542).
+Every prompt and prompt fragment the-loop sends to an agent now lives in a Markdown file
+under `cli/the_loop/prompts/` (142 files, including the 37 MCP tool descriptions), read
+through one loader. The stop hook's text is in `hooks/prompts/`. Every human-facing string
+of the application now comes from one JSON catalog, `cli/the_loop/strings/en.json`, with
+2,275 keys. That covers comment bodies, CLI output, argparse help and the UI's 428 `ui.*`
+keys. There is one lookup, with locale fallback. Rendered output is unchanged: the CLI
+suite has 6998 tests and the UI suite 379, and both still assert today's exact text.
+
+On the owner's ruling ("do it in this PR itself"), the earlier scope split is gone and #542
+is superseded.
 
 No explainer page: the `explainer` row was declared away at `phase-selection`.
 
 ## Where to focus (in this order)
 
-1. **The scope split — the one decision that is yours.** Requirements § *Out of scope*.
-   The ticket says "any strings … from one json file". This PR moves **every prompt**, but
-   only the **keyed message dictionaries** (10 of them) onto the catalog. The long tail
-   (inline f-strings in comment builders, CLI stdout and `argparse` help, the UI) is in
-   #542. That is roughly 300 `print` calls and hundreds of composed f-strings, which can't
-   be byte-checked in one reviewable diff. Please confirm the split, or say what must land here.
+1. **The line between catalogued and in-code text.** Requirements R2.7: machine
+   vocabulary, `logger` lines and exceptions raised for operators and developers stay in
+   code. `SystemExit` text and every printed or posted message moved. Tell me if
+   exception messages should be catalogued too.
 2. **Byte-identity of the prompt renderers.** `cli/the_loop/graphlink.py`
    (`render_graph_context`), `graph/hooks/assignment.py`, `prnotice.py`,
    `webhook/cimonitor.py`. Prose moved into many small fragment files, and the
@@ -27,7 +30,11 @@ No explainer page: the `explainer` row was declared away at `phase-selection`.
 3. **The two new modules.** `cli/the_loop/prompts/__init__.py` (name regex,
    `importlib.resources`, `inline=`) and `cli/the_loop/strings/__init__.py` (flat keys,
    `section()`, locale fallback, `en` must parse).
-4. **Skim:** the 101 `.md` files, `en.json`, the guard test, and the docs.
+4. **Spot-check the bulk migration.** Pick a few command modules (`cli/the_loop/commands/*`),
+   a channel body builder (`channels/commands.py`, `channels/inbound.py`) and a UI component.
+   Each call is a literal `strings.t("key", …)`, and `test_strings_catalog.py` / `i18n.test.ts`
+   check every key and placeholder in both directions.
+5. **Skim:** the `.md` files, `en.json`, the guard test, and the docs.
 
 ## What changed (map)
 
