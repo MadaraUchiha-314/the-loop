@@ -112,7 +112,7 @@
       "outcome": "",
       "enteredAt": "2026-11-19T03:11:05+00:00",
       "exitedAt": "",
-      "lastBlock": "",
+      "lastBlock": "`validate-artifacts` did not pass:\n- 14 task(s) still unticked (docs/specs/issue-544/tasks.md)",
       "forced": false
     }
   },
