@@ -1,0 +1,244 @@
+<!doctype html>
+<!-- Design prototype for issue-544 (R8): the Slides and Flashcards tabs the
+     explainer page gains when an experiment row is ticked. Self-contained:
+     no network, no external script, style or font. Sample content is this
+     work item's own spec. Every string is rendered with textContent. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>issue-544 explainer experiments</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --surface: #ffffff; --text: #1d1d1f; --muted: #5b5b66;
+    --border: #e2e0da; --accent: #3b5bdb; --accent-soft: #e8ecfd;
+    --ok: #1e7a46; --ok-soft: #e3f4ea; --no: #b3261e; --no-soft: #fbe7e5;
+    --callout: #fff7e0; --callout-border: #e8c766; --code-bg: #f3f2ee;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #16171b; --surface: #1e2026; --text: #ececf1; --muted: #a3a3b0;
+      --border: #33353d; --accent: #8ea4ff; --accent-soft: #262c45;
+      --ok: #6fd39a; --ok-soft: #173426; --no: #ff8f86; --no-soft: #3a1e1c;
+      --callout: #2c2817; --callout-border: #7a6728; --code-bg: #24262d;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #16171b; --surface: #1e2026; --text: #ececf1; --muted: #a3a3b0;
+    --border: #33353d; --accent: #8ea4ff; --accent-soft: #262c45;
+    --ok: #6fd39a; --ok-soft: #173426; --no: #ff8f86; --no-soft: #3a1e1c;
+    --callout: #2c2817; --callout-border: #7a6728; --code-bg: #24262d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
+  header .meta { color: var(--muted); font-size: 14px; }
+  header h1 { font-size: 26px; line-height: 1.25; margin: 4px 0 8px; }
+  .badge {
+    display: inline-block; padding: 1px 8px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent); font-weight: 600; font-size: 13px;
+  }
+  [role="tablist"] {
+    display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--border);
+    margin: 20px 0 24px;
+  }
+  [role="tab"] {
+    font: inherit; font-size: 15px; background: none; border: 0; color: var(--muted);
+    padding: 8px 12px; border-bottom: 2px solid transparent; cursor: pointer;
+  }
+  [role="tab"][aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+  [role="tab"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  h2 { font-size: 20px; margin: 28px 0 8px; }
+  h3 { font-size: 17px; margin: 20px 0 6px; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
+  code { background: var(--code-bg); padding: 1px 4px; border-radius: 4px; }
+  pre { background: var(--code-bg); padding: 12px; border-radius: 8px; overflow-x: auto; }
+  .callout {
+    background: var(--callout); border-left: 4px solid var(--callout-border);
+    padding: 10px 14px; border-radius: 6px; margin: 14px 0;
+  }
+  .callout strong { display: block; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; margin: 12px 0; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .table-wrap { overflow-x: auto; }
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .compare > div { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  @media (max-width: 560px) { .compare { grid-template-columns: 1fr; } }
+  /* quiz */
+  .progress { color: var(--muted); font-size: 14px; }
+  .q { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin: 14px 0; }
+  .q legend { font-weight: 600; padding: 0; margin-bottom: 8px; }
+  .q fieldset { border: 0; margin: 0; padding: 0; }
+  .opt {
+    display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; margin: 4px 0;
+    border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+  }
+  .opt input { margin-top: 5px; }
+  .opt:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .feedback { margin-top: 10px; padding: 8px 12px; border-radius: 8px; }
+  .feedback.ok { background: var(--ok-soft); }
+  .feedback.no { background: var(--no-soft); }
+  .feedback .verdict { font-weight: 700; }
+  .feedback.ok .verdict { color: var(--ok); }
+  .feedback.no .verdict { color: var(--no); }
+  .note { color: var(--muted); font-size: 14px; }
+
+  /* experiments: slides */
+  .deck { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 28px 24px; min-height: 280px; display: flex; flex-direction: column; justify-content: center; }
+  .deck h2 { margin: 0 0 12px; font-size: 24px; line-height: 1.3; }
+  .deck p { margin: 0; font-size: 18px; color: var(--text); }
+  .deck .kicker { color: var(--accent); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
+  .nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
+  .nav button { font: inherit; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+  .nav button:disabled { opacity: .4; cursor: default; }
+  .nav button:focus-visible, .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* experiments: flashcards */
+  .card { width: 100%; font: inherit; text-align: left; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 12px; padding: 28px 24px; min-height: 220px; cursor: pointer; display: flex; flex-direction: column; justify-content: center; }
+  .card[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+  .card .side { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
+  .card .face { font-size: 19px; }
+  .exp { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 11px; background: var(--callout); border: 1px solid var(--callout-border); color: var(--text); vertical-align: middle; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <div class="meta">issue-544 · github:MadaraUchiha-314/the-loop#544 · <span class="badge">depth: standard</span></div>
+    <h1>Make what the-loop writes easy to read and review</h1>
+    <div class="meta">Generated by the-loop from the approved spec. The checked-in spec files stay the source of truth.</div>
+  </header>
+
+  <div role="tablist" aria-label="Explainer sections">
+    <button role="tab" id="tab-spec" aria-controls="panel-spec" aria-selected="false" tabindex="-1">Spec explainer</button>
+    <button role="tab" id="tab-specquiz" aria-controls="panel-specquiz" aria-selected="false" tabindex="-1">Spec quiz</button>
+    <button role="tab" id="tab-slides" aria-controls="panel-slides" aria-selected="true">Slides<span class="exp">experiment</span></button>
+    <button role="tab" id="tab-cards" aria-controls="panel-cards" aria-selected="false" tabindex="-1">Flashcards<span class="exp">experiment</span></button>
+  </div>
+
+  <section role="tabpanel" id="panel-spec" aria-labelledby="tab-spec" hidden>
+    <p class="note">(The existing Spec explainer tab, unchanged.)</p>
+  </section>
+  <section role="tabpanel" id="panel-specquiz" aria-labelledby="tab-specquiz" hidden>
+    <p class="note">(The existing Spec quiz tab, unchanged.)</p>
+  </section>
+
+  <section role="tabpanel" id="panel-slides" aria-labelledby="tab-slides">
+    <div data-slides="slides-spec"></div>
+  </section>
+
+  <section role="tabpanel" id="panel-cards" aria-labelledby="tab-cards" hidden>
+    <p class="note">Click a card, or press Space, to flip it.</p>
+    <div data-cards="cards-spec"></div>
+  </section>
+</main>
+
+<script type="application/json" id="slides-spec">
+{"slides": [
+  {"kicker": "The problem", "title": "Reviewers skim instead of read", "body": "Spec files run 1,100 to 2,800 words each, four or five per work item. A gate is only as good as the reading behind it."},
+  {"kicker": "The idea", "title": "Write less before writing better", "body": "Every artifact opens with a short card: what changes, why, what to check. The story follows; reference detail goes last."},
+  {"kicker": "design.md", "title": "Interfaces, architecture, technology", "body": "No function names, signatures or code snippets. That level lives in tasks.md and the code."},
+  {"kicker": "Code comments", "title": "Explain the code, not the process", "body": "No issue or decision numbers in production comments. Traceability goes in commits and the PR."},
+  {"kicker": "Experiments", "title": "Slides and flashcards, opt-in", "body": "Two unticked rows in the explainer section. They run only when the explainer runs."}
+]}
+</script>
+<script type="application/json" id="cards-spec">
+{"cards": [
+  {"q": "What does every the-loop artifact open with after this change?", "a": "A short card under 'The short version': what changes, why, and what the reviewer should check."},
+  {"q": "Where does function- and code-level detail go, if not design.md?", "a": "Into tasks.md and the code itself. design.md keeps interfaces, architecture and technology choices."},
+  {"q": "Which comments may still cite a requirement id?", "a": "Test docstrings: they keep their Requirement: links. Production-code comments may not."},
+  {"q": "What happens if explainer-slides is ticked but explainer is not?", "a": "The slides do not run, and the confirmation comment says why."}
+]}
+</script>
+<script>
+(function () {
+  "use strict";
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
+  function select(tab) {
+    tabs.forEach(function (t) {
+      var on = t === tab;
+      t.setAttribute("aria-selected", on ? "true" : "false");
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+    });
+    tab.focus();
+  }
+  tabs.forEach(function (tab, i) {
+    tab.addEventListener("click", function () { select(tab); });
+    tab.addEventListener("keydown", function (e) {
+      var k = e.key, n = tabs.length, j = null;
+      if (k === "ArrowRight") j = (i + 1) % n;
+      else if (k === "ArrowLeft") j = (i - 1 + n) % n;
+      if (j !== null) { e.preventDefault(); select(tabs[j]); }
+    });
+  });
+  var start = document.getElementById("tab-" + location.hash.slice(1));
+  if (start && start.getAttribute("role") === "tab") select(start);
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  function load(id, key, host) {
+    try { return JSON.parse(document.getElementById(id).textContent)[key] || []; }
+    catch (err) { host.appendChild(el("p", "note", "This section could not be loaded.")); return null; }
+  }
+  function stepper(host, items, render, label) {
+    var i = 0, view = el("div"), nav = el("div", "nav");
+    var prev = el("button", null, "Previous"), next = el("button", null, "Next");
+    var count = el("span", "progress");
+    count.setAttribute("aria-live", "polite");
+    prev.type = next.type = "button";
+    nav.appendChild(prev); nav.appendChild(count); nav.appendChild(next);
+    host.appendChild(view); host.appendChild(nav);
+    function show() {
+      view.textContent = "";
+      view.appendChild(render(items[i]));
+      count.textContent = label + " " + (i + 1) + " / " + items.length;
+      prev.disabled = i === 0; next.disabled = i === items.length - 1;
+    }
+    prev.addEventListener("click", function () { if (i > 0) { i -= 1; show(); } });
+    next.addEventListener("click", function () { if (i < items.length - 1) { i += 1; show(); } });
+    host.addEventListener("keydown", function (e) {
+      if (e.target.closest && e.target.closest(".card") && (e.key === " " || e.key === "Enter")) return;
+      if (e.key === "ArrowRight") { next.click(); } else if (e.key === "ArrowLeft") { prev.click(); }
+    });
+    if (items.length) show(); else host.appendChild(el("p", "note", "Nothing here at this depth."));
+  }
+  document.querySelectorAll("[data-slides]").forEach(function (host) {
+    var items = load(host.getAttribute("data-slides"), "slides", host);
+    if (!items) return;
+    host.tabIndex = 0;
+    stepper(host, items, function (s) {
+      var d = el("div", "deck");
+      d.appendChild(el("div", "kicker", s.kicker || ""));
+      d.appendChild(el("h2", null, s.title));
+      d.appendChild(el("p", null, s.body));
+      return d;
+    }, "Slide");
+  });
+  document.querySelectorAll("[data-cards]").forEach(function (host) {
+    var items = load(host.getAttribute("data-cards"), "cards", host);
+    if (!items) return;
+    stepper(host, items, function (c) {
+      var b = el("button", "card");
+      b.type = "button";
+      b.setAttribute("aria-pressed", "false");
+      var side = el("span", "side", "Question"), face = el("span", "face", c.q);
+      b.appendChild(side); b.appendChild(face);
+      b.addEventListener("click", function () {
+        var flipped = b.getAttribute("aria-pressed") !== "true";
+        b.setAttribute("aria-pressed", flipped ? "true" : "false");
+        side.textContent = flipped ? "Answer" : "Question";
+        face.textContent = flipped ? c.a : c.q;
+      });
+      return b;
+    }, "Card");
+  });
+})();
+</script>
+</body>
+</html>
