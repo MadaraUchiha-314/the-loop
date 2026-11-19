@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-544",
-  "currentNode": "reviewer-briefing",
+  "currentNode": "human-approval",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -173,8 +173,24 @@
     },
     "reviewer-briefing": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-11-19T16:56:01+00:00",
+      "exitedAt": "2026-11-19T16:57:17+00:00",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required section is missing: Pull requests (docs/specs/issue-544/evidence/pull-requests.md)",
+      "forced": false
+    },
+    "code-quiz": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-11-19T16:57:17+00:00",
+      "exitedAt": "2026-11-19T16:57:17+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "human-approval": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-11-19T16:57:17+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -395,7 +411,11 @@
     }
   },
   "forced": [],
-  "parked": null,
+  "parked": {
+    "node": "human-approval",
+    "reason": "awaiting a human",
+    "since": "2026-11-19T16:57:17+00:00"
+  },
   "completions": {
     "brainstorming": {
       "at": "2026-11-18T23:39:12+00:00",
@@ -443,6 +463,10 @@
     },
     "capability-docs": {
       "at": "2026-11-19T16:56:01+00:00",
+      "by": "cli"
+    },
+    "reviewer-briefing": {
+      "at": "2026-11-19T16:57:17+00:00",
       "by": "cli"
     }
   },
