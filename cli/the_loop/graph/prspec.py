@@ -472,7 +472,8 @@ class PrSpecRecord:
         if data.get("version") != 1:
             raise ValueError(f"unknown record version {data.get('version')!r}")
         pull_request = str(data.get("pullRequest") or "")
-        if expected_pr and pull_request != expected_pr:
+        # GitHub owner and repository names are case-insensitive.
+        if expected_pr and pull_request.lower() != expected_pr.lower():
             raise ValueError(
                 f"the record names {pull_request!r}, not this pull request {expected_pr!r}"
             )

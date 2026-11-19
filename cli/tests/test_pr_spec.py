@@ -1184,3 +1184,17 @@ def test_the_pr_briefing_links_the_pr_spec_first():
         if line.strip() and not line.startswith(("<!--", "     "))
     )
     assert first.startswith("**This PR's spec:**")
+
+
+def test_record_pull_request_matches_case_insensitively():
+    """GitHub owner and repository names are case-insensitive: the ref the verb
+    derives from a checkout's remote may differ in case from the daemon's."""
+    data = record_dict(pullRequest="github:octo/API#12")
+    assert prspec.PrSpecRecord.from_dict(data, expected_pr="github:Octo/api#12")
+
+
+def test_verb_accepts_refs_that_differ_only_in_case(tmp_path):
+    co = pr_checkout(tmp_path)
+    req = verb_request(tmp_path, co, pr_ref="github:Octo/API#12")
+    write_pr_spec(co, req.spec_dir)
+    assert record_pr_spec(req, VerbGitHub(visibility=PUBLIC)).findings == []

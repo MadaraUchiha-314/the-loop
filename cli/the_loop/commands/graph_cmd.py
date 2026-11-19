@@ -295,7 +295,11 @@ def _pr_spec(
     still_valid: str = "",
     spec_dir: str = "",
 ) -> Dict[str, Any]:
-    return routed(
+    # A GitHub-reading verb, so it routes like the harness's GitHub verbs: a
+    # service too old to serve the route is named, not reported as a bare 404.
+    from ..client.routing import harness_routed
+
+    return harness_routed(
         lambda connection: connection.post(
             "/graph/pr-spec",
             {

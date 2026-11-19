@@ -192,13 +192,24 @@ All code lands in this repository, so no repository is declared beyond the origi
   - _Depends on:_ 9, 11
   - _Requirements:_ R4.6, R6, R7.1, R7.2
   - _Test:_ T6 and T12 — `tests/test_writing_parity.py`, `make lint`
-- [ ] 14. Dogfood on PR #546
-  - Write the PR spec at `docs/specs/issue-543/pr-546/`, run
-    `the-loop graph pr-spec issue-543 --pr 546 --checkout .`, and commit the record.
-  - Show the stale report after a local, discarded chain edit.
+- [x] 14. Dogfood on PR #546
+  - Ran `the-loop graph pr-spec issue-543 --pr 546 --checkout .` in-process. It
+    recorded `required: false, reason: single-pr` at
+    `pr-loops/pr-546/pr-spec.json`, committed here. `pr-spec-current` passes as
+    `not-required` at the outer and the inner placement.
+  - **Rescoped.** issue-543 has one delivery PR, so R1.2 says it needs no PR spec, and
+    none was written. A stale report needs a required record, which this work item
+    cannot have, so that half of T11 is shown by T2's second scenario instead. The
+    verification node records T11 on those terms.
+  - **Found while dogfooding, fixed test-first:** a ref derived from the checkout's
+    remote can differ in case from the daemon's (`madarauchiha-314` against
+    `MadaraUchiha-314`), so the record and front-matter refs now compare
+    case-insensitively. The verb also now routes like the harness's GitHub verbs.
+    The running daemon predates the route and still answers it with a bare 404 until
+    `the-loop restart`.
   - _Depends on:_ 12, 13
-  - _Requirements:_ R4.3, R4.6, R4.7, R5.1
-  - _Test:_ T11 (run at verification), then T12 — `make check`
+  - _Requirements:_ R1.2, R4.3, R5.1
+  - _Test:_ T11 (recorded at verification), T12 — `make check`
 
 ## Dependency graph (DAG)
 

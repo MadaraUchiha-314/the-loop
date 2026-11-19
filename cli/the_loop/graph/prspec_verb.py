@@ -250,7 +250,14 @@ def _check_files(
             "chainDigest": digest,
         }
         for key, want in expected.items():
-            if str(front.get(key) or "") != want:
+            have_value = str(front.get(key) or "")
+            # Refs name GitHub repositories, whose names are case-insensitive.
+            same = (
+                have_value.lower() == want.lower()
+                if key in ("workItem", "pullRequest")
+                else have_value == want
+            )
+            if not same:
                 found.append(Finding(name, 1, f"front matter `{key}` must be {want!r}"))
         if "status" in front:
             found.append(
