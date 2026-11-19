@@ -75,7 +75,7 @@ All code lands in this repository, so no repository is declared beyond the origi
 
 ### Layer 2 — the hook, the verb, the API
 
-- [ ] 5. Offline hook `pr-spec-current`
+- [x] 5. Offline hook `pr-spec-current`
   - Registered with `@hook("pr-spec-current")` in `graph/hooks/prspec.py` and imported
     in `hooks/__init__.py`.
   - Inner placement (with `prRef` in config): re-derive applicability; for
@@ -83,7 +83,7 @@ All code lands in this repository, so no repository is declared beyond the origi
     the inner-loop dir, validate it and compare the digest. A stale record blocks with
     "stale: chain changed since `<rev>`" and names the changed files.
   - Outer placement: every non-`self` PR row needs a valid, current record.
-  - It writes nothing. Messages go in `strings/en.json`.
+  - It writes nothing. Its messages stay in code: `docs/capabilities/prompts-and-strings.md` exempts graph hook messages from the strings catalog.
   - _Depends on:_ 1, 3
   - _Requirements:_ R1.2–R1.4, R4.5, R5.1, R5.2, AC3, NFR offline
   - _Test:_ T1 and T8 — `tests/test_pr_spec.py::test_hook_*`,

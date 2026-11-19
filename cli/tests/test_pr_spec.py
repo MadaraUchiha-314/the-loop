@@ -420,3 +420,200 @@ def test_secret_scan_ignores_digests_and_shas():
         )
     }
     assert prspec.scan_secrets(files) == []
+
+
+# -- task 5: the offline hook --------------------------------------------------
+
+from the_loop.graph.contract import HookContext, WorkItem  # noqa: E402
+from the_loop.graph.hooks.pr_spec import pr_spec_current  # noqa: E402
+
+ORIGIN = "octo/origin"
+
+
+def hook_ctx(tmp_path, prs, *, repos=(), pr_ref="", node="reviewer-briefing"):
+    """An origin checkout with a chain and an outer state naming ``prs``."""
+    spec = write_chain(tmp_path / "docs" / "specs" / "issue-15")
+    state = {
+        "workItem": "github:octo/origin#15",
+        "currentNode": "implementation",
+        "pullRequests": prs,
+        "repos": list(repos),
+    }
+    (spec / "work-item-state.json").write_text(json.dumps(state), encoding="utf-8")
+    config = {"originRepo": ORIGIN}
+    if pr_ref:
+        config["prRef"] = pr_ref
+    item = WorkItem(ref=pr_ref or "github:octo/origin#15", id="issue-15", spec_dir=spec)
+    return HookContext(
+        work_item=item, node={"id": node}, boundary="exit", repo=tmp_path, config=config
+    )
+
+
+def put_record(spec, repo, number, **over):
+    from the_loop.graph.hooks.loops import inner_loop_state_dir
+
+    data = record_dict(
+        pullRequest=f"github:{repo}#{number}",
+        chainDigest=prspec.chain_digest(spec),
+        chainParts=prspec.chain_parts(spec),
+    )
+    data.update(over)
+    target = inner_loop_state_dir(spec, number, repo) / prspec.PR_SPEC_RECORD
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(data), encoding="utf-8")
+    return target
+
+
+TWO = [pr_row(ORIGIN, 2), pr_row("octo/api", 12)]
+
+
+def test_hook_single_pr_passes_not_required(tmp_path):
+    ctx = hook_ctx(tmp_path, [pr_row(ORIGIN, 2)], pr_ref="github:octo/origin#2")
+    result = pr_spec_current(ctx)
+    assert result.status == "pass"
+    assert result.data["prSpec"] == "not-required"
+
+
+def test_hook_multi_pr_without_record_blocks(tmp_path):
+    ctx = hook_ctx(tmp_path, TWO, pr_ref="github:octo/api#12")
+    result = pr_spec_current(ctx)
+    assert result.status == "block"
+    assert (
+        "the-loop graph pr-spec issue-15 --pr 12 --pr-repo octo/api" in result.render()
+    )
+
+
+def test_hook_multi_pr_with_current_record_passes(tmp_path):
+    ctx = hook_ctx(tmp_path, TWO, pr_ref="github:octo/api#12")
+    put_record(ctx.work_item.spec_dir, "octo/api", 12)
+    assert pr_spec_current(ctx).status == "pass"
+
+
+def test_hook_finds_the_origin_pr_record_in_either_layout(tmp_path):
+    from the_loop.graph.hooks.loops import inner_loop_state_dir
+
+    ctx = hook_ctx(tmp_path, TWO, pr_ref="github:octo/origin#2")
+    spec = ctx.work_item.spec_dir
+    put_record(spec, ORIGIN, 2)  # qualified layout
+    assert pr_spec_current(ctx).status == "pass"
+    qualified = inner_loop_state_dir(spec, 2, ORIGIN) / prspec.PR_SPEC_RECORD
+    plain = inner_loop_state_dir(spec, 2) / prspec.PR_SPEC_RECORD
+    plain.parent.mkdir(parents=True)
+    qualified.rename(plain)
+    assert pr_spec_current(ctx).status == "pass"
+
+
+def test_hook_stale_record_blocks_naming_changed_files(tmp_path):
+    ctx = hook_ctx(tmp_path, TWO, pr_ref="github:octo/api#12")
+    spec = ctx.work_item.spec_dir
+    put_record(spec, "octo/api", 12)
+    with (spec / "design.md").open("a", encoding="utf-8") as fh:
+        fh.write("\nA change.\n")
+    result = pr_spec_current(ctx)
+    assert result.status == "block"
+    assert "stale: chain changed since" in result.render()
+    assert "design.md" in result.render()
+
+
+def test_hook_lock_only_change_is_not_stale(tmp_path):
+    ctx = hook_ctx(tmp_path, TWO, pr_ref="github:octo/api#12")
+    spec = ctx.work_item.spec_dir
+    put_record(spec, "octo/api", 12)
+    text = (spec / "design.md").read_text(encoding="utf-8")
+    (spec / "design.md").write_text(
+        text.replace("---\n\n#", "approvedBy: [a]\n---\n\n#", 1)
+    )
+    assert pr_spec_current(ctx).status == "pass"
+
+
+def test_hook_malformed_record_blocks(tmp_path):
+    ctx = hook_ctx(tmp_path, TWO, pr_ref="github:octo/api#12")
+    target = put_record(ctx.work_item.spec_dir, "octo/api", 12)
+    target.write_text("{not json", encoding="utf-8")
+    assert pr_spec_current(ctx).status == "block"
+
+
+def test_forged_required_false_still_blocks(tmp_path):
+    ctx = hook_ctx(tmp_path, TWO, pr_ref="github:octo/api#12")
+    put_record(
+        ctx.work_item.spec_dir, "octo/api", 12, required=False, reason="single-pr"
+    )
+    result = pr_spec_current(ctx)
+    assert result.status == "block"
+    assert "not required" in result.render()
+
+
+def test_forged_spec_only_outside_the_origin_still_blocks(tmp_path):
+    ctx = hook_ctx(tmp_path, TWO, pr_ref="github:octo/api#12")
+    put_record(
+        ctx.work_item.spec_dir, "octo/api", 12, required=False, reason="spec-only"
+    )
+    assert pr_spec_current(ctx).status == "block"
+
+
+def test_hook_spec_only_origin_pr_passes(tmp_path):
+    ctx = hook_ctx(tmp_path, TWO, pr_ref="github:octo/origin#2")
+    put_record(ctx.work_item.spec_dir, ORIGIN, 2, required=False, reason="spec-only")
+    assert pr_spec_current(ctx).status == "pass"
+
+
+def test_forged_record_for_another_pr_blocks(tmp_path):
+    ctx = hook_ctx(tmp_path, TWO, pr_ref="github:octo/api#12")
+    put_record(ctx.work_item.spec_dir, "octo/api", 12, pullRequest="github:octo/api#99")
+    assert pr_spec_current(ctx).status == "block"
+
+
+def test_hook_declared_skip_in_the_inner_state_passes(tmp_path):
+    from the_loop.graph.hooks.loops import inner_loop_state_dir
+
+    ctx = hook_ctx(tmp_path, TWO, pr_ref="github:octo/api#12")
+    inner = inner_loop_state_dir(ctx.work_item.spec_dir, 12, "octo/api")
+    inner.mkdir(parents=True)
+    (inner / "work-item-state.json").write_text(
+        json.dumps(
+            {
+                "workItem": "x",
+                "currentNode": "implementation",
+                "skips": {"pr-spec": {"via": "declared", "by": "@owner"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = pr_spec_current(ctx)
+    assert result.status == "pass"
+    assert result.data["prSpec"] == "skipped"
+
+
+def test_hook_outer_placement_blocks_listing_every_pr_without_record(tmp_path):
+    ctx = hook_ctx(tmp_path, TWO, node="implementation")
+    put_record(ctx.work_item.spec_dir, "octo/api", 12)
+    result = pr_spec_current(ctx)
+    assert result.status == "block"
+    assert "github:octo/origin#2" in result.render()
+    assert "octo/api#12" not in result.render()
+
+
+def test_hook_outer_placement_passes_when_all_open_prs_recorded(tmp_path):
+    rows = TWO + [pr_row("octo/api", 13, state="merged")]
+    ctx = hook_ctx(tmp_path, rows, node="implementation")
+    put_record(ctx.work_item.spec_dir, "octo/api", 12)
+    put_record(ctx.work_item.spec_dir, ORIGIN, 2)
+    assert pr_spec_current(ctx).status == "pass"
+
+
+def test_hook_outer_placement_single_pr_passes(tmp_path):
+    ctx = hook_ctx(tmp_path, [pr_row(ORIGIN, 2)], node="implementation")
+    assert pr_spec_current(ctx).status == "pass"
+
+
+def test_abuse_hook_writes_nothing(tmp_path):
+    ctx = hook_ctx(tmp_path, TWO, pr_ref="github:octo/api#12")
+    put_record(ctx.work_item.spec_dir, "octo/api", 12)
+
+    def snapshot():
+        return {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+
+    before = snapshot()
+    pr_spec_current(ctx)
+    pr_spec_current(hook_ctx(tmp_path, TWO, node="implementation"))
+    assert snapshot().keys() == before.keys()
