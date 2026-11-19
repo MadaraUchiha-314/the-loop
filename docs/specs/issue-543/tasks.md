@@ -27,7 +27,7 @@ All code lands in this repository, so no repository is declared beyond the origi
 
 ### Layer 1 — pure building blocks (`cli/the_loop/graph/prspec.py`)
 
-- [ ] 1. Chain digest and PR-spec key/path
+- [x] 1. Chain digest and PR-spec key/path
   - `chain_digest(spec_dir)` is a SHA-256 over requirements/bugfix, design,
     testing-plan and tasks, each with its front matter stripped (via
     `the_loop.graph.frontmatter`) and taken in a fixed order. A missing file
@@ -40,7 +40,7 @@ All code lands in this repository, so no repository is declared beyond the origi
   - _Requirements:_ R2.7, R4.4, R5.1, AC4
   - _Test:_ T1 and T8 — `tests/test_pr_spec.py::test_digest_*`, `::test_key_*`,
     `::test_abuse_path_parts_refused` (red→green)
-- [ ] 2. Citation parser and resolver
+- [x] 2. Citation parser and resolver
   - Parse every `[wi:…]` token in five forms: `R2`, `R2.3`, `design#slug`, `TP-T2`
     and `task-4`. Resolve each against the chain: requirement headings, EARS list
     items, the design heading slugs, testing-plan matrix `#` cells and `tasks.md`
@@ -51,7 +51,7 @@ All code lands in this repository, so no repository is declared beyond the origi
   - _Depends on:_ none
   - _Requirements:_ R3.1, R3.2
   - _Test:_ T1 — `tests/test_pr_spec.py::test_citation_*` (red→green)
-- [ ] 3. Applicability and the record model
+- [x] 3. Applicability and the record model
   - `applicability(outer_state, origin_repo)` returns `multi-pr` when there are ≥2
     non-`self` rows, or when any row or declared repo lies outside the origin.
     Otherwise it returns `single-pr`.
@@ -62,7 +62,7 @@ All code lands in this repository, so no repository is declared beyond the origi
   - _Requirements:_ R1.1–R1.3, R1.6
   - _Test:_ T1 and T8 — `tests/test_pr_spec.py::test_applicability_*`,
     `::test_forged_record_*` (red→green)
-- [ ] 4. Secret scan
+- [x] 4. Secret scan
   - Use a fixed pattern list: `ghp_`, `gho_`, `ghs_`, `github_pat_`, `xox[abp]-`,
     `AKIA`, `Authorization:`/`Bearer` values, `Cookie`/`Set-Cookie`, and email
     addresses (reusing `redact._EMAIL_RE`).
