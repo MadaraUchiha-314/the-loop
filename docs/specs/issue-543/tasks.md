@@ -76,14 +76,15 @@ All code lands in this repository, so no repository is declared beyond the origi
 ### Layer 2 — the hook, the verb, the API
 
 - [x] 5. Offline hook `pr-spec-current`
-  - Registered with `@hook("pr-spec-current")` in `graph/hooks/prspec.py` and imported
+  - Registered with `@hook("pr-spec-current")` in `graph/hooks/pr_spec.py` and imported
     in `hooks/__init__.py`.
   - Inner placement (with `prRef` in config): re-derive applicability; for
     `single-pr`, pass with outcome `not-required`; otherwise load `pr-spec.json` from
     the inner-loop dir, validate it and compare the digest. A stale record blocks with
     "stale: chain changed since `<rev>`" and names the changed files.
   - Outer placement: every non-`self` PR row needs a valid, current record.
-  - It writes nothing. Its messages stay in code: `docs/capabilities/prompts-and-strings.md` exempts graph hook messages from the strings catalog.
+  - It writes nothing. Its messages stay in code, because
+    `docs/capabilities/prompts-and-strings.md` exempts graph hook messages.
   - _Depends on:_ 1, 3
   - _Requirements:_ R1.2–R1.4, R4.5, R5.1, R5.2, AC3, NFR offline
   - _Test:_ T1 and T8 — `tests/test_pr_spec.py::test_hook_*`,
@@ -172,7 +173,7 @@ All code lands in this repository, so no repository is declared beyond the origi
   - _Depends on:_ 9, 10
   - _Requirements:_ R4.1, R6.1–R6.3, AC3
   - _Test:_ T6 — `tests/test_graph_loops.py` assignment render names both commands
-    (red→green)
+    (written after the command, so green on first run)
 
 ### Layer 4 — integration, docs, dogfood
 
@@ -184,7 +185,7 @@ All code lands in this repository, so no repository is declared beyond the origi
   - _Requirements:_ R1.1, R1.2, R1.4, R1.6, R4.1, R4.5, R5.1–R5.3, AC1, AC2
   - _Test:_ T2 — `cd cli && uv run python -m pytest -q tests/test_pr_spec_integration.py`
 - [x] 13. Docs and decision
-  - Write `docs/decisions/decision-153-*.md`, which refines decision-065 D2/D4.
+  - Write `docs/decisions/decision-153.md`, which refines decision-065 D2/D4.
   - Update `docs/capabilities/process-graph.md` and `spec-workflow.md`.
   - Update `skills/the-loop/SKILL.md` and `reference/workflow.md`, including feedback
     routing.
