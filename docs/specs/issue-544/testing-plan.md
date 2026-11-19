@@ -2,8 +2,8 @@
 type: testing-plan
 phase: test-planning
 workItem: "issue-544"
-status: draft                # draft | in-review | approved
-approvedBy: []
+status: approved             # draft | in-review | approved
+approvedBy: ["MadaraUchiha-314"]
 overrides: {}
 ---
 
@@ -112,3 +112,9 @@ _Not yet executed._
 
 > Appended by the-loop's `record-feedback` hook when a human gate approves with
 > comments (issue-109). Append-only and attributed.
+
+### 2026-11-18 — approved
+
+**@MadaraUchiha-314** wrote:
+
+approved
