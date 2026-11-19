@@ -113,13 +113,16 @@ they explain the code, and cite no issue, decision or requirement.
   - Drop experiments when `explainer` is unticked, and say why in the confirmation.
   - Freeze `explainerExperiments` into `work-item-state.json` only when non-empty;
     state without the key loads unchanged.
+  - Confirmation text goes in the string catalog (`cli/the_loop/strings/en.json`), not
+    inline.
   - _Depends on:_ 8
   - _Requirements:_ R8 AC 2, 5, 6; NFR backward compatibility
   - _Test:_ T1 and T10 — parse, dependency, confirmation and round-trip cases in
     `tests/test_explainer_experiments.py`; T8 abuse case 1 rides on T2 (task 12)
 - [ ] 10. Carry the experiments to the session and the terminal
-  - Add the fixed prompt line at `spec-explainer` and `code-explainer` only (in the
-    graph-block renderer); list the experiments under `choices:` in `the-loop graph`.
+  - Add the fixed prompt line at `spec-explainer` and `code-explainer` only, as a
+    Markdown fragment beside `cli/the_loop/prompts/graph-context/claude-doc.md`; list the
+    experiments under `choices:` in `the-loop graph`.
   - _Depends on:_ 9
   - _Requirements:_ R8 AC 3–4
   - _Test:_ T1 — prompt-line cases in `tests/test_graphlink.py` (present at the two
@@ -128,8 +131,8 @@ they explain the code, and cite no issue, decision or requirement.
   - Slack's selection control classifies every `explainer-*` row as a setting.
   - The `request-review` hook takes an optional per-node focus line from the graph;
     `design-approval` sets "Start with `design.md` § Interfaces, then the testing
-    plan's matrix." Other gates' messages are unchanged. Keep any graph-mirroring doc
-    in step.
+    plan's matrix." Other gates' messages are unchanged; any new text goes in the
+    string catalog or a prompt file. Keep any graph-mirroring doc in step.
   - _Depends on:_ 8
   - _Requirements:_ R8 AC 7, R3 AC 9
   - _Test:_ T1 — Slack classification and request-review focus-line cases in
