@@ -1,19 +1,26 @@
 h1. <PR title> — reviewer briefing
 
-h2. TL;DR
+h2. The short version
 
-One or two sentences: what this PR does and why.
+What this PR does and why, in a few plain sentences.
 
 *Start here:* the explainer of this change — {{<Location from evidence/explainer.md>}}.
 (Drop this line when the work item declared the {{explainer}} row away.)
 
-h2. Where to focus (in this order)
+h2. Review effort
 
-Prioritized so a reviewer of AI-authored work knows what to scrutinize first.
+*<1–5>* — one line on why. 1 is a few minutes (a doc fix, a one-file change); 5 is
+hours (a new subsystem, a migration, a security boundary).
 
-# *<highest-priority area>* — {{<path>}} — why it matters / what to check.
-# *<next>* — {{<path>}} — …
-# *<lower-risk / skim>* — …
+h2. Guided tour
+
+Stops in the order to read them, so a reviewer of AI-authored work sees the riskiest
+change first. Each stop links a file and line in the diff, with one sentence on why it
+matters.
+
+# [{{<path>:<line>}}|link%20to%20the%20line%20in%20the%20PR%20diff] — what to check here.
+# [{{<path>:<line>}}|link] — …
+# [{{<path>:<line>}}|link] — lower risk; skim.
 
 h2. What changed (map)
 

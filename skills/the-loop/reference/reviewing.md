@@ -28,6 +28,21 @@ defaults apply when the CLI is not installed.
   a lot of comments, and each of them is a candidate for the trigger paths to
   mis-read as fresh human input if left unmarked.
 
+## Standing checks
+
+Every self-review and critic-review prompt carries these checks, whatever else the
+round looks at. Each one names its own finding.
+
+1. **Production-code comments explain the code.** Read every production-code comment
+   the diff adds or changes. Flag any that cites a work item, decision, requirement id,
+   review round or spec file instead of explaining the code
+   (`workflow.md` § Code comments). Test docstrings and scenario names are exempt, and
+   comments the diff does not touch are out of scope.
+2. **`design.md` holds no code-level detail.** When the PR carries a `design.md`, flag
+   any function or method name, signature, class layout, algorithm, code snippet,
+   internal data structure or file-by-file change list in it. That detail belongs in
+   `tasks.md` and the code. The design critic round runs this check too.
+
 ## Reply-first-then-fix protocol
 
 For every finding, in order:
@@ -90,7 +105,7 @@ is still printed), `2` a misconfigured critic (nothing was spawned).
 **The critic prompt** — written by the harness into the prompt file — must carry, in this
 order: what to review (the diff/PR, and the `docs/specs/<id>/` artifacts it must satisfy);
 the acceptance criteria and the security considerations it is checking against; the
-findings already raised in earlier rounds, so the critic adds rather than repeats; and the
+[standing checks](#standing-checks); the findings already raised in earlier rounds, so the critic adds rather than repeats; and the
 output contract — *findings only, most severe first, each with file/line and why it is
 wrong*, and "no new findings" when there are none.
 
@@ -141,7 +156,8 @@ What changes when it runs, and what does not:
 | Recorded in | `evidence/design-critic-review.md` | `evidence/critic-review.md` § Review cycles |
 | Procedure | unchanged — everything above this section | unchanged |
 
-The **prompt** carries what the critic-round prompt carries, with the subject swapped:
+The **prompt** carries what the critic-round prompt carries, including the
+[standing checks](#standing-checks), with the subject swapped:
 the design under review and the requirements it must satisfy; the security considerations
 its Security design section claims to enforce; findings from earlier rounds; and the same
 output contract (findings only, most severe first, each with the section and why it is

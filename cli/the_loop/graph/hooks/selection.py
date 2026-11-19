@@ -109,6 +109,7 @@ from ...prsessions import (
     session_per_pr_mode,
 )
 from ..contract import HookContext, HookResult
+from ..state import EXPLAINER_EXPERIMENTS
 from ..registry import hook
 from .feedback import _authorized_comments
 
@@ -213,6 +214,14 @@ DEFAULT_EFFORT = "medium"
 #: explainer` and the recorded provenance all say the same word.
 EXPLAINER_TOKEN = "explainer"
 
+#: The explainer's experiment rows: ``explainer-<format>``, one per known format,
+#: unticked. The whole prefix is a setting, so a format this version does not
+#: know is ignored rather than read as a phase.
+EXPLAINER_EXPERIMENT_PREFIX = f"{EXPLAINER_TOKEN}-"
+EXPLAINER_EXPERIMENT_TOKENS = {
+    f"{EXPLAINER_EXPERIMENT_PREFIX}{name}": name for name in EXPLAINER_EXPERIMENTS
+}
+
 #: The one harness that can publish a Claude artifact — the Claude Code
 #: adapter's name. A tick on a work item resolved to any other is not applied.
 CLAUDE_HARNESS = "claude"
@@ -277,6 +286,7 @@ def _is_non_phase(token: str) -> bool:
         or token.startswith(HARNESS_PREFIX)
         or token.startswith(MODEL_PREFIX)
         or token.startswith(EFFORT_PREFIX)
+        or token.startswith(EXPLAINER_EXPERIMENT_PREFIX)
     )
 
 
@@ -905,6 +915,7 @@ def _checklist_body(ctx: HookContext) -> str:
             strings.t("graph.selection.publish.about-harness"),
         )
         if _explainer_nodes(ctx):
+            experiment_rows = strings.section("graph.selection.explainer.experiment")
             lines += [
                 "#### " + strings.t("graph.selection.explainer.heading"),
                 "",
@@ -912,6 +923,13 @@ def _checklist_body(ctx: HookContext) -> str:
                 "",
                 f"- [x] `{EXPLAINER_TOKEN}` — "
                 + strings.t("graph.selection.explainer.row"),
+                "",
+                strings.t("graph.selection.explainer.experiments"),
+                "",
+                *(
+                    f"- [ ] `{token}` — " + experiment_rows[name]
+                    for token, name in EXPLAINER_EXPERIMENT_TOKENS.items()
+                ),
                 "",
             ]
             lines += _collapsed(
@@ -1187,6 +1205,21 @@ def _parse_explainer(body: str) -> bool:
     return True
 
 
+def _parse_explainer_experiments(body: str) -> List[str]:
+    """The experiments one reply ticks, in :data:`EXPLAINER_EXPERIMENTS` order.
+
+    Only a ticked row of a known format counts: unticked, absent, unreadable and
+    unknown all mean off, as for any offered addition.
+    """
+    ticked = {
+        EXPLAINER_EXPERIMENT_TOKENS[match.group("token")]
+        for match in _CHECK_LINE.finditer(body)
+        if match.group("token") in EXPLAINER_EXPERIMENT_TOKENS
+        and match.group("mark").strip()
+    }
+    return [name for name in EXPLAINER_EXPERIMENTS if name in ticked]
+
+
 def _claude_artifact_applies(harness: str) -> bool:
     """Whether a work item resolved to ``harness`` can publish a Claude artifact.
 
@@ -1243,6 +1276,8 @@ def _confirmation(
     claude_doc: bool = False,
     both_ticked: bool = False,
     explainer: Optional[bool] = None,
+    experiments: Optional[List[str]] = None,
+    experiments_dropped: Optional[List[str]] = None,
 ) -> str:
     lines = [strings.t("graph.selection.confirm.heading"), ""]
     if skips:
@@ -1357,6 +1392,27 @@ def _confirmation(
                 "graph.selection.confirm.explainer-off",
                 actor=actor,
                 nodes=", ".join(f"`{n}`" for n in _explainer_nodes(ctx)),
+            ),
+        ]
+    if experiments:
+        lines += [
+            "",
+            strings.t(
+                "graph.selection.confirm.experiments",
+                experiments=", ".join(experiments),
+            ),
+        ]
+    if experiments_dropped:
+        lines += [
+            "",
+            strings.t(
+                "graph.selection.confirm.experiments-dropped",
+                actor=actor,
+                rows=", ".join(
+                    f"`{EXPLAINER_EXPERIMENT_PREFIX}{name}`"
+                    for name in experiments_dropped
+                ),
+                explainer=EXPLAINER_TOKEN,
             ),
         ]
     # A loop that was never asked the surface question confirms nothing about
@@ -1551,6 +1607,11 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
     explainer_nodes = _explainer_nodes(ctx)
     explainer = _parse_explainer(body) if explainer_nodes else None
     grouped_skips = [] if explainer in (None, True) else list(explainer_nodes)
+    # An experiment is part of the explainer: without it there is nothing to
+    # extend, so a ticked experiment is dropped here and the confirmation says so.
+    experiments_ticked = _parse_explainer_experiments(body) if explainer_nodes else []
+    experiments = experiments_ticked if explainer is True else []
+    experiments_dropped = [] if experiments else experiments_ticked
 
     confirmation_error = ""
     try:
@@ -1581,6 +1642,8 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
                 claude_doc=claude_doc,
                 both_ticked=both_ticked,
                 explainer=explainer,
+                experiments=experiments,
+                experiments_dropped=experiments_dropped,
             ),
         )
     except Exception as exc:  # noqa: BLE001
@@ -1629,6 +1692,7 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
             "effort": effort,
             "claudeArtifact": claude_artifact,
             "claudeDoc": claude_doc,
+            "explainerExperiments": experiments,
             "frozenGraph": _frozen_graph(
                 ctx,
                 skips + grouped_skips,

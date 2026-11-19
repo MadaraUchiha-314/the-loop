@@ -391,6 +391,22 @@ when `true` and never beside `claudeArtifact: true`.
    can open or edit it.
 8. **No docs connector, no doc.** Say so once on the ticket and carry on with the files.
 
+### A reading view, not a copy (issue-544)
+
+The artifact and the doc exist to be easier to read than the markdown, so each tab is a
+**reading view** of its file rather than a paste of it:
+
+1. **The card first.** Each tab opens with the file's `## The short version`.
+2. **Diagrams drawn natively.** Draw each mermaid diagram with the surface's own drawing:
+   an inline diagram in an artifact, a diagram block in a Claude doc. Where neither is
+   possible, keep the mermaid source as a code block. For architecture, flow, sequence
+   and data-model diagrams in an HTML view, see `explainer.md` § Diagrams in a rich view.
+3. **Same substance.** The tab says what the file says, clause for clause. It may
+   reorder emphasis, fold reference material into collapsed blocks and draw what the
+   file describes, but it adds and drops nothing.
+
+Read-before-rewrite and feedback-never-approval (the rules above) are unchanged.
+
 ## The explainer and the quizzes (issue-488)
 
 **Understanding is the new bottleneck, so the outer loop teaches and checks it.** Four
@@ -802,6 +818,26 @@ copy of its contents. The checked-in file is the single source of truth.
   nears its limit, and run
   high-volume exploration in subagents so it never enters the main window.
 
+### Code comments
+
+A comment explains the code in its own terms: what it is for, a constraint the reader
+cannot see, or why the obvious approach is wrong. A maintainer should never need the
+ticket history to understand it.
+
+- **Keep the process out of production-code comments.** No work-item ids (`issue-N`),
+  decision ids (`decision-N`), requirement ids (`R<n>`), mentions of a critic or
+  self-review round, or spec file names (`design.md`, `requirements.md`).
+- **Put traceability where it is kept:** the commit message, the PR and the specs. Git
+  links each line to the commit that wrote it, and that commit names the work item.
+- **Test docstrings and scenario names are the exception.** They keep their
+  `Requirement:` links (`testing.linkRequirements`), because a test is a traceability
+  artifact.
+- **Going forward only.** The rule applies to comments a change adds or edits. A
+  comment the diff does not touch is not flagged or rewritten.
+
+The self-review and critic rounds check this rule on every diff (`reviewing.md`
+§ Standing checks).
+
 ## Verification — executing the plan
 
 `implementation` ends when the task DAG is done; the work item then enters
@@ -983,8 +1019,8 @@ must ALL hold:
   recorded in `evidence/documentation.md`) — the organized view of specs must not rot;
   **and**
 - the **R10 reviewer briefing** is posted/updated in the PR — a condensed, prioritized
-  summary (where to focus), mermaid diagram(s), and the low-level decisions — produced
-  from the-loop's internal
+  summary (the card, a review-effort score and a guided tour of the diff), mermaid
+  diagram(s), and the low-level decisions — produced from the-loop's internal
   `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md`. This is the
   **trigger** that makes mandatory user-education actually fire (a fixed gate item, not
   a setting); do not request review without it. RULE: educating the reviewer is not

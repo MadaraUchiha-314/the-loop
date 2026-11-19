@@ -263,6 +263,7 @@ def _state_keys() -> set:
             claude_artifact_url="https://claude.ai/artifact/x",
             claude_doc=True,  # issue-536: also written only when set
             claude_doc_url="https://claude.ai/artifact/d",
+            explainer_experiments=["slides"],  # written only when one is chosen
         ).as_dict()
     )
 

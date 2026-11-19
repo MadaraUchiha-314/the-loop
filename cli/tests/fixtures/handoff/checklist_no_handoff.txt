@@ -91,6 +91,11 @@ Ticking both uses the default — the ticked one above. On any other harness the
 
 - [x] `explainer` — a spec explainer and quiz before code generation, an explainer of the change for the reviewer, and a code quiz before review is requested.
 
+🧪 Experiments, off unless you tick them (they need `explainer` ticked):
+
+- [ ] `explainer-slides` — the explainer as a slide deck, one idea per slide.
+- [ ] `explainer-flashcards` — flashcards on the spec and the change, question on the front.
+
 <details>
 <summary>ℹ️ What this means</summary>
 

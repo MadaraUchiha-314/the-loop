@@ -18,6 +18,14 @@ overrides: {}                # per-work-item overrides of .the-loop/harness-conf
 > questions, and locks this file on that approval (issue-494).
 > Skip this phase entirely when the work is already clear.
 
+## The short version
+
+<!-- The card: what changes, why, and what to check. About 120 words is the
+     guide, not a limit. -->
+
+The idea in a few sentences: the problem, the option you lean towards and
+why, and the questions you need answered before requirements.
+
 ## Problem / opportunity
 
 What are we trying to solve or improve, and why now? The itch that started this.

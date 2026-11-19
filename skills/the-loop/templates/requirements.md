@@ -21,6 +21,15 @@ overrides: {}                # per-task overrides of .the-loop/harness-config.ya
 > (https://kiro.dev/docs/specs/). This phase MUST be reviewed and approved by the
 > required collaborators before moving to design.
 
+## The short version
+
+<!-- The card: what changes, why, and what to check. About 120 words is the
+     guide, not a limit. -->
+
+What changes for whom, and why now, in a few plain sentences. Name the
+requirements a reviewer should read closely, and add or link a diagram when
+the change has three or more named parts.
+
 ## Introduction
 
 A short summary of the feature/work item and the problem it solves. Link the ticket.

@@ -18,3 +18,4 @@ workItem: ""
 | Location | <the Claude artifact URL, or the committed page's GitHub URL / repo path> |
 | Published as | spec-chain artifact tab · own artifact · committed HTML |
 | Questions | 0 · 3 · 5 |
+| Experiments | none · slides · flashcards · slides, flashcards — or why a chosen one was not produced |

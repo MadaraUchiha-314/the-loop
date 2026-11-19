@@ -315,6 +315,16 @@ There are exactly **two** runtime concepts and **one** contract between them.
     `spec-quiz`, `code-explainer` and `code-quiz` skipped, each with `token: explainer`
     and the replier's name; absent or unreadable SHALL mean on. The four nodes SHALL NOT
     appear as phase rows.
+  - Under it, the same reply SHALL resolve two unticked experiment rows,
+    `explainer-slides` and `explainer-flashcards` (issue-544). A ticked row of a known
+    format SHALL freeze into `explainerExperiments` (a list of `slides` and/or
+    `flashcards`, written only when non-empty, unknown values dropped on load) only
+    when `explainer` is on; with `explainer` off a ticked experiment SHALL be dropped and
+    the confirmation SHALL say why. Every `explainer-*` token SHALL be read as a setting,
+    never a phase, on the checklist and in Slack. The graph-context block of
+    `spec-explainer` and `code-explainer`, and no other node, SHALL then carry one fixed
+    line naming the experiments; the archive's `selections` and `the-loop graph`'s
+    `choices:` SHALL list them.
 - The quiz gates (issue-488, decision-143): WHEN `spec-quiz` or `code-quiz` is entered
   THEN `post-quiz-attestation` SHALL post one marked comment linking the agent node's
   recorded `Location` — on the ticket, or on every open delivering pull request (the
@@ -1221,6 +1231,7 @@ reader.
 | Work item | What changed | Links |
 |-----------|--------------|-------|
 | issue-524 | A `pause` or `resume` stopped forgetting the loop (2026-10-27): each overwrote the control record, so a paused or resumed `review`/`contribute`/`do` item, and one armed onto an operator loop, answered "which loop" with the default. Those records now keep `armedBy` (the arming spawn command) and the selected `loop`, and `_loop_for_start` reads `armedBy` first. | [issue-524](https://github.com/MadaraUchiha-314/the-loop/issues/524) |
+| issue-544 | Two opt-in explainer experiments at `phase-selection` (2026-11-18): unticked `explainer-slides` / `explainer-flashcards` rows under `explainer`, frozen as `explainerExperiments` only when the explainer runs, named in the prompt of the two explainer nodes; the `request-review` hook takes an optional `focus` (`with: {focus: <name>}`, text from the string catalog), set at `design-approval` to point the reviewer at `design.md` § Interfaces first | [spec](../specs/issue-544/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/544) |
 | issue-536 | `phase-selection` offers the spec chain as one Claude doc (2026-11-17): a non-phase `claude-doc` row beside `claude-artifact` and ticked by default in its place (a handoff naming a spec-chain artifact keeps the artifact ticked). Both ticked resolves to the default. The signed reply freezes `claudeDoc` into `work-item-state.json` (written only when `true`), the decision record, the frozen graph and the archive's `selections`, and the outer loop's prompt carries one fixed line | [spec](../specs/issue-536/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/536) |
 | issue-538 | The work item's session stopped being left uninformed about its pull-request sessions (2026-11-18): a work item sat at `implementation` after its last pull request merged, because nothing re-evaluated `await-inner-loops` when an inner loop finished and nothing told the work item's session. The dispatcher now pastes one notice per endpoint transition into the work item's session, and re-runs the outer exit chain after an inner loop finishes, only when the pointer is parked on a node that waits on inner loops | [spec](../specs/issue-538/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/538) |
 | issue-500 | `record-feedback` stopped repeating its own heading (2026-10-26): a gate approved twice on one day appended a second identical `### <date> — <outcome>`, which MD024 rejects, and issue-496's locked requirements had to be silenced by hand. The hook now suffixes a repeat `(2)`, `(3)`, … — a counter rather than a time or a comment id, because only a counter is unique by construction and needs no new input; the first recording reads as it always did | [spec](../specs/issue-500/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/500) |

@@ -213,9 +213,8 @@ a gate (`tasks.md`) advances on shape alone.
    **Before requesting human review, post/update the R10 reviewer briefing in the PR**
    (required gate item, fixed), produced from
    `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md`: a **condensed,
-   prioritized** summary saying
-   **where to focus first**, **mermaid** diagram(s) of the change, and the
-   spec→implementation insights + low-level decisions. Whenever you ask for input, give
+   prioritized** summary: the card, a **review-effort score**, a **guided tour** of the
+   diff, **mermaid** diagram(s) of the change, and the spec→implementation insights + low-level decisions. Whenever you ask for input, give
    enough context to decide, and **educate the user on the low-level design decisions —
    this is mandatory, not optional.**
 

@@ -26,6 +26,14 @@ overrides: {}
 > like code. Credentials appear **by reference only** (env var name, secret-store key),
 > never by value.
 
+## The short version
+
+<!-- The card: what changes, why, and what to check. About 120 words is the
+     guide, not a limit. -->
+
+How the change will be proved, in a few sentences: the matrix rows that
+carry the weight, what is `n/a` and why, and what the reviewer should check.
+
 ## Test matrix
 
 > One row per candidate testing type. A type that does not apply is marked `n/a`

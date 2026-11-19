@@ -98,6 +98,15 @@ from a conversation at the stage it reached (issue-517).
   `claudeDoc` is true, its own Claude artifact
   otherwise, and a committed self-contained HTML file on a harness with no artifact
   tool; the files SHALL stay the gates' subject. See `skills/the-loop/reference/explainer.md`.
+- WHERE `explainer-slides` or `explainer-flashcards` was ticked with `explainer`
+  (issue-544) THEN the explainer page SHALL also carry a Slides or Flashcards tab, filled
+  from JSON data blocks and rendered as text like the quiz; in a Claude doc the
+  flashcards' answers SHALL join the Quiz answers tab, and the explainer record SHALL
+  name what was produced on its Experiments line.
+- WHERE the spec chain is published as a Claude artifact or doc THEN each tab SHALL be a
+  reading view of its file: the file's card first, diagrams drawn with the surface's own
+  drawing (archify when the harness already has it, mermaid otherwise), and the same
+  substance clause for clause (issue-544).
 - WHEN a work item starts as a fuzzy idea THEN the loop SHALL begin with a
   `brainstorm.md` root artifact (optional Phase 0) and convert it to requirements once
   the `brainstorm-approval` gate locks it on an authorized approval (issue-494). WHILE
@@ -225,6 +234,7 @@ from a conversation at the stage it reached (issue-517).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-544 | Readable artifacts (2026-11-18): every spec template and the PR briefing opens with a `## The short version` card; `design.md` reshaped to Interfaces, Architecture and Technology choices with no code-level detail; the briefing gains review effort and a guided tour; the artifact and doc tabs become reading views; archify recommended when present; opt-in slides and flashcards in the explainer. See [writing-style](writing-style.md) | [spec](../specs/issue-544/), [decision-152](../decisions/decision-152.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/544) |
 | issue-536 | The spec chain can be one Claude doc instead (2026-11-17): a `claude-doc` row beside `claude-artifact`, ticked by default (the artifact row now unticked, except after a handoff that published one); tick at most one, both ticked uses the default. Frozen as `claudeDoc`; the session keeps one doc with a tab per spec file (and the explainer and quizzes), reads each tab before rewriting it and folds any human edit into the file as feedback. The files stay the source of truth and the gates' subject | [spec](../specs/issue-536/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/536) |
 | issue-517 | A conversation can be handed to the-loop at the stage it reached (2026-10-21): `/the-loop:handoff` (the `handoff-to-the-loop` skill) drafts the settled prefix of the chain, interviews, files the issue with a hashed handoff record, and the item enters at `brainstorming`, `brainstorm-approval`, `requirements-approval`, `test-planning` or `design-approval`. The new `import-handoff` node imports and checks the carried files and demotes on a failure; the approval gates are unchanged, and the furthest artifact is never approved in chat | [spec](../specs/issue-517/), [process-graph](process-graph.md), [decision-150](../decisions/decision-150.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/517) |
 | issue-494 | The brainstorm is gated (2026-10-16): a human `brainstorm-approval` node follows `brainstorming`, so the author can comment and ask questions as often as they need and the brainstorm moves to requirements only on their approval, which locks `brainstorm.md`. A brainstorm that was never written, or a declared-skipped `brainstorming`, routes past the gate. Reverses issue-281's "gate-less" rule for `brainstorm.md` only; `tasks.md` stays gate-less | [spec](../specs/issue-494/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/494) |

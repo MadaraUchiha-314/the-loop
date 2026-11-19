@@ -24,7 +24,7 @@ they explain the code, and cite no issue, decision or requirement.
 
 ## Task list
 
-- [ ] 1. Writing skill: plain language, story and layers
+- [x] 1. Writing skill: plain language, story and layers
   - Add to `skills/writing/SKILL.md`: BLUF plus story, the three borrowed STE rules,
     the plain-language habits, imperative numbered steps, the three layers (card,
     story, reference), the linking-sentence carve-out in the density test, and the
@@ -37,7 +37,7 @@ they explain the code, and cite no issue, decision or requirement.
   - _Requirements:_ R1, R2 (AC on the soft guide), R3 (the boundary)
   - _Test:_ T6 — `cd cli && uv run python -m pytest -q tests/test_writing_parity.py`
     (new case: the skill names the card heading and asserts no checked limit; red→green)
-- [ ] 2. A `## The short version` card on every human-read template
+- [x] 2. A `## The short version` card on every human-read template
   - Add the card section first in `brainstorm.md`, `requirements.md`, `bugfix.md`,
     `design.md`, `testing-plan.md`, `tasks.md`, `decision.md`, `capability.md` and
     `pr-briefing.md` under `skills/the-loop/templates/` (whichever of these the parity
@@ -46,7 +46,7 @@ they explain the code, and cite no issue, decision or requirement.
   - _Requirements:_ R2
   - _Test:_ T6 — new parity case "every human-read template opens with
     `## The short version`" (red first, then green)
-- [ ] 3. The new `design.md` template shape
+- [x] 3. The new `design.md` template shape
   - Reorder to: The short version, Interfaces, Architecture, Technology choices, UI/UX
     design, Security design, Testing strategy, Open questions, Review comments.
   - Drop Overview, Components & interfaces, Data models, Error handling and
@@ -58,7 +58,7 @@ they explain the code, and cite no issue, decision or requirement.
   - _Test:_ T6 (parity case on the section order) and T10 — a unit test runs the
     `design` node's section check on `docs/specs/issue-538/design.md` and on the new
     template; both pass (R3 AC 8)
-- [ ] 4. PR briefing: the card, review effort and a guided tour
+- [x] 4. PR briefing: the card, review effort and a guided tour
   - In `pr-briefing.md`: TL;DR becomes The short version, add Review effort (1–5 plus
     a reason), and replace Where to focus with Guided tour (ordered `file:line` stops,
     one sentence each).
@@ -68,7 +68,7 @@ they explain the code, and cite no issue, decision or requirement.
   - _Requirements:_ R6
   - _Test:_ T6 — parity case: the briefing template carries Review effort and Guided
     tour, and no reference still names "Where to focus"
-- [ ] 5. Code-comment rule and the standing review checks
+- [x] 5. Code-comment rule and the standing review checks
   - Add the comment rule to the-loop skill's implementation guidance (production code
     only; test docstrings keep their `Requirement:` links; going forward only).
   - Add **Standing checks** to `reference/reviewing.md`: the comment rule on added or
@@ -78,7 +78,7 @@ they explain the code, and cite no issue, decision or requirement.
   - _Requirements:_ R4, R3 AC 7
   - _Test:_ T6 — parity case: the review reference lists both standing checks, and the
     critic prompt text includes them; T11 applies them to this item
-- [ ] 6. Publishing rules: the doc and artifact as a reading view, and archify
+- [x] 6. Publishing rules: the doc and artifact as a reading view, and archify
   - In `reference/explainer.md` (and wherever the Claude-doc publishing rule lives):
     each tab opens with the card; diagrams use the surface's native drawing, falling
     back to the mermaid source; substance matches the file clause for clause.
@@ -88,7 +88,7 @@ they explain the code, and cite no issue, decision or requirement.
   - _Requirements:_ R5, R7
   - _Test:_ T6 — parity case: the reference says "fall back to mermaid" and names no
     install step (T8 abuse case 4)
-- [ ] 7. Explainer template: Slides and Flashcards tabs
+- [x] 7. Explainer template: Slides and Flashcards tabs
   - Port the prototype's tabs into `skills/the-loop/templates/explainer.html`: optional
     JSON blocks for slides and cards, the stepper, the flip card with `aria-pressed`, a
     live counter. Tabs are hidden when their block is empty.
@@ -100,14 +100,14 @@ they explain the code, and cite no issue, decision or requirement.
   - _Test:_ T5, T9 and T8 abuse case 2 — a unit check that the template's script never
     assigns markup (`innerHTML`, `outerHTML`, `insertAdjacentHTML`) and a headless
     render where a slide title holding `<img src=x onerror=…>` shows as text
-- [ ] 8. Experiment rows in the checklist
+- [x] 8. Experiment rows in the checklist
   - Render `explainer-slides` and `explainer-flashcards` unticked under the explainer
     row, with the "Experiments" lead-in.
   - _Depends on:_ none
   - _Requirements:_ R8 AC 1
   - _Test:_ T1 — `tests/test_explainer_experiments.py::test_rows_render_unticked_in_explainer_section`
     and the layout case in `tests/test_selection_layout.py` (red→green)
-- [ ] 9. Parse, validate and freeze the experiments
+- [x] 9. Parse, validate and freeze the experiments
   - Parse ticked rows into a list of known formats; ignore unknown `explainer-*`
     tokens; treat absent or unreadable rows as off.
   - Drop experiments when `explainer` is unticked, and say why in the confirmation.
@@ -119,7 +119,7 @@ they explain the code, and cite no issue, decision or requirement.
   - _Requirements:_ R8 AC 2, 5, 6; NFR backward compatibility
   - _Test:_ T1 and T10 — parse, dependency, confirmation and round-trip cases in
     `tests/test_explainer_experiments.py`; T8 abuse case 1 rides on T2 (task 12)
-- [ ] 10. Carry the experiments to the session and the terminal
+- [x] 10. Carry the experiments to the session and the terminal
   - Add the fixed prompt line at `spec-explainer` and `code-explainer` only, as a
     Markdown fragment beside `cli/the_loop/prompts/graph-context/claude-doc.md`; list the
     experiments under `choices:` in `the-loop graph`.
@@ -127,7 +127,7 @@ they explain the code, and cite no issue, decision or requirement.
   - _Requirements:_ R8 AC 3–4
   - _Test:_ T1 — prompt-line cases in `tests/test_graphlink.py` (present at the two
     explainer nodes, absent elsewhere and when the list is empty) and a `choices:` case
-- [ ] 11. Slack and the design-approval focus line
+- [x] 11. Slack and the design-approval focus line
   - Slack's selection control classifies every `explainer-*` row as a setting.
   - The `request-review` hook takes an optional per-node focus line from the graph;
     `design-approval` sets "Start with `design.md` § Interfaces, then the testing
@@ -137,7 +137,7 @@ they explain the code, and cite no issue, decision or requirement.
   - _Requirements:_ R8 AC 7, R3 AC 9
   - _Test:_ T1 — Slack classification and request-review focus-line cases in
     `tests/test_explainer_experiments.py`
-- [ ] 12. Integration scenarios
+- [x] 12. Integration scenarios
   - Add `tests/test_explainer_experiments_integration.py` with Gherkin docstrings:
     `Scenario: an authorized execute with explainer-slides ticked reaches the spec-explainer prompt`,
     `Scenario: an experiment ticked without the explainer never reaches a prompt`,
@@ -145,14 +145,14 @@ they explain the code, and cite no issue, decision or requirement.
   - _Depends on:_ 9, 10
   - _Requirements:_ R8 AC 2–3, 5; abuse case 1
   - _Test:_ T2, T8 — `cd cli && uv run python -m pytest -q tests/test_explainer_experiments_integration.py`
-- [ ] 13. Capability docs
+- [x] 13. Capability docs
   - Update `docs/capabilities/writing-style.md`, the spec-workflow and explainer
     capability docs, and the process-graph doc for the new rows, state key, prompt line
     and focus line.
   - _Depends on:_ 1–7, 10, 11
   - _Requirements:_ R9 AC 1
   - _Test:_ T12 — `make check` (doc parity tests included)
-- [ ] 14. Decision record: the soft card guide
+- [x] 14. Decision record: the soft card guide
   - Add the next `docs/decisions/decision-<n>.md`: a soft, unchecked ~120-word card
     guide alongside decision-061's rejection of checked budgets; note the
     `design.md` boundary and the comment rule. Index it.

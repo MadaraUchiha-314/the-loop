@@ -324,7 +324,10 @@ nodes:
     skippable: true         # issue-177: with design skipped this gate has only
                             # the testing plan to read, and that plan still gets
                             # its human eyes at `human-approval`
-    entry: [set-phase-label, request-review, {hook: notify, with: {event: phase-approval-pending, artifact: design.md}}]
+    entry:
+      - set-phase-label
+      - {hook: request-review, with: {focus: design-approval}}
+      - {hook: notify, with: {event: phase-approval-pending, artifact: design.md}}
     exit:
       - classify-feedback
       - {hook: record-feedback, with: {into: design.md}}

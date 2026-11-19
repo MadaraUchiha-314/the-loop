@@ -22,7 +22,7 @@
       "content": [
         {
           "type": "text",
-          "text": "TL;DR"
+          "text": "The short version"
         }
       ]
     },
@@ -31,7 +31,7 @@
       "content": [
         {
           "type": "text",
-          "text": "One or two sentences: what this PR does and why."
+          "text": "What this PR does and why, in a few plain sentences."
         }
       ]
     },
@@ -94,7 +94,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Where to focus (in this order)"
+          "text": "Review effort"
         }
       ]
     },
@@ -103,7 +103,58 @@
       "content": [
         {
           "type": "text",
-          "text": "Prioritized so a reviewer of AI-authored work knows what to scrutinize first."
+          "text": "<1–5>",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " — one line on why. 1 is a few minutes (a doc fix, a one-file change); 5 is"
+        },
+        {
+          "type": "hardBreak"
+        },
+        {
+          "type": "text",
+          "text": "hours (a new subsystem, a migration, a security boundary)."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "level": 2
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "Guided tour"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
+          "text": "Stops in the order to read them, so a reviewer of AI-authored work sees the riskiest"
+        },
+        {
+          "type": "hardBreak"
+        },
+        {
+          "type": "text",
+          "text": "change first. Each stop links a file and line in the diff, with one sentence on why it"
+        },
+        {
+          "type": "hardBreak"
+        },
+        {
+          "type": "text",
+          "text": "matters."
         }
       ]
     },
@@ -121,21 +172,14 @@
               "content": [
                 {
                   "type": "text",
-                  "text": "<highest-priority area>",
+                  "text": "<path>:<line>",
                   "marks": [
                     {
-                      "type": "strong"
-                    }
-                  ]
-                },
-                {
-                  "type": "text",
-                  "text": " — "
-                },
-                {
-                  "type": "text",
-                  "text": "<path>",
-                  "marks": [
+                      "type": "link",
+                      "attrs": {
+                        "href": "link%20to%20the%20line%20in%20the%20PR%20diff"
+                      }
+                    },
                     {
                       "type": "code"
                     }
@@ -143,7 +187,7 @@
                 },
                 {
                   "type": "text",
-                  "text": " — why it matters / what to check."
+                  "text": " — what to check here."
                 }
               ]
             }
@@ -157,21 +201,14 @@
               "content": [
                 {
                   "type": "text",
-                  "text": "<next>",
+                  "text": "<path>:<line>",
                   "marks": [
                     {
-                      "type": "strong"
-                    }
-                  ]
-                },
-                {
-                  "type": "text",
-                  "text": " — "
-                },
-                {
-                  "type": "text",
-                  "text": "<path>",
-                  "marks": [
+                      "type": "link",
+                      "attrs": {
+                        "href": "link"
+                      }
+                    },
                     {
                       "type": "code"
                     }
@@ -193,16 +230,22 @@
               "content": [
                 {
                   "type": "text",
-                  "text": "<lower-risk / skim>",
+                  "text": "<path>:<line>",
                   "marks": [
                     {
-                      "type": "strong"
+                      "type": "link",
+                      "attrs": {
+                        "href": "link"
+                      }
+                    },
+                    {
+                      "type": "code"
                     }
                   ]
                 },
                 {
                   "type": "text",
-                  "text": " — …"
+                  "text": " — lower risk; skim."
                 }
               ]
             }

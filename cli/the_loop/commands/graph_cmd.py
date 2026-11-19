@@ -20,6 +20,7 @@ from .base import Command, register
 from .. import strings
 from ..client.routing import routed, service_error
 from ..core import graphs as core_graphs
+from ..graph.state import explainer_experiments
 
 logger = logging.getLogger("the-loop.graph")
 
@@ -641,6 +642,10 @@ def _archived_lines(report: Dict[str, Any]) -> List[str]:
         chosen.append("claude-artifact")  # issue-471
     if selections.get("claudeDoc") is True:
         chosen.append("claude-doc")  # issue-536
+    chosen += [
+        f"explainer-{name}"
+        for name in explainer_experiments(selections.get("explainerExperiments"))
+    ]
     if chosen:
         lines.append(strings.t("cli.graph.archived.choices", choices=", ".join(chosen)))
     for pr in terminal.get("pullRequests") or []:

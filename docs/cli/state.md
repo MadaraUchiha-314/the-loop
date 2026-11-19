@@ -128,6 +128,7 @@ from the artifacts alone.
 | `model` / `effort` | human decision | what it runs on, and at what effort ([issue-358](https://github.com/MadaraUchiha-314/the-loop/issues/358)) |
 | `claudeArtifact` | human decision | whether the spec chain is also published as one Claude artifact — `true` only when ticked and resolved to the `claude` harness; anything but the boolean `true` reads as `false` ([issue-471](https://github.com/MadaraUchiha-314/the-loop/issues/471)) |
 | `claudeDoc` | human decision | whether the spec chain is published as one Claude doc instead — `true` only when ticked alone and resolved to the `claude` harness; anything but the boolean `true`, or `true` beside `claudeArtifact: true`, reads as `false`; written only when `true` ([issue-536](https://github.com/MadaraUchiha-314/the-loop/issues/536)) |
+| `explainerExperiments` | human decision | the explainer experiments chosen at selection, a list of `slides` and/or `flashcards`; kept only when `explainer` is ticked, unknown values dropped on load, written only when non-empty ([issue-544](https://github.com/MadaraUchiha-314/the-loop/issues/544)) |
 | `handoff` | human decision | the handoff record the item arrived with — the parsed record plus `author`, `commentUrl` and `recordedAt`, read once at the walk's start, and `lockedSha256` (`{artifact: sha256}`, the bytes each approved-in-chat lock wrote, so a re-run recognises its own lock by content); a `requiresHandoff` node is skipped `via: no-handoff` without it ([issue-517](https://github.com/MadaraUchiha-314/the-loop/issues/517)) |
 | `handoffDemoted` | pointer | each carried artifact the `import-handoff` check refused, as `{node, artifact, reason}` ([issue-517](https://github.com/MadaraUchiha-314/the-loop/issues/517)) |
 | `claudeArtifactUrl` | pointer | the published spec-chain Claude artifact's URL ([issue-517](https://github.com/MadaraUchiha-314/the-loop/issues/517)) |
@@ -135,7 +136,7 @@ from the artifacts alone.
 | `repos` | human decision | the repositories it contributes to |
 | `pullRequests` | repository entity | each pull request delivering it |
 
-`handoff`, `handoffDemoted`, `claudeArtifactUrl`, `claudeDoc` and `claudeDocUrl` are written only when set, so a
+`handoff`, `handoffDemoted`, `claudeArtifactUrl`, `claudeDoc`, `claudeDocUrl` and `explainerExperiments` are written only when set, so a
 work item that never had a handoff or a doc saves byte-identical to a file from before they existed.
 Each is a filtered copy in the terminal record (`archive.py`): `handoff` keeps only its
 scalar fields and links, `handoffDemoted` only the node and artifact names.

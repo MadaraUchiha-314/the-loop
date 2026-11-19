@@ -17,20 +17,45 @@ overrides: {}
 # Design: <work item title>
 
 > Phase 2 of 3 (requirements → design → tasks). Derives from the approved
-> requirements. MUST be reviewed and approved before moving to tasks breakdown.
+> requirements, and is reviewed with `testing-plan.md` at the `design-approval` gate.
+>
+> **Stay at the level of decisions.** This file holds the interfaces, the architecture
+> and the technology choices. It carries no function or method names, signatures,
+> class layouts, algorithms, code snippets, internal data structures or file-by-file
+> change lists: that detail belongs in `tasks.md` and the code.
 
-## Overview
+## The short version
 
-The technical approach at a glance and how it satisfies the requirements.
+<!-- The card: what changes, why, and what to check. About 120 words is the
+     guide, not a limit. Point the reviewer at Interfaces, and add or link a
+     diagram when the change has three or more named parts. -->
+
+What changes and why, in a few plain sentences, and where the reviewer should start.
+
+## Interfaces
+
+Everything an outside party relies on, one topic per subsection. For a topic this
+change leaves alone, write one line, "No change", rather than dropping it.
+
+- **CLI:** commands, flags and their output.
+- **Configuration:** keys, defaults and validation.
+- **API and schema:** endpoints, events, message formats.
+- **Persisted formats:** files and records written to disk or a store.
+- **User-visible behaviour:** what a person sees, including how failures surface.
 
 ## Architecture
 
-Key components and how they interact. Reference `docs/architecture/architecture.md`
-and add sub-component docs if needed. Include diagrams where helpful.
+The components, how they connect and how data moves between them, with at least one
+mermaid diagram. Say why the pieces are arranged this way. Reference
+`docs/architecture/architecture.md` and add sub-component docs if needed.
 
-## Components & interfaces
+## Technology choices
 
-For each component: responsibility, inputs/outputs, public interface/contract.
+| Choice | Chosen | Alternatives | Why |
+|---|---|---|---|
+| <a library, storage format, protocol or pattern> | <the choice> | <what else was considered> | <why this one won> |
+
+Log a durable choice under `docs/decisions/`.
 
 ## UI/UX design
 
@@ -51,14 +76,6 @@ For each component: responsibility, inputs/outputs, public interface/contract.
 - **Design system / tokens:** colours, type, spacing, components reused (link the source).
 - **Accessibility & responsiveness:** target breakpoints, keyboard/contrast intent.
 - **Evidence:** rendered screenshots of the **locked** artifacts (`design.uiArtifacts.screenshotEvidence`).
-
-## Data models
-
-Schemas, types, persistence. (Link `harness-config.schema.json`-style schemas if any.)
-
-## Error handling
-
-Failure modes and how they are surfaced (observability identical at dev-time/runtime).
 
 ## Security design
 
@@ -86,10 +103,6 @@ The **executable detail** — which testing types apply and which are `n/a` and 
 verification environment, the evidence to capture — belongs to `testing-plan.md`, derived
 from this design at the `test-planning` node and executed at `verification`. Do not
 duplicate it here. See `reference/testing.md`.
-
-## Trade-offs & decisions
-
-Significant choices made here; log durable ones under `docs/decisions/`.
 
 ## Open questions
 
