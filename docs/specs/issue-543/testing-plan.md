@@ -2,8 +2,8 @@
 type: testing-plan
 phase: test-planning
 workItem: "github:MadaraUchiha-314/the-loop#543"
-status: draft                # draft | in-review | approved — locked with design.md by the design-approval gate
-approvedBy: []
+status: approved             # draft | in-review | approved — locked with design.md by the design-approval gate
+approvedBy: ["MadaraUchiha-314"]
 overrides: {}
 ---
 
@@ -116,3 +116,9 @@ them. They are verified at review: R6 by reading `/the-loop:derive-pr-spec` and
 
 > Appended by the-loop's `record-feedback` hook when a human gate approves with
 > comments (issue-109). Append-only and attributed.
+
+### 2026-11-19 — approved
+
+**@MadaraUchiha-314** wrote:
+
+approved

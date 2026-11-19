@@ -2,8 +2,8 @@
 type: design
 phase: design
 workItem: "github:MadaraUchiha-314/the-loop#543"
-status: draft                # draft | in-review | approved — locked by the design-approval gate, never by the session
-approvedBy: []
+status: approved             # draft | in-review | approved — locked by the design-approval gate, never by the session
+approvedBy: ["MadaraUchiha-314"]
 overrides: {}
 riskTier: 3                  # no schema, credential or workflow path; a new online CLI verb that reads repository visibility
 ---
@@ -335,3 +335,9 @@ None open. The three requirement questions were settled on PR #546.
 
 > Appended by the-loop's `record-feedback` hook when a human gate approves with
 > comments (issue-109). Append-only and attributed.
+
+### 2026-11-19 — approved
+
+**@MadaraUchiha-314** wrote:
+
+approved
