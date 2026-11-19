@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-544",
-  "currentNode": "requirements-definition",
+  "currentNode": "requirements-approval",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -37,8 +37,16 @@
     },
     "requirements-definition": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-11-19T00:23:10+00:00",
+      "exitedAt": "2026-11-19T00:25:40+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "requirements-approval": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-11-19T00:25:40+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -259,10 +267,18 @@
     }
   },
   "forced": [],
-  "parked": null,
+  "parked": {
+    "node": "requirements-approval",
+    "reason": "awaiting a human",
+    "since": "2026-11-19T00:25:40+00:00"
+  },
   "completions": {
     "brainstorming": {
       "at": "2026-11-18T23:39:12+00:00",
+      "by": "cli"
+    },
+    "requirements-definition": {
+      "at": "2026-11-19T00:25:40+00:00",
       "by": "cli"
     }
   },
